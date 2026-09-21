@@ -50,7 +50,7 @@ impl Kind {
     }
     /// Tests and operations are hidden from the lineage canvas by default: they
     /// are attached to their parent instead of drawn as graph nodes.
-    fn is_graph_node(self) -> bool {
+    pub(crate) fn is_graph_node(self) -> bool {
         !matches!(self, Kind::Test | Kind::Operation)
     }
 }
@@ -61,6 +61,25 @@ pub struct Place {
     pub database: String,
     pub schema: String,
     pub alias: String,
+}
+
+/// The one place a path from the manifest becomes a path this program speaks.
+///
+/// dbt writes `original_file_path` with the separator of the machine that
+/// parsed the project, so a manifest produced on Windows reaches a macOS
+/// dbt-edith full of backslashes. Everything else here, `/api/dir`, the file
+/// index, git, the browser, uses `/`, and a node whose path disagreed compared
+/// equal to nothing: no tree row matched it, no folder could be derived from
+/// it, and the same file opened from the tree and from a `ref()` became two
+/// tabs. Normalising at the boundary is what keeps the rest free of the
+/// question. `files::resolve` still accepts either, for anything the browser
+/// sends back.
+fn slashed(path: String) -> String {
+    if path.contains('\\') {
+        path.replace('\\', "/")
+    } else {
+        path
+    }
 }
 
 /// A config value as text: a JSON string as-is, null as empty, anything else
@@ -89,6 +108,12 @@ pub struct Column {
 pub struct Node {
     pub id: String,
     pub name: String,
+    /// dbt's fully qualified name, joined with '.': the package, then the path
+    /// under the resource root, then the name. The implicit selector method
+    /// matches on it (0024). Joined rather than kept as a `Vec<String>`: one
+    /// allocation per node instead of one per part, and the parts are recovered
+    /// by splitting, which the matcher has to do anyway.
+    pub fqn: String,
     pub kind: Kind,
     pub file: String,
     pub yml: String,
@@ -257,19 +282,22 @@ impl Graph {
             };
             columns.sort_by(|a, b| a.name.cmp(&b.name));
 
-            let file = raw_node.original_file_path;
+            let file = slashed(raw_node.original_file_path);
             let search_key = format!("{}\u{0}{}", name.to_lowercase(), file.to_lowercase());
             index.insert(id.clone(), nodes.len() as u32);
             nodes.push(Node {
                 id,
                 name,
+                fqn: raw_node.fqn.join("."),
                 kind,
-                yml: raw_node
-                    .patch_path
-                    .unwrap_or_default()
-                    .split_once("://")
-                    .map(|(_, p)| p.to_string())
-                    .unwrap_or_default(),
+                yml: slashed(
+                    raw_node
+                        .patch_path
+                        .unwrap_or_default()
+                        .split_once("://")
+                        .map(|(_, p)| p.to_string())
+                        .unwrap_or_default(),
+                ),
                 file,
                 schema: raw_node.schema.clone().unwrap_or_default(),
                 database: raw_node.database.clone().unwrap_or_default(),
@@ -627,7 +655,7 @@ impl Graph {
         // `cll` tied to `self` so the returned Lineage can reference its kinds.
         let Some(cll) = self.cll.as_ref() else {
             return Lineage {
-                focus: 0,
+                focus: None,
                 truncated: false,
                 mode: "column",
                 focus_column: "",
@@ -690,7 +718,7 @@ impl Graph {
 
         let focus_node = &self.nodes[focus.node as usize];
         Lineage {
-            focus: pos[&focus],
+            focus: Some(pos[&focus]),
             truncated,
             mode: "column",
             edge_kinds,
@@ -881,7 +909,7 @@ impl Graph {
         edges.dedup();
 
         Lineage {
-            focus: pos[&focus],
+            focus: Some(pos[&focus]),
             truncated,
             mode: "model",
             focus_column: "",
@@ -911,11 +939,121 @@ impl Graph {
             edges,
         }
     }
+
+    /// Draws an arbitrary set of nodes, the one a selector expression resolved
+    /// to. There is no focus, because a selection has no centre.
+    ///
+    /// `depth` is a longest-path layering of the induced subgraph rather than a
+    /// distance from anything, so each disconnected component starts at column
+    /// 0 instead of being dragged right by one it has nothing to do with.
+    pub fn selection(&self, picked: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
+        let mut members: Vec<u32> = picked.to_vec();
+        let truncated = members.len() > max_nodes;
+        if truncated {
+            // Cut by name, never by index: index order follows the manifest's
+            // HashMap iteration in build(), so cutting by it would draw a
+            // different subset of the same selection after every reload.
+            //
+            // Tests go last, because a selection with tests switched on is
+            // mostly tests, and an alphabetical cut would fill the canvas with
+            // them and drop the models the selection was written for.
+            members.sort_by(|&a, &b| {
+                let key = |i: u32| {
+                    let n = &self.nodes[i as usize];
+                    (n.kind == Kind::Test, &n.name, &n.id)
+                };
+                key(a).cmp(&key(b))
+            });
+            members.truncate(max_nodes);
+        }
+        members.sort_unstable();
+        members.dedup();
+        let pos: HashMap<u32, usize> = members.iter().enumerate().map(|(p, &i)| (i, p)).collect();
+
+        let mut edges: Vec<[usize; 2]> = Vec::new();
+        for (p, &i) in members.iter().enumerate() {
+            let node = &self.nodes[i as usize];
+            for &c in &node.children {
+                if let Some(&cp) = pos.get(&c) {
+                    edges.push([p, cp]);
+                }
+            }
+            if with_tests {
+                for &t in &node.tests {
+                    if let Some(&tp) = pos.get(&t) {
+                        edges.push([p, tp]);
+                    }
+                }
+            }
+        }
+        edges.sort_unstable();
+        edges.dedup();
+
+        // Kahn, so a node sits one column right of its deepest parent in view.
+        let mut out_adj: Vec<Vec<usize>> = vec![Vec::new(); members.len()];
+        let mut indeg: Vec<usize> = vec![0; members.len()];
+        for [a, b] in &edges {
+            out_adj[*a].push(*b);
+            indeg[*b] += 1;
+        }
+        let mut depth: Vec<i32> = vec![0; members.len()];
+        let mut queue: Vec<usize> = (0..members.len()).filter(|&i| indeg[i] == 0).collect();
+        let mut head = 0usize;
+        while head < queue.len() {
+            let p = queue[head];
+            head += 1;
+            for k in 0..out_adj[p].len() {
+                let q = out_adj[p][k];
+                depth[q] = depth[q].max(depth[p] + 1);
+                indeg[q] -= 1;
+                if indeg[q] == 0 {
+                    queue.push(q);
+                }
+            }
+        }
+        // Whatever the queue never reached sits on a cycle, which dbt forbids.
+        // It keeps depth 0: a wrong column beats a loop that can spin.
+
+        Lineage {
+            focus: None,
+            truncated,
+            mode: "select",
+            focus_column: "",
+            edge_kinds: Vec::new(),
+            nodes: members
+                .iter()
+                .enumerate()
+                .map(|(p, &i)| {
+                    let n = &self.nodes[i as usize];
+                    LineageNode {
+                        id: std::borrow::Cow::Borrowed(&n.id),
+                        name: &n.name,
+                        sub: String::new(),
+                        kind: n.kind,
+                        file: &n.file,
+                        schema: &n.schema,
+                        materialized: &n.materialized,
+                        disabled: n.disabled,
+                        depth: depth[p],
+                        tests: n.tests.len(),
+                        parents: n.parents.len(),
+                        children: n.children.len(),
+                        hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
+                        hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
+                    }
+                })
+                .collect(),
+            edges,
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
 pub struct Lineage<'a> {
-    pub focus: usize,
+    /// The node the graph was built around, as a position in `nodes`. A
+    /// selection has no centre, so it sends none, and the renderer marks no box.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus: Option<usize>,
     pub truncated: bool,
     pub mode: &'static str,
     #[serde(skip_serializing_if = "str::is_empty")]
@@ -970,6 +1108,39 @@ mod tests {
         }))
         .unwrap();
         Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    /// A manifest parsed on Windows reaches every other machine with backslashes.
+    /// Nothing downstream should ever have to know that.
+    #[test]
+    fn windows_paths_arrive_slashed() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.stg_orders": {
+                    "name": "stg_orders",
+                    "resource_type": "model",
+                    "package_name": "shop",
+                    "original_file_path": "models\\shop\\staging\\stg_orders.sql",
+                    "patch_path": "shop://models\\shop\\staging\\stg_orders.yml",
+                },
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let n = &g.nodes[0];
+        assert_eq!(n.file, "models/shop/staging/stg_orders.sql");
+        assert_eq!(n.yml, "models/shop/staging/stg_orders.yml");
+        // The file index is keyed by the same spelling the browser will send.
+        assert!(g.by_file.contains_key("models/shop/staging/stg_orders.sql"));
+        assert!(g.by_file.contains_key("models/shop/staging/stg_orders.yml"));
+        // And a path search matches what a user would actually type.
+        assert_eq!(g.search("shop/staging", &[], 10).len(), 1);
+    }
+
+    #[test]
+    fn a_posix_path_is_left_alone() {
+        assert_eq!(slashed("models/a/b.sql".to_string()), "models/a/b.sql");
+        assert_eq!(slashed(String::new()), "");
     }
 
     fn edge(from_col: &str, to_col: &str) -> RawColEdge {
@@ -1032,5 +1203,104 @@ mod tests {
         assert_eq!(twice.cll.as_ref().unwrap().degree(ColRef { node: dim(&twice), col: slot }), (1, 0));
         let columns = |g: &Graph| g.nodes[dim(g) as usize].columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         assert_eq!(columns(&twice), columns(&once));
+    }
+
+    /// A diamond and, apart from it, a pair that touches nothing: enough to
+    /// tell a layering from a distance, and a component from the whole graph.
+    fn shapes() -> Graph {
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "fqn": ["shop", name] })
+        };
+        let test = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "test", "package_name": "shop",
+                                "fqn": ["shop", name] })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.a": model("a"), "model.shop.b": model("b"),
+                "model.shop.c": model("c"), "model.shop.d": model("d"),
+                "model.shop.x": model("x"), "model.shop.y": model("y"),
+                "test.shop.aaa_not_null_a": test("aaa_not_null_a"),
+            },
+            "parent_map": {
+                "test.shop.aaa_not_null_a": ["model.shop.a"],
+                "model.shop.b": ["model.shop.a"],
+                "model.shop.c": ["model.shop.a"],
+                "model.shop.d": ["model.shop.b", "model.shop.c"],
+                "model.shop.y": ["model.shop.x"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    /// Positions in a Lineage follow HashMap iteration order, so every
+    /// assertion here reads a node by name instead.
+    fn by_name<'a>(sub: &'a Lineage<'a>, name: &str) -> &'a LineageNode<'a> {
+        sub.nodes.iter().find(|n| n.name == name).expect(name)
+    }
+
+    fn all(g: &Graph, names: &[&str]) -> Vec<u32> {
+        names.iter().map(|n| g.index[&format!("model.shop.{n}")]).collect()
+    }
+
+    #[test]
+    fn a_selection_layers_every_component_from_its_own_zero() {
+        let g = shapes();
+        let sub = g.selection(&all(&g, &["a", "b", "c", "d", "x", "y"]), false, 100);
+        for (name, want) in [("a", 0), ("b", 1), ("c", 1), ("d", 2), ("x", 0), ("y", 1)] {
+            assert_eq!(by_name(&sub, name).depth, want, "{name}");
+        }
+        assert_eq!(sub.edges.len(), 5);
+        assert!(!sub.truncated);
+        assert_eq!(sub.mode, "select");
+    }
+
+    #[test]
+    fn a_selection_counts_the_neighbours_it_left_out() {
+        let g = shapes();
+        let sub = g.selection(&all(&g, &["b", "d"]), false, 100);
+        assert_eq!(by_name(&sub, "b").hidden_up, 1, "a is upstream and out of view");
+        assert_eq!(by_name(&sub, "d").hidden_up, 1, "c is out of view, b is not");
+        assert_eq!(by_name(&sub, "b").hidden_down, 0, "d is the only child and it is in view");
+        // Both are drawn even though only one edge between them survives.
+        assert_eq!(sub.nodes.len(), 2);
+        assert_eq!(sub.edges.len(), 1);
+    }
+
+    #[test]
+    fn a_capped_selection_says_so_and_cuts_the_same_way_twice() {
+        let g = shapes();
+        let picked = all(&g, &["a", "b", "c", "d", "x", "y"]);
+        let sub = g.selection(&picked, false, 3);
+        assert!(sub.truncated);
+        assert_eq!(sub.nodes.len(), 3);
+        let mut drawn: Vec<&str> = sub.nodes.iter().map(|n| n.name).collect();
+        drawn.sort();
+        // By name, so the same selection draws the same three every time.
+        assert_eq!(drawn, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_capped_selection_drops_its_tests_before_its_models() {
+        let g = shapes();
+        // The test sorts first by name, so an alphabetical cut alone would keep
+        // it and drop a model. With tests on, most of a selection is tests.
+        let picked = vec![g.index["test.shop.aaa_not_null_a"], g.index["model.shop.a"]];
+        let sub = g.selection(&picked, true, 1);
+        assert!(sub.truncated);
+        assert_eq!(sub.nodes.iter().map(|n| n.name).collect::<Vec<_>>(), ["a"]);
+    }
+
+    #[test]
+    fn only_a_selection_has_no_focus() {
+        let g = shapes();
+        let picked = all(&g, &["a", "b"]);
+        let select = serde_json::to_value(g.selection(&picked, false, 100)).unwrap();
+        assert!(select.get("focus").is_none(), "a selection has no centre to send");
+
+        let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
+        assert!(lineage["focus"].is_number(), "and every other mode still sends one");
     }
 }

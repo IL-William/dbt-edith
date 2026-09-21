@@ -9,7 +9,7 @@ project.
 
 The first column click against a real warehouse answered `251005: User is
 empty`, which is Snowflake's way of saying that `profiles.yml` was still the
-template the setup script wrote. Nothing in dbt-lens named the file the
+template the setup script wrote. Nothing in dbt-edith named the file the
 connection came from, and that file sits in `~/.dbt`, outside the project,
 where 0012 says nothing is read.
 
@@ -17,7 +17,7 @@ where 0012 says nothing is read.
 
 - **One file, and the script names it.** `tools/sf_lineage.py` announces the
   profile before reading it, so the path is known even when reading it is what
-  fails. dbt-lens opens that path and no other.
+  fails. dbt-edith opens that path and no other.
 - **The route takes no path.** `GET` and `PUT /api/profiles` serve what the
   script announced, so no request can widen the exception. `/api/file` and its
   confinement to the project do not move.

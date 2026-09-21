@@ -134,7 +134,7 @@ pub enum Status {
     Env,
     /// Nothing written, so the value dbt parsed is shown as is.
     Parsed,
-    /// Jinja that dbt-lens does not evaluate.
+    /// Jinja that dbt-edith does not evaluate.
     Unevaluated,
     /// The file defines it, but as a placeholder rather than a real name.
     Placeholder,
@@ -853,7 +853,7 @@ mod tests {
 
     #[test]
     fn discover_names_hides_and_skips_correctly() {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-envs-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-envs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".env.venvlike")).unwrap(); // a directory, not a file
         std::fs::write(dir.join(".env"), "A=1").unwrap();

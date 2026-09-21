@@ -1,4 +1,4 @@
-# Working on dbt-lens
+# Working on dbt-edith
 
 A browser IDE for dbt projects: editor, terminal and lineage, served from one
 binary that contains its own frontend. It reads a dbt project, it never runs
@@ -87,10 +87,14 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |
+| make the server read files it was not asked for by name | [0020](docs/decisions/0020-search-never-opens-an-env-file.md) |
+| show the structure inside a file, or parse SQL for it | [0022](docs/decisions/0022-the-outline-is-scanned-in-the-browser.md) |
+| read a `.sql` file to work out anything at all | [0002](docs/decisions/0002-lineage-from-the-manifest.md), [0023](docs/decisions/0023-column-lineage-may-be-parsed.md) |
+| resolve a dbt selector, or add a selector method | [0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 
-All nineteen decisions, with what was rejected each time, are indexed in
+Every decision, with what was rejected each time, is indexed in
 [docs/decisions/](docs/decisions/). The [README](README.md) is the user-facing
 documentation: what the tool does and how to use it. Rationale lives here, never
 in both.
@@ -99,8 +103,8 @@ in both.
 
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
-concern each: `envs`, `project`, `settings`, `git`, `collin`, `sidecar`,
-`compiled`, `venv`, `files`, `pty`. `build.rs` stamps the binary with
+concern each: `envs`, `project`, `settings`, `git`, `collin`, `select`,
+`sidecar`, `compiled`, `venv`, `files`, `pty`. `build.rs` stamps the binary with
 `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

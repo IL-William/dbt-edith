@@ -130,7 +130,7 @@ pub fn interpreters(root: &Path, env: &VenvInfo) -> Vec<Interpreter> {
 }
 
 /// Writes the embedded script under the configuration directory, named by its
-/// hash: two versions of dbt-lens never overwrite each other's copy, and the
+/// hash: two versions of dbt-edith never overwrite each other's copy, and the
 /// file is written only when it is missing or different.
 pub fn install_script(config_dir: &Path) -> Result<PathBuf, String> {
     let name = format!("sf_lineage-{:016x}.py", crate::settings::fnv1a64(SCRIPT.as_bytes()));
@@ -236,7 +236,7 @@ impl Sidecar {
     /// Installs the script and starts it with the best interpreter there is.
     pub async fn start_for(&self, root: &Path, env: &VenvInfo) -> Status {
         let Some(dir) = crate::settings::config_dir(|key| std::env::var_os(key), cfg!(windows)) else {
-            let error = "no configuration directory to install the Snowflake script in: set DBT_LENS_CONFIG_DIR";
+            let error = "no configuration directory to install the Snowflake script in: set DBT_EDITH_CONFIG_DIR";
             return self.fail(String::new(), error.into(), Vec::new());
         };
         let script = match tokio::task::spawn_blocking(move || install_script(&dir)).await {
@@ -563,7 +563,7 @@ mod tests {
     /// the `-u` meant for Python only makes unset variables an error. It
     /// records its pid next to itself.
     fn fake(tag: &str, body: &str) -> (PathBuf, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-sidecar-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-sidecar-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("fake.sh");
@@ -768,7 +768,7 @@ done
 
     #[test]
     fn a_venv_with_the_connector_comes_first_then_the_status_bar_one_then_the_path() {
-        let root = std::env::temp_dir().join(format!("dbt-lens-sidecar-venvs-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("dbt-edith-sidecar-venvs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         for name in ["plain-env", "sf-env", "other-env"] {
             std::fs::create_dir_all(root.join(name).join("bin")).unwrap();
@@ -795,7 +795,7 @@ done
 
     #[test]
     fn the_script_is_installed_once_per_version() {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-sidecar-install-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-sidecar-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = install_script(&dir).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), SCRIPT);

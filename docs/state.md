@@ -1,7 +1,7 @@
 # Where the work stands
 
 Rewritten as things change, unlike [decisions/](decisions/), which is appended
-to. Last updated 2026-09-18.
+to. Last updated 2026-09-19.
 
 ## Shipped
 
@@ -9,7 +9,7 @@ Editor with clickable `ref()` and `source()` and Jinja coloured by role,
 lineage graph in model and column modes, column lineage fetched from Snowflake
 when a column is clicked and the switch in Catalog > Columns is on (0016),
 terminal, file explorer with git and
-unsaved colouring, search across nodes and every file, Catalog with columns and
+unsaved colouring, search across nodes, file names and file contents, Catalog with columns and
 locations, compiled SQL with freshness, git panel (status, branch switch, stage,
 commit, push, pull, conflicts, side-by-side diff), Python environment in the
 status bar, and environment-aware location resolution with a `.env` selector.
@@ -20,6 +20,27 @@ resolved under the selected environment. Project vars come from a hand-written
 scanner over `dbt_project.yml` (0018), because the manifest does not carry them.
 Showing a resolved value needed the .env boundary widened, which 0019 does,
 under two guards.
+
+Breadcrumb bar, added 2026-09-18: the row under the tabs shows the file's path
+and, inside a `.yml` or a `.md`, where the cursor sits in the document. Every
+segment opens a menu, so a sibling file or a neighbouring model is one click
+away without leaving the editor. The outline is scanned in the browser (0022);
+`.sql` shows the path only, until string and comment masking exists.
+
+Search across file contents, added 2026-09-18: the Search tab reads the indexed
+files rather than their names, so a column used in forty models is findable. It
+never opens a `.env` (0020). A full pass over a 12 000 file project is under a
+second in release, after an ASCII fast path and a per-file pre-check.
+
+Selector expressions, added 2026-09-19: the Lineage tab has a third mode where
+you type a dbt selection expression and the canvas draws the set it matches,
+laid out by longest path within the selection so disconnected pieces each start
+at the left. `src/select.rs` re-implements dbt-core's selector methods over the
+manifest rather than shelling out to `dbt ls` (0024), which answers in
+milliseconds and needs no profile; the fidelity that costs is watched by
+refusing an unsupported method by name and by a button that types the
+equivalent `dbt ls` into the terminal for you to compare. Measured on a
+109 MB manifest: one term with a `+` resolves 265 nodes in well under 10 ms.
 
 Every route sits behind the Host and Origin guard added on 2026-09-17 after a
 security audit found the terminal reachable from any web page (0015). The same
@@ -35,25 +56,29 @@ pass confined `/api/git/diff` to the project and added `SECURITY.md`.
    as the box stroke in the graph, plus staleness against the manifest. Watch
    for partial runs: a node absent from the file was not run, which is not the
    same as not tested.
-3. **Selector resolution, then orchestration coverage.** Resolve the project's
-   named selectors locally, validate against `dbt ls`, and only then scan the
-   orchestrator's jobs to show which models no schedule covers.
+3. **Named selectors, then orchestration coverage.** `src/select.rs` resolves a
+   typed expression; what is left is reading the project's `selectors.yml` and
+   offering those by name, which needs a hand-written YAML scanner (0018). Only
+   then scan the orchestrator's jobs to show which models no schedule covers.
 4. **A var's definition line, clickable.** The card names
-   `dbt_project.yml:<line>`; opening the file there needs a YAML key scanner in
-   the browser, which nothing else wants yet.
+   `dbt_project.yml:<line>`. The scanner this was waiting for now exists:
+   `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
+5. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
+   which needs SQL strings and comments masked first, for the reason 0022 gives.
 
 Sketched but not started: a second column-lineage source using dbt Fusion's
 local index (`dbt compile --static-analysis strict --write-index
 --write-lineage`), which needs no warehouse privileges and covers uncommitted
 SQL. It fills the same cache file (0008).
 
-0.2.0 adds the hover cards. Since 0.2.0 the binary also carries a build stamp
+0.4.0 adds the selector mode in the lineage tab. 0.3.0 added the breadcrumb bar. 0.2.0 added the hover cards; since 0.2.0 the
+binary also carries a build stamp
 (`git describe`, or a build date without a `.git`), shown by `--version`, by the
 startup banner and in the status bar, because until then two installs of the
 same release were indistinguishable and reinstalling on the VM looked like it
 had done nothing.
 
-0.2.0 is tagged, as 0.1.0 was, and released on GitHub as source only. No binary
+0.3.0 is tagged, as 0.2.0 and 0.1.0 were, and released on GitHub as source only. No binary
 is attached, so installing means building from source, as
 [the README](../README.md#getting-started) describes. Attaching binaries is a
 deliberate later step: an unsigned executable download brings its own friction
@@ -96,11 +121,25 @@ cross-compile.
 - **Switching Snowflake lineage on proves nothing about Snowflake.** It checks
   Python, the profile and the connector, all local. The first click is what
   reaches the warehouse, and what may open a sign-in tab.
+- **A manifest carries the separator of the machine that parsed it.** A project
+  parsed on the Windows VM gives every node an `original_file_path` full of
+  backslashes, which a macOS or Linux dbt-edith then has to read. `Graph::build`
+  normalises it once, at the boundary, so nothing downstream has to ask. If
+  paths ever look doubled, unmatched in the tree, or open twice as two tabs,
+  that normalisation is the first thing to check.
 - **The test harnesses slice `web/app.js` by function name** (0013). Renaming a
   sliced function breaks its harness; `./scripts/check.sh` catches it.
+  `web/tests/selection.js` slices from `selectKindCounts` to
+  `async function loadSidecar`, so anything new between those two has to be pure
+  or it dies at eval time rather than at an assertion.
+- **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
+  the dbt ls button types the command that settles it; the usual answer is the
+  tests checkbox, which dbt has no equivalent of in `dbt ls`.
 - **`openFile` sits inside the slice `web/tests/tabs.js` evaluates.** Anything
   new it calls has to be stubbed there, or the harness dies with no output at
   all rather than a failed assertion.
+  This is why the breadcrumb hooks hang off `activate`, which that harness
+  already stubs, and not off `openFile`.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

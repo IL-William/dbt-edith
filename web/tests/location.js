@@ -156,7 +156,7 @@ check('a placeholder gives no relation',
       resolvedRelation(envRows('N/A', 'placeholder', ['DBT_DB_MART']), 'MART_CI.marts.orders', '.env.qa').text, '');
 check('unevaluated Jinja gives no relation',
       resolvedRelation(envRows('', 'unevaluated', []), 'MART_CI.marts.orders', '.env.qa').reason,
-      'database contains Jinja that dbt-lens does not evaluate');
+      'database contains Jinja that dbt-edith does not evaluate');
 var noDatabase = locationRows({
   written: { database: '', schema: 'marts', alias: '' },
   parsed:  { database: '', schema: 'marts', alias: '' },

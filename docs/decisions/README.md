@@ -1,7 +1,7 @@
 # Decisions
 
 Why this codebase is shaped the way it is, and what was rejected along the way.
-The README says what dbt-lens does for the person using it; these files say why
+The README says what dbt-edith does for the person using it; these files say why
 it is built this way, for whoever changes it next.
 
 | | Decision | Read it before |
@@ -25,6 +25,11 @@ it is built this way, for whoever changes it next.
 | [0017](0017-the-profile-is-reachable.md) | The dbt profile is reachable, and it alone | opening, reading or writing anything outside the project |
 | [0018](0018-project-vars-by-scanner.md) | The `vars:` block is read by a scanner, not a YAML parser | reading a `.yml` file from the server, or reaching for a YAML parser |
 | [0019](0019-a-resolved-value-may-be-shown.md) | A resolved value may reach the browser, under two guards | returning any value derived from a `.env` file |
+| [0020](0020-search-never-opens-an-env-file.md) | A content search never opens a `.env` file | making the server read files it was not asked for by name |
+| [0021](0021-one-cache-file-per-producer.md) | One column-lineage cache per producer, and the user picks | adding a source of column lineage, or changing where one writes |
+| [0022](0022-the-outline-is-scanned-in-the-browser.md) | The breadcrumb's outline is scanned in the browser, and SQL has none | adding structure inside a file to the UI, or reaching for a YAML parser |
+| [0023](0023-column-lineage-may-be-parsed.md) | Column lineage may be parsed out of SQL, and 0002 still holds | reading a `.sql` file to work out anything, or wondering how 0002 allows collin |
+| [0024](0024-selectors-resolved-from-the-manifest.md) | A selector expression is resolved from the manifest, never by running dbt | changing how the Selection box matches, adding a selector method, or reaching for `dbt ls` |
 
 ## Keeping these honest
 

@@ -250,7 +250,7 @@ pub fn branches(root: &Path) -> Vec<Branch> {
 pub fn checkout(root: &Path, branch: &str, stash_first: bool) -> GitRun {
     if stash_first {
         let from = read(root, &["branch", "--show-current"]).unwrap_or_default().trim().to_string();
-        let label = format!("dbt-lens: switching away from {}", if from.is_empty() { "detached HEAD" } else { &from });
+        let label = format!("dbt-edith: switching away from {}", if from.is_empty() { "detached HEAD" } else { &from });
         let stashed = run(
             root,
             &["stash", "push", "--include-untracked", "-m", &label],

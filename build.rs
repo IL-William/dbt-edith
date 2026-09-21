@@ -5,7 +5,7 @@
 //! reinstalling on the Windows VM, so `git describe` goes in as well, and a
 //! build date for a source tree copied without its `.git`.
 //!
-//! Everything is composed here: `DBT_LENS_BUILD` is the one string the rest of
+//! Everything is composed here: `DBT_EDITH_BUILD` is the one string the rest of
 //! the program reads, and it is never empty.
 
 use std::path::Path;
@@ -17,7 +17,7 @@ fn main() {
         parts.push(described);
     }
     parts.push(format!("built {}", build_date()));
-    println!("cargo:rustc-env=DBT_LENS_BUILD={}", parts.join(", "));
+    println!("cargo:rustc-env=DBT_EDITH_BUILD={}", parts.join(", "));
 
     println!("cargo:rerun-if-changed=build.rs");
     // Only when there is a .git to watch: cargo treats a missing path as

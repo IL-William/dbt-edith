@@ -7,7 +7,7 @@ new route.
 
 ## Context
 
-dbt-lens reads `.env` files and a whole project directory. It runs as the user,
+dbt-edith reads `.env` files and a whole project directory. It runs as the user,
 with the user's access. The interesting question is not what it can read but
 what it is allowed to hand out.
 

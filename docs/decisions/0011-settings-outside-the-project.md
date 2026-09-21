@@ -14,7 +14,7 @@ and a tool that drops a file into it creates a diff the user has to explain.
 ## Decision
 
 `src/settings.rs` writes to the user's own configuration directory:
-`DBT_LENS_CONFIG_DIR` if set, then `%APPDATA%` on Windows, then
+`DBT_EDITH_CONFIG_DIR` if set, then `%APPDATA%` on Windows, then
 `$XDG_CONFIG_HOME` or `~/.config`. One file per project,
 `projects/<slug>-<fnv1a64 of the normalised path>.json`, recognisable by name
 while two projects sharing a folder name stay apart. Writes go through a

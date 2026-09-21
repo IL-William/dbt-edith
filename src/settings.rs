@@ -37,6 +37,10 @@ pub struct Settings {
     /// Snowflake column lineage on click. Off unless the user turned it on (0016).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub snowflake_lineage: bool,
+    /// Which column-lineage cache to merge, by file name. A project can hold one
+    /// per producer, and the choice is the user's rather than the newest file's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cll_file: Option<String>,
 }
 
 fn looks_absolute(value: &str, windows: bool) -> bool {
@@ -48,7 +52,7 @@ fn looks_absolute(value: &str, windows: bool) -> bool {
     }
 }
 
-/// The dbt-lens config directory, or None when nothing usable is set, in which
+/// The dbt-edith config directory, or None when nothing usable is set, in which
 /// case the app runs without persistence. Empty or relative values are ignored.
 /// On Windows `HOME` is not consulted: under Git Bash it holds an MSYS path.
 pub fn config_dir(lookup: impl Fn(&str) -> Option<OsString>, windows: bool) -> Option<PathBuf> {
@@ -58,7 +62,7 @@ pub fn config_dir(lookup: impl Fn(&str) -> Option<OsString>, windows: bool) -> O
             .filter(|v| !v.is_empty() && looks_absolute(v, windows))
             .map(PathBuf::from)
     };
-    if let Some(explicit) = get("DBT_LENS_CONFIG_DIR") {
+    if let Some(explicit) = get("DBT_EDITH_CONFIG_DIR") {
         return Some(explicit);
     }
     let base = if windows {
@@ -66,7 +70,7 @@ pub fn config_dir(lookup: impl Fn(&str) -> Option<OsString>, windows: bool) -> O
     } else {
         get("XDG_CONFIG_HOME").or_else(|| get("HOME").map(|p| p.join(".config")))
     };
-    base.map(|p| p.join("dbt-lens"))
+    base.map(|p| p.join("dbt-edith"))
 }
 
 /// A stable spelling of the project path. Windows verbatim prefixes and
@@ -118,6 +122,13 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     let tmp = path.with_extension(format!("json.tmp-{}", std::process::id()));
     std::fs::write(&tmp, bytes)?;
+    // A rename puts a new file in the target's place, carrying whatever mode the
+    // umask gave it rather than the one the target had. Settings do not care;
+    // `~/.dbt/profiles.yml` does, since it can hold a warehouse password and is
+    // commonly 0600 (0017). Without this, saving it from the editor once turns
+    // it into 0644. The in-place fallback below truncates rather than replaces,
+    // so it keeps the mode on its own.
+    keep_mode(path, &tmp);
     let mut last_error = None;
     for attempt in 0..3 {
         match std::fs::rename(&tmp, path) {
@@ -135,6 +146,22 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let _ = std::fs::remove_file(&tmp);
     std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))
 }
+
+/// Gives `tmp` the mode `target` already has, so replacing it does not widen it.
+/// A target that does not exist yet leaves the umask to decide, which is what
+/// creating a file normally does.
+#[cfg(unix)]
+fn keep_mode(target: &Path, tmp: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(target) {
+        let _ = std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(meta.permissions().mode()));
+    }
+}
+
+/// Windows has no mode to carry: a new file takes its ACL from the directory,
+/// which is where the target's came from too.
+#[cfg(not(unix))]
+fn keep_mode(_target: &Path, _tmp: &Path) {}
 
 pub struct Store {
     pub path: Option<PathBuf>,
@@ -196,6 +223,48 @@ mod tests {
         move |key| pairs.iter().find(|(k, _)| *k == key).map(|(_, v)| OsString::from(*v))
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_keeps_a_private_file_private() {
+        // `~/.dbt/profiles.yml` holds warehouse credentials and is commonly
+        // 0600. Replacing it through a rename used to hand it back at 0644.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("profiles.yml");
+        std::fs::write(&path, b"before\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        write_atomic(&path, b"after\n").unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the mode must survive the write");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after\n");
+        // No temp file left behind next to a credential file.
+        let strays: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("tmp-"))
+            .collect();
+        assert!(strays.is_empty(), "left behind {strays:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_leaves_a_new_file_to_the_umask() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mode-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("settings.json");
+        write_atomic(&path, b"{}\n").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert!(mode != 0, "a created file still gets a mode");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn fnv1a64_matches_reference_vectors() {
         assert_eq!(format!("{:016x}", fnv1a64(b"")), "cbf29ce484222325");
@@ -204,19 +273,19 @@ mod tests {
 
     #[test]
     fn config_dir_prefers_the_explicit_override() {
-        let dir = config_dir(env(&[("DBT_LENS_CONFIG_DIR", "/tmp/lens"), ("HOME", "/home/me")]), false);
+        let dir = config_dir(env(&[("DBT_EDITH_CONFIG_DIR", "/tmp/lens"), ("HOME", "/home/me")]), false);
         assert_eq!(dir, Some(PathBuf::from("/tmp/lens")));
     }
 
     #[test]
     fn config_dir_on_unix_uses_xdg_then_home() {
-        assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", "/xdg"), ("HOME", "/home/me")]), false), Some(PathBuf::from("/xdg/dbt-lens")));
-        assert_eq!(config_dir(env(&[("HOME", "/home/me")]), false), Some(PathBuf::from("/home/me/.config/dbt-lens")));
+        assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", "/xdg"), ("HOME", "/home/me")]), false), Some(PathBuf::from("/xdg/dbt-edith")));
+        assert_eq!(config_dir(env(&[("HOME", "/home/me")]), false), Some(PathBuf::from("/home/me/.config/dbt-edith")));
     }
 
     #[test]
     fn config_dir_ignores_empty_and_relative_values() {
-        assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", ""), ("HOME", "/home/me")]), false), Some(PathBuf::from("/home/me/.config/dbt-lens")));
+        assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", ""), ("HOME", "/home/me")]), false), Some(PathBuf::from("/home/me/.config/dbt-edith")));
         assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", "relative/dir")]), false), None);
         assert_eq!(config_dir(env(&[]), false), None);
     }
@@ -225,7 +294,7 @@ mod tests {
     fn config_dir_on_windows_uses_appdata_and_never_home() {
         let dir = config_dir(env(&[("APPDATA", r"C:\Users\me\AppData\Roaming"), ("HOME", "/c/Users/me")]), true).unwrap();
         let text = dir.to_string_lossy();
-        assert!(text.starts_with(r"C:\Users\me\AppData\Roaming") && text.ends_with("dbt-lens"), "{text}");
+        assert!(text.starts_with(r"C:\Users\me\AppData\Roaming") && text.ends_with("dbt-edith"), "{text}");
         let fallback = config_dir(env(&[("USERPROFILE", r"C:\Users\me"), ("HOME", "/c/Users/me")]), true).unwrap();
         assert!(fallback.to_string_lossy().starts_with(r"C:\Users\me"));
         assert_eq!(config_dir(env(&[("HOME", "/c/Users/me")]), true), None);
@@ -255,7 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn update_round_trips_and_rejects_another_projects_file() {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-settings-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-settings-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let store = Store { path: Some(dir.join("p.json")), project: "/work/shop".into(), lock: Default::default() };
 
@@ -280,7 +349,7 @@ mod tests {
 
     #[tokio::test]
     async fn snowflake_lineage_stays_off_unless_it_was_turned_on() {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-settings-sf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-settings-sf-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store { path: Some(dir.join("p.json")), project: "/work/shop".into(), lock: Default::default() };

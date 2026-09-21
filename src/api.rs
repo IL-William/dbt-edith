@@ -8,6 +8,7 @@ use crate::git::{self, GitInfo};
 use crate::graph::{ColRef, Graph, Kind, Place};
 use crate::manifest::{RawCatalog, RawManifest};
 use crate::pty::{FromPty, PtySession, ShellSpec};
+use crate::select;
 use crate::sidecar;
 use crate::venv::VenvInfo;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -29,7 +30,9 @@ pub struct AppState {
     pub root: PathBuf,
     pub manifest_path: PathBuf,
     pub catalog_path: PathBuf,
-    pub cll_path: PathBuf,
+    /// The cache currently merged into the graph. Changeable, because the
+    /// project can hold one file per producer and the user picks which one.
+    pub cll_path: std::sync::RwLock<PathBuf>,
     /// Where dbt writes its artifacts; the compiled SQL lives under it.
     pub target_dir: PathBuf,
     pub venv: VenvInfo,
@@ -47,6 +50,19 @@ pub struct AppState {
     /// click records the cache it wrote, or the watcher would re-read the whole
     /// manifest for it three seconds later.
     pub seen: std::sync::Mutex<[u64; 3]>,
+}
+
+impl AppState {
+    /// The active cache path. Cloned rather than borrowed: the lock must not be
+    /// held across an await, and every caller wants an owned path anyway.
+    pub fn cll(&self) -> PathBuf {
+        self.cll_path.read().map(|p| p.clone()).unwrap_or_default()
+    }
+    pub fn set_cll(&self, path: PathBuf) {
+        if let Ok(mut slot) = self.cll_path.write() {
+            *slot = path;
+        }
+    }
 }
 
 #[derive(rust_embed::RustEmbed)]
@@ -103,12 +119,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/vars", get(list_vars))
         .route("/api/compiled", get(compiled_sql))
         .route("/api/lineage", get(lineage))
+        .route("/api/select", get(selection))
         .route("/api/collineage", get(col_lineage))
+        .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
         .route("/api/sidecar", get(sidecar_status).post(sidecar_switch))
         .route("/api/profiles", get(read_profile).put(write_profile))
         .route("/api/dir", get(dir))
         .route("/api/files", get(file_search))
+        .route("/api/grep", get(grep))
         .route("/api/file", get(read_file).put(write_file))
         .route("/api/resolve", post(resolve))
         .route("/api/git", get(git_status))
@@ -231,24 +250,80 @@ struct MetaBody {
     build: &'static str,
     venv: VenvInfo,
     meta: crate::graph::Meta,
+    /// Every cache found beside the manifest, so the UI can offer them without
+    /// a second round trip. Headers only: no edge array is parsed for this.
+    cll_sources: Vec<collin::Available>,
+    /// File name of the active one, matching one of `cll_sources`.
+    cll_active: String,
 }
 
 async fn meta(State(st): State<Arc<AppState>>) -> Response {
     let graph = st.graph.read().await.clone();
+    let dir = st.target_dir.clone();
+    let cll_sources = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let cll_active = st
+        .cll()
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     Json(MetaBody {
         root: st.root.display().to_string(),
         shell: format!("{} {}", st.shell.program, st.shell.args.join(" ")).trim().to_string(),
         version: env!("CARGO_PKG_VERSION"),
-        build: env!("DBT_LENS_BUILD"),
+        build: env!("DBT_EDITH_BUILD"),
         venv: st.venv.clone(),
         meta: graph.meta.clone(),
+        cll_sources,
+        cll_active,
     })
     .into_response()
 }
 
+#[derive(Deserialize)]
+struct CllSourceBody {
+    /// A file name as `/api/meta` listed it, never a path.
+    file: String,
+}
+
+/// Switches which column-lineage cache the graph holds.
+///
+/// The graph can only carry one source at a time: `merge_col_lineage` replaces
+/// the edge set rather than adding to it, which is what keeps two producers'
+/// answers from being blended into something neither of them said.
+///
+/// The name is matched against what discovery found rather than joined onto the
+/// target directory, so nothing the browser sends can reach another file (0015).
+async fn select_cll_source(State(st): State<Arc<AppState>>, Json(b): Json<CllSourceBody>) -> Response {
+    let dir = st.target_dir.clone();
+    let wanted = b.file.clone();
+    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let Some(chosen) = collin::resolve_choice(&found, &wanted) else {
+        return (StatusCode::NOT_FOUND, "no such column lineage cache beside the manifest").into_response();
+    };
+    let path = st.target_dir.join(&chosen.file);
+
+    let _cache = st.cll_lock.lock().await;
+    st.set_cll(path.clone());
+    let _ = st.settings.update(|s| s.cll_file = Some(wanted.clone())).await;
+
+    let (manifest, catalog) = (st.manifest_path.clone(), st.catalog_path.clone());
+    match tokio::task::spawn_blocking(move || load_graph(&manifest, &catalog, &path)).await {
+        Ok(Ok(g)) => {
+            let meta = g.meta.clone();
+            if let Ok(mut seen) = st.seen.lock() {
+                seen[2] = meta.cll_mtime;
+            }
+            *st.graph.write().await = Arc::new(g);
+            Json(meta).into_response()
+        }
+        Ok(Err(e)) => err(e),
+        Err(e) => err(e),
+    }
+}
+
 async fn reload(State(st): State<Arc<AppState>>) -> Response {
     let _cache = st.cll_lock.lock().await;
-    let (path, cat, cll) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll_path.clone());
+    let (path, cat, cll) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
     match tokio::task::spawn_blocking(move || load_graph(&path, &cat, &cll)).await {
         Ok(Ok(g)) => {
             let meta = g.meta.clone();
@@ -541,6 +616,90 @@ async fn lineage(State(st): State<Arc<AppState>>, Query(q): Query<LineageQuery>)
     };
     let sub = graph.lineage(idx, q.up.min(20), q.down.min(20), q.tests == 1, q.max.unwrap_or(400).min(3000));
     Json(sub).into_response()
+}
+
+/// Names sent back for the copy button. Far past any selection worth reading,
+/// and short enough that one expression cannot answer with megabytes.
+const MAX_NAMES: usize = 5000;
+
+#[derive(Deserialize)]
+struct SelectorQuery {
+    q: String,
+    #[serde(default)]
+    exclude: String,
+    #[serde(default)]
+    tests: u8,
+    #[serde(default)]
+    max: Option<usize>,
+}
+
+#[derive(serde::Serialize)]
+struct SelectorBody<'a> {
+    /// Flattened, so the payload keeps the shape the canvas already renders.
+    #[serde(flatten)]
+    graph: crate::graph::Lineage<'a>,
+    /// How many nodes matched, which is more than were drawn when the canvas
+    /// capped: the summary tells the truth even when the picture cannot.
+    matched: usize,
+    /// Everything that matched, counted by kind. Counted here rather than off
+    /// the drawn nodes so a capped canvas still reports the whole selection.
+    counts: std::collections::HashMap<String, usize>,
+    /// Every match, not only what was drawn, so the copied list is the whole
+    /// answer. Sorted the way `dbt ls --output name` prints it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    names: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+    /// The include half as parsed, with any pasted command prefix stripped.
+    select: String,
+    /// True when a `dbt ls -s` was stripped off the front. The box rewrites
+    /// itself to `select` then, so what is on screen is what was resolved.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    stripped: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    exclude: String,
+}
+
+#[derive(serde::Serialize)]
+struct SelectorFailed {
+    error: String,
+    code: &'static str,
+    /// Byte offset of the term at fault, for a caret under it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    at: Option<usize>,
+}
+
+/// Resolves a dbt node-selection expression against the manifest graph. dbt is
+/// never run for it, and never will be (0002, 0024).
+async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let tests = if q.tests == 1 { select::Tests::Eager } else { select::Tests::Excluded };
+    let (expr, res) = match select::select(&graph, &q.q, &q.exclude, tests) {
+        Ok(v) => v,
+        Err(e) => {
+            let body = SelectorFailed { error: e.to_string(), code: e.code(), at: e.pos() };
+            return (StatusCode::BAD_REQUEST, Json(body)).into_response();
+        }
+    };
+    let sub = graph.selection(&res.nodes, tests == select::Tests::Eager, q.max.unwrap_or(400).min(3000));
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for &i in &res.nodes {
+        *counts.entry(graph.nodes[i as usize].kind.as_str().to_string()).or_insert(0) += 1;
+    }
+    let mut names: Vec<&str> =
+        res.nodes.iter().take(MAX_NAMES).map(|&i| graph.nodes[i as usize].name.as_str()).collect();
+    names.sort_unstable();
+    Json(SelectorBody {
+        matched: res.nodes.len(),
+        counts,
+        names,
+        warnings: res.warnings,
+        select: expr.select,
+        stripped: expr.stripped,
+        exclude: expr.excluded,
+        graph: sub,
+    })
+    .into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -925,7 +1084,7 @@ struct SwitchBody {
 async fn sidecar_switch(State(st): State<Arc<AppState>>, Json(b): Json<SwitchBody>) -> Response {
     st.sidecar.set_enabled(b.enabled);
     // Remembered like the environment selection. Without a configuration
-    // directory the switch still holds until dbt-lens stops.
+    // directory the switch still holds until dbt-edith stops.
     if let Err(e) = st.settings.update(|s| s.snowflake_lineage = b.enabled).await {
         eprintln!("  snowflake lineage switch not saved: {e}");
     }
@@ -955,7 +1114,7 @@ fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
 const NO_PROFILE: &str = "no profile yet: switch Snowflake lineage on once, so the script says which file it reads";
 
 /// The dbt profile the Snowflake script read: the one file outside the project
-/// dbt-lens opens, and only because the script named it first (0017). No path
+/// dbt-edith opens, and only because the script named it first (0017). No path
 /// comes from the browser, so no request can widen the exception.
 async fn read_profile(State(st): State<Arc<AppState>>) -> Response {
     let Some(path) = st.sidecar.profile_path() else {
@@ -1072,9 +1231,10 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
         if !graph.index.contains_key(&b.id) {
             return (StatusCode::NOT_FOUND, "unknown node").into_response();
         }
-        if graph.meta.cll_edges > 0 && graph.meta.cll_source != "snowflake" {
-            return (StatusCode::CONFLICT, collin::other_source(&st.cll_path, &graph.meta.cll_source)).into_response();
-        }
+        // No conflict check any more: Snowflake writes to its own file, so it
+        // cannot contend with another producer's. What it still does is take
+        // over the graph, which holds one source at a time, and the UI says so
+        // by showing which cache is active.
     }
     // The file's values stay on the server: they only decide which node an
     // object stands for.
@@ -1124,7 +1284,10 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     };
 
     let _cache = st.cll_lock.lock().await;
-    let (path, target) = (st.cll_path.clone(), st.sidecar.status().target);
+    // Its own file, always, whatever is currently loaded. One file per producer
+    // is what keeps a half Snowflake, half other cache from ever existing.
+    let path = collin::path_for(&st.target_dir, "snowflake");
+    let target = st.sidecar.status().target;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let merged = match tokio::task::spawn_blocking(move || collin::add_to_file(&path, edges, &target, now)).await {
         Ok(Ok(merged)) => merged,
@@ -1134,14 +1297,23 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     let mut added = 0;
     if let Some((cache, n)) = merged {
         added = n;
-        let mtime = mtime_secs(&st.cll_path);
+        // Fetching is an explicit request for Snowflake's answer, so its cache
+        // becomes the active one. The graph could not show both anyway.
+        let snow = collin::path_for(&st.target_dir, "snowflake");
+        if st.cll() != snow {
+            st.set_cll(snow.clone());
+            if let Some(name) = snow.file_name().map(|n| n.to_string_lossy().into_owned()) {
+                let _ = st.settings.update(|s| s.cll_file = Some(name)).await;
+            }
+        }
+        let mtime = mtime_secs(&st.cll());
         if let Ok(mut seen) = st.seen.lock() {
             seen[2] = mtime;
         }
         let mut current = st.graph.write().await;
         let graph = Arc::make_mut(&mut current);
         graph.merge_col_lineage(cache, mtime);
-        graph.meta.cll_file = st.cll_path.display().to_string();
+        graph.meta.cll_file = st.cll().display().to_string();
     }
     let graph = st.graph.read().await.clone();
     let (up, down) = match (graph.cll.as_ref(), graph.index.get(&b.id)) {
@@ -1187,6 +1359,38 @@ async fn file_search(State(st): State<Arc<AppState>>, Query(q): Query<FileQuery>
     let index = st.file_index.read().await.clone();
     let hits = files::search_paths(&index, &q.q, q.limit.unwrap_or(60).min(500));
     Json(hits).into_response()
+}
+
+#[derive(Deserialize)]
+struct GrepQuery {
+    q: String,
+    /// Files to report, not matches: a word in 400 models is a real answer.
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// The shortest query worth walking the project for. One or two characters
+/// match nearly every file and cost a full read of each.
+const GREP_MIN_QUERY: usize = 3;
+const GREP_DEFAULT_FILES: usize = 200;
+const GREP_MAX_FILES: usize = 500;
+const GREP_PER_FILE: usize = 20;
+
+/// Searches file contents, which the path index cannot do. `.env` files are
+/// never opened here (0020).
+async fn grep(State(st): State<Arc<AppState>>, Query(q): Query<GrepQuery>) -> Response {
+    let needle = q.q.trim().to_string();
+    if needle.chars().count() < GREP_MIN_QUERY {
+        return Json(files::GrepResult::default()).into_response();
+    }
+    let index = st.file_index.read().await.clone();
+    let root = st.root.clone();
+    let limit = q.limit.unwrap_or(GREP_DEFAULT_FILES).clamp(1, GREP_MAX_FILES);
+    // Reads every indexed file in the worst case, so never on the async runtime.
+    match tokio::task::spawn_blocking(move || files::grep(&root, &index, &needle, limit, GREP_PER_FILE)).await {
+        Ok(result) => Json(result).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 /// The index is a directory walk, cheap enough to simply redo on a timer so a
@@ -1415,7 +1619,7 @@ async fn terminal_loop(socket: WebSocket, st: Arc<AppState>, q: TermQuery) {
     let session = match PtySession::spawn(&st.shell, &st.root, q.cols.max(20), q.rows.max(5), tx) {
         Ok(s) => s,
         Err(e) => {
-            let _ = sink.send(Message::Text(format!("\r\n[dbt-lens] cannot start shell: {e}\r\n").into())).await;
+            let _ = sink.send(Message::Text(format!("\r\n[dbt-edith] cannot start shell: {e}\r\n").into())).await;
             return;
         }
     };
@@ -1427,7 +1631,7 @@ async fn terminal_loop(socket: WebSocket, st: Arc<AppState>, q: TermQuery) {
                     if sink.send(Message::Binary(bytes.into())).await.is_err() { break; }
                 }
                 _ => {
-                    let _ = sink.send(Message::Text("\r\n[dbt-lens] shell exited\r\n".into())).await;
+                    let _ = sink.send(Message::Text("\r\n[dbt-edith] shell exited\r\n".into())).await;
                     break;
                 }
             },
@@ -1456,7 +1660,7 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         // Held through the reload: a click merging fetched lineage meanwhile
         // would otherwise merge into the graph this reload is about to replace.
         let _cache = st.cll_lock.lock().await;
-        let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll_path.clone());
+        let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
         let stamps = tokio::task::spawn_blocking(move || [mtime_secs(&mp), mtime_secs(&cp), mtime_secs(&lp)])
             .await
             .unwrap_or([0, 0, 0]);
@@ -1472,7 +1676,7 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         }
         // Give dbt a moment to finish writing.
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll_path.clone());
+        let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
         if let Ok(Ok(g)) = tokio::task::spawn_blocking(move || load_graph(&mp, &cp, &lp)).await {
             eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
             *st.graph.write().await = Arc::new(g);
@@ -1524,7 +1728,7 @@ mod tests {
     }
 
     fn temp_project(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-api-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-api-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("dbt_project.yml"), "name: demo\n").unwrap();
@@ -1543,7 +1747,7 @@ mod tests {
             root: root.to_path_buf(),
             manifest_path: manifest.clone(),
             catalog_path: root.join("target").join("catalog.json"),
-            cll_path: root.join("target").join("column_lineage.json"),
+            cll_path: std::sync::RwLock::new(root.join("target").join("column_lineage.json")),
             target_dir: root.join("target"),
             venv: VenvInfo::default(),
             file_index: RwLock::new(Arc::new(Vec::new())),
@@ -1611,6 +1815,45 @@ mod tests {
         }
         r.push_str("Content-Length: 0\r\nConnection: close\r\n\r\n");
         r
+    }
+
+    /// The graph `serve()` builds is empty, so this asserts on status codes and
+    /// on the shape of the answer. What a selector actually matches is settled
+    /// in `select.rs`, against a graph with nodes in it.
+    #[tokio::test]
+    async fn a_selector_answers_this_page_and_names_what_it_could_not_parse() {
+        let root = temp_project("selector");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let ok = body_of(port, get("/api/select?q=dim_customers", &h)).await;
+        assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
+        assert!(ok.contains(r#""matched":0"#), "{ok}");
+        assert!(ok.contains("nothing matches"), "an empty graph matches nothing, and says so");
+        assert!(ok.contains(r#""mode":"select""#), "{ok}");
+        assert!(!ok.contains(r#""focus""#), "a selection sends no focus");
+
+        for (query, code) in [
+            ("q=", "empty"),
+            ("q=state%3Amodified", "unknown_method"),
+            ("q=--wat%20a", "unknown_flag"),
+            ("q=a%2C%2Cb", "empty_term"),
+        ] {
+            let body = body_of(port, get(&format!("/api/select?{query}"), &h)).await;
+            assert!(body.starts_with("HTTP/1.1 400"), "{query}: {body}");
+            assert!(body.contains(code), "{query}: {body}");
+        }
+
+        // A pasted file is refused before any of it is parsed.
+        let long = format!("/api/select?q={}", "x".repeat(5000));
+        assert!(status_of(port, get(&long, &h)).await.contains("400"));
+
+        // Read-only, so the guard asks for the Host and nothing more.
+        assert!(status_of(port, get("/api/select?q=a", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
@@ -1693,7 +1936,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The one file outside the project dbt-lens opens, and only because the
+    /// The one file outside the project dbt-edith opens, and only because the
     /// script named it: the route itself takes no path at all (0017).
     #[cfg(unix)]
     #[tokio::test]
@@ -1712,7 +1955,7 @@ mod tests {
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
 
         // A script that names a profile, outside the project on purpose.
-        let outside = std::env::temp_dir().join(format!("dbt-lens-profile-{}", std::process::id()));
+        let outside = std::env::temp_dir().join(format!("dbt-edith-profile-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&outside);
         std::fs::create_dir_all(&outside).unwrap();
         let profile = outside.join("profiles.yml");

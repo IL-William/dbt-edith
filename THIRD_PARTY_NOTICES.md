@@ -1,6 +1,6 @@
 # Third-party notices
 
-dbt-lens embeds the following libraries, unmodified, under `web/vendor/`.
+dbt-edith embeds the following libraries, unmodified, under `web/vendor/`.
 
 | Library | Version | License | Copyright |
 | --- | --- | --- | --- |

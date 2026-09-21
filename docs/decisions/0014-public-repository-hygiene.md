@@ -7,8 +7,8 @@ commit message, and before copying any asset.
 
 ## Context
 
-dbt-lens is developed against a client's dbt project, and lives in its own
-repository under MIT at `github.com/IL-William/dbt-lens`. That repository is
+dbt-edith is developed against a client's dbt project, and lives in its own
+repository under MIT at `github.com/IL-William/dbt-edith`. That repository is
 private today, but it is written to be publishable at any moment, and it is
 already shared with colleagues. Nothing about the client may be in it.
 

@@ -4,7 +4,7 @@
 PyYAML and the Snowflake connector are replaced by fakes in sys.modules before
 the script asks for them, so this runs on a bare interpreter. The fake connector
 prints while connecting, the way single sign-on does: that is the failure serve
-most needs to survive, since its stdout is the protocol dbt-lens reads.
+most needs to survive, since its stdout is the protocol dbt-edith reads.
 
 Run from the repository root: python3 tools/test_sf_lineage.py
 """

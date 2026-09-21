@@ -1,4 +1,4 @@
-/* dbt-lens UI shell: sidebar, editor tabs, lineage, node detail, terminal. */
+/* dbt-edith UI shell: sidebar, editor tabs, lineage, node detail, terminal. */
 (() => {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -22,8 +22,12 @@ const S = {
   env: '',                    // this tab's chosen .env file, '' for the manifest as parsed
   node: null,                 // catalog: node currently displayed
   catTab: 'preview',          // catalog: preview | columns
-  graphMode: 'model',         // lineage canvas: model | column
+  graphMode: 'model',         // lineage canvas: model | column | select
   colFocus: null,             // {id, column} when the canvas shows columns
+  selectSub: null,            // last /api/select payload, for the two copy buttons
+  selectAsk: 0,               // bumped per run, so only the latest answer is drawn
+  selectHistory: [],          // expressions typed this session, newest first
+  selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
   colSort: 'az',              // catalog: az | tests
   sidecar: null,              // payload of /api/sidecar: the Snowflake lineage switch and its script
@@ -32,6 +36,8 @@ const S = {
   nodeCache: new Map(),       // /api/node payloads, by query: hover asks far more often than click
   nodeGen: 0,                 // bumped when the manifest or a .env file changes under the cache
   vars: null,                 // payload of /api/vars, for the editor's var() marks
+  outline: null,              // { path, nodes } scanned for the breadcrumb's symbol half
+  crumbLine: -1,              // the line that half was last drawn for
 };
 
 // ------------------------------------------------------------------ util --
@@ -492,11 +498,17 @@ function initEditor() {
     else if (pinned) renderTabs();
   });
   S.cm.on('cursorActivity', updateStatus);
+  S.cm.on('cursorActivity', crumbCursor);
   let rescan = null;
   S.cm.on('change', () => {
     clearTimeout(rescan);
     const doc = S.cm.getDoc();
-    rescan = setTimeout(() => { markRefs(doc, S.active); markVars(doc); }, 500);
+    rescan = setTimeout(() => {
+      markRefs(doc, S.active);
+      markVars(doc);
+      refreshOutline();
+      renderCrumbs();
+    }, 500);
   });
   wireRefClicks(S.cm);
   wireHovers(S.cm);
@@ -701,6 +713,8 @@ function activate(path, focusLineage = true) {
   }
   renderTabs();
   updateStatus();
+  refreshOutline();
+  renderCrumbs();
   // A profile is not in the project, so no tree row and no node answer to it.
   const inProject = f.kind === 'profile' ? '' : f.kind === 'diff' ? f.path : path;
   markTreeSelection(inProject);
@@ -722,6 +736,7 @@ function closeFile(path) {
       $('#diff-host').classList.add('hidden');
       $('#editor-empty').classList.remove('hidden');
       updateStatus();
+      renderCrumbs();
     }
   }
   renderTabs();
@@ -779,6 +794,7 @@ function closeAll() {
   $('#editor-empty').classList.remove('hidden');
   renderTabs();
   updateStatus();
+  renderCrumbs();
 }
 
 function renderTabs() {
@@ -875,6 +891,424 @@ function updateStatus() {
   }
   const c = S.cm.getCursor();
   s.textContent = `${S.active}  ·  ${c.line + 1}:${c.ch + 1}${f.dirty ? '  ·  modified' : ''}${f.truncated ? '  ·  truncated' : ''}`;
+}
+
+// ------------------------------------------------------------ breadcrumbs --
+/* The bar under the tabs: where the file sits in the project, then where the
+   cursor sits inside the file. Both halves navigate, the way VS Code's
+   breadcrumb does. The path half asks /api/dir; the symbol half is scanned in
+   the browser, from the document CodeMirror already holds, so an unsaved edit
+   is reflected without a round trip. */
+
+/* One entry per path segment. `dir` is the folder that segment's menu lists,
+   which is its parent, so the first segment lists the project root.
+
+   Split on either separator and rejoin with `/`. The graph normalises what the
+   manifest gave it, so this is belt and braces rather than the fix, but a bar
+   that silently becomes one long segment is not a failure anyone would read as
+   a path problem. */
+function pathCrumbs(path) {
+  if (!path) return [];
+  const parts = path.split(/[\\/]/).filter((p) => p !== '');
+  return parts.map((label, i) => ({
+    label,
+    path: parts.slice(0, i + 1).join('/'),
+    dir: parts.slice(0, i).join('/'),
+  }));
+}
+
+/* Leading spaces, or -1 when the indentation contains a tab. YAML forbids a tab
+   there, and misreading the nesting is worse than dropping the line. The same
+   refusal src/project.rs makes for dbt_project.yml. */
+function yamlIndent(line) {
+  let n = 0;
+  while (line[n] === ' ') n++;
+  return line[n] === '\t' ? -1 : n;
+}
+
+/* Splits `key: value` at the first `:` outside quotes. YAML only starts a
+   mapping when the colon is followed by a space or ends the line, so `a:b` stays
+   a scalar and `url: http://x` splits once, at the right colon. */
+function yamlKey(s) {
+  let quote = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) { if (c === quote) quote = ''; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c !== ':') continue;
+    const next = s[i + 1];
+    if (next !== undefined && next !== ' ' && next !== '\t') continue;
+    return { key: unquote(s.slice(0, i).trim()), value: s.slice(i + 1).trim() };
+  }
+  return null;
+}
+
+/* One layer of matching quotes, so a quoted key or list entry reads as itself. */
+function unquote(s) {
+  const q = s[0];
+  return (q === '"' || q === "'") && s.length > 1 && s[s.length - 1] === q ? s.slice(1, -1) : s;
+}
+
+/* Every node owns the lines up to the next node that is not below it. Filled in
+   one pass so a cursor line resolves by containment rather than by guessing. */
+function closeRanges(nodes, lastLine) {
+  const open = [];
+  for (let j = 0; j < nodes.length; j++) {
+    while (open.length && nodes[open[open.length - 1]].depth >= nodes[j].depth) {
+      const t = open.pop();
+      nodes[t].endLine = Math.max(nodes[t].line, nodes[j].line - 1);
+    }
+    open.push(j);
+  }
+  for (const t of open) nodes[t].endLine = Math.max(nodes[t].line, lastLine);
+  return nodes;
+}
+
+/* A flat outline of a YAML document: one node per mapping key and per sequence
+   item, in line order, each pointing at its parent. Enough for a breadcrumb and
+   no more. Flow collections, anchors and multi-document files are deliberately
+   not modelled: a dbt properties file uses none of them, and a crumb that is
+   sometimes wrong is worse than a crumb that is absent. */
+function yamlOutline(text) {
+  const lines = text.split('\n');
+  const nodes = [];
+  // The root frame is never popped, so every line has somewhere to attach.
+  const stack = [{ indent: -1, node: -1, item: false, count: 0, leaf: false }];
+  let block = -1;              // indent of the key owning a `|` or `>` body
+
+  const add = (line, col, label, parent) => {
+    nodes.push({ line, col, label, kind: 'scalar', depth: stack.length - 1, parent, endLine: line });
+    return nodes.length - 1;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    const ind = yamlIndent(raw);
+    if (block >= 0) {
+      // A description block is full of dashes and colons that are not structure.
+      if (trimmed === '' || (ind > block && ind >= 0)) continue;
+      block = -1;
+    }
+    if (trimmed === '' || trimmed[0] === '#' || ind < 0) continue;
+
+    let col = ind;
+    let rest = raw.slice(ind);
+    let item = -1;               // the item opened on this line, if any
+    // `- - a` opens two levels on one line, so the dashes are taken in a loop.
+    while (rest === '-' || rest.startsWith('- ')) {
+      while (stack.length > 1) {
+        const top = stack[stack.length - 1];
+        // A key frame at the same indent is kept: YAML lets a sequence sit at
+        // its key's own column, and that is how dbt files are usually written.
+        if (top.indent > col || top.leaf || (top.indent === col && top.item)) stack.pop();
+        else break;
+      }
+      const parent = stack[stack.length - 1];
+      const idx = add(i, col, String(parent.count++), parent.node);
+      item = idx;
+      if (parent.node >= 0) nodes[parent.node].kind = 'seq';
+      stack.push({ indent: col, node: idx, item: true, count: 0, leaf: false });
+      let k = 1;
+      while (rest[k] === ' ') k++;
+      col += k;
+      rest = rest.slice(k);
+      if (rest === '') break;
+    }
+    if (rest === '' || rest === '-') continue;
+
+    const kv = yamlKey(rest);
+    if (!kv) {
+      // A list of plain strings, which dbt files are full of, reads by value
+      // rather than by index: `satellites > sat_web__order`, not `> 4`.
+      if (item >= 0 && rest !== '') {
+        nodes[item].label = unquote(rest);
+        stack[stack.length - 1].leaf = true;
+      }
+      continue;
+    }
+    while (stack.length > 1) {
+      const top = stack[stack.length - 1];
+      if (top.indent >= col || top.leaf) stack.pop();
+      else break;
+    }
+    const parent = stack[stack.length - 1];
+    // A value that is only a comment leaves the key free to adopt children.
+    const value = kv.value[0] === '#' ? '' : kv.value;
+    const leaf = value !== '';
+    const idx = add(i, col, kv.key, parent.node);
+    if (parent.node >= 0) nodes[parent.node].kind = 'map';
+    stack.push({ indent: col, node: idx, item: false, count: 0, leaf });
+    if (leaf && (value[0] === '|' || value[0] === '>')) block = col;
+  }
+  return closeRanges(nodes, lines.length - 1);
+}
+
+/* ATX headings, and none inside a fenced block: that is what a reader navigates
+   a markdown file by. */
+function mdOutline(text) {
+  const lines = text.split('\n');
+  const nodes = [];
+  let fence = '';
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (fence) { if (t.startsWith(fence)) fence = ''; continue; }
+    if (t.startsWith('```')) { fence = '```'; continue; }
+    if (t.startsWith('~~~')) { fence = '~~~'; continue; }
+    if (t[0] !== '#') continue;
+    let level = 0;
+    while (t[level] === '#') level++;
+    if (level > 6 || (t[level] !== undefined && t[level] !== ' ')) continue;
+    const label = t.slice(level).trim();
+    if (!label) continue;
+    let parent = -1;
+    for (let j = nodes.length - 1; j >= 0; j--) {
+      if (nodes[j].depth < level - 1) { parent = j; break; }
+    }
+    nodes.push({
+      line: i, col: lines[i].indexOf('#'), label,
+      kind: 'heading', depth: level - 1, parent, endLine: i,
+    });
+  }
+  return closeRanges(nodes, lines.length - 1);
+}
+
+/* SQL is absent on purpose. A CTE name can only be found honestly by masking
+   strings and comments first, and a bar that occasionally names a case arm as a
+   model section is worse than a bar with nothing after the file name. */
+function documentOutline(path, text) {
+  const mode = modeFor(path);
+  if (mode === 'text/x-yaml') return yamlOutline(text);
+  if (mode === 'text/x-markdown') return mdOutline(text);
+  return [];
+}
+
+/* The nodes containing a line, outermost first. */
+function outlineChainAt(nodes, line) {
+  const out = [];
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].line > line) break;
+    if (nodes[i].endLine >= line) out.push(i);
+  }
+  return out;
+}
+
+function outlineSiblings(nodes, i) {
+  const out = [];
+  for (let j = 0; j < nodes.length; j++) if (nodes[j].parent === nodes[i].parent) out.push(j);
+  return out;
+}
+
+/* The glyph stands for the kind of the node's value, which is what VS Code
+   shows: a mapping, a sequence, or a plain scalar. */
+function crumbIcon(kind) {
+  if (kind === 'map') return '{ }';
+  if (kind === 'seq') return '[ ]';
+  if (kind === 'heading') return '#';
+  return 'abc';
+}
+
+function renderCrumbs() {
+  const bar = $('#crumbs');
+  const f = S.active ? S.open.get(S.active) : null;
+  /* Hidden for a diff, which holds two documents and no cursor, and for the
+     profile, which lives outside the project where /api/dir cannot list. */
+  if (!f || f.kind === 'diff' || f.kind === 'profile') {
+    bar.textContent = '';
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.textContent = '';
+  bar.classList.remove('hidden');
+
+  const segs = pathCrumbs(S.active);
+  segs.forEach((seg, i) => {
+    if (i) bar.appendChild(crumbSep());
+    bar.appendChild(crumbButton(seg.label, '', (btn) =>
+      openCrumbMenu(btn, { kind: 'path', dir: seg.dir, current: seg.path })));
+  });
+
+  const nodes = S.outline && S.outline.path === S.active ? S.outline.nodes : [];
+  for (const idx of outlineChainAt(nodes, S.crumbLine)) {
+    const n = nodes[idx];
+    bar.appendChild(crumbSep());
+    bar.appendChild(crumbButton(n.label, n.kind, (btn) =>
+      openCrumbMenu(btn, { kind: 'symbol', index: idx })));
+  }
+  // A deep path scrolls: the end is the part that says where you are.
+  bar.scrollLeft = bar.scrollWidth;
+}
+
+function crumbSep() {
+  return Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '›' });
+}
+
+function crumbButton(label, kind, open) {
+  const b = document.createElement('button');
+  b.className = 'crumb';
+  b.type = 'button';
+  if (kind) {
+    const ic = document.createElement('span');
+    ic.className = 'sicon';
+    ic.dataset.kind = kind;
+    ic.textContent = crumbIcon(kind);
+    b.appendChild(ic);
+  }
+  b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
+  b.addEventListener('click', () => {
+    if (crumbMenu && crumbMenu.anchor === b) return closeCrumbMenu();
+    open(b);
+  });
+  return b;
+}
+
+// A document larger than this is not worth scanning on every keystroke pause.
+const OUTLINE_MAX = 2 * 1024 * 1024;
+
+function refreshOutline() {
+  S.outline = null;
+  S.crumbLine = -1;
+  const f = S.active ? S.open.get(S.active) : null;
+  if (!f || f.kind === 'diff' || f.kind === 'profile' || !f.doc) return;
+  const text = f.doc.getValue();
+  if (text.length > OUTLINE_MAX) return;
+  S.outline = { path: S.active, nodes: documentOutline(S.active, text) };
+  S.crumbLine = S.cm ? S.cm.getCursor().line : 0;
+}
+
+/* Only a change of line can change the chain, and the cursor moves far more
+   often than that. */
+function crumbCursor() {
+  if (!S.outline || S.outline.path !== S.active || !S.cm) return;
+  const line = S.cm.getCursor().line;
+  if (line === S.crumbLine) return;
+  S.crumbLine = line;
+  renderCrumbs();
+}
+
+/* Puts the cursor somewhere in the active document and shows it. Shared by the
+   search results and the symbol crumbs, which want the same three steps. */
+function gotoPos(line, ch = 0) {
+  if (!S.cm) return;
+  const pos = { line: Math.max(0, line), ch: Math.max(0, ch) };
+  S.cm.setCursor(pos);
+  S.cm.scrollIntoView({ from: pos, to: pos }, 120);
+  S.cm.focus();
+}
+
+let crumbMenu = null;                        // { el, anchor, off }
+
+function closeCrumbMenu({ refocus = false } = {}) {
+  if (!crumbMenu) return;
+  const { el, anchor, off } = crumbMenu;
+  crumbMenu = null;
+  off();
+  el.remove();
+  anchor.classList.remove('open');
+  if (refocus) anchor.focus();
+}
+
+/* The menu a crumb opens. A path crumb lists the folder it sits in, so picking
+   a sibling is one click; a folder inside it reopens the menu one level down,
+   which is how VS Code lets you walk the tree without leaving the bar. */
+async function openCrumbMenu(anchor, spec) {
+  closeCrumbMenu();
+  // A card that opened by accident must not sit over a menu opened on purpose.
+  closeHoverCard();
+
+  let rows = [];
+  if (spec.kind === 'path') {
+    let entries;
+    try { entries = await api.get('/api/dir?path=' + encodeURIComponent(spec.dir)); }
+    catch (e) { return toast(e.message, 'err'); }
+    rows = entries.map((entry) => ({
+      label: entry.name,
+      dir: entry.dir,
+      current: entry.path === spec.current,
+      pick: () => {
+        if (entry.dir) return openCrumbMenu(anchor, { kind: 'path', dir: entry.path, current: '' });
+        closeCrumbMenu();
+        openFile(entry.path, { preview: true });
+        revealInTree(entry.path);
+      },
+    }));
+  } else {
+    const nodes = S.outline ? S.outline.nodes : [];
+    if (!nodes[spec.index]) return;
+    rows = outlineSiblings(nodes, spec.index).map((j) => ({
+      label: nodes[j].label,
+      kind: nodes[j].kind,
+      current: j === spec.index,
+      pick: () => { closeCrumbMenu(); gotoPos(nodes[j].line, nodes[j].col); },
+    }));
+  }
+  if (!rows.length) return;
+
+  const el = document.createElement('div');
+  el.className = 'crumbmenu';
+  for (const row of rows) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = row.current ? 'on' : '';
+    const ic = document.createElement('span');
+    if (row.kind) {
+      ic.className = 'sicon';
+      ic.dataset.kind = row.kind;
+      ic.textContent = crumbIcon(row.kind);
+      b.appendChild(ic);
+    } else if (row.dir) {
+      ic.className = 'caret';
+      ic.innerHTML = CHEVRON;
+      b.appendChild(ic);
+    } else {
+      b.appendChild(fileIcon(row.label));
+    }
+    b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: row.label }));
+    b.addEventListener('click', row.pick);
+    el.appendChild(b);
+  }
+  document.body.appendChild(el);
+  anchor.classList.add('open');
+
+  const box = el.getBoundingClientRect();
+  const p = placeFloating(anchor.getBoundingClientRect(), { width: box.width, height: box.height },
+    { width: window.innerWidth, height: window.innerHeight }, 2);
+  el.style.top = `${p.top}px`;
+  el.style.left = `${p.left}px`;
+
+  const buttons = [...el.querySelectorAll('button')];
+  const onKey = (e) => {
+    if (e.key === 'Tab') return closeCrumbMenu();
+    const i = buttons.indexOf(document.activeElement);
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (e.key !== 'Escape' && !step) return;
+    // Handled here only: the editor and the global shortcuts never see it.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') closeCrumbMenu({ refocus: true });
+    else buttons[(i + step + buttons.length) % buttons.length].focus();
+  };
+  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeCrumbMenu(); };
+  // Scrolling the crumb bar away leaves the menu floating in the wrong place.
+  const onScroll = (e) => {
+    const t = e.target;
+    if (t === document || (t instanceof Node && t.contains(anchor))) closeCrumbMenu();
+  };
+  const onResize = () => closeCrumbMenu();
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onResize);
+  crumbMenu = {
+    el, anchor,
+    off: () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    },
+  };
+  (buttons.find((b) => b.classList.contains('on')) || buttons[0]).focus();
 }
 
 // ----------------------------------------------------------------- icons --
@@ -1299,7 +1733,7 @@ async function doPull() {
     if (/diverge|not possible to fast-forward/i.test(res.stderr)) {
       const body = document.createElement('div');
       body.append(para('Your branch and origin have diverged, so a fast-forward is impossible.'));
-      body.append(para('dbt-lens will not pick a merge or a rebase for you: run the one you want in the terminal.'));
+      body.append(para('dbt-edith will not pick a merge or a rebase for you: run the one you want in the terminal.'));
       body.append(pre(res.stderr));
       return modal({ title: 'Cannot fast-forward', body, actions: [{ id: 'ok', label: 'Close' }] });
     }
@@ -1451,7 +1885,7 @@ async function focusNode(id, { open = false } = {}) {
     Lineage.render(sub);
     $('#lineage-status').textContent =
       `${sub.nodes.length} nodes · ${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
-    paintLegend(sub.nodes);
+    paintLegend(sub);
     renderCatalog(detail);
     if (!$('#dock-compiled').classList.contains('hidden')) loadCompiled(id);
     if (open && detail.file) openFile(detail.file, { focusLineage: false });
@@ -1479,7 +1913,7 @@ async function focusColumn(id, column) {
     Lineage.render(sub);
     $('#lineage-status').textContent =
       `${sub.focus_column} · ${sub.nodes.length} columns · ${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
-    paintLegend(sub.nodes);
+    paintLegend(sub);
     showDock('lineage');
   } catch (e) {
     toast('column lineage: ' + e.message, 'err');
@@ -1490,9 +1924,157 @@ async function focusColumn(id, column) {
 }
 
 /* Every control that used to re-run focusNode has to respect the current mode. */
-const rerender = () => (S.graphMode === 'column' && S.colFocus)
-  ? focusColumn(S.colFocus.id, S.colFocus.column)
-  : (S.focus ? focusNode(S.focus) : undefined);
+const rerender = () => S.graphMode === 'select'
+  ? runSelection()
+  : (S.graphMode === 'column' && S.colFocus)
+    ? focusColumn(S.colFocus.id, S.colFocus.column)
+    : (S.focus ? focusNode(S.focus) : undefined);
+
+// ------------------------------------------------------------- selection --
+/* A dbt selector expression, resolved by the server against the manifest and
+   drawn as a set rather than as a neighbourhood of one node. dbt is never run
+   for it (0024): the terminal button is how you check that against dbt itself. */
+let selectTimer = null;
+
+async function runSelection() {
+  closeHoverCard();
+  S.graphMode = 'select';
+  S.colFocus = null;
+  paintMode();
+  const expr = $('#select-input').value.trim();
+  const ask = ++S.selectAsk;
+  if (!expr) {
+    S.selectSub = null;
+    Lineage.clear();
+    emptyHint('Type a dbt selector, for example my_model+');
+    $('#select-sum').textContent = '';
+    $('#lineage-status').textContent = '';
+    paintSelectWarnings([]);
+    return;
+  }
+  const tests = $('#with-tests').checked ? 1 : 0;
+  try {
+    const sub = await api.get(`/api/select?q=${encodeURIComponent(expr)}&tests=${tests}`);
+    if (ask !== S.selectAsk) return;          // a later keystroke already asked
+    S.selectSub = sub;
+    // A pasted command is written back as what was actually resolved, so the
+    // box and the picture never say two different things.
+    if (sub.stripped) {
+      $('#select-input').value = sub.select + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
+    }
+    rememberSelection($('#select-input').value.trim());
+    if (sub.nodes.length) {
+      $('#lineage-empty').classList.add('hidden');
+      Lineage.render(sub);
+      paintLegend(sub);
+    } else {
+      Lineage.clear();
+      emptyHint('Nothing matched.');
+    }
+    $('#select-sum').textContent = selectSummary(sub);
+    $('#lineage-status').textContent = selectStatus(sub);
+    paintSelectWarnings(selectWarnings(sub.warnings));
+  } catch (e) {
+    if (ask !== S.selectAsk) return;
+    S.selectSub = null;
+    $('#select-sum').textContent = '';
+    paintSelectWarnings([e.message], true);
+  }
+}
+
+const emptyHint = (text) => {
+  $('#lineage-empty').classList.remove('hidden');
+  $('#lineage-empty').querySelector('p').textContent = text;
+};
+
+/* Session history, and no further. Persisting it would need a settings route
+   of its own (0011), which retyping a selector has not yet been worth. */
+function rememberSelection(expr) {
+  if (!expr) return;
+  S.selectHistory = [expr].concat(S.selectHistory.filter((e) => e !== expr)).slice(0, 20);
+  S.selectHistAt = -1;
+}
+
+/* A +N badge names its own box in the expression instead of bumping a depth
+   box, because in this mode the text is what the picture is made of. */
+function expandSelection(dir, node) {
+  const box = $('#select-input');
+  box.value = expandTerm(box.value, node.name, dir);
+  runSelection();
+}
+
+function paintSelectWarnings(lines, bad) {
+  const host = $('#select-warn');
+  host.textContent = '';
+  host.classList.toggle('hidden', !lines.length);
+  host.classList.toggle('bad', !!bad);
+  for (const line of lines) {
+    const row = document.createElement('div');
+    row.textContent = line;
+    row.title = line;
+    host.appendChild(row);
+  }
+}
+
+/* One place for the clipboard, because a Copy that silently does nothing is
+   worse than no button: the browser refuses it often enough to need the toast. */
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('copied ' + (label || text), 'ok');
+  } catch { toast('clipboard unavailable', 'err'); }
+}
+
+/* What the selection is made of, by kind, biggest first. Counted by the server
+   over everything that matched, so a capped canvas still reports the whole set. */
+function selectKindCounts(counts) {
+  return Object.entries(counts || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function selectSummary(sub) {
+  if (!sub.matched) return 'nothing matched';
+  return selectKindCounts(sub.counts).map(([kind, n]) => `${n} ${kind}${n > 1 ? 's' : ''}`).join('  ·  ');
+}
+
+/* The canvas half of the answer, which is not the same number: what was drawn,
+   against what matched, so a capped picture says so instead of looking whole. */
+function selectStatus(sub) {
+  if (!sub.matched) return '';
+  const drawn = sub.nodes.length;
+  const head = sub.truncated ? `${drawn} of ${sub.matched} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
+  return `${head} · ${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
+}
+
+/* Four at most: a selector with twenty bad terms has one mistake in it, not
+   twenty, and a wall of amber hides the graph it is about. */
+function selectWarnings(list) {
+  const seen = [...new Set(list || [])];
+  return seen.length <= 4 ? seen : seen.slice(0, 4).concat(`and ${seen.length - 4} more`);
+}
+
+/* The command that should print the same list, for checking this build against
+   dbt itself. No escaping: the server strips quotes while parsing, so what
+   comes back can never contain one. */
+function lsCommand(select, exclude) {
+  const quote = (s) => '"' + String(s).replace(/"/g, '') + '"';
+  const tail = exclude ? ` --exclude ${quote(exclude)}` : '';
+  return `dbt ls --select ${quote(select)}${tail} --output name`;
+}
+
+function expandTerm(expr, name, dir) {
+  const term = dir === 'up' ? `+${name}` : `${name}+`;
+  const terms = String(expr).split(/\s+/).filter(Boolean);
+  return (terms.includes(term) ? terms : terms.concat(term)).join(' ');
+}
+
+/* Walking the history from the box: past the newest is the empty line you
+   started on, and past the oldest stays on the oldest. */
+function historyStep(list, at, dir) {
+  if (!list.length) return -1;
+  const next = at + dir;
+  if (next < 0) return -1;
+  return next >= list.length ? list.length - 1 : next;
+}
 
 // ------------------------------------------------------ snowflake lineage --
 /* Column lineage fetched from Snowflake on click. The server starts
@@ -1511,7 +2093,7 @@ function sidecarLabel(sc) {
     return {
       text: 'Snowflake lineage: off', tone: 'off',
       title: 'Switch on to fetch a column\'s lineage from Snowflake when you click it. '
-        + 'dbt-lens starts tools/sf_lineage.py with your dbt profile, and nothing connects before the first click.',
+        + 'dbt-edith starts tools/sf_lineage.py with your dbt profile, and nothing connects before the first click.',
     };
   }
   const who = [sc.profile && `profile ${sc.profile}`, sc.target && `target ${sc.target}`, sc.role && `role ${sc.role}`]
@@ -1543,6 +2125,134 @@ function columnsHint(sc, cached) {
   return cached ? null : { text: 'click a column to fetch its lineage from Snowflake', tone: 'hint' };
 }
 
+/* How old a cache is, in the shortest form that is still honest. */
+function cacheAge(mtime) {
+  if (!mtime) return '';
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - mtime);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}min ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+/* What one entry of the producer menu reads as. A cache with no source field is
+   not named "unknown" but by its file, which is the only true thing about it. */
+function sourceLabel(src) {
+  const name = src.source || src.file.replace(/^column_lineage\.?|\.json$/g, '') || src.file;
+  const bits = [src.target, cacheAge(src.mtime)].filter(Boolean);
+  return { name, sub: bits.join(' · ') };
+}
+
+/* The producer of the column lineage on screen.
+
+   One control rather than two: the graph holds one source at a time, so picking
+   a cache and switching Snowflake fetching on are the same decision made twice.
+   The live entry is last and marked, because it is the only one that reaches a
+   warehouse. */
+function sourceMenu() {
+  const wrap = document.createElement('span');
+  wrap.className = 'srcpick';
+  const b = document.createElement('button');
+  b.id = 'cll-source';
+  b.className = 'btn sm';
+  paintSourceButton(b);
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSourceMenu(b);
+  });
+  wrap.appendChild(b);
+  return wrap;
+}
+
+function paintSourceButton(b = $('#cll-source')) {
+  if (!b) return;
+  if (sidecarOn()) {
+    const label = sidecarLabel(S.sidecar);
+    b.textContent = `source: Snowflake, live \u25be`;
+    b.dataset.tone = label.tone;
+    b.title = label.title;
+    return;
+  }
+  const active = (S.cllSources || []).find((x) => x.file === S.cllActive);
+  if (!active) {
+    b.textContent = 'source: none \u25be';
+    b.dataset.tone = 'off';
+    b.title = 'No column lineage cache beside the manifest. Generate one, or switch on Snowflake to fetch per column.';
+    return;
+  }
+  const { name, sub } = sourceLabel(active);
+  b.textContent = `source: ${name} \u25be`;
+  b.dataset.tone = 'on';
+  b.title = `column lineage from ${name}${sub ? ` (${sub})` : ''}\n${active.file}`;
+}
+
+function openSourceMenu(anchor) {
+  closeMenus();
+  const menu = document.createElement('div');
+  menu.className = 'envmenu';
+  const add = (name, sub, on, onPick) => {
+    const item = document.createElement('button');
+    const check = document.createElement('span');
+    check.className = 'check';
+    check.textContent = on ? '\u2713' : '';
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = name;
+    item.append(check, lbl);
+    if (sub) {
+      const s = document.createElement('span');
+      s.className = 'sub';
+      s.textContent = sub;
+      item.appendChild(s);
+    }
+    if (on) item.classList.add('on');
+    item.addEventListener('click', () => { closeMenus(); onPick(); });
+    menu.appendChild(item);
+  };
+
+  const sources = S.cllSources || [];
+  if (!sources.length) {
+    const p = document.createElement('div');
+    p.className = 'sub';
+    p.style.padding = '5px 8px';
+    p.textContent = 'no cache beside the manifest';
+    menu.appendChild(p);
+  }
+  for (const src of sources) {
+    const { name, sub } = sourceLabel(src);
+    add(name, sub, !sidecarOn() && src.file === S.cllActive, () => selectSource(src.file));
+  }
+  if (sources.length) menu.appendChild(document.createElement('hr'));
+  add('Snowflake, live', 'fetches on click', sidecarOn(), () => setSidecar(true));
+  if (sidecarOn()) add('stop fetching', '', false, () => setSidecar(false));
+
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(6, Math.min(r.left, window.innerWidth - menu.offsetWidth - 6))}px`;
+  menu.style.top = `${r.bottom + 4}px`;
+  setTimeout(() => document.addEventListener('click', closeMenus, { once: true }), 0);
+}
+
+function closeMenus() {
+  $$('.envmenu').forEach((m) => m.remove());
+}
+
+async function selectSource(file) {
+  if (sidecarOn()) await setSidecar(false);
+  try {
+    const meta = await api.post('/api/collineage/source', { file });
+    S.meta = Object.assign({}, S.meta, meta);
+    S.cllActive = file;
+    paintSourceButton();
+    paintChips();
+    if (S.node) renderCatalog(S.node);
+    rerender();
+    toast(`column lineage from ${meta.cll_source || file}`);
+  } catch (e) {
+    toast('column lineage source: ' + e.message, 'err');
+  }
+}
+
 function sidecarSwitch() {
   const b = document.createElement('button');
   b.id = 'sidecar-switch';
@@ -1562,7 +2272,7 @@ function paintSidecarSwitch(b = $('#sidecar-switch')) {
   b.dataset.tone = label.tone;
   b.title = label.title;
   // The script may still be starting in the background, as it does when
-  // dbt-lens starts with the switch already on.
+  // dbt-edith starts with the switch already on.
   if (S.sidecar && S.sidecar.state === 'starting') {
     setTimeout(() => loadSidecar().then(() => paintSidecarSwitch()), 1500);
   }
@@ -1708,13 +2418,27 @@ async function openColumn(n, column) {
   }
 }
 
-/* Only the materializations present in the current graph, so the legend stays
-   short and always matches what is drawn. */
-function paintLegend(nodes) {
+/* Only what is actually on screen, so the legend stays short and always matches
+   what is drawn.
+
+   Model mode explains the boxes, whose colour is the materialization. Column
+   mode explains the edges instead, whose colour is what happened to the column:
+   that is the question the column graph exists to answer, and repeating the
+   materializations there would explain something nobody is looking at. */
+function paintLegend(sub) {
   const seen = new Map();
-  for (const n of nodes) {
-    const label = Lineage.matLabel(n);
-    if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
+  const kinds = sub.edge_kinds || [];
+  if (kinds.length) {
+    // The badges too, not just the edges: `raw` and `mixed` only ever appear on
+    // a box, and a legend that skipped them would leave two colours unexplained.
+    for (const k of kinds.concat(Lineage.nodeRoles(sub))) {
+      if (k && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
+    }
+  } else {
+    for (const n of sub.nodes) {
+      const label = Lineage.matLabel(n);
+      if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
+    }
   }
   const host = $('#lineage-legend');
   host.textContent = '';
@@ -1728,14 +2452,18 @@ function paintLegend(nodes) {
 }
 
 function paintMode() {
-  const column = S.graphMode === 'column';
+  const selecting = S.graphMode === 'select';
   $$('#graph-mode .segbtn').forEach((b) => {
-    b.classList.toggle('active', (b.dataset.mode === 'column') === column);
+    b.classList.toggle('active', b.dataset.mode === S.graphMode);
     if (b.dataset.mode === 'column') {
       b.disabled = !S.colFocus;
       b.title = S.colFocus ? '' : 'pick a column in the Catalog tab first';
     }
   });
+  $('#select-bar').classList.toggle('hidden', !selecting);
+  // The depth boxes have nothing to say about a selection: the + in the
+  // expression carries it, and two places to set one would contradict.
+  $('#up').disabled = $('#down').disabled = selecting;
   const chip = $('#col-chip');
   chip.classList.toggle('hidden', !S.colFocus);
   if (S.colFocus) {
@@ -1765,9 +2493,35 @@ function relinkTools() {
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
   $$('#graph-mode .segbtn').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
+    if (b.dataset.mode === 'select') { runSelection(); $('#select-input').focus(); return; }
+    emptyHint('Select a model to see its lineage.');
     if (b.dataset.mode === 'column' && S.colFocus) focusColumn(S.colFocus.id, S.colFocus.column);
     else if (S.focus) focusNode(S.focus);
+    else { S.graphMode = b.dataset.mode; paintMode(); Lineage.clear(); }
   }));
+
+  const box = $('#select-input');
+  box.addEventListener('input', () => {
+    clearTimeout(selectTimer);
+    selectTimer = setTimeout(runSelection, 500);
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { clearTimeout(selectTimer); runSelection(); return; }
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    S.selectHistAt = historyStep(S.selectHistory, S.selectHistAt, e.key === 'ArrowUp' ? 1 : -1);
+    box.value = S.selectHistAt < 0 ? '' : S.selectHistory[S.selectHistAt];
+  });
+  $('#select-copy').addEventListener('click', () => {
+    const sub = S.selectSub;
+    if (!sub || !sub.names || !sub.names.length) return toast('nothing to copy', 'err');
+    copyText(sub.names.join('\n'), `${sub.names.length} names`);
+  });
+  $('#select-ls').addEventListener('click', () => {
+    const sub = S.selectSub;
+    if (!sub) return toast('run a selection first', 'err');
+    sendToTerminal(lsCommand(sub.select, sub.exclude || ''));
+  });
 }
 
 // --------------------------------------------------------------- compiled --
@@ -1846,7 +2600,7 @@ async function loadCompiled(id) {
   } else {
     body.appendChild(S.compiledCm.getWrapperElement());
   }
-  S.compiledCm.setValue(info.content + (info.truncated ? '\n\n-- truncated by dbt-lens\n' : ''));
+  S.compiledCm.setValue(info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : ''));
   setTimeout(() => S.compiledCm.refresh(), 0);
 }
 
@@ -2518,7 +3272,7 @@ function resolvedCell(row, envName, file) {
       return {
         text: row.resolved || 'not evaluated',
         cls: 'env-unevaluated',
-        title: 'Contains Jinja that dbt-lens does not evaluate.' + branchNote,
+        title: 'Contains Jinja that dbt-edith does not evaluate.' + branchNote,
       };
     case 'env':
       return { text: row.resolved, cls: '', title: `${vars} from ${file}` + branchNote };
@@ -2557,7 +3311,7 @@ function splitRelation(text) {
 /* The relation the resolved column points at, quoted part by part the way the
    built relation is, or the reason it cannot be written. Database and schema
    must come from the config: left unset, they fall back to the target profile,
-   which dbt-lens does not read. An unset alias is the one dbt built, since dbt
+   which dbt-edith does not read. An unset alias is the one dbt built, since dbt
    derives it from the node, not from the environment. */
 function resolvedRelation(rows, builtRelation, file) {
   const names = [];
@@ -2566,10 +3320,10 @@ function resolvedRelation(rows, builtRelation, file) {
     const vars = r.vars.join(', ');
     if (r.status === 'missing') return { text: '', reason: `${vars} is not defined in ${file}` };
     if (r.status === 'placeholder') return { text: '', reason: `${key} is a placeholder in ${file}, not a real name` };
-    if (r.status === 'unevaluated') return { text: '', reason: `${key} contains Jinja that dbt-lens does not evaluate` };
+    if (r.status === 'unevaluated') return { text: '', reason: `${key} contains Jinja that dbt-edith does not evaluate` };
     if (r.resolved) names.push(r.resolved);
     else if (key === 'alias' && r.built) names.push(r.built);
-    else return { text: '', reason: `${key} is not set in the config, so it comes from the target profile, which dbt-lens does not read` };
+    else return { text: '', reason: `${key} is not set in the config, so it comes from the target profile, which dbt-edith does not read` };
   }
   const parts = builtRelation ? splitRelation(builtRelation) : [];
   const bare = (s) => (s.length > 1 && s[0] === '"' && s[s.length - 1] === '"' ? s.slice(1, -1) : s);
@@ -2729,10 +3483,7 @@ function relationCell(text, reason, what) {
   copy.className = 'btn sm';
   copy.textContent = 'Copy';
   copy.title = 'copy ' + text;
-  copy.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(text); toast('copied ' + text, 'ok'); }
-    catch { toast('clipboard unavailable', 'err'); }
-  });
+  copy.addEventListener('click', () => copyText(text));
   wrap.append(name, copy);
   td.appendChild(wrap);
   return td;
@@ -2833,7 +3584,7 @@ function catalogColumns(body, n) {
   note.textContent = untyped === n.columns.length
     ? 'no types: run dbt compile --write-catalog to pull them from Snowflake'
     : `${n.columns.length - untyped}/${n.columns.length} typed`;
-  tools.append(note, sidecarSwitch());
+  tools.append(note, sourceMenu());
   const hint = columnsHint(S.sidecar, n.columns.some((c) => c.up || c.down));
   if (hint) {
     const span = document.createElement('span');
@@ -2918,7 +3669,14 @@ function catalogColumns(body, n) {
       if (c.up || c.down || live) {
         tr.classList.add('c-linked');
         tr.title = live ? `fetch the lineage of ${c.name} from Snowflake` : `column lineage for ${c.name}`;
-        tr.addEventListener('click', () => openColumn(n, c.name));
+        // The name cell is left out of the click target on purpose: copying a
+        // column name is the more common thing to want, and a click target
+        // makes the text impossible to select. The rest of the row still opens
+        // the lineage, so column mode stays reachable from here.
+        tr.addEventListener('click', (e) => {
+          if (e.target.closest('.c-name')) return;
+          openColumn(n, c.name);
+        });
       }
       tr.appendChild(lin);
     }
@@ -2966,6 +3724,7 @@ function connectTerm() {
 // ---------------------------------------------------------------- palette --
 let palIndex = 0, palHits = [];
 function openPalette() {
+  closeCrumbMenu();
   $('#palette').classList.remove('hidden');
   const input = $('#palette-input');
   input.value = ''; input.focus();
@@ -3044,14 +3803,104 @@ function choosePalette(i) {
 }
 
 // ------------------------------------------------------------------ tabs --
+/* Search across file contents, which the path index cannot answer. The server
+   finds the lines; the match inside one is found here, because the browser knows
+   the query and a byte offset from Rust would not survive into a UTF-16 string. */
+function splitMatch(text, query) {
+  const at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (!query || at < 0) return [text, '', ''];
+  return [text.slice(0, at), text.slice(at, at + query.length), text.slice(at + query.length)];
+}
+
+/* What the status line says about a result. Pure, so the wording is checkable. */
+function grepSummary(result, query) {
+  if (!query) return '';
+  if (query.length < 3) return 'three letters or more';
+  if (!result) return 'searching…';
+  const files = result.files.length;
+  if (!files) return `no match for "${query}"`;
+  const hits = result.total;
+  const bits = [`${hits} match${hits > 1 ? 'es' : ''} in ${files} file${files > 1 ? 's' : ''}`];
+  if (result.capped) bits.push('showing the first found');
+  if (result.skipped) bits.push(`${result.skipped} file${result.skipped > 1 ? 's' : ''} skipped`);
+  return bits.join(' · ');
+}
+
+let grepTimer = null;
+let grepRun = 0;
+
+function paintGrep(result, query) {
+  $('#grep-status').textContent = grepSummary(result, query);
+  const host = $('#grep-results');
+  host.textContent = '';
+  if (!result) return;
+  for (const f of result.files) {
+    const head = document.createElement('div');
+    head.className = 'grep-file';
+    head.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: base(f.path) }));
+    head.append(Object.assign(document.createElement('span'), { className: 'dir', textContent: dirOf(f.path) }));
+    head.title = f.path;
+    head.addEventListener('click', () => openAt(f.path, f.hits[0].line));
+    host.appendChild(head);
+    for (const h of f.hits) {
+      const row = document.createElement('div');
+      row.className = 'grep-hit';
+      row.append(Object.assign(document.createElement('span'), { className: 'ln', textContent: h.line }));
+      const [before, hit, after] = splitMatch(h.text, query);
+      const body = document.createElement('span');
+      body.className = 'tx';
+      body.append(document.createTextNode(before));
+      if (hit) body.append(Object.assign(document.createElement('mark'), { textContent: hit }));
+      body.append(document.createTextNode(after));
+      row.appendChild(body);
+      row.addEventListener('click', () => openAt(f.path, h.line));
+      host.appendChild(row);
+    }
+    if (f.more) {
+      host.append(Object.assign(document.createElement('div'), {
+        className: 'grep-more', textContent: `+${f.more} more in this file`,
+      }));
+    }
+  }
+}
+
+function runGrep() {
+  const query = $('#grep-input').value.trim();
+  clearTimeout(grepTimer);
+  if (query.length < 3) {
+    paintGrep(null, query);
+    return;
+  }
+  paintGrep(null, query);
+  const run = ++grepRun;
+  // A full scan of a large project is well under a second, so a short pause is
+  // enough to keep a burst of typing down to one request.
+  grepTimer = setTimeout(() => {
+    api.get('/api/grep?q=' + encodeURIComponent(query))
+      .then((result) => { if (run === grepRun) paintGrep(result, query); })
+      .catch((e) => { if (run === grepRun) $('#grep-status').textContent = 'search failed: ' + e.message; });
+  }, 250);
+}
+
+/* Opens a file and puts the cursor on one of its lines, which is what a search
+   result is for. Preview, like a single click in the explorer: browsing results
+   should not leave a dozen pinned tabs behind. */
+async function openAt(path, line) {
+  await openFile(path, { focusLineage: false, preview: true });
+  if (!S.cm || S.active !== path) return;
+  gotoPos(line - 1, 0);
+}
+
 function wireTabs() {
   $$('[data-side]').forEach((b) => b.addEventListener('click', () => {
     $$('[data-side]').forEach((x) => x.classList.toggle('active', x === b));
     $('#side-files').classList.toggle('hidden', b.dataset.side !== 'files');
     $('#side-models').classList.toggle('hidden', b.dataset.side !== 'models');
     $('#side-git').classList.toggle('hidden', b.dataset.side !== 'git');
+    $('#side-search').classList.toggle('hidden', b.dataset.side !== 'search');
     if (b.dataset.side === 'models' && !$('#model-list').children.length) refreshModels();
     if (b.dataset.side === 'git') refreshGit();
+    if (b.dataset.side === 'search') $('#grep-input').focus();
   }));
 
   $$('[data-dock]').forEach((b) => b.addEventListener('click', () => showDock(b.dataset.dock)));
@@ -3220,13 +4069,15 @@ async function boot() {
       focusNode(nodeId);
       if (n.file) { openFile(n.file, { focusLineage: false }); revealInTree(n.file); }
     },
-    onExpand: (dir) => {
+    onExpand: (dir, n) => {
+      if (S.graphMode === 'select') return expandSelection(dir, n);
       const input = dir === 'up' ? $('#up') : $('#down');
       input.value = Math.min(20, +input.value + 1);
       rerender();
     },
   });
   wireTabs(); wireKeys(); wireSplitters(); relinkTools();
+  $('#grep-input').addEventListener('input', runGrep);
   renderTabs();
   paintMode();
   $('#editor-host').style.display = 'none';
@@ -3239,21 +4090,21 @@ async function boot() {
   // what tells a stale binary from a frontend change that really did nothing.
   const build = $('#status-build');
   build.textContent = 'v' + (info.version || '?');
-  build.title = `dbt-lens ${info.version || '?'}\n${info.build || 'no build stamp'}`;
+  build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   const v = info.venv || {};
   const venvEl = $('#status-venv');
   if (v.name) {
     venvEl.textContent = (v.source === 'activated' ? 'venv ' : 'venv (inactive) ') + v.name
       + (v.python ? ' · py ' + v.python : '');
     venvEl.title = [v.path, v.dbt && ('dbt: ' + v.dbt),
-      v.source === 'activated' ? 'activated when dbt-lens started'
+      v.source === 'activated' ? 'activated when dbt-edith started'
         : 'found in the project but not activated; source its activate script in the terminal',
       v.others.length ? 'also found: ' + v.others.join(', ') : ''].filter(Boolean).join('\n');
   } else {
     venvEl.textContent = 'no venv';
-    venvEl.title = 'no VIRTUAL_ENV when dbt-lens started, and none found in the project';
+    venvEl.title = 'no VIRTUAL_ENV when dbt-edith started, and none found in the project';
   }
-  document.title = `${info.meta.project || 'dbt-lens'} · dbt-lens`;
+  document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
   $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
   loadEnvs();
   await loadDir($('#tree'), '', 0);

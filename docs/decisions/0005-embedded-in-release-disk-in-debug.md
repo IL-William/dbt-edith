@@ -29,7 +29,7 @@ A release binary is only as fresh as its last build, which has bitten before.
 After changing anything under `web/`, rebuild before testing the release binary,
 and to be sure, grep the binary for a string you just added:
 
-    LC_ALL=C grep -ac 'function relationCell' target/release/dbt-lens
+    LC_ALL=C grep -ac 'function relationCell' target/release/dbt-edith
 
 The same applies to a copy handed to someone else: it carries the frontend and
 the Rust code as they were at build time, and nothing tells its user how old it

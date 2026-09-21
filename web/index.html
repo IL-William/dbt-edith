@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dbt-lens</title>
+<title>dbt-edith</title>
 <link rel="stylesheet" href="vendor/xterm.css">
 <link rel="stylesheet" href="vendor/codemirror.css">
 <link rel="stylesheet" href="vendor/cm-merge.css">
@@ -12,7 +12,7 @@
 <body>
 
 <header id="topbar">
-  <span class="brand">dbt&#8202;<b>lens</b></span>
+  <span class="brand"><b>Edith</b></span>
   <span class="sep"></span>
   <span id="project" class="muted">loading…</span>
   <span id="counts" class="chips"></span>
@@ -28,6 +28,7 @@
     <div class="tabs">
       <button class="tab active" data-side="files">Files</button>
       <button class="tab" data-side="models">Models</button>
+      <button class="tab" data-side="search">Search</button>
       <button class="tab" data-side="git">Git<span id="git-badge" class="tabbadge hidden"></span></button>
     </div>
     <div id="side-files" class="side-pane">
@@ -81,6 +82,11 @@
       </div>
     </div>
 
+    <div id="side-search" class="side-pane hidden">
+      <input id="grep-input" class="filter" placeholder="Search in all files…" spellcheck="false" autocomplete="off">
+      <div id="grep-status" class="muted grep-status"></div>
+      <div id="grep-results" class="list"></div>
+    </div>
     <div id="side-models" class="side-pane hidden">
       <input id="model-filter" class="filter" placeholder="Filter models and sources…" spellcheck="false">
       <div id="model-list" class="list"></div>
@@ -92,6 +98,7 @@
   <main id="main">
     <section id="editor-pane">
       <div id="tabbar" class="tabbar"></div>
+      <div id="crumbs" class="crumbs hidden" aria-label="Breadcrumbs"></div>
       <div id="editor-host"></div>
       <div id="diff-host" class="hidden"></div>
       <div id="editor-empty" class="empty">
@@ -112,6 +119,7 @@
           <span id="graph-mode" class="seg">
             <button class="segbtn active" data-mode="model">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
+            <button class="segbtn" data-mode="select">Selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label>up <input id="up" type="number" min="0" max="20" value="2"></label>
@@ -121,6 +129,18 @@
         </div>
       </div>
       <div id="dock-lineage" class="dock-pane">
+        <div id="select-bar" class="select-bar hidden">
+          <div class="select-row">
+            <input id="select-input" spellcheck="false" autocomplete="off"
+                   placeholder="stg_customers dim_customers+ tag:nightly"
+                   aria-label="dbt node selection expression">
+            <span id="select-sum" class="sel-sum"></span>
+            <button class="btn sm" id="select-copy" title="Copy the matching names, one per line">Copy</button>
+            <button class="btn sm" id="select-ls"
+                    title="Type the dbt ls that should print the same list into the terminal, without running it">dbt ls</button>
+          </div>
+          <div id="select-warn" class="sel-warn hidden"></div>
+        </div>
         <div id="lineage-empty" class="empty"><p>Select a model to see its lineage.</p></div>
         <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="lineage-legend" class="legend"></div>

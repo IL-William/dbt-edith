@@ -43,6 +43,10 @@ pub struct RawNode {
     pub package_name: String,
     #[serde(default)]
     pub original_file_path: String,
+    /// The package name, then the path under the resource root, then the node
+    /// name. The implicit selector method matches on it (0024).
+    #[serde(default)]
+    pub fqn: Vec<String>,
     #[serde(default)]
     pub patch_path: Option<String>,
     #[serde(default)]

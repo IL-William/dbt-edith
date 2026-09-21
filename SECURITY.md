@@ -1,8 +1,8 @@
 # Security
 
-## What dbt-lens assumes
+## What dbt-edith assumes
 
-dbt-lens is a local tool. One person runs it on their own machine, against a
+dbt-edith is a local tool. One person runs it on their own machine, against a
 project they already have full access to, and it runs with that person's
 rights: the terminal is their shell, the git buttons use their credentials,
 the editor reads and writes their files.
@@ -24,12 +24,14 @@ the editor reads and writes their files.
   editor is for. The environments panel, by contrast, never returns a `.env`
   value, only names and counts. The hover card on a variable does show a
   resolved value, but never one whose name is a `DBT_ENV_SECRET_*` or reads as a
-  credential; both guards are server-side (0019).
+  credential; both guards are server-side (0019). Searching across file contents
+  skips `.env` files entirely, since a search is a wide read nobody aimed at a
+  particular file (0020).
 - **No outbound network calls of its own**, apart from the git commands you
   click. Snowflake column lineage is a separate script, `tools/sf_lineage.py`,
-  which dbt-lens starts only while you have that switch on, and which opens a
+  which dbt-edith starts only while you have that switch on, and which opens a
   connection only when you click a column. It reads your dbt profile itself, so
-  no credential passes through dbt-lens.
+  no credential passes through dbt-edith.
 
 ## Out of scope
 

@@ -106,7 +106,7 @@ impl PtySession {
         cmd.cwd(cwd);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.env("DBT_LENS", "1");
+        cmd.env("DBT_EDITH", "1");
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave); // so the reader sees EOF when the shell exits
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn an_unquoted_path_that_exists_is_not_split() {
-        let dir = std::env::temp_dir().join(format!("dbt-lens-pty-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dbt-edith-pty-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("my shell");

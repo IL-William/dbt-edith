@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Snowflake column-level lineage for dbt-lens.
+"""Snowflake column-level lineage for dbt-edith.
 
-dbt-lens is a single static binary with no HTTP client, no TLS and no credential
+dbt-edith is a single static binary with no HTTP client, no TLS and no credential
 handling, and it has to stay that way to keep cross-compiling to one dependency
-free .exe. So this script owns the Snowflake connection. dbt-lens starts it in
+free .exe. So this script owns the Snowflake connection. dbt-edith starts it in
 `serve` mode once the user switches Snowflake lineage on, and talks to it over
 stdin and stdout (docs/decisions/0016).
 
@@ -46,7 +46,7 @@ PROFILE_KEYS = (
 def profiles_path(profiles_dir: str | None) -> Path:
     """Where dbt itself looks: the flag, DBT_PROFILES_DIR, the project, ~/.dbt.
 
-    Always absolute: dbt-lens is told this path and has to open that file, not
+    Always absolute: dbt-edith is told this path and has to open that file, not
     something relative to wherever it happens to be running.
     """
     explicit = profiles_dir or os.environ.get("DBT_PROFILES_DIR")
@@ -99,7 +99,7 @@ def load_profile(profile: str, target: str | None, profiles_dir: str | None):
         "schema": cfg.get("schema"),
         # One browser prompt per machine rather than one per process.
         "client_store_temporary_credential": True,
-        "application": "dbt_lens",
+        "application": "dbt_edith",
     }
     if cfg.get("authenticator"):
         kwargs["authenticator"] = cfg["authenticator"]
@@ -277,7 +277,7 @@ def cmd_probe(args):
         print("  and check the account is Enterprise Edition or higher.")
     if acc:
         print("  ACCESS_HISTORY is readable: a bulk load of the whole project is possible,")
-        print("  which is much cheaper than one call per column. Tell dbt-lens about it.")
+        print("  which is much cheaper than one call per column. Tell dbt-edith about it.")
     else:
         print("  ACCESS_HISTORY is not readable: stay with per-column calls.")
     cur.close()
@@ -301,7 +301,7 @@ def lineage_request(req):
 
 
 def cmd_serve(args):
-    """JSON Lines for dbt-lens, one request per line on stdin, one reply per line on stdout.
+    """JSON Lines for dbt-edith, one request per line on stdin, one reply per line on stdout.
 
     Requests: {"id": 1, "relation": "DB.SCHEMA.OBJECT", "column": "C",
                "direction": "UPSTREAM", "depth": 2}, or {"op": "quit"}.
@@ -312,7 +312,7 @@ def cmd_serve(args):
     The phase says whether the profile is to blame or not: a connection that
     Snowflake refuses points at profiles.yml, a query that fails does not.
 
-    Rows name Snowflake objects, not dbt nodes: dbt-lens maps them itself,
+    Rows name Snowflake objects, not dbt nodes: dbt-edith maps them itself,
     because it knows the current manifest and the environment the user picked.
     The connection opens on the first request, never before, so a sign-in tab
     can only follow a click.
@@ -324,7 +324,7 @@ def cmd_serve(args):
         out.write(json.dumps(obj, separators=(",", ":")) + "\n")
         out.flush()
 
-    # Named before it is read, so dbt-lens can point at the file even when
+    # Named before it is read, so dbt-edith can point at the file even when
     # reading it is what fails.
     reply({"event": "profiles", "path": str(profiles_path(args.profiles_dir))})
     kwargs, target = load_profile(args.profile, args.target, args.profiles_dir)

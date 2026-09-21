@@ -1,4 +1,4 @@
-# dbt-lens
+# dbt-edith
 
 A very small browser IDE for dbt projects: file tree, editor, real terminal and
 lineage read straight from `target/manifest.json`.
@@ -8,12 +8,12 @@ embedded in the executable, so the machine that runs it needs nothing but the
 binary itself and a browser.
 
 ```
-dbt-lens /path/to/dbt/project
+dbt-edith /path/to/dbt/project
 ```
 
 It prints a `http://127.0.0.1:4321` URL and opens it.
 
-Changing dbt-lens itself rather than using it: [AGENTS.md](AGENTS.md) is the
+Changing dbt-edith itself rather than using it: [AGENTS.md](AGENTS.md) is the
 short version, and [docs/decisions/](docs/decisions/) says why it is built this
 way.
 
@@ -21,7 +21,7 @@ way.
 
 ### What you need
 
-- **A dbt project that has been parsed at least once.** dbt-lens reads
+- **A dbt project that has been parsed at least once.** dbt-edith reads
   `target/manifest.json` and never runs dbt itself, so that file has to exist.
   Any `dbt parse`, `dbt compile` or `dbt build` writes one.
 - **Rust, on the machine that builds.** Not on the machine that runs: the binary
@@ -39,12 +39,12 @@ way.
 ### Install it
 
 ```
-git clone https://github.com/IL-William/dbt-lens.git
-cd dbt-lens
+git clone https://github.com/IL-William/dbt-edith.git
+cd dbt-edith
 cargo install --path .
 ```
 
-That one command builds it and puts `dbt-lens` in `~/.cargo/bin`, which rustup
+That one command builds it and puts `dbt-edith` in `~/.cargo/bin`, which rustup
 already has on your `PATH`, so you can run it from any project afterwards. If
 the command is not found once it finishes, add that directory to your `PATH`.
 
@@ -52,8 +52,8 @@ The repository is public, so the clone needs no account and no key. There is no
 published download, though: building is how you get a binary.
 
 Prefer not to install it? `cargo build --release` leaves the same binary at
-`target/release/dbt-lens`, and everything below works with that path in place of
-the `dbt-lens` command.
+`target/release/dbt-edith`, and everything below works with that path in place of
+the `dbt-edith` command.
 
 After a `git pull`, run the same command again. The binary carries the UI inside
 it and does not update on its own.
@@ -73,19 +73,19 @@ rustup target add x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu
 ```
 
-Copy `target/x86_64-pc-windows-gnu/release/dbt-lens.exe` to the machine and run
+Copy `target/x86_64-pc-windows-gnu/release/dbt-edith.exe` to the machine and run
 it: no installer, no admin rights. It imports nothing but Windows system
 libraries, so there is no runtime to place beside it. The terminal uses ConPTY,
 which ships with Windows 10 and 11. Windows may warn about an unsigned
 executable that arrived by copy, which is what an in-house build looks like
 to it.
 
-To type `dbt-lens` from any project there, as you would elsewhere, keep the
+To type `dbt-edith` from any project there, as you would elsewhere, keep the
 `.exe` in a folder of your own and put that folder on your `PATH`. Neither step
 needs admin rights. In Git Bash:
 
 ```
-mkdir -p ~/bin && mv /c/Users/you/Downloads/dbt-lens.exe ~/bin/
+mkdir -p ~/bin && mv /c/Users/you/Downloads/dbt-edith.exe ~/bin/
 echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
 ```
 
@@ -128,7 +128,7 @@ new terminal, and check that `as --version` answers:
 echo 'export PATH="/c/Users/you/AppData/Local/Microsoft/WinGet/Packages/<WinLibs folder>/mingw64/bin:$PATH"' >> ~/.bashrc
 ```
 
-Then `cargo install --path .` from the clone builds it and drops `dbt-lens.exe`
+Then `cargo install --path .` from the clone builds it and drops `dbt-edith.exe`
 in `%USERPROFILE%\.cargo\bin`, which rustup already put on your `PATH`.
 
 The two errors this avoids, word for word, so that searching for them lands here:
@@ -137,26 +137,26 @@ The two errors this avoids, word for word, so that searching for them lands here
   was not found.
 - `dlltool.exe: CreateProcess`: `dlltool` ran but could not start `as`.
 
-To update, stop dbt-lens first, because Windows will not replace an `.exe` that
+To update, stop dbt-edith first, because Windows will not replace an `.exe` that
 is running, then `git pull` and `cargo install --path .` again.
 
 ### Run it
 
 ```
 cd /path/to/your-dbt-project
-dbt-lens
+dbt-edith
 ```
 
 With no argument it opens the current directory, so be in the one that holds
 `dbt_project.yml`. From anywhere else, pass that directory:
-`dbt-lens /path/to/your-dbt-project`. Either way it prints what it found, then
+`dbt-edith /path/to/your-dbt-project`. Either way it prints what it found, then
 opens a browser:
 
 ```
   reading /home/you/analytics/target/manifest.json
   2104 nodes in 180 ms  (412 models, 96 sources, 1508 tests)
 
-  dbt-lens  0.2.0  (v0.2.0, built 2026-09-18)
+  dbt-edith  0.3.0  (v0.3.0, built 2026-09-18)
   project   /home/you/analytics
   shell     /bin/zsh -l
   venv      dbt-env (activated, python 3.12)
@@ -167,7 +167,7 @@ Those lines are worth reading once: they say which project, manifest, shell and
 Python environment were picked up, which is where nearly every setup mistake
 shows up first. The version carries the build it came from, from
 `git describe`, so two installs of the same release are still told apart; the
-status bar shows the same thing at the bottom right of the page, and `dbt-lens
+status bar shows the same thing at the bottom right of the page, and `dbt-edith
 --version` prints it without starting anything. `Ctrl+C` in that terminal stops the server. Every flag is listed
 under [Options](#options).
 
@@ -188,7 +188,7 @@ it is used against day to day.
 | the Snowflake lineage switch says `failed` | the script could not start, and its tooltip says why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | no browser opened | `--no-open`, or no default browser | open the printed URL by hand |
-| a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-lens --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-lens first, since the `.exe` cannot be replaced while it runs |
+| a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
 
 ## Why
 
@@ -208,9 +208,12 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when the switch is on |
 | hover a lineage node, a `ref()` or a `var()` | a card with what it is |
+| the Search tab in the sidebar | find a word inside every file, not just in their names |
+| click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
 | click a lineage node | select it, fill the Node panel |
 | double-click a lineage node | re-centre the lineage on it and open its file |
 | `+N` badge on a node | pull in one more level of parents or children |
+| the Selection button above the graph | draw your own set of models, in dbt selector syntax |
 | wheel / drag | zoom and pan the lineage |
 
 Opening a `.sql` or `.yml` file that belongs to a dbt node moves the lineage
@@ -294,6 +297,23 @@ of the project put together. `dbt_packages` is indexed but ranked below your own
 files, so reading an automate_dv macro is one search away without ever
 outranking your own code.
 
+### Search in file contents
+
+The **Search** tab in the sidebar looks inside every indexed file, which
+`Cmd/Ctrl + K` cannot: that one matches names, so a column used in forty models
+is invisible to it. Type three letters or more and the matching lines appear
+grouped by file, with the match highlighted; clicking one opens the file in the
+preview tab with the cursor on that line.
+
+It is case-insensitive and plain text, not a pattern. A full pass over a 12 000
+file project takes well under a second, so results follow typing rather than
+waiting for Enter. Files it passed over, binaries and anything over 2 MB, are
+counted in the status line rather than quietly dropped.
+
+`.env` files are never opened by it (0020). Searching for a variable's name
+finds where it is used, never where it is set; the Manage environments panel
+answers that other question, by name.
+
 ### Explorer
 
 Folders carry the state of what is inside them:
@@ -313,7 +333,7 @@ File types get their own icon and colour; `.sql` files use a database glyph.
 ### Column lineage
 
 Column-level edges come from Snowflake's `SNOWFLAKE.CORE.GET_LINEAGE`, read by
-`tools/sf_lineage.py`. dbt-lens itself never connects to Snowflake: it has no
+`tools/sf_lineage.py`. dbt-edith itself never connects to Snowflake: it has no
 HTTP client, no TLS and no credential handling, and keeping it that way is what
 lets it ship as one dependency-free binary. The script owns the connection and
 reads your dbt profile, so SSO, key-pair and password targets all work
@@ -326,7 +346,7 @@ and role, all named in the switch's tooltip. Nothing connects until you click a
 column, and the first click of a session may open a sign-in tab.
 
 In the top bar, next to the model counts, `profiles.yml` names the file the
-script read, and opens it in the editor. It is the one file outside the project dbt-lens opens, and only
+script read, and opens it in the editor. It is the one file outside the project dbt-edith opens, and only
 because the script says which one it is (0017). Saving it restarts the script,
 since the profile is read once, when it starts. When Snowflake refuses the
 connection, the message points at that file rather than leaving you with an
@@ -366,7 +386,7 @@ python tools/sf_lineage.py dump --select model_a,model_b \
   --out target/column_lineage.json
 ```
 
-dbt-lens picks `target/column_lineage.json` up on its own, the same way it picks
+dbt-edith picks `target/column_lineage.json` up on its own, the same way it picks
 up `catalog.json`, and reloads when the file changes. `--column-lineage <path>`
 overrides the location. With edges present, the Catalog > Columns table gains a
 Lineage column and the canvas gains a Models / Columns switch. With no edges and
@@ -397,7 +417,7 @@ not necessarily any particular environment: a shell that sourced a CI `.env`
 file yields CI values.
 
 When a manifest comes from a developer sandbox, where nearly every model is
-built into one `database.schema`, dbt-lens detects it once and says so, rather
+built into one `database.schema`, dbt-edith detects it once and says so, rather
 than flagging every model as moved. A model built somewhere unexpected is only
 highlighted when it is the exception. The comparison is always between the
 parsed config and the built location, which come from the same parse. Case
@@ -423,7 +443,7 @@ a glance.
   dbt actually took when it parsed, and marked as such. Anything else, filters
   or `target.*` for instance, is shown as not evaluated rather than guessed.
 - **The file alone.** Values come only from the chosen file, never from the
-  shell dbt-lens was started in. So *missing* means "not defined in this file",
+  shell dbt-edith was started in. So *missing* means "not defined in this file",
   which is not quite what dbt would see after sourcing several files in a row.
   `${...}` interpolation is kept as text and not evaluated.
 - **Flagged, not shown as real.** Variables set to a placeholder (`N/A`, `TODO`,
@@ -441,9 +461,9 @@ the project itself:
 
 | | |
 | --- | --- |
-| macOS, Linux | `$XDG_CONFIG_HOME/dbt-lens`, else `~/.config/dbt-lens` |
-| Windows | `%APPDATA%\dbt-lens` |
-| anywhere | `DBT_LENS_CONFIG_DIR` overrides both |
+| macOS, Linux | `$XDG_CONFIG_HOME/dbt-edith`, else `~/.config/dbt-edith` |
+| Windows | `%APPDATA%\dbt-edith` |
+| anywhere | `DBT_EDITH_CONFIG_DIR` overrides both |
 
 Each browser tab keeps its own environment. The stored one is only where a new
 tab starts.
@@ -460,6 +480,52 @@ exists in the warehouse. The legend in the corner lists only the
 materializations actually on screen. The same colours are used for the dots in
 the sidebar and the catalog, so a model looks the same everywhere.
 
+### Selecting with an expression
+
+The **Selection** button above the graph swaps the canvas from one model's
+neighbourhood to whatever a dbt selector matches, so you can draw the set you
+actually work on:
+
+```
+stg_customers dim_customers+ fct_orders
+```
+
+A space is a union, a comma is an intersection, and `--exclude` may follow on
+the same line. Whole commands paste in: `dbt ls -s "a b" --exclude tag:x` is
+understood, and the box rewrites itself to the part that was resolved.
+
+| | |
+| --- | --- |
+| `my_model` | by name, or by a dotted path into the fqn (`shop.staging.*`, `staging.my_model`) |
+| `+my_model`, `my_model+` | everything upstream, everything downstream |
+| `2+my_model`, `my_model+3` | as far as that many levels |
+| `@my_model` | it, its children, and every parent of those children |
+| `tag:`, `path:`, `file:`, `package:` | the usual dbt methods, with `*` and `?` wildcards |
+| `resource_type:`, `source:`, `exposure:` | by kind, by source, by exposure |
+| `config.materialized:` | and `config.schema`, `config.database`, `config.alias`, `config.incremental_strategy`, `config.unique_key` |
+
+Disabled nodes are never returned, as in dbt. Tests take part only when the
+**tests** checkbox is on, and then a test joins whenever a parent of it did,
+which is dbt's own default. A term that matches nothing is called out under the
+box rather than dropped, and it says whether the term matched only disabled
+nodes or only tests. The count beside the box is the whole selection; the line
+in the corner is what fits on the canvas, which says `400 of 2422 drawn` when a
+selection is larger than the canvas will take.
+
+**Nothing runs dbt for this.** The expression is resolved against
+`manifest.json`, which is the same data dbt reads, so the answer arrives in
+milliseconds and needs no profile ([0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md)).
+The price is that the answer is this tool's, not dbt's. Two buttons exist for
+that: **Copy** puts the matching names on the clipboard one per line, the way
+`dbt ls --output name` prints them, and **dbt ls** types the equivalent command
+into the Terminal tab without running it, so you can press Enter and compare.
+With the tests checkbox off, add `--exclude "resource_type:test"` to dbt's side,
+which is the only routine reason the two counts differ.
+
+A method this build does not know, `state:` for instance, is refused by name
+rather than ignored, because a silently dropped term would draw far too much and
+look right doing it.
+
 ### Compiled SQL
 
 A Compiled tab shows what dbt last wrote to `target/compiled/`, with its age.
@@ -467,7 +533,7 @@ It turns amber when the compiled file is over an hour old, or when the model or
 its schema file changed after it was compiled, which is the case that actually
 bites: reading compiled SQL that no longer matches the source.
 
-dbt-lens never compiles anything itself. dbt runs where you run it, so when
+dbt-edith never compiles anything itself. dbt runs where you run it, so when
 there is no compiled file the tab names the paths it checked and offers to type
 `dbt compile --select <model>` into the integrated terminal, without pressing
 Enter for you.
@@ -475,7 +541,7 @@ Enter for you.
 ### Python environment
 
 The status bar shows the virtualenv, labelled `venv` when it was active as
-dbt-lens started and `venv (inactive)` when it was merely found in the project,
+dbt-edith started and `venv (inactive)` when it was merely found in the project,
 with the Python and dbt versions in the tooltip. When several are present, the
 one that actually contains dbt wins.
 
@@ -527,10 +593,24 @@ top of the sidebar lists every open file with its own close and save buttons,
 plus save-all and close-all in its header. Closing a tab never touches the file
 on disk.
 
+### Breadcrumbs
+
+The row under the tabs says where you are twice over: the file's path through
+the project, then, inside a `.yml` or a `.md`, where the cursor sits in the
+document, as `models > 0 > data_tests`. Every segment is a button. A path
+segment opens a menu of the folder it sits in, where a folder drills one level
+down and a file opens in a preview tab; a document segment lists the keys or the
+list entries beside it and jumps the cursor to the one you pick. Arrow keys move
+in the menu, Enter picks, Escape closes.
+
+A `.sql` file shows its path and stops there. Finding a CTE name honestly means
+masking SQL strings and comments first, and a bar that is occasionally wrong is
+worse than one that is short.
+
 ### Options
 
 ```
-dbt-lens [PROJECT]                       dbt project root, default the current directory
+dbt-edith [PROJECT]                       dbt project root, default the current directory
          [-p, --port 4321]               tries up to 20 ports from there, then gives up
          [--manifest path/manifest.json] default <project>/target/manifest.json
          [--catalog path/catalog.json]   default <project>/target/catalog.json
@@ -540,7 +620,7 @@ dbt-lens [PROJECT]                       dbt project root, default the current d
 ```
 
 A relative path in `--manifest`, `--catalog` or `--column-lineage` is relative
-to where you run the command, not to the project. `dbt-lens --help` prints the
+to where you run the command, not to the project. `dbt-edith --help` prints the
 same list. The terminal runs `$SHELL -l` on macOS
 and Linux, and Git Bash on Windows, falling back to PowerShell when Git Bash is
 not installed.
@@ -576,6 +656,8 @@ $JSC web/tests/location.js    # written, resolved and built locations
 $JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
 $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
+$JSC web/tests/grep.js        # what a search result says, and where the match falls
+$JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -589,9 +671,10 @@ python3 tools/test_sf_lineage.py
 
 ```
 src/manifest.rs   manifest.json -> raw structs (only the fields the UI needs)
-src/graph.rs      compact node vector, adjacency, search, lineage BFS
+src/graph.rs      compact node vector, adjacency, search, lineage BFS, selection layering
 src/api.rs        HTTP + WebSocket handlers
 src/collin.rs     the column lineage cache, merged like catalog.json
+src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
 src/compiled.rs   compiled SQL lookup and freshness
 src/envs.rs       .env parsing and location resolution per environment
@@ -602,7 +685,8 @@ src/venv.rs       which Python environment is in play
 src/files.rs      filesystem access, confined to the project root
 src/pty.rs        one PTY per terminal connection
 web/              UI: no framework, CodeMirror 5 and xterm.js are vendored
-web/lineage.js    layered graph layout and SVG renderer, model and column modes
+web/app.js        the shell, including the document outline behind the breadcrumbs
+web/lineage.js    layered graph layout and SVG renderer, model, column and selection modes
 web/vendor/       CodeMirror, xterm, the merge addon and diff-match-patch
 tools/            sf_lineage.py, the only piece that talks to Snowflake
 ```
@@ -616,9 +700,9 @@ covered.
 
 ## Not there yet
 
-Compiled SQL preview, running a selector straight from the graph, persisting
-open tabs between sessions, and filtering column lineage by edge kind once we
-know how dense the real graph is. A second lineage source is sketched out but
+Compiled SQL preview, named selectors from `selectors.yml`, persisting open
+tabs between sessions, and filtering column lineage by edge kind once we know
+how dense the real graph is. A second lineage source is sketched out but
 not built: dbt Fusion computes column lineage locally with
 `dbt compile --static-analysis strict --write-index --write-lineage`, which
 needs no warehouse privileges and covers uncommitted SQL.
