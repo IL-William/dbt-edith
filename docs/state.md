@@ -1,7 +1,7 @@
 # Where the work stands
 
 Rewritten as things change, unlike [decisions/](decisions/), which is appended
-to. Last updated 2026-09-19.
+to. Last updated 2026-09-21.
 
 ## Shipped
 
@@ -42,6 +42,17 @@ refusing an unsupported method by name and by a button that types the
 equivalent `dbt ls` into the terminal for you to compare. Measured on a
 109 MB manifest: one term with a `+` resolves 265 nodes in well under 10 ms.
 
+Manifest freshness, added 2026-09-21: a dot beside Reload manifest says whether
+the lineage on screen still matches the files dbt would parse, and clicking it
+runs `dbt parse` in the terminal. Freshness is measured in file times rather
+than in commits (0025), because committing changes no file and pulling an old
+commit changes several. git is asked one question only, per file already known
+to be newer: is it dirty? That separates the user's own unsaved work (amber)
+from a checkout or a pull they have not re-parsed since (red). How far the
+branch trails the default one rides beside the dot in its own segment and never
+colours it. `api::watch_remote` fetches every ten minutes so that count means
+something, read only and deadlined like the rest of 0007.
+
 Every route sits behind the Host and Origin guard added on 2026-09-17 after a
 security audit found the terminal reachable from any web page (0015). The same
 pass confined `/api/git/diff` to the project and added `SECURITY.md`.
@@ -55,7 +66,8 @@ pass confined `/api/git/diff` to the project and added `SECURITY.md`.
 2. **Run history.** `run_results.json` gives status and timing per node. Status
    as the box stroke in the graph, plus staleness against the manifest. Watch
    for partial runs: a node absent from the file was not run, which is not the
-   same as not tested.
+   same as not tested. Per-node freshness would read the same mtimes 0025
+   already walks, so the walk is the piece to reuse rather than repeat.
 3. **Named selectors, then orchestration coverage.** `src/select.rs` resolves a
    typed expression; what is left is reading the project's `selectors.yml` and
    offering those by name, which needs a hand-written YAML scanner (0018). Only
@@ -71,8 +83,9 @@ local index (`dbt compile --static-analysis strict --write-index
 --write-lineage`), which needs no warehouse privileges and covers uncommitted
 SQL. It fills the same cache file (0008).
 
-0.4.0 ships the breadcrumb bar, the selector mode in the lineage tab and the
-rename to Edith, which reached main together. 0.2.0 added the hover cards;
+0.5.0 ships the manifest freshness badge. 0.4.0 shipped the breadcrumb bar, the
+selector mode in the lineage tab and the rename to Edith, which reached main
+together. 0.2.0 added the hover cards;
 since 0.2.0 the binary also carries a build stamp (`git describe`, or a build
 date without a `.git`), shown by `--version`, by the startup banner and in the
 status bar, because until then two installs of the same release were

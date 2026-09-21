@@ -3,7 +3,8 @@
 use crate::collin::{self, RawColLineage};
 use crate::compiled;
 use crate::envs;
-use crate::files;
+use crate::files::{self, mtime_secs};
+use crate::freshness;
 use crate::git::{self, GitInfo};
 use crate::graph::{ColRef, Graph, Kind, Place};
 use crate::manifest::{RawCatalog, RawManifest};
@@ -41,6 +42,9 @@ pub struct AppState {
     pub graph: RwLock<Arc<Graph>>,
     pub shell: ShellSpec,
     pub git: tokio::sync::Mutex<Option<(std::time::Instant, GitInfo)>>,
+    /// Same idea as `git`, for the same reason: the badge polls on a timer and
+    /// each answer costs a walk of the resource directories.
+    pub fresh: tokio::sync::Mutex<Option<(std::time::Instant, freshness::Freshness)>>,
     /// The Snowflake script, running only while the user has it switched on (0016).
     pub sidecar: sidecar::Sidecar,
     /// Held while the column-lineage cache is merged and written, and while the
@@ -68,15 +72,6 @@ impl AppState {
 #[derive(rust_embed::RustEmbed)]
 #[folder = "web/"]
 struct Assets;
-
-pub fn mtime_secs(path: &Path) -> u64 {
-    std::fs::metadata(path)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
 
 pub fn load_graph(manifest_path: &Path, catalog_path: &Path, cll_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
@@ -131,6 +126,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/file", get(read_file).put(write_file))
         .route("/api/resolve", post(resolve))
         .route("/api/git", get(git_status))
+        .route("/api/freshness", get(freshness_status))
         .route("/api/git/branches", get(git_branches))
         .route("/api/git/diff", get(git_diff))
         .route("/api/git/outgoing", get(git_outgoing))
@@ -1427,11 +1423,14 @@ async fn write_file(State(st): State<Arc<AppState>>, Json(body): Json<WriteBody>
 
 /// Working-tree status, cached briefly so that polling from the explorer does
 /// not fork a git process on every tick.
-async fn git_status(State(st): State<Arc<AppState>>) -> Response {
+/// The working-tree status, cached for a moment. The git panel and the
+/// freshness badge poll on their own timers and both need it, so they share one
+/// `git status` rather than running one each.
+async fn git_cached(st: &Arc<AppState>) -> GitInfo {
     let mut cached = st.git.lock().await;
     if let Some((at, info)) = cached.as_ref() {
         if at.elapsed() < std::time::Duration::from_millis(1500) {
-            return Json(info.clone()).into_response();
+            return info.clone();
         }
     }
     let root = st.root.clone();
@@ -1439,7 +1438,48 @@ async fn git_status(State(st): State<Arc<AppState>>) -> Response {
         .await
         .unwrap_or_default();
     *cached = Some((std::time::Instant::now(), info.clone()));
-    Json(info).into_response()
+    info
+}
+
+async fn git_status(State(st): State<Arc<AppState>>) -> Response {
+    Json(git_cached(&st).await).into_response()
+}
+
+/// How far `manifest.json` has drifted from the files it was parsed out of.
+/// Polled beside the git status, so it is cached for about as long.
+async fn freshness_status(State(st): State<Arc<AppState>>) -> Response {
+    {
+        let cached = st.fresh.lock().await;
+        if let Some((at, f)) = cached.as_ref() {
+            if at.elapsed() < std::time::Duration::from_millis(2500) {
+                return Json(f.clone()).into_response();
+            }
+        }
+    }
+    let git = git_cached(&st).await;
+    let graph = st.graph.read().await.clone();
+    let manifest_at = graph.meta.manifest_mtime;
+    // This project's own nodes, both files each: a model's schema.yml
+    // disappearing changes the manifest as surely as the model's file does. A
+    // node from an installed package is left out because its path is relative
+    // to the package directory, so it would read as a file that had vanished.
+    let project = graph.meta.project.clone();
+    let mut node_files: Vec<String> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.package.is_empty() || n.package == project)
+        .flat_map(|n| [n.file.clone(), n.yml.clone()])
+        .filter(|p| !p.is_empty())
+        .collect();
+    node_files.sort();
+    node_files.dedup();
+
+    let root = st.root.clone();
+    let f = tokio::task::spawn_blocking(move || freshness::check(&root, manifest_at, &node_files, &git))
+        .await
+        .unwrap_or_default();
+    *st.fresh.lock().await = Some((std::time::Instant::now(), f.clone()));
+    Json(f).into_response()
 }
 
 /// Runs one git action off the async runtime, then drops the status cache so
@@ -1451,6 +1491,7 @@ where
     let root = st.root.clone();
     let out = tokio::task::spawn_blocking(move || f(root)).await;
     *st.git.lock().await = None;
+    *st.fresh.lock().await = None;
     match out {
         Ok(run) => Json(run).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -1652,6 +1693,22 @@ async fn terminal_loop(socket: WebSocket, st: Arc<AppState>, q: TermQuery) {
     session.kill();
 }
 
+/// Keeps `origin/main` current for the freshness badge, which reads refs off
+/// disk and never reaches the network itself. Ten minutes because the badge
+/// only counts commits, and a fetch per poll would be a network call every five
+/// seconds for an answer that changes a few times a day. Read-only, deadlined,
+/// and silent on failure: offline, the badge says when the refs were last
+/// refreshed instead of claiming the branch is up to date (0007).
+pub async fn watch_remote(st: Arc<AppState>) {
+    loop {
+        let root = st.root.clone();
+        if tokio::task::spawn_blocking(move || git::fetch_quiet(&root)).await.unwrap_or(false) {
+            *st.fresh.lock().await = None;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+    }
+}
+
 /// Background poll: reloads whenever dbt rewrites manifest.json or catalog.json,
 /// or something other than a click rewrites the column-lineage cache.
 pub async fn watch_artifacts(st: Arc<AppState>) {
@@ -1680,6 +1737,9 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         if let Ok(Ok(g)) = tokio::task::spawn_blocking(move || load_graph(&mp, &cp, &lp)).await {
             eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
             *st.graph.write().await = Arc::new(g);
+            // A parse just landed, so the badge should turn green on the next
+            // poll rather than a cache lifetime later.
+            *st.fresh.lock().await = None;
         }
     }
 }
@@ -1754,6 +1814,7 @@ mod tests {
             settings: crate::settings::Store::new(root),
             graph: RwLock::new(Arc::new(Graph::build(Default::default(), &manifest, 0, 0))),
             git: tokio::sync::Mutex::new(None),
+            fresh: tokio::sync::Mutex::new(None),
             shell: ShellSpec { program: "/bin/sh".into(), args: Vec::new() },
             sidecar: sidecar::Sidecar::new(false, Default::default()),
             cll_lock: tokio::sync::Mutex::new(()),

@@ -208,6 +208,7 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when the switch is on |
 | hover a lineage node, a `ref()` or a `var()` | a card with what it is |
+| the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
 | click a lineage node | select it, fill the Node panel |
@@ -255,6 +256,37 @@ dbt-core, and
 `catalog.json` is picked up automatically, filling in
 the real warehouse types and listing the columns that exist in the warehouse but
 are not documented (shown in italics).
+
+### Is the lineage still true?
+
+Beside **Reload manifest** sits a dot and the manifest's age. The dot answers
+one question: does the manifest still match the files dbt would parse right
+now?
+
+| | |
+| --- | --- |
+| green | nothing dbt parses has changed since the manifest was written |
+| amber | files are newer, and all of them are yours, saved but not committed |
+| red | files are newer and already committed: a checkout, a pull or a merge moved them under this manifest |
+| grey | there is no `manifest.json` yet |
+
+Hovering says which files, how many, what the last commit was, and what to do
+about it. Clicking runs `dbt parse` in the terminal, which is the command that
+turns the dot green again. dbt runs there, in your shell and your environment,
+never from the server.
+
+Green does not mean recent. A manifest parsed three weeks ago on a branch
+nobody has touched for three weeks is correct, and the age beside the dot is
+there to say so. What makes a manifest wrong is a file moving under it, not
+time passing.
+
+A second segment appears when your branch has fallen behind the default one:
+`main +7` means `origin/main` has seven commits you do not have. It never
+changes the colour, because a branch behind `main` still has a manifest that is
+true for the code in front of you; it is there so you know to pull before
+trusting the lineage as a picture of production. That count is only as current
+as your remote refs, so dbt-edith fetches every ten minutes in the background,
+read only, and the card says when the refs were last refreshed.
 
 ### Hover cards
 
@@ -677,6 +709,7 @@ src/collin.rs     the column lineage cache, merged like catalog.json
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
 src/compiled.rs   compiled SQL lookup and freshness
+src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: block of dbt_project.yml, read by hand
 src/git.rs        working tree status and the git commands the UI can run

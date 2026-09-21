@@ -6,6 +6,7 @@ mod collin;
 mod compiled;
 mod envs;
 mod files;
+mod freshness;
 mod git;
 mod graph;
 mod manifest;
@@ -147,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
         settings,
         graph: tokio::sync::RwLock::new(Arc::new(graph)),
         git: tokio::sync::Mutex::new(None),
+        fresh: tokio::sync::Mutex::new(None),
         shell: shell.clone(),
         sidecar: sidecar::Sidecar::new(snowflake_on, Default::default()),
         cll_lock: tokio::sync::Mutex::new(()),
@@ -154,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));
+    tokio::spawn(api::watch_remote(state.clone()));
     tokio::spawn(api::watch_files(state.clone()));
     if snowflake_on {
         // Starting runs no query: the script connects on the first click (0016).

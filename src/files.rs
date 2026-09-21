@@ -10,6 +10,18 @@ const NOT_INDEXED: &[&str] = &["target", "logs", ".git", "node_modules", "__pyca
 const MAX_INDEXED: usize = 60_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
 
+/// Seconds since the epoch, or 0 when the file is missing or unreadable. Every
+/// freshness comparison in the tool is between two of these, so a missing file
+/// reads as infinitely old rather than as an error to thread through.
+pub fn mtime_secs(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Turns a project-relative path into an absolute one, refusing anything that
 /// would escape the project root (`..`, absolute paths, symlinks pointing out).
 pub fn resolve(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {

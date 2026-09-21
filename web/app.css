@@ -15,6 +15,7 @@
   --exposure: #ef7a9b;
   --warn: #e0a34b;
   --ok: #4ec78d;
+  --bad: #e06c75;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --side-w: 270px;
@@ -127,6 +128,31 @@ kbd {
   font: 11px var(--mono); color: var(--fg-dim);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 7px;
 }
+/* Manifest freshness, beside the reload button. The dot carries the state and
+   the text carries the age, because a colour on its own cannot say "two hours".
+   Drift from the default branch sits in its own dim segment: it is worth
+   knowing, but it does not make the lineage on screen wrong. */
+.freshbadge {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font: 11px var(--mono); color: var(--fg-dim);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
+}
+.freshbadge:hover { background: #26303e; border-color: #3a475a; }
+.freshbadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: 0 0 auto; }
+.freshbadge[data-tone="ok"] .dot { background: var(--ok); }
+.freshbadge[data-tone="warn"] .dot { background: var(--warn); }
+.freshbadge[data-tone="bad"] .dot { background: var(--bad); }
+.freshbadge[data-tone="warn"] .lbl { color: var(--warn); }
+.freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
+.freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
+.freshbadge .drift:empty { display: none; }
+/* The same dot again at the head of the hover card, so the card is visibly
+   about the thing the pointer is on. */
+.hovercard .freshdot { border-radius: 50%; background: var(--fg-dim); }
+.hovercard .freshdot[data-tone="ok"] { background: var(--ok); }
+.hovercard .freshdot[data-tone="warn"] { background: var(--warn); }
+.hovercard .freshdot[data-tone="bad"] { background: var(--bad); }
+
 .btn {
   font: 12px var(--ui); color: var(--fg); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer;

@@ -69,6 +69,13 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Rust modules** are one concern each, with a header comment that states the
   concern and any invariant. `src/git.rs` is the example to follow.
 - **API payloads** are `serde` structs in `src/api.rs`, skipping empty fields.
+- **Branches** are `<kind>/<what-it-does>`, kebab-case: `feature/` for a new
+  capability, `fix/` for a correction, `deps/` for a dependency bump, and
+  `archive/<area>/` for history kept but never merged. The kind comes first
+  because that is what the branch list gets read for.
+- **Commit subjects** say what the commit does, as a sentence and not a label:
+  "Fetch a column's Snowflake lineage on click, behind a switch". The body is
+  where the why goes, and what was rejected, which no diff can show.
 
 ## Where to read next
 
@@ -91,6 +98,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | show the structure inside a file, or parse SQL for it | [0022](docs/decisions/0022-the-outline-is-scanned-in-the-browser.md) |
 | read a `.sql` file to work out anything at all | [0002](docs/decisions/0002-lineage-from-the-manifest.md), [0023](docs/decisions/0023-column-lineage-may-be-parsed.md) |
 | resolve a dbt selector, or add a selector method | [0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md) |
+| change what the freshness badge claims, or compare the manifest with a commit | [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 
@@ -104,7 +112,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `settings`, `git`, `collin`, `select`,
-`sidecar`, `compiled`, `venv`, `files`, `pty`. `build.rs` stamps the binary with
-`git describe`, so two builds of one release can be told apart. `web/` is the
+`sidecar`, `compiled`, `freshness`, `venv`, `files`, `pty`. `build.rs` stamps
+the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

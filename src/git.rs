@@ -388,3 +388,84 @@ pub fn diff(root: &Path, rel: &str, on_disk: &Path, max_bytes: usize) -> DiffVie
 pub fn merge_abort(root: &Path) -> GitRun {
     run(root, &["merge", "--abort"], &[], Duration::from_secs(60))
 }
+
+// ----------------------------------------------------------------- drift ----
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct Head {
+    /// Abbreviated, because it is shown and never passed back to git.
+    pub sha: String,
+    pub subject: String,
+    /// Committer date. Not compared against the manifest's mtime: committing
+    /// changes no file, so a commit made after a parse leaves it still true.
+    pub at: u64,
+}
+
+pub fn head(root: &Path) -> Head {
+    let Some(line) = read(root, &["log", "-1", "--format=%h%x09%ct%x09%s"]) else {
+        return Head::default();
+    };
+    let mut f = line.trim_end().splitn(3, '\t');
+    Head {
+        sha: f.next().unwrap_or("").to_string(),
+        at: f.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+        subject: f.next().unwrap_or("").to_string(),
+    }
+}
+
+#[derive(serde::Serialize, Clone, Default)]
+pub struct Drift {
+    /// The default branch as this clone knows it, `origin/main` or similar.
+    pub base: String,
+    /// Commits on `base` that this branch does not have.
+    pub behind: u32,
+    /// When a fetch last wrote FETCH_HEAD, so an answer resting on week-old
+    /// refs can say so instead of looking authoritative.
+    pub fetched_at: u64,
+}
+
+/// Which remote branch the others are cut from. `origin/HEAD` is what a clone
+/// records; a repository initialised locally has no such ref, hence the two
+/// conventional names as a fallback.
+fn base_ref(root: &Path) -> String {
+    if let Some(r) = read(root, &["rev-parse", "--abbrev-ref", "origin/HEAD"]) {
+        let r = r.trim();
+        if !r.is_empty() && r != "origin/HEAD" {
+            return r.to_string();
+        }
+    }
+    for name in ["origin/main", "origin/master"] {
+        if read(root, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{name}")]).is_some() {
+            return name.to_string();
+        }
+    }
+    String::new()
+}
+
+/// How far this branch has fallen behind the default branch, read from refs
+/// already on disk. Nothing here touches the network: `fetch_quiet` is what
+/// keeps those refs current, and this only reports what it finds.
+pub fn drift(root: &Path) -> Drift {
+    let mut d = Drift {
+        fetched_at: read(root, &["rev-parse", "--git-dir"])
+            .map(|g| crate::files::mtime_secs(&root.join(g.trim()).join("FETCH_HEAD")))
+            .unwrap_or(0),
+        ..Default::default()
+    };
+    d.base = base_ref(root);
+    if d.base.is_empty() {
+        return d;
+    }
+    d.behind = read(root, &["rev-list", "--count", &format!("HEAD..{}", d.base)])
+        .and_then(|c| c.trim().parse().ok())
+        .unwrap_or(0);
+    d
+}
+
+/// The fetch behind the freshness badge, run on a long timer rather than by a
+/// click. Read-only, no prune, and a failure is dropped: offline, or on a
+/// machine whose key needs a passphrase, the badge falls back to refs already
+/// on disk and says when they were last refreshed.
+pub fn fetch_quiet(root: &Path) -> bool {
+    run(root, &["fetch", "--quiet"], NET_ENV, Duration::from_secs(60)).ok
+}

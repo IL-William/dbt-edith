@@ -1451,6 +1451,31 @@ async function refreshGit() {
   } catch { /* git missing or not a repo */ }
 }
 
+/* Repainted only when the answer changed, like the git poll above: this runs
+   every few seconds and the badge is usually saying the same thing. */
+async function refreshFreshness() {
+  try {
+    const f = await api.get('/api/freshness');
+    const key = JSON.stringify(f);
+    if (key === S.freshKey) return;
+    S.freshKey = key;
+    S.fresh = f;
+    paintFreshness(f);
+  } catch { /* the badge is the one thing that must never interrupt anything */ }
+}
+
+function paintFreshness(f) {
+  const el = $('#fresh-badge');
+  const b = freshnessBadge(f);
+  el.classList.remove('hidden');
+  el.dataset.tone = b.tone;
+  el.querySelector('.lbl').textContent = b.label;
+  el.querySelector('.drift').textContent = b.drift;
+  // No `title`: the hover card says all of this, and a native tooltip on top
+  // of it would arrive a second later and say it again.
+  el.setAttribute('aria-label', b.head + '. ' + b.desc);
+}
+
 function markTreeSelection(path) {
   $$('#tree .row').forEach((r) => r.classList.toggle('sel', r.dataset.path === path));
 }
@@ -2611,16 +2636,95 @@ function humanAge(secs) {
   return Math.floor(secs / 86400) + 'd';
 }
 
-/* Types a command into the integrated terminal and stops there: running it is
-   the user's decision, and dbt is theirs to launch. */
-function sendToTerminal(cmd) {
+/* What the badge beside Reload manifest shows, and what its hover card says.
+   The dot's colour answers one question only, the one that decides whether the
+   lineage on screen can be trusted: does this manifest still match the files
+   dbt would parse? Drift from the default branch is reported in its own
+   segment rather than in the colour, because a feature branch behind main
+   still has a manifest that is true for the code in front of you.
+
+   The card carries the words. "manifest 3d" and "main +10" are a reminder of
+   something you already understand, not an explanation, so every number the
+   badge shows is spelled out in a sentence here. Pure, so every state is
+   testable without a DOM. */
+function freshnessBadge(f) {
+  const n = (k) => f[k + '_n'] || 0;
+  const plural = (k, one, many) => n(k) + ' ' + (n(k) === 1 ? one : many);
+  const tone = { fresh: 'ok', edited: 'warn', stale: 'bad', missing: 'none' }[f.state] || 'none';
+  const label = f.state === 'missing' ? 'no manifest' : 'manifest ' + humanAge(f.age_secs || 0);
+
+  const head = {
+    fresh: 'The lineage matches your files',
+    edited: 'Your saved edits are not in it yet',
+    stale: 'The files moved under this manifest',
+    missing: 'No manifest.json yet',
+  }[f.state] || 'Unknown state';
+
+  const desc = {
+    fresh: 'Nothing dbt parses has changed since this manifest was written, so the graph is showing what your project actually says.',
+    edited: 'You have saved changes dbt has not parsed. The graph still shows the project as it was before them.',
+    stale: 'Files changed and were committed after this manifest was written. The graph may be showing models that no longer look like this.',
+    missing: 'There is nothing to draw a lineage from until dbt writes one.',
+  }[f.state] || '';
+
+  const when = f.state === 'missing' ? ''
+    : 'written ' + new Date((f.manifest_at || 0) * 1000).toLocaleString() + ', ' + humanAge(f.age_secs || 0) + ' ago';
+
+  // Split so the card can lead with the file name and dim the folder: these
+  // paths run to eighty characters and the last segment is the one that reads.
+  const split = (p) => {
+    const cut = p.lastIndexOf('/');
+    return { full: p, name: cut < 0 ? p : p.slice(cut + 1), dir: cut < 0 ? '' : p.slice(0, cut).split('/').pop() };
+  };
+  const group = (key, heading) => {
+    if (!n(key)) return null;
+    const shown = (f[key] || []).map(split);
+    return { head: heading, paths: shown, more: n(key) - shown.length };
+  };
+  const groups = [
+    group('committed', plural('committed', 'file', 'files') + ' changed since, already committed'),
+    group('gone', plural('gone', 'file', 'files') + ' the manifest names no longer exist'),
+    group('edited', plural('edited', 'file', 'files') + ' saved since, not committed'),
+  ].filter(Boolean);
+
+  const d = f.drift || {};
+  const h = f.head || {};
+  const facts = [];
+  if (n('committed')) facts.push('A checkout, a pull or a merge brought them in.');
+  if (h.sha) facts.push('This branch sits at ' + h.sha + (h.subject ? ', "' + h.subject + '"' : '') + '.');
+  let drift = '';
+  if (d.base && d.behind) {
+    drift = d.base.replace(/^origin\//, '') + ' +' + d.behind;
+    facts.push(d.base + ' has ' + d.behind + ' commit' + (d.behind === 1 ? '' : 's')
+      + ' this branch does not have, so the lineage is your branch and not production.');
+  } else if (d.base) {
+    facts.push('This branch has everything ' + d.base + ' has.');
+  }
+  if (d.base) {
+    // A count of commits is only as current as the refs it was counted from,
+    // so the card says when they were last refreshed rather than implying now.
+    facts.push(d.fetched_at
+      ? 'Remote refs last fetched ' + humanAge(Math.max(0, Math.floor(Date.now() / 1000) - d.fetched_at)) + ' ago.'
+      : 'Remote refs have never been fetched in this clone, so that comparison means little.');
+  }
+
+  const advice = f.advice || '';
+  return { tone, label, drift, head, when, desc, groups, facts, advice,
+    hint: advice ? 'Click to run it in the terminal.' : 'Click to run dbt parse in the terminal.' };
+}
+
+/* Types a command into the integrated terminal. It stops at the prompt by
+   default, because running it is the user's decision and dbt is theirs to
+   launch (0002). `run` is for the one button whose whole point is the command:
+   the freshness badge, where the user has already chosen by clicking it. */
+function sendToTerminal(cmd, run) {
   showDock('terminal');
   let tries = 0;
   const attempt = () => {
     if (S.ws && S.ws.readyState === 1) {
-      S.ws.send(JSON.stringify({ t: 'i', d: cmd }));
+      S.ws.send(JSON.stringify({ t: 'i', d: run ? cmd + '\r' : cmd }));
       S.term && S.term.focus();
-      toast('command ready in the terminal, press Enter to run it');
+      toast(run ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
     } else if (tries++ < 40) setTimeout(attempt, 100);
     else toast('terminal is not connected', 'err');
   };
@@ -2926,6 +3030,43 @@ function fillVarCard(el, t) {
     if (row.status && row.raw) lines.push('as written: ' + row.raw);
     show(value, lines.filter(Boolean).join('\n'), `${body.file}:${row.line}`, row.redacted ? 'warn' : '');
   }).catch(() => show(null, 'could not read dbt_project.yml', '', 'warn'));
+}
+
+/* The freshness card. Built from `freshnessBadge`, which decides every word:
+   this only lays them out, using the same vocabulary as the node and var
+   cards so the three read as one thing. */
+function fillFreshCard(el, f) {
+  const b = freshnessBadge(f);
+  const add = (cls, text, parent) => {
+    const d = Object.assign(document.createElement('div'), { className: cls, textContent: text });
+    (parent || el).appendChild(d);
+    return d;
+  };
+
+  const head = add('hc-head', '');
+  const dot = document.createElement('span');
+  dot.className = 'dot freshdot';
+  dot.dataset.tone = b.tone;
+  head.appendChild(dot);
+  head.appendChild(Object.assign(document.createElement('span'), { className: 'hc-name', textContent: b.head }));
+  if (b.when) add('hc-sub', b.when);
+  if (b.desc) add('hc-desc', b.desc);
+
+  for (const g of b.groups) {
+    const box = add('hc-cols', '');
+    add('hc-more', g.head, box);
+    for (const p of g.paths) {
+      const row = add('hc-col', '', box);
+      row.title = p.full;
+      row.appendChild(Object.assign(document.createElement('span'), { className: 'c-name', textContent: p.name }));
+      if (p.dir) row.appendChild(Object.assign(document.createElement('span'), { className: 'c-type', textContent: p.dir }));
+    }
+    if (g.more > 0) add('hc-more', 'and ' + g.more + ' more', box);
+  }
+
+  if (b.facts.length) add('hc-counts', b.facts.join('\n')).style.whiteSpace = 'pre-line';
+  if (b.advice) add('hc-note ' + (b.tone === 'ok' ? 'muted' : 'warn'), b.advice);
+  add('hc-note muted', b.hint);
 }
 
 // ------------------------------------------------------------ environments --
@@ -4007,8 +4148,21 @@ function wireKeys() {
       applyMeta(meta);
       toast(`manifest reloaded in ${meta.load_ms} ms`, 'ok');
       rerender();
+      refreshFreshness();
     } catch (e) { toast('reload failed: ' + e.message, 'err'); }
   });
+  // The badge says the manifest is behind; the command that fixes that is the
+  // one thing the user would type next. dbt still runs in their terminal, under
+  // their environment, never from the server (0002).
+  $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
+  // Keyed on the state, so a card being read is not rebuilt under the pointer
+  // by a poll that changed nothing.
+  $('#fresh-badge').addEventListener('mouseenter', (e) => {
+    if (!S.fresh) return;
+    const at = e.currentTarget;
+    hoverEnter('fresh:' + S.freshKey, () => at.getBoundingClientRect(), (el) => fillFreshCard(el, S.fresh));
+  });
+  $('#fresh-badge').addEventListener('mouseleave', hoverLeave);
 }
 
 // ------------------------------------------------------------------ boot --
@@ -4109,7 +4263,8 @@ async function boot() {
   loadEnvs();
   await loadDir($('#tree'), '', 0);
   refreshGit();
-  setInterval(refreshGit, 5000);
+  refreshFreshness();
+  setInterval(() => { refreshGit(); refreshFreshness(); }, 5000);
   window.addEventListener('resize', () => Lineage.fit());
 }
 
