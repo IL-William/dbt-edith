@@ -71,14 +71,18 @@ local index (`dbt compile --static-analysis strict --write-index
 --write-lineage`), which needs no warehouse privileges and covers uncommitted
 SQL. It fills the same cache file (0008).
 
-0.4.0 adds the selector mode in the lineage tab. 0.3.0 added the breadcrumb bar. 0.2.0 added the hover cards; since 0.2.0 the
-binary also carries a build stamp
-(`git describe`, or a build date without a `.git`), shown by `--version`, by the
-startup banner and in the status bar, because until then two installs of the
-same release were indistinguishable and reinstalling on the VM looked like it
-had done nothing.
+0.4.0 ships the breadcrumb bar, the selector mode in the lineage tab and the
+rename to Edith, which reached main together. 0.2.0 added the hover cards;
+since 0.2.0 the binary also carries a build stamp (`git describe`, or a build
+date without a `.git`), shown by `--version`, by the startup banner and in the
+status bar, because until then two installs of the same release were
+indistinguishable and reinstalling on the VM looked like it had done nothing.
 
-0.3.0 is tagged, as 0.2.0 and 0.1.0 were, and released on GitHub as source only. No binary
+0.4.0 is tagged, as 0.2.0 and 0.1.0 were, and released on GitHub as source only.
+**There is no 0.3.0.** The version was bumped to it on the breadcrumb branch,
+that branch went on collecting work, and it merged as 0.4.0, so 0.3.0 never
+reached main and was never tagged. An earlier version of this file said it was
+tagged and released. It was not, and nothing was ever installed from it. No binary
 is attached, so installing means building from source, as
 [the README](../README.md#getting-started) describes. Attaching binaries is a
 deliberate later step: an unsigned executable download brings its own friction
