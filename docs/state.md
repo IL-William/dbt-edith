@@ -1,7 +1,9 @@
 # Where the work stands
 
-Rewritten as things change, unlike [decisions/](decisions/), which is appended
-to. Last updated 2026-09-21.
+Rewritten as things change, unlike [decisions/](decisions/) and
+[../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
+which version belongs there; what is half done, deferred or waiting on someone
+belongs here. Last updated 2026-09-22.
 
 ## Shipped
 
@@ -77,6 +79,13 @@ pass confined `/api/git/diff` to the project and added `SECURITY.md`.
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
 5. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
+
+Wanted but never ranked, because nobody has needed either enough to place it:
+persisting the open tabs between sessions, which `src/settings.rs` already has
+the store for, and filtering the column lineage by edge kind, which waits on
+seeing how dense a real graph is. Both were listed in the README's "Not there
+yet" and nowhere else until 2026-09-22, which is how that section came to
+disagree with this one.
 
 Sketched but not started: a second column-lineage source using dbt Fusion's
 local index (`dbt compile --static-analysis strict --write-index
@@ -165,6 +174,9 @@ cross-compile.
 
 GitHub Actions runs `cargo test`, a RustSec audit of the lockfile, an OSV audit
 of `web/vendor/` and the Snowflake script's tests on every push and every
-Monday, and Dependabot opens weekly lockfile bumps. CodeMirror is at 5.65.21 since 2026-09-17, which does
+Monday, and Dependabot opens weekly lockfile bumps. A pull request touching
+`src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
+`no changelog` label, and its branch and title have to read the way AGENTS.md
+says, Dependabot's own branches excepted. CodeMirror is at 5.65.21 since 2026-09-17, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not
 in CI: they need `jsc`, which ships with macOS (0013).

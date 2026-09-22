@@ -733,12 +733,15 @@ covered.
 
 ## Not there yet
 
-Compiled SQL preview, named selectors from `selectors.yml`, persisting open
-tabs between sessions, and filtering column lineage by edge kind once we know
-how dense the real graph is. A second lineage source is sketched out but
-not built: dbt Fusion computes column lineage locally with
-`dbt compile --static-analysis strict --write-index --write-lineage`, which
-needs no warehouse privileges and covers uncommitted SQL.
+Links on `{{ macro() }}` calls, run status and timing from `run_results.json`,
+named selectors from `selectors.yml`, CTE names in the breadcrumb bar,
+persisting open tabs between sessions, and a second column lineage source using
+dbt Fusion's local index, which needs no warehouse privileges.
+
+[docs/state.md](docs/state.md) has the list that is kept up to date, in the
+order the work was chosen, and says for each what deferred it. It is the only
+one: a second list here would drift from it, and the older list is the one that
+gets believed.
 
 ## License
 

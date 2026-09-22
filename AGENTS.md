@@ -57,6 +57,19 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Bump the version in `Cargo.toml` and tag the commit** for anything anyone
   installs. Between tags the build stamp tells builds apart; the version is
   what says a release happened.
+- **Read the deferred list before starting a feature**, in
+  [docs/state.md](docs/state.md). The work is usually already there, in the
+  order it was chosen, with the trap that deferred it written down: that trap is
+  the reason it is not built, and it has not gone away. When the feature ships,
+  strike its entry from that list in the same change. It is the only list of
+  what is missing, and the README points at it rather than repeating it, because
+  two such lists drift apart and it is the stale one that gets believed.
+- **Every change someone using the tool would notice adds a line to
+  [CHANGELOG.md](CHANGELOG.md)**, under `## Unreleased`, in the same sentence
+  form as a commit subject. CI refuses a pull request that touches `src/`,
+  `web/` or `tools/` without one, unless it carries the `no changelog` label,
+  which is how a refactor or a dependency bump opts out. That file is appended
+  to and never rewritten, unlike `docs/state.md`.
 - **Comments say why, not what.** The code already says what it does.
 - **No em dash** in code, comments or documentation.
 
@@ -70,12 +83,19 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   concern and any invariant. `src/git.rs` is the example to follow.
 - **API payloads** are `serde` structs in `src/api.rs`, skipping empty fields.
 - **Branches** are `<kind>/<what-it-does>`, kebab-case: `feature/` for a new
-  capability, `fix/` for a correction, `deps/` for a dependency bump, and
-  `archive/<area>/` for history kept but never merged. The kind comes first
-  because that is what the branch list gets read for.
+  capability, `fix/` for a correction, `deps/` for a dependency bump, `docs/`
+  for documentation alone, and `archive/<area>/` for history kept but never
+  merged. The kind comes first because that is what the branch list gets read
+  for. CI checks the four that open a pull request; a `dependabot/` branch is
+  exempt, since Dependabot names its own.
 - **Commit subjects** say what the commit does, as a sentence and not a label:
   "Fetch a column's Snowflake lineage on click, behind a switch". The body is
   where the why goes, and what was rejected, which no diff can show.
+- **Pull request titles** are that same sentence, because a pull request is
+  squashed into one commit and its title becomes that commit's subject. So:
+  three words or more, capitalised, no full stop at the end, no branch name in
+  it, and short enough to read in a list. "Feature/breadcrumb bar" is the shape
+  to avoid, and the only one that ever reached `main`.
 
 ## Where to read next
 
@@ -101,6 +121,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the freshness badge claims, or compare the manifest with a commit | [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
+| find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 
 Every decision, with what was rejected each time, is indexed in
 [docs/decisions/](docs/decisions/). The [README](README.md) is the user-facing

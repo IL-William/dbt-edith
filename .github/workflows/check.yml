@@ -65,3 +65,82 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 tools/test_sf_lineage.py
+
+  # A pull request that changes what the tool does says so in CHANGELOG.md,
+  # which is the only file that keeps the order of what shipped. The label is
+  # the way out for a refactor, a dependency bump or a documentation fix, since
+  # those change src/ or web/ without changing anything a user would notice.
+  changelog:
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no changelog')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Both ends of the pull request have to be reachable to diff them.
+          fetch-depth: 0
+      - name: An entry under Unreleased, or the "no changelog" label
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          if ! printf '%s\n' "$changed" | grep -qE '^(src/|web/|tools/)'; then
+            echo "nothing under src/, web/ or tools/ changed"
+            exit 0
+          fi
+          if printf '%s\n' "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md changed"
+            exit 0
+          fi
+          echo "This pull request changes src/, web/ or tools/ without touching CHANGELOG.md."
+          echo "Add a line under '## Unreleased' saying what it does, or label the"
+          echo "pull request 'no changelog' if it changes nothing a user would notice."
+          exit 1
+
+  # The branch list and the pull request list get read far more often than they
+  # get written, which is the whole reason both have a shape. AGENTS.md, under
+  # Conventions, is the statement of it; this job is what keeps it true. A
+  # dependabot/ branch is skipped: Dependabot names its own branches and titles,
+  # and a red check on every bump would only teach everyone to ignore this one.
+  naming:
+    if: github.event_name == 'pull_request' && !startsWith(github.event.pull_request.head.ref, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: The branch says its kind, the title says what it does
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          bad=0
+          fail() { echo "  $1"; bad=1; }
+
+          echo "branch: $BRANCH"
+          if ! printf '%s' "$BRANCH" | grep -qE '^(feature|fix|deps|docs)/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            fail "not <kind>/<what-it-does> in kebab-case, kind being feature, fix, deps or docs"
+          fi
+
+          echo "title: $TITLE"
+          if [ "$(printf '%s' "$TITLE" | wc -w)" -lt 3 ]; then
+            fail "a label rather than a sentence: three words or more"
+          fi
+          case "$TITLE" in
+            [A-Z]*) ;;
+            *) fail "starts with a lower-case letter" ;;
+          esac
+          case "$TITLE" in
+            *.) fail "ends with a full stop" ;;
+          esac
+          case "${TITLE%% *}" in
+            */*) fail "starts with a branch name, as in 'Feature/breadcrumb bar'" ;;
+          esac
+          if [ "${#TITLE}" -gt 72 ]; then
+            fail "${#TITLE} characters, over the 72 that read in a list"
+          fi
+
+          if [ "$bad" -ne 0 ]; then
+            echo
+            echo "AGENTS.md, under Conventions, says what both should look like."
+            exit 1
+          fi
+          echo "ok"
