@@ -558,17 +558,49 @@ A method this build does not know, `state:` for instance, is refused by name
 rather than ignored, because a silently dropped term would draw far too much and
 look right doing it.
 
-### Compiled SQL
+### Compiled and Run
 
-A Compiled tab shows what dbt last wrote to `target/compiled/`, with its age.
-It turns amber when the compiled file is over an hour old, or when the model or
-its schema file changed after it was compiled, which is the case that actually
-bites: reading compiled SQL that no longer matches the source.
+Two tabs, over the two files dbt leaves per model under `target/`. **Compiled**
+is `target/compiled/`: the model with its Jinja rendered, which is what you read
+to check a macro or a `ref()` expanded the way you meant. **Run** is
+`target/run/`: that same SQL wrapped in the statement dbt actually sent to the
+warehouse, `create or replace transient table ...` and all, which is what you
+read when the table is there but looks wrong.
 
-dbt-edith never compiles anything itself. dbt runs where you run it, so when
-there is no compiled file the tab names the paths it checked and offers to type
-`dbt compile --select <model>` into the integrated terminal, without pressing
-Enter for you.
+Each names the date its file was written, with the age beside it:
+
+```
+last run 29/07/2026 16:48:06   54d ago, the model file changed after this was run
+target/run/shop/models/marts/.../fct_orders.sql
+```
+
+That path is a link. Clicking it opens the file tree at the file, so the folder
+dbt wrote, the files beside it and the file itself are one click away.
+
+The bar turns amber when something the file was built from has moved since it
+was written, and names what: the model, its schema file, `dbt_project.yml`, or a
+macro. The Run tab asks one more question only it can ask, since dbt writes
+`compiled/` on every compile and `run/` only on a run: has this model been
+compiled again since it was last executed?
+
+Age alone never colours anything. A file nothing has touched since is still
+exactly what dbt would write, whether that was an hour ago or last month, and a
+clock threshold only ever teaches you to ignore the colour. The date is there to
+be read, not to expire.
+
+Any macro counts, not just the ones your model calls. The manifest lists the
+macros reached while parsing a node, which leaves out the ones those in turn
+call and is mostly `macro.dbt.*`, built into dbt-core with no file to look at. A
+macro edit makes every compiled file suspect until it is rebuilt, which is also
+what dbt does about it. The same goes for a `git pull`: it moves the mtime of
+everything it touches, so your artifacts predate the code you now have, which is
+the answer [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) gives
+for the manifest too.
+
+dbt-edith never compiles or runs anything itself. dbt runs where you run it, so
+when a file is not there the tab names the paths it checked and offers to type
+`dbt compile --select <model>` or `dbt run --select <model>` into the integrated
+terminal, without pressing Enter for you.
 
 ### Python environment
 
@@ -708,7 +740,7 @@ src/api.rs        HTTP + WebSocket handlers
 src/collin.rs     the column lineage cache, merged like catalog.json
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
-src/compiled.rs   compiled SQL lookup and freshness
+src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: block of dbt_project.yml, read by hand

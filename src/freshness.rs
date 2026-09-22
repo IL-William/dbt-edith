@@ -26,7 +26,7 @@ const ROOT_FILES: &[&str] = &["dbt_project.yml", "packages.yml", "dependencies.y
 
 /// Conventional when `macro-paths` is not set, and macros carry no node in the
 /// manifest to derive it from the way the other directories are derived.
-const MACROS_DIR: &str = "macros";
+pub const MACROS_DIR: &str = "macros";
 
 /// dbt writes into these, or vendors into them. A resource root should never
 /// be one of them, and the walk refuses to enter them even if one ever is:
@@ -147,6 +147,44 @@ fn walk_under(root: &Path, dir: &str, at: u64, w: &mut Walk, budget: &mut usize)
             }
         }
     }
+}
+
+/// The newest file dbt would parse under one resource directory, with its path.
+/// Asks of one directory what `check` asks of the whole project, so a single
+/// artifact under `target/` can be compared with the things it was built from
+/// rather than with the clock.
+///
+/// Capped like the walk above, and best effort: a project big enough to hit the
+/// cap is answered from the part that was walked, which can only under-report a
+/// change and never invent one.
+pub fn newest_input(root: &Path, dir: &str) -> Option<(u64, String)> {
+    let mut best: Option<(u64, String)> = None;
+    let mut budget = MAX_WALK;
+    let mut stack = vec![(root.join(dir), dir.to_string())];
+    while let Some((path, prefix)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&path) else { continue };
+        for entry in entries.flatten() {
+            if budget == 0 {
+                return best;
+            }
+            budget -= 1;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || GENERATED.contains(&name.as_str()) {
+                continue;
+            }
+            let rel = format!("{prefix}/{name}");
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push((entry.path(), rel));
+            } else if meta.is_file() && parses_into_manifest(&name) {
+                let when = mtime_secs(&entry.path());
+                if best.as_ref().map(|(b, _)| when > *b).unwrap_or(true) {
+                    best = Some((when, rel));
+                }
+            }
+        }
+    }
+    best
 }
 
 /// Whether git has this path as changed. Entries ending in `/` are how git

@@ -573,15 +573,28 @@ kbd {
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
 
-/* -------------------------------------------------------------- compiled -- */
+/* ------------------------------------------------------------- artifacts -- */
+/* The Compiled and Run tabs: same pane twice, over target/compiled/ and
+   target/run/. */
 .compiled-head { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
-#dock-compiled { display: flex; flex-direction: column; }
+#dock-compiled, #dock-run { display: flex; flex-direction: column; }
 .compiled-body { flex: 1; min-height: 0; overflow: hidden; }
 .compiled-body .CodeMirror { height: 100%; }
 .fresh-bar {
-  display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 12px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; row-gap: 3px;
+  padding: 7px 12px; font-size: 12px;
   border-left: 3px solid var(--ok); background: #16211c;
 }
+/* Its own line, at full width: these paths run past a hundred characters and
+   the segment that identifies the file is the last one. */
+.artifact-path {
+  flex: 0 0 100%; min-width: 0; font: 11px var(--mono); text-align: left;
+  direction: rtl; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0; margin: 0; border: 0; background: none; color: var(--fg-dim);
+}
+.artifact-path.link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.artifact-path.link:hover { color: var(--accent); }
+.artifact-path.outside { cursor: default; opacity: .75; }
 .fresh-bar.stale { border-left-color: var(--warn); background: #241d12; }
 .fresh-bar.missing { border-left-color: #a05a5a; background: #241616; }
 .fresh-bar b { font-family: var(--mono); font-size: 11.5px; }

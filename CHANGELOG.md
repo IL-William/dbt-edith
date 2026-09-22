@@ -30,6 +30,21 @@ tagged, and nothing was ever installed from it.
 - A second segment beside that dot says how far the branch trails the default
   one, as `main +7`. It never colours the dot, and a background fetch every ten
   minutes, read only, keeps the count meaning something.
+- A Run tab sits beside Compiled, over `target/run/`: the statement dbt actually
+  sent to the warehouse, where Compiled is the model with its Jinja rendered.
+  Until now one tab probed both directories and showed whichever it found first,
+  so a model dbt had run but not recompiled showed its `create table` under
+  Compiled.
+- Both tabs name the date their file was written, not only its age, so it can be
+  compared with the manifest, the nightly build or the edit still open.
+- What turns those tabs amber is now what has moved, never the clock (0025). The
+  bar names it: the model, its schema file, `dbt_project.yml` or a macro, and on
+  the Run tab, a compile that happened after the last run. Age alone no longer
+  colours anything, because a file nothing has touched since is still what dbt
+  would write, and the hour-old rule it replaces only taught you to ignore the
+  colour.
+- The path in either tab is a link. Clicking it opens the file tree at the file
+  dbt wrote, under `target/`.
 
 ## 0.4.0 - 2026-09-21
 

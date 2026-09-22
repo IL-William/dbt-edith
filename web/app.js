@@ -17,7 +17,7 @@ const S = {
   gitModDirs: new Set(), gitUntDirs: new Set(),
   gitPrefixes: [], gitKey: '',
   git: null,                  // full payload of /api/git
-  compiledCm: null,           // read-only editor for the compiled SQL
+  artifactCm: { compiled: null, run: null },  // read-only editors for the two files under target/
   envs: null,                 // payload of /api/envs
   env: '',                    // this tab's chosen .env file, '' for the manifest as parsed
   node: null,                 // catalog: node currently displayed
@@ -1912,7 +1912,9 @@ async function focusNode(id, { open = false } = {}) {
       `${sub.nodes.length} nodes · ${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
     paintLegend(sub);
     renderCatalog(detail);
-    if (!$('#dock-compiled').classList.contains('hidden')) loadCompiled(id);
+    for (const kind of ['compiled', 'run']) {
+      if (!$('#dock-' + kind).classList.contains('hidden')) loadArtifact(kind, id);
+    }
     if (open && detail.file) openFile(detail.file, { focusLineage: false });
   } catch (e) { toast('lineage: ' + e.message, 'err'); }
 }
@@ -2549,16 +2551,22 @@ function relinkTools() {
   });
 }
 
-// --------------------------------------------------------------- compiled --
-/* The compiled SQL dbt left in target/. Never compiled here: dbt runs where the
-   user runs it, so a missing file is reported with the command to produce it. */
-async function loadCompiled(id) {
-  const head = $('#compiled-head');
-  const body = $('#compiled-body');
+// -------------------------------------------------------------- artifacts --
+/* The two files dbt leaves per node under target/: compiled/ holds the model's
+   SQL with the Jinja gone, run/ the statement dbt executed to materialise it.
+   They get a tab each and are never shown in each other's place, because
+   "what does this model say" and "what did dbt send to the warehouse" are
+   different questions and only one of them explains a table that looks wrong.
+
+   Nothing is compiled here: dbt runs where the user runs it (0002), so a
+   missing file is reported with the command that would produce it. */
+async function loadArtifact(kind, id) {
+  const head = $('#' + kind + '-head');
+  const body = $('#' + kind + '-body');
   head.textContent = '';
   if (!id) {
     body.textContent = '';
-    head.append(Object.assign(document.createElement('div'), {
+    body.append(Object.assign(document.createElement('div'), {
       className: 'compiled-empty', textContent: 'Select a model first.' }));
     return;
   }
@@ -2566,33 +2574,32 @@ async function loadCompiled(id) {
   const name = node ? node.name : id.split('.').pop();
 
   let info;
-  try { info = await api.get('/api/compiled?id=' + encodeURIComponent(id)); }
-  catch (e) { return toast('compiled: ' + e.message, 'err'); }
+  try { info = await api.get('/api/compiled?kind=' + kind + '&id=' + encodeURIComponent(id)); }
+  catch (e) { return toast(kind + ': ' + e.message, 'err'); }
 
-  if (!info.found) {
-    if (S.compiledCm) S.compiledCm.setValue('');
+  const said = artifactBar(info, name);
+
+  if (!said.found) {
+    if (S.artifactCm[kind]) S.artifactCm[kind].setValue('');
     body.textContent = '';
     const box = document.createElement('div');
     box.className = 'compiled-empty';
-    box.append(Object.assign(document.createElement('p'), {
-      textContent: `No compiled SQL for ${name}. dbt has not compiled it into target/ yet.`,
-      style: 'margin:0 0 4px' }));
-    const cmd = `dbt compile --select ${name}`;
+    box.append(Object.assign(document.createElement('p'), { textContent: said.head, style: 'margin:0 0 4px' }));
     const code = document.createElement('code');
-    code.textContent = cmd;
+    code.textContent = said.command;
     box.append(code, document.createElement('br'));
     const send = document.createElement('button');
     send.className = 'btn sm';
     send.textContent = 'Type it in the terminal';
     send.title = 'Puts the command in the integrated terminal without running it';
-    send.addEventListener('click', () => sendToTerminal(cmd));
+    send.addEventListener('click', () => sendToTerminal(said.command));
     box.append(send);
     const det = document.createElement('details');
     det.style.marginTop = '12px';
     det.append(Object.assign(document.createElement('summary'), {
       textContent: 'paths checked', style: 'cursor:pointer;font-size:11px' }));
     const ul = document.createElement('ul');
-    info.candidates.forEach((c) => ul.append(Object.assign(document.createElement('li'), { textContent: c })));
+    said.candidates.forEach((c) => ul.append(Object.assign(document.createElement('li'), { textContent: c })));
     det.append(ul);
     box.append(det);
     body.append(box);
@@ -2600,33 +2607,47 @@ async function loadCompiled(id) {
   }
 
   const bar = document.createElement('div');
-  bar.className = 'fresh-bar' + (info.stale ? ' stale' : '');
-  const when = document.createElement('b');
-  when.textContent = 'compiled ' + humanAge(info.age_secs) + ' ago';
-  bar.append(when);
-  if (info.stale) {
-    const why = document.createElement('span');
-    why.className = 'why';
-    why.textContent = info.reasons.join(' · ') + ' (may be out of date)';
-    bar.append(why);
-  }
+  bar.className = 'fresh-bar' + (said.tone === 'stale' ? ' stale' : '');
+  bar.append(Object.assign(document.createElement('b'), { textContent: said.when }));
+  bar.append(Object.assign(document.createElement('span'), { className: 'why', textContent: said.why }));
   bar.append(Object.assign(document.createElement('div'), { className: 'grow' }));
-  const recompile = document.createElement('button');
-  recompile.className = 'btn sm';
-  recompile.textContent = info.stale ? 'Recompile' : 'Compile again';
-  recompile.addEventListener('click', () => sendToTerminal(`dbt compile --select ${name}`));
-  bar.append(recompile);
-  bar.title = info.path;
+  const redo = document.createElement('button');
+  redo.className = 'btn sm';
+  redo.textContent = said.button;
+  redo.title = 'Puts ' + said.command + ' in the integrated terminal without running it';
+  redo.addEventListener('click', () => sendToTerminal(said.command));
+  bar.append(redo, artifactPath(said));
   head.append(bar);
 
   body.textContent = '';
-  if (!S.compiledCm) {
-    S.compiledCm = CodeMirror(body, { lineNumbers: true, readOnly: true, mode: 'text/x-sql', lineWrapping: false });
+  if (!S.artifactCm[kind]) {
+    S.artifactCm[kind] = CodeMirror(body, { lineNumbers: true, readOnly: true, mode: 'text/x-sql', lineWrapping: false });
   } else {
-    body.appendChild(S.compiledCm.getWrapperElement());
+    body.appendChild(S.artifactCm[kind].getWrapperElement());
   }
-  S.compiledCm.setValue(info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : ''));
-  setTimeout(() => S.compiledCm.refresh(), 0);
+  S.artifactCm[kind].setValue(info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : ''));
+  setTimeout(() => S.artifactCm[kind].refresh(), 0);
+}
+
+/* The file's own line in the bar. A path dbt wrote is long and nobody retypes
+   it, so it is a link: clicking brings the file tree back into view and walks
+   it down to the row, which is the fastest way to reach the file itself, the
+   ones beside it, or the folder to delete before a clean build. A target
+   outside the project has no tree row, so it is shown and not linked. */
+function artifactPath(said) {
+  if (!said.link) {
+    return Object.assign(document.createElement('div'),
+      { className: 'artifact-path outside', textContent: said.path, title: said.pathTitle });
+  }
+  const link = document.createElement('button');
+  link.className = 'artifact-path link';
+  link.textContent = said.path;
+  link.title = said.pathTitle;
+  link.addEventListener('click', () => {
+    showSide('files');
+    revealInTree(said.path);
+  });
+  return link;
 }
 
 function humanAge(secs) {
@@ -2634,6 +2655,64 @@ function humanAge(secs) {
   if (secs < 3600) return Math.round(secs / 60) + 'min';
   if (secs < 86400) return Math.floor(secs / 3600) + 'h' + String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
   return Math.floor(secs / 86400) + 'd';
+}
+
+/* Every word the Compiled or Run tab puts on screen for one file. The bar
+   answers, of a single file, the question the manifest badge answers of the
+   whole project: is what you are reading still what the source says?
+
+   It leads with the date rather than the age, because that is the number you
+   can compare with something. "3h ago" does not say whether this predates the
+   nightly build, the pull you did at nine, or the edit still open in the
+   editor; "22/09/2026 08:14" does, and the age rides beside it for the glance.
+
+   Amber means something it was built from has moved since: the model, its
+   schema file, dbt_project.yml, a macro, or for a run, a compile that happened
+   after it. Never the age on its own, however large. Pure, so every state is
+   testable without a DOM. */
+function artifactBar(info, name) {
+  const kind = info && info.kind === 'run' ? 'run' : 'compiled';
+  const w = {
+    compiled: {
+      verb: 'compiled', dir: 'target/compiled/', what: 'compiled SQL',
+      cmd: 'dbt compile', fresh: 'Compile again', stale: 'Recompile',
+    },
+    run: {
+      verb: 'last run', dir: 'target/run/', what: 'run SQL',
+      cmd: 'dbt run', fresh: 'Run again', stale: 'Run again',
+    },
+  }[kind];
+  const command = w.cmd + ' --select ' + name;
+
+  if (!info || !info.found) {
+    return { kind, found: false, command,
+      head: 'No ' + w.what + ' for ' + name + '. dbt has not written it into ' + w.dir + ' yet.',
+      candidates: (info && info.candidates) || [] };
+  }
+
+  const age = humanAge(info.age_secs || 0) + ' ago';
+  // "changed since" once, then the list. Said per entry it ran to five copies
+  // of "changed after this was run" and stopped being readable at a glance,
+  // which is the only thing this line is for.
+  const why = [age];
+  if ((info.changed || []).length) why.push('changed since: ' + info.changed.join(', '));
+  (info.reasons || []).forEach((r) => why.push(r));
+  // The absolute path is the tooltip either way: it is what you paste into a
+  // terminal, and the only thing left to show when no link can be offered.
+  return {
+    kind, found: true, command,
+    tone: info.stale ? 'stale' : 'ok',
+    when: w.verb + ' ' + new Date((info.compiled_at || 0) * 1000).toLocaleString(),
+    // The age leads this line and what moved follows it, because the age is
+    // the part that is always true and the part a glance is looking for.
+    why: why.join(' \u00b7 ') + (info.stale ? ' (may be out of date)' : ''),
+    button: info.stale ? w.stale : w.fresh,
+    link: !!info.rel,
+    path: info.rel || info.path,
+    pathTitle: info.rel
+      ? info.path + ' \u00b7 click to show it in the file tree'
+      : info.path + ' \u00b7 outside the project, so the file tree cannot reach it',
+  };
 }
 
 /* What the badge beside Reload manifest shows, and what its hover card says.
@@ -4033,18 +4112,21 @@ async function openAt(path, line) {
 }
 
 function wireTabs() {
-  $$('[data-side]').forEach((b) => b.addEventListener('click', () => {
-    $$('[data-side]').forEach((x) => x.classList.toggle('active', x === b));
-    $('#side-files').classList.toggle('hidden', b.dataset.side !== 'files');
-    $('#side-models').classList.toggle('hidden', b.dataset.side !== 'models');
-    $('#side-git').classList.toggle('hidden', b.dataset.side !== 'git');
-    $('#side-search').classList.toggle('hidden', b.dataset.side !== 'search');
-    if (b.dataset.side === 'models' && !$('#model-list').children.length) refreshModels();
-    if (b.dataset.side === 'git') refreshGit();
-    if (b.dataset.side === 'search') $('#grep-input').focus();
-  }));
-
+  $$('[data-side]').forEach((b) => b.addEventListener('click', () => showSide(b.dataset.side)));
   $$('[data-dock]').forEach((b) => b.addEventListener('click', () => showDock(b.dataset.dock)));
+}
+
+/* Pulled out of wireTabs because a link into the file tree has to bring the
+   tree back into view before there is anything to reveal. */
+function showSide(which) {
+  $$('[data-side]').forEach((x) => x.classList.toggle('active', x.dataset.side === which));
+  $('#side-files').classList.toggle('hidden', which !== 'files');
+  $('#side-models').classList.toggle('hidden', which !== 'models');
+  $('#side-git').classList.toggle('hidden', which !== 'git');
+  $('#side-search').classList.toggle('hidden', which !== 'search');
+  if (which === 'models' && !$('#model-list').children.length) refreshModels();
+  if (which === 'git') refreshGit();
+  if (which === 'search') $('#grep-input').focus();
 }
 
 function showDock(which) {
@@ -4053,7 +4135,8 @@ function showDock(which) {
   $('#dock-terminal').classList.toggle('hidden', which !== 'terminal');
   $('#dock-catalog').classList.toggle('hidden', which !== 'catalog');
   $('#dock-compiled').classList.toggle('hidden', which !== 'compiled');
-  if (which === 'compiled') loadCompiled(S.focus);
+  $('#dock-run').classList.toggle('hidden', which !== 'run');
+  if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
   if (which === 'terminal') { initTerm(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);

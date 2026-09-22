@@ -116,7 +116,8 @@
         <button class="tab active" data-dock="lineage">Lineage</button>
         <button class="tab" data-dock="terminal">Terminal</button>
         <button class="tab" data-dock="catalog">Catalog</button>
-        <button class="tab" data-dock="compiled">Compiled</button>
+        <button class="tab" data-dock="compiled" title="The model's SQL with the Jinja gone, from target/compiled/">Compiled</button>
+        <button class="tab" data-dock="run" title="The statement dbt executed to materialise it, from target/run/">Run</button>
         <div class="grow"></div>
         <div id="lineage-tools" class="tools">
           <span id="graph-mode" class="seg">
@@ -155,6 +156,10 @@
       <div id="dock-compiled" class="dock-pane hidden">
         <div id="compiled-head" class="compiled-head"></div>
         <div id="compiled-body" class="compiled-body"></div>
+      </div>
+      <div id="dock-run" class="dock-pane hidden">
+        <div id="run-head" class="compiled-head"></div>
+        <div id="run-body" class="compiled-body"></div>
       </div>
       <div id="dock-catalog" class="dock-pane hidden">
         <div id="catalog" class="catalog"><p class="muted pad">No node selected. Open a model, or pick one in the lineage.</p></div>

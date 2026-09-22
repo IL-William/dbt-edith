@@ -12,7 +12,7 @@ lineage graph in model and column modes, column lineage fetched from Snowflake
 when a column is clicked and the switch in Catalog > Columns is on (0016),
 terminal, file explorer with git and
 unsaved colouring, search across nodes, file names and file contents, Catalog with columns and
-locations, compiled SQL with freshness, git panel (status, branch switch, stage,
+locations, the compiled and run SQL under target/ with freshness, git panel (status, branch switch, stage,
 commit, push, pull, conflicts, side-by-side diff), Python environment in the
 status bar, and environment-aware location resolution with a `.env` selector.
 
@@ -55,6 +55,33 @@ branch trails the default one rides beside the dot in its own segment and never
 colours it. `api::watch_remote` fetches every ten minutes so that count means
 something, read only and deadlined like the rest of 0007.
 
+Compiled and Run tabs, added 2026-09-22: the two files dbt leaves per node
+under `target/` get a tab each, where one tab used to probe `compiled/` then
+`run/` and show whichever it found first. That silently answered the wrong
+question whenever dbt had run a model without recompiling it. Each tab names the
+date its file was written rather than only its age, because an age cannot be
+compared with anything; the path beside it is a link that opens the file tree at
+the file.
+
+What turns that bar amber is measured the way 0025 measures the manifest, in
+mtimes and never in a clock: the model, its schema file, `dbt_project.yml` and
+the newest file under `macros/`, each named in the bar when it is the one that
+moved, plus, for a run, a compiled sibling written after it. The first attempt
+had an age threshold instead, an hour for compiled and a day for a run, and both
+numbers were arbitrary: a file nothing has touched since is still what dbt would
+write at any age, and a threshold only teaches the reader to ignore the colour.
+Any macro counts rather than the ones the node declares, because the manifest's
+`depends_on.macros` omits nested calls and is mostly `macro.dbt.*`, which has no
+file; a false green is worse here than a false amber. The cost is that one macro
+edit, or any `git pull` that touches `dbt_project.yml`, turns every model amber
+until the next compile, which is true and is what dbt does about it too.
+Measured on the 18 825 node project: 1.3 ms per tab load, macro walk included.
+The precision left on the table is naming the macro a model actually uses, which
+wants `manifest.macros` read and package paths resolved.
+
+This is not the deferred **Run history** below: that one reads `run_results.json`
+for status and timing, which no file under `target/run/` carries.
+
 Every route sits behind the Host and Origin guard added on 2026-09-17 after a
 security audit found the terminal reachable from any web page (0015). The same
 pass confined `/api/git/diff` to the project and added `SECURITY.md`.
@@ -92,7 +119,7 @@ local index (`dbt compile --static-analysis strict --write-index
 --write-lineage`), which needs no warehouse privileges and covers uncommitted
 SQL. It fills the same cache file (0008).
 
-0.5.0 ships the manifest freshness badge. 0.4.0 shipped the breadcrumb bar, the
+0.5.0 ships the manifest freshness badge and the Compiled and Run tabs. 0.4.0 shipped the breadcrumb bar, the
 selector mode in the lineage tab and the rename to Edith, which reached main
 together. 0.2.0 added the hover cards;
 since 0.2.0 the binary also carries a build stamp (`git describe`, or a build
@@ -157,7 +184,10 @@ cross-compile.
   sliced function breaks its harness; `./scripts/check.sh` catches it.
   `web/tests/selection.js` slices from `selectKindCounts` to
   `async function loadSidecar`, so anything new between those two has to be pure
-  or it dies at eval time rather than at an assertion.
+  or it dies at eval time rather than at an assertion. `humanAge` is now the
+  start of two slices, `compiled.js` up to `freshnessBadge` and `freshness.js`
+  up to `sendToTerminal`, so `artifactBar` between them is read by both and has
+  to stay pure.
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
   tests checkbox, which dbt has no equivalent of in `dbt ls`.

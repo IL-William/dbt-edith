@@ -1003,8 +1003,26 @@ async fn save_envs(State(st): State<Arc<AppState>>, Json(b): Json<OverridesBody>
     }
 }
 
-/// Compiled SQL for one node, with the freshness signals the UI colours on.
-async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Response {
+#[derive(Deserialize)]
+struct ArtifactQuery {
+    id: String,
+    /// `compiled` or `run`. Defaulted rather than required, because the
+    /// compiled file is what this route answered before the run file existed.
+    #[serde(default = "compiled_kind")]
+    kind: String,
+}
+
+fn compiled_kind() -> String {
+    "compiled".to_string()
+}
+
+/// The SQL dbt left under `target/` for one node, with the freshness signals
+/// the UI colours on. `kind` picks the artifact: `compiled/` for the model's
+/// own SQL, `run/` for the statement dbt executed.
+async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<ArtifactQuery>) -> Response {
+    let Some(kind) = compiled::kind(&q.kind) else {
+        return (StatusCode::BAD_REQUEST, "kind must be compiled or run").into_response();
+    };
     let graph = st.graph.read().await.clone();
     let Some(&idx) = graph.index.get(&q.id) else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
@@ -1013,7 +1031,7 @@ async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery
     let (root, target) = (st.root.clone(), st.target_dir.clone());
     let (package, file, yml) = (n.package.clone(), n.file.clone(), n.yml.clone());
     match tokio::task::spawn_blocking(move || {
-        compiled::look_up(&root, &target, &package, &file, &yml, 2 * 1024 * 1024)
+        compiled::look_up(&root, &target, kind, &package, &file, &yml, 2 * 1024 * 1024)
     })
     .await
     {
