@@ -12,6 +12,7 @@ function activate(p) { S.active = p; activated.push(p); }
 function markRefs() {}
 function closeHoverCard() {}
 function markVars() {}
+function markMacros() {}
 function modeFor() { return null; }
 function toast(m) { print('  toast: ' + m); }
 eval(fn);

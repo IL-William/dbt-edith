@@ -4,6 +4,7 @@
 //! lists stay small even on projects with tens of thousands of nodes.
 
 use crate::collin::RawColLineage;
+use crate::macros::Macros;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
 use std::collections::HashMap;
 
@@ -73,8 +74,8 @@ pub struct Place {
 /// it, and the same file opened from the tree and from a `ref()` became two
 /// tabs. Normalising at the boundary is what keeps the rest free of the
 /// question. `files::resolve` still accepts either, for anything the browser
-/// sends back.
-fn slashed(path: String) -> String {
+/// sends back. Macro paths come through here too (`src/macros.rs`).
+pub(crate) fn slashed(path: String) -> String {
     if path.contains('\\') {
         path.replace('\\', "/")
     } else {
@@ -243,6 +244,8 @@ pub struct Graph {
     pub by_file: HashMap<String, Vec<u32>>,
     /// Node name -> index, for resolving ref() and source() from the editor.
     pub by_name: HashMap<String, u32>,
+    /// Macro calls in the editor resolve here, never against the nodes.
+    pub macros: Macros,
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
     pub meta: Meta,
@@ -250,6 +253,7 @@ pub struct Graph {
 
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
+        let macros = Macros::build(raw.macros, &raw.metadata.project_name);
         let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len() + raw.sources.len());
         let mut index: HashMap<String, u32> = HashMap::with_capacity(nodes.capacity());
 
@@ -547,6 +551,7 @@ impl Graph {
             index,
             by_file,
             by_name,
+            macros,
             catalog_mtime: 0,
             cll: None,
         }

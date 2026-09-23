@@ -9,6 +9,7 @@ mod files;
 mod freshness;
 mod git;
 mod graph;
+mod macros;
 mod manifest;
 mod project;
 mod pty;
@@ -104,16 +105,17 @@ async fn main() -> anyhow::Result<()> {
 
     let graph = if manifest_path.exists() {
         eprintln!("  reading {}", manifest_path.display());
-        let (path, cat, cll) = (manifest_path.clone(), catalog_path.clone(), cll_path.clone());
-        let g = tokio::task::spawn_blocking(move || api::load_graph(&path, &cat, &cll)).await??;
+        let (project, path, cat, cll) = (root.clone(), manifest_path.clone(), catalog_path.clone(), cll_path.clone());
+        let g = tokio::task::spawn_blocking(move || api::load_graph(&project, &path, &cat, &cll)).await??;
         let c = &g.meta.counts;
         eprintln!(
-            "  {} nodes in {} ms  ({} models, {} sources, {} tests)",
+            "  {} nodes in {} ms  ({} models, {} sources, {} tests, {} macros)",
             g.nodes.len(),
             g.meta.load_ms,
             c.get("model").unwrap_or(&0),
             c.get("source").unwrap_or(&0),
             c.get("test").unwrap_or(&0),
+            g.macros.len(),
         );
         if g.meta.catalog_columns > 0 {
             eprintln!("  catalog.json merged ({} columns typed)", g.meta.catalog_columns);

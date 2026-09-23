@@ -21,6 +21,10 @@ pub struct RawManifest {
     /// the editor must be able to jump to them.
     #[serde(default)]
     pub disabled: HashMap<String, Vec<RawNode>>,
+    /// Every macro dbt could call, its own and the adapter's included, so the
+    /// editor can link a call to the right one (`src/macros.rs`).
+    #[serde(default)]
+    pub macros: HashMap<String, RawMacro>,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -144,6 +148,33 @@ pub struct RawColumn {
 pub struct RawDependsOn {
     #[serde(default)]
     pub nodes: Vec<String>,
+}
+
+/// A macro, without `macro_sql`: the body is the bulk of the entry, and serde
+/// skips what is not declared. Every field is an Option where a node has plain
+/// strings, because a null in a section this program never read before must
+/// not cost the whole manifest, lineage included.
+#[derive(serde::Deserialize, Default)]
+pub struct RawMacro {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub package_name: Option<String>,
+    /// Relative to the project for the root project's macros, and to the
+    /// package's own directory for anything installed.
+    #[serde(default)]
+    pub original_file_path: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Only the ones documented in YAML: dbt never reads a macro's signature.
+    #[serde(default)]
+    pub arguments: Option<Vec<RawMacroArg>>,
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct RawMacroArg {
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// `catalog.json`, written by `dbt docs generate`. Optional: it carries the real

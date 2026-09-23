@@ -201,13 +201,15 @@ sub-graphs around whichever model you are looking at.
 | Action | |
 | --- | --- |
 | click a `ref()` / `source()` / `source_model` name | jump to that model's file |
+| click a macro call, `{{ hub() }}` or `{{ dbt_utils.star() }}` | open the file that defines it, at its `{% macro %}` line |
+| click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Alt + W`, or middle-click a tab | close a tab |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when the switch is on |
-| hover a lineage node, a `ref()` or a `var()` | a card with what it is |
+| hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
@@ -220,7 +222,8 @@ sub-graphs around whichever model you are looking at.
 | Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
 
 Opening a `.sql` or `.yml` file that belongs to a dbt node moves the lineage
-onto that node, so the graph follows the editor.
+onto that node, so the graph follows the editor. A properties file declares
+several: when the lineage already shows one of them, it stays there.
 
 The lineage graph itself comes entirely from `manifest.json` (`parent_map`).
 No `.sql` file is ever parsed to build it: dbt already did that work.
@@ -238,6 +241,26 @@ happens to share a model name. Jinja comments are skipped. Disabled models are
 amber and still open; a name in `ref()` that no manifest node matches is red,
 which makes it a genuine dangling-reference signal. Alt-click places the cursor
 instead of navigating.
+
+In a properties file the names that declare nodes are links as well: each
+table under `sources:`, and each entry under `models:`, `seeds:`,
+`snapshots:`, `analyses:` and `exposures:`, but never a column. Clicking one
+moves the lineage onto that node and leaves you in the file, since the line you
+clicked is the definition; from the Terminal tab, the Lineage tab comes
+forward. A name the manifest does not have yet is red, like a dangling `ref()`,
+until the next `dbt parse`.
+
+A macro call inside `{{ }}` or `{% %}` links to the macro's file, and the click
+lands on its `{% macro %}` line: `hub` in `{{ hub(...) }}`, `stage` in
+`{{ automate_dv.stage(...) }}`, a hook in `dbt_project.yml`, an entry under
+`macros:`. Which macro a name reaches follows dbt's own order, from the
+manifest: the package's own macro when you write `automate_dv.hub`, and for a
+bare `hub` the project's before anything else, so a project that wraps a
+package macro under the same name opens its wrapper. A bare name never reaches
+an installed package, because in dbt it does not either. Package macros open
+from `dbt_packages/`, and only once `dbt deps` has installed them. dbt's own
+macros (`is_incremental`, `run_query`) live outside the project and stay text,
+as do Jinja's builtins and a name that is no macro.
 
 Jinja in a model is coloured by role: delimiters and keywords in orange, what
 dbt itself provides (`ref`, `source`, `this`, `adapter`, `is_incremental`...) in
@@ -305,6 +328,9 @@ small card with the model's description, its first columns and their types, the
 upstream, downstream and test counts, and its tags. It is the Catalog Preview in
 passing, without leaving the file or the graph. Panning, zooming, scrolling,
 clicking or typing dismisses it, and a click on a `ref()` still navigates.
+On a macro, the card names the package it came from and its file, which is how
+to tell the project's `hub` from automate_dv's, with the description and
+arguments its YAML documents.
 
 Pausing on a `var('x')` or an `env_var('X')` shows what that variable is worth.
 This is the one thing dbt's own artifacts cannot tell you: the manifest holds no
@@ -779,6 +805,7 @@ $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
+$JSC web/tests/macros.js      # macro calls, and the names a properties file declares
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -798,6 +825,7 @@ src/collin.rs     the column lineage cache, merged like catalog.json
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
+src/macros.rs     macros from the manifest, and which one a call in the editor reaches
 src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: block of dbt_project.yml, read by hand
@@ -822,7 +850,7 @@ covered.
 
 ## Not there yet
 
-Links on `{{ macro() }}` calls, run status and timing from `run_results.json`,
+A used-by count per macro, run status and timing from `run_results.json`,
 named selectors from `selectors.yml`, CTE names in the breadcrumb bar,
 persisting open tabs between sessions, and a second column lineage source using
 dbt Fusion's local index, which needs no warehouse privileges.

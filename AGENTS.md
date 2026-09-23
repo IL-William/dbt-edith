@@ -121,6 +121,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the freshness badge claims, or compare the manifest with a commit | [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) |
 | export the graph, or change what an exported file carries | [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md) |
 | move a box on the lineage canvas, or read `n.depth` | [0027](docs/decisions/0027-the-canvas-lays-out-from-the-edges.md) |
+| link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
@@ -135,7 +136,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `settings`, `git`, `collin`, `select`,
-`sidecar`, `compiled`, `freshness`, `venv`, `files`, `pty`. `build.rs` stamps
+`sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

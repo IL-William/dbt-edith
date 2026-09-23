@@ -247,9 +247,53 @@ const REF_RE = /\b(ref|source)\s*\(\s*(['"])([^'"\n]+)\2\s*(?:,\s*(['"])([^'"\n]
 const TOKEN_RE = /[A-Za-z0-9_]+/g;
 
 /* Blanks out {# ... #} blocks, keeping both offsets and line breaks intact: dbt
-   never evaluates what is inside them, so neither should the link scanner. */
+   never evaluates what is inside them, so neither should the link scanner.
+   Only where Jinja's lexer opens one, in the text between blocks: a `{#` inside
+   a string of a {{ }} or {% %} block, or in a raw block, is text, and masking
+   from there cut the string in half, so every quote after it was read the
+   wrong way round to the end of the file. */
 function maskJinjaComments(src) {
-  return src.replace(/\{#[\s\S]*?#\}/g, (block) => block.replace(/[^\n]/g, ' '));
+  const opener = /\{([{%#])/g;
+  let out = '', at = 0, m;
+  while ((m = opener.exec(src)) !== null) {
+    if (m[1] === '#') {
+      const close = src.indexOf('#}', opener.lastIndex);
+      if (close < 0) break;
+      out += src.slice(at, m.index) + src.slice(m.index, close + 2).replace(/[^\n]/g, ' ');
+      at = opener.lastIndex = close + 2;
+    } else if (m[1] === '%' && /^[-+]?\s*raw\s*[-+]?%\}/.test(src.slice(opener.lastIndex, opener.lastIndex + 16))) {
+      const endraw = /\{%[-+]?\s*endraw\s*[-+]?%\}/g;
+      endraw.lastIndex = opener.lastIndex;
+      opener.lastIndex = endraw.exec(src) ? endraw.lastIndex : src.length;
+    } else {
+      opener.lastIndex = Math.min(src.length, jinjaBlockEnd(src, opener.lastIndex, m[1] === '%' ? '%}' : '}}') + 2);
+    }
+  }
+  return out + src.slice(at);
+}
+
+/* Where a block opened before `from` closes: the first `close` outside a
+   string with every bracket shut, since Jinja's lexer reads the `}}` ending
+   `{'a': {'b': 1}}` as two braces of the dict. A block still being typed, whose
+   brackets never balance, ends at its first `close`, or at the end of the text. */
+function jinjaBlockEnd(text, from, close) {
+  let quote = '', depth = 0, first = -1;
+  for (let i = from; i < text.length - 1; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === close[0] && text[i + 1] === '}') {
+      if (depth <= 0) return i;
+      if (first < 0) first = i;
+    }
+    if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+  }
+  return first >= 0 ? first : text.length;
 }
 
 /* Explicit ref() / source() calls, with the exact range of each name. */
@@ -356,10 +400,177 @@ function scanVocabulary(text, vocab) {
   return found;
 }
 
+/* The names a properties file declares nodes under, each to be linked to its
+   node: a table under `sources:`, named `source.table` the way the graph names
+   it, and an entry of one of these top-level lists. Only a `name:` on an item
+   of such a list counts, so a column named like a model is never taken for
+   one, and the `models:` of dbt_project.yml, a mapping of configs, declares
+   nothing. Entries under `macros:` come back as well, for the macro links. */
+const DECLARING_LISTS = new Set(['models', 'seeds', 'snapshots', 'analyses', 'exposures']);
+
+function yamlDeclared(text) {
+  const nodes = yamlOutline(text);
+  const lines = text.split('\n');
+  const starts = [];
+  let offset = 0;
+  for (const l of lines) { starts.push(offset); offset += l.length + 1; }
+  // The key an item hangs from, when that key is a top-level list.
+  const listOf = (item) => {
+    const list = item.parent >= 0 ? nodes[item.parent] : null;
+    return list && list.parent < 0 && list.kind === 'seq' ? list.label : '';
+  };
+  const nameUnder = (item) => {
+    for (let j = item + 1; j < nodes.length && nodes[j].line <= nodes[item].endLine; j++) {
+      if (nodes[j].parent !== item || nodes[j].label !== 'name') continue;
+      const v = yamlNameAt(lines[nodes[j].line], nodes[j].col);
+      return v ? v.value : '';
+    }
+    return '';
+  };
+  const sourceNames = new Map();
+  const found = [];
+  for (const n of nodes) {
+    if (n.label !== 'name' || n.parent < 0) continue;
+    const v = yamlNameAt(lines[n.line], n.col);
+    if (!v) continue;
+    const ranges = [[starts[n.line] + v.from, starts[n.line] + v.to]];
+    const item = nodes[n.parent];
+    const list = listOf(item);
+    if (DECLARING_LISTS.has(list)) {
+      found.push({ kind: 'node', name: v.value, ranges });
+      continue;
+    }
+    if (list === 'macros') {
+      found.push({ kind: 'macro', name: v.value, ranges });
+      continue;
+    }
+    // A table's item hangs from `tables`, which sits on an item of `sources`.
+    const tables = item.parent >= 0 ? nodes[item.parent] : null;
+    if (!tables || tables.label !== 'tables' || tables.kind !== 'seq' || tables.parent < 0) continue;
+    if (listOf(nodes[tables.parent]) !== 'sources') continue;
+    if (!sourceNames.has(tables.parent)) sourceNames.set(tables.parent, nameUnder(tables.parent));
+    const source = sourceNames.get(tables.parent);
+    if (source) found.push({ kind: 'source', name: `${source}.${v.value}`, ranges });
+  }
+  return found;
+}
+
+/* The value of a `name:` key written at `col`, and where it sits in the line.
+   Null for anything but a plain or quoted scalar: Jinja, a flow collection, an
+   anchor or a block scalar never names a node the way it is written. */
+function yamlNameAt(line, col) {
+  const colon = line.indexOf(':', col);
+  if (colon < 0) return null;
+  let from = colon + 1;
+  while (line[from] === ' ' || line[from] === '\t') from++;
+  let to;
+  const q = line[from];
+  if (q === '"' || q === "'") {
+    to = line.indexOf(q, from + 1);
+    if (to < 0) return null;
+    from++;
+  } else {
+    if (q === undefined || '[{|>&*!#'.includes(q)) return null;
+    const comment = line.slice(from).search(/[ \t]#/);
+    to = comment < 0 ? line.length : from + comment;
+    while (to > from && /\s/.test(line[to - 1])) to--;
+  }
+  const value = line.slice(from, to);
+  if (!value || value.includes('{{') || value.includes('{%')) return null;
+  return { value, from, to };
+}
+
+/* Calls inside Jinja, as the dotted name before a `(`: `hub`, `automate_dv.hub`.
+   Only inside a block, since outside one `coalesce(` is SQL, and a project
+   macro named like a SQL function would otherwise link every use of it.
+   Whether a name is a macro, and which one, is the server's answer: the same
+   bare `hub` is the project's own or automate_dv's depending on what the
+   project defines (0028). A name after a dot is a method, after a pipe a
+   filter, and after `macro` the definition itself; none of those is a call.
+   The range is the macro's own name, without its package: the SQL mode draws
+   `automate_dv`, the dot and `hub` as three tokens, and a mark across them
+   would light up one piece at a time under the pointer. */
+const JINJA_DEFINERS = new Set(['macro', 'test', 'materialization']);
+
+/* `yaml` for a properties or project file, where Jinja inside a double-quoted
+   scalar writes its own quotes as `\"`: YAML hands Jinja a plain `"`, so that
+   is what the scan reads, one space and one quote keeping every offset. */
+function scanMacroCalls(text, yaml = false) {
+  if (yaml) text = text.replace(/\\"/g, ' "');
+  const found = new Map();
+  const opener = /\{([{%])[-+]?/g;
+  let m;
+  while ((m = opener.exec(text)) !== null) {
+    const tag = m[1] === '%';
+    const end = jinjaBlockEnd(text, opener.lastIndex, tag ? '%}' : '}}');
+    let i = opener.lastIndex;
+    let first = tag;           // the first word of a {% %} block is its tag
+    let defines = false;       // and after `macro`, the next name is being defined
+    let quote = '';
+    while (i < end) {
+      const c = text[i];
+      if (quote) {
+        if (c === '\\') i++;
+        else if (c === quote) quote = '';
+        i++;
+        continue;
+      }
+      if (c === '"' || c === "'") { quote = c; i++; continue; }
+      if (!/[A-Za-z_]/.test(c)) { i++; continue; }
+      const from = i;
+      while (i < end && /[\w.]/.test(text[i])) i++;
+      const chain = text.slice(from, i);
+      if (first) {
+        first = false;
+        defines = JINJA_DEFINERS.has(chain);
+        // Nothing in a raw block is Jinja, so the scan resumes after it.
+        if (chain === 'raw') {
+          const close = /\{%[-+]?\s*endraw\s*[-+]?%\}/g;
+          close.lastIndex = end;
+          const r = close.exec(text);
+          opener.lastIndex = r ? close.lastIndex : text.length;
+          break;
+        }
+        continue;
+      }
+      if (defines) { defines = false; continue; }
+      let j = i;
+      while (text[j] === ' ' || text[j] === '\t') j++;
+      if (text[j] !== '(' || text[from - 1] === '.') continue;
+      let k = from - 1;
+      while (k >= 0 && /\s/.test(text[k])) k--;
+      if (text[k] === '|') continue;
+      const parts = chain.split('.');
+      if (parts.length > 2 || parts.some((p) => !p)) continue;
+      if (!found.has(chain)) found.set(chain, []);
+      found.get(chain).push([from + chain.lastIndexOf('.') + 1, from + chain.length]);
+    }
+    if (opener.lastIndex < end) opener.lastIndex = end;
+  }
+  return [...found].map(([call, ranges]) => ({ call, ranges }));
+}
+
+/* Where `{% macro name(` sits, as a line and a column, so a link lands on the
+   definition rather than at the top of a file that may hold twenty. Comments
+   are masked first: a commented-out copy is not the macro dbt reads. */
+function macroDefLine(text, name) {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp('(\\{%[-+]?\\s*macro\\s+)' + esc + '\\s*\\(').exec(maskJinjaComments(text));
+  if (!m) return null;
+  const at = m.index + m[1].length;
+  const before = text.slice(0, at);
+  const line = before.split('\n').length - 1;
+  return { line, ch: at - (before.lastIndexOf('\n') + 1) };
+}
+
 async function markRefs(doc, path) {
   doc.getAllMarks().forEach((mk) => { if (mk.refTarget) mk.clear(); });
   const text = maskJinjaComments(doc.getValue());
   const calls = scanCalls(text);
+  // In a properties file, the names that declare its nodes link to them too.
+  const declared = path && modeFor(path) === 'text/x-yaml' && text.length <= OUTLINE_MAX
+    ? yamlDeclared(text).filter((d) => d.kind !== 'macro')
+    : [];
 
   // The manifest is the authority on what this file actually depends on.
   let parents = [];
@@ -370,13 +581,17 @@ async function markRefs(doc, path) {
   const known = {};
   parents.forEach((p) => { known[p.name] = p; });
 
-  const unknown = [...new Set(calls.map((c) => c.name))].filter((n) => !known[n]);
+  const unknown = [...new Set([...calls, ...declared].map((c) => c.name))].filter((n) => !known[n]);
+  const resolved = {};
   if (unknown.length) {
     try {
       const rows = await api.send('/api/resolve', 'POST', { names: unknown });
-      rows.forEach((r) => { known[r.name] = r; });
+      rows.forEach((r) => { resolved[r.name] = r; });
     } catch { /* leave them unresolved */ }
   }
+  // A declared name is linked where it is declared and nowhere else: in the
+  // vocabulary below, a table would also link every column sharing its name.
+  for (const c of calls) if (resolved[c.name]) known[c.name] = resolved[c.name];
 
   // A source parent is named "src.table", which never appears as one token.
   // Custom macros such as replicate('crm', 'X') hide the source() call, so
@@ -388,15 +603,21 @@ async function markRefs(doc, path) {
     if (!known[table]) known[table] = target;
   }
   const vocab = new Set(Object.keys(known).filter((n) => !n.includes('.')));
-  const hits = [...calls, ...scanVocabulary(text, vocab)];
+  // Declared first, so a name that is both keeps the click that stays put.
+  const hits = [...declared, ...calls, ...scanVocabulary(text, vocab)];
+  const isCall = new Set(calls), isDeclared = new Set(declared);
 
   const seen = new Set();
   for (const hit of hits) {
-    const target = known[hit.name];
+    // A declared name asked for itself, and `known` may hold a source table
+    // of the same name: a model called after its source links to the model.
+    const target = isDeclared.has(hit)
+      ? resolved[hit.name] || known[hit.name]
+      : known[hit.name] || resolved[hit.name];
     for (const [from, to] of hit.ranges) {
       if (seen.has(from)) continue;
       seen.add(from);
-      if (!target && !calls.includes(hit)) continue;
+      if (!target && !isCall.has(hit) && !isDeclared.has(hit)) continue;
       const title = target
         ? `${target.disabled ? 'DISABLED ' : ''}${target.kind}${target.materialized ? ' · ' + target.materialized : ''}\n${target.file}`
         : `${hit.name} is in no manifest node (stale manifest or a typo)`;
@@ -408,6 +629,7 @@ async function markRefs(doc, path) {
       });
       mark.refTarget = target || { name: hit.name };
       mark.refTitle = title;
+      if (isDeclared.has(hit)) mark.declared = true;
     }
   }
 }
@@ -428,20 +650,84 @@ function markVars(doc) {
   }
 }
 
+/* Links every macro call in the buffer, and in a properties file every entry
+   under `macros:`, to the file that defines the macro. The names come from the
+   buffer and the answer from the manifest (0028): only a call the server can
+   place in the project comes back, so dbt's own macros, Jinja's builtins and a
+   typo all stay text. The marks are replaced only once the answer is in, and
+   not at all when a later scan has started or the buffer has moved on, since
+   ranges read from one text would land on the wrong words of another. */
+async function markMacros(doc, path) {
+  const scan = doc.macroScan = (doc.macroScan || 0) + 1;
+  const raw = doc.getValue();
+  const text = maskJinjaComments(raw);
+  const yaml = !!path && modeFor(path) === 'text/x-yaml';
+  const hits = scanMacroCalls(text, yaml);
+  if (yaml && text.length <= OUTLINE_MAX) {
+    for (const d of yamlDeclared(text)) if (d.kind === 'macro') hits.push({ call: d.name, ranges: d.ranges });
+  }
+  let links = [];
+  if (hits.length) {
+    try {
+      links = await api.send('/api/macros/resolve', 'POST', { file: path || '', calls: hits.map((h) => h.call) });
+    } catch { return; }
+  }
+  if (doc.macroScan !== scan || doc.getValue() !== raw) return;
+  doc.getAllMarks().forEach((mk) => { if (mk.macroTarget) mk.clear(); });
+  const byCall = new Map(links.map((l) => [l.call, l]));
+  for (const hit of hits) {
+    const target = byCall.get(hit.call);
+    if (!target) continue;
+    for (const [from, to] of hit.ranges) {
+      const mark = doc.markText(doc.posFromIndex(from), doc.posFromIndex(to), { className: 'cm-macrolink' });
+      mark.macroTarget = target;
+    }
+  }
+}
+
 function wireRefClicks(cm) {
   cm.getWrapperElement().addEventListener('mousedown', (e) => {
     if (e.button !== 0 || e.altKey) return;              // alt-click still places the cursor
-    if (!e.target.classList || !e.target.classList.contains('cm-reflink')) return;
+    const cl = e.target.classList;
+    if (!cl || !(cl.contains('cm-reflink') || cl.contains('cm-macrolink'))) return;
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
-    const mark = cm.findMarksAt(pos).find((mk) => mk.refTarget);
+    const marks = cm.findMarksAt(pos);
+    const macro = cl.contains('cm-macrolink') && marks.find((mk) => mk.macroTarget);
+    if (macro) {
+      e.preventDefault();
+      openMacro(macro.macroTarget);
+      return;
+    }
+    const mark = marks.find((mk) => mk.refTarget);
     if (!mark) return;
     e.preventDefault();
     const t = mark.refTarget;
     if (!t.id) return toast(`${t.name} is not in the manifest`, 'err');
+    if (mark.declared) return focusDeclared(t.id);
     openFile(t.file, { focusLineage: false, preview: true });
     focusNode(t.id);
     revealInTree(t.file);
   });
+}
+
+/* A name clicked in the file that declares it. The editor stays where it is,
+   since the definition is the line that was clicked, and the lineage moves.
+   The terminal is the one dock that shows nothing of a node, so from there
+   the lineage is brought forward; the others all follow the focus. */
+function focusDeclared(id) {
+  focusNode(id);
+  if (!$('#dock-terminal').classList.contains('hidden')) showDock('lineage');
+}
+
+/* The file a macro is defined in, at its `{% macro %}` line. The lineage stays
+   on the model being read: a macro is not a node. */
+async function openMacro(t) {
+  await openFile(t.file, { focusLineage: false, preview: true });
+  const f = S.open.get(t.file);
+  if (S.active !== t.file || !f || !f.doc) return;          // it could not be opened
+  revealInTree(t.file);
+  const at = macroDefLine(f.doc.getValue(), t.name);
+  if (at) gotoPos(at.line, at.ch);
 }
 
 /* Hovering a mark opens the card. The classList gate comes first because
@@ -454,9 +740,15 @@ function wireHovers(cm) {
     const cl = e.target.classList;
     if (!cl) return hoverLeave();
     const isVar = cl.contains('cm-varlink');
-    if (!isVar && !cl.contains('cm-reflink')) return hoverLeave();
+    const isMacro = cl.contains('cm-macrolink');
+    if (!isVar && !isMacro && !cl.contains('cm-reflink')) return hoverLeave();
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const at = () => cm.charCoords(pos, 'window');
+    if (isMacro) {
+      const mm = cm.findMarksAt(pos).find((mk) => mk.macroTarget);
+      if (!mm) return hoverLeave();
+      return hoverEnter('macro:' + mm.macroTarget.id, at, (el) => fillMacroCard(el, mm.macroTarget));
+    }
     if (isVar) {
       const vm = cm.findMarksAt(pos).find((mk) => mk.varTarget);
       if (!vm) return hoverLeave();
@@ -503,10 +795,14 @@ function initEditor() {
   let rescan = null;
   S.cm.on('change', () => {
     clearTimeout(rescan);
-    const doc = S.cm.getDoc();
+    // The path as well as the Doc, taken now: a tab switched within the delay
+    // would otherwise scan this file as that one, and a .yml would lose the
+    // links only a properties file gets.
+    const doc = S.cm.getDoc(), path = S.active;
     rescan = setTimeout(() => {
-      markRefs(doc, S.active);
+      markRefs(doc, path);
       markVars(doc);
+      markMacros(doc, path);
       refreshOutline();
       renderCrumbs();
     }, 500);
@@ -548,6 +844,7 @@ async function openFile(path, { focusLineage = true, preview = false } = {}) {
   if (preview) S.preview = path;
   markRefs(doc, path);
   markVars(doc);
+  markMacros(doc, path);
   activate(path, focusLineage);
 }
 
@@ -1016,7 +1313,9 @@ function yamlOutline(text) {
       rest = rest.slice(k);
       if (rest === '') break;
     }
-    if (rest === '' || rest === '-') continue;
+    // `- # note` is an item with nothing on its line yet, not a string item
+    // holding the comment: its keys follow on the lines below.
+    if (rest === '' || rest === '-' || rest[0] === '#') continue;
 
     const kv = yamlKey(rest);
     if (!kv) {
@@ -2523,6 +2822,15 @@ function paintMode() {
 }
 
 async function syncNode(path) {
+  // A properties file declares many nodes, and the server answers for one of
+  // them. When the lineage already shows another, most likely because it was
+  // clicked in this file, coming back to the tab keeps it.
+  if (S.focus) {
+    try {
+      const now = await nodeDetail({ id: S.focus });
+      if (now.file === path || now.yml === path) return;
+    } catch { /* gone with the last manifest: sync as usual */ }
+  }
   try {
     const detail = await nodeDetail({ file: path });
     if (detail.id !== S.focus) focusNode(detail.id);
@@ -3659,6 +3967,20 @@ function fillVarCard(el, t) {
     if (row.status && row.raw) lines.push('as written: ' + row.raw);
     show(value, lines.filter(Boolean).join('\n'), `${body.file}:${row.line}`, row.redacted ? 'warn' : '');
   }).catch(() => show(null, 'could not read dbt_project.yml', '', 'warn'));
+}
+
+/* A macro, from what its link already carries, so there is nothing to wait
+   for. The package is the line that matters: a project and a package can both
+   define `hub`, and this says which of the two the call reached. */
+function fillMacroCard(el, t) {
+  hoverCardBody(el, { title: t.name, sub: `macro · ${t.package}`, crumb: t.file });
+  el.append(Object.assign(document.createElement('div'), {
+    className: 'hc-desc' + (t.description ? '' : ' muted'),
+    textContent: t.description || 'No description in the YAML.',
+  }));
+  if (t.args && t.args.length) {
+    el.append(Object.assign(document.createElement('div'), { className: 'hc-counts', textContent: 'arguments: ' + t.args.join(', ') }));
+  }
 }
 
 /* The freshness card. Built from `freshnessBadge`, which decides every word:

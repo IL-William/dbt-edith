@@ -7,7 +7,7 @@ belongs here. Last updated 2026-09-23.
 
 ## Shipped
 
-Editor with clickable `ref()` and `source()` and Jinja coloured by role,
+Editor with clickable `ref()`, `source()` and macro calls and Jinja coloured by role,
 lineage graph in model and column modes, column lineage fetched from Snowflake
 when a column is clicked and the switch in Catalog > Columns is on (0016),
 terminal, file explorer with git and
@@ -166,12 +166,44 @@ tall to 8 126. Brandes and Kopf alone drew that one at 15 615 px, found only by
 running the real payload, which is why the switch exists. Seen in headless
 Chrome on that payload; not yet on the VM.
 
+Macro links, and the names a properties file declares, added 2026-09-23: a
+macro call inside Jinja opens the file that defines it at its `{% macro %}`
+line, and in a `.yml` the name of each source table, model, seed, snapshot and
+exposure moves the lineage onto its node. The macro table is the manifest's,
+1 690 entries on the 18 825 node project, 171 of them the project's own, and a
+call is resolved in dbt's order by `src/macros.rs` (0028), because 54 names are
+defined twice there, some by the project wrapping a package macro under its
+own name. A bare name reaches the project's, `pkg.name` the package's, and a
+bare `star` nothing at all, as in dbt. The browser finds the names and the
+definition line, the server only which macro and whether its file is on disk.
+
+A declared name's click leaves the editor where it is, unlike a `ref()`, which
+opens its target. In a properties file the name is the definition, and opening
+the model's `.sql` as a preview would replace the file being edited. Returning
+to that file used to move the lineage to whichever node `/api/node?file=` lists
+first, rarely the table just clicked; `syncNode` now keeps the node already
+shown when the file declares it.
+
+Driven in headless Chrome on that project: `stage` in `automate_dv.stage(`
+opened the package's `stage.sql` on its definition, the lineage unmoved; a
+project macro opened on its line in a file named after something else; 22 of
+22 tables of a sources file linked, the source itself not; a models file linked
+its model and none of its columns; the four macro calls in `dbt_project.yml`,
+hooks and the query comment, linked, `env_var` left to its card.
+Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
+YAML, and packages under a custom `packages-install-path`. Not yet opened on
+the VM.
+
 ## Deferred, in the order they were chosen
 
-1. **Macro layer.** Links on `{{ macro() }}` calls, and a used-by count per
-   macro. The interesting part is reporting macros with no inbound reference
-   without claiming they are dead: a macro can be called from YAML, from a
-   selector, or by another package.
+1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
+   count is what is left of the macro layer. The interesting part is reporting
+   macros with no inbound reference without claiming they are dead: a macro can
+   be called from YAML, from a selector, or by another package. Most of the
+   count is already in the manifest: every node and every macro carries
+   `depends_on.macros`, which named one project macro for all 300 models
+   calling it (0028). Hooks are the gap: their operation nodes list what they
+   call under dbt-core and nothing under Fusion.
 2. **Run history.** `run_results.json` gives status and timing per node. Status
    as the box stroke in the graph, plus staleness against the manifest. Watch
    for partial runs: a node absent from the file was not run, which is not the
@@ -299,6 +331,12 @@ cross-compile.
   all rather than a failed assertion.
   This is why the breadcrumb hooks hang off `activate`, which that harness
   already stubs, and not off `openFile`.
+- **`web/tests/macros.js` slices** `web/app.js` three times: from
+  `function maskJinjaComments` to `/* Explicit ref()`, which `vars.js` reads
+  too and which holds `jinjaBlockEnd`, the comment mask's own dependency; from
+  `function yamlIndent` to `/* ATX headings`; and from `const DECLARING_LISTS`
+  to `async function markRefs`. Everything in those ranges stays pure.
+  `markMacros` is called from `openFile`, which is why `tabs.js` stubs it.
 - **`exportViewer` runs in the exported file, not in the app.** It is written
   into the page as its own source text, so a name from `web/app.js` inside it
   passes every check here and fails only in a downloaded file.
