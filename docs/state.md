@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-09-22.
+belongs here. Last updated 2026-09-23.
 
 ## Shipped
 
@@ -130,6 +130,24 @@ compiled SQL where none did, 60 of 60 models are unchanged, and only 7 of those
 148 have a run file, which is true rather than a miss: dbt writes 26 250
 compiled generic tests there and 472 run ones.
 
+Export and Copy image, added 2026-09-23: the canvas leaves as one HTML file for
+a ticket, read in a browser with nothing installed (0026), or as a PNG on the
+clipboard. The file pans and zooms its own viewBox, prints to one vector page,
+which is the PDF, and forbids itself every fetch. Its header names the `dbt ls`
+command for the same nodes and where the picture came from, in absolute dates.
+Built from the payload that was drawn, never from `S`: a rejected selector
+leaves the last picture on screen while `S.selectSub` is already null.
+
+Measured on the 18 825 node project, driven in headless Chrome from `file://`:
+a nine-model selection is a 27 KB file, a capped one of 400 boxes 524 KB. Each
+file makes one request, its own, and logs nothing. Two things only a browser
+showed. The app's own policy takes images from `data:` alone (0015), so the
+PNG goes through a data URL; a blob URL failed without a word. And a clip counts
+characters while a box holds pixels, so a name written out whole is measured on
+the canvas, measured again once shrunk, since small sizes do not scale in
+proportion, and pinned to that length for readers whose fonts run wider.
+Not yet opened in Firefox, Safari, or Edge on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **Macro layer.** Links on `{{ macro() }}` calls, and a used-by count per
@@ -245,6 +263,19 @@ cross-compile.
   all rather than a failed assertion.
   This is why the breadcrumb hooks hang off `activate`, which that harness
   already stubs, and not off `openFile`.
+- **`exportViewer` runs in the exported file, not in the app.** It is written
+  into the page as its own source text, so a name from `web/app.js` inside it
+  passes every check here and fails only in a downloaded file.
+  `web/tests/export.js` looks for the usual ones.
+- **The canvas CSS exists twice**, in `web/app.css` and in `exportCanvasCss`.
+  Editing a `.nd`, `.edge`, `.role` or `#graph text` rule in one fails the
+  export harness until the other matches.
+- **The export harness slices** `web/app.js` from `function exportTitle` to
+  `function exportLineage`, and from `function legendEntries` to
+  `function paintLegend`. Everything in those ranges stays pure, and
+  `exportLineage` must never become `async`: the slice would end on a bare
+  `async` and stop parsing. The same harness evaluates `frameOf`, which sits
+  inside the `web/lineage.js` slice that `colours.js` reads.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

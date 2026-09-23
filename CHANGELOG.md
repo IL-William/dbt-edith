@@ -22,6 +22,16 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- The Lineage tab exports what it shows: Export saves one HTML file that opens
+  in any browser with nothing installed and no network, zooms without blurring
+  and prints to a one-page PDF, for a ticket that says which models a release
+  rebuilds (0026). Its header names the `dbt ls` command that lists the same
+  nodes, the warnings of a mistyped selector, how much of a capped selection was
+  drawn, and when and from which manifest, branch and commit the picture came.
+- Copy image, beside Export, puts the same picture on the clipboard as a PNG to
+  paste into a ticket's description, and saves the PNG instead when the browser
+  refuses the clipboard.
+
 - The Compiled and Run tabs answer for a test, not only for a model. A generic
   test's file is named by dbt, which truncates a long generated name and appends
   a hash, so it is found by reading the `compiled_path` the manifest records

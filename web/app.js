@@ -38,6 +38,7 @@ const S = {
   vars: null,                 // payload of /api/vars, for the editor's var() marks
   outline: null,              // { path, nodes } scanned for the breadcrumb's symbol half
   crumbLine: -1,              // the line that half was last drawn for
+  version: '',                // this build's version, named in an exported graph
 };
 
 // ------------------------------------------------------------------ util --
@@ -1908,8 +1909,7 @@ async function focusNode(id, { open = false } = {}) {
     ]);
     $('#lineage-empty').classList.add('hidden');
     Lineage.render(sub);
-    $('#lineage-status').textContent =
-      `${sub.nodes.length} nodes · ${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
+    $('#lineage-status').textContent = canvasStatus(sub);
     paintLegend(sub);
     renderCatalog(detail);
     for (const kind of ['compiled', 'run']) {
@@ -1938,8 +1938,7 @@ async function focusColumn(id, column) {
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`);
     $('#lineage-empty').classList.add('hidden');
     Lineage.render(sub);
-    $('#lineage-status').textContent =
-      `${sub.focus_column} · ${sub.nodes.length} columns · ${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
+    $('#lineage-status').textContent = canvasStatus(sub);
     paintLegend(sub);
     showDock('lineage');
   } catch (e) {
@@ -2070,6 +2069,16 @@ function selectStatus(sub) {
   const drawn = sub.nodes.length;
   const head = sub.truncated ? `${drawn} of ${sub.matched} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
   return `${head} · ${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
+}
+
+/* The line under the canvas, whichever mode drew it. One function rather than
+   a string at each caller, so an exported graph repeats the screen's words. */
+function canvasStatus(sub) {
+  if (sub.mode === 'select') return selectStatus(sub);
+  const tail = `${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
+  return sub.mode === 'column'
+    ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
+    : `${sub.nodes.length} nodes · ${tail}`;
 }
 
 /* Four at most: a selector with twenty bad terms has one mistake in it, not
@@ -2451,8 +2460,11 @@ async function openColumn(n, column) {
    Model mode explains the boxes, whose colour is the materialization. Column
    mode explains the edges instead, whose colour is what happened to the column:
    that is the question the column graph exists to answer, and repeating the
-   materializations there would explain something nobody is looking at. */
-function paintLegend(sub) {
+   materializations there would explain something nobody is looking at.
+
+   Pure, and shared with an exported graph, so the file and the screen explain
+   the same colours. */
+function legendEntries(sub) {
   const seen = new Map();
   const kinds = sub.edge_kinds || [];
   if (kinds.length) {
@@ -2467,9 +2479,13 @@ function paintLegend(sub) {
       if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
     }
   }
+  return [...seen].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function paintLegend(sub) {
   const host = $('#lineage-legend');
   host.textContent = '';
-  [...seen].sort((a, b) => a[0].localeCompare(b[0])).forEach(([label, colour]) => {
+  legendEntries(sub).forEach(([label, colour]) => {
     const chip = document.createElement('span');
     const sq = document.createElement('i');
     sq.style.background = colour;
@@ -2518,6 +2534,8 @@ function relinkTools() {
     el.addEventListener('change', rerender);
   }
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
+  $('#export-btn').addEventListener('click', exportLineage);
+  $('#image-btn').addEventListener('click', copyLineageImage);
   $$('#graph-mode .segbtn').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
     if (b.dataset.mode === 'select') { runSelection(); $('#select-input').focus(); return; }
@@ -2549,6 +2567,526 @@ function relinkTools() {
     if (!sub) return toast('run a selection first', 'err');
     sendToTerminal(lsCommand(sub.select, sub.exclude || ''));
   });
+}
+
+// ---------------------------------------------------------------- export --
+/* What the canvas shows, as one file anyone can open with nothing installed:
+   attached to a ticket and read in a browser, zoomed without blurring, printed
+   to a one-page PDF, or pasted as an image (0026). Every word of it comes from
+   the payload that was drawn, never from S or the boxes above the canvas: a
+   rejected selector or a failed fetch leaves the last picture on screen while
+   those already describe the next one.
+
+   Pure from here to the Export button's handler, which is where the export
+   harness stops reading. */
+
+/* What the picture is of: the expression for a selection, the model for its
+   neighbourhood, model.column for a column. A column box's `sub` starts with
+   its owner's name, which is how the server builds it. */
+function exportTitle(sub) {
+  if (!sub || !sub.nodes || !sub.nodes.length) return '';
+  if (sub.mode === 'select') return (sub.select || '') + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
+  const f = sub.nodes[sub.focus];
+  if (!f) return '';
+  if (sub.mode !== 'column') return f.name;
+  const owner = String(f.sub || '').split('  ·  ')[0];
+  const column = sub.focus_column || f.name;
+  return owner ? `${owner}.${column}` : column;
+}
+
+/* Short enough for a heading and a file name. A selection can run to dozens
+   of terms and the command carries every one of them, so the heading keeps
+   the first terms that fit and counts the rest. A first term too long to fit
+   is cut itself rather than the count, which says more than its last letters
+   would. An exclusion is never cut in half: it is named, or left to the
+   command. */
+function shortTitle(text, max) {
+  const s = String(text || '').trim();
+  if (s.length <= max) return s;
+  const terms = s.split(/\s+/);
+  const cut = terms.indexOf('--exclude');
+  const inc = cut < 0 ? terms : terms.slice(0, cut);
+  const rest = (k) => (k ? ` and ${k} more` : cut < 0 ? '' : ' --exclude …');
+  let out = '';
+  let n = 0;
+  for (; n < inc.length; n++) {
+    const next = out ? `${out} ${inc[n]}` : inc[n];
+    if ((next + rest(inc.length - n - 1)).length > max) break;
+    out = next;
+  }
+  if (out) return out + rest(inc.length - n);
+  const tail = rest(inc.length - 1);
+  return (inc[0] || s).slice(0, Math.max(1, max - tail.length - 1)) + '…' + tail;
+}
+
+/* The command that lists what the picture shows, for a reader who wants to
+   check it against dbt itself (0024), in the words the dbt ls button types.
+   When the set holds no test, tests are excluded outright: dbt ls would
+   otherwise list the ones the tests checkbox kept off the canvas. A model's
+   neighbourhood is written with dbt's own graph operators, from the depths
+   actually drawn, and only for what dbt selects by a bare name. Column
+   lineage has no dbt equivalent. */
+function exportCommand(sub) {
+  if (!sub || !sub.nodes || !sub.nodes.length) return '';
+  const tested = sub.mode === 'select'
+    ? !!(sub.counts && sub.counts.test)
+    : sub.nodes.some((n) => n.kind === 'test');
+  const exclude = (ex) => (tested ? ex : [ex, 'resource_type:test'].filter(Boolean).join(' '));
+  if (sub.mode === 'select') return lsCommand(sub.select || '', exclude(sub.exclude || ''));
+  const f = sub.nodes[sub.focus];
+  if (sub.mode !== 'model' || !f || !['model', 'seed', 'snapshot'].includes(f.kind)) return '';
+  const depths = sub.nodes.map((n) => n.depth || 0);
+  const up = Math.max(0, ...depths.map((d) => -d));
+  const down = Math.max(0, ...depths);
+  return lsCommand(`${up ? up + '+' : ''}${f.name}${down ? '+' + down : ''}`, exclude(''));
+}
+
+/* What matched but did not fit on the canvas, by name. A multiset difference,
+   because a source and a model can share a name and each is a match. */
+function undrawnNames(names, nodes) {
+  const drawn = new Map();
+  for (const n of nodes || []) drawn.set(n.name, (drawn.get(n.name) || 0) + 1);
+  const out = [];
+  for (const name of names || []) {
+    const left = drawn.get(name) || 0;
+    if (left) drawn.set(name, left - 1);
+    else out.push(name);
+  }
+  return out;
+}
+
+/* The manifest's state when the file was made, told to someone who was not
+   there. The badge's own sentences speak to the person at the keyboard about
+   files they can open, and carry an age, which is wrong by the time anyone
+   reads this. */
+function exportFreshness(f) {
+  if (!f) return '';
+  const n = (k) => f[k + '_n'] || 0;
+  const files = (k) => `${k} file${k === 1 ? '' : 's'}`;
+  const said = {
+    fresh: 'The manifest then matched the project\'s files.',
+    edited: `${files(n('edited'))} saved since the manifest was written had not been parsed, `
+      + 'so the graph shows the project as it was before them.',
+    stale: `${files(n('committed') + n('gone') + n('edited'))} had changed since the manifest was written, `
+      + 'so some boxes may no longer match the code.',
+  }[f.state] || '';
+  const d = f.drift || {};
+  const behind = d.base && d.behind
+    ? `The branch was ${d.behind} commit${d.behind === 1 ? '' : 's'} behind ${d.base}.`
+    : '';
+  return [said, behind].filter(Boolean).join(' ');
+}
+
+/* The header's words, from the payload that was drawn and fields the caller
+   fills in by name. S.meta itself never comes here: it also carries absolute
+   paths, the manifest's and the column cache's, which have no business in a
+   file that leaves the machine. */
+function exportFacts(sub, ctx) {
+  const kicker = { select: 'Selection', model: 'Lineage of a model', column: 'Column lineage' }[sub.mode] || 'Lineage';
+  const depths = sub.nodes.map((n) => n.depth || 0);
+  const up = Math.max(0, ...depths.map((d) => -d));
+  const down = Math.max(0, ...depths);
+  const counts = sub.mode === 'select'
+    ? `${selectSummary(sub)}  ·  ${canvasStatus(sub)}`
+    : `${canvasStatus(sub)}  ·  ${up} level${up === 1 ? '' : 's'} up, ${down} down`;
+  const where = [
+    ctx.project,
+    ctx.dbtVersion && `dbt ${ctx.dbtVersion}`,
+    ctx.manifestAt && `manifest written ${ctx.manifestAt}`,
+    ctx.branch && `branch ${ctx.branch}${ctx.sha ? ` at ${ctx.sha}` : ''}`,
+    sub.mode === 'column' && ctx.cllSource && `column lineage from ${ctx.cllSource}`,
+  ].filter(Boolean).join('  ·  ');
+  const when = [
+    `Exported ${ctx.exportedAt}${ctx.version ? ` with dbt-edith ${ctx.version}` : ''}.`,
+    exportFreshness(ctx.fresh),
+  ].filter(Boolean).join(' ');
+  return {
+    kicker,
+    lines: [counts, where, when].filter(Boolean),
+    warnings: sub.mode === 'select' ? selectWarnings(sub.warnings) : [],
+    command: exportCommand(sub),
+    undrawn: sub.mode === 'select' && sub.truncated ? undrawnNames(sub.names, sub.nodes) : [],
+  };
+}
+
+/* An absolute moment with its offset: a reader elsewhere cannot tell 09/10
+   from 10/09, and an age is wrong by the time anyone reads it. The offset is
+   an argument so the answer does not depend on the machine running the tests. */
+function exportStamp(secs, offsetMin) {
+  const d = new Date((secs + offsetMin * 60) * 1000);
+  const p = (x) => String(x).padStart(2, '0');
+  const off = Math.abs(offsetMin);
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} `
+    + `${p(d.getUTCHours())}:${p(d.getUTCMinutes())} `
+    + `UTC${offsetMin < 0 ? '-' : '+'}${p(Math.floor(off / 60))}:${p(off % 60)}`;
+}
+
+/* The day a file is named after, on the clock of whoever exported it. */
+function localDay(d) {
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/* A name every system accepts. Anything outside a short safe set becomes a
+   dash, which covers all Windows forbids, and the cut comes before the final
+   trim so a name never ends in a dash or a dot. */
+function exportFileName(title, day) {
+  const slug = String(title || '')
+    .replace(/[^A-Za-z0-9._+-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 60)
+    .replace(/^[-.]+|[-.]+$/g, '');
+  return `lineage-${slug ? slug + '-' : ''}${day}.html`;
+}
+
+function escapeHtml(s) {
+  const to = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(s ?? '').replace(/[&<>"']/g, (c) => to[c]);
+}
+
+/* The canvas rules, copied from app.css line for line, with the variables they
+   and the page use. Copied rather than read from the live stylesheet at export
+   time, which would hand over whatever the exporting browser made of them,
+   rules it dropped included, to be opened in another browser. The export
+   harness holds every copied line to app.css, so an edit there fails the
+   check until it is made here too. */
+function exportCanvasCss() {
+  return [
+    ':root { --bg: #12161d; --bg-2: #171c25; --bg-3: #1d2430; --line: #2a3340; --fg: #d7dee8; '
+      + '--fg-dim: #8b97a8; --accent: #4da3ff; --warn: #e0a34b; '
+      + '--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; '
+      + '--ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }',
+    '#graph text { font-family: var(--ui); user-select: none; }',
+    '.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }',
+    '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
+    '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
+    '.nd:hover rect.box { stroke: var(--fg-dim); }',
+    '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
+    '.nd.off rect.box { stroke-dasharray: 3 3; }',
+    '.nd.off .t1, .nd.off .t2 { opacity: .55; }',
+    '.nd.sel rect.box { stroke: #fff; }',
+    '.nd .kindbar { stroke: none; rx: 3; }',
+    '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
+    '.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }',
+    '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
+    '.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }',
+    '.rolebadge rect { stroke-width: 1; }',
+  ].join('\n');
+}
+
+/* The page around the picture, and its print. The page never scrolls, so the
+   wheel over the graph always zooms. A print is one page whatever the graph:
+   the body takes a fixed height that fits A4 and Letter alike, in millimetres
+   because engines have measured `vh` against the screen when printing, and
+   the graph gets what the header leaves. The zero page margin also keeps the
+   browser from printing its own header and footer, which name where the file
+   sat on the machine that printed it. */
+function exportPageCss(orientation) {
+  return `* { box-sizing: border-box; }
+html { height: 100%; background: var(--bg); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { height: 100%; margin: 0; display: flex; flex-direction: column; color: var(--fg); font: 13px/1.45 var(--ui); }
+header { flex: 0 0 auto; padding: 10px 16px; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.kicker { font: 600 10.5px var(--ui); letter-spacing: .7px; text-transform: uppercase; color: var(--fg-dim); }
+h1 { margin: 1px 0 6px; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.cmd { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.cmd code { flex: 1 1 auto; padding: 3px 8px; font: 12px/1.5 var(--mono); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.facts { margin: 0; padding: 0; list-style: none; font-size: 11.5px; color: var(--fg-dim); }
+.facts .warn { color: var(--warn); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font: 10.5px var(--mono); color: var(--fg-dim); }
+.legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
+.tools { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--fg-dim); }
+button { display: none; padding: 2px 8px; font: 11px var(--ui); color: var(--fg); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+.js .tools { display: flex; }
+.js button { display: inline-block; }
+main { position: relative; flex: 1 1 0; min-height: 0; }
+#graph { display: block; width: 100%; height: 100%; }
+.js #graph { cursor: grab; }
+.js #graph.panning { cursor: grabbing; }
+#nodes { position: absolute; top: 8px; right: 8px; max-width: min(440px, 60%); max-height: calc(100% - 16px); overflow: auto; font-size: 11.5px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; }
+#nodes summary { padding: 4px 10px; color: var(--fg-dim); cursor: pointer; }
+#nodes ol { margin: 0; padding: 0 0 6px; list-style: none; }
+#nodes li { padding: 3px 10px; }
+.js #nodes li[data-id] { cursor: pointer; }
+.js #nodes li[data-id]:hover { background: var(--bg-3); }
+#nodes .nm { overflow-wrap: anywhere; }
+#nodes .sub, #nodes .file, #nodes .undrawn { font: 10.5px var(--mono); color: var(--fg-dim); overflow-wrap: anywhere; }
+#nodes .more { padding: 6px 10px 2px; font-size: 10.5px; letter-spacing: .6px; text-transform: uppercase; color: var(--fg-dim); }
+@page { size: ${orientation}; margin: 0; }
+@media print {
+  html, body { height: auto; }
+  body { height: ${orientation === 'portrait' ? 270 : 200}mm; padding: 6mm; overflow: hidden; }
+  .tools, button, #nodes { display: none !important; }
+}`;
+}
+
+/* One zoom step around a point, as a new viewBox. The point stays where it
+   was on screen: with preserveAspectRatio meet, a box scaled evenly keeps its
+   letterbox. Clamped through the factor, never width and height apart, so the
+   ratio survives the clamp. */
+function zoomViewBox(vb, ux, uy, f, minW, maxW) {
+  const [x, y, w, h] = vb;
+  const k = Math.min(Math.max(f, w / maxW), w / minW);
+  return [ux - (ux - x) / k, uy - (uy - y) / k, w / k, h / k];
+}
+
+/* Runs inside the exported file and never here: the page is given this
+   function's own source text, so it may name nothing else from this file.
+   All it needs is in the page, and zoomViewBox arrives as its argument.
+
+   Pan and zoom rewrite the viewBox, never a transform, so the page with
+   scripts off still shows the whole graph fitted, and printing has one
+   attribute to put back. */
+function exportViewer(zoomViewBox) {
+  const svg = document.getElementById('graph');
+  const layer = svg && svg.querySelector('g');
+  if (!layer) return;
+  document.documentElement.classList.add('js');
+  const home = svg.getAttribute('viewBox').split(/[\s,]+/).map(Number);
+  let view = home.slice();
+  const show = (v) => { view = v; svg.setAttribute('viewBox', v.join(' ')); };
+  // The inner group's matrix is the viewBox mapping itself. Engines have not
+  // always agreed on whether the outer svg's includes it.
+  const toUser = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(layer.getScreenCTM().inverse());
+
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    // Some mice report lines in Firefox, not pixels, and a notch would then
+    // barely move the zoom.
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const p = toUser(e);
+    show(zoomViewBox(view, p.x, p.y, Math.exp(-dy * 0.0015), 120, home[2] * 4));
+  }, { passive: false });
+
+  let picked = null;
+  const pick = (id) => {
+    picked = id;
+    svg.querySelectorAll('.nd').forEach((g) => g.classList.toggle('sel', g.dataset.id === id));
+    svg.querySelectorAll('.edge').forEach((p) => {
+      p.classList.toggle('hi', !!id && (p.dataset.a === id || p.dataset.b === id));
+    });
+  };
+
+  // Listening on the window, with no pointer capture: a captured pointer
+  // sends its click to the svg, and the box under it would never hear of it.
+  let drag = null;
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const box = e.target.closest('.nd');
+    drag = {
+      x: e.clientX, y: e.clientY, from: view.slice(), k: layer.getScreenCTM().a,
+      moved: false, id: box ? box.dataset.id : null,
+    };
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) <= 3) return;
+    drag.moved = true;
+    svg.classList.add('panning');
+    show([drag.from[0] - dx / drag.k, drag.from[1] - dy / drag.k, drag.from[2], drag.from[3]]);
+  });
+  const drop = () => { drag = null; svg.classList.remove('panning'); };
+  window.addEventListener('pointerup', () => {
+    if (drag && !drag.moved) pick(drag.id && drag.id !== picked ? drag.id : null);
+    drop();
+  });
+  window.addEventListener('pointercancel', drop);
+  svg.addEventListener('dblclick', (e) => { if (!e.target.closest('.nd')) show(home.slice()); });
+
+  const fit = document.getElementById('fit');
+  if (fit) fit.addEventListener('click', () => show(home.slice()));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '0') show(home.slice());
+    if (e.key === 'Escape') pick(null);
+  });
+
+  // A row of the list selects its box and brings it to the middle, at the
+  // zoom already chosen.
+  document.querySelectorAll('#nodes li[data-id]').forEach((li) => li.addEventListener('click', () => {
+    const g = [...svg.querySelectorAll('.nd')].find((x) => x.dataset.id === li.dataset.id);
+    if (!g) return;
+    pick(li.dataset.id);
+    const t = g.transform.baseVal.consolidate();
+    const box = g.querySelector('rect.box');
+    const cx = (t ? t.matrix.e : 0) + box.width.baseVal.value / 2;
+    const cy = (t ? t.matrix.f : 0) + box.height.baseVal.value / 2;
+    show([cx - view[2] / 2, cy - view[3] / 2, view[2], view[3]]);
+  }));
+
+  // Copied where the clipboard is allowed; elsewhere selected, ready for the
+  // keyboard.
+  const copy = document.getElementById('copy');
+  const code = document.querySelector('.cmd code');
+  if (copy && code) copy.addEventListener('click', () => {
+    const choose = () => {
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      copy.textContent = 'Selected';
+    };
+    if (!navigator.clipboard) return choose();
+    navigator.clipboard.writeText(code.textContent).then(() => { copy.textContent = 'Copied'; }, choose);
+  });
+
+  let kept = null;
+  window.addEventListener('beforeprint', () => { kept = view; show(home.slice()); });
+  window.addEventListener('afterprint', () => { if (kept) show(kept); kept = null; });
+}
+
+/* The whole file. Every value from the project goes through escapeHtml; the
+   SVG is the one thing inserted as it is, and XMLSerializer escaped it on the
+   way out. The script is the same text whatever is drawn, so nothing from a
+   project can end up running, and the policy forbids every fetch, which keeps
+   the file working offline even after a later change reaches for a font. */
+function exportDocument(o) {
+  const e = escapeHtml;
+  const f = o.facts;
+  const legend = o.legend.map(([label, colour]) =>
+    `<span><i style="background:${e(colour)}"></i>${e(label)}</span>`).join('');
+  const facts = f.warnings.map((w) => `<li class="warn">${e(w)}</li>`)
+    .concat(f.lines.map((l) => `<li>${e(l)}</li>`)).join('');
+  const rows = o.nodes.map((n) => `<li data-id="${e(n.id)}"><div class="nm">${e(n.name)}</div>`
+    + `<div class="sub">${e(n.sub)}</div><div class="file">${e(n.file)}</div></li>`).join('');
+  const undrawn = f.undrawn.length
+    ? `<div class="more">Matched, not drawn (${f.undrawn.length})</div>`
+      + `<ol class="undrawn">${f.undrawn.map((n) => `<li>${e(n)}</li>`).join('')}</ol>`
+    : '';
+  const command = f.command
+    ? `<div class="cmd"><code>${e(f.command)}</code><button id="copy" type="button">Copy</button></div>`
+    : '';
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>${e(o.heading)} · lineage</title>
+<style>
+${exportCanvasCss()}
+${exportPageCss(o.frame.h > o.frame.w ? 'portrait' : 'landscape')}
+</style>
+</head>
+<body>
+<header>
+<div class="kicker">${e(f.kicker)}</div>
+<h1>${e(o.heading)}</h1>
+${command}
+<ul class="facts">${facts}</ul>
+<div class="legend">${legend}</div>
+<div class="tools"><button id="fit" type="button">Fit</button><span>Wheel to zoom, drag to pan, click a box for its edges, 0 to fit. Ctrl+P saves a PDF.</span></div>
+</header>
+<main>
+${o.svg}
+<details id="nodes"><summary>${e(o.noun)} (${o.nodes.length})</summary><ol>${rows}</ol>${undrawn}</details>
+</main>
+<script>(${exportViewer})(${zoomViewBox});</script>
+</body>
+</html>
+`;
+}
+
+/* Twice the size for a sharp paste, less for a graph so large that a canvas
+   would refuse it or eat the memory of a small machine. */
+function pngScale(w, h) {
+  return Math.min(2, Math.sqrt(16e6 / (w * h)), 16384 / w, 16384 / h);
+}
+
+/* The Export button. Synchronous from the click to the download: a browser
+   lets a page save an .html file only while the user's gesture lasts, and an
+   await would spend it. */
+function exportLineage() {
+  const shot = Lineage.snapshot();
+  if (!shot) return toast('nothing drawn to export', 'err');
+  const sub = shot.data;
+  const meta = S.meta || {};
+  const fresh = S.fresh || null;
+  const stamp = (secs) => exportStamp(secs, -new Date(secs * 1000).getTimezoneOffset());
+  const manifestAt = (fresh && fresh.manifest_at) || meta.manifest_mtime || 0;
+  const facts = exportFacts(sub, {
+    project: meta.project || '',
+    dbtVersion: meta.dbt_version || '',
+    manifestAt: manifestAt ? stamp(manifestAt) : '',
+    branch: (S.git && S.git.repo && S.git.branch) || '',
+    sha: (fresh && fresh.head && fresh.head.sha) || '',
+    cllSource: meta.cll_source || '',
+    fresh,
+    version: S.version,
+    exportedAt: stamp(Math.floor(Date.now() / 1000)),
+  });
+  const heading = shortTitle(exportTitle(sub), 60);
+  const nodes = sub.nodes
+    .map((n) => ({ id: n.id, name: n.name, sub: Lineage.subtitle(n), file: n.file }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const html = exportDocument({
+    heading, facts, nodes, legend: legendEntries(sub), svg: shot.svg, frame: shot.frame,
+    noun: sub.mode === 'column' ? 'Columns' : 'Nodes',
+  });
+  const name = exportFileName(heading, localDay(new Date()));
+  saveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), name);
+  toast('saved ' + name, 'ok');
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Not at once: a download the browser has not started yet still needs it.
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+/* Rasterised from the standalone SVG, onto a canvas filled with the page's
+   background first: an image has no page behind it. Loaded from a data: URL,
+   because this page's policy takes images from data: and nowhere else (0015),
+   so a blob: URL fails to load without saying why. */
+function renderPng(shot, scale) {
+  const bytes = new TextEncoder().encode(shot.svg);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    // Caught here, or a canvas that throws would leave the promise, and the
+    // clipboard waiting on it, unsettled for good.
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(shot.frame.w * scale);
+        canvas.height = Math.round(shot.frame.h * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('the browser could not encode it'))), 'image/png');
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('the browser could not draw it'));
+    img.src = 'data:image/svg+xml;base64,' + btoa(bin);
+  });
+}
+
+/* The Copy image button: the same picture as a PNG on the clipboard, for a
+   ticket where an attachment takes a click to see. The clipboard item is made
+   inside the click, holding a promise for its content, which is what Safari
+   needs to count it as the user's gesture. Whatever refuses it gets the file
+   instead. */
+function copyLineageImage() {
+  const first = Lineage.snapshot({ tight: true });
+  if (!first) return toast('nothing drawn to copy', 'err');
+  const scale = pngScale(first.frame.w, first.frame.h);
+  const shot = Lineage.snapshot({ css: exportCanvasCss(), scale, tight: true });
+  const png = renderPng(shot, scale);
+  const name = exportFileName(shortTitle(exportTitle(shot.data), 60), localDay(new Date()))
+    .replace(/\.html$/, '.png');
+  const save = () => png.then((blob) => {
+    saveBlob(blob, name);
+    toast('the clipboard took no image, saved ' + name + ' instead', 'ok');
+  }).catch((e) => toast('image: ' + e.message, 'err'));
+  if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) return save();
+  navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    .then(() => toast('image copied: paste it into the ticket', 'ok'), save);
 }
 
 // -------------------------------------------------------------- artifacts --
@@ -4466,6 +5004,7 @@ async function boot() {
   // Which build drew this page. A release binary embeds web/ (0005), so this is
   // what tells a stale binary from a frontend change that really did nothing.
   const build = $('#status-build');
+  S.version = info.version || '';
   build.textContent = 'v' + (info.version || '?');
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   const v = info.venv || {};

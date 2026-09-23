@@ -84,6 +84,19 @@ const Lineage = (() => {
     return (n.materialized || 'unknown').toLowerCase();
   }
 
+  /* The area an exported picture shows: the layout's box plus room for what is
+     drawn outside the boxes, a +N badge reaching 27 beside one and a role tag
+     14 above one. A page gets at least a screenful at natural size, because it
+     scales its picture to fit the window: one box alone would arrive six times
+     too big, which the canvas avoids by capping its own zoom at 1.1. An image
+     has a size of its own and takes the tight frame. */
+  function frameOf(b, minW = 1000, minH = 560) {
+    const pad = 40;
+    const w = Math.max(minW, b.x1 - b.x0 + pad * 2);
+    const h = Math.max(minH, b.y1 - b.y0 + pad * 2);
+    return { x: (b.x0 + b.x1 - w) / 2, y: (b.y0 + b.y1 - h) / 2, w, h };
+  }
+
   let svg, root, handlers = {}, data = null, place = [], bbox = null;
   let view = { k: 1, x: 0, y: 0 }, selected = null;
   // Module scope, not init's: render() reads it to keep a hover card from
@@ -307,7 +320,7 @@ const Lineage = (() => {
   /* The node travels with the direction: model mode only needs to know which
      way to deepen, selection mode has to name the box in the expression. */
   function badge(x, y, label, dir, node) {
-    const g = el('g', { class: 'more-badge', style: 'cursor:pointer' });
+    const g = el('g', { class: 'more-badge', style: 'cursor:pointer', 'data-dir': dir });
     g.appendChild(el('circle', { cx: x, cy: y, r: 11, fill: '#1d2430', stroke: '#2a3340' }));
     const t = el('text', { class: 'more', x, y: y + 3, 'text-anchor': 'middle' });
     t.textContent = label;
@@ -336,6 +349,98 @@ const Lineage = (() => {
     apply();
   }
 
+  /* The canvas as one standalone SVG, for a file read where neither this page
+     nor its stylesheet exists: a ticket attachment, a PDF, an image (0026).
+
+     Only what a reader without this page would miss is changed. A clipped line
+     is written out whole, smaller if it has to be, since a PDF has no hover
+     card to spell a name and Ctrl+F has to find it. The accessible name becomes
+     a <title>, the one tooltip a file can carry. The passing selection goes and
+     the focus stays: the focus is what model mode is about.
+
+     `css` and `tight` are for the image path. Inlined into a page, a <style>
+     inside the SVG would style the whole page, so the page brings its own. */
+  function snapshot({ css = '', scale = 1, tight = false } = {}) {
+    if (!data || !bbox || !data.nodes.length) return null;
+    const frame = tight ? frameOf(bbox, 0, 0) : frameOf(bbox);
+    const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
+    const g = root.cloneNode(true);
+    g.removeAttribute('transform');
+    g.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
+    g.querySelectorAll('.hi').forEach((x) => x.classList.remove('hi'));
+
+    // Measured on the canvas itself, inside a box so the same rules apply: a
+    // detached clone has no layout to measure. A clip counts characters, so
+    // plenty of clipped lines fit whole once they are measured.
+    const host = root.querySelector('.nd');
+    const probes = {};
+    const measure = (cls, text, size) => {
+      if (!probes[cls]) {
+        probes[cls] = el('text', { class: cls, visibility: 'hidden' });
+        host.appendChild(probes[cls]);
+      }
+      const probe = probes[cls];
+      probe.style.fontSize = size ? `${size}px` : '';
+      probe.textContent = text;
+      return { wide: probe.getComputedTextLength(), size: parseFloat(getComputedStyle(probe).fontSize) };
+    };
+    // Shrunk to fit, down to a floor that keeps the glyphs' shape: the file is
+    // zoomed into, not read at arm's length. Measured again once shrunk, since
+    // small sizes do not scale in proportion, then pinned to that length, so
+    // a reader whose fonts run wider sees the same line rather than one that
+    // spills out of its box. Past the floor the pin squeezes it.
+    const spell = (t, full) => {
+      if (!t || !full || t.textContent === full) return;
+      const cls = t.getAttribute('class');
+      const room = W - 20;
+      const natural = measure(cls, full);
+      t.textContent = full;
+      if (!natural.wide) return;
+      const shrink = Math.min(1, Math.max(0.6, room / natural.wide));
+      let wide = natural.wide;
+      if (shrink < 1) {
+        const size = +(natural.size * shrink).toFixed(2);
+        t.style.fontSize = `${size}px`;
+        wide = measure(cls, full, size).wide;
+      }
+      t.setAttribute('textLength', Math.min(room, wide).toFixed(1));
+      t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+    };
+    g.querySelectorAll('.nd').forEach((nd) => {
+      const n = byId.get(nd.dataset.id);
+      if (!n) return;
+      nd.removeAttribute('aria-label');
+      const title = el('title');
+      title.textContent = [n.name, subtitle(n), n.file].filter(Boolean).join('\n');
+      nd.insertBefore(title, nd.firstChild);
+      spell(nd.querySelector('.t1'), n.name);
+      spell(nd.querySelector('.t2'), subtitle(n));
+      nd.querySelectorAll('.more-badge').forEach((b) => {
+        const up = b.dataset.dir === 'up';
+        b.removeAttribute('style');
+        const tip = el('title');
+        tip.textContent = `${up ? n.hidden_up : n.hidden_down} more ${up ? 'upstream' : 'downstream'}, not drawn`;
+        b.insertBefore(tip, b.firstChild);
+      });
+    });
+    Object.values(probes).forEach((p) => p.remove());
+
+    const out = el('svg', {
+      id: 'graph',
+      viewBox: `${frame.x} ${frame.y} ${frame.w} ${frame.h}`,
+      width: Math.round(frame.w * scale),
+      height: Math.round(frame.h * scale),
+      preserveAspectRatio: 'xMidYMid meet',
+    });
+    if (css) {
+      const style = el('style');
+      style.textContent = css;
+      out.appendChild(style);
+    }
+    out.appendChild(g);
+    return { svg: new XMLSerializer().serializeToString(out), frame, data };
+  }
+
   // clear() does not go through apply(), so it closes the card itself.
   const clear = () => {
     root && (root.textContent = '');
@@ -343,5 +448,5 @@ const Lineage = (() => {
     handlers.onHoverClose && handlers.onHoverClose();
   };
 
-  return { init, render, fit, select, clear, subtitle, nodeColor, matLabel, roleColor, nodeRoles };
+  return { init, render, fit, select, clear, snapshot, subtitle, nodeColor, matLabel, roleColor, nodeRoles };
 })();

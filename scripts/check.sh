@@ -89,18 +89,19 @@ else
   done
 
   echo
-  echo "== web/app.js parses =="
+  echo "== the frontend parses =="
+  # Whole files, because a harness reads only slices of them: a syntax error
+  # outside every slice would pass them all.
   syntax=$(mktemp)
-  cat > "$syntax" <<'EOF'
-try { new Function(read('web/app.js')); print('ok'); }
-catch (e) { print('SYNTAX ERROR ' + e); }
-EOF
-  if [ "$("$JSC" "$syntax")" = "ok" ]; then
-    echo "ok      web/app.js"
-  else
-    "$JSC" "$syntax"
-    failed=$((failed + 1))
-  fi
+  for f in web/app.js web/lineage.js; do
+    printf "try { new Function(read('%s')); print('ok'); }\ncatch (e) { print('SYNTAX ERROR ' + e); }\n" "$f" > "$syntax"
+    if [ "$("$JSC" "$syntax")" = "ok" ]; then
+      echo "ok      $f"
+    else
+      "$JSC" "$syntax"
+      failed=$((failed + 1))
+    fi
+  done
   rm -f "$syntax"
 fi
 

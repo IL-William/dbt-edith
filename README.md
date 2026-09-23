@@ -216,6 +216,8 @@ sub-graphs around whichever model you are looking at.
 | `+N` badge on a node | pull in one more level of parents or children |
 | the Selection button above the graph | draw your own set of models, in dbt selector syntax |
 | wheel / drag | zoom and pan the lineage |
+| Export above the graph | save what the canvas shows as one HTML file anyone can open |
+| Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
 
 Opening a `.sql` or `.yml` file that belongs to a dbt node moves the lineage
 onto that node, so the graph follows the editor.
@@ -566,6 +568,36 @@ A method this build does not know, `state:` for instance, is refused by name
 rather than ignored, because a silently dropped term would draw far too much and
 look right doing it.
 
+### Sharing the graph
+
+**Export**, beside Fit, saves what the canvas shows as one HTML file named
+after it, `lineage-<what it shows>-<date>.html`, for a ticket or a message.
+Anyone opens it in a browser with nothing installed and no network. The wheel
+zooms without blurring, a drag pans, `0` fits it back, and a click on a box
+lights its edges. **Nodes** lists every box with its full name and file, and a
+name too long for its box is written whole in the box too, smaller, rather than
+cut short as it is on screen.
+
+The header says what the picture is. It names the `dbt ls` command that lists
+the same nodes, with `--exclude "resource_type:test"` when no test is drawn,
+since dbt would list them. It repeats the warnings of a mistyped selector, and
+says how much of a capped selection was drawn, the rest being listed by name.
+It says where the picture came from, the project, the dbt version, the
+manifest's date, the branch and commit, and whether the manifest still matched
+the files at that moment. Every date carries its offset from UTC: the reader may
+be elsewhere, and reads it later.
+
+**Ctrl+P** then *Save as PDF* in that file prints the whole graph on one page,
+as vectors, so the PDF zooms too. **Copy image** puts the same picture on the
+clipboard as a PNG to paste into a ticket's description, and saves the PNG when
+the browser refuses the clipboard. In a ticket, the PDF and the pasted image
+show in place; the HTML file is downloaded and opened, and it is the one that
+pans and lists names.
+
+The file holds what the canvas shows and that header, nothing else: no absolute
+path and no value from a `.env` file
+([0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md)).
+
 ### Compiled and Run
 
 Two tabs, over the two files dbt leaves per model under `target/`. **Compiled**
@@ -730,6 +762,11 @@ $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
 $JSC web/tests/grep.js        # what a search result says, and where the match falls
 $JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls
+$JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outline
+$JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
+$JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
+$JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
+$JSC web/tests/export.js      # an exported graph: its header, its file, its safety
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -758,8 +795,8 @@ src/venv.rs       which Python environment is in play
 src/files.rs      filesystem access, confined to the project root
 src/pty.rs        one PTY per terminal connection
 web/              UI: no framework, CodeMirror 5 and xterm.js are vendored
-web/app.js        the shell, including the document outline behind the breadcrumbs
-web/lineage.js    layered graph layout and SVG renderer, model, column and selection modes
+web/app.js        the shell, including the document outline behind the breadcrumbs and the exported page
+web/lineage.js    layered graph layout and SVG renderer, model, column and selection modes, and the snapshot an export is made of
 web/vendor/       CodeMirror, xterm, the merge addon and diff-match-patch
 tools/            sf_lineage.py, the only piece that talks to Snowflake
 ```
