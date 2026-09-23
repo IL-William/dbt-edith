@@ -22,6 +22,19 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- Catalog > Columns shows every test guarding a column rather than one chip per
+  kind: two `relationships` on one column, or two `expression_is_true`, used to
+  collapse into a single chip and the second test was gone before the browser
+  saw it. A column guarded by more than the cell can hold shows a `+N` that
+  lists the rest on hover, on click and from the keyboard, each with the name
+  dbt generated for it.
+- Catalog > Preview lists the tests that guard the whole model instead of only
+  counting them, under their own heading and apart from the ones guarding a
+  column. A singular test under `tests/` and a generic with no column, such as
+  `unique_combination_of_columns`, name no column and so had no row in the
+  Columns table: until now they appeared nowhere at all. The Columns toolbar
+  says how many of them there are, and clicking it goes to that list.
+
 - A dot beside Reload manifest says whether the lineage on screen still matches
   the files dbt would parse right now, and clicking it runs `dbt parse` in the
   terminal. Freshness is measured in file times rather than in commits (0025),

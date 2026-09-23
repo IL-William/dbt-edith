@@ -764,6 +764,10 @@ kbd {
 .coltools .sfswitch[data-tone="on"] { border-color: var(--accent); color: var(--accent); }
 .coltools .sfswitch[data-tone="busy"] { border-color: var(--warn); color: var(--warn); }
 .coltools .sfswitch[data-tone="failed"] { border-color: #ef6b6b; color: #ef6b6b; }
+/* The count of tests this table cannot show. Underlined rather than coloured:
+   the toolbar's colours mean the Snowflake connection's state and nothing else. */
+.coltools .modeltests { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.coltools .modeltests:hover { color: var(--accent); }
 .coltools .colhint[data-tone="hint"] { color: var(--accent); }
 .coltools .colhint[data-tone="busy"] { color: var(--warn); }
 .coltools .colhint[data-tone="failed"] { color: #ef6b6b; }
@@ -783,6 +787,17 @@ kbd {
 }
 .testchip.nn { border-color: #3e6b52; color: #7fd6a6; }
 .testchip.un { border-color: #3e5a6b; color: #7fb8d6; }
+/* The Tests cell is capped in testChips rather than here: a max-width on a cell
+   of an auto-laid-out table is a suggestion, and a chip named
+   expect_column_values_to_not_match_like_pattern overrules it. The overflow chip
+   is dashed and not only another colour, because the two test tones are the
+   whole colour signal in this cell and have to stay legible. */
+.testchip.more { border-style: dashed; color: var(--fg-dim); cursor: pointer; }
+.testchip.more:hover, .testchip.more:focus { border-color: var(--accent); color: var(--accent); outline: none; }
+.hc-tests { margin-top: 7px; border-top: 1px solid var(--line); padding-top: 6px; }
+.hc-test { font: 11px var(--mono); line-height: 1.45; margin-bottom: 4px; }
+.hc-test .t-label { color: var(--fg); }
+.hc-test .t-name { display: block; color: var(--fg-dim); word-break: break-all; }
 
 /* -------------------------------------------------------------- terminal -- */
 #term { height: 100%; padding: 4px 2px 0 8px; background: #0e1219; }

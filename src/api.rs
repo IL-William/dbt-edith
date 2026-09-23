@@ -407,6 +407,25 @@ struct Ref<'a> {
     file: &'a str,
     materialized: &'a str,
     disabled: bool,
+    /// Test nodes only: the generic's short name, and the column it guards when
+    /// it guards one. Empty on every other kind, so a parent or a child pays
+    /// nothing for them.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    test_name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    column: &'a str,
+}
+
+/// One data test guarding one column. `label` is what the chip says, which is
+/// the generic's short name; `name` is the name dbt generated for the test,
+/// which is the only thing that tells two tests of one generic apart.
+#[derive(serde::Serialize)]
+struct ColTest<'a> {
+    id: &'a str,
+    label: &'a str,
+    name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    file: &'a str,
 }
 
 #[derive(serde::Serialize)]
@@ -414,7 +433,8 @@ struct Col<'a> {
     name: &'a str,
     data_type: &'a str,
     description: &'a str,
-    tests: &'a [String],
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tests: Vec<ColTest<'a>>,
     undeclared: bool,
     up: usize,
     down: usize,
@@ -495,6 +515,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             file: &t.file,
             materialized: &t.materialized,
             disabled: t.disabled,
+            test_name: &t.test_name,
+            column: &t.column,
         }
     };
     Json(NodeDetail {
@@ -533,7 +555,19 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
                     name: &c.name,
                     data_type: &c.data_type,
                     description: &c.description,
-                    tests: &c.tests,
+                    tests: c
+                        .tests
+                        .iter()
+                        .map(|&t| {
+                            let t = &graph.nodes[t as usize];
+                            ColTest {
+                                id: &t.id,
+                                label: if t.test_name.is_empty() { &t.name } else { &t.test_name },
+                                name: &t.name,
+                                file: &t.file,
+                            }
+                        })
+                        .collect(),
                     undeclared: c.undeclared,
                     up,
                     down,

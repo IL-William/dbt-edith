@@ -248,6 +248,14 @@ column count, upstream and downstream counts, tags and description under
 Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file.
+A column's Tests cell names every test guarding it, one chip each: two
+`relationships` on one column are two tests and read as two. Where they would
+not fit, the first few are shown and a `+N` carries the rest, which hover, click
+or Enter reveals with the name dbt generated for each. The tests that guard the
+model rather than a column, which is every singular test under `tests/` and
+every generic with no column such as `unique_combination_of_columns`, are listed
+under Preview, where clicking one moves the lineage to it and double-clicking
+opens its file.
 Everything there comes from `manifest.json`, which already holds the merged YAML
 (descriptions, tags, and the tests attached to each column). Column *types* are
 the exception: the manifest only carries them when they are declared in YAML, so

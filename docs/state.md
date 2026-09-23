@@ -82,6 +82,31 @@ wants `manifest.macros` read and package paths resolved.
 This is not the deferred **Run history** below: that one reads `run_results.json`
 for status and timing, which no file under `target/run/` carries.
 
+Every test in the Catalog, added 2026-09-22: a column held the *names* of the
+tests guarding it, and the pass that deduped them deduped on that name, so two
+`relationships` pointing at different tables, or two `expression_is_true` with
+different expressions, arrived as one chip. On the 18 825 node project that was
+15 columns in the 600 models measured, each losing a test. A column now holds
+graph indices of test nodes instead, which are 4 bytes where a name was 24 plus
+its heap, and the payload carries dbt's generated name per test, since that is
+the only thing telling two tests of one generic apart. The cell shows three
+chips and a `+N`, capped in characters as well as in count because three
+`dbt_expectations` names wrap a row to three lines where three of `not_null`,
+`unique` and one more sit on one. The `+N` opens the shared hover card, and
+clicks to expand in place: a hover is no affordance on a touch screen and no
+route from a keyboard, and a second click cannot reopen a card that closes on
+any outside mousedown.
+
+Preview lists `n.tests` rather than only counting it, which is the only place a
+test guarding the model and no column of it is ever named: 460 of those 600
+models have at least one, and one hub has 48 singular tests that until
+now appeared nowhere at all. The two kinds are listed apart rather than in one
+list where the difference is a missing suffix, and the Columns toolbar names the
+count it cannot show, because a table of columns can hold no test that names
+none. What is still invisible, and deliberately: disabled
+tests, unit tests, and a test whose `column_name` matches no declared column,
+which is dropped silently with no owner to hang it on.
+
 Every route sits behind the Host and Origin guard added on 2026-09-17 after a
 security audit found the terminal reachable from any web page (0015). The same
 pass confined `/api/git/diff` to the project and added `SECURITY.md`.
@@ -187,7 +212,12 @@ cross-compile.
   or it dies at eval time rather than at an assertion. `humanAge` is now the
   start of two slices, `compiled.js` up to `freshnessBadge` and `freshness.js`
   up to `sendToTerminal`, so `artifactBar` between them is read by both and has
-  to stay pure.
+  to stay pure. `web/tests/testchips.js` slices from `testChips` to
+  `function catalogColumns`, which makes `catalogColumns` an end marker as well
+  as a function: `fillTestsCard` and `paintTests` sit inside that slice and are
+  only ever read as declarations, so nothing between the two may run at eval
+  time. A `const` there does not survive either, which is why the chip caps are
+  arguments of `testChips` and not a constant beside the cell.
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
   tests checkbox, which dbt has no equivalent of in `dbt ls`.

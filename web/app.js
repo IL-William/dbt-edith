@@ -3724,7 +3724,10 @@ function catalogPreview(body, n) {
     stat('Columns', String(n.columns.length)),
     stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id); showDock('lineage'); }),
     stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id); showDock('lineage'); }),
-    stat('Tests', String(n.tests.length)),
+    stat('Tests', String(n.tests.length), n.tests.length ? () => {
+      const h = [...body.querySelectorAll('h3')].find((e) => e.textContent.startsWith('tests on'));
+      if (h) h.scrollIntoView({ block: 'start' });
+    } : null),
   );
   const totals = document.createElement('div');
   totals.className = 'muted';
@@ -3761,7 +3764,7 @@ function catalogPreview(body, n) {
   add('unique id', n.id);
   if (kv.children.length) { body.appendChild(h3('details')); body.appendChild(kv); }
 
-  const refs = (label, items) => {
+  const refs = (label, items, text) => {
     if (!items.length) return;
     body.appendChild(h3(`${label} (${items.length})`));
     const box = document.createElement('div');
@@ -3771,7 +3774,7 @@ function catalogPreview(body, n) {
     items.slice(0, 300).forEach((r) => {
       const a = document.createElement('span');
       a.className = 'link';
-      a.append(dot(r), document.createTextNode(r.name));
+      a.append(dot(r), document.createTextNode(text ? text(r) : r.name));
       a.title = `${r.id}\nclick: show it here and in the lineage`
         + (r.file ? '\ndouble-click: also open its file' : '');
       a.addEventListener('click', () => focusNode(r.id));
@@ -3786,6 +3789,127 @@ function catalogPreview(body, n) {
   };
   refs('upstream', n.parents);
   refs('downstream', n.children);
+  const guards = splitTests(n.tests);
+  // The model's own tests come first, and they are the point of this section:
+  // guarding no column, they have no row in the Columns table and are named
+  // nowhere else at all. The column ones follow for completeness, each saying
+  // which column, because a relationships test counts on both models it joins
+  // and reads as a stranger on the one that did not declare it.
+  refs('tests on the model', guards.model, (r) => r.test_name || r.name);
+  refs('tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+}
+
+/* Which tests a Tests cell shows, and what the +N stands for. Pure, so the cap
+   and its edge cases are checked without a DOM (web/tests/testchips.js). Each
+   entry is one test node, so two `relationships` on one column are two entries:
+   the cell used to hold names, and a name cannot tell them apart. */
+function testChips(tests, max, chars) {
+  const all = tests || [];
+  // Both caps live here rather than beside the cell, so the harness pins the
+  // numbers the cell actually uses: a `const` next to it would not survive the
+  // slice the harness evaluates.
+  const cap = max || 3;
+  // Counting chips is not enough. Three of dbt_expectations' names are longer
+  // than the Description column and wrap the row to three lines, while three of
+  // not_null, unique and one more sit on one. The budget is what keeps every
+  // row the same height, whatever the names happen to be.
+  const room = chars || 48;
+  let used = 0;
+  let n = 0;
+  while (n < all.length && n < cap) {
+    used += (all[n].label || '').length;
+    // The first chip is shown however long its name: a cell that says only +4
+    // names nothing at all.
+    if (n && used > room) break;
+    n++;
+  }
+  if (n >= all.length) return { shown: all, hidden: [] };
+  return { shown: all.slice(0, n), hidden: all.slice(n) };
+}
+
+/* A node's tests, split by what each one guards. A test naming a column is
+   already a chip in that column's row; one naming none guards the whole table
+   and has no row it could ever appear in, which is why the two are listed apart
+   rather than in one list where the difference is a missing suffix. */
+function splitTests(tests) {
+  const all = tests || [];
+  return { model: all.filter((t) => !t.column), column: all.filter((t) => t.column) };
+}
+
+/* Every test guarding one column, behind the +N chip. Unlike fillNodeCard there
+   is nothing to fetch: /api/node already sent all of them. */
+function fillTestsCard(el, n, c) {
+  hoverCardBody(el, { title: c.name, sub: `${c.tests.length} tests`, crumb: n.name });
+  const list = document.createElement('div');
+  list.className = 'hc-tests';
+  for (const t of c.tests) {
+    const row = document.createElement('div');
+    row.className = 'hc-test';
+    row.append(Object.assign(document.createElement('span'), { className: 't-label', textContent: t.label }));
+    // dbt's generated name carries what the generic was given: which table a
+    // relationships points at, which column it joins on.
+    row.append(Object.assign(document.createElement('span'), { className: 't-name', textContent: t.name }));
+    list.appendChild(row);
+  }
+  el.appendChild(list);
+  // The list is taller than the head the card was placed with.
+  placeHoverCard();
+}
+
+/* Fills one Tests cell, collapsed or expanded. Repaints itself rather than
+   keeping the expansion in S: sorting or reopening the node rebuilds the table
+   anyway, and a key in S would only be there to go stale. */
+function paintTests(td, n, c, expanded) {
+  td.textContent = '';
+  const all = c.tests || [];
+  if (!all.length) {
+    td.append(Object.assign(document.createElement('span'), { className: 'nul', textContent: '–' }));
+    return;
+  }
+  const cut = expanded ? { shown: all, hidden: [] } : testChips(all);
+  for (const t of cut.shown) {
+    const chip = document.createElement('span');
+    chip.className = 'testchip' + (t.label === 'not_null' ? ' nn' : t.label === 'unique' ? ' un' : '');
+    chip.textContent = t.label;
+    chip.title = `${t.name}\n${t.id}`;
+    td.appendChild(chip);
+  }
+  if (!cut.hidden.length && !expanded) return;
+
+  const more = document.createElement('span');
+  more.className = 'testchip more';
+  more.textContent = expanded ? '−' : `+${cut.hidden.length}`;
+  more.tabIndex = 0;
+  more.setAttribute('role', 'button');
+  more.setAttribute('aria-expanded', String(expanded));
+  more.setAttribute('aria-label', expanded
+    ? `show fewer tests on ${c.name}`
+    : `show all ${all.length} tests on ${c.name}`);
+  // No native title here: one under a hover card is two tooltips.
+  const open = () => hoverEnter(`tests:${n.id}:${c.name}`, () => more.getBoundingClientRect(), (el) => fillTestsCard(el, n, c));
+  more.addEventListener('mouseenter', open);
+  more.addEventListener('mouseleave', hoverLeave);
+  // A hover is no affordance on a touch screen and no route from a keyboard, so
+  // the click expands the chips in the cell itself and focus opens the card for
+  // whoever tabbed here. Reopening the card on a second click cannot work: the
+  // card closes on any outside mousedown, so the click would close and reopen it
+  // forever rather than toggle.
+  more.addEventListener('focus', open);
+  more.addEventListener('blur', hoverLeave);
+  const toggle = (e) => {
+    e.stopPropagation();
+    closeHoverCard();
+    paintTests(td, n, c, !expanded);
+    const next = td.querySelector('.testchip.more');
+    if (next && e.type !== 'click') next.focus();
+  };
+  more.addEventListener('click', toggle);
+  more.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggle(e);
+  });
+  td.appendChild(more);
 }
 
 function catalogColumns(body, n) {
@@ -3805,6 +3929,17 @@ function catalogColumns(body, n) {
     ? 'no types: run dbt compile --write-catalog to pull them from Snowflake'
     : `${n.columns.length - untyped}/${n.columns.length} typed`;
   tools.append(note, sourceMenu());
+  // This table can only ever show the tests that name a column. Saying how many
+  // it cannot show is what stops it from reading as the whole story.
+  const onModel = splitTests(n.tests).model.length;
+  if (onModel) {
+    const span = document.createElement('span');
+    span.className = 'colhint modeltests';
+    span.textContent = `${onModel} guard the model itself`;
+    span.title = 'a singular test, or a generic naming no column: no column row can hold it.\nclick to list them in Preview';
+    span.addEventListener('click', () => { S.catTab = 'preview'; renderCatalog(n); });
+    tools.appendChild(span);
+  }
   const hint = columnsHint(S.sidecar, n.columns.some((c) => c.up || c.down));
   if (hint) {
     const span = document.createElement('span');
@@ -3827,7 +3962,8 @@ function catalogColumns(body, n) {
   body.appendChild(tools);
 
   const cols = [...n.columns];
-  if (S.colSort === 'tests') cols.sort((a, b) => b.tests.length - a.tests.length || a.name.localeCompare(b.name));
+  // A column with no test has no `tests` at all: the payload skips it empty.
+  if (S.colSort === 'tests') cols.sort((a, b) => (b.tests || []).length - (a.tests || []).length || a.name.localeCompare(b.name));
   else cols.sort((a, b) => a.name.localeCompare(b.name));
 
   // With the switch on, every column can be asked about, not just the cached ones.
@@ -3863,13 +3999,8 @@ function catalogColumns(body, n) {
     desc.className = 'c-desc';
     desc.append(c.description || nul());
     const tests = document.createElement('td');
-    if (!c.tests.length) tests.append(nul());
-    c.tests.forEach((t) => {
-      const chip = document.createElement('span');
-      chip.className = 'testchip' + (t === 'not_null' ? ' nn' : t === 'unique' ? ' un' : '');
-      chip.textContent = t;
-      tests.appendChild(chip);
-    });
+    tests.className = 'c-tests';
+    paintTests(tests, n, c, false);
     tr.append(name, type, desc, tests);
     if (linked) {
       const lin = document.createElement('td');
@@ -3891,10 +4022,11 @@ function catalogColumns(body, n) {
         tr.title = live ? `fetch the lineage of ${c.name} from Snowflake` : `column lineage for ${c.name}`;
         // The name cell is left out of the click target on purpose: copying a
         // column name is the more common thing to want, and a click target
-        // makes the text impossible to select. The rest of the row still opens
+        // makes the text impossible to select. The Tests cell is left out
+        // because its +N chip owns the click. The rest of the row still opens
         // the lineage, so column mode stays reachable from here.
         tr.addEventListener('click', (e) => {
-          if (e.target.closest('.c-name')) return;
+          if (e.target.closest('.c-name, .c-tests')) return;
           openColumn(n, c.name);
         });
       }

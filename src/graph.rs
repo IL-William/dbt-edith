@@ -97,8 +97,12 @@ pub struct Column {
     pub name: String,
     pub data_type: String,
     pub description: String,
-    /// Names of the data tests guarding this column (not_null, unique, ...).
-    pub tests: Vec<String>,
+    /// Graph indices of the data tests guarding this column. Indices and not
+    /// names, because a generic's name cannot tell two tests apart: two
+    /// `relationships` on one column are two different tests, and holding names
+    /// meant the second one vanished into the first. The indices are assigned
+    /// in `build` and nothing renumbers nodes afterwards.
+    pub tests: Vec<u32>,
     /// True when the column only exists in catalog.json, i.e. it is in the
     /// warehouse but not declared in YAML.
     pub undeclared: bool,
@@ -433,22 +437,36 @@ impl Graph {
             };
             let Some(owner) = owner else { continue };
             let wanted = nodes[i].column.to_lowercase();
-            let label = if nodes[i].test_name.is_empty() {
-                nodes[i].name.clone()
-            } else {
-                nodes[i].test_name.clone()
-            };
             if let Some(col) = nodes[owner as usize]
                 .columns
                 .iter_mut()
                 .find(|c| c.name.to_lowercase() == wanted)
             {
-                col.tests.push(label);
+                col.tests.push(i as u32);
             }
+        }
+
+        // A cell has to read the same way on every start, and node indices come
+        // out of HashMap iteration, so sorting on the index itself would shuffle
+        // the chips between runs. Rank the test nodes once, by the generic's
+        // name and then by dbt's generated name, and order each column by that
+        // rank. The dedup is on the index and never on a name: it guards against
+        // one test node being attached twice, which is the only duplicate that
+        // is not a second test.
+        let mut order: Vec<u32> = (0..nodes.len() as u32)
+            .filter(|&i| nodes[i as usize].kind == Kind::Test)
+            .collect();
+        order.sort_by(|&a, &b| {
+            let (x, y) = (&nodes[a as usize], &nodes[b as usize]);
+            x.test_name.cmp(&y.test_name).then_with(|| x.name.cmp(&y.name))
+        });
+        let mut rank = vec![0u32; nodes.len()];
+        for (r, &i) in order.iter().enumerate() {
+            rank[i as usize] = r as u32;
         }
         for n in nodes.iter_mut() {
             for c in n.columns.iter_mut() {
-                c.tests.sort();
+                c.tests.sort_unstable_by_key(|&i| rank[i as usize]);
                 c.tests.dedup();
             }
         }
@@ -1302,5 +1320,153 @@ mod tests {
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
         assert!(lineage["focus"].is_number(), "and every other mode still sends one");
+    }
+
+    /// Two `relationships` on one column, a `not_null`, and a model-level test.
+    /// `attached_node` names the owner, so the model the relationships points at
+    /// carries no chip of its own.
+    fn tested() -> Graph {
+        let col_test = |name: &str, generic: &str| {
+            serde_json::json!({
+                "name": name,
+                "resource_type": "test",
+                "package_name": "shop",
+                "column_name": "customer_id",
+                "attached_node": "model.shop.dim_customers",
+                "test_metadata": { "name": generic },
+            })
+        };
+        let model = |name: &str| {
+            serde_json::json!({
+                "name": name,
+                "resource_type": "model",
+                "package_name": "shop",
+                "columns": { "customer_id": { "name": "customer_id" } },
+            })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.dim_customers": model("dim_customers"),
+                "model.shop.dim_legacy": model("dim_legacy"),
+                "test.shop.rel_a": col_test("rel_a", "relationships"),
+                "test.shop.rel_b": col_test("rel_b", "relationships"),
+                "test.shop.nn": col_test("nn", "not_null"),
+                "test.shop.combo": {
+                    "name": "combo",
+                    "resource_type": "test",
+                    "package_name": "shop",
+                    "test_metadata": { "name": "unique_combination_of_columns" },
+                },
+            },
+            "parent_map": {
+                "test.shop.rel_a": ["model.shop.dim_customers", "model.shop.dim_legacy"],
+                "test.shop.rel_b": ["model.shop.dim_customers", "model.shop.dim_legacy"],
+                "test.shop.nn": ["model.shop.dim_customers"],
+                "test.shop.combo": ["model.shop.dim_customers"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    fn chips<'a>(g: &'a Graph, model: &str) -> Vec<&'a str> {
+        let n = &g.nodes[g.index[model] as usize];
+        n.columns[0].tests.iter().map(|&i| g.nodes[i as usize].name.as_str()).collect()
+    }
+
+    /// Two tests of one generic on one column are two tests. While the column
+    /// held names, the cleanup pass deduped `relationships` against
+    /// `relationships` and the second test was gone before any payload was built.
+    #[test]
+    fn two_tests_of_one_generic_on_a_column_both_survive() {
+        let g = tested();
+        assert_eq!(chips(&g, "model.shop.dim_customers"), ["nn", "rel_a", "rel_b"]);
+        // attached_node names the owner: the model a relationships points at is
+        // not the model the test guards.
+        assert!(chips(&g, "model.shop.dim_legacy").is_empty());
+    }
+
+    /// A test carrying no column_name guards the node and no column of it, which
+    /// is the whole of the singular tests and of generics like
+    /// unique_combination_of_columns. The Catalog names those in its Preview tab,
+    /// so losing them here would lose them everywhere.
+    #[test]
+    fn a_test_without_a_column_stays_on_the_node() {
+        let g = tested();
+        let dim = &g.nodes[g.index["model.shop.dim_customers"] as usize];
+        let mut names: Vec<&str> = dim.tests.iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["combo", "nn", "rel_a", "rel_b"]);
+        assert!(!dim.columns[0].tests.iter().any(|&i| g.nodes[i as usize].name == "combo"));
+    }
+
+    /// Chip order is the generic's name, then dbt's generated name. The indices
+    /// a column holds come out of HashMap iteration, so without that rank the
+    /// same manifest would order one cell differently on every start.
+    #[test]
+    fn column_tests_read_the_same_way_on_every_run() {
+        let first = chips(&tested(), "model.shop.dim_customers").join(",");
+        for _ in 0..8 {
+            assert_eq!(chips(&tested(), "model.shop.dim_customers").join(","), first);
+        }
+        assert_eq!(first, "nn,rel_a,rel_b", "not_null sorts before relationships");
+    }
+
+    /// A test naming a column the node does not declare is dropped. Pinned so
+    /// that the drop stays a decision: the fix is to resolve the owner better,
+    /// not to hang the test off an arbitrary column.
+    #[test]
+    fn a_test_on_a_column_that_is_not_declared_attaches_to_nothing() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.dim_customers": {
+                    "name": "dim_customers",
+                    "resource_type": "model",
+                    "package_name": "shop",
+                    "columns": { "customer_id": { "name": "customer_id" } },
+                },
+                "test.shop.nn_ghost": {
+                    "name": "nn_ghost",
+                    "resource_type": "test",
+                    "package_name": "shop",
+                    "column_name": "customer_key",
+                    "attached_node": "model.shop.dim_customers",
+                    "test_metadata": { "name": "not_null" },
+                },
+            },
+            "parent_map": { "test.shop.nn_ghost": ["model.shop.dim_customers"] },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let dim = &g.nodes[g.index["model.shop.dim_customers"] as usize];
+        assert!(dim.columns[0].tests.is_empty());
+        assert_eq!(dim.tests.len(), 1, "it still guards the node");
+    }
+
+    /// A column_name dbt wrote in another case is the same column.
+    #[test]
+    fn a_column_name_matches_whatever_its_case() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.dim_customers": {
+                    "name": "dim_customers",
+                    "resource_type": "model",
+                    "package_name": "shop",
+                    "columns": { "CUSTOMER_ID": { "name": "CUSTOMER_ID" } },
+                },
+                "test.shop.nn": {
+                    "name": "nn",
+                    "resource_type": "test",
+                    "package_name": "shop",
+                    "column_name": "customer_id",
+                    "attached_node": "model.shop.dim_customers",
+                    "test_metadata": { "name": "not_null" },
+                },
+            },
+            "parent_map": { "test.shop.nn": ["model.shop.dim_customers"] },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        assert_eq!(chips(&g, "model.shop.dim_customers"), ["nn"]);
     }
 }
