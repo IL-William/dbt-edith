@@ -522,6 +522,9 @@ kbd {
    `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
 .edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }
 .edge.hi { stroke: var(--accent); stroke-width: 2; }
+/* An edge drawn against its direction, where column lineage loops: with no
+   arrowheads, left to right is the only direction a reader has (0027). */
+.edge.back { stroke-dasharray: 5 4; }
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
 .nd:hover rect.box { stroke: var(--fg-dim); }
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }

@@ -148,6 +148,24 @@ the canvas, measured again once shrunk, since small sizes do not scale in
 proportion, and pinned to that length for readers whose fonts run wider.
 Not yet opened in Firefox, Safari, or Edge on the VM.
 
+Columns from the edges, added 2026-09-23: a box's column was the server's BFS
+distance from the focus, so a model reached by a short path and a long one sat
+at the short one, and a model it feeds could be drawn to its left (0027). The
+browser now lays the canvas out from the edges it draws. Columns come from the
+longest path, and a long edge gets a lane in each column it skips. Median sweeps
+set the order. Brandes and Kopf sets the heights, unless it would spend more than
+half again the tallest column's height; a compact isotonic step then takes over,
+where it comes out shorter.
+`depth` keeps its BFS meaning, because the export turns it into `N+model+M`.
+
+Measured on a 112 model neighbourhood of the 18 825 node project, against the
+old layout: edges pointing left 27 to none, crossings 316 to 57, passes behind a
+box 199 to none, 14 to 21 columns, about a millisecond. With its tests ticked,
+400 boxes: 359 edges pointing left to none, 1 700 crossings to 477, and 9 038 px
+tall to 8 126. Brandes and Kopf alone drew that one at 15 615 px, found only by
+running the real payload, which is why the switch exists. Seen in headless
+Chrome on that payload; not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **Macro layer.** Links on `{{ macro() }}` calls, and a used-by count per
@@ -168,6 +186,17 @@ Not yet opened in Firefox, Safari, or Edge on the VM.
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
 5. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
+6. **Folder bands, as an option.** A checkbox beside tests giving each folder
+   under `models/` a band of columns, at the first level where the drawn models
+   split, so numbered folders like `10_raw`, `20_clean` each read as a block. The
+   folders are ordered by the edges between them, never by their names, so
+   `staging`, `intermediate`, `marts` works too. A node sits no earlier than its
+   folder's band, one constraint more in `dagLayers`. Measured on the 112 model
+   graph in the prototype that compared layerings, with one ordering for both:
+   folder inversions 176 to 0, but 21 to 23 columns and 58 to 92 crossings, so
+   it is a way of reading, not a fix. The trap: two folders
+   feeding each other have no order, and bands would then point edges left,
+   the bug 0027 fixed, so the checkbox has to refuse and say why.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
@@ -175,6 +204,13 @@ the store for, and filtering the column lineage by edge kind, which waits on
 seeing how dense a real graph is. Both were listed in the README's "Not there
 yet" and nowhere else until 2026-09-22, which is how that section came to
 disagree with this one.
+
+Left over from the layout (0027), also unranked: Fit centred on the focus with
+a zoom floor, now that a neighbourhood can be 21 columns wide; the entry points
+of a wide fan-in spread along the box's left side, where 27 parents now converge
+on one pixel; network simplex for the columns, which would move the marts to
+the end; and the Kahn layering in `Graph::selection`, which places nothing any
+more and could simply send depth 0.
 
 Sketched but not started: a second column-lineage source using dbt Fusion's
 local index (`dbt compile --static-analysis strict --write-index
@@ -276,6 +312,11 @@ cross-compile.
   `exportLineage` must never become `async`: the slice would end on a bare
   `async` and stop parsing. The same harness evaluates `frameOf`, which sits
   inside the `web/lineage.js` slice that `colours.js` reads.
+- **The layout lives in that same slice**, from `const MAT = {` to
+  `let svg, root`: `dagLayout` and every `dag*`, `bk*` and `iso*` function it
+  calls, read by `colours.js`, `export.js` and `layout.js`. `W`, `H`, `HGAP` and
+  `VGAP` sit above the slice, which is why sizes arrive as a `dim` argument, and
+  nothing in it may touch the DOM or the module's `data`, `place` or `bbox`.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

@@ -22,6 +22,23 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- The lineage canvas puts every box to the right of all the parents drawn, so
+  every edge runs left to right and an intermediate model sits between what it
+  reads and what reads it, instead of after a model that reads it (0027). A
+  model read by more models than it reads moves right, to just before its first
+  reader. The columns used to be each model's distance from the focus, which on
+  a 112 model graph sent 27 of its 152 edges leftwards.
+- An edge that skips columns runs level through a lane between the boxes of each
+  column it crosses, instead of passing behind them, and a model read across
+  many columns shares one lane among its readers. On the same graph, edges
+  passing behind a box went from 199 to none, and crossings from 316 to 57.
+  Where level lanes would cost more than half again the height of the tallest
+  column, as with the tests ticked, some lanes bend instead when that makes the
+  graph shorter: 8 126 px rather than 15 615 on that graph with its tests.
+- In column mode, an edge the canvas has to draw against its direction, where
+  the column lineage loops, is dashed, and a column feeding itself gets a small
+  loop on the right of its box.
+
 - The Lineage tab exports what it shows: Export saves one HTML file that opens
   in any browser with nothing installed and no network, zooms without blurring
   and prints to a one-page PDF, for a ticket that says which models a release

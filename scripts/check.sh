@@ -75,10 +75,15 @@ else
   # A harness slices web/app.js between two function names. A rename that breaks
   # a slice shows up here as an error, not as a quietly empty test file.
   for t in web/tests/*.js; do
+    # A harness that throws stops where it stands, prints no FAIL and exits
+    # non-zero: without the exit code, the PASS lines before it would vouch
+    # for the whole file. A rejected promise does neither, so tabs.js, the one
+    # harness built on promises, prints its own FAIL.
     out=$("$JSC" "$t" 2>&1)
+    code=$?
     n=$(printf '%s\n' "$out" | grep -c '^PASS' || true)
     bad=$(printf '%s\n' "$out" | grep -c 'FAIL' || true)
-    if [ "$bad" -gt 0 ] || [ "$n" -eq 0 ]; then
+    if [ "$code" -ne 0 ] || [ "$bad" -gt 0 ] || [ "$n" -eq 0 ]; then
       echo "FAILED  $t"
       printf '%s\n' "$out" | grep -v '^PASS' | head -20
       failed=$((failed + 1))

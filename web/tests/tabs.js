@@ -49,4 +49,7 @@ step(function () {
   check('reopening a pinned tab does not demote it', tabs(), 'e.sql d.sql f.sql [h.sql]');
   check('  and it becomes active', S.active, 'd.sql');
 });
-q.then(function () { print('\nfinal tabs: ' + S.order.length + ', preview: ' + S.preview); });
+// jsc says nothing about a rejected promise and exits 0, so a step that throws
+// has to say so itself, or the checks before it would vouch for the file.
+q.then(function () { print('\nfinal tabs: ' + S.order.length + ', preview: ' + S.preview); },
+  function (e) { print('FAIL  a step threw ' + e); });

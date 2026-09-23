@@ -522,6 +522,17 @@ exists in the warehouse. The legend in the corner lists only the
 materializations actually on screen. The same colours are used for the dots in
 the sidebar and the catalog, so a model looks the same everywhere.
 
+Each box sits to the right of all its parents on screen, so every edge runs
+left to right and a model always comes after what it reads. A model read by more
+models than it reads moves right, to just before its first reader, which keeps
+its edges short. An edge that skips columns runs level through a lane between
+the boxes of each column it crosses rather than behind them, and a model read
+across many columns shares one lane among its readers. In column mode, where the
+lineage can loop, the one edge of each loop drawn against its direction is
+dashed. The columns are an order, not a distance: the up and down boxes, the +N
+badges and the export's `dbt ls` line still count levels from the focus, as dbt
+does.
+
 ### Selecting with an expression
 
 The **Selection** button above the graph swaps the canvas from one model's
@@ -767,6 +778,7 @@ $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their f
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety
+$JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake

@@ -1,6 +1,6 @@
 # 0006. The lineage graph is laid out and drawn by hand
 
-Date: 2026-09-11 · Status: accepted
+Date: 2026-09-11 · Status: accepted, amended by 0027
 
 **Trigger:** read before adding a graph library or rewriting `web/lineage.js`.
 
@@ -17,6 +17,11 @@ gives the direction of every edge.
 focus node, orders within a layer to reduce crossings, and emits SVG. Model
 mode and column mode share the same canvas, the same pan and zoom, and the same
 renderer; only the node set differs.
+*Amended by [0027](0027-the-canvas-lays-out-from-the-edges.md): the columns
+were the server's depth, a BFS distance from the focus rather than the longest
+path described here, and only a selection was layered by longest path. Every
+mode is now a longest-path layering computed in the browser, with lanes for
+long edges.*
 
 ## Rejected
 

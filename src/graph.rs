@@ -861,6 +861,10 @@ impl Graph {
     }
 
     /// Breadth-first upstream/downstream expansion around a focus node.
+    ///
+    /// `depth` is the signed shortest distance from the focus, which is what
+    /// dbt's `N+model+M` counts and what the export turns back into one. The
+    /// canvas never uses it as a column: it lays out from the edges (0027).
     pub fn lineage(&self, focus: u32, up: u32, down: u32, with_tests: bool, max_nodes: usize) -> Lineage<'_> {
         let mut depth: HashMap<u32, i32> = HashMap::new();
         let mut truncated = false;
@@ -968,8 +972,9 @@ impl Graph {
     /// to. There is no focus, because a selection has no centre.
     ///
     /// `depth` is a longest-path layering of the induced subgraph rather than a
-    /// distance from anything, so each disconnected component starts at column
-    /// 0 instead of being dragged right by one it has nothing to do with.
+    /// distance from anything, since a selection has no centre to measure one
+    /// from. The canvas does not read it: it lays every mode out from the
+    /// edges it draws (0027).
     pub fn selection(&self, picked: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
         let mut members: Vec<u32> = picked.to_vec();
         let truncated = members.len() > max_nodes;
@@ -1013,7 +1018,7 @@ impl Graph {
         edges.sort_unstable();
         edges.dedup();
 
-        // Kahn, so a node sits one column right of its deepest parent in view.
+        // Kahn, so a node is one level past its deepest parent in view.
         let mut out_adj: Vec<Vec<usize>> = vec![Vec::new(); members.len()];
         let mut indeg: Vec<usize> = vec![0; members.len()];
         for [a, b] in &edges {
@@ -1036,7 +1041,7 @@ impl Graph {
             }
         }
         // Whatever the queue never reached sits on a cycle, which dbt forbids.
-        // It keeps depth 0: a wrong column beats a loop that can spin.
+        // It keeps depth 0: a wrong depth beats a loop that can spin.
 
         Lineage {
             focus: None,
@@ -1326,6 +1331,38 @@ mod tests {
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
         assert!(lineage["focus"].is_number(), "and every other mode still sends one");
+    }
+
+    /// `depth` is what the export turns back into dbt's `N+model+M`, which
+    /// counts the shortest path. The canvas lays out by the longest one (0027),
+    /// so nothing on screen would show this drifting.
+    #[test]
+    fn lineage_depth_is_the_shortest_distance() {
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "fqn": ["shop", name] })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.p": model("p"), "model.shop.q": model("q"),
+                "model.shop.r": model("r"), "model.shop.s": model("s"),
+            },
+            "parent_map": {
+                "model.shop.q": ["model.shop.p"],
+                "model.shop.r": ["model.shop.q", "model.shop.p"],
+                "model.shop.s": ["model.shop.r"],
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let down = g.lineage(g.index["model.shop.p"], 0, 3, false, 100);
+        for (name, want) in [("p", 0), ("q", 1), ("r", 1), ("s", 2)] {
+            assert_eq!(by_name(&down, name).depth, want, "{name} downstream");
+        }
+        let up = g.lineage(g.index["model.shop.s"], 3, 0, false, 100);
+        for (name, want) in [("s", 0), ("r", -1), ("q", -2), ("p", -2)] {
+            assert_eq!(by_name(&up, name).depth, want, "{name} upstream");
+        }
     }
 
     /// Two `relationships` on one column, a `not_null`, and a model-level test.

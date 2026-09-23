@@ -2759,6 +2759,7 @@ function exportCanvasCss() {
     '#graph text { font-family: var(--ui); user-select: none; }',
     '.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }',
     '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
+    '.edge.back { stroke-dasharray: 5 4; }',
     '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
     '.nd:hover rect.box { stroke: var(--fg-dim); }',
     '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
@@ -2863,7 +2864,10 @@ function exportViewer(zoomViewBox) {
     picked = id;
     svg.querySelectorAll('.nd').forEach((g) => g.classList.toggle('sel', g.dataset.id === id));
     svg.querySelectorAll('.edge').forEach((p) => {
-      p.classList.toggle('hi', !!id && (p.dataset.a === id || p.dataset.b === id));
+      const hit = !!id && (p.dataset.a === id || p.dataset.b === id);
+      p.classList.toggle('hi', hit);
+      // On top, as on the canvas: edges sharing a lane lie on one line.
+      if (hit) p.parentNode.appendChild(p);
     });
   };
 

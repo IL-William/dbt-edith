@@ -32,6 +32,7 @@ it is built this way, for whoever changes it next.
 | [0024](0024-selectors-resolved-from-the-manifest.md) | A selector expression is resolved from the manifest, never by running dbt | changing how the Selection box matches, adding a selector method, or reaching for `dbt ls` |
 | [0025](0025-freshness-is-mtimes-not-commits.md) | Manifest freshness is measured in file times, not in commits | changing what the freshness badge claims, or comparing the manifest against a commit |
 | [0026](0026-the-lineage-exports-as-one-html-file.md) | The lineage exports as one HTML file, built in the browser | changing what an exported graph carries, or adding a way to export one |
+| [0027](0027-the-canvas-lays-out-from-the-edges.md) | The canvas lays out from the edges, and depth stays a distance | moving a box on the lineage canvas, or reading `n.depth` |
 
 ## Keeping these honest
 
