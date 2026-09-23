@@ -22,6 +22,16 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- The Compiled and Run tabs answer for a test, not only for a model. A generic
+  test's file is named by dbt, which truncates a long generated name and appends
+  a hash, so it is found by reading the `compiled_path` the manifest records
+  rather than by deriving a name nothing could reconstruct. Measured on an
+  18 825 node project: 148 of 148 generic tests sampled now show their compiled
+  SQL, where none did.
+- The Run tab offers `dbt test --select` for a test, where it offered
+  `dbt run --select`, which selects nothing and would have left the tab saying
+  what it said before.
+
 - Catalog > Columns shows every test guarding a column rather than one chip per
   kind: two `relationships` on one column, or two `expression_is_true`, used to
   collapse into a single chip and the second test was gone before the browser

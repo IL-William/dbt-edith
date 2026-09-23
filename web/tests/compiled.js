@@ -109,3 +109,16 @@ var mixed = artifactBar(payload({
 has('the inputs are grouped', mixed.why, 'changed since: the model file, dbt_project.yml');
 has('the rest stands on its own', mixed.why, '· compiled again after this was run');
 has('and the warning closes the line', mixed.why, '(may be out of date)');
+
+print('\n--- a test is not run by dbt run ---');
+// Its run file is written by `dbt test`; `dbt run --select <a test>` selects
+// nothing and would leave the tab saying exactly what it said before.
+var testRun = artifactBar(payload({ kind: 'run', rel: 'target/run/shop/x.sql' }), 'not_null_orders_id', true);
+check('the run button offers dbt test', testRun.command, 'dbt test --select not_null_orders_id');
+check('and says so on the button', testRun.button, 'Test again');
+var testCompiled = artifactBar(payload({}), 'not_null_orders_id', true);
+check('compiling is the same command for both', testCompiled.command, 'dbt compile --select not_null_orders_id');
+var missing = artifactBar({ kind: 'run', found: false, candidates: [] }, 'not_null_orders_id', true);
+check('a missing test run still offers dbt test', missing.command, 'dbt test --select not_null_orders_id');
+var modelRun = artifactBar(payload({ kind: 'run', rel: 'target/run/shop/x.sql' }), 'orders', false);
+check('a model is still run by dbt run', modelRun.command, 'dbt run --select orders');

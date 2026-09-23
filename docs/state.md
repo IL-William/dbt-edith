@@ -111,6 +111,25 @@ Every route sits behind the Host and Origin guard added on 2026-09-17 after a
 security audit found the terminal reachable from any web page (0015). The same
 pass confined `/api/git/diff` to the project and added `SECURITY.md`.
 
+Compiled and Run for a test, added 2026-09-23: both tabs were derived from a
+node's `original_file_path`, which is the model's own file and, for a generic
+test, the schema file that declares it. dbt writes that test somewhere else
+again, under a name it truncates and hashes once the generated one runs long:
+`relationships_fct_orders__cus_4a1f0c2e9b7d6a5c3e8f1b0d2c4a6e8f.sql`. Nothing
+here could reconstruct that, so the manifest's own `compiled_path` is read
+instead, which the module previously said Fusion does not write. It does: 15 911
+of the 18 825 nodes carry one. Only the part inside the target directory is
+kept, because `--manifest` elsewhere means the recorded directory and the one
+being read need not agree, and `run/` is that same path under the other
+directory, since dbt records no path for it and mirrors the layout into both.
+Where no `compiled_path` exists the old derivation still runs, plus two guesses
+at a generic test's file name, and every path tried is still reported.
+
+Measured on that project: 148 of 148 generic tests sampled now show their
+compiled SQL where none did, 60 of 60 models are unchanged, and only 7 of those
+148 have a run file, which is true rather than a miss: dbt writes 26 250
+compiled generic tests there and 472 run ones.
+
 ## Deferred, in the order they were chosen
 
 1. **Macro layer.** Links on `{{ macro() }}` calls, and a used-by count per

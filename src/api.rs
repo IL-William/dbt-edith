@@ -1064,8 +1064,17 @@ async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<ArtifactQ
     let n = &graph.nodes[idx as usize];
     let (root, target) = (st.root.clone(), st.target_dir.clone());
     let (package, file, yml) = (n.package.clone(), n.file.clone(), n.yml.clone());
+    let (compiled_at, name, alias) = (n.compiled.clone(), n.name.clone(), n.alias.clone());
     match tokio::task::spawn_blocking(move || {
-        compiled::look_up(&root, &target, kind, &package, &file, &yml, 2 * 1024 * 1024)
+        let subject = compiled::Subject {
+            package: &package,
+            file: &file,
+            yml: &yml,
+            compiled: &compiled_at,
+            name: &name,
+            alias: &alias,
+        };
+        compiled::look_up(&root, &target, kind, &subject, 2 * 1024 * 1024)
     })
     .await
     {

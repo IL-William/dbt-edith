@@ -2577,7 +2577,9 @@ async function loadArtifact(kind, id) {
   try { info = await api.get('/api/compiled?kind=' + kind + '&id=' + encodeURIComponent(id)); }
   catch (e) { return toast(kind + ': ' + e.message, 'err'); }
 
-  const said = artifactBar(info, name);
+  // A test node even when the catalog is showing something else: a dbt
+  // unique_id says what it is, and the id is all this has when they disagree.
+  const said = artifactBar(info, name, node ? node.kind === 'test' : id.startsWith('test.'));
 
   if (!said.found) {
     if (S.artifactCm[kind]) S.artifactCm[kind].setValue('');
@@ -2670,14 +2672,20 @@ function humanAge(secs) {
    schema file, dbt_project.yml, a macro, or for a run, a compile that happened
    after it. Never the age on its own, however large. Pure, so every state is
    testable without a DOM. */
-function artifactBar(info, name) {
+function artifactBar(info, name, isTest) {
   const kind = info && info.kind === 'run' ? 'run' : 'compiled';
   const w = {
     compiled: {
       verb: 'compiled', dir: 'target/compiled/', what: 'compiled SQL',
       cmd: 'dbt compile', fresh: 'Compile again', stale: 'Recompile',
     },
-    run: {
+    // A test's run file is written by `dbt test` and never by `dbt run`, which
+    // would select nothing and leave the tab saying the same thing afterwards.
+    // Compiling is the same command for both.
+    run: isTest ? {
+      verb: 'last run', dir: 'target/run/', what: 'run SQL',
+      cmd: 'dbt test', fresh: 'Test again', stale: 'Test again',
+    } : {
       verb: 'last run', dir: 'target/run/', what: 'run SQL',
       cmd: 'dbt run', fresh: 'Run again', stale: 'Run again',
     },

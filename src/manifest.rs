@@ -80,6 +80,12 @@ pub struct RawNode {
     pub columns: HashMap<String, RawColumn>,
     #[serde(default)]
     pub depends_on: RawDependsOn,
+    /// Where dbt wrote this node's compiled SQL, project-relative. The only
+    /// thing that knows the file name of a generic test: dbt truncates a long
+    /// generated name and appends a hash, which nothing here could reconstruct.
+    /// Absent from some manifests, so the layout is still derived when it is.
+    #[serde(default)]
+    pub compiled_path: Option<String>,
     // Test-only fields, used to attach a test to the column it guards.
     #[serde(default)]
     pub column_name: Option<String>,

@@ -121,6 +121,11 @@ pub struct Node {
     pub kind: Kind,
     pub file: String,
     pub yml: String,
+    /// `compiled_path` as dbt wrote it, slashed and project-relative, or empty
+    /// when the manifest carries none. Kept for every node and not only the
+    /// heavy ones, because a generic test is exactly the node whose artifact
+    /// cannot be found without it.
+    pub compiled: String,
     pub schema: String,
     pub database: String,
     pub relation: String,
@@ -303,6 +308,7 @@ impl Graph {
                         .unwrap_or_default(),
                 ),
                 file,
+                compiled: slashed(raw_node.compiled_path.unwrap_or_default()),
                 schema: raw_node.schema.clone().unwrap_or_default(),
                 database: raw_node.database.clone().unwrap_or_default(),
                 relation: raw_node.relation_name.unwrap_or_default(),
