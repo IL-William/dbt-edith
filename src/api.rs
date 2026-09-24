@@ -73,11 +73,18 @@ impl AppState {
 #[folder = "web/"]
 struct Assets;
 
-pub fn load_graph(manifest_path: &Path, catalog_path: &Path, cll_path: &Path) -> anyhow::Result<Graph> {
+/// `project` is read only for what a manifest can leave out: dbt-core before
+/// 1.6 does not name the root project, and its macros are found by that name.
+pub fn load_graph(project: &Path, manifest_path: &Path, catalog_path: &Path, cll_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
     let mtime = mtime_secs(manifest_path);
     let raw = RawManifest::load(manifest_path)?;
     let mut graph = Graph::build(raw, manifest_path, mtime, started.elapsed().as_millis());
+    if !graph.macros.has_root() {
+        if let Some(name) = crate::project::name(project) {
+            graph.macros.set_root(name);
+        }
+    }
     if catalog_path.exists() {
         match RawCatalog::load(catalog_path) {
             Ok(cat) => {
@@ -125,6 +132,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/grep", get(grep))
         .route("/api/file", get(read_file).put(write_file))
         .route("/api/resolve", post(resolve))
+        .route("/api/macros/resolve", post(resolve_macros))
         .route("/api/git", get(git_status))
         .route("/api/freshness", get(freshness_status))
         .route("/api/git/branches", get(git_branches))
@@ -302,8 +310,8 @@ async fn select_cll_source(State(st): State<Arc<AppState>>, Json(b): Json<CllSou
     st.set_cll(path.clone());
     let _ = st.settings.update(|s| s.cll_file = Some(wanted.clone())).await;
 
-    let (manifest, catalog) = (st.manifest_path.clone(), st.catalog_path.clone());
-    match tokio::task::spawn_blocking(move || load_graph(&manifest, &catalog, &path)).await {
+    let (root, manifest, catalog) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone());
+    match tokio::task::spawn_blocking(move || load_graph(&root, &manifest, &catalog, &path)).await {
         Ok(Ok(g)) => {
             let meta = g.meta.clone();
             if let Ok(mut seen) = st.seen.lock() {
@@ -319,8 +327,8 @@ async fn select_cll_source(State(st): State<Arc<AppState>>, Json(b): Json<CllSou
 
 async fn reload(State(st): State<Arc<AppState>>) -> Response {
     let _cache = st.cll_lock.lock().await;
-    let (path, cat, cll) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
-    match tokio::task::spawn_blocking(move || load_graph(&path, &cat, &cll)).await {
+    let (root, path, cat, cll) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
+    match tokio::task::spawn_blocking(move || load_graph(&root, &path, &cat, &cll)).await {
         Ok(Ok(g)) => {
             let meta = g.meta.clone();
             *st.graph.write().await = Arc::new(g);
@@ -621,6 +629,71 @@ async fn resolve(State(st): State<Arc<AppState>>, Json(body): Json<ResolveBody>)
         })
         .collect();
     Json(out).into_response()
+}
+
+#[derive(Deserialize)]
+struct MacroCallsBody {
+    /// The file the calls were read from. A bare name is looked up in its
+    /// package before the root project, the way dbt looks one up for a node.
+    #[serde(default)]
+    file: String,
+    calls: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct MacroLink {
+    /// The call as the editor sent it, which is how it finds its marks again.
+    call: String,
+    id: String,
+    name: String,
+    package: String,
+    file: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    description: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
+}
+
+/// More distinct calls than any file holds: past it, the request is not an
+/// editor asking.
+const MAX_MACRO_CALLS: usize = 2_000;
+
+/// Maps the macro calls found in the editor onto the macros they reach, and
+/// answers only for those whose file is in the project, since nothing else can
+/// be opened. A call it leaves out is a context function, a Jinja builtin, a
+/// macro of dbt's own, or a typo, and the editor leaves all four as text.
+async fn resolve_macros(State(st): State<Arc<AppState>>, Json(b): Json<MacroCallsBody>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let root = st.root.clone();
+    // A stat or two per call, which on the VM's disk is not free.
+    let found = tokio::task::spawn_blocking(move || {
+        let macros = &graph.macros;
+        let local = macros.package_of(&b.file);
+        let mut seen = std::collections::HashSet::new();
+        b.calls
+            .iter()
+            .filter(|c| seen.insert(c.as_str()))
+            .take(MAX_MACRO_CALLS)
+            .filter_map(|call| {
+                let m = macros.resolve(call, local)?;
+                let file = macros.place(&root, m)?;
+                Some(MacroLink {
+                    call: call.clone(),
+                    id: m.id.clone(),
+                    name: m.name.clone(),
+                    package: m.package.clone(),
+                    file,
+                    description: m.description.clone(),
+                    args: m.args.clone(),
+                })
+            })
+            .collect::<Vec<_>>()
+    })
+    .await;
+    match found {
+        Ok(links) => Json(links).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -1794,8 +1867,8 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         }
         // Give dbt a moment to finish writing.
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
-        if let Ok(Ok(g)) = tokio::task::spawn_blocking(move || load_graph(&mp, &cp, &lp)).await {
+        let (root, mp, cp, lp) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
+        if let Ok(Ok(g)) = tokio::task::spawn_blocking(move || load_graph(&root, &mp, &cp, &lp)).await {
             eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
             *st.graph.write().await = Arc::new(g);
             // A parse just landed, so the badge should turn green on the next
@@ -1973,6 +2046,47 @@ mod tests {
 
         // Read-only, so the guard asks for the Host and nothing more.
         assert!(status_of(port, get("/api/select?q=a", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Which macro a call reaches is settled in `macros.rs`. This is the part
+    /// only a server can check: a link is sent only for a file that is really
+    /// in the project, and only to this page.
+    #[tokio::test]
+    async fn a_macro_call_links_only_to_a_file_in_the_project() {
+        let root = temp_project("macros");
+        std::fs::create_dir_all(root.join("macros")).unwrap();
+        std::fs::write(root.join("macros").join("cents.sql"), "{% macro cents(x) %}{{ x }} / 100{% endmacro %}\n").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "macros": {
+                "macro.demo.cents": { "name": "cents", "package_name": "demo", "original_file_path": "macros/cents.sql" },
+                "macro.dbt.is_incremental": {
+                    "name": "is_incremental", "package_name": "dbt",
+                    "original_file_path": "macros/materializations/models/incremental/is_incremental.sql",
+                },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://{host}");
+        let body = r#"{"file":"models/orders.sql","calls":["cents","dbt.is_incremental","is_incremental","log","cents"]}"#;
+
+        let answer = body_of(port, with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", &own)], body)).await;
+        assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+        assert!(answer.contains(r#""call":"cents""#), "{answer}");
+        assert!(answer.contains(r#""file":"macros/cents.sql""#), "{answer}");
+        // `dbt.is_incremental` resolves, to a file in site-packages, so only the
+        // disk check keeps it out. A bare `is_incremental` never reaches dbt's
+        // package from a model, and `log` is no macro at all.
+        assert_eq!(answer.matches(r#""call":"#).count(), 1, "one link, asked for twice: {answer}");
+
+        let foreign = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", "https://evil.example")], body);
+        assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

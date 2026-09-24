@@ -639,12 +639,14 @@ kbd {
 .tagchip { font: 10px var(--mono); background: var(--accent-dim); border-radius: 9px; padding: 1px 7px; }
 
 /* ------------------------------------------------------------ ref links -- */
-.cm-reflink {
+/* A macro call links the same way a ref() does, to its definition, so it
+   looks the same; the card says which it is. */
+.cm-reflink, .cm-macrolink {
   border-bottom: 1px dotted #6f7f93;
   cursor: pointer;
   border-radius: 2px;
 }
-.cm-reflink:hover {
+.cm-reflink:hover, .cm-macrolink:hover {
   color: var(--accent) !important;
   border-bottom: 1px solid var(--accent);
   background: #1b2a3d;

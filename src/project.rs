@@ -1,7 +1,9 @@
-//! `dbt_project.yml`: the `vars:` block, and nothing else in the file.
+//! `dbt_project.yml`: the `vars:` block, and the project's `name:`.
 //!
 //! The manifest holds the merged YAML for everything else, but it does not hold
-//! project vars at all, so this is the one place they can be read (0018).
+//! project vars at all, so this is the one place they can be read (0018). The
+//! name it does hold, from dbt-core 1.6 on; before that only a hash of it, and
+//! the macro links need the name itself (`src/macros.rs`).
 //!
 //! The scanner covers the shapes that actually appear in a `vars:` block and
 //! reports every line it could not read, with a line number and a fixed
@@ -383,6 +385,36 @@ fn push_var(out: &mut ProjectVars, var: ProjectVar) {
     out.vars.push(var);
 }
 
+/// The top-level `name:`, as a plain or quoted scalar and nothing else.
+pub fn name(root: &Path) -> Option<String> {
+    let path = root.join("dbt_project.yml");
+    let meta = std::fs::metadata(&path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_BYTES {
+        return None;
+    }
+    name_in(&crate::envs::decode(&std::fs::read(&path).ok()?))
+}
+
+fn name_in(text: &str) -> Option<String> {
+    for line in text.lines() {
+        if indent_of(line) != Some(0) || skippable(line) {
+            continue;
+        }
+        let Some((key, rest)) = split_key(line) else { continue };
+        if key != "name" {
+            continue;
+        }
+        if rest.trim().is_empty() {
+            return None;
+        }
+        return match parse_value(rest) {
+            Value::Scalar(s) if !s.is_empty() && !s.contains('{') => Some(s),
+            _ => None,
+        };
+    }
+    None
+}
+
 pub fn read(root: &Path) -> ProjectVars {
     let path = root.join("dbt_project.yml");
     let Ok(meta) = std::fs::metadata(&path) else {
@@ -400,6 +432,17 @@ pub fn read(root: &Path) -> ProjectVars {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_name_is_the_top_level_key_and_only_that() {
+        let text = "# shop\nmodels:\n  name: not_this\nname: 'shop'  # the project\nname: later\n";
+        assert_eq!(name_in(text).as_deref(), Some("shop"));
+        assert_eq!(name_in("version: 2\nname: shop_2\r\n").as_deref(), Some("shop_2"));
+        // Nothing, or something this does not read, is no name at all.
+        assert_eq!(name_in("name:\n"), None);
+        assert_eq!(name_in("name: \"{{ env_var('P') }}\"\n"), None);
+        assert_eq!(name_in("models:\n  shop:\n    +schema: x\n"), None);
+    }
 
     fn names(p: &ProjectVars) -> Vec<&str> {
         p.vars.iter().map(|v| v.name.as_str()).collect()

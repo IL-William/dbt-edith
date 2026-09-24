@@ -22,6 +22,20 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- A macro call in the editor is a link: clicking `hub` in `{{ hub(...) }}`
+  opens the file that defines it, at its `{% macro %}` line, and pausing on it
+  says which package it came from (0028). A bare name reaches the project's own
+  macro and never an installed package's, as in dbt, so `hub` and
+  `automate_dv.hub` can open two different files. Calls in `dbt_project.yml`
+  hooks and in a `macros:` properties entry are linked too. dbt's own macros, a
+  package that is not installed and anything that is not a macro stay text.
+- In a properties file, the name of each source table, model, seed, snapshot and
+  exposure links to its node: a click moves the lineage onto it and leaves the
+  editor in the file, and a pause shows the node's card.
+- Coming back to a properties file keeps the lineage on the node it shows when
+  that file declares it, instead of moving to whichever of its nodes the server
+  lists first.
+
 - The lineage canvas puts every box to the right of all the parents drawn, so
   every edge runs left to right and an intermediate model sits between what it
   reads and what reads it, instead of after a model that reads it (0027). A

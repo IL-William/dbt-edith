@@ -33,6 +33,7 @@ it is built this way, for whoever changes it next.
 | [0025](0025-freshness-is-mtimes-not-commits.md) | Manifest freshness is measured in file times, not in commits | changing what the freshness badge claims, or comparing the manifest against a commit |
 | [0026](0026-the-lineage-exports-as-one-html-file.md) | The lineage exports as one HTML file, built in the browser | changing what an exported graph carries, or adding a way to export one |
 | [0027](0027-the-canvas-lays-out-from-the-edges.md) | The canvas lays out from the edges, and depth stays a distance | moving a box on the lineage canvas, or reading `n.depth` |
+| [0028](0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) | A macro call resolves by name, the way dbt resolves it | linking anything to a macro, or changing which macro a call reaches |
 
 ## Keeping these honest
 

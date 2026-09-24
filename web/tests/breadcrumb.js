@@ -109,6 +109,10 @@ check('quotes are stripped, once', chain(pl, 2), ['satellites', 'sat_shop__order
 check('and each item ends on its own line', chain(pl, 3), ['satellites', 'sat_app__order']);
 check('a mapping item keeps its index', chain(y, 15), ['models', '0', 'columns', '1', 'name']);
 
+print('\n--- an item whose dash line is only a comment ---');
+var NOTED = ['models:', '  - name: a', '  - # later', '    name: b'].join('\n');
+check('its keys still nest under it', chain(yamlOutline(NOTED), 3), ['models', '1', 'name']);
+
 print('\n--- a sequence at its key\'s own column ---');
 var FLUSH = ['models:', '- name: a', '- name: b'].join('\n');
 var f = yamlOutline(FLUSH);
