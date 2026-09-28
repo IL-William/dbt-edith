@@ -122,6 +122,129 @@ const Lineage = (() => {
     return { rank, byRank };
   }
 
+  /* Numbers inside a name compare as numbers, so `9_marts` sorts before
+     `10_audit` and the folders a project numbers keep their numbers. */
+  function dagNatural(a, b) {
+    const A = String(a).match(/\d+|\D+/g) || [], B = String(b).match(/\d+|\D+/g) || [];
+    for (let i = 0; i < A.length && i < B.length; i++) {
+      if (A[i] === B[i]) continue;
+      if (/^\d/.test(A[i]) && /^\d/.test(B[i]) && +A[i] !== +B[i]) return +A[i] - +B[i];
+      return A[i] < B[i] ? -1 : 1;
+    }
+    return A.length - B.length;
+  }
+
+  /* The kinds filed under the model paths, which set the level the folders are
+     read at. A seed, a snapshot or a test lives under a path of its own, and
+     letting one vote would lift the level to the top of the project, where
+     every model shares `models`. */
+  const ANCHORS = new Set(['model', 'source', 'exposure']);
+
+  /* The folder bands: which folder each drawn node is filed under, and the
+     order the folders go in, left to right (0029).
+
+     The folder is the first one below where the drawn models and sources stop
+     sharing a path. On a canvas holding `models/core/20_clean/...` and
+     `models/core/30_vault/...` that is `20_clean` and `30_vault`; with
+     everything drawn in 20_clean, its own sub-folders. Read from what is
+     drawn, not from the whole project, so a canvas whose models split
+     somewhere always gets bands. A node outside that level, a seed say, goes
+     under the first folder of its own path that leaves it, `seeds`, and a
+     model filed above it under its own folder, `models`. A node from another
+     package goes under the package, since its path is relative to the package
+     and would otherwise land in any folder of this project sharing the name.
+
+     The order comes from the edges between folders, never from how their
+     names sort, so `staging`, `intermediate`, `marts` works. A name that
+     starts with a number is the exception: whoever numbered `20_clean` and
+     `30_vault` has said which comes first, and one model in 30_vault read by
+     one in 20_clean must not swap the two on the canvas that happens to
+     draw that edge and no other. A numbered folder never goes before a lower
+     number, and the edges place everything else. Two folders feeding each
+     other have no order, and then the one fed least by the folders not yet
+     placed goes next: the edges it leaves behind are the ones drawn against
+     the order, dashed. Where the edges leave a choice, the folder whose nodes
+     sit further left without the bands goes first, `plain` being those
+     columns: a seed read by nothing drawn then starts the canvas, as it would
+     have, rather than ending it because `seeds` sorts after every number.
+     Names break the ties left. A test goes with the latest of the nodes it
+     tests, so it never makes a folder of its own nor points an edge back.
+
+     `band` is the position of each node's folder in that order. `key` is the
+     folder's path, or `@` and the package, and `name` what is written on it. */
+  function dagFolders(nodes, edges, project, plain) {
+    const n = nodes.length;
+    const pkg = nodes.map((x) => String(x.id || '').split('.')[1] || '');
+    const own = (v) => !project || pkg[v] === project;
+    const dirs = nodes.map((x) => String(x.file || '').split('/').slice(0, -1));
+    // Down one folder at a time while every model and source going that deep
+    // shares it. One filed higher up, a `models/sources.yml` say, keeps its own
+    // folder rather than lifting the level for all the others.
+    const deep = [], root = [];
+    for (let v = 0; v < n; v++) if (ANCHORS.has(nodes[v].kind) && own(v)) deep.push(dirs[v]);
+    for (let l = 0; ; l++) {
+      const reach = deep.filter((d) => d.length > l);
+      if (!reach.length || reach.some((d) => d[l] !== reach[0][l])) break;
+      root.push(reach[0][l]);
+    }
+    const fed = new Uint8Array(n);
+    for (const [a, b] of edges) if (a !== b) fed[b] = 1;
+    const key = nodes.map((x, v) => {
+      if (x.kind === 'test' && fed[v]) return null;
+      if (!own(v)) return '@' + pkg[v];
+      const d = dirs[v];
+      let k = 0;
+      while (k < root.length && root[k] === d[k]) k++;
+      return d.slice(0, k + 1).join('/');
+    });
+    const nameOf = (k) => (k[0] === '@' ? k.slice(1) : k.slice(k.lastIndexOf('/') + 1) || '/');
+    const keys = [...new Set(key.filter((k) => k !== null))];
+    keys.sort((a, b) => dagNatural(nameOf(a), nameOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
+    const B = keys.length, at = new Map(keys.map((k, i) => [k, i]));
+    if (!B) return null;
+    // How many drawn pairs of nodes lead from one folder into another.
+    const w = new Float64Array(B * B), seen = new Set();
+    for (const [a, b] of edges) {
+      const x = at.get(key[a]), y = at.get(key[b]);
+      if (x === undefined || y === undefined || x === y || seen.has(a * n + b)) continue;
+      seen.add(a * n + b);
+      w[x * B + y]++;
+    }
+    const numbered = keys.map((k) => k[0] !== '@' && /^\d/.test(nameOf(k)));
+    const mean = new Float64Array(B), count = new Float64Array(B);
+    if (plain) {
+      for (let v = 0; v < n; v++) {
+        if (key[v] === null) continue;
+        const x = at.get(key[v]);
+        mean[x] += plain[v]; count[x]++;
+      }
+      for (let x = 0; x < B; x++) mean[x] /= count[x];
+    }
+    const left = new Uint8Array(B).fill(1), place = new Int32Array(B);
+    for (let s = 0; s < B; s++) {
+      // The keys are in name order, so the first numbered one left is the lowest.
+      let pick = -1, least = Infinity, lowest = -1;
+      for (let y = 0; y < B && lowest < 0; y++) if (left[y] && numbered[y]) lowest = y;
+      for (let y = 0; y < B; y++) {
+        if (!left[y] || (numbered[y] && y !== lowest)) continue;
+        let into = 0;
+        for (let x = 0; x < B; x++) if (left[x]) into += w[x * B + y];
+        if (into < least || (into === least && mean[y] < mean[pick])) { least = into; pick = y; }
+      }
+      left[pick] = 0; place[pick] = s;
+    }
+    const band = new Int32Array(n).fill(-1);
+    for (let v = 0; v < n; v++) if (key[v] !== null) band[v] = place[at.get(key[v])];
+    for (const [a, b] of edges) if (key[b] === null && band[a] > band[b]) band[b] = band[a];
+    for (let v = 0; v < n; v++) if (band[v] < 0) band[v] = 0;
+    const bands = new Array(B);
+    keys.forEach((k, i) => {
+      bands[place[i]] = { key: k, name: nameOf(k), size: 0, package: k[0] === '@' };
+    });
+    for (let v = 0; v < n; v++) bands[band[v]].size++;
+    return { band, bands, root: root.join('/') };
+  }
+
   /* Columns by longest path over the drawn edges, so every edge points right.
      Never n.depth: that is the server's distance from the focus, which the
      export turns into dbt's graph operators, and a model reached by a short
@@ -134,8 +257,15 @@ const Lineage = (() => {
      it. A node with more readers than parents is then pulled right to just
      before its first reader, which shortens more edges than it stretches: the
      usual case is an input only a late model reads, which would otherwise sit
-     in the first column at the end of a long edge. */
-  function dagLayers(n, edges, R) {
+     in the first column at the end of a long edge.
+
+     `band`, when the canvas is drawn by folder, gives each folder its own run
+     of columns, starting one column after the folder before it ends. An edge
+     from a later folder to an earlier one is turned round before the walk,
+     since the folders now fix that order, which leaves the walk only the loops
+     inside one folder to find. A node is pulled right no further than its
+     folder's last column. `span` is each folder's first and last column. */
+  function dagLayers(n, edges, R, band) {
     const { rank } = R;
     const out = Array.from({ length: n }, () => []);
     const index = new Map(), pairs = [], edgePair = [];
@@ -147,7 +277,9 @@ const Lineage = (() => {
     }
     out.forEach((l) => l.sort((x, y) => rank[pairs[x][1]] - rank[pairs[y][1]]));
     const indeg = new Int32Array(n), state = new Uint8Array(n), flip = new Uint8Array(pairs.length);
-    pairs.forEach(([, b]) => { indeg[b]++; });
+    let against = 0;
+    if (band) pairs.forEach(([a, b], k) => { if (band[a] > band[b]) { flip[k] = 1; against++; } });
+    pairs.forEach(([, b], k) => { if (!flip[k]) indeg[b]++; });
     // Roots first, so that in a cycle hanging off a root it is the edge closing
     // the loop that turns.
     for (const s of R.byRank.filter((v) => !indeg[v]).concat(R.byRank)) {
@@ -158,6 +290,7 @@ const Lineage = (() => {
         const t = stack.length - 1, u = stack[t];
         if (at[t] < out[u].length) {
           const k = out[u][at[t]++], w = pairs[k][1];
+          if (flip[k]) continue;
           if (state[w] === 1) flip[k] = 1;
           else if (!state[w]) { state[w] = 1; stack.push(w); at.push(0); }
         } else { state[u] = 2; stack.pop(); at.pop(); }
@@ -170,22 +303,32 @@ const Lineage = (() => {
       succ[a].push(b); pred[b].push(a); deg[b]++;
     });
     const topo = R.byRank.filter((v) => !deg[v]);
-    for (let h = 0; h < topo.length; h++) {
+    for (let h = 0; h < topo.length; h++) for (const w of succ[topo[h]]) if (!--deg[w]) topo.push(w);
+    // Still an order every edge agrees with, since no edge left points to an
+    // earlier folder: sort() is stable.
+    if (band) topo.sort((x, y) => band[x] - band[y]);
+    const span = [];
+    for (let h = 0, start = 0; h < topo.length; h++) {
       const v = topo[h];
-      for (const w of succ[v]) {
-        if (layer[w] < layer[v] + 1) layer[w] = layer[v] + 1;
-        if (!--deg[w]) topo.push(w);
+      if (band && (!h || band[v] !== band[topo[h - 1]])) {
+        if (h) start = span[band[topo[h - 1]]][1] + 1;
+        span[band[v]] = [start, start];
       }
+      let l = band ? start : 0;
+      for (const u of pred[v]) if (layer[u] + 1 > l) l = layer[u] + 1;
+      layer[v] = l;
+      if (band && l > span[band[v]][1]) span[band[v]][1] = l;
     }
     // Backwards, so every reader already sits in its final column.
     for (let h = topo.length - 1; h >= 0; h--) {
       const v = topo[h];
       if (!succ[v].length || pred[v].length >= succ[v].length) continue;
-      layer[v] = Math.min(...succ[v].map((w) => layer[w])) - 1;
+      const l = Math.min(...succ[v].map((w) => layer[w])) - 1;
+      layer[v] = band ? Math.min(l, span[band[v]][1]) : l;
     }
     const lo = Math.min(0, ...layer);
     for (let i = 0; i < n; i++) layer[i] -= lo;
-    return { pairs, flip, edgePair, layer };
+    return { pairs, flip, edgePair, layer, against, span };
   }
 
   /* The whole layout from the payload alone, which it never touches: the same
@@ -199,10 +342,16 @@ const Lineage = (() => {
      included, needs 8 092: twice the zoom out on a graph that tall. Level
      lanes may spend half again the tallest column's height, no more. The
      isotonic heights are no promise either, only usually shorter, so they
-     replace Brandes and Kopf only where they are. */
-  function dagLayout(d, dim) {
+     replace Brandes and Kopf only where they are.
+
+     `folders`, when the canvas is drawn by folder, is the project's package,
+     or '' when it is not known, which files every node as the project's own:
+     the layout then gives each folder a band of columns (0029). Left out, or
+     null, it draws as it always has. */
+  function dagLayout(d, dim, folders) {
     const n = d.nodes.length, R = dagRank(d.nodes);
-    const lay = dagLayers(n, d.edges, R);
+    const F = folders == null ? null : dagFolders(d.nodes, d.edges, folders, dagLayers(n, d.edges, R).layer);
+    const lay = dagLayers(n, d.edges, R, F && F.band);
     const g = dagProper(n, lay, R.rank, d.edge_kinds || [], dim.bundle);
     dagOrder(g, R);
     let y = bkCoords(g, dim);
@@ -210,7 +359,28 @@ const Lineage = (() => {
       const iso = isoCoords(g, dim);
       if (dagSpan(g, iso, dim) < dagSpan(g, y, dim)) y = iso;
     }
-    return dagDraw(d, g, lay, y, dim);
+    const L = dagDraw(d, g, lay, y, dim);
+    if (F) dagBands(L, F, lay, dim);
+    return L;
+  }
+
+  /* Where each band is drawn: its columns, plus a margin that keeps the +N
+     badges and the loops inside it and leaves a gutter between two bands. The
+     frame grows to hold them, and above the boxes by the room an exported file
+     writes their names in. Heights are left to whoever draws them: on the
+     canvas a band runs the whole height, so its name can sit at the top of the
+     window wherever that is. */
+  function dagBands(L, F, lay, dim) {
+    const step = dim.w + dim.hgap, margin = dim.hgap * 3 / 8;
+    L.bands = F.bands.map((b, i) => Object.assign({}, b, {
+      x0: lay.span[i][0] * step - margin,
+      x1: lay.span[i][1] * step + dim.w + margin,
+    }));
+    L.against = lay.against;
+    if (!L.bbox) return;
+    L.bbox.x0 = Math.min(L.bbox.x0, L.bands[0].x0);
+    L.bbox.x1 = Math.max(L.bbox.x1, L.bands[L.bands.length - 1].x1);
+    L.bbox.y0 -= 20;
   }
 
   /* How far apart two neighbours in a column sit, centre to centre. Two boxes
@@ -623,6 +793,8 @@ const Lineage = (() => {
 
   let svg, root, handlers = {}, data = null, place = [], bbox = null;
   let view = { k: 1, x: 0, y: 0 }, selected = null;
+  // The folder bands drawn, and the layer over the canvas their names sit in.
+  let bands = [], heads = null, drawn = null;
   // Module scope, not init's: render() reads it to keep a hover card from
   // opening under a pointer that is in the middle of a pan.
   let drag = null;
@@ -652,6 +824,9 @@ const Lineage = (() => {
     svg = svgEl; handlers = h || {};
     root = el('g');
     svg.appendChild(root);
+    heads = document.createElement('div');
+    heads.className = 'folder-heads';
+    svg.parentNode.insertBefore(heads, svg.nextSibling);
 
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -678,7 +853,9 @@ const Lineage = (() => {
       apply();
     });
     window.addEventListener('mouseup', () => { drag = null; svg.classList.remove('panning'); });
-    svg.addEventListener('dblclick', (e) => { if (e.target === svg) fit(); });
+    // A band covers the background, and a double click on it is still one on
+    // the background.
+    svg.addEventListener('dblclick', (e) => { if (e.target === svg || e.target.classList.contains('band')) fit(); });
   }
 
   /* The one place a pan, a wheel zoom and fit() all pass through, so closing the
@@ -687,21 +864,55 @@ const Lineage = (() => {
      grace period onHoverOut grants would just keep being restarted. */
   const apply = () => {
     root.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+    placeHeads();
     handlers.onHoverClose && handlers.onHoverClose();
   };
 
+  // Below whatever the page floats over the top of the canvas.
+  const headTop = () => (handlers.headTop ? handlers.headTop() : 0) + 6;
+
+  /* The band names, pinned to the top of the window over their bands the way
+     a table's header is: a graph fitted to the window is drawn too small to
+     read a name at its own scale, and one zoomed into has scrolled its top
+     away. A name starts inside its band and may run on over the gutter, up to
+     where the next name starts; it gives up when that leaves too little room
+     to show even the number a numbered folder starts with. */
+  function placeHeads() {
+    if (!heads || !bands.length) return;
+    const r = svg.getBoundingClientRect(), p = heads.getBoundingClientRect();
+    const top = headTop();
+    bands.forEach((b, i) => {
+      const s = heads.children[i], next = bands[i + 1];
+      const x0 = view.x + b.x0 * view.k, x1 = next ? view.x + next.x0 * view.k : view.x + b.x1 * view.k;
+      const left = Math.max(x0, 0) + 4, room = Math.min(x1, r.width) - left - 4;
+      s.style.display = room < 40 ? 'none' : '';
+      s.style.left = `${r.left - p.left + left}px`;
+      s.style.top = `${r.top - p.top + top}px`;
+      s.style.maxWidth = `${room}px`;
+    });
+  }
+
+  /* What a band says on hover: where the folder is, and how much of it is drawn. */
+  function bandTitle(b, columnMode) {
+    const noun = columnMode ? 'column' : 'node';
+    return `${b.package ? `package ${b.name}` : `${b.key || '.'}/`}  ·  ${b.size} ${noun}${b.size === 1 ? '' : 's'} drawn`;
+  }
+
   /* Columns from the drawn edges, a lane in every column a long edge skips,
      and Brandes and Kopf for the heights where they cost little (0027). */
-  function layout(d) {
+  function layout(d, folders) {
     const L = dagLayout(d, {
       w: W, h: H, hgap: HGAP, vgap: VGAP, lane: LANE, bundle: BUNDLE,
       badge: d.mode === 'column' ? TAG_ROOM : 0,
-    });
+    }, folders);
     bbox = L.bbox;
     return L;
   }
 
-  function render(d) {
+  /* `opts.folders` draws the canvas by folder: the project's package, '' when
+     it is not known, or null for the usual canvas (0029). What comes back says
+     what the bands added, for the line under the canvas; null without them. */
+  function render(d, opts = {}) {
     data = d;
     const columnMode = d.mode === 'column';
     W = columnMode ? 180 : 200;
@@ -712,12 +923,32 @@ const Lineage = (() => {
     selected = d.nodes[d.focus] ? d.nodes[d.focus].id : null;
     // Column mode only: in model mode the box colour already carries the answer.
     const roles = columnMode ? nodeRoles(d) : [];
-    const L = layout(d);
+    const L = layout(d, opts.folders);
     place = L.boxes;
+    bands = L.bands || [];
+    drawn = L.bands ? { folders: bands.length, against: L.against } : null;
     root.textContent = '';
 
-    const edgeLayer = el('g'), nodeLayer = el('g');
-    root.appendChild(edgeLayer); root.appendChild(nodeLayer);
+    const bandLayer = el('g', { class: 'bands' }), edgeLayer = el('g'), nodeLayer = el('g');
+    root.appendChild(bandLayer); root.appendChild(edgeLayer); root.appendChild(nodeLayer);
+
+    // Far taller than the graph, so wherever a pan leaves the window, the name
+    // pinned at its top still sits on its band. snapshot() cuts them to the
+    // picture.
+    heads.textContent = '';
+    bands.forEach((b) => {
+      const r = el('rect', {
+        class: 'band', x: b.x0, y: L.bbox.y0 - 1e5, width: b.x1 - b.x0, height: L.bbox.y1 - L.bbox.y0 + 2e5,
+      });
+      const tip = el('title');
+      tip.textContent = bandTitle(b, columnMode);
+      r.appendChild(tip);
+      bandLayer.appendChild(r);
+      const s = document.createElement('span');
+      s.className = 'folder-head';
+      s.textContent = b.name;
+      heads.appendChild(s);
+    });
 
     // One path per edge even when it runs through lanes, so select() and the
     // exported page still find it by its two ends.
@@ -778,6 +1009,7 @@ const Lineage = (() => {
 
     fit();
     select(selected);
+    return drawn;
   }
 
   /* The role, as a tag above the box rather than inside it: both lines of a
@@ -833,11 +1065,14 @@ const Lineage = (() => {
     if (!bbox || !data || !data.nodes.length) return;
     const r = svg.getBoundingClientRect();
     const pad = 30;
+    // The band names are pinned over the top of the window, so the graph is
+    // fitted below them rather than under them.
+    const top = bands.length ? headTop() + 20 : 0;
     const k = Math.min(1.1, Math.max(0.08,
-      Math.min((r.width - pad * 2) / (bbox.x1 - bbox.x0 || 1), (r.height - pad * 2) / (bbox.y1 - bbox.y0 || 1))));
+      Math.min((r.width - pad * 2) / (bbox.x1 - bbox.x0 || 1), (r.height - top - pad * 2) / (bbox.y1 - bbox.y0 || 1))));
     view.k = k;
     view.x = r.width / 2 - ((bbox.x0 + bbox.x1) / 2) * k;
-    view.y = r.height / 2 - ((bbox.y0 + bbox.y1) / 2) * k;
+    view.y = top + (r.height - top) / 2 - ((bbox.y0 + bbox.y1) / 2) * k;
     apply();
   }
 
@@ -915,6 +1150,24 @@ const Lineage = (() => {
         b.insertBefore(tip, b.firstChild);
       });
     });
+    // A file has no window to pin the band names to, so each is written at the
+    // top of its band, and every band runs the height of the picture. A name
+    // wider than its band is squeezed into it, as a box's name is.
+    const layer = g.querySelector('.bands');
+    g.querySelectorAll('rect.band').forEach((r) => {
+      r.setAttribute('y', frame.y);
+      r.setAttribute('height', frame.h);
+    });
+    bands.forEach((b) => {
+      const t = el('text', { class: 'band-name', x: b.x0 + 10, y: frame.y + 22 });
+      t.textContent = b.name;
+      const room = b.x1 - b.x0 - 20, wide = measure('band-name', b.name).wide;
+      if (wide > room) {
+        t.setAttribute('textLength', room.toFixed(1));
+        t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
+      }
+      layer.appendChild(t);
+    });
     Object.values(probes).forEach((p) => p.remove());
 
     const out = el('svg', {
@@ -930,13 +1183,14 @@ const Lineage = (() => {
       out.appendChild(style);
     }
     out.appendChild(g);
-    return { svg: new XMLSerializer().serializeToString(out), frame, data };
+    return { svg: new XMLSerializer().serializeToString(out), frame, data, folders: drawn };
   }
 
   // clear() does not go through apply(), so it closes the card itself.
   const clear = () => {
     root && (root.textContent = '');
-    data = null; bbox = null;
+    heads && (heads.textContent = '');
+    data = null; bbox = null; bands = []; drawn = null;
     handlers.onHoverClose && handlers.onHoverClose();
   };
 

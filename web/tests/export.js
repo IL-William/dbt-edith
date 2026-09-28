@@ -237,8 +237,10 @@ ok('nor its DOM helpers', !/\$\$?\(/.test(viewer));
 
 print('\n--- the canvas looks the same in the file ---');
 var copied = exportCanvasCss();
-var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role)/.test(l); });
-ok('the canvas rules are where this test looks for them', rules.length >= 15);
+var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role|\.band)/.test(l); });
+ok('the canvas rules are where this test looks for them', rules.length >= 17);
+ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
+  && rules.some(function (l) { return /^\.band-name \{/.test(l); }));
 check('every one of them is copied as it is',
   rules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
 function rootVars(text) {

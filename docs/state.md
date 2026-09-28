@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-09-23.
+belongs here. Last updated 2026-09-28.
 
 ## Shipped
 
@@ -194,6 +194,30 @@ Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
 YAML, and packages under a custom `packages-install-path`. Not yet opened on
 the VM.
 
+Folder bands, added 2026-09-28: the folders checkbox beside tests gives each
+folder its own run of columns (0029), at the first level where the drawn models
+and sources stop sharing a path, so a canvas that sits in one folder gets its
+sub-folders. The plan here was to refuse when two folders feed each other. The
+18 825 node project has exactly one edge running from a later layer back to an
+earlier one, and the canvas that draws it is the one most worth reading in
+layers, so the edge is dashed instead, as a loop is in column mode, and counted
+under the canvas. Ordered by the edges alone, that one edge put the later layer
+first on that canvas and nowhere else, which is why a folder named with a
+number keeps its number's place and the edges place the rest. Where they leave
+a choice, a folder goes where its nodes sat without the bands: broken by names,
+a seed nothing drawn reads came after every number, at the far right.
+
+Measured on that project against the plain layout: a 64 model neighbourhood 8
+to 13 columns, crossings 52 to 54, and the 194 pairs of boxes drawn in the
+reverse of their folders' order to none; a 157 model one 13 to 19 columns,
+crossings 1 191 to 1 752, 4 088 to 6 720 px tall; a 400 box canvas in about 6 ms.
+The names sit in an HTML layer over the canvas, pinned to the top of the
+window, because at the zoom that fits a graph the canvas's own text cannot be
+read; a name gives way under 40 px of room, which on a tall graph is most bands
+until you zoom in. Driven in headless Chrome on that project, in model and
+selection mode, with the export and the image; column mode only by the harness,
+the project's column cache holding two edges. Not yet opened on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -218,17 +242,6 @@ the VM.
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
 5. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
-6. **Folder bands, as an option.** A checkbox beside tests giving each folder
-   under `models/` a band of columns, at the first level where the drawn models
-   split, so numbered folders like `10_raw`, `20_clean` each read as a block. The
-   folders are ordered by the edges between them, never by their names, so
-   `staging`, `intermediate`, `marts` works too. A node sits no earlier than its
-   folder's band, one constraint more in `dagLayers`. Measured on the 112 model
-   graph in the prototype that compared layerings, with one ordering for both:
-   folder inversions 176 to 0, but 21 to 23 columns and 58 to 92 crossings, so
-   it is a way of reading, not a fix. The trap: two folders
-   feeding each other have no order, and bands would then point edges left,
-   the bug 0027 fixed, so the checkbox has to refuse and say why.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
@@ -313,8 +326,9 @@ cross-compile.
 - **The test harnesses slice `web/app.js` by function name** (0013). Renaming a
   sliced function breaks its harness; `./scripts/check.sh` catches it.
   `web/tests/selection.js` slices from `selectKindCounts` to
-  `async function loadSidecar`, so anything new between those two has to be pure
-  or it dies at eval time rather than at an assertion. `humanAge` is now the
+  `async function loadSidecar`, and `folders.js` reads the same range, so
+  anything new between those two has to be pure or it dies at eval time rather
+  than at an assertion. `humanAge` is now the
   start of two slices, `compiled.js` up to `freshnessBadge` and `freshness.js`
   up to `sendToTerminal`, so `artifactBar` between them is read by both and has
   to stay pure. `web/tests/testchips.js` slices from `testChips` to
@@ -342,8 +356,13 @@ cross-compile.
   passes every check here and fails only in a downloaded file.
   `web/tests/export.js` looks for the usual ones.
 - **The canvas CSS exists twice**, in `web/app.css` and in `exportCanvasCss`.
-  Editing a `.nd`, `.edge`, `.role` or `#graph text` rule in one fails the
-  export harness until the other matches.
+  Editing a `.nd`, `.edge`, `.role`, `.band` or `#graph text` rule in one
+  fails the export harness until the other matches.
+- **A band's name on the canvas is not in the SVG.** It sits in
+  `.folder-heads`, an HTML layer `Lineage.init` puts after the svg, moved by
+  `placeHeads` on every pan and zoom, so a name stays readable at any zoom.
+  `snapshot()` writes the names into an export itself and cuts the bands,
+  drawn far taller than the graph on the canvas, to the picture.
 - **The export harness slices** `web/app.js` from `function exportTitle` to
   `function exportLineage`, and from `function legendEntries` to
   `function paintLegend`. Everything in those ranges stays pure, and
@@ -352,7 +371,7 @@ cross-compile.
   inside the `web/lineage.js` slice that `colours.js` reads.
 - **The layout lives in that same slice**, from `const MAT = {` to
   `let svg, root`: `dagLayout` and every `dag*`, `bk*` and `iso*` function it
-  calls, read by `colours.js`, `export.js` and `layout.js`. `W`, `H`, `HGAP` and
+  calls, read by `colours.js`, `export.js`, `layout.js` and `folders.js`. `W`, `H`, `HGAP` and
   `VGAP` sit above the slice, which is why sizes arrive as a `dim` argument, and
   nothing in it may touch the DOM or the module's `data`, `place` or `bbox`.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`

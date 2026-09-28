@@ -2207,8 +2207,8 @@ async function focusNode(id, { open = false } = {}) {
       nodeDetail({ id }),
     ]);
     $('#lineage-empty').classList.add('hidden');
-    Lineage.render(sub);
-    $('#lineage-status').textContent = canvasStatus(sub);
+    const drawn = Lineage.render(sub, canvasOptions());
+    $('#lineage-status').textContent = canvasStatus(sub, drawn);
     paintLegend(sub);
     renderCatalog(detail);
     for (const kind of ['compiled', 'run']) {
@@ -2236,8 +2236,8 @@ async function focusColumn(id, column) {
     const sub = await api.get(
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`);
     $('#lineage-empty').classList.add('hidden');
-    Lineage.render(sub);
-    $('#lineage-status').textContent = canvasStatus(sub);
+    const drawn = Lineage.render(sub, canvasOptions());
+    $('#lineage-status').textContent = canvasStatus(sub, drawn);
     paintLegend(sub);
     showDock('lineage');
   } catch (e) {
@@ -2254,6 +2254,13 @@ const rerender = () => S.graphMode === 'select'
   : (S.graphMode === 'column' && S.colFocus)
     ? focusColumn(S.colFocus.id, S.colFocus.column)
     : (S.focus ? focusNode(S.focus) : undefined);
+
+/* How the canvas draws what it is sent, in every mode. The folders checkbox
+   hands the layout this project's package, which is how it tells the
+   project's own folders from an installed package's (0029). */
+function canvasOptions() {
+  return { folders: $('#by-folder').checked ? ((S.meta && S.meta.project) || '') : null };
+}
 
 // ------------------------------------------------------------- selection --
 /* A dbt selector expression, resolved by the server against the manifest and
@@ -2288,17 +2295,20 @@ async function runSelection() {
       $('#select-input').value = sub.select + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
     }
     rememberSelection($('#select-input').value.trim());
+    // Before drawing: the warnings make the bar taller, and the folder names
+    // are placed below it.
+    paintSelectWarnings(selectWarnings(sub.warnings));
+    let drawn = null;
     if (sub.nodes.length) {
       $('#lineage-empty').classList.add('hidden');
-      Lineage.render(sub);
+      drawn = Lineage.render(sub, canvasOptions());
       paintLegend(sub);
     } else {
       Lineage.clear();
       emptyHint('Nothing matched.');
     }
     $('#select-sum').textContent = selectSummary(sub);
-    $('#lineage-status').textContent = selectStatus(sub);
-    paintSelectWarnings(selectWarnings(sub.warnings));
+    $('#lineage-status').textContent = canvasStatus(sub, drawn);
   } catch (e) {
     if (ask !== S.selectAsk) return;
     S.selectSub = null;
@@ -2371,13 +2381,24 @@ function selectStatus(sub) {
 }
 
 /* The line under the canvas, whichever mode drew it. One function rather than
-   a string at each caller, so an exported graph repeats the screen's words. */
-function canvasStatus(sub) {
-  if (sub.mode === 'select') return selectStatus(sub);
+   a string at each caller, so an exported graph repeats the screen's words.
+   `drawn` is what Lineage.render() said the folder bands added, if any. */
+function canvasStatus(sub, drawn) {
+  if (sub.mode === 'select') return selectStatus(sub) + foldersStatus(drawn);
   const tail = `${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
-  return sub.mode === 'column'
+  return (sub.mode === 'column'
     ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
-    : `${sub.nodes.length} nodes · ${tail}`;
+    : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
+}
+
+/* How many folders the canvas is drawn in, and how many edges run from a
+   later folder to an earlier one, which the canvas dashes: without the count,
+   a dashed edge in model mode would look like a loop dbt does not allow. */
+function foldersStatus(drawn) {
+  if (!drawn) return '';
+  const n = drawn.folders, back = drawn.against;
+  return ` · ${n} folder${n === 1 ? '' : 's'}`
+    + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '');
 }
 
 /* Four at most: a selector with twenty bad terms has one mistake in it, not
@@ -2838,7 +2859,7 @@ async function syncNode(path) {
 }
 
 function relinkTools() {
-  for (const el of [$('#up'), $('#down'), $('#with-tests')]) {
+  for (const el of [$('#up'), $('#down'), $('#with-tests'), $('#by-folder')]) {
     el.addEventListener('change', rerender);
   }
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
@@ -2995,8 +3016,8 @@ function exportFacts(sub, ctx) {
   const up = Math.max(0, ...depths.map((d) => -d));
   const down = Math.max(0, ...depths);
   const counts = sub.mode === 'select'
-    ? `${selectSummary(sub)}  ·  ${canvasStatus(sub)}`
-    : `${canvasStatus(sub)}  ·  ${up} level${up === 1 ? '' : 's'} up, ${down} down`;
+    ? `${selectSummary(sub)}  ·  ${canvasStatus(sub, ctx.folders)}`
+    : `${canvasStatus(sub, ctx.folders)}  ·  ${up} level${up === 1 ? '' : 's'} up, ${down} down`;
   const where = [
     ctx.project,
     ctx.dbtVersion && `dbt ${ctx.dbtVersion}`,
@@ -3078,6 +3099,8 @@ function exportCanvasCss() {
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
     '.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }',
     '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
+    '.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }',
+    '.band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }',
     '.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }',
     '.rolebadge rect { stroke-width: 1; }',
   ].join('\n');
@@ -3326,6 +3349,7 @@ function exportLineage() {
     fresh,
     version: S.version,
     exportedAt: stamp(Math.floor(Date.now() / 1000)),
+    folders: shot.folders,
   });
   const heading = shortTitle(exportTitle(sub), 60);
   const nodes = sub.nodes
@@ -5315,6 +5339,12 @@ async function boot() {
       const input = dir === 'up' ? $('#up') : $('#down');
       input.value = Math.min(20, +input.value + 1);
       rerender();
+    },
+    // Where the folder names can sit: below the selector bar, which floats
+    // over the top of the canvas in that mode.
+    headTop: () => {
+      const bar = $('#select-bar');
+      return bar.classList.contains('hidden') ? 0 : bar.offsetTop + bar.offsetHeight;
     },
   });
   wireTabs(); wireKeys(); wireSplitters(); relinkTools();
