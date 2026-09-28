@@ -35,6 +35,7 @@ it is built this way, for whoever changes it next.
 | [0027](0027-the-canvas-lays-out-from-the-edges.md) | The canvas lays out from the edges, and depth stays a distance | moving a box on the lineage canvas, or reading `n.depth` |
 | [0028](0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) | A macro call resolves by name, the way dbt resolves it | linking anything to a macro, or changing which macro a call reaches |
 | [0029](0029-the-canvas-may-be-drawn-by-folder.md) | The canvas may be drawn by folder, and an edge against the folders is dashed | changing which folder a node is filed under, or the order the folders go in |
+| [0030](0030-find-is-the-apps-own.md) | Find is the app's own, and the shortcut list opens on ? | adding a keyboard shortcut, or changing what Cmd/Ctrl + F does |
 
 ## Keeping these honest
 

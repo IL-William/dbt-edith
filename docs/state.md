@@ -217,6 +217,28 @@ read; a name gives way under 40 px of room, which on a tall graph is most bands
 until you zoom in. Driven in headless Chrome on that project, in model and
 selection mode, with the export and the image; column mode only by the harness,
 the project's column cache holding two edges. Not yet opened on the VM.
+Find, the column filter and the shortcut list, added 2026-09-28 (0030):
+`Cmd/Ctrl + F` used to open the browser's find, which sees only the thirty or so
+lines CodeMirror keeps in the page, so a match below the screen was never found.
+Each CodeMirror now has a find bar, through the `find`, `findNext` and
+`findPrev` commands its keymaps already bind; the Catalog focuses a filter on
+the Columns table; `?`, `F1` or a button lists every shortcut. The first idea
+for that list was `Cmd + H`, which macOS takes before the page sees it.
+
+Measured in headless Chrome on a 3.5 MB model of 34 198 lines, the largest the
+editor opens being 4 MB: 6 to 14 ms per keystroke to count and repaint, whatever
+the query, and half a millisecond per step. Past 10 000 matches the count stops
+and says `10000+`; a step reads the text, not the list, so it still reaches the
+next match, and typing stays near the line it started from instead of wrapping
+to the top. Driven the same way on an invented project: the editor, Compiled,
+Run, both sides of a diff, the column filter kept across models, and the list
+by `?`, `F1` and the button. Then all of it again as Edge on Windows, with
+`navigator.platform` at `Win32`, which is what turns CodeMirror to Ctrl: every
+key with Ctrl, plus `F3`, `Ctrl + G`, `Alt + W` from a QWERTY and an AZERTY
+keyboard, and AltGr+4 typing `{` rather than firing anything. That emulates
+the page, not the browser: not yet opened on the VM, where Edge itself has to
+leave `Ctrl + F`, `F3` and `F1` to the page, as Chromium does for any key it
+does not reserve.
 
 ## Deferred, in the order they were chosen
 
@@ -351,6 +373,14 @@ cross-compile.
   `function yamlIndent` to `/* ATX headings`; and from `const DECLARING_LISTS`
   to `async function markRefs`. Everything in those ranges stays pure.
   `markMacros` is called from `openFile`, which is why `tabs.js` stubs it.
+- **`web/tests/find.js` slices** `web/app.js` from `function escapeRegExp` to
+  `const findPrefs`, which is every pure piece of find, and from
+  `function columnMatches` to `function focusColumnFilter`. Both of those sit
+  inside the `testchips.js` slice as well, as declarations only.
+  `web/tests/keys.js` slices from `function keyCombo` to
+  `function toggleShortcuts`, and reads the `case '...'` labels of `wireKeys`
+  as text, up to the `boot` banner: a global key bound any other way escapes
+  the check that it is in the shortcut list.
 - **`exportViewer` runs in the exported file, not in the app.** It is written
   into the page as its own source text, so a name from `web/app.js` inside it
   passes every check here and fails only in a downloaded file.

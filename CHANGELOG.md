@@ -22,6 +22,20 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- `Cmd/Ctrl + F` finds inside the file being edited, the Compiled and Run SQL
+  and either side of a diff, where it used to open the browser's own find,
+  which missed every match not on screen (0030). The bar counts and paints
+  every match, matches case, whole words or a regular expression on request,
+  and steps with `Enter` and `Shift + Enter`; `Escape` leaves the cursor on the
+  last match.
+- In the Catalog, `Cmd/Ctrl + F` filters the Columns table by name, and the
+  filter stays as you move from one model to the next.
+- `?`, `F1` or the `?` button in the top bar lists every keyboard shortcut, in
+  the keys of the machine it runs on, and the top bar says `Ctrl+K` on Windows
+  where it said `⌘K` everywhere.
+- `Alt + W` closes a tab on a Mac too, where Option turned the W into `∑`
+  before the shortcut could see it.
+
 - Seeds are drawn in a yellow-green of their own, on the lineage canvas, in its
   legend and in the sidebar's dots. Their green sat so close to a table's that
   every seed read as a table until its subtitle was read. The new colour stands
