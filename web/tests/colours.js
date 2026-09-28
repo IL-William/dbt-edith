@@ -121,3 +121,58 @@ check('a truncated upstream is not called raw', nodeRoles(cut)[0], '');
 var model = { nodes: [{ name: 'a' }, { name: 'b' }], edges: [[0, 1]] };
 check('no edge kinds at all leaves the roles empty except the start',
       nodeRoles(model).join(','), 'raw,raw');
+
+print('\n--- a seed does not pass for a table ---');
+// Two colours that merely differ can still read as one: a seed's green sat 4
+// from a table's on the scale below, and every seed was drawn as a table. The
+// scale is OKLab distance x100, where 15 is the floor for two marks to read
+// apart at a glance, and 8 the floor under protanopia and deuteranopia,
+// simulated with the Machado, Oliveira and Fernandes (2009) matrices that
+// floor was set against. Any box can sit beside a seed, and in column mode any
+// role colour too, so the seed is held apart from every one of them.
+var CVD = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+};
+function linearRgb(hex) {
+  return [1, 3, 5].map(function (i) {
+    var c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+}
+function oklab(rgb, sim) {
+  if (sim) {
+    rgb = sim.map(function (row) {
+      return Math.min(1, Math.max(0, row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2]));
+    });
+  }
+  var l = Math.cbrt(0.4122214708 * rgb[0] + 0.5363325363 * rgb[1] + 0.0514459929 * rgb[2]);
+  var m = Math.cbrt(0.2119034982 * rgb[0] + 0.6806995451 * rgb[1] + 0.1073969566 * rgb[2]);
+  var s = Math.cbrt(0.0883024619 * rgb[0] + 0.2817188376 * rgb[1] + 0.6299787005 * rgb[2]);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+          1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+          0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+function apart(a, b, sim) {
+  var p = oklab(linearRgb(a), sim), q = oklab(linearRgb(b), sim);
+  return 100 * Math.sqrt(Math.pow(p[0] - q[0], 2) + Math.pow(p[1] - q[1], 2) + Math.pow(p[2] - q[2], 2));
+}
+check('the scale reads a colour as itself', apart('#4ec78d', '#4ec78d'), 0);
+check('and black as a whole lightness from white', Math.round(apart('#000000', '#ffffff')), 100);
+
+var seed = nodeColor({ kind: 'seed' });
+var beside = {};
+['view', 'table', 'incremental', 'ephemeral', 'materialized_view'].forEach(function (m) {
+  beside[m] = nodeColor({ kind: 'model', materialized: m });
+});
+['source', 'snapshot', 'exposure', 'test'].forEach(function (k) { beside[k] = nodeColor({ kind: k }); });
+beside['a custom materialization'] = nodeColor({ kind: 'model', materialized: 'something_custom' });
+ROLES.forEach(function (r) { beside['the ' + r + ' role'] = roleColor(r); });
+beside['the raw badge'] = roleColor('raw');
+Object.keys(beside).forEach(function (k) {
+  var seen = apart(seed, beside[k]);
+  var redGreen = Math.min(apart(seed, beside[k], CVD.protan), apart(seed, beside[k], CVD.deutan));
+  var ok = seen >= 15 && redGreen >= 8;
+  print((ok ? 'PASS  ' : 'FAIL  ') + 'a seed stands apart from ' + k + ': ' + seen.toFixed(1)
+        + ', and ' + redGreen.toFixed(1) + ' to a red-green colour-blind eye' + (ok ? '' : '   expected 15 and 8'));
+});

@@ -805,7 +805,7 @@ $JSC web/tests/tabs.js        # preview/pinned tab state machine
 $JSC web/tests/explorer.js    # git and unsaved colouring, including folders
 $JSC web/tests/collineage.js  # composite column ids and node subtitles
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks
-$JSC web/tests/colours.js     # materialization colours, including custom ones
+$JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
 $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations

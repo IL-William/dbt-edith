@@ -22,6 +22,12 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- Seeds are drawn in a yellow-green of their own, on the lineage canvas, in its
+  legend and in the sidebar's dots. Their green sat so close to a table's that
+  every seed read as a table until its subtitle was read. The new colour stands
+  apart from every other box and role colour, to a red-green colour-blind eye
+  too.
+
 - The Lineage tab can draw its canvas by folder: the **folders** checkbox,
   beside tests, gives each folder a band of columns, so numbered layers such as
   `10_raw`, `20_clean` and `30_vault` each read as a block, left to right
