@@ -559,6 +559,21 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
+The **folders** checkbox, beside tests, draws the same canvas by folder: each
+folder gets a band of columns of its own, at the first level where the models
+drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
+`30_vault` each read as a block. Their names stay pinned over the top of the
+canvas while you pan, and pausing on a band's background names its folder in
+full. The folders go left to right in the order of their numbers, then of the
+edges between them, so `staging`, `intermediate` and `marts` need no numbers.
+An edge that runs from a later folder back to an earlier one, a layer read by
+one before it, is dashed, and the line under the canvas counts them. Seeds,
+snapshots and each installed package get a band of their own, and a test sits
+with the model it tests. It costs width, since a band starts only where the one
+before it ends: a way of reading the graph, not a better layout of it
+([0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md)). An exported
+file and a copied image keep the bands, with each name written at the top.
+
 ### Selecting with an expression
 
 The **Selection** button above the graph swaps the canvas from one model's
@@ -805,6 +820,7 @@ $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
+$JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
 ```
 

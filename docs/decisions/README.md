@@ -34,6 +34,7 @@ it is built this way, for whoever changes it next.
 | [0026](0026-the-lineage-exports-as-one-html-file.md) | The lineage exports as one HTML file, built in the browser | changing what an exported graph carries, or adding a way to export one |
 | [0027](0027-the-canvas-lays-out-from-the-edges.md) | The canvas lays out from the edges, and depth stays a distance | moving a box on the lineage canvas, or reading `n.depth` |
 | [0028](0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) | A macro call resolves by name, the way dbt resolves it | linking anything to a macro, or changing which macro a call reaches |
+| [0029](0029-the-canvas-may-be-drawn-by-folder.md) | The canvas may be drawn by folder, and an edge against the folders is dashed | changing which folder a node is filed under, or the order the folders go in |
 
 ## Keeping these honest
 

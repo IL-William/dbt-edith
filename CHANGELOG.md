@@ -22,6 +22,14 @@ tagged, and nothing was ever installed from it.
 
 ## Unreleased
 
+- The Lineage tab can draw its canvas by folder: the **folders** checkbox,
+  beside tests, gives each folder a band of columns, so numbered layers such as
+  `10_raw`, `20_clean` and `30_vault` each read as a block, left to right
+  (0029). The names stay pinned over the top of the canvas, and an exported
+  file or copied image keeps the bands with their names. Folders go in the
+  order of their numbers, then of the edges between them; an edge from a later
+  folder to an earlier one is dashed, and the line under the canvas counts it.
+
 - A macro call in the editor is a link: clicking `hub` in `{{ hub(...) }}`
   opens the file that defines it, at its `{% macro %}` line, and pausing on it
   says which package it came from (0028). A bare name reaches the project's own
