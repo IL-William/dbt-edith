@@ -83,6 +83,33 @@ kbd {
 .envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .envdot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: 0 0 auto; }
 .envdot[data-tone=manifest] { background: transparent; border: 1px solid #6f7f93; }
+/* Column lineage tools (0031). Their own attribute rather than data-tone, which
+   is the environments' colour. Each hue is far from the accent and from the
+   others, and the tool is always named beside it, never shown by colour alone. */
+[data-tool] { --tool: #6f7f93; }
+[data-tool=fusion] { --tool: #ff694b; }
+[data-tool=collin] { --tool: #e070d0; }
+[data-tool=snowflake] { --tool: #29b5e8; }
+.tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
+.btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
+.cllpick .tname { color: var(--tool); font-weight: 600; }
+.cllpick .tdetail, .cllpick .caret { color: var(--fg-dim); }
+.cllpick .caret { font-size: 11px; line-height: 1; }
+.btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
+.cllpick[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
+.cllpick[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.cllpick[data-tone=busy] .tstate { color: var(--warn); }
+.cllpick[data-tone=failed] .tstate { color: var(--bad); }
+.btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
+.envmenu [data-tool] .check { color: var(--tool); }
+.envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.envmenu button[aria-disabled=true] { opacity: .45; cursor: default; }
+.envmenu button[aria-disabled=true]:hover { background: transparent; }
+.envmenu .menuhead {
+  padding: 2px 8px 3px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--fg-dim);
+}
+.envmenu .menunote { padding: 1px 8px 4px 26px; font-size: 11px; line-height: 1.4; color: var(--fg-dim); max-width: 340px; }
 /* z-index 64: above the ambient chrome and the palette (50) and the toasts (60),
    below the env and crumb menus (65) and the modal (70). A card that opens by
    accident must never cover a surface that was opened on purpose. */
@@ -823,11 +850,8 @@ kbd {
 .cols tr.c-focus td { background: var(--accent-dim); }
 .cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
 .cols .c-lin b { color: var(--accent); font-weight: 600; }
-.coltools .sfswitch[data-tone="on"] { border-color: var(--accent); color: var(--accent); }
-.coltools .sfswitch[data-tone="busy"] { border-color: var(--warn); color: var(--warn); }
-.coltools .sfswitch[data-tone="failed"] { border-color: #ef6b6b; color: #ef6b6b; }
 /* The count of tests this table cannot show. Underlined rather than coloured:
-   the toolbar's colours mean the Snowflake connection's state and nothing else. */
+   the toolbar's colours mean the column lineage tool and its state, nothing else. */
 .coltools .modeltests { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .coltools .modeltests:hover { color: var(--accent); }
 .coltools .colhint[data-tone="hint"] { color: var(--accent); }
@@ -882,6 +906,7 @@ kbd {
 /* ------------------------------------------------------------- shortcuts -- */
 .keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
 .keysbtn:hover { color: var(--fg); }
+#settings-btn { display: inline-flex; align-items: center; justify-content: center; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
   position: fixed; inset: 0; z-index: 72; background: #0009;

@@ -24,6 +24,21 @@ tagged, and nothing was ever installed from it.
 went on collecting work for eleven more pull requests and the tag was never
 cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 
+## Unreleased
+
+- A menu in the top bar picks where column lineage comes from, Fusion, Collin
+  or Snowflake, each in its own colour, where a read-only chip used to name the
+  source (0031). A tool with nothing to offer is greyed and says which file it
+  lacks, and every other cache beside the manifest stays pickable. Picking a
+  cache from the old menu in Catalog > Columns never worked, and now does.
+- Picking Snowflake is what switches fetching on click on: the separate
+  Snowflake switch is gone, and Snowflake picked before its first fetch shows
+  no other tool's edges under its name (0031).
+- A settings menu behind the gear in the top bar switches Snowflake's features
+  on or off for the project. Until you choose, they follow the manifest's
+  adapter; off, nothing of Snowflake is offered, its cache and the profile link
+  included (0031).
+
 ## 0.6.0 - 2026-09-29
 
 - `Cmd/Ctrl + F` finds inside the file being edited, the Compiled and Run SQL

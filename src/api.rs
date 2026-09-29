@@ -45,8 +45,12 @@ pub struct AppState {
     /// Same idea as `git`, for the same reason: the badge polls on a timer and
     /// each answer costs a walk of the resource directories.
     pub fresh: tokio::sync::Mutex<Option<(std::time::Instant, freshness::Freshness)>>,
-    /// The Snowflake script, running only while the user has it switched on (0016).
+    /// The Snowflake script, running only while Snowflake is the picked tool (0016).
     pub sidecar: sidecar::Sidecar,
+    /// The user's choice of Snowflake's features for this project, None until
+    /// there is one. Held here as well as in the settings, so the choice lasts
+    /// the session when there is no configuration directory to keep it in.
+    pub snowflake_features: std::sync::Mutex<Option<bool>>,
     /// Held while the column-lineage cache is merged and written, and while the
     /// watcher reloads: a click's edges must land in the graph that stays.
     pub cll_lock: tokio::sync::Mutex<()>,
@@ -67,7 +71,18 @@ impl AppState {
             *slot = path;
         }
     }
+
+    /// Whether Snowflake's features are on (0031). The adapter is read from the
+    /// graph each time, because a manifest rewritten by another dbt can change it.
+    pub async fn snowflake_allowed(&self) -> bool {
+        let chosen = self.snowflake_features.lock().map(|c| *c).unwrap_or(None);
+        let adapter = self.graph.read().await.meta.adapter.clone();
+        crate::settings::snowflake_features(chosen, &adapter)
+    }
 }
+
+/// Why a Snowflake route answers nothing (0031).
+const SNOWFLAKE_OFF: &str = "Snowflake features are off for this project: switch them on in the settings menu";
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "web/"]
@@ -95,8 +110,17 @@ pub fn load_graph(project: &Path, manifest_path: &Path, catalog_path: &Path, cll
             Err(e) => eprintln!("  catalog.json ignored: {e}"),
         }
     }
-    // After merge_catalog, never before: both re-sort Node.columns and the column
-    // slots recorded by the lineage merge are positions in that final order.
+    merge_cache(&mut graph, cll_path);
+    graph.meta.load_ms = started.elapsed().as_millis();
+    Ok(graph)
+}
+
+/// Merges one column-lineage cache, if the file is there. An empty path is how
+/// "no column lineage" is spelled, and merges nothing.
+///
+/// After merge_catalog, never before: both re-sort Node.columns and the column
+/// slots recorded by the lineage merge are positions in that final order.
+pub fn merge_cache(graph: &mut Graph, cll_path: &Path) {
     if cll_path.exists() {
         match RawColLineage::load(cll_path) {
             Ok(raw) => {
@@ -107,8 +131,6 @@ pub fn load_graph(project: &Path, manifest_path: &Path, catalog_path: &Path, cll
             Err(e) => eprintln!("  column lineage ignored: {e}"),
         }
     }
-    graph.meta.load_ms = started.elapsed().as_millis();
-    Ok(graph)
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -125,7 +147,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage", get(col_lineage))
         .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
-        .route("/api/sidecar", get(sidecar_status).post(sidecar_switch))
+        .route("/api/sidecar", get(sidecar_status))
+        .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
         .route("/api/dir", get(dir))
         .route("/api/files", get(file_search))
@@ -254,75 +277,208 @@ struct MetaBody {
     build: &'static str,
     venv: VenvInfo,
     meta: crate::graph::Meta,
-    /// Every cache found beside the manifest, so the UI can offer them without
-    /// a second round trip. Headers only: no edge array is parsed for this.
+    /// Every cache found beside the manifest that may be offered, so the UI can
+    /// list them without a second round trip. Headers only: no edge array is
+    /// parsed for this.
     cll_sources: Vec<collin::Available>,
-    /// File name of the active one, matching one of `cll_sources`.
+    /// File name of the active one, matching one of `cll_sources`, or empty.
     cll_active: String,
+    /// The tool whose edges the graph holds: Snowflake whenever it is picked,
+    /// even before its first fetch, else the producer of the cache on screen.
+    cll_tool: &'static str,
+    features: Features,
+    sidecar: SidecarBody,
 }
 
-async fn meta(State(st): State<Arc<AppState>>) -> Response {
+#[derive(serde::Serialize)]
+struct Features {
+    snowflake: bool,
+    /// Chosen for this project, rather than following the adapter.
+    snowflake_set: bool,
+}
+
+/// What the page needs to paint the lineage menu and the settings menu. Every
+/// route that changes either answers with it, so the page never paints half of
+/// a change.
+async fn meta_body(st: &AppState) -> MetaBody {
     let graph = st.graph.read().await.clone();
     let dir = st.target_dir.clone();
-    let cll_sources = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let chosen = st.snowflake_features.lock().map(|c| *c).unwrap_or(None);
+    let snowflake = crate::settings::snowflake_features(chosen, &graph.meta.adapter);
     let cll_active = st
         .cll()
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    Json(MetaBody {
+    let live = st.sidecar.enabled();
+    MetaBody {
         root: st.root.display().to_string(),
         shell: format!("{} {}", st.shell.program, st.shell.args.join(" ")).trim().to_string(),
         version: env!("CARGO_PKG_VERSION"),
         build: env!("DBT_EDITH_BUILD"),
         venv: st.venv.clone(),
+        cll_tool: if live { "snowflake" } else { collin::tool_of(&graph.meta.cll_source) },
         meta: graph.meta.clone(),
-        cll_sources,
+        cll_sources: found.into_iter().filter(|a| collin::offered(a, snowflake)).collect(),
         cll_active,
-    })
-    .into_response()
+        features: Features { snowflake, snowflake_set: chosen.is_some() },
+        sidecar: SidecarBody { enabled: live, status: st.sidecar.status() },
+    }
+}
+
+async fn meta(State(st): State<Arc<AppState>>) -> Response {
+    Json(meta_body(&st).await).into_response()
+}
+
+/// Loads `path` as the graph's column lineage, under the lock the watcher and
+/// a fetch take, and records its time so the watcher does not load it again.
+async fn show_cache(st: &AppState, path: PathBuf) -> Result<(), Response> {
+    let _cache = st.cll_lock.lock().await;
+    st.set_cll(path.clone());
+    let (root, manifest, catalog) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone());
+    match tokio::task::spawn_blocking(move || load_graph(&root, &manifest, &catalog, &path)).await {
+        Ok(Ok(g)) => {
+            if let Ok(mut seen) = st.seen.lock() {
+                seen[2] = g.meta.cll_mtime;
+            }
+            *st.graph.write().await = Arc::new(g);
+            Ok(())
+        }
+        Ok(Err(e)) => Err(err(e)),
+        Err(e) => Err(err(e)),
+    }
+}
+
+/// Switches the script off at once and stops it in the background: stopping
+/// waits on a start still in progress, which can take a minute on a cold VM,
+/// and nothing should wait on that to show another tool's edges.
+fn stop_fetching(st: &Arc<AppState>) {
+    st.sidecar.set_enabled(false);
+    let st = st.clone();
+    tokio::spawn(async move {
+        // Picked again meanwhile: the start that follows is not to be undone.
+        if !st.sidecar.enabled() {
+            st.sidecar.stop().await;
+        }
+    });
 }
 
 #[derive(Deserialize)]
 struct CllSourceBody {
+    /// One of `collin::TOOLS`.
+    #[serde(default)]
+    tool: Option<String>,
     /// A file name as `/api/meta` listed it, never a path.
-    file: String,
+    #[serde(default)]
+    file: Option<String>,
 }
 
-/// Switches which column-lineage cache the graph holds.
+/// Switches which column lineage the graph holds, and with it whether a column
+/// click fetches from Snowflake: one request, so the two cannot disagree (0031).
 ///
 /// The graph can only carry one source at a time: `merge_col_lineage` replaces
 /// the edge set rather than adding to it, which is what keeps two producers'
 /// answers from being blended into something neither of them said.
 ///
-/// The name is matched against what discovery found rather than joined onto the
-/// target directory, so nothing the browser sends can reach another file (0015).
+/// Neither name is joined onto the target directory, so nothing the browser
+/// sends can reach another file (0015).
 async fn select_cll_source(State(st): State<Arc<AppState>>, Json(b): Json<CllSourceBody>) -> Response {
-    let dir = st.target_dir.clone();
-    let wanted = b.file.clone();
-    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
-    let Some(chosen) = collin::resolve_choice(&found, &wanted) else {
-        return (StatusCode::NOT_FOUND, "no such column lineage cache beside the manifest").into_response();
+    let wanted = match (b.tool.as_deref(), b.file.as_deref()) {
+        (Some(tool), _) => collin::Wanted::Tool(tool),
+        (None, Some(file)) => collin::Wanted::File(file),
+        (None, None) => return (StatusCode::BAD_REQUEST, "name a tool or a cache file").into_response(),
     };
-    let path = st.target_dir.join(&chosen.file);
-
-    let _cache = st.cll_lock.lock().await;
-    st.set_cll(path.clone());
-    let _ = st.settings.update(|s| s.cll_file = Some(wanted.clone())).await;
-
-    let (root, manifest, catalog) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone());
-    match tokio::task::spawn_blocking(move || load_graph(&root, &manifest, &catalog, &path)).await {
-        Ok(Ok(g)) => {
-            let meta = g.meta.clone();
-            if let Ok(mut seen) = st.seen.lock() {
-                seen[2] = meta.cll_mtime;
-            }
-            *st.graph.write().await = Arc::new(g);
-            Json(meta).into_response()
-        }
-        Ok(Err(e)) => err(e),
-        Err(e) => err(e),
+    let dir = st.target_dir.clone();
+    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let (path, live) = match collin::pick(&st.target_dir, &found, wanted, st.snowflake_allowed().await) {
+        Ok(chosen) => chosen,
+        Err(collin::Refusal::SnowflakeOff) => return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response(),
+        Err(collin::Refusal::UnknownTool) => return (StatusCode::BAD_REQUEST, "not a column lineage tool").into_response(),
+        Err(collin::Refusal::NoCache(why)) => return (StatusCode::NOT_FOUND, why).into_response(),
+    };
+    if !live {
+        stop_fetching(&st);
     }
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    // Remembered like the environment selection. Without a configuration
+    // directory the choice still holds until dbt-edith stops.
+    if let Err(e) = st
+        .settings
+        .update(|s| {
+            s.cll_file = name;
+            s.snowflake_lineage = live;
+        })
+        .await
+    {
+        eprintln!("  column lineage choice not saved: {e}");
+    }
+    if let Err(response) = show_cache(&st, path).await {
+        return response;
+    }
+    if live {
+        st.sidecar.set_enabled(true);
+        if !st.sidecar.is_up() {
+            // Starting checks Python, the profile and the connector, and runs
+            // no query (0016). The page polls for the outcome instead of
+            // waiting on it here.
+            st.sidecar.mark_starting();
+            let st = st.clone();
+            tokio::spawn(async move {
+                if st.sidecar.enabled() {
+                    st.sidecar.start_for(&st.root, &st.venv).await;
+                }
+            });
+        }
+    }
+    Json(meta_body(&st).await).into_response()
+}
+
+#[derive(Deserialize)]
+struct FeaturesBody {
+    /// Optional, so a later feature adds a field rather than a route.
+    #[serde(default)]
+    snowflake: Option<bool>,
+}
+
+/// Switches a family of features on or off for this project (0031). Turning
+/// Snowflake's on starts nothing: it only offers Snowflake in the menu. Turning
+/// them off stops its script and takes its edges off the graph, which then
+/// holds what startup would have loaded with Snowflake off.
+async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBody>) -> Response {
+    if let Some(on) = b.snowflake {
+        if let Ok(mut chosen) = st.snowflake_features.lock() {
+            *chosen = Some(on);
+        }
+        let saved = st
+            .settings
+            .update(|s| {
+                s.snowflake_features = Some(on);
+                if !on {
+                    s.snowflake_lineage = false;
+                }
+            })
+            .await;
+        if let Err(e) = &saved {
+            eprintln!("  snowflake features choice not saved: {e}");
+        }
+        // A path with no file behind it is chosen again too: it may be where
+        // a Snowflake dump would land and be loaded by the watcher.
+        let shown = collin::tool_of(&st.graph.read().await.meta.cll_source) == "snowflake";
+        if !on && (st.sidecar.enabled() || shown || !st.cll().is_file()) {
+            stop_fetching(&st);
+            let dir = st.target_dir.clone();
+            let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+            let remembered = saved.map_or_else(|_| st.settings.load(), |s| s).cll_file;
+            let path = collin::choose(&st.target_dir, &found, remembered.as_deref(), false, false);
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+            let _ = st.settings.update(|s| s.cll_file = name).await;
+            if let Err(response) = show_cache(&st, path).await {
+                return response;
+            }
+        }
+    }
+    Json(meta_body(&st).await).into_response()
 }
 
 async fn reload(State(st): State<Arc<AppState>>) -> Response {
@@ -1203,25 +1359,6 @@ async fn sidecar_status(State(st): State<Arc<AppState>>) -> Response {
     Json(SidecarBody { enabled: st.sidecar.enabled(), status: st.sidecar.status() }).into_response()
 }
 
-#[derive(Deserialize)]
-struct SwitchBody {
-    enabled: bool,
-}
-
-/// Switches Snowflake lineage on or off for this project. On starts the script,
-/// which checks its setup and then waits: no connection opens until a column
-/// is clicked (0016).
-async fn sidecar_switch(State(st): State<Arc<AppState>>, Json(b): Json<SwitchBody>) -> Response {
-    st.sidecar.set_enabled(b.enabled);
-    // Remembered like the environment selection. Without a configuration
-    // directory the switch still holds until dbt-edith stops.
-    if let Err(e) = st.settings.update(|s| s.snowflake_lineage = b.enabled).await {
-        eprintln!("  snowflake lineage switch not saved: {e}");
-    }
-    let status = if b.enabled { st.sidecar.start_for(&st.root, &st.venv).await } else { st.sidecar.stop().await };
-    Json(SidecarBody { enabled: st.sidecar.enabled(), status }).into_response()
-}
-
 /// A dbt profile is a few kilobytes; anything of this size is not one.
 const MAX_PROFILE_BYTES: u64 = 512 * 1024;
 
@@ -1240,13 +1377,20 @@ fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
     Ok(ProfileBody { path: path.display().to_string(), content })
 }
 
+/// Why a column click fetches nothing while Snowflake's features are on.
+const NOT_PICKED: &str = "Snowflake is not the column lineage tool: pick it in the column lineage menu";
+
 /// Why there is nothing to open yet.
-const NO_PROFILE: &str = "no profile yet: switch Snowflake lineage on once, so the script says which file it reads";
+const NO_PROFILE: &str = "no profile yet: pick Snowflake in the column lineage menu once, so the script says which file it reads";
 
 /// The dbt profile the Snowflake script read: the one file outside the project
 /// dbt-edith opens, and only because the script named it first (0017). No path
-/// comes from the browser, so no request can widen the exception.
+/// comes from the browser, so no request can widen the exception, and with
+/// Snowflake's features off nothing on the page needs it, so it is closed (0031).
 async fn read_profile(State(st): State<Arc<AppState>>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
     let Some(path) = st.sidecar.profile_path() else {
         return (StatusCode::CONFLICT, NO_PROFILE).into_response();
     };
@@ -1275,6 +1419,9 @@ struct ProfileSaved {
 /// creates a file, and never takes a path (0017). The write is atomic, so a
 /// half-written profile cannot be left behind.
 async fn write_profile(State(st): State<Arc<AppState>>, Json(b): Json<ProfileWrite>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
     let Some(path) = st.sidecar.profile_path() else {
         return (StatusCode::CONFLICT, NO_PROFILE).into_response();
     };
@@ -1342,8 +1489,11 @@ struct Fetched {
 /// the guard on its Host alone, so any page could run warehouse queries
 /// through an image tag (0015, 0016).
 async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchBody>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
     if !st.sidecar.enabled() {
-        return (StatusCode::CONFLICT, "Snowflake lineage is switched off").into_response();
+        return (StatusCode::CONFLICT, NOT_PICKED).into_response();
     }
     if !collin::valid_relation(&b.relation) {
         return (StatusCode::BAD_REQUEST, "not a database.schema.object relation").into_response();
@@ -1381,7 +1531,7 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     if !st.sidecar.is_up() {
         let status = st.sidecar.start_for(&st.root, &st.venv).await;
         if status.state != "ready" {
-            let why = if status.error.is_empty() { "Snowflake lineage is switched off".to_string() } else { status.error };
+            let why = if status.error.is_empty() { NOT_PICKED.to_string() } else { status.error };
             return (StatusCode::BAD_GATEWAY, why).into_response();
         }
     }
@@ -1414,12 +1564,25 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     };
 
     let _cache = st.cll_lock.lock().await;
-    // Its own file, always, whatever is currently loaded. One file per producer
-    // is what keeps a half Snowflake, half other cache from ever existing.
-    let path = collin::path_for(&st.target_dir, "snowflake");
+    // Another tool picked while Snowflake was answering: the answer is not
+    // wanted any more, and storing it would take the graph back.
+    if !st.sidecar.enabled() {
+        return (StatusCode::CONFLICT, NOT_PICKED).into_response();
+    }
+    // The Snowflake cache on screen, which is its newest, so a fetch adds to
+    // the dump being read rather than hiding it behind a file of one column.
+    // Otherwise Snowflake's own file. Never another producer's: one file per
+    // producer is what keeps a half Snowflake, half other cache from existing.
+    let shown = st.cll();
+    let path = if collin::tool_of(&st.graph.read().await.meta.cll_source) == "snowflake" && shown.parent() == Some(st.target_dir.as_path()) {
+        shown
+    } else {
+        collin::path_for(&st.target_dir, "snowflake")
+    };
     let target = st.sidecar.status().target;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    let merged = match tokio::task::spawn_blocking(move || collin::add_to_file(&path, edges, &target, now)).await {
+    let written = path.clone();
+    let merged = match tokio::task::spawn_blocking(move || collin::add_to_file(&written, edges, &target, now)).await {
         Ok(Ok(merged)) => merged,
         Ok(Err(e)) => return (StatusCode::CONFLICT, e).into_response(),
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -1429,10 +1592,9 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
         added = n;
         // Fetching is an explicit request for Snowflake's answer, so its cache
         // becomes the active one. The graph could not show both anyway.
-        let snow = collin::path_for(&st.target_dir, "snowflake");
-        if st.cll() != snow {
-            st.set_cll(snow.clone());
-            if let Some(name) = snow.file_name().map(|n| n.to_string_lossy().into_owned()) {
+        if st.cll() != path {
+            st.set_cll(path.clone());
+            if let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) {
                 let _ = st.settings.update(|s| s.cll_file = Some(name)).await;
             }
         }
@@ -1936,6 +2098,10 @@ mod tests {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let manifest = root.join("target").join("manifest.json");
+        // Never the developer's own configuration directory: a route that
+        // saves a choice would write into it.
+        let mut settings = crate::settings::Store::new(root);
+        settings.path = None;
         let state: Arc<AppState> = Arc::new(AppState {
             port,
             root: root.to_path_buf(),
@@ -1945,12 +2111,13 @@ mod tests {
             target_dir: root.join("target"),
             venv: VenvInfo::default(),
             file_index: RwLock::new(Arc::new(Vec::new())),
-            settings: crate::settings::Store::new(root),
+            settings,
             graph: RwLock::new(Arc::new(Graph::build(Default::default(), &manifest, 0, 0))),
             git: tokio::sync::Mutex::new(None),
             fresh: tokio::sync::Mutex::new(None),
             shell: ShellSpec { program: "/bin/sh".into(), args: Vec::new() },
             sidecar: sidecar::Sidecar::new(false, Default::default()),
+            snowflake_features: std::sync::Mutex::new(None),
             cll_lock: tokio::sync::Mutex::new(()),
             seen: std::sync::Mutex::new([0; 3]),
         });
@@ -2147,26 +2314,108 @@ mod tests {
         r
     }
 
-    // Both routes can lead to warehouse queries under the user's own identity,
-    // so no other page may reach them, and nothing runs while switched off.
+    // Every route that can lead to warehouse queries under the user's own
+    // identity, or start the script that makes them, answers this page alone,
+    // and nothing runs while Snowflake is not the picked tool.
     #[tokio::test]
-    async fn snowflake_lineage_answers_only_this_page_and_only_when_switched_on() {
+    async fn snowflake_lineage_answers_only_this_page_and_only_when_picked() {
         let root = temp_project("snowflake");
-        let (port, _st, server) = serve(&root).await;
+        let (port, st, server) = serve(&root).await;
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");
         let fetch = r#"{"id":"model.shop.dim_customers","column":"customer_id","relation":"analytics.marts.dim_customers"}"#;
 
-        for (path, body) in [("/api/sidecar", r#"{"enabled":true}"#), ("/api/collineage/fetch", fetch)] {
+        for (path, body) in [
+            ("/api/collineage/source", r#"{"tool":"snowflake"}"#),
+            ("/api/collineage/fetch", fetch),
+            ("/api/features", r#"{"snowflake":true}"#),
+        ] {
             let foreign = with_json("POST", path, &[("Host", &host), ("Origin", "https://evil.example")], body);
             assert!(status_of(port, foreign).await.ends_with("403 Forbidden"), "{path}");
         }
-        // A plain read cannot start anything.
+        // A plain read cannot start anything, and the old switch is gone.
         assert!(status_of(port, get("/api/collineage/fetch", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
+        assert!(status_of(port, get("/api/features", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/sidecar", &[("Host", &host)])).await.ends_with("200 OK"));
+        let old = with_json("POST", "/api/sidecar", &[("Host", &host), ("Origin", &own)], r#"{"enabled":true}"#);
+        assert!(status_of(port, old).await.ends_with("405 Method Not Allowed"));
 
+        // Features on, Snowflake not picked: still nothing runs.
+        *st.snowflake_features.lock().unwrap() = Some(true);
         let off = with_json("POST", "/api/collineage/fetch", &[("Host", &host), ("Origin", &own)], fetch);
-        assert!(status_of(port, off).await.ends_with("409 Conflict"));
+        let answer = body_of(port, off).await;
+        assert!(answer.starts_with("HTTP/1.1 409"), "{answer}");
+        assert!(answer.contains(NOT_PICKED), "{answer}");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Off, Snowflake is not offered at all: not its tool, not a cache it
+    /// wrote, not the profile. The adapter decides until the user does (0031).
+    #[tokio::test]
+    async fn snowflake_is_offered_only_while_its_features_are_on() {
+        let root = temp_project("features");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let manifest = |adapter: &str| {
+            let body = format!(r#"{{"metadata":{{"project_name":"demo","adapter_type":"{adapter}"}}}}"#);
+            std::fs::write(target.join("manifest.json"), body).unwrap();
+        };
+        let cache = |file: &str, source: &str| {
+            std::fs::write(target.join(file), format!(r#"{{"version":1,"source":"{source}","edges":[]}}"#)).unwrap();
+        };
+        cache("column_lineage.snowflake.json", "snowflake");
+        cache("column_lineage.collin.json", "collin");
+        manifest("postgres");
+        let (port, st, server) = serve(&root).await;
+        let load = || load_graph(&root, &target.join("manifest.json"), &target.join("catalog.json"), Path::new("")).unwrap();
+        *st.graph.write().await = Arc::new(load());
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let post = |path: &str, body: &str| with_json("POST", path, &[("Host", &host), ("Origin", &own)], body);
+        let fetch = r#"{"id":"model.demo.orders","column":"id","relation":"analytics.marts.orders"}"#;
+
+        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        assert!(meta.contains(r#""features":{"snowflake":false,"snowflake_set":false}"#), "{meta}");
+        assert!(meta.contains("column_lineage.collin.json"), "{meta}");
+        assert!(!meta.contains("column_lineage.snowflake.json"), "not even listed: {meta}");
+        for (path, body) in [
+            ("/api/collineage/source", r#"{"tool":"snowflake"}"#),
+            ("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#),
+            ("/api/collineage/fetch", fetch),
+        ] {
+            assert!(status_of(port, post(path, body)).await.ends_with("409 Conflict"), "{path} {body}");
+        }
+        assert!(status_of(port, get("/api/profiles", &[("Host", &host)])).await.ends_with("409 Conflict"));
+        let put = with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", &own)], r#"{"content":"x"}"#);
+        assert!(status_of(port, put).await.ends_with("409 Conflict"));
+
+        let picked = body_of(port, post("/api/collineage/source", r#"{"tool":"collin"}"#)).await;
+        assert!(picked.starts_with("HTTP/1.1 200"), "{picked}");
+        assert!(picked.contains(r#""cll_active":"column_lineage.collin.json","cll_tool":"collin""#), "{picked}");
+        assert!(status_of(port, post("/api/collineage/source", r#"{"tool":"fusion"}"#)).await.ends_with("404 Not Found"));
+        assert!(status_of(port, post("/api/collineage/source", r#"{"tool":"../x"}"#)).await.ends_with("400 Bad Request"));
+        assert!(status_of(port, post("/api/collineage/source", "{}")).await.ends_with("400 Bad Request"));
+
+        // A Snowflake manifest offers it without being asked.
+        manifest("snowflake");
+        *st.graph.write().await = Arc::new(load());
+        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        assert!(meta.contains(r#""features":{"snowflake":true,"snowflake_set":false}"#), "{meta}");
+        assert!(meta.contains("column_lineage.snowflake.json"), "{meta}");
+        // Picked by its file, a cache is read as it is: no script starts.
+        let picked = body_of(port, post("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#)).await;
+        assert!(picked.contains(r#""cll_tool":"snowflake""#), "{picked}");
+        assert!(!st.sidecar.enabled());
+
+        // Switched off, the user's choice wins over the adapter, and the graph
+        // no longer holds Snowflake's answer.
+        let off = body_of(port, post("/api/features", r#"{"snowflake":false}"#)).await;
+        assert!(off.starts_with("HTTP/1.1 200"), "{off}");
+        assert!(off.contains(r#""features":{"snowflake":false,"snowflake_set":true}"#), "{off}");
+        assert!(off.contains(r#""cll_active":"column_lineage.collin.json","cll_tool":"collin""#), "{off}");
+        assert!(status_of(port, get("/api/profiles", &[("Host", &host)])).await.ends_with("409 Conflict"));
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
@@ -2179,12 +2428,14 @@ mod tests {
     async fn the_profile_is_read_and_written_where_the_script_said() {
         let root = temp_project("profile");
         let (port, st, server) = serve(&root).await;
+        *st.snowflake_features.lock().unwrap() = Some(true);
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");
         let put = |body: &str| with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", &own)], body);
 
         // Nothing has named a profile yet, so there is nothing to open.
-        assert!(status_of(port, get("/api/profiles", &[("Host", &host)])).await.ends_with("409 Conflict"));
+        let none = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        assert!(none.starts_with("HTTP/1.1 409") && none.contains(NO_PROFILE), "{none}");
         assert!(status_of(port, put(r#"{"content":"x"}"#)).await.ends_with("409 Conflict"));
         // And no other page may write it.
         let foreign = with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", "https://evil.example")], r#"{"content":"x"}"#);
