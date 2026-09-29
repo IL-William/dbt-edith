@@ -791,9 +791,9 @@ mod tests {
     use super::*;
     use crate::manifest::RawManifest;
 
-    /// Two packages, a source feeding a staging model, a mart that two models
-    /// feed, an exposure on the end, a seed, a snapshot, one test and one
-    /// disabled model. Small enough to assert whole sets against.
+    /// Two packages, a source and a seed each feeding a staging model, a mart
+    /// that two models feed, an exposure on the end, a snapshot, one test and
+    /// one disabled model. Small enough to assert whole sets against.
     fn graph() -> Graph {
         let raw: RawManifest = serde_json::from_value(serde_json::json!({
             "nodes": {
@@ -873,6 +873,7 @@ mod tests {
             },
             "parent_map": {
                 "model.shop.stg_customers": ["source.shop.crm.customers"],
+                "model.shop.stg_orders": ["seed.shop.country_codes"],
                 "model.shop.dim_customers": ["model.shop.stg_customers"],
                 "model.shop.fct_orders": ["model.shop.stg_orders", "model.shop.dim_customers"],
                 "test.shop.not_null_dim_customers_id": ["model.shop.dim_customers"],
@@ -999,10 +1000,20 @@ mod tests {
     }
 
     #[test]
+    fn plus_reaches_a_csv_seed_like_any_other_parent() {
+        assert_eq!(pick("+stg_orders"), ["country_codes", "stg_orders"]);
+        assert_eq!(
+            pick("country_codes+"),
+            ["country_codes", "fct_orders", "stg_orders", "weekly_report"]
+        );
+    }
+
+    #[test]
     fn at_takes_the_children_and_every_parent_of_those() {
         assert_eq!(
             pick("@dim_customers"),
             [
+                "country_codes",
                 "crm.customers",
                 "dim_customers",
                 "fct_orders",

@@ -1370,6 +1370,66 @@ mod tests {
         }
     }
 
+    /// A seed read by a staging model, and a mart on that. The edges come from
+    /// `parent_map`, or from `depends_on` alone, which is what `build` falls
+    /// back on when a manifest has no `parent_map`.
+    fn seeded(from_parent_map: bool) -> Graph {
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "config": { "materialized": "table" } })
+        };
+        let mut raw = serde_json::json!({
+            "nodes": {
+                "seed.shop.country_codes": {
+                    "name": "country_codes", "resource_type": "seed", "package_name": "shop",
+                    "original_file_path": "seeds/country_codes.csv",
+                    "config": { "materialized": "seed" },
+                },
+                "model.shop.stg_customers": model("stg_customers"),
+                "model.shop.dim_customers": model("dim_customers"),
+            },
+        });
+        let parents = [
+            ("model.shop.stg_customers", "seed.shop.country_codes"),
+            ("model.shop.dim_customers", "model.shop.stg_customers"),
+        ];
+        for (child, parent) in parents {
+            if from_parent_map {
+                raw["parent_map"][child] = serde_json::json!([parent]);
+            } else {
+                raw["nodes"][child]["depends_on"] = serde_json::json!({ "nodes": [parent] });
+            }
+        }
+        Graph::build(serde_json::from_value(raw).unwrap(), std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    /// A seed is a root, like a source, but reached through `ref()`. Pinned
+    /// from both ends, since opening its CSV focuses the seed itself, and from
+    /// both lists of edges `build` reads.
+    #[test]
+    fn a_seed_is_drawn_upstream_of_the_model_that_reads_it() {
+        for from_parent_map in [true, false] {
+            let how = if from_parent_map { "parent_map" } else { "depends_on" };
+            let g = seeded(from_parent_map);
+            let seed = g.index["seed.shop.country_codes"];
+
+            let around = g.lineage(g.index["model.shop.stg_customers"], 2, 2, false, 100);
+            let at = |name: &str| around.nodes.iter().position(|n| n.name == name).expect(name);
+            assert_eq!(by_name(&around, "country_codes").depth, -1, "{how}");
+            assert!(around.edges.contains(&[at("country_codes"), at("stg_customers")]), "{how}");
+            // The canvas colours and labels a box by this string.
+            let payload = serde_json::to_value(&around).unwrap();
+            assert_eq!(payload["nodes"][at("country_codes")]["kind"], "seed", "{how}");
+
+            let from_seed = g.lineage(seed, 2, 2, false, 100);
+            for (name, want) in [("country_codes", 0), ("stg_customers", 1), ("dim_customers", 2)] {
+                assert_eq!(by_name(&from_seed, name).depth, want, "{name}, {how}");
+            }
+            assert_eq!(from_seed.edges.len(), 2, "{how}");
+            assert_eq!(g.reach(seed, false), 2, "{how}");
+        }
+    }
+
     /// Two `relationships` on one column, a `not_null`, and a model-level test.
     /// `attached_node` names the owner, so the model the relationships points at
     /// carries no chip of its own.

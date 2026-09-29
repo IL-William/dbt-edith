@@ -28,8 +28,11 @@ const Lineage = (() => {
     dynamic_table: '#3fc7c7',
   };
   const KIND = {
-    source: '#b98cf0', seed: '#56b98b', snapshot: '#ef7a9b',
+    source: '#b98cf0', snapshot: '#ef7a9b',
     test: '#7a879a', exposure: '#ef7a9b', other: '#7a879a',
+    /* Lighter than the rest, because at their lightness no hue stands far
+       enough from all of them: the green a seed had there drew it as a table. */
+    seed: '#c3e143',
   };
   /* Anything else is a custom materialization, and deserves to be noticed. */
   const CUSTOM = '#ff6ec7';
