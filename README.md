@@ -204,6 +204,8 @@ sub-graphs around whichever model you are looking at.
 | click a macro call, `{{ hub() }}` or `{{ dbt_utils.star() }}` | open the file that defines it, at its `{% macro %}` line |
 | click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
+| `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, or filter the Catalog's columns |
+| `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Alt + W`, or middle-click a tab | close a tab |
@@ -381,6 +383,35 @@ counted in the status line rather than quietly dropped.
 `.env` files are never opened by it (0020). Searching for a variable's name
 finds where it is used, never where it is set; the Manage environments panel
 answers that other question, by name.
+
+### Find
+
+`Cmd/Ctrl + F` finds inside what you are reading: the file in the editor, the
+SQL in the Compiled or Run tab, either side of a diff. The browser's own find
+cannot do this, because the editor keeps only the lines on screen in the page,
+so a match further down is not there for it to find. The bar counts every match
+in the file and paints them all; `Enter` and `Shift + Enter` step through them,
+and `Escape` closes it with the cursor left on the last one, ready to type.
+
+Beside the box, `Aa` matches case, `ab` whole words, and `.*` takes a regular
+expression, where `^` and `$` are the ends of a line. A selection on one line
+becomes the query, and a bar opened elsewhere starts from the last query, so a
+column found in the model is one `Cmd/Ctrl + F` away in its compiled SQL.
+`Cmd/Ctrl + G` and `F3` step from the text itself, with `Shift` to go back.
+Typing searches from where the cursor was when you started, so in a long file
+the first letters never drag the view to the top. Past 10 000 matches the count
+stops and says so; stepping still reaches every one.
+
+In the Catalog, `Cmd/Ctrl + F` goes to the Columns tab and into its filter,
+which keeps the columns whose name contains what you type, in any case. The
+filter stays as you move to another node, so one column can be followed through
+the lineage a model at a time. `Escape` empties it.
+
+Anywhere else, the lineage or the terminal, `Cmd/Ctrl + F` is the browser's own
+find. `?` outside a text box, `F1` from anywhere, or the `?` button in the top
+bar lists every shortcut, with the keys of the machine you are on. `Cmd + H`
+would have been the obvious key, and cannot be: macOS hides the browser on it
+before the page ever sees it.
 
 ### Explorer
 
@@ -822,6 +853,8 @@ $JSC web/tests/export.js      # an exported graph: its header, its file, its saf
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
+$JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
+$JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake

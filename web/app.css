@@ -488,6 +488,38 @@ kbd {
 .cm-jinja-punct { color: #89ddff; }
 .cm-jinja-comment { color: #5d6b7d; font-style: italic; }
 
+/* ------------------------------------------------------------------ find -- */
+/* Inside CodeMirror's wrapper, top right, above the text and below nothing:
+   CodeMirror's scrollbars sit at 6, its dialogs at 15. Amber rather than the
+   accent, because the selection is already blue. */
+.findbar {
+  position: absolute; top: 4px; right: 16px; z-index: 12;
+  display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 5px;
+  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .45); font: 11px var(--ui); color: var(--fg-dim);
+}
+.findbar .find-q {
+  width: 190px; margin-right: 2px; padding: 3px 6px; outline: none;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+  font: 12px var(--mono);
+}
+.findbar .find-q:focus { border-color: var(--accent-dim); }
+.findbar .find-q.bad { border-color: var(--bad); }
+.find-opt {
+  min-width: 22px; height: 20px; padding: 0 4px; cursor: pointer;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--fg-dim); font: 11px var(--mono);
+}
+.find-opt:hover { background: var(--bg-3); color: var(--fg); }
+.find-opt[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #1b2a3d; }
+.find-wholeWord { text-decoration: underline; text-underline-offset: 2px; }
+.find-count { min-width: 72px; padding: 0 4px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.find-count.none { color: #e08b8b; }
+.findbar .icon { font-size: 13px; }
+.CodeMirror.find-open .CodeMirror-lines { padding-top: 36px; }
+.cm-findhit { background: rgba(224, 163, 75, .36); border-radius: 2px; }
+.cm-findcur { background: rgba(224, 163, 75, .55); outline: 1px solid var(--warn); border-radius: 2px; color: #fff !important; }
+
 /* ------------------------------------------------------------------ dock -- */
 #dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }
 .dock-pane { flex: 1; min-height: 0; position: relative; }
@@ -762,6 +794,18 @@ kbd {
 
 .coltools { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; }
 .coltools .grow { flex: 1; }
+.colfind { position: relative; display: inline-flex; align-items: center; }
+.colfilter {
+  width: 210px; padding: 3px 76px 3px 7px; outline: none;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px;
+  font: 11.5px var(--mono);
+}
+.colfilter:focus { border-color: var(--accent-dim); }
+.colcount {
+  position: absolute; right: 7px; pointer-events: none;
+  font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cols .c-name mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
 .cols { width: 100%; border-collapse: collapse; font-size: 12px; }
 .cols th {
   text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
@@ -834,6 +878,36 @@ kbd {
 .pres.on { background: var(--accent-dim); }
 .pres .p1 { font-size: 13px; }
 .pres .p2 { font: 11px var(--mono); color: var(--fg-dim); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------- shortcuts -- */
+.keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
+.keysbtn:hover { color: var(--fg); }
+/* Above the palette and the modal: F1 can open it from either. */
+#shortcuts {
+  position: fixed; inset: 0; z-index: 72; background: #0009;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh;
+}
+.keys-box {
+  width: min(960px, 94vw); max-height: 84vh; overflow: auto; outline: none;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 20px 12px; box-shadow: 0 18px 60px #0009;
+}
+.keys-head { display: flex; align-items: center; margin-bottom: 6px; }
+.keys-head h2 { margin: 0; font-size: 15px; }
+.keys-grid { column-width: 400px; column-gap: 32px; }
+.keys-grid section { break-inside: avoid; padding-bottom: 6px; }
+.keys-grid h3 {
+  font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase;
+  letter-spacing: .9px; margin: 10px 0 6px; font-weight: 600;
+}
+.keys-row { display: flex; align-items: baseline; gap: 12px; padding: 2px 0; font-size: 12px; }
+.keys-k { flex: 0 0 132px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+/* Ctrl+Shift+G is three times the width of its Mac glyphs, and a pair of keys
+   that wraps reads as a row with no description. */
+.keys-box.pc .keys-k { flex-basis: 176px; }
+.keys-k kbd { color: var(--fg); white-space: nowrap; }
+.keys-what { color: #c2ccd9; }
+.keys-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
 
 /* ----------------------------------------------------------------- toast -- */
 #toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; }

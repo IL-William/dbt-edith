@@ -30,6 +30,10 @@ const S = {
   selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
   colSort: 'az',              // catalog: az | tests
+  colFilter: '',              // catalog: what the Columns filter holds, kept from one node to the next
+  dock: 'lineage',            // the dock tab on screen
+  lastPane: '',               // the pane last clicked or focused, for a Cmd+F with nothing focused
+  keysReturn: null,           // where focus goes back to when the shortcut list closes
   sidecar: null,              // payload of /api/sidecar: the Snowflake lineage switch and its script
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
@@ -133,6 +137,11 @@ const dot = (n) => {
   d.title = Lineage.matLabel(typeof n === 'string' ? { kind: n } : n);
   return d;
 };
+
+/* Whether CodeMirror took this for a Mac. Asked of CodeMirror rather than of
+   the user agent, so a key the shortcut list names as ⌘ is one CodeMirror
+   binds to Cmd, and never a Ctrl it is waiting for instead. */
+const IS_MAC = CodeMirror.keyMap.default === CodeMirror.keyMap.macDefault;
 
 // ---------------------------------------------------------------- editor --
 /* Jinja in a model, one token at a time, from an opening delimiter to its close.
@@ -809,6 +818,435 @@ function initEditor() {
   });
   wireRefClicks(S.cm);
   wireHovers(S.cm);
+}
+
+// ------------------------------------------------------------------ find --
+/* Find inside one editor: the file being edited, the Compiled or Run SQL, a
+   diff. The browser's own find cannot do this, because CodeMirror keeps only
+   the lines on screen in the page, so a match two screens down is not there to
+   be found. The search runs over the document CodeMirror holds instead, and the
+   highlight is an overlay, which CodeMirror paints a line at a time as it draws
+   it. Both go through matchInLine, so the count and the highlight cannot
+   disagree about what a match is. */
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/* The query as a global RegExp, or why it cannot be one. A plain query is
+   escaped, so `.` and `(` mean themselves. */
+function findPattern(query, opts) {
+  if (!query) return { re: null, error: '' };
+  const flags = opts.caseSensitive ? 'g' : 'gi';
+  if (!opts.regex) return { re: new RegExp(escapeRegExp(query), flags), error: '' };
+  try {
+    return { re: new RegExp(query, flags), error: '' };
+  } catch (e) {
+    return { re: null, error: e.message };
+  }
+}
+
+/* A letter, a digit or an underscore, in any script: `donn` is not a whole
+   word inside `données`. */
+function isWordChar(ch) {
+  return !!ch && /[\p{L}\p{N}_]/u.test(ch);
+}
+
+/* VS Code's rule for a whole word: each end of the match meets the edge of the
+   line or something that is not part of a word, or is not part of one itself,
+   so `.id` is a whole word in `o.id` and `id` is not one in `order_id`. */
+function wholeWord(text, from, to) {
+  const left = from === 0 || !isWordChar(text[from - 1]) || !isWordChar(text[from]);
+  const right = to === text.length || !isWordChar(text[to]) || !isWordChar(text[to - 1]);
+  return left && right;
+}
+
+/* The first match in one line at or after `from`, as {from, to}, or null. An
+   empty match is stepped over: `^` or `x*` matches between every two
+   characters, and a find that stopped there would never move. */
+function matchInLine(text, re, from, whole) {
+  for (let at = from; at <= text.length;) {
+    re.lastIndex = at;
+    const m = re.exec(text);
+    if (!m) return null;
+    const end = m.index + m[0].length;
+    if (end > m.index && (!whole || wholeWord(text, m.index, end))) return { from: m.index, to: end };
+    at = m.index + 1;
+  }
+  return null;
+}
+
+/* Every match in document order, as {line, from, to}, and whether there were
+   more than `cap`. Line by line, as the overlay paints, so `^` and `$` are the
+   ends of a line and no match runs across two. Past the cap the count says so
+   rather than going on: nobody steps through ten thousand matches, and each
+   one is an object. */
+function findMatches(lines, re, whole, cap) {
+  const hits = [];
+  if (!re) return { hits, capped: false };
+  for (let line = 0; line < lines.length; line++) {
+    const text = lines[line];
+    for (let m = matchInLine(text, re, 0, whole); m; m = matchInLine(text, re, m.to, whole)) {
+      if (hits.length === cap) return { hits, capped: true };
+      hits.push({ line, from: m.from, to: m.to });
+    }
+  }
+  return { hits, capped: false };
+}
+
+/* The match a step lands on, as {line, from, to}, or null when there is none.
+   Forward, the first one starting at or after `pos`; backward, the last one
+   starting before it; both wrap around the end. Read from the text rather
+   than from the counted matches, so a step past the cap still finds the next
+   one. Each line is read from its start, as the count and the overlay read it,
+   so a step never lands on a match neither of them has: `aa` in `aaa` is the
+   first two letters, even from a cursor after the first. */
+function nextMatch(lines, re, whole, pos, dir) {
+  const n = lines.length;
+  if (!re || !n) return null;
+  const at = Math.min(pos.line, n - 1);
+  // k runs once round the document and back onto the starting line, where
+  // only the part the first pass left out still counts.
+  for (let k = 0; k <= n; k++) {
+    const line = dir > 0 ? (at + k) % n : (at - k + n) % n;
+    let pick = null;
+    for (let m = matchInLine(lines[line], re, 0, whole); m; m = matchInLine(lines[line], re, m.to, whole)) {
+      const after = m.from >= pos.ch;
+      if (k === 0 && after !== dir > 0) continue;
+      if (k === n && after === dir > 0) continue;
+      pick = m;
+      if (dir > 0) break;
+    }
+    if (pick) return { line, from: pick.from, to: pick.to };
+  }
+  return null;
+}
+
+/* Whether a selection is exactly a match, however far past the cap. */
+function isMatch(lines, re, whole, from, to) {
+  if (!re || from.line !== to.line || from.line >= lines.length) return false;
+  const text = lines[from.line];
+  for (let m = matchInLine(text, re, 0, whole); m && m.from <= from.ch; m = matchInLine(text, re, m.to, whole)) {
+    if (m.from === from.ch && m.to === to.ch) return true;
+  }
+  return false;
+}
+
+/* Which counted match a selection is, or -1: the ordinal in "3 of 17". Past
+   the cap there is none to give. */
+function hitAt(hits, from, to) {
+  let lo = 0, hi = hits.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const h = hits[mid];
+    if (h.line < from.line || (h.line === from.line && h.from < from.ch)) lo = mid + 1;
+    else hi = mid;
+  }
+  const h = hits[lo];
+  return h && h.line === from.line && h.from === from.ch && to.line === h.line && to.ch === h.to ? lo : -1;
+}
+
+/* What the bar says beside the box. `at` is the counted match the selection
+   is on, or -1; `onMatch` says the selection is a match all the same, one past
+   the cap, which has no number to give. */
+function findLabel(query, found, at, error, onMatch) {
+  if (!query) return '';
+  if (error) return 'invalid pattern';
+  const n = found.hits.length;
+  if (!n) return 'No results';
+  const total = n + (found.capped ? '+' : '');
+  if (at >= 0) return (at + 1) + ' of ' + total;
+  if (onMatch) return '? of ' + total;
+  return total + (n === 1 && !found.capped ? ' result' : ' results');
+}
+
+/* Every match painted, as an overlay mode. CodeMirror hands it one line at a
+   time from its start, so each call either paints the match it stands on or
+   skips to the next one. */
+function findOverlay(re, whole) {
+  return {
+    token(stream) {
+      const m = matchInLine(stream.string, re, stream.pos, whole);
+      if (!m) { stream.skipToEnd(); return null; }
+      if (m.from > stream.pos) { stream.pos = m.from; return null; }
+      stream.pos = m.to;
+      return 'findhit';
+    },
+  };
+}
+
+/* What the last bar used, which is what the next one opens with, the way VS
+   Code carries a search from one editor to the next: Cmd+F in the Compiled tab
+   after a search in the model looks for the same thing. Each open bar keeps
+   its own copy, so typing in one never changes what another highlights. */
+const findPrefs = { query: '', caseSensitive: false, wholeWord: false, regex: false };
+const FIND_CAP = 10000;
+
+/* One editor's bar, built the first time Cmd+F reaches that editor. It lives
+   inside CodeMirror's own wrapper, where CodeMirror's dialogs go, so it moves
+   with the editor: the Compiled one is detached and put back between nodes. */
+function findBar(cm) {
+  if (cm.state.findBar) return cm.state.findBar;
+  const st = {
+    cm, open: false, q: { ...findPrefs }, key: '', re: null, error: '', lines: [],
+    found: { hits: [], capped: false }, at: -1, cur: null, mark: null, overlay: null,
+    origin: { line: 0, ch: 0 }, moving: false, timer: 0,
+    keys: { Esc: () => closeFind(cm) },
+  };
+  const bar = document.createElement('div');
+  bar.className = 'findbar hidden';
+  bar.setAttribute('role', 'search');
+  const input = document.createElement('input');
+  input.className = 'find-q';
+  input.placeholder = 'Find';
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+  input.setAttribute('aria-label', 'Find in this text');
+  const option = (name, label, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'find-opt find-' + name;
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', () => {
+      st.q[name] = !st.q[name];
+      findPrefs[name] = st.q[name];
+      refreshFind(st, true);
+      input.focus();
+    });
+    return [name, b];
+  };
+  st.opts = [
+    option('caseSensitive', 'Aa', 'Match case'),
+    option('wholeWord', 'ab', 'Match whole word'),
+    option('regex', '.*', 'Use a regular expression'),
+  ];
+  const count = document.createElement('span');
+  count.className = 'find-count';
+  count.setAttribute('aria-live', 'polite');
+  const button = (label, title, run) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'icon';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', run);
+    return b;
+  };
+  bar.append(input, ...st.opts.map(([, b]) => b), count,
+    button('↑', `Previous match (${keyLabel('Shift+Enter', IS_MAC)})`, () => stepFind(cm, -1)),
+    button('↓', `Next match (${keyLabel('Enter', IS_MAC)})`, () => stepFind(cm, 1)),
+    button('×', `Close (${keyLabel('Escape', IS_MAC)})`, () => closeFind(cm)));
+  Object.assign(st, { bar, input, count });
+
+  input.addEventListener('input', () => {
+    st.q.query = findPrefs.query = input.value;
+    refreshFind(st, true);
+  });
+  bar.addEventListener('keydown', (e) => {
+    const k = keyCombo(e, IS_MAC);
+    // Enter steps from the box only: on one of the buttons it presses it.
+    const dir = { 'Mod+G': 1, F3: 1, 'Mod+Shift+G': -1, 'Shift+F3': -1 }[k]
+      || (e.target === input && { Enter: 1, 'Shift+Enter': -1 }[k]);
+    if (dir) stepFind(cm, dir);
+    else if (k === 'Escape') closeFind(cm);
+    else if (k === 'Mod+F') { input.focus(); input.select(); }
+    else return;
+    e.preventDefault();
+  });
+  // An edit moves matches; waiting for a pause keeps a burst of typing to one
+  // count. A document swapped in, another tab's, is counted at once.
+  cm.on('changes', () => {
+    if (!st.open) return;
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => refreshFind(st, false), 150);
+  });
+  cm.on('swapDoc', (_, old) => {
+    if (!st.open || old === cm.getDoc()) return;
+    st.origin = cm.getCursor('from');
+    refreshFind(st, false);
+  });
+  // Typing searches from where the cursor was put, never from where the last
+  // keystroke's match happened to land: after `x` has jumped far ahead, a `y`
+  // typed in its place still starts from the same line.
+  cm.on('cursorActivity', () => {
+    if (st.open && !st.moving) st.origin = cm.getCursor('from');
+  });
+  cm.getWrapperElement().appendChild(bar);
+  cm.state.findBar = st;
+  return st;
+}
+
+/* Counts again and repaints. `jump` is for typing and the option buttons: it
+   moves to the first match from where the search started. */
+function refreshFind(st, jump) {
+  const { cm, q } = st;
+  clearTimeout(st.timer);
+  st.timer = 0;
+  const key = [q.query, q.caseSensitive, q.wholeWord, q.regex].join('\u0000');
+  if (key !== st.key) {
+    // Only a new pattern repaints: the overlay reads the text as it draws it,
+    // so an edit needs no new one.
+    st.key = key;
+    const pat = findPattern(q.query, q);
+    st.re = pat.re;
+    st.error = pat.error;
+    if (st.overlay) cm.removeOverlay(st.overlay);
+    st.overlay = st.re ? findOverlay(st.re, q.wholeWord) : null;
+    if (st.overlay) cm.addOverlay(st.overlay);
+  }
+  st.lines = [];
+  cm.getDoc().eachLine((l) => { st.lines.push(l.text); });
+  st.found = findMatches(st.lines, st.re, q.wholeWord, FIND_CAP);
+  const m = jump && nextMatch(st.lines, st.re, q.wholeWord, st.origin, 1);
+  if (m) return gotoMatch(st, m, false);
+  const from = cm.getCursor('from'), to = cm.getCursor('to');
+  settleFind(st, isMatch(st.lines, st.re, q.wholeWord, from, to) ? { from, to } : null);
+}
+
+/* A step moves where the next one, and the next query, start from. */
+function gotoMatch(st, m, step) {
+  const { cm } = st;
+  const from = { line: m.line, ch: m.from }, to = { line: m.line, ch: m.to };
+  st.moving = true;
+  cm.setSelection(from, to, { scroll: false });
+  // A third of the height clear on either side, so the match never lands under
+  // the bar or on the bottom line, where it would still have to be looked for.
+  cm.scrollIntoView({ from, to }, Math.round(cm.getScrollInfo().clientHeight / 3));
+  st.moving = false;
+  if (step) st.origin = from;
+  settleFind(st, { from, to });
+}
+
+/* `cur` is the match the selection is on, or null. It is painted brighter than
+   the rest, because the selection alone is a faint blue once the focus is in
+   the box. */
+function settleFind(st, cur) {
+  const { q } = st;
+  st.cur = cur;
+  st.at = cur ? hitAt(st.found.hits, cur.from, cur.to) : -1;
+  if (st.mark) st.mark.clear();
+  st.mark = cur ? st.cm.markText(cur.from, cur.to, { className: 'cm-findcur' }) : null;
+  st.input.classList.toggle('bad', !!st.error);
+  st.input.title = st.error;
+  st.count.textContent = findLabel(q.query, st.found, st.at, st.error, !!cur);
+  st.count.classList.toggle('none', !!q.query && (!!st.error || !st.found.hits.length));
+  for (const [name, b] of st.opts) b.setAttribute('aria-pressed', String(!!q[name]));
+}
+
+function showFind(st) {
+  if (!st.open) {
+    st.open = true;
+    st.origin = st.cm.getCursor('from');
+    st.bar.classList.remove('hidden');
+    st.cm.addKeyMap(st.keys);
+    // Room above the first line, as VS Code makes, or a match there would sit
+    // under the bar with nowhere to scroll it to.
+    st.cm.getWrapperElement().classList.add('find-open');
+    st.cm.refresh();
+  }
+  st.input.value = st.q.query;
+  refreshFind(st, false);
+}
+
+/* Cmd+F. A selection on one line becomes the query, as in VS Code, unless it
+   is the match already selected: that would swap a pattern for the one string
+   it happened to match. */
+function openFind(cm) {
+  const st = findBar(cm);
+  const onMatch = st.open && !!st.cur;
+  if (!st.open) st.q = { ...findPrefs };
+  const sel = cm.getSelection();
+  if (sel && !sel.includes('\n') && sel.length <= 200 && !onMatch) {
+    st.q.query = findPrefs.query = st.q.regex ? escapeRegExp(sel) : sel;
+  }
+  showFind(st);
+  st.input.focus();
+  st.input.select();
+}
+
+/* Enter and Shift+Enter in the bar, Cmd+G and F3 in the text. With the bar
+   closed it opens on the last query first, and leaves the focus in the text. */
+function stepFind(cm, dir) {
+  const st = findBar(cm);
+  if (!st.open) {
+    st.q = { ...findPrefs };
+    showFind(st);
+  } else if (st.timer) {
+    refreshFind(st, false);                  // an edit is still waiting to be counted
+  }
+  const m = nextMatch(st.lines, st.re, st.q.wholeWord, cm.getCursor(dir > 0 ? 'to' : 'from'), dir);
+  if (m) gotoMatch(st, m, true);
+}
+
+/* The selection stays on the last match, so Escape leaves the cursor where the
+   search brought it, ready to type. */
+function closeFind(cm) {
+  const st = cm.state.findBar;
+  if (!st || !st.open) return;
+  st.open = false;
+  clearTimeout(st.timer);
+  st.timer = 0;
+  st.bar.classList.add('hidden');
+  cm.getWrapperElement().classList.remove('find-open');
+  cm.refresh();
+  cm.removeKeyMap(st.keys);
+  if (st.overlay) cm.removeOverlay(st.overlay);
+  st.overlay = null;
+  st.key = '';
+  st.lines = [];
+  if (st.mark) st.mark.clear();
+  st.mark = st.cur = null;
+  cm.focus();
+}
+
+/* CodeMirror's default keymaps already bind Cmd+F, Cmd+G and Shift+Cmd+G (Ctrl
+   elsewhere) to these three names and leave them for the embedder to define.
+   Defining them is what reaches every editor here, the diff panes included,
+   and only the one with the focus answers. */
+CodeMirror.commands.find = (cm) => openFind(cm);
+CodeMirror.commands.findNext = (cm) => stepFind(cm, 1);
+CodeMirror.commands.findPrev = (cm) => stepFind(cm, -1);
+// The same two under the keys Windows and VS Code give them.
+CodeMirror.keyMap.default.F3 = 'findNext';
+CodeMirror.keyMap.default['Shift-F3'] = 'findPrev';
+
+/* The editor a Cmd+F from outside every editor means: the file on screen, or
+   the working-tree side of a diff. */
+function activeEditor() {
+  const f = S.active && S.open.get(S.active);
+  if (!f) return null;
+  if (f.kind === 'diff') return f.mv ? f.mv.editor() : null;
+  return S.cm;
+}
+
+/* Where an element sits, by pane. Everything in the dock belongs to the tab on
+   screen, its tab bar included, so Cmd+F after a click on Compiled searches the
+   SQL under it. '' is the page itself, with nothing focused. */
+function paneOf(el) {
+  if (!el || !el.closest || el === document.body) return '';
+  if (el.closest('#editor-pane')) return 'editor';
+  if (el.closest('#sidebar')) return 'sidebar';
+  if (el.closest('#dock')) return S.dock;
+  return 'other';
+}
+
+/* Cmd+F wherever CodeMirror has not answered it already. False where there is
+   nothing of ours to search, and the browser's own find opens instead: over the
+   lineage it finds a box by its name. */
+function findInPane(pane) {
+  if (pane === 'catalog') return focusColumnFilter();
+  if (pane === 'compiled' || pane === 'run') {
+    const cm = S.artifactCm[pane];
+    if (!cm || !document.body.contains(cm.getWrapperElement())) return false;
+    openFind(cm);
+    return true;
+  }
+  if (pane !== 'editor' && pane !== 'sidebar' && pane !== '') return false;
+  const cm = activeEditor();
+  if (!cm) return false;
+  openFind(cm);
+  return true;
 }
 
 const base = (path) => path.split('/').pop();
@@ -3697,6 +4135,9 @@ function renderCatalog(n) {
   S.node = n;
   const host = $('#catalog');
   if (envMenu && host.contains(envMenu.anchor)) closeEnvMenu();
+  // A node that lands while the filter is being typed in redraws the table,
+  // and the box with it: the next key has to reach the new one.
+  const typing = document.activeElement && document.activeElement.id === 'col-filter';
   host.textContent = '';
 
   const head = document.createElement('div');
@@ -3741,6 +4182,11 @@ function renderCatalog(n) {
   body.className = 'cat-body';
   (S.catTab === 'columns' ? catalogColumns : catalogPreview)(body, n);
   host.append(head, body);
+  const filter = typing && $('#col-filter');
+  if (filter) {
+    filter.focus();
+    filter.setSelectionRange(filter.value.length, filter.value.length);
+  }
 }
 
 function h3(label) {
@@ -4808,6 +5254,30 @@ function paintTests(td, n, c, expanded) {
   td.appendChild(more);
 }
 
+/* Whether a column answers the Columns filter: its name holds the text, in any
+   case. The name alone, because that is what the filter is for finding, and a
+   description mentioning the same word would bury the column called that
+   under every column that talks about it. */
+function columnMatches(c, query) {
+  return !query || c.name.toLowerCase().includes(query.toLowerCase());
+}
+
+/* Cmd+F in the Catalog. The columns are what there is to find there, so the
+   Preview tab gives way to the Columns one. */
+function focusColumnFilter() {
+  const n = S.node;
+  if (!n || !n.columns.length) return false;
+  if (S.catTab !== 'columns') {
+    S.catTab = 'columns';
+    renderCatalog(n);
+  }
+  const box = $('#col-filter');
+  if (!box) return false;
+  box.focus();
+  box.select();
+  return true;
+}
+
 function catalogColumns(body, n) {
   if (!n.columns.length) {
     const p = document.createElement('p');
@@ -4819,6 +5289,24 @@ function catalogColumns(body, n) {
 
   const tools = document.createElement('div');
   tools.className = 'coltools';
+  // Kept from one node to the next, so a column can be followed through the
+  // lineage: click the next model and the filter is already asking for it.
+  const filter = document.createElement('input');
+  filter.id = 'col-filter';
+  filter.className = 'colfilter';
+  filter.placeholder = 'Filter by name';
+  filter.value = S.colFilter;
+  filter.spellcheck = false;
+  filter.autocomplete = 'off';
+  filter.title = `Filter the columns by name (${keyLabel('Mod+F', IS_MAC)}). ${keyLabel('Escape', IS_MAC)} clears it.`;
+  // The count sits inside the box, so it cannot be read as part of the typed
+  // count beside it.
+  const shown = document.createElement('span');
+  shown.className = 'colcount';
+  const box = document.createElement('span');
+  box.className = 'colfind';
+  box.append(filter, shown);
+  tools.append(box);
   const untyped = n.columns.filter((c) => !c.data_type).length;
   const note = document.createElement('span');
   note.textContent = untyped === n.columns.length
@@ -4881,12 +5369,14 @@ function catalogColumns(body, n) {
     s.textContent = "\u2013";
     return s;
   };
+  const rows = [];
   for (const c of cols) {
     const tr = document.createElement('tr');
     if (c.undeclared) tr.className = 'c-undeclared';
     const name = document.createElement('td');
     name.className = 'c-name';
     name.textContent = c.name;
+    rows.push({ tr, name, c });
     if (c.undeclared) name.title = 'in the warehouse but not declared in YAML';
     const type = document.createElement('td');
     type.className = 'c-type';
@@ -4932,6 +5422,44 @@ function catalogColumns(body, n) {
     table.appendChild(tr);
   }
   body.appendChild(table);
+  const none = document.createElement('p');
+  none.className = 'muted';
+  body.appendChild(none);
+
+  // Rows are hidden in place rather than the table redrawn, so the box keeps
+  // the focus and a +N chip opened further down stays open.
+  const apply = () => {
+    const q = S.colFilter.trim();
+    let kept = 0;
+    for (const r of rows) {
+      const hit = columnMatches(r.c, q);
+      r.tr.classList.toggle('hidden', !hit);
+      if (!hit) continue;
+      kept++;
+      const [before, match, after] = splitMatch(r.c.name, q);
+      r.name.textContent = before;
+      if (match) r.name.append(Object.assign(document.createElement('mark'), { textContent: match }));
+      r.name.append(after);
+    }
+    shown.textContent = q ? `${kept} of ${rows.length}` : '';
+    none.textContent = q && !kept ? `No column name contains "${q}".` : '';
+    none.classList.toggle('hidden', !none.textContent);
+  };
+  filter.addEventListener('input', () => {
+    S.colFilter = filter.value;
+    apply();
+  });
+  filter.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    if (filter.value) {
+      filter.value = S.colFilter = '';
+      apply();
+    } else {
+      filter.blur();
+    }
+  });
+  apply();
 }
 
 // --------------------------------------------------------------- terminal --
@@ -5158,6 +5686,7 @@ function showSide(which) {
 }
 
 function showDock(which) {
+  S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
   $('#dock-lineage').classList.toggle('hidden', which !== 'lineage');
   $('#dock-terminal').classList.toggle('hidden', which !== 'terminal');
@@ -5201,16 +5730,212 @@ function wireSplitters() {
 }
 
 // ------------------------------------------------------------------ keys --
+/* A keydown, named the way the shortcut list names it: Mod+Alt+S, Shift+Enter,
+   ?. Mod is Cmd or Ctrl, as it always was here. Shift is named for a letter or
+   a named key only: for a symbol it is already in the character, which is how
+   `?` stays `?` on a layout that types it with Shift and on one that does not.
+
+   On a Mac, Option makes a letter into another character, Option+W into ∑, so
+   there the physical key is read instead. Not when Option alone typed a
+   letter, though: that is someone writing Â on a French keyboard, and closing
+   their tab would be the wrong answer to it. */
+function keyCombo(e, mac) {
+  let key = e.key || '';
+  const letter = /^Key([A-Z])$/.exec(e.code || '');
+  if (mac && e.altKey && letter && (e.metaKey || e.ctrlKey || !/^\p{L}$/u.test(key))) key = letter[1];
+  if (/^[a-z]$/.test(key)) key = key.toUpperCase();
+  if (key === ' ') key = 'Space';
+  const mods = [];
+  if (e.metaKey || e.ctrlKey) mods.push('Mod');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey && (/^[A-Z]$/.test(key) || key.length > 1)) mods.push('Shift');
+  return mods.concat(key).join('+');
+}
+
+/* How a key reads on this machine: ⌥⌘S on a Mac, in Apple's order, and
+   Ctrl+Alt+S elsewhere. */
+function keyLabel(combo, mac) {
+  const parts = combo.split('+');
+  const key = parts.pop();
+  const k = { ArrowUp: '↑', ArrowDown: '↓', Escape: 'Esc', Enter: mac ? '↩' : 'Enter' }[key] || key;
+  if (!mac) return parts.map((m) => (m === 'Mod' ? 'Ctrl' : m)).concat(k).join('+');
+  const glyphs = [['Ctrl', '⌃'], ['Alt', '⌥'], ['Shift', '⇧'], ['Mod', '⌘']];
+  const mods = glyphs.filter(([m]) => parts.includes(m)).map(([, g]) => g).join('');
+  // A mouse action is a word, which reads apart from the glyphs: ⌥ click.
+  return mods + (mods && /^[a-z]/.test(k) ? ' ' : '') + k;
+}
+
+/* Every shortcut there is, for the list ? opens: each row is the keys, any of
+   which does it, and what it does. The keys wireKeys answers to are checked
+   against this by web/tests/keys.js, so none is bound without appearing here;
+   the rest are answered by CodeMirror or by one box, and are listed by hand. */
+function shortcutSheet() {
+  return [
+    { title: 'Anywhere', keys: [
+      [['Mod+K'], 'Search models, sources and every file'],
+      [['Mod+S'], 'Save the file'],
+      [['Mod+Alt+S'], 'Save every modified file'],
+      [['Alt+W'], 'Close the tab'],
+      [['Mod+`'], 'Show the terminal'],
+      [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
+    ] },
+    { title: 'Find', keys: [
+      [['Mod+F'], 'In a file, or in Compiled or Run: find in that text'],
+      [['Mod+F'], 'In the Catalog: filter the columns by name'],
+      [['Enter', 'Shift+Enter'], 'Next and previous match, from the find box'],
+      [['Mod+G', 'Mod+Shift+G'], 'Next and previous match, from the text too'],
+      [['F3', 'Shift+F3'], 'The same, as in VS Code'],
+      [['Escape'], 'Close the find bar, or empty the column filter'],
+    ] },
+    { title: 'Editor', keys: [
+      [['Mod+Z', 'Mod+Shift+Z'], 'Undo and redo'],
+      [['Mod+['], 'Indent less'],
+      [['Mod+]'], 'Indent more'],
+      [['Mod+D'], 'Delete the line, where VS Code would select the next match'],
+      [['Alt+click'], 'Put the cursor on a link without following it'],
+    ] },
+    { title: 'Tabs', keys: [
+      [['Middle-click'], 'Close a tab'],
+      [['Double-click'], 'Keep a preview tab, the one in italics'],
+    ] },
+    { title: 'Search box, branches and menus', keys: [
+      [['ArrowUp', 'ArrowDown'], 'Move'],
+      [['Enter'], 'Open or pick'],
+      [['Escape'], 'Close'],
+    ] },
+    { title: 'Selection box, above the lineage', keys: [
+      [['Enter'], 'Draw it now'],
+      [['ArrowUp', 'ArrowDown'], 'Earlier expressions'],
+    ] },
+    { title: 'Git', keys: [
+      [['Mod+Enter'], 'Commit, from the message box'],
+    ] },
+    { title: 'Catalog', keys: [
+      [['Enter', 'Space'], 'On a +N chip: every test on that column'],
+    ] },
+  ];
+}
+
+/* Whether a key pressed here is text: a box, the editor, the terminal. `?` is
+   a shortcut only outside all three. */
+function isTyping(el) {
+  if (!el || !el.tagName) return false;
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+  return el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range)$/.test(el.type);
+}
+
+/* The shortcut list: ? outside a text box, F1 anywhere, or the button in the
+   top bar. Cmd+H was the first idea and cannot work: on a Mac, the system
+   hides the browser before any page sees the key (0030). */
+function toggleShortcuts() {
+  const built = $('#shortcuts');
+  if (built && !built.classList.contains('hidden')) return closeShortcuts();
+  const box = built || buildShortcuts();
+  S.keysReturn = document.activeElement;
+  box.classList.remove('hidden');
+  box.querySelector('.keys-box').focus();
+}
+
+/* Focus goes back to where the keys were typed, the editor usually. */
+function closeShortcuts() {
+  const box = $('#shortcuts');
+  if (!box || box.classList.contains('hidden')) return;
+  box.classList.add('hidden');
+  const back = S.keysReturn;
+  S.keysReturn = null;
+  if (back && back.focus && document.body.contains(back)) back.focus();
+}
+
+function buildShortcuts() {
+  const box = document.createElement('div');
+  box.id = 'shortcuts';
+  box.className = 'hidden';
+  const panel = document.createElement('div');
+  panel.className = 'keys-box' + (IS_MAC ? '' : ' pc');
+  panel.tabIndex = -1;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Keyboard shortcuts');
+  const head = document.createElement('div');
+  head.className = 'keys-head';
+  const close = document.createElement('button');
+  close.className = 'icon';
+  close.textContent = '×';
+  close.title = `Close (${keyLabel('Escape', IS_MAC)})`;
+  close.addEventListener('click', closeShortcuts);
+  head.append(Object.assign(document.createElement('h2'), { textContent: 'Keyboard shortcuts' }),
+    Object.assign(document.createElement('div'), { className: 'grow' }), close);
+  const grid = document.createElement('div');
+  grid.className = 'keys-grid';
+  for (const group of shortcutSheet()) {
+    const sec = document.createElement('section');
+    sec.append(h3(group.title));
+    for (const [combos, what] of group.keys) {
+      const row = document.createElement('div');
+      row.className = 'keys-row';
+      const keys = document.createElement('span');
+      keys.className = 'keys-k';
+      for (const combo of combos) keys.append(Object.assign(document.createElement('kbd'), { textContent: keyLabel(combo, IS_MAC) }));
+      row.append(keys, Object.assign(document.createElement('span'), { className: 'keys-what', textContent: what }));
+      sec.append(row);
+    }
+    grid.append(sec);
+  }
+  // The question the list raises first: why not the key every other app uses.
+  const note = document.createElement('p');
+  note.className = 'keys-note';
+  note.textContent = IS_MAC
+    ? '⌘W and ⌘H belong to the browser and to macOS, never to a page: one closes the browser tab, '
+      + 'the other hides the window. Hence ⌥W to close a tab here, and ? or F1 for this list.'
+    : 'Ctrl+W belongs to the browser, never to a page: it closes the browser tab. Hence Alt+W to close a tab here.';
+  panel.append(head, grid, note);
+  box.append(panel);
+  box.addEventListener('mousedown', (e) => { if (e.target === box) closeShortcuts(); });
+  // Only the list closes: the search box or a dialog under it stays open.
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeShortcuts();
+  });
+  document.body.append(box);
+  return box;
+}
+
 function wireKeys() {
   window.addEventListener('keydown', (e) => {
-    const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); saveAll(); return; }
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); return; }
-    if (e.altKey && !mod && e.key.toLowerCase() === 'w') { e.preventDefault(); if (S.active) closeFile(S.active); return; }
-    if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
-    if (mod && e.key === '`') { e.preventDefault(); showDock('terminal'); return; }
+    switch (keyCombo(e, IS_MAC)) {
+      case 'Mod+Alt+S': e.preventDefault(); saveAll(); return;
+      case 'Mod+S': e.preventDefault(); save(); return;
+      case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
+      case 'Mod+K': e.preventDefault(); openPalette(); return;
+      case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
+      // An editor with the focus has answered this already, and said so.
+      case 'Mod+F':
+        if (!e.defaultPrevented && findInPane(paneOf(e.target) || S.lastPane)) e.preventDefault();
+        return;
+      // Not from the terminal, where F1 belongs to whatever runs in it.
+      case 'F1':
+        if (e.target.closest && e.target.closest('#term')) return;
+        e.preventDefault();
+        toggleShortcuts();
+        return;
+      case '?':
+        if (isTyping(e.target)) return;
+        e.preventDefault();
+        toggleShortcuts();
+        return;
+    }
     if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) closePalette();
   });
+  // What Cmd+F searches when nothing has the focus: the pane last used, never a
+  // dialog or the top bar.
+  const lastPane = (e) => {
+    const pane = paneOf(e.target);
+    if (pane && pane !== 'other') S.lastPane = pane;
+  };
+  document.addEventListener('pointerdown', lastPane, true);
+  document.addEventListener('focusin', lastPane);
+  $('#keys-btn').addEventListener('click', toggleShortcuts);
   $('#palette-input').addEventListener('input', (e) => runPalette(e.target.value));
   $('#palette-input').addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1); }
@@ -5348,6 +6073,10 @@ async function boot() {
     },
   });
   wireTabs(); wireKeys(); wireSplitters(); relinkTools();
+  // The markup says ⌘K, which on the Windows machine this is built for is Ctrl+K.
+  const palKey = keyLabel('Mod+K', IS_MAC);
+  $$('.k-palette').forEach((k) => { k.textContent = palKey; });
+  $('#palette-btn').title = `Search models and files (${palKey})`;
   $('#grep-input').addEventListener('input', runGrep);
   renderTabs();
   paintMode();

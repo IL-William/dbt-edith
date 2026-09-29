@@ -123,6 +123,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | move a box on the lineage canvas, or read `n.depth` | [0027](docs/decisions/0027-the-canvas-lays-out-from-the-edges.md) |
 | change the folder bands, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
+| add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
