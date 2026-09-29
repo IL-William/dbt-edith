@@ -13,14 +13,18 @@ points at the decision behind it. A version's date is the day its tag was cut.
 
 Versions up to 0.4.0 were reconstructed from git history and
 [docs/state.md](docs/state.md) on 2026-09-22, after the fact, so they group a
-release rather than follow each pull request. Everything from 0.5.0 on is
+release rather than follow each pull request. Everything from 0.6.0 on is
 written as the work lands.
 
 **There is no 0.3.0.** The version was bumped to it on a branch that went on
 collecting work and merged as 0.4.0, so 0.3.0 never reached `main`, was never
 tagged, and nothing was ever installed from it.
 
-## Unreleased
+**There is no 0.5.0 either.** `Cargo.toml` was bumped to it early, then main
+went on collecting work for eleven more pull requests and the tag was never
+cut, so everything the bump was meant to carry ships as 0.6.0 instead.
+
+## 0.6.0 - 2026-09-29
 
 - `Cmd/Ctrl + F` finds inside the file being edited, the Compiled and Run SQL
   and either side of a diff, where it used to open the browser's own find,

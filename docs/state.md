@@ -284,7 +284,11 @@ local index (`dbt compile --static-analysis strict --write-index
 --write-lineage`), which needs no warehouse privileges and covers uncommitted
 SQL. It fills the same cache file (0008).
 
-0.5.0 ships the manifest freshness badge and the Compiled and Run tabs. 0.4.0 shipped the breadcrumb bar, the
+0.6.0 ships everything since 0.4.0: the manifest freshness badge, the Compiled
+and Run tabs, the tests in the Catalog, the lineage export and its folder bands,
+the macro and YAML links, the seed colour, find and the shortcut list. The
+version was bumped to 0.5.0 early and the tag never cut, so that number never
+shipped. 0.4.0 shipped the breadcrumb bar, the
 selector mode in the lineage tab and the rename to Edith, which reached main
 together. 0.2.0 added the hover cards;
 since 0.2.0 the binary also carries a build stamp (`git describe`, or a build
