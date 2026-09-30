@@ -186,7 +186,7 @@ it is used against day to day.
 | column types are missing in the Catalog | no `catalog.json` | dbt Fusion: `dbt compile --write-catalog`; dbt-core: `dbt docs generate` |
 | the URL says a port other than 4321 | 4321 was busy, so it walked forward to a free one | use the URL it printed, or pass `--port` |
 | the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
-| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the gear in the top bar |
+| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the snowflake in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | no browser opened | `--no-open`, or no default browser | open the printed URL by hand |
 | a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
@@ -213,7 +213,7 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
-| the gear in the top bar | settings for the project: Snowflake's features on or off |
+| the snowflake in the top bar | Snowflake's features on or off for the project |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
@@ -462,7 +462,7 @@ connects until you click a column, and the first click of a session may open a
 sign-in tab.
 
 **Snowflake's features are a setting of the project**, a switch in the menu
-behind the gear in the top bar. They are marked alpha: none of them has yet been
+behind the snowflake in the top bar. They are marked alpha: none of them has yet been
 checked against a real warehouse. Until you choose, they follow the manifest:
 on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
 nor are the caches it wrote, nor the profile link below, and the server refuses

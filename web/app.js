@@ -3191,6 +3191,15 @@ function applyLineage(info) {
   S.features = info.features || null;
   if (info.sidecar) S.sidecar = info.sidecar;
   paintSidecar(was);
+  paintSettingsButton();
+}
+
+/* The button stays Snowflake's colour whether the features are on or off: it
+   is where they are found, and a grey one was easy to miss. Its tooltip says
+   which. */
+function paintSettingsButton() {
+  const on = !!(S.features && S.features.snowflake);
+  $('#settings-btn').title = `Snowflake features: ${on ? 'on' : 'off'} for this project (alpha)`;
 }
 
 /* After the graph's column lineage changed: the Columns tab's counts, and the
@@ -6302,6 +6311,7 @@ async function boot() {
   $('#editor-host').style.display = 'none';
 
   $('#cll-pick-host').append(sourceMenu());
+  $('#settings-btn').append(snowflakeIcon());
   $('#settings-btn').addEventListener('click', (e) => openSettingsMenu(e.currentTarget));
   const info = await api.get('/api/meta');
   applyInfo(info);

@@ -935,7 +935,14 @@ kbd {
 /* ------------------------------------------------------------- shortcuts -- */
 .keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
 .keysbtn:hover { color: var(--fg); }
-#settings-btn { display: inline-flex; align-items: center; justify-content: center; }
+/* Where Snowflake's features are found, so it keeps their colour on or off,
+   and a ring of it, where the grey gear it replaced was easy to miss. */
+#settings-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-color: rgba(41, 181, 232, .45); background: rgba(41, 181, 232, .08);
+}
+#settings-btn:hover { border-color: var(--tool); background: rgba(41, 181, 232, .18); }
+#settings-btn .sficon { width: 15px; height: 15px; stroke-width: 1.5; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
   position: fixed; inset: 0; z-index: 72; background: #0009;

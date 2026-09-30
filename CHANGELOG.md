@@ -34,7 +34,7 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 - Picking Snowflake is what switches fetching on click on: the separate
   Snowflake switch is gone, and Snowflake picked before its first fetch shows
   no other tool's edges under its name (0031).
-- A settings menu behind the gear in the top bar switches Snowflake's features
+- A settings menu behind a snowflake in the top bar switches Snowflake's features
   on or off for the project, and says they are still alpha. Until you choose,
   they follow the manifest's adapter; off, nothing of Snowflake is offered, its
   cache and the profile link included (0031).
