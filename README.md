@@ -616,7 +616,12 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **folders** checkbox, beside tests, draws the same canvas by folder: each
+The **eye** beside the depth boxes draws the data tests on the canvas too, each
+hanging off the models it reads. It is off to start with and turns amber when
+on, because tests can outnumber the models several times over: hundreds of
+boxes slow the canvas and bury what it was drawn for. Its tooltip says so.
+
+The **folders** checkbox, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models
 drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
 `30_vault` each read as a block. Their names stay pinned over the top of the
@@ -657,7 +662,7 @@ understood, and the box rewrites itself to the part that was resolved.
 | `--selector name` | a named selector from `selectors.yml`, [below](#named-selectors) |
 
 Disabled nodes are never returned, as in dbt. Tests take part only when the
-**tests** checkbox is on, and then each term brings the tests of what it
+tests **eye** is open, and then each term brings the tests of what it
 selected, a test joining whenever a parent of it did, which is dbt's own
 default. So a test excluded by name stays out, and `+` and `@` reach tests the
 way dbt's graph does. A term that matches nothing is called out under the
@@ -673,7 +678,7 @@ The price is that the answer is this tool's, not dbt's. Two buttons exist for
 that: **Copy** puts the matching names on the clipboard one per line, the way
 `dbt ls --output name` prints them, and **dbt ls** types the equivalent command
 into the Terminal tab without running it, so you can press Enter and compare.
-With the tests checkbox off, add `--exclude "resource_type:test"` to dbt's side,
+With the tests eye closed, add `--exclude "resource_type:test"` to dbt's side,
 which is the only routine reason the two counts differ.
 
 A method this build does not know, `state:` for instance, is refused by name
@@ -695,7 +700,7 @@ so a `buildable` one keeps only the tests whose inputs all sit upstream of the
 selection, and an `empty` one keeps none, as `dbt ls --selector` would
 ([0032](docs/decisions/0032-named-selectors-from-the-manifest.md)).
 
-The **tests** checkbox means something else here. The selector's definition
+The tests **eye** means something else here. The selector's definition
 already decided which tests belong, so the box only decides what is drawn.
 Either way the models the selected tests belong to are drawn, dimmed when the
 selector did not select them itself, so you see what a test reads and how the

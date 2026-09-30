@@ -292,7 +292,7 @@ the YAML scanner this item was deferred on was never needed. Each criterion
 brings its own tests, by its own `indirect_selection`, before the sets are
 combined, as dbt-core's `select_nodes_recursively` does. Typed lines go through
 the same engine now, so 0024's "applied once at the end" is gone, and `+` and
-`@` walk into tests as dbt's graph does. For a named selector the tests box
+`@` walk into tests as dbt's graph does. For a named selector the tests eye
 filters the drawing only. A test's models are drawn either way, dimmed when the
 selector did not pick them; on, the test hangs off them, off, only it goes. The
 first version drew nothing at all with the box off for a selector of tests
@@ -455,7 +455,7 @@ cross-compile.
   arguments of `testChips` and not a constant beside the cell.
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
-  tests checkbox, which dbt has no equivalent of in `dbt ls`. Not for a named
+  tests eye, which dbt has no equivalent of in `dbt ls`. Not for a named
   selector, where the box only filters the drawing: there the usual answer is
   the manifest, when a dbt Fusion that drops `indirect_selection` wrote it, and
   the amber note says so (0032).

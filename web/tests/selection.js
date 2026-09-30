@@ -76,7 +76,9 @@ check('and says nothing when nothing was lost', selectorsNote({ selectors: [] })
 check('first, so the cap on warnings never drops it',
   selectWarnings(lost.concat(['a', 'b', 'c', 'd', 'e']))[0], lost[0]);
 check('a selector of tests alone, with the tests box off, says why the canvas is empty',
-  selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): tick tests to see them.');
+  selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): open the tests eye to see them.');
+check('the tests eye warns before it draws them', testsTitle(false).indexOf('hundreds') > 0, true);
+check('and says how to hide them once they are drawn', /^Data tests shown.*Click to hide them\.$/.test(testsTitle(true)), true);
 check('one that matched nothing says that', selectEmptyText({ matched: 0 }), 'Nothing matched.');
 check('and some tests hidden among models is not the same thing',
   selectEmptyText({ matched: 5, hidden_tests: 2 }), 'Nothing matched.');

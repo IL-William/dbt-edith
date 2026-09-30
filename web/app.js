@@ -2643,7 +2643,7 @@ async function focusNode(id, { open = false } = {}) {
   S.colFocus = null;
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
-  const tests = $('#with-tests').checked ? 1 : 0;
+  const tests = testsOn() ? 1 : 0;
   try {
     const [sub, detail] = await Promise.all([
       api.get(`/api/lineage?id=${encodeURIComponent(id)}&up=${up}&down=${down}&tests=${tests}`),
@@ -2727,7 +2727,7 @@ async function runSelection() {
     paintSelectWarnings([]);
     return;
   }
-  const tests = $('#with-tests').checked ? 1 : 0;
+  const tests = testsOn() ? 1 : 0;
   try {
     const sub = await api.get(`/api/select?q=${encodeURIComponent(expr)}&tests=${tests}`);
     if (ask !== S.selectAsk) return;          // a later keystroke already asked
@@ -2933,9 +2933,19 @@ function selectorsNote(body) {
 function selectEmptyText(sub) {
   const hidden = (sub && sub.hidden_tests) || 0;
   if (hidden && hidden === sub.matched) {
-    return `This selector keeps only tests (${hidden}): tick tests to see them.`;
+    return `This selector keeps only tests (${hidden}): open the tests eye to see them.`;
   }
   return 'Nothing matched.';
+}
+
+/* The tests toggle's words. Data tests can outnumber the models several times
+   over, and every one is a box: the tooltip says so before a click draws them. */
+function testsTitle(on) {
+  return on
+    ? 'Data tests shown: each one is a box on the canvas, and there can be hundreds, '
+      + 'which slows the canvas and buries the models. Click to hide them.'
+    : 'Data tests hidden. Click to draw them on the canvas: there can be hundreds, '
+      + 'which slows it and buries the models.';
 }
 
 function expandTerm(expr, name, dir) {
@@ -3366,6 +3376,36 @@ function openSettingsMenu(anchor) {
 /* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
    their marks are for uses they approve in writing, and this repository is
    public (0014). The name in text, and the colour, say which product it is. */
+/* The tests toggle above the lineage, an eye as the Snowflake button is a
+   snowflake: open while the canvas draws data tests, struck through while it
+   does not. Its state lives on the button, read by testsOn(). */
+function testsEye(on) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  const draw = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    svg.appendChild(e);
+  };
+  draw('path', { d: 'M1.3 8C2.8 5.2 5.2 3.6 8 3.6S13.2 5.2 14.7 8C13.2 10.8 10.8 12.4 8 12.4S2.8 10.8 1.3 8Z' });
+  draw('circle', { cx: 8, cy: 8, r: 2.1 });
+  if (!on) draw('path', { d: 'M2.6 13.4 13.4 2.6' });
+  return svg;
+}
+
+function testsOn() {
+  return $('#with-tests').getAttribute('aria-pressed') === 'true';
+}
+
+function paintTestsToggle(on) {
+  const b = $('#with-tests');
+  b.setAttribute('aria-pressed', String(on));
+  b.title = testsTitle(on);
+  b.replaceChildren(testsEye(on));
+}
+
 function snowflakeIcon() {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -3605,9 +3645,10 @@ async function syncNode(path) {
 }
 
 function relinkTools() {
-  for (const el of [$('#up'), $('#down'), $('#with-tests'), $('#by-folder')]) {
+  for (const el of [$('#up'), $('#down'), $('#by-folder')]) {
     el.addEventListener('change', rerender);
   }
+  $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
   $('#export-btn').addEventListener('click', exportLineage);
   $('#image-btn').addEventListener('click', copyLineageImage);
@@ -6521,6 +6562,7 @@ async function boot() {
 
   $('#cll-pick-host').append(sourceMenu());
   $('#settings-btn').append(snowflakeIcon());
+  paintTestsToggle(false);
   $('#settings-btn').addEventListener('click', (e) => openSettingsMenu(e.currentTarget));
   const info = await api.get('/api/meta');
   applyInfo(info);

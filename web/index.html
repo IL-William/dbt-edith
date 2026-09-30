@@ -133,7 +133,9 @@
           <span id="col-chip" class="colchip hidden"></span>
           <label>up <input id="up" type="number" min="0" max="20" value="2"></label>
           <label>down <input id="down" type="number" min="0" max="20" value="2"></label>
-          <label class="check"><input id="with-tests" type="checkbox"> tests</label>
+          <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
+          <button id="with-tests" class="btn sm eyebtn" type="button" aria-pressed="false"
+                  aria-label="Data tests on the canvas"></button>
           <label class="check"
                  title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><input id="by-folder" type="checkbox"> folders</label>
           <button class="btn sm" id="fit-btn">Fit</button>

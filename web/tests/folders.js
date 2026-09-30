@@ -311,8 +311,9 @@ group('the line under the canvas', function () {
 
 group('the page asks for it', function () {
   var html = read('web/index.html');
-  ok('a checkbox beside tests', /id="with-tests"[\s\S]{0,300}id="by-folder" type="checkbox"/.test(html));
-  ok('which redraws the canvas like the others', /\[\$\('#up'\), \$\('#down'\), \$\('#with-tests'\), \$\('#by-folder'\)\]/.test(app));
+  ok('a checkbox beside the tests eye', /id="with-tests"[\s\S]{0,400}id="by-folder" type="checkbox"/.test(html));
+  ok('which redraws the canvas like the others', /\[\$\('#up'\), \$\('#down'\), \$\('#by-folder'\)\]/.test(app));
+  ok('and so does the eye, on a click', /\$\('#with-tests'\)\.addEventListener\('click', \(\) => \{ paintTestsToggle\(!testsOn\(\)\); rerender\(\); \}\)/.test(app));
   ok('every mode hands the canvas the same options', (app.match(/Lineage\.render\(sub, canvasOptions\(\)\)/g) || []).length === 3);
   ok('an exported file names the folders in its header', /canvasStatus\(sub, ctx\.folders\)/.test(app) && /folders: shot\.folders/.test(app));
   ok('and writes each band\'s name, which the canvas pins to the window instead',
