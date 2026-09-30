@@ -37,6 +37,7 @@ it is built this way, for whoever changes it next.
 | [0029](0029-the-canvas-may-be-drawn-by-folder.md) | The canvas may be drawn by folder, and an edge against the folders is dashed | changing which folder a node is filed under, or the order the folders go in |
 | [0030](0030-find-is-the-apps-own.md) | Find is the app's own, and the shortcut list opens on ? | adding a keyboard shortcut, or changing what Cmd/Ctrl + F does |
 | [0031](0031-named-selectors-from-the-manifest.md) | A named selector is read from the manifest and resolved whole | changing how `--selector` resolves, how a criterion brings its tests, or what the tests checkbox does in Selection |
+| [0032](0032-selections-are-checked-against-dbt.md) | Selections are checked against dbt itself, on a copy of Jaffle Shop | changing how a selection resolves, touching `tests/fixtures/jaffle_shop/`, or a failing `dbt` job |
 
 ## Keeping these honest
 
