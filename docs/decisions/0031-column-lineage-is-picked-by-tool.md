@@ -59,6 +59,11 @@ More features that only mean something on Snowflake are coming.
 ## Consequences
 
 A project on Snowflake behaves as before until someone turns the setting off.
+Switching tools is meant to be done often, so it does not read the manifest
+again: the server keeps the manifest and the catalog as a graph of their own and
+merges the chosen cache into a copy of it, since merging never removes the
+columns a previous cache added. That graph costs its size in memory once more.
+
 Anything new that only works on Snowflake checks the same gate,
 `AppState::snowflake_allowed`, and adds its row's description to the settings
 menu rather than a switch of its own.

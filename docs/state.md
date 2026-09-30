@@ -261,6 +261,26 @@ Snowflake `--column-lineage` refused while off. The 18 825 node project holds
 only a legacy `column_lineage.json` whose source is Snowflake, which the menu
 files under Snowflake. Not yet opened on the VM.
 
+Switching tools no longer reads the manifest. Merging a cache adds the columns
+it knows and the YAML does not, and never removes them, so switching used to
+re-read everything to shed the last cache's columns. The server now keeps a
+second graph, `base`, holding the manifest and the catalog alone, and merges the
+chosen cache into a copy of it. The menu's list of caches reads a file's header
+once per version of the file, where it read every cache in full each time the
+menu opened. Measured in release against the build before:
+
+| | before | after |
+| --- | --- | --- |
+| switching on the 18 825 node project | 438 ms | 25 ms |
+| switching to a cache of 250 000 edges, 46 MB | 1 280 to 1 500 ms | 720 to 900 ms |
+| opening the menu beside three such caches | 106 ms | under 1 ms |
+| memory at startup, 18 825 node project | 135 MB | 181 MB |
+| memory after switching, same project | 353 MB | 227 MB |
+
+The 46 MB more at startup is the price of the second graph. Memory after
+switching falls, because a switch no longer parses a 110 MB manifest to throw
+the old one away. What a large cache still costs is parsing its own JSON.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -360,6 +380,11 @@ cross-compile.
 - **A synthetic column-lineage cache looks exactly like a real one** apart from
   its `source` field. If the column graph looks suspiciously complete, check
   what produced the cache before trusting a screenshot of it.
+- **The graph is held twice**, as `base` (manifest and catalog) and `graph`
+  (`base` with the chosen cache merged into a copy). Anything that reads the
+  manifest or the catalog again replaces both, through `load_all`; replacing
+  `graph` alone brings the old manifest back on the next switch, which reads
+  `base`. A test that swaps in its own graph sets both for the same reason.
 - **Release binaries embed the frontend** (0005). A frontend fix that appears to
   do nothing usually means the release binary was not rebuilt. The build stamp
   in the status bar settles it: compare it with `git describe` in the clone.

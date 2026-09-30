@@ -83,9 +83,9 @@ impl RawColLineage {
 /// One cache file found next to the manifest.
 ///
 /// `edges` is deliberately absent: the list is built by reading each file's
-/// header and discarding the edge array, so opening the selector does not parse
-/// tens of megabytes. The active cache's edge count comes from the graph, which
-/// already knows it.
+/// header and discarding the edge array, once per version of the file
+/// (`Headers`), so opening the selector does not parse tens of megabytes. The
+/// active cache's edge count comes from the graph, which already knows it.
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 pub struct Available {
     /// File name, never a path: it is what the UI shows and hands back, and a
@@ -112,7 +112,7 @@ pub fn tool_of(source: &str) -> &'static str {
 }
 
 /// Just the header, with the edges parsed and thrown away.
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default, Clone)]
 struct Header {
     #[serde(default)]
     version: u32,
@@ -155,13 +155,40 @@ pub fn tool_in(path: &Path) -> &'static str {
     header(path).map_or("", |h| tool_of(&h.source))
 }
 
-/// Every cache in the target directory, most recently written first.
+/// Headers already read, by file name, with the size and modification time
+/// they were read at.
+///
+/// Reading a header means reading the whole file: serde skips the edges
+/// without keeping them, but it still has to walk past every one of them, and
+/// three caches of 250 000 edges took about 95 ms to list. The menu lists them
+/// each time it opens, so a file is read again only when its size or its time
+/// changes, which leaves a `stat` per file.
+#[derive(Default)]
+pub struct Headers(std::sync::Mutex<HashMap<String, Seen>>);
+
+struct Seen {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    head: Option<Header>,
+}
+
+/// Every cache in the target directory, most recently written first, with
+/// every header read from disk. Startup lists once, so it keeps nothing.
+pub fn discover(target_dir: &Path) -> Vec<Available> {
+    discover_cached(target_dir, &Headers::default())
+}
+
+/// Every cache in the target directory, most recently written first, reading
+/// only the headers `headers` has not seen at this size and time.
 ///
 /// A file that cannot be read is left out rather than reported: the selector
 /// offers what can actually be loaded, and `load` still explains itself when one
-/// of them is chosen and turns out to be broken.
-pub fn discover(target_dir: &Path) -> Vec<Available> {
+/// of them is chosen and turns out to be broken. A file caught half written is
+/// read again once it is whole, since writing it moves its time.
+pub fn discover_cached(target_dir: &Path, headers: &Headers) -> Vec<Available> {
     let Ok(entries) = std::fs::read_dir(target_dir) else { return Vec::new() };
+    let Ok(mut seen) = headers.0.lock() else { return Vec::new() };
+    let mut present: HashSet<String> = HashSet::new();
     let mut out: Vec<Available> = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -169,24 +196,31 @@ pub fn discover(target_dir: &Path) -> Vec<Available> {
             continue;
         }
         let path = entry.path();
-        if !path.is_file() {
+        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        if !meta.is_file() {
             continue;
         }
-        let Some(head) = header(&path) else { continue };
+        let (len, modified) = (meta.len(), meta.modified().ok());
+        present.insert(name.clone());
+        let fresh = seen.get(&name).is_some_and(|s| s.len == len && s.modified == modified);
+        if !fresh {
+            seen.insert(name.clone(), Seen { len, modified, head: header(&path) });
+        }
+        let Some(head) = seen.get(&name).and_then(|s| s.head.clone()) else { continue };
         out.push(Available {
             file: name,
             tool: tool_of(&head.source),
             source: head.source,
             target: head.target,
             generated_at: head.generated_at,
-            mtime: std::fs::metadata(&path)
-                .and_then(|m| m.modified())
-                .ok()
+            mtime: modified
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
         });
     }
+    // A file gone is forgotten, so one of the same name written later is read.
+    seen.retain(|name, _| present.contains(name));
     out.sort_by(|a, b| b.mtime.cmp(&a.mtime).then_with(|| a.file.cmp(&b.file)));
     out
 }
@@ -653,6 +687,40 @@ mod tests {
         assert_eq!((collin.tool, latest_of(&found, "snowflake").map(|a| a.tool)), ("collin", Some("snowflake")));
         assert_eq!(tool_in(&dir.join("column_lineage.snowflake.json")), "snowflake");
         assert_eq!(tool_in(&dir.join("column_lineage.broken.json")), "");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_header_is_read_again_only_when_its_file_changes() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-collin-seen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("column_lineage.collin.json");
+        let body = |source: &str| format!(r#"{{"version":1,"source":"{source}","edges":[]}}"#);
+        std::fs::write(&path, body("collin")).unwrap();
+        let headers = Headers::default();
+        assert_eq!(discover_cached(&dir, &headers)[0].tool, "collin");
+
+        // Same size, time put back: the header kept is the one already read.
+        let at = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, body("flinch")).unwrap();
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(at).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].source, "collin");
+        assert_eq!(discover(&dir)[0].source, "flinch", "without the cache, the file itself");
+
+        // A new time is a new file.
+        let later = at + std::time::Duration::from_secs(5);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].source, "flinch");
+
+        // Gone is forgotten, and a broken file is left out until it is whole.
+        std::fs::remove_file(&path).unwrap();
+        assert!(discover_cached(&dir, &headers).is_empty());
+        std::fs::write(&path, "{\"version\":1,\"sou").unwrap();
+        assert!(discover_cached(&dir, &headers).is_empty());
+        std::fs::write(&path, body("collin")).unwrap();
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later + std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].tool, "collin");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -38,6 +38,9 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   on or off for the project. Until you choose, they follow the manifest's
   adapter; off, nothing of Snowflake is offered, its cache and the profile link
   included (0031).
+- Switching the column lineage tool no longer reads the manifest again: 25 ms
+  instead of 440 ms on an 18 825 node project. Opening the menu reads a cache
+  only when the file has changed, where it read every cache in full.
 
 ## 0.6.0 - 2026-09-29
 

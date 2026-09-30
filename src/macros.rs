@@ -84,7 +84,7 @@ impl Macros {
     }
 
     /// Whether the manifest named the root project. dbt-core wrote the name
-    /// from 1.6 on; before, `load_graph` takes it from `dbt_project.yml`.
+    /// from 1.6 on; before, `load_base` takes it from `dbt_project.yml`.
     pub fn has_root(&self) -> bool {
         !self.root.is_empty()
     }
@@ -276,7 +276,7 @@ mod tests {
         });
         std::fs::write(&manifest, json.to_string()).unwrap();
         let none = dir.join("target").join("none.json");
-        let g = crate::api::load_graph(&dir, &manifest, &none, &none).unwrap();
+        let g = crate::api::load_base(&dir, &manifest, &none).unwrap();
         let local = g.macros.package_of("models/orders.sql");
         let cents = g.macros.resolve("cents", local).expect("a bare call reaches the project");
         assert_eq!(g.macros.place(&dir, cents).as_deref(), Some("macros/money.sql"));

@@ -39,7 +39,18 @@ pub struct AppState {
     pub venv: VenvInfo,
     pub file_index: RwLock<Arc<Vec<String>>>,
     pub settings: crate::settings::Store,
+    /// The graph as drawn: `base` with the chosen column lineage merged in.
     pub graph: RwLock<Arc<Graph>>,
+    /// The manifest and the catalog alone, never any column lineage. Switching
+    /// caches merges into a copy of it rather than reading the manifest again,
+    /// and must: merging adds the columns a cache knows and the YAML does not,
+    /// and never takes them away, so a cache laid over another would keep the
+    /// first one's columns. Replaced with `graph` whenever the manifest or the
+    /// catalog is read again.
+    pub base: RwLock<Arc<Graph>>,
+    /// Headers of the caches beside the manifest, read again only when a file
+    /// changes, since listing them is what opening the menu costs.
+    pub cll_headers: collin::Headers,
     pub shell: ShellSpec,
     pub git: tokio::sync::Mutex<Option<(std::time::Instant, GitInfo)>>,
     /// Same idea as `git`, for the same reason: the badge polls on a timer and
@@ -88,9 +99,12 @@ const SNOWFLAKE_OFF: &str = "Snowflake features are off for this project: switch
 #[folder = "web/"]
 struct Assets;
 
+/// The manifest with the catalog merged, and no column lineage: what `base`
+/// holds.
+///
 /// `project` is read only for what a manifest can leave out: dbt-core before
 /// 1.6 does not name the root project, and its macros are found by that name.
-pub fn load_graph(project: &Path, manifest_path: &Path, catalog_path: &Path, cll_path: &Path) -> anyhow::Result<Graph> {
+pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
     let mtime = mtime_secs(manifest_path);
     let raw = RawManifest::load(manifest_path)?;
@@ -110,9 +124,44 @@ pub fn load_graph(project: &Path, manifest_path: &Path, catalog_path: &Path, cll
             Err(e) => eprintln!("  catalog.json ignored: {e}"),
         }
     }
-    merge_cache(&mut graph, cll_path);
     graph.meta.load_ms = started.elapsed().as_millis();
     Ok(graph)
+}
+
+/// `base` with one column-lineage cache merged into a copy of it. Copying
+/// 18 825 nodes is a fraction of reading the 110 MB manifest they came from.
+pub fn with_cache(base: &Graph, cll_path: &Path) -> Graph {
+    let mut graph = base.clone();
+    merge_cache(&mut graph, cll_path);
+    graph
+}
+
+/// Reads the manifest and the catalog again, lays the cache on screen over
+/// them, and replaces both graphs. The caller holds `cll_lock`, so a switch or
+/// a fetch cannot land between the two.
+async fn load_all(st: &AppState) -> anyhow::Result<Arc<Graph>> {
+    let (root, mp, cp, lp) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
+    let (base, graph) = tokio::task::spawn_blocking(move || -> anyhow::Result<(Graph, Graph)> {
+        let base = load_base(&root, &mp, &cp)?;
+        let graph = with_cache(&base, &lp);
+        Ok((base, graph))
+    })
+    .await??;
+    // What was just read is what the watcher has acted on, so it does not
+    // read it all again three seconds later.
+    if let Ok(mut seen) = st.seen.lock() {
+        *seen = [graph.meta.manifest_mtime, graph.meta.catalog_mtime, graph.meta.cll_mtime];
+    }
+    let graph = Arc::new(graph);
+    *st.base.write().await = Arc::new(base);
+    *st.graph.write().await = graph.clone();
+    Ok(graph)
+}
+
+/// The caches beside the manifest, headers read only where a file changed.
+async fn caches(st: &Arc<AppState>) -> Vec<collin::Available> {
+    let st = st.clone();
+    tokio::task::spawn_blocking(move || collin::discover_cached(&st.target_dir, &st.cll_headers)).await.unwrap_or_default()
 }
 
 /// Merges one column-lineage cache, if the file is there. An empty path is how
@@ -300,10 +349,9 @@ struct Features {
 /// What the page needs to paint the lineage menu and the settings menu. Every
 /// route that changes either answers with it, so the page never paints half of
 /// a change.
-async fn meta_body(st: &AppState) -> MetaBody {
+async fn meta_body(st: &Arc<AppState>) -> MetaBody {
     let graph = st.graph.read().await.clone();
-    let dir = st.target_dir.clone();
-    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let found = caches(st).await;
     let chosen = st.snowflake_features.lock().map(|c| *c).unwrap_or(None);
     let snowflake = crate::settings::snowflake_features(chosen, &graph.meta.adapter);
     let cll_active = st
@@ -331,23 +379,19 @@ async fn meta(State(st): State<Arc<AppState>>) -> Response {
     Json(meta_body(&st).await).into_response()
 }
 
-/// Loads `path` as the graph's column lineage, under the lock the watcher and
-/// a fetch take, and records its time so the watcher does not load it again.
+/// Loads `path` as the graph's column lineage, over the manifest already read,
+/// under the lock the watcher and a fetch take, and records its time so the
+/// watcher does not load it again.
 async fn show_cache(st: &AppState, path: PathBuf) -> Result<(), Response> {
     let _cache = st.cll_lock.lock().await;
     st.set_cll(path.clone());
-    let (root, manifest, catalog) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone());
-    match tokio::task::spawn_blocking(move || load_graph(&root, &manifest, &catalog, &path)).await {
-        Ok(Ok(g)) => {
-            if let Ok(mut seen) = st.seen.lock() {
-                seen[2] = g.meta.cll_mtime;
-            }
-            *st.graph.write().await = Arc::new(g);
-            Ok(())
-        }
-        Ok(Err(e)) => Err(err(e)),
-        Err(e) => Err(err(e)),
+    let base = st.base.read().await.clone();
+    let g = tokio::task::spawn_blocking(move || with_cache(&base, &path)).await.map_err(err)?;
+    if let Ok(mut seen) = st.seen.lock() {
+        seen[2] = g.meta.cll_mtime;
     }
+    *st.graph.write().await = Arc::new(g);
+    Ok(())
 }
 
 /// Switches the script off at once and stops it in the background: stopping
@@ -389,8 +433,7 @@ async fn select_cll_source(State(st): State<Arc<AppState>>, Json(b): Json<CllSou
         (None, Some(file)) => collin::Wanted::File(file),
         (None, None) => return (StatusCode::BAD_REQUEST, "name a tool or a cache file").into_response(),
     };
-    let dir = st.target_dir.clone();
-    let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+    let found = caches(&st).await;
     let (path, live) = match collin::pick(&st.target_dir, &found, wanted, st.snowflake_allowed().await) {
         Ok(chosen) => chosen,
         Err(collin::Refusal::SnowflakeOff) => return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response(),
@@ -467,8 +510,7 @@ async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBod
         let shown = collin::tool_of(&st.graph.read().await.meta.cll_source) == "snowflake";
         if !on && (st.sidecar.enabled() || shown || !st.cll().is_file()) {
             stop_fetching(&st);
-            let dir = st.target_dir.clone();
-            let found = tokio::task::spawn_blocking(move || collin::discover(&dir)).await.unwrap_or_default();
+            let found = caches(&st).await;
             let remembered = saved.map_or_else(|_| st.settings.load(), |s| s).cll_file;
             let path = collin::choose(&st.target_dir, &found, remembered.as_deref(), false, false);
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
@@ -483,14 +525,8 @@ async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBod
 
 async fn reload(State(st): State<Arc<AppState>>) -> Response {
     let _cache = st.cll_lock.lock().await;
-    let (root, path, cat, cll) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
-    match tokio::task::spawn_blocking(move || load_graph(&root, &path, &cat, &cll)).await {
-        Ok(Ok(g)) => {
-            let meta = g.meta.clone();
-            *st.graph.write().await = Arc::new(g);
-            Json(meta).into_response()
-        }
-        Ok(Err(e)) => err(e),
+    match load_all(&st).await {
+        Ok(g) => Json(g.meta.clone()).into_response(),
         Err(e) => err(e),
     }
 }
@@ -1592,20 +1628,39 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
         added = n;
         // Fetching is an explicit request for Snowflake's answer, so its cache
         // becomes the active one. The graph could not show both anyway.
-        if st.cll() != path {
+        let switched = st.cll() != path;
+        if switched {
             st.set_cll(path.clone());
             if let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) {
                 let _ = st.settings.update(|s| s.cll_file = Some(name)).await;
             }
         }
-        let mtime = mtime_secs(&st.cll());
+        let mtime = mtime_secs(&path);
         if let Ok(mut seen) = st.seen.lock() {
             seen[2] = mtime;
         }
-        let mut current = st.graph.write().await;
-        let graph = Arc::make_mut(&mut current);
-        graph.merge_col_lineage(cache, mtime);
-        graph.meta.cll_file = st.cll().display().to_string();
+        let file = path.display().to_string();
+        if switched {
+            // Another file was on screen, and the columns it added go with it.
+            let base = st.base.read().await.clone();
+            let Ok(fresh) = tokio::task::spawn_blocking(move || {
+                let mut graph = (*base).clone();
+                graph.merge_col_lineage(cache, mtime);
+                graph.meta.cll_file = file;
+                graph
+            })
+            .await
+            else {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "merging the lineage failed").into_response();
+            };
+            *st.graph.write().await = Arc::new(fresh);
+        } else {
+            // The same file, grown: every column it added before is still in it.
+            let mut current = st.graph.write().await;
+            let graph = Arc::make_mut(&mut current);
+            graph.merge_col_lineage(cache, mtime);
+            graph.meta.cll_file = file;
+        }
     }
     let graph = st.graph.read().await.clone();
     let (up, down) = match (graph.cll.as_ref(), graph.index.get(&b.id)) {
@@ -2017,25 +2072,37 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         let stamps = tokio::task::spawn_blocking(move || [mtime_secs(&mp), mtime_secs(&cp), mtime_secs(&lp)])
             .await
             .unwrap_or([0, 0, 0]);
-        let changed = st.seen.lock().is_ok_and(|mut seen| {
-            let changed = stamps.iter().zip(seen.iter()).any(|(now, before)| *now != 0 && now != before);
-            if changed {
-                *seen = stamps;
-            }
-            changed
-        });
+        let (changed, artifacts) = st
+            .seen
+            .lock()
+            .map(|mut seen| {
+                let moved = |i: usize| stamps[i] != 0 && stamps[i] != seen[i];
+                let artifacts = moved(0) || moved(1);
+                let changed = artifacts || moved(2);
+                if changed {
+                    *seen = stamps;
+                }
+                (changed, artifacts)
+            })
+            .unwrap_or((false, false));
         if !changed {
             continue;
         }
         // Give dbt a moment to finish writing.
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let (root, mp, cp, lp) = (st.root.clone(), st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
-        if let Ok(Ok(g)) = tokio::task::spawn_blocking(move || load_graph(&root, &mp, &cp, &lp)).await {
-            eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
-            *st.graph.write().await = Arc::new(g);
-            // A parse just landed, so the badge should turn green on the next
-            // poll rather than a cache lifetime later.
-            *st.fresh.lock().await = None;
+        if artifacts {
+            if let Ok(g) = load_all(&st).await {
+                eprintln!("  artifacts reloaded ({} nodes, {} ms)", g.nodes.len(), g.meta.load_ms);
+                // A parse just landed, so the badge should turn green on the
+                // next poll rather than a cache lifetime later.
+                *st.fresh.lock().await = None;
+            }
+        } else {
+            // Only the cache moved: the manifest under it is the one already read.
+            let (base, lp) = (st.base.read().await.clone(), st.cll());
+            if let Ok(g) = tokio::task::spawn_blocking(move || with_cache(&base, &lp)).await {
+                *st.graph.write().await = Arc::new(g);
+            }
         }
     }
 }
@@ -2113,6 +2180,8 @@ mod tests {
             file_index: RwLock::new(Arc::new(Vec::new())),
             settings,
             graph: RwLock::new(Arc::new(Graph::build(Default::default(), &manifest, 0, 0))),
+            base: RwLock::new(Arc::new(Graph::build(Default::default(), &manifest, 0, 0))),
+            cll_headers: Default::default(),
             git: tokio::sync::Mutex::new(None),
             fresh: tokio::sync::Mutex::new(None),
             shell: ShellSpec { program: "/bin/sh".into(), args: Vec::new() },
@@ -2351,6 +2420,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Why `base` exists: merging adds the columns a cache knows and the YAML
+    /// does not, and never removes them, so switching merges into a copy of the
+    /// graph as the manifest and catalog left it.
+    #[test]
+    fn a_cache_laid_over_another_keeps_none_of_its_columns() {
+        let root = temp_project("base");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let model = |name: &str| {
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/{name}.sql"),
+                "columns": { "id": { "name": "id" } },
+            })
+        };
+        let manifest = serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "nodes": { "model.demo.stg": model("stg"), "model.demo.orders": model("orders") },
+        });
+        std::fs::write(target.join("manifest.json"), manifest.to_string()).unwrap();
+        let cache = |file: &str, source: &str, col: &str| {
+            let edge = serde_json::json!({ "from": "model.demo.stg", "from_col": col, "to": "model.demo.orders", "to_col": col });
+            let body = serde_json::json!({ "version": 1, "source": source, "edges": [edge] });
+            std::fs::write(target.join(file), body.to_string()).unwrap();
+            target.join(file)
+        };
+        let (a, b) = (cache("column_lineage.collin.json", "collin", "only_a"), cache("column_lineage.x.json", "x", "only_b"));
+        let columns = |g: &Graph| -> Vec<String> {
+            g.nodes[g.index["model.demo.orders"] as usize].columns.iter().map(|c| c.name.clone()).collect()
+        };
+
+        let base = load_base(&root, &target.join("manifest.json"), &target.join("catalog.json")).unwrap();
+        let over_a = with_cache(&base, &a);
+        assert_eq!(columns(&over_a), ["id", "only_a"]);
+        assert_eq!(columns(&with_cache(&base, &b)), ["id", "only_b"]);
+        assert_eq!(columns(&with_cache(&base, Path::new(""))), ["id"], "no cache, no lineage columns");
+        assert_eq!(columns(&base), ["id"], "the base is never merged into");
+
+        // What switching over the graph on screen would have drawn.
+        let mut laid_over = over_a.clone();
+        merge_cache(&mut laid_over, &b);
+        assert_eq!(columns(&laid_over), ["id", "only_a", "only_b"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// Off, Snowflake is not offered at all: not its tool, not a cache it
     /// wrote, not the profile. The adapter decides until the user does (0031).
     #[tokio::test]
@@ -2369,8 +2483,9 @@ mod tests {
         cache("column_lineage.collin.json", "collin");
         manifest("postgres");
         let (port, st, server) = serve(&root).await;
-        let load = || load_graph(&root, &target.join("manifest.json"), &target.join("catalog.json"), Path::new("")).unwrap();
-        *st.graph.write().await = Arc::new(load());
+        let load = || Arc::new(load_base(&root, &target.join("manifest.json"), &target.join("catalog.json")).unwrap());
+        *st.base.write().await = load();
+        *st.graph.write().await = load();
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");
         let post = |path: &str, body: &str| with_json("POST", path, &[("Host", &host), ("Origin", &own)], body);
@@ -2400,7 +2515,8 @@ mod tests {
 
         // A Snowflake manifest offers it without being asked.
         manifest("snowflake");
-        *st.graph.write().await = Arc::new(load());
+        *st.base.write().await = load();
+        *st.graph.write().await = load();
         let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
         assert!(meta.contains(r#""features":{"snowflake":true,"snowflake_set":false}"#), "{meta}");
         assert!(meta.contains("column_lineage.snowflake.json"), "{meta}");

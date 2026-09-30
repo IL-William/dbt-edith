@@ -79,12 +79,13 @@ async fn main() -> anyhow::Result<()> {
     let saved = settings.load();
     let target_dir = manifest_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.join("target"));
 
-    // Loaded without column lineage first: whether a Snowflake cache may be
-    // loaded depends on the adapter this manifest names (0031).
-    let mut graph = if manifest_path.exists() {
+    // Loaded without column lineage first. That is the base every cache is
+    // merged into, and whether a Snowflake cache may be loaded at all depends on
+    // the adapter this manifest names (0031).
+    let base = if manifest_path.exists() {
         eprintln!("  reading {}", manifest_path.display());
         let (project, path, cat) = (root.clone(), manifest_path.clone(), catalog_path.clone());
-        let g = tokio::task::spawn_blocking(move || api::load_graph(&project, &path, &cat, Path::new(""))).await??;
+        let g = tokio::task::spawn_blocking(move || api::load_base(&project, &path, &cat)).await??;
         let c = &g.meta.counts;
         eprintln!(
             "  {} nodes in {} ms  ({} models, {} sources, {} tests, {} macros)",
@@ -106,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
         graph::Graph::build(Default::default(), &manifest_path, 0, 0)
     };
 
-    let snowflake = settings::snowflake_features(saved.snowflake_features, &graph.meta.adapter);
+    let snowflake = settings::snowflake_features(saved.snowflake_features, &base.meta.adapter);
     let live = saved.snowflake_lineage && snowflake;
     let found = collin::discover(&target_dir);
     let cll_path = match args.column_lineage.clone() {
@@ -131,11 +132,11 @@ async fn main() -> anyhow::Result<()> {
             collin::choose(&target_dir, &found, saved.cll_file.as_deref(), live, snowflake)
         }
     };
-    let graph = {
+    let (base, graph) = {
         let path = cll_path.clone();
         tokio::task::spawn_blocking(move || {
-            api::merge_cache(&mut graph, &path);
-            graph
+            let graph = api::with_cache(&base, &path);
+            (base, graph)
         })
         .await?
     };
@@ -158,6 +159,8 @@ async fn main() -> anyhow::Result<()> {
         file_index: tokio::sync::RwLock::new(Arc::new(files::scan(&root))),
         settings,
         graph: tokio::sync::RwLock::new(Arc::new(graph)),
+        base: tokio::sync::RwLock::new(Arc::new(base)),
+        cll_headers: Default::default(),
         git: tokio::sync::Mutex::new(None),
         fresh: tokio::sync::Mutex::new(None),
         shell: shell.clone(),
