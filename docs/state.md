@@ -3,13 +3,13 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-09-28.
+belongs here. Last updated 2026-09-29.
 
 ## Shipped
 
 Editor with clickable `ref()`, `source()` and macro calls and Jinja coloured by role,
-lineage graph in model and column modes, column lineage fetched from Snowflake
-when a column is clicked and the switch in Catalog > Columns is on (0016),
+lineage graph in model and column modes, column lineage from the tool picked in
+the top bar, Snowflake's fetched when a column is clicked (0016, 0031),
 terminal, file explorer with git and
 unsaved colouring, search across nodes, file names and file contents, Catalog with columns and
 locations, the compiled and run SQL under target/ with freshness, git panel (status, branch switch, stage,
@@ -240,6 +240,51 @@ the page, not the browser: not yet opened on the VM, where Edge itself has to
 leave `Ctrl + F`, `F3` and `F1` to the page, as Chromium does for any key it
 does not reserve.
 
+Column lineage by tool, added 2026-09-29 (0031): the read-only chip in the top
+bar is now a menu of Fusion, Collin and Snowflake, each in its own colour, and
+the same menu sits in Catalog > Columns. The menu there had never worked: the
+page never read the caches `/api/meta` listed, and picking one called an
+`api.post` that did not exist, so a project with collin's cache could only ever
+show it. A tool is its newest cache, by the producer the header names; older
+files and other producers' stay under "other caches". Picking Snowflake is one
+request that also starts the script, so the old switch, and `POST /api/sidecar`,
+are gone. Snowflake's features sit behind a switch in a new menu, opened by a
+snowflake in the top bar, which follows the manifest's adapter until the user
+chooses; off, the server refuses the tool, its caches, a fetch and the profile. The switch and the Snowflake
+entry are marked alpha until the first real answer from a warehouse, under
+Waiting on a human below. The icon beside the switch is a snowflake drawn here,
+not Snowflake's logo: their marks are licensed only for uses they approve in
+writing, and this repository is public (0014).
+
+Driven in headless Chrome on an invented project with a collin, a Snowflake and
+a synthetic cache: the greyed Fusion entry and its tooltip, picking each entry,
+the setting on and off with the Snowflake entry and the profile link going with
+it, the script's `starting` then `failed` in both buttons, and Escape. Startup
+checked with the setting unset on a `snowflake` and a `postgres` adapter, and a
+Snowflake `--column-lineage` refused while off. The 18 825 node project holds
+only a legacy `column_lineage.json` whose source is Snowflake, which the menu
+files under Snowflake. Not yet opened on the VM.
+
+Switching tools no longer reads the manifest. Merging a cache adds the columns
+it knows and the YAML does not, and never removes them, so switching used to
+re-read everything to shed the last cache's columns. The server now keeps a
+second graph, `base`, holding the manifest and the catalog alone, and merges the
+chosen cache into a copy of it. The menu's list of caches reads a file's header
+once per version of the file, where it read every cache in full each time the
+menu opened. Measured in release against the build before:
+
+| | before | after |
+| --- | --- | --- |
+| switching on the 18 825 node project | 438 ms | 25 ms |
+| switching to a cache of 250 000 edges, 46 MB | 1 280 to 1 500 ms | 720 to 900 ms |
+| opening the menu beside three such caches | 106 ms | under 1 ms |
+| memory at startup, 18 825 node project | 135 MB | 181 MB |
+| memory after switching, same project | 353 MB | 227 MB |
+
+The 46 MB more at startup is the price of the second graph. Memory after
+switching falls, because a switch no longer parses a 110 MB manifest to throw
+the old one away. What a large cache still costs is parsing its own JSON.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -279,10 +324,12 @@ on one pixel; network simplex for the columns, which would move the marts to
 the end; and the Kahn layering in `Graph::selection`, which places nothing any
 more and could simply send depth 0.
 
-Sketched but not started: a second column-lineage source using dbt Fusion's
-local index (`dbt compile --static-analysis strict --write-index
---write-lineage`), which needs no warehouse privileges and covers uncommitted
-SQL. It fills the same cache file (0008).
+Sketched but not started: a column-lineage source using dbt Fusion's local
+index (`dbt compile --static-analysis strict --write-index --write-lineage`),
+which needs no warehouse privileges and covers uncommitted SQL. The index is
+parquet under `target/index/`, so it needs a converter outside this binary
+(0003). It would write `column_lineage.fusion.json`, which the menu's greyed
+Fusion entry already waits for (0031).
 
 0.6.0 ships everything since 0.4.0: the manifest freshness badge, the Compiled
 and Run tabs, the tests in the Catalog, the lineage export and its folder bands,
@@ -337,12 +384,17 @@ cross-compile.
 - **A synthetic column-lineage cache looks exactly like a real one** apart from
   its `source` field. If the column graph looks suspiciously complete, check
   what produced the cache before trusting a screenshot of it.
+- **The graph is held twice**, as `base` (manifest and catalog) and `graph`
+  (`base` with the chosen cache merged into a copy). Anything that reads the
+  manifest or the catalog again replaces both, through `load_all`; replacing
+  `graph` alone brings the old manifest back on the next switch, which reads
+  `base`. A test that swaps in its own graph sets both for the same reason.
 - **Release binaries embed the frontend** (0005). A frontend fix that appears to
   do nothing usually means the release binary was not rebuilt. The build stamp
   in the status bar settles it: compare it with `git describe` in the clone.
-- **Switching Snowflake lineage on proves nothing about Snowflake.** It checks
-  Python, the profile and the connector, all local. The first click is what
-  reaches the warehouse, and what may open a sign-in tab.
+- **Picking Snowflake proves nothing about Snowflake.** It checks Python, the
+  profile and the connector, all local. The first click is what reaches the
+  warehouse, and what may open a sign-in tab.
 - **A manifest carries the separator of the machine that parsed it.** A project
   parsed on the Windows VM gives every node an `original_file_path` full of
   backslashes, which a macOS or Linux dbt-edith then has to read. `Graph::build`
@@ -352,9 +404,12 @@ cross-compile.
 - **The test harnesses slice `web/app.js` by function name** (0013). Renaming a
   sliced function breaks its harness; `./scripts/check.sh` catches it.
   `web/tests/selection.js` slices from `selectKindCounts` to
-  `async function loadSidecar`, and `folders.js` reads the same range, so
-  anything new between those two has to be pure or it dies at eval time rather
-  than at an assertion. `humanAge` is now the
+  `async function loadSidecar`, and `folders.js` and `export.js` read the same
+  range, so anything new between those two has to be pure or it dies at eval
+  time rather than at an assertion. `web/tests/collineage.js` slices from
+  `function sidecarLabel` to `function profileLink`, which holds the column
+  lineage menu: only declarations there, and the tool table is
+  `lineageToolDefs()` rather than a constant for that reason. `humanAge` is now the
   start of two slices, `compiled.js` up to `freshnessBadge` and `freshness.js`
   up to `sendToTerminal`, so `artifactBar` between them is read by both and has
   to stay pure. `web/tests/testchips.js` slices from `testChips` to

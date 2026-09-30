@@ -48,7 +48,7 @@ struct Args {
     #[arg(long)]
     catalog: Option<PathBuf>,
 
-    /// Path to the column lineage cache (default: <project>/target/column_lineage.json)
+    /// Path to the column lineage cache (default: the tool last picked in the menu, else the newest target/column_lineage*.json)
     #[arg(long)]
     column_lineage: Option<PathBuf>,
 
@@ -74,39 +74,18 @@ async fn main() -> anyhow::Result<()> {
     let manifest_path = args.manifest.unwrap_or_else(|| root.join("target").join("manifest.json"));
     let catalog_path = args.catalog.unwrap_or_else(|| root.join("target").join("catalog.json"));
     // The store is built here rather than inside AppState because the cache the
-    // user last chose decides which file is loaded before the graph exists.
+    // user last chose decides which file is loaded before the state exists.
     let settings = settings::Store::new(&root);
+    let saved = settings.load();
     let target_dir = manifest_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.join("target"));
-    let cll_path = args.column_lineage.clone().unwrap_or_else(|| {
-        // A project can hold one cache per producer. Honour the saved choice,
-        // fall back to the most recent, and keep the legacy name when there is
-        // nothing to choose from.
-        let found = collin::discover(&target_dir);
-        let saved = settings.load().cll_file;
-        let chosen = saved
-            .as_deref()
-            .and_then(|f| collin::resolve_choice(&found, f))
-            .or_else(|| collin::default_choice(&found));
-        match chosen {
-            Some(c) => target_dir.join(&c.file),
-            None => target_dir.join("column_lineage.json"),
-        }
-    });
-    if args.column_lineage.is_none() {
-        let found = collin::discover(&target_dir);
-        if found.len() > 1 {
-            let names: Vec<String> = found
-                .iter()
-                .map(|a| if a.source.is_empty() { a.file.clone() } else { a.source.clone() })
-                .collect();
-            eprintln!("  {} column lineage caches: {}", found.len(), names.join(", "));
-        }
-    }
 
-    let graph = if manifest_path.exists() {
+    // Loaded without column lineage first. That is the base every cache is
+    // merged into, and whether a Snowflake cache may be loaded at all depends on
+    // the adapter this manifest names (0031).
+    let base = if manifest_path.exists() {
         eprintln!("  reading {}", manifest_path.display());
-        let (project, path, cat, cll) = (root.clone(), manifest_path.clone(), catalog_path.clone(), cll_path.clone());
-        let g = tokio::task::spawn_blocking(move || api::load_graph(&project, &path, &cat, &cll)).await??;
+        let (project, path, cat) = (root.clone(), manifest_path.clone(), catalog_path.clone());
+        let g = tokio::task::spawn_blocking(move || api::load_base(&project, &path, &cat)).await??;
         let c = &g.meta.counts;
         eprintln!(
             "  {} nodes in {} ms  ({} models, {} sources, {} tests, {} macros)",
@@ -128,10 +107,41 @@ async fn main() -> anyhow::Result<()> {
         graph::Graph::build(Default::default(), &manifest_path, 0, 0)
     };
 
-    let target_dir = manifest_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.join("target"));
+    let snowflake = settings::snowflake_features(saved.snowflake_features, &base.meta.adapter);
+    let live = saved.snowflake_lineage && snowflake;
+    let found = collin::discover(&target_dir);
+    let cll_path = match args.column_lineage.clone() {
+        // Named on the command line, and still not loaded if it is Snowflake's
+        // answer while Snowflake's features are off.
+        Some(path) if !snowflake && collin::tool_in(&path) == "snowflake" => {
+            eprintln!("  {} not loaded: it holds Snowflake's lineage, and Snowflake's features are off", path.display());
+            PathBuf::new()
+        }
+        Some(path) => path,
+        None => {
+            // A project can hold one cache per producer: the saved choice, else
+            // the most recent that may be offered.
+            let offered: Vec<&str> = found
+                .iter()
+                .filter(|a| collin::offered(a, snowflake))
+                .map(|a| if a.source.is_empty() { a.file.as_str() } else { a.source.as_str() })
+                .collect();
+            if offered.len() > 1 {
+                eprintln!("  {} column lineage caches: {}", offered.len(), offered.join(", "));
+            }
+            collin::choose(&target_dir, &found, saved.cll_file.as_deref(), live, snowflake)
+        }
+    };
+    let (base, graph) = {
+        let path = cll_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let graph = api::with_cache(&base, &path);
+            (base, graph)
+        })
+        .await?
+    };
+
     let seen = [graph.meta.manifest_mtime, graph.meta.catalog_mtime, graph.meta.cll_mtime];
-    let settings = settings::Store::new(&root);
-    let snowflake_on = settings.load().snowflake_lineage;
     let venv = venv::detect(&root);
     let shell = pty::ShellSpec::detect(args.shell);
     // Bound before the state exists: the guard in api.rs compares Host and
@@ -149,10 +159,13 @@ async fn main() -> anyhow::Result<()> {
         file_index: tokio::sync::RwLock::new(Arc::new(files::scan(&root))),
         settings,
         graph: tokio::sync::RwLock::new(Arc::new(graph)),
+        base: tokio::sync::RwLock::new(Arc::new(base)),
+        cll_headers: Default::default(),
         git: tokio::sync::Mutex::new(None),
         fresh: tokio::sync::Mutex::new(None),
         shell: shell.clone(),
-        sidecar: sidecar::Sidecar::new(snowflake_on, Default::default()),
+        sidecar: sidecar::Sidecar::new(live, Default::default()),
+        snowflake_features: std::sync::Mutex::new(saved.snowflake_features),
         cll_lock: tokio::sync::Mutex::new(()),
         seen: std::sync::Mutex::new(seen),
     });
@@ -160,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(api::watch_artifacts(state.clone()));
     tokio::spawn(api::watch_remote(state.clone()));
     tokio::spawn(api::watch_files(state.clone()));
-    if snowflake_on {
+    if live {
         // Starting runs no query: the script connects on the first click (0016).
         let st = state.clone();
         tokio::spawn(async move { st.sidecar.start_for(&st.root, &st.venv).await });
@@ -177,8 +190,8 @@ async fn main() -> anyhow::Result<()> {
             if venv.python.is_empty() { String::new() } else { format!(", python {}", venv.python) },
         );
     }
-    if snowflake_on {
-        eprintln!("  snowflake column lineage on, connecting on the first column click");
+    if live {
+        eprintln!("  column lineage from Snowflake, connecting on the first column click");
     }
     eprintln!("  open      {url}\n");
 

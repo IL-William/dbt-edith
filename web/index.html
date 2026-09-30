@@ -16,10 +16,14 @@
   <span class="sep"></span>
   <span id="project" class="muted">loading…</span>
   <span id="counts" class="chips"></span>
+  <span id="cll-pick-host"></span>
   <span id="profile-chip" class="chips"></span>
   <div class="grow"></div>
   <button id="palette-btn" class="btn" title="Search models and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
   <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
+  <!-- Its icon is snowflakeIcon(), drawn by the page, so the menu and the button share one drawing. -->
+  <button id="settings-btn" class="btn keysbtn" type="button" data-tool="snowflake" title="Snowflake features"
+          aria-label="Snowflake features" aria-haspopup="menu"></button>
   <button id="fresh-badge" class="freshbadge hidden" type="button">
     <span class="dot"></span><span class="lbl"></span><span class="drift"></span>
   </button>

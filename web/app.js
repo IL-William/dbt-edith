@@ -34,7 +34,12 @@ const S = {
   dock: 'lineage',            // the dock tab on screen
   lastPane: '',               // the pane last clicked or focused, for a Cmd+F with nothing focused
   keysReturn: null,           // where focus goes back to when the shortcut list closes
-  sidecar: null,              // payload of /api/sidecar: the Snowflake lineage switch and its script
+  sidecar: null,              // payload of /api/sidecar: whether Snowflake is picked, and its script
+  sidecarPoll: 0,             // the timer asking again while the script starts
+  cllSources: [],             // column-lineage caches /api/meta offers, newest first
+  cllActive: '',              // file name of the one the graph holds, '' for none
+  cllTool: '',                // fusion | collin | snowflake | '' for another producer or none
+  features: null,             // { snowflake, snowflake_set }: which feature families are on
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
   nodeCache: new Map(),       // /api/node payloads, by query: hover asks far more often than click
@@ -2870,23 +2875,38 @@ function historyStep(list, at, dir) {
   return next >= list.length ? list.length - 1 : next;
 }
 
-// ------------------------------------------------------ snowflake lineage --
-/* Column lineage fetched from Snowflake on click. The server starts
-   tools/sf_lineage.py while the switch is on, and the script connects on the
-   first column click, never before (0016). */
+// ------------------------------------------------------ column lineage tool --
+/* Where the column lineage comes from: Fusion, Collin, or Snowflake fetched on
+   click (0031). Picking Snowflake starts tools/sf_lineage.py, and the script
+   connects on the first column click, never before (0016). */
 async function loadSidecar() {
+  const was = S.sidecar && S.sidecar.state;
   try { S.sidecar = await api.get('/api/sidecar'); } catch { S.sidecar = null; }
+  paintSidecar(was);
+}
+
+/* Paints what the script's state shows in, and keeps asking while it starts:
+   the server starts it in the background, and nothing else would come back to
+   say how the start ended. */
+function paintSidecar(was) {
+  paintSourceButton();
   paintProfileChip();
+  const sc = S.sidecar;
+  const now = sc ? sc.state : '';
+  if (now !== was && S.node) renderCatalog(S.node);
+  if (was === 'starting' && now === 'failed') toast('Snowflake lineage: ' + (sc.error || 'the script could not start'), 'err');
+  clearTimeout(S.sidecarPoll);
+  if (now === 'starting') S.sidecarPoll = setTimeout(loadSidecar, 1500);
 }
 
 const sidecarOn = () => !!(S.sidecar && S.sidecar.enabled);
 
-/* Label, tone and tooltip of the switch for one /api/sidecar payload. */
+/* Label, tone and tooltip of the Snowflake script for one /api/sidecar payload. */
 function sidecarLabel(sc) {
   if (!sc || !sc.enabled) {
     return {
       text: 'Snowflake lineage: off', tone: 'off',
-      title: 'Switch on to fetch a column\'s lineage from Snowflake when you click it. '
+      title: 'Pick Snowflake in the column lineage menu to fetch a column\'s lineage when you click it. '
         + 'dbt-edith starts tools/sf_lineage.py with your dbt profile, and nothing connects before the first click.',
     };
   }
@@ -2909,8 +2929,9 @@ function sidecarLabel(sc) {
   }
 }
 
-/* What to say beside the switch: the script's trouble, or what to do next.
-   The tooltip alone was invisible, and a toast is gone in three seconds. */
+/* What to say beside the menu in the Columns tab: the script's trouble, or what
+   to do next. The tooltip alone was invisible, and a toast is gone in three
+   seconds. */
 function columnsHint(sc, cached) {
   if (!sc || !sc.enabled) return null;
   if (sc.state === 'failed') return { text: sc.error || 'the Snowflake script could not start', tone: 'failed' };
@@ -2929,169 +2950,203 @@ function cacheAge(mtime) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-/* What one entry of the producer menu reads as. A cache with no source field is
-   not named "unknown" but by its file, which is the only true thing about it. */
+/* What one cache reads as in the menu. A cache with no source field is not
+   named "unknown" but by its file, which is the only true thing about it. */
 function sourceLabel(src) {
   const name = src.source || src.file.replace(/^column_lineage\.?|\.json$/g, '') || src.file;
   const bits = [src.target, cacheAge(src.mtime)].filter(Boolean);
   return { name, sub: bits.join(' · ') };
 }
 
-/* The producer of the column lineage on screen.
+/* The tools the menu offers, in its order. A function rather than a constant,
+   because the harness evaluates this part of the file and a const does not
+   outlive its eval. `missing` is what a greyed entry says. */
+function lineageToolDefs() {
+  return [
+    { tool: 'fusion', label: 'Fusion',
+      missing: 'No column_lineage.fusion.json beside the manifest. dbt Fusion keeps its lineage as parquet under '
+        + 'target/index/, which nothing here converts yet.' },
+    { tool: 'collin', label: 'Collin',
+      missing: 'No column_lineage.collin.json beside the manifest: run collin over the compiled SQL to write one.' },
+    { tool: 'snowflake', label: 'Snowflake', missing: '' },
+  ];
+}
 
-   One control rather than two: the graph holds one source at a time, so picking
-   a cache and switching Snowflake fetching on are the same decision made twice.
-   The live entry is last and marked, because it is the only one that reaches a
-   warehouse. */
+/* What the menu offers, from the caches the server found, newest first, and
+   what the graph holds. Each tool stands for its newest cache; every other
+   file, an older one of a tool's included, stays pickable under "other
+   caches" (0021). Snowflake is left out entirely while its features are off,
+   and is otherwise never greyed, since it can always fetch on click (0031). */
+function lineageTools(sources, active, live, snowflake) {
+  const tools = [];
+  const taken = new Set();
+  for (const def of lineageToolDefs()) {
+    const snow = def.tool === 'snowflake';
+    if (snow && !snowflake) continue;
+    const src = sources.find((s) => s.tool === def.tool) || null;
+    if (src) taken.add(src.file);
+    const onScreen = !!src && src.file === active;
+    let title = def.missing;
+    if (snow) {
+      title = 'Fetches a column\'s lineage from Snowflake when you click it, under your dbt profile.'
+        + (src ? `\nAdds to ${src.file}` : '');
+    } else if (src) {
+      title = src.file + (src.generated_at ? `\nwritten ${src.generated_at}` : '');
+    }
+    tools.push({
+      tool: def.tool, label: def.label, src,
+      available: snow || !!src,
+      active: snow ? live || onScreen : !live && onScreen,
+      sub: src ? sourceLabel(src).sub : (snow ? 'fetch on click' : 'no cache'),
+      title,
+    });
+  }
+  const others = sources
+    .filter((s) => !taken.has(s.file) && (snowflake || s.tool !== 'snowflake'))
+    .map((src) => ({ src, active: !live && src.file === active }));
+  return { tools, others };
+}
+
+/* Where the edges on screen came from, for a tooltip. Always the producer by
+   name: mistaking synthetic or stale edges for warehouse truth is the
+   expensive failure mode here. */
+function cacheTitle(m) {
+  return [
+    `column lineage from ${m.cll_source || 'a cache that names no producer'}${m.cll_target ? `, target ${m.cll_target}` : ''}`,
+    m.cll_file,
+    m.cll_generated_at && `written ${m.cll_generated_at}`,
+    m.cll_dropped && `${m.cll_dropped} row(s) dropped as unknown`,
+  ].filter(Boolean).join('\n');
+}
+
+/* What the menu's button says: the tool whose edges are on screen, never what
+   the menu merely offers. Snowflake picked says so before its first fetch,
+   with the script's state beside it. */
+function lineagePickLabel(meta, tool, live, sc) {
+  const m = meta || {};
+  const count = m.cll_edges ? `${m.cll_edges} col edge${m.cll_edges > 1 ? 's' : ''}` : '';
+  if (live) {
+    const script = sidecarLabel(sc);
+    const state = { starting: 'starting', busy: 'querying', failed: 'failed' }[sc && sc.state] || '';
+    return { tool: 'snowflake', name: 'Snowflake', detail: count || 'fetch on click', state, tone: script.tone,
+      title: [script.title, m.cll_file && cacheTitle(m)].filter(Boolean).join('\n\n') };
+  }
+  if (!m.cll_file) {
+    return { tool: '', name: 'column lineage: none', detail: '', state: '', tone: 'off',
+      title: 'No column lineage on screen. Pick where it comes from in this menu.' };
+  }
+  const def = lineageToolDefs().find((d) => d.tool === tool);
+  const name = def ? def.label : (m.cll_source || m.cll_file.split(/[\\/]/).pop());
+  return { tool: def ? def.tool : '', name, detail: count || 'no edges', state: '', tone: 'on', title: cacheTitle(m) };
+}
+
+/* Why Snowflake's features are on or off, under the switch. */
+function featureNote(f, adapter) {
+  if (!f) return '';
+  const now = f.snowflake ? 'on' : 'off';
+  if (f.snowflake_set) return `${now}, as chosen for this project`;
+  if (!adapter) return 'off: the manifest names no adapter';
+  return `${now} because the manifest's adapter is ${adapter}`;
+}
+
+/* The column lineage menu's button. There are two, in the top bar and in the
+   Columns tab, so it is a class and every copy is painted at once. */
 function sourceMenu() {
-  const wrap = document.createElement('span');
-  wrap.className = 'srcpick';
   const b = document.createElement('button');
-  b.id = 'cll-source';
-  b.className = 'btn sm';
-  paintSourceButton(b);
+  b.type = 'button';
+  b.className = 'btn sm cllpick';
+  b.setAttribute('aria-haspopup', 'menu');
   b.addEventListener('click', (e) => {
     e.stopPropagation();
     openSourceMenu(b);
   });
-  wrap.appendChild(b);
-  return wrap;
-}
-
-function paintSourceButton(b = $('#cll-source')) {
-  if (!b) return;
-  if (sidecarOn()) {
-    const label = sidecarLabel(S.sidecar);
-    b.textContent = `source: Snowflake, live \u25be`;
-    b.dataset.tone = label.tone;
-    b.title = label.title;
-    return;
-  }
-  const active = (S.cllSources || []).find((x) => x.file === S.cllActive);
-  if (!active) {
-    b.textContent = 'source: none \u25be';
-    b.dataset.tone = 'off';
-    b.title = 'No column lineage cache beside the manifest. Generate one, or switch on Snowflake to fetch per column.';
-    return;
-  }
-  const { name, sub } = sourceLabel(active);
-  b.textContent = `source: ${name} \u25be`;
-  b.dataset.tone = 'on';
-  b.title = `column lineage from ${name}${sub ? ` (${sub})` : ''}\n${active.file}`;
-}
-
-function openSourceMenu(anchor) {
-  closeMenus();
-  const menu = document.createElement('div');
-  menu.className = 'envmenu';
-  const add = (name, sub, on, onPick) => {
-    const item = document.createElement('button');
-    const check = document.createElement('span');
-    check.className = 'check';
-    check.textContent = on ? '\u2713' : '';
-    const lbl = document.createElement('span');
-    lbl.className = 'lbl';
-    lbl.textContent = name;
-    item.append(check, lbl);
-    if (sub) {
-      const s = document.createElement('span');
-      s.className = 'sub';
-      s.textContent = sub;
-      item.appendChild(s);
-    }
-    if (on) item.classList.add('on');
-    item.addEventListener('click', () => { closeMenus(); onPick(); });
-    menu.appendChild(item);
-  };
-
-  const sources = S.cllSources || [];
-  if (!sources.length) {
-    const p = document.createElement('div');
-    p.className = 'sub';
-    p.style.padding = '5px 8px';
-    p.textContent = 'no cache beside the manifest';
-    menu.appendChild(p);
-  }
-  for (const src of sources) {
-    const { name, sub } = sourceLabel(src);
-    add(name, sub, !sidecarOn() && src.file === S.cllActive, () => selectSource(src.file));
-  }
-  if (sources.length) menu.appendChild(document.createElement('hr'));
-  add('Snowflake, live', 'fetches on click', sidecarOn(), () => setSidecar(true));
-  if (sidecarOn()) add('stop fetching', '', false, () => setSidecar(false));
-
-  document.body.appendChild(menu);
-  const r = anchor.getBoundingClientRect();
-  menu.style.left = `${Math.max(6, Math.min(r.left, window.innerWidth - menu.offsetWidth - 6))}px`;
-  menu.style.top = `${r.bottom + 4}px`;
-  setTimeout(() => document.addEventListener('click', closeMenus, { once: true }), 0);
-}
-
-function closeMenus() {
-  $$('.envmenu').forEach((m) => m.remove());
-}
-
-async function selectSource(file) {
-  if (sidecarOn()) await setSidecar(false);
-  try {
-    const meta = await api.post('/api/collineage/source', { file });
-    S.meta = Object.assign({}, S.meta, meta);
-    S.cllActive = file;
-    paintSourceButton();
-    paintChips();
-    if (S.node) renderCatalog(S.node);
-    rerender();
-    toast(`column lineage from ${meta.cll_source || file}`);
-  } catch (e) {
-    toast('column lineage source: ' + e.message, 'err');
-  }
-}
-
-function sidecarSwitch() {
-  const b = document.createElement('button');
-  b.id = 'sidecar-switch';
-  b.className = 'btn sm sfswitch';
-  paintSidecarSwitch(b);
-  b.addEventListener('click', () => {
-    if (S.sidecar && S.sidecar.state === 'starting') return;
-    setSidecar(!sidecarOn());
-  });
+  paintSourceButton(b);
   return b;
 }
 
-function paintSidecarSwitch(b = $('#sidecar-switch')) {
-  if (!b) return;
-  const label = sidecarLabel(S.sidecar);
-  b.textContent = label.text;
-  b.dataset.tone = label.tone;
-  b.title = label.title;
-  // The script may still be starting in the background, as it does when
-  // dbt-edith starts with the switch already on.
-  if (S.sidecar && S.sidecar.state === 'starting') {
-    setTimeout(() => loadSidecar().then(() => paintSidecarSwitch()), 1500);
+function paintSourceButton(only) {
+  const label = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar);
+  const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
+  for (const b of only ? [only] : $$('.cllpick')) {
+    b.dataset.tool = label.tool;
+    b.dataset.tone = label.tone;
+    b.title = label.title;
+    b.textContent = '';
+    b.append(span('tooldot', ''), span('tname', label.name));
+    if (label.detail) b.append(span('tdetail', ` · ${label.detail}`));
+    if (label.state) b.append(span('tstate', ` · ${label.state}`));
+    b.append(span('caret', ' ▾'));
   }
 }
 
-async function setSidecar(enabled) {
-  S.sidecar = Object.assign({}, S.sidecar, { enabled, state: enabled ? 'starting' : 'off', error: '', log: [] });
-  paintProfileChip();
-  if (S.node) renderCatalog(S.node);
+async function openSourceMenu(anchor) {
+  if (closePopup(anchor)) return;
+  // Asked again, so a cache written since the page loaded is offered too.
+  try { applyLineage(await api.get('/api/meta')); } catch { /* what the page last knew still stands */ }
+  const snowflake = !!(S.features && S.features.snowflake);
+  const { tools, others } = lineageTools(S.cllSources || [], S.cllActive, sidecarOn(), snowflake);
+  const menu = document.createElement('div');
+  menu.className = 'envmenu cllmenu';
+  menu.setAttribute('role', 'menu');
+  const add = ({ label, sub, tool, on, disabled, title, badge, pick }) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(on));
+    item.dataset.tool = tool;
+    if (on) item.classList.add('on');
+    // Not `disabled`: a disabled button swallows the hover, and its tooltip
+    // is the only place that says what is missing.
+    if (disabled) item.setAttribute('aria-disabled', 'true');
+    if (title) item.title = title;
+    item.append(
+      Object.assign(document.createElement('span'), { className: 'check', textContent: on ? '✓' : '' }),
+      Object.assign(document.createElement('span'), { className: 'tooldot' }),
+      Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }),
+    );
+    if (badge) item.append(Object.assign(document.createElement('span'), { className: 'alpha', textContent: badge }));
+    if (sub) item.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
+    item.addEventListener('click', () => {
+      if (disabled) return;
+      closePopup();
+      pick();
+    });
+    menu.appendChild(item);
+  };
+  for (const t of tools) {
+    add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
+      badge: t.tool === 'snowflake' ? 'alpha' : '', pick: () => switchLineage({ tool: t.tool }) });
+  }
+  if (others.length) {
+    menu.appendChild(document.createElement('hr'));
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'menuhead', textContent: 'other caches' }));
+    for (const o of others) {
+      const { name, sub } = sourceLabel(o.src);
+      add({ label: name, sub, tool: o.src.tool || '', on: o.active, title: o.src.file,
+        pick: () => switchLineage({ file: o.src.file }) });
+    }
+  }
+  if (!snowflake) {
+    menu.appendChild(Object.assign(document.createElement('div'), {
+      className: 'menunote', textContent: 'Snowflake is off for this project: the settings menu turns it on.',
+    }));
+  }
+  openPopup(anchor, menu);
+}
+
+/* One request switches the graph's column lineage and whether a click fetches
+   from Snowflake, so the two can never disagree (0031). */
+async function switchLineage(body) {
   try {
-    S.sidecar = await api.send('/api/sidecar', 'POST', { enabled });
-    if (S.sidecar.state === 'failed') toast('Snowflake lineage: ' + S.sidecar.error, 'err');
+    applyInfo(await api.send('/api/collineage/source', 'POST', body));
+    const label = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar);
+    toast(`column lineage from ${label.name}`);
+    await redrawLineage();
   } catch (e) {
-    toast('Snowflake lineage: ' + e.message, 'err');
-    await loadSidecar();
+    toast('column lineage: ' + e.message, 'err');
   }
-  // The answer carries the file the script named, so the bar can say it now
-  // rather than on the next poll.
-  paintProfileChip();
-  if (S.node) renderCatalog(S.node);
 }
 
-/* A column clicked in the Catalog, or double-clicked on the canvas. With the
-   switch on, its lineage is fetched from Snowflake before it is drawn; off, the
-   cache is drawn as it is. */
 /* What a failed fetch should say. Only a connection Snowflake refused points at
    the profile: a query it rejected is about the object or the role, and a
    request this build got wrong is neither. */
@@ -3116,22 +3171,196 @@ function profileLink() {
 
 /* The profile the connection comes from is a fact about the project, so it sits
    in the top bar, not only where a column is clicked. Known once the script has
-   run and said which file it reads. */
+   run and said which file it reads, and shown only while Snowflake's features
+   are on, the one reason the file is reachable at all (0017, 0031). */
 function paintProfileChip() {
   const host = $('#profile-chip');
   host.textContent = '';
+  if (!(S.features && S.features.snowflake)) return;
   const link = profileLink();
   if (link) host.append(link);
-  // At startup the script may still be on its way to saying which file it
-  // reads, and nothing else would come back to fill this in.
-  else if (S.sidecar && S.sidecar.state === 'starting') setTimeout(loadSidecar, 1500);
+}
+
+/* The lineage fields of an /api/meta answer, which every route that switches
+   the lineage or a feature answers with. */
+function applyLineage(info) {
+  const was = S.sidecar && S.sidecar.state;
+  S.cllSources = info.cll_sources || [];
+  S.cllActive = info.cll_active || '';
+  S.cllTool = info.cll_tool || '';
+  S.features = info.features || null;
+  if (info.sidecar) S.sidecar = info.sidecar;
+  paintSidecar(was);
+  paintSettingsButton();
+}
+
+/* The button keeps Snowflake's colour whether the features are on or off:
+   it is where they are found, and a grey one was easy to miss. Off, it is only
+   muted, and its tooltip says which. */
+function paintSettingsButton() {
+  const on = !!(S.features && S.features.snowflake);
+  const b = $('#settings-btn');
+  b.dataset.on = String(on);
+  b.title = `Snowflake features: ${on ? 'on' : 'off'} for this project (alpha)`;
+}
+
+/* After the graph's column lineage changed: the Columns tab's counts, and the
+   canvas, which cannot stay in column mode on edges that are gone. */
+async function redrawLineage() {
+  if (S.node) {
+    try { renderCatalog(await nodeDetail({ id: S.node.id })); } catch { /* gone with the last manifest */ }
+  }
+  if (S.graphMode === 'column' && !(S.meta && S.meta.cll_edges)) {
+    if (S.focus) focusNode(S.focus);
+  } else {
+    rerender();
+  }
+}
+
+/* One floating menu at a time, closed by a click outside it, Escape, a resize,
+   or a second click on the button that opened it. */
+let popup = null;
+
+function openPopup(anchor, el) {
+  closePopup();
+  document.body.appendChild(el);
+  const at = anchor.getBoundingClientRect();
+  const box = el.getBoundingClientRect();
+  const below = at.bottom + 4 + box.height <= window.innerHeight;
+  el.style.top = `${below ? at.bottom + 4 : Math.max(4, at.top - 4 - box.height)}px`;
+  el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
+  const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"])')];
+  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopup(); };
+  const onKey = (e) => {
+    if (e.key === 'Tab') return closePopup();
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (e.key !== 'Escape' && !step) return;
+    // Handled here only: the editor and the global shortcuts never see it.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      closePopup();
+      anchor.focus();
+      return;
+    }
+    const buttons = live();
+    const i = buttons.indexOf(document.activeElement);
+    if (buttons.length) buttons[(i + step + buttons.length) % buttons.length].focus();
+  };
+  const onResize = () => closePopup();
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('resize', onResize);
+  popup = {
+    el, anchor,
+    off: () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize);
+    },
+  };
+  const first = live();
+  (first.find((b) => b.classList.contains('on')) || first[0] || el).focus();
+}
+
+/* Closes the open menu. True when `anchor` opened it, so the click on that
+   button closes it rather than opening it again. */
+function closePopup(anchor) {
+  if (!popup) return false;
+  const same = !!anchor && popup.anchor === anchor;
+  popup.off();
+  popup.el.remove();
+  popup = null;
+  return same;
+}
+
+/* Settings for this project. One family of features so far, Snowflake's, with
+   more to come: each is a row, kept per project (0011, 0031). */
+function openSettingsMenu(anchor) {
+  if (closePopup(anchor)) return;
+  const menu = document.createElement('div');
+  menu.className = 'envmenu setmenu';
+  menu.setAttribute('role', 'menu');
+  paintSettingsMenu(menu);
+  openPopup(anchor, menu);
+}
+
+/* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
+   their marks are for uses they approve in writing, and this repository is
+   public (0014). The name in text, and the colour, say which product it is. */
+function snowflakeIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'sficon');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const turn of [0, 60, 120]) {
+    const arm = document.createElementNS(ns, 'path');
+    arm.setAttribute('d', 'M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6');
+    arm.setAttribute('transform', `rotate(${turn} 8 8)`);
+    svg.appendChild(arm);
+  }
+  return svg;
+}
+
+/* One row per family of features: its name, a switch, what it covers and why
+   it is on or off. Snowflake's is marked alpha, since none of it has been
+   seen against a real warehouse yet (docs/state.md, Waiting on a human). */
+function paintSettingsMenu(menu) {
+  const f = S.features || { snowflake: false, snowflake_set: false };
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  menu.textContent = '';
+  menu.append(el('div', 'menuhead', 'Settings for this project'));
+
+  const row = el('div', 'setrow');
+  row.dataset.tool = 'snowflake';
+  const toggle = el('button', 'switch');
+  toggle.type = 'button';
+  toggle.setAttribute('role', 'switch');
+  toggle.setAttribute('aria-checked', String(!!f.snowflake));
+  toggle.setAttribute('aria-label', 'Snowflake features');
+  toggle.title = f.snowflake ? 'Switch Snowflake\'s features off for this project' : 'Switch Snowflake\'s features on for this project';
+  toggle.append(el('span', 'knob'));
+  row.append(snowflakeIcon(), el('span', 'setlbl', 'Snowflake features'), el('span', 'alpha', 'alpha'), toggle);
+  // The whole row is the target, the name included, and the switch is what
+  // the keyboard reaches. A second click while the first is on its way is
+  // dropped, or the two would race to the server.
+  let busy = false;
+  row.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    row.setAttribute('aria-busy', 'true');
+    await setFeatures({ snowflake: !f.snowflake });
+    paintSettingsMenu(menu);
+    const again = menu.querySelector('.switch');
+    if (again) again.focus();
+  });
+
+  const note = (text) => el('div', 'menunote', text);
+  const warn = el('div', 'alphawarn');
+  warn.append(el('b', '', 'Alpha.'), document.createTextNode(
+    ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
+    + 'Expect rough edges, and check what they show against Snowflake itself.'));
+  menu.append(row,
+    note('Column lineage from Snowflake, fetched on click, and the profiles.yml link in the top bar.'),
+    note(featureNote(f, S.meta && S.meta.adapter)),
+    warn);
+}
+
+async function setFeatures(body) {
+  try {
+    applyInfo(await api.send('/api/features', 'POST', body));
+    await redrawLineage();
+  } catch (e) {
+    toast('settings: ' + e.message, 'err');
+  }
 }
 
 /* The profile lives outside the project, so it has its own route rather than a
    hole in the one that is confined to the project (0017). */
 async function openProfiles() {
   const path = (S.sidecar && S.sidecar.profiles) || '';
-  if (!path) return toast('no profile yet: switch Snowflake lineage on once', 'err');
+  if (!path) return toast('no profile yet: pick Snowflake in the column lineage menu once', 'err');
   const key = 'profile:' + path;
   if (!S.open.has(key)) {
     let body;
@@ -3150,7 +3379,6 @@ async function saveProfile(key, f) {
     const saved = await api.send('/api/profiles', 'PUT', { content: f.doc.getValue() });
     f.dirty = false;
     await loadSidecar();
-    paintSidecarSwitch();
     if (S.node) renderCatalog(S.node);
     // The caller already says it saved; this is the part it cannot know.
     if (saved.restarted) toast('Snowflake script restarted on the new profile', 'ok');
@@ -3162,6 +3390,9 @@ async function saveProfile(key, f) {
   }
 }
 
+/* A column clicked in the Catalog, or double-clicked on the canvas. With
+   Snowflake picked, its lineage is fetched from Snowflake before it is drawn;
+   otherwise the cache is drawn as it is. */
 async function openColumn(n, column) {
   if (!sidecarOn()) return focusColumn(n.id, column);
   const rel = lineageRelation(n, S.env);
@@ -3173,7 +3404,7 @@ async function openColumn(n, column) {
   status.textContent = `querying Snowflake for ${column} in ${rel.text}`
     + (S.colAnswered ? '' : ' (the first query of a session may open a sign-in tab)');
   S.sidecar = Object.assign({}, S.sidecar, { state: 'busy' });
-  paintSidecarSwitch();
+  paintSourceButton();
   try {
     const res = await api.send('/api/collineage/fetch', 'POST', {
       id: n.id, column, relation: rel.text, env: rel.file, up: +$('#up').value, down: +$('#down').value,
@@ -3181,7 +3412,7 @@ async function openColumn(n, column) {
     if (ask !== S.colAsk) return;
     S.colAnswered = true;
     if (res.added) {
-      applyMeta((await api.get('/api/meta')).meta);
+      applyInfo(await api.get('/api/meta'));
       if (S.node && S.node.id === n.id) {
         S.colHighlight = column;
         renderCatalog(await nodeDetail({ id: n.id }));
@@ -3208,7 +3439,6 @@ async function openColumn(n, column) {
     toast('Snowflake lineage: ' + e.message, 'err');
   } finally {
     await loadSidecar();
-    paintSidecarSwitch();
   }
 }
 
@@ -4135,6 +4365,7 @@ function renderCatalog(n) {
   S.node = n;
   const host = $('#catalog');
   if (envMenu && host.contains(envMenu.anchor)) closeEnvMenu();
+  if (popup && host.contains(popup.anchor)) closePopup();
   // A node that lands while the filter is being typed in redraws the table,
   // and the box with it: the next key has to reach the new one.
   const typing = document.activeElement && document.activeElement.id === 'col-filter';
@@ -5350,7 +5581,7 @@ function catalogColumns(body, n) {
   if (S.colSort === 'tests') cols.sort((a, b) => (b.tests || []).length - (a.tests || []).length || a.name.localeCompare(b.name));
   else cols.sort((a, b) => a.name.localeCompare(b.name));
 
-  // With the switch on, every column can be asked about, not just the cached ones.
+  // With Snowflake picked, every column can be asked about, not just the cached ones.
   const live = sidecarOn();
   const linked = live || n.columns.some((c) => c.up || c.down);
   const table = document.createElement('table');
@@ -6018,18 +6249,17 @@ function applyMeta(meta) {
     s.textContent = `${c[k]} ${k}${c[k] > 1 ? 's' : ''}`;
     $('#counts').appendChild(s);
   }
-  if (meta.cll_edges) {
-    const s = document.createElement('span');
-    s.className = 'chip';
-    // Always name the source: mistaking synthetic or stale edges for warehouse
-    // truth is the expensive failure mode here.
-    s.textContent = `${meta.cll_edges} col edges · ${meta.cll_source || 'unknown source'}`;
-    s.title = `column lineage from ${meta.cll_source || 'cache'} (${meta.cll_file || '?'})`
-      + (meta.cll_dropped ? `, ${meta.cll_dropped} row(s) dropped as unknown` : '');
-    $('#counts').appendChild(s);
-  }
   const when = meta.manifest_mtime ? new Date(meta.manifest_mtime * 1000).toLocaleString() : 'missing';
   $('#status-manifest').textContent = `dbt ${meta.dbt_version || '?'} · manifest ${when}`;
+  // A reload can change the count of edges the menu's button names.
+  paintSourceButton();
+}
+
+/* A whole /api/meta answer: the graph's facts, then where its column lineage
+   comes from, which the menu in the top bar names in place of a count. */
+function applyInfo(info) {
+  applyMeta(info.meta);
+  applyLineage(info);
 }
 
 async function boot() {
@@ -6082,9 +6312,11 @@ async function boot() {
   paintMode();
   $('#editor-host').style.display = 'none';
 
+  $('#cll-pick-host').append(sourceMenu());
+  $('#settings-btn').append(snowflakeIcon());
+  $('#settings-btn').addEventListener('click', (e) => openSettingsMenu(e.currentTarget));
   const info = await api.get('/api/meta');
-  applyMeta(info.meta);
-  await loadSidecar();
+  applyInfo(info);
   $('#status-shell').textContent = info.shell;
   // Which build drew this page. A release binary embeds web/ (0005), so this is
   // what tells a stale binary from a frontend change that really did nothing.

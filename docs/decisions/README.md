@@ -36,6 +36,7 @@ it is built this way, for whoever changes it next.
 | [0028](0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) | A macro call resolves by name, the way dbt resolves it | linking anything to a macro, or changing which macro a call reaches |
 | [0029](0029-the-canvas-may-be-drawn-by-folder.md) | The canvas may be drawn by folder, and an edge against the folders is dashed | changing which folder a node is filed under, or the order the folders go in |
 | [0030](0030-find-is-the-apps-own.md) | Find is the app's own, and the shortcut list opens on ? | adding a keyboard shortcut, or changing what Cmd/Ctrl + F does |
+| [0031](0031-column-lineage-is-picked-by-tool.md) | Column lineage is picked by tool, and Snowflake sits behind its own setting | adding a source of column lineage, or anything that only works on Snowflake |
 
 ## Keeping these honest
 

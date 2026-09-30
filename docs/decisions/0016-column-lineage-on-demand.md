@@ -1,6 +1,6 @@
 # 0016. Column lineage on demand, behind a switch
 
-Date: 2026-09-17 · Status: accepted · Supersedes 0008
+Date: 2026-09-17 · Status: accepted, amended by 0031 · Supersedes 0008
 
 **Trigger:** read before starting a process from the server, or before changing
 what clicking a column does.
@@ -21,6 +21,9 @@ The server may start the script, and that alone.
 
 - **Not without the switch.** One in Catalog > Columns, remembered per project
   (0011), decides whether the script runs at all.
+  *Amended by [0031](0031-column-lineage-is-picked-by-tool.md): the switch is
+  picking Snowflake in the column lineage menu, offered only while Snowflake's
+  features are on.*
 - **Not a connection of its own.** The binary still has no driver, no TLS and no
   credentials. Starting checks what is local (Python, the profile, the
   connector) and then waits; the script connects on its first request, so a
