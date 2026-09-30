@@ -957,6 +957,19 @@ fn why_empty(graph: &Graph, term: &Term, tests: Tests) -> String {
 /// `selectors.yml`, and a bound on the recursion whatever a manifest holds.
 const MAX_REFS: usize = 64;
 
+/// One end of the range an unknown `indirect_selection` spans, for learning
+/// whether it could change an answer at all. `Low` gives every criterion the
+/// fewest tests it could bring (empty), `High` the most (eager). Each criterion
+/// only gains tests from one to the other, a union and an intersection keep
+/// that order, and a difference turns it round in its second half, where
+/// more tests leave fewer in the answer; so the two swap there, and every
+/// mix of modes answers something between the two ends.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Bound {
+    Low,
+    High,
+}
+
 /// A resolution in progress: the graph, who may be selected, and what the
 /// named selectors reached so far have answered.
 struct Ctx<'g, 's> {
@@ -964,15 +977,20 @@ struct Ctx<'g, 's> {
     universe: Vec<bool>,
     tests: Tests,
     lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
-    memo: HashMap<String, Vec<bool>>,
+    /// Set to replace every criterion's own mode by one end of the range.
+    bound: Option<Bound>,
+    memo: HashMap<(String, bool), Vec<bool>>,
     stack: Vec<String>,
     warnings: Vec<String>,
 }
 
 impl Ctx<'_, '_> {
     /// A named selector's answer, computed once however often it is named.
-    fn named(&mut self, name: &str) -> Result<Vec<bool>, SelectError> {
-        if let Some(done) = self.memo.get(name) {
+    /// `negated` is whether it sits under the second half of a difference,
+    /// which only changes the answer when a `bound` is set.
+    fn named(&mut self, name: &str, negated: bool) -> Result<Vec<bool>, SelectError> {
+        let key = (name.to_string(), negated && self.bound.is_some());
+        if let Some(done) = self.memo.get(&key) {
             return Ok(done.clone());
         }
         // `src/selectors.rs` refuses a cycle before anything is resolved;
@@ -986,10 +1004,10 @@ impl Ctx<'_, '_> {
             return Err(SelectError::UnknownSelector { name: name.to_string() });
         };
         self.stack.push(name.to_string());
-        let answer = eval(self, spec);
+        let answer = eval(self, spec, negated);
         self.stack.pop();
         let answer = answer?;
-        self.memo.insert(name.to_string(), answer.clone());
+        self.memo.insert(key, answer.clone());
         Ok(answer)
     }
 }
@@ -998,7 +1016,7 @@ impl Ctx<'_, '_> {
 /// indirect set up the tree, for a group whose own mode could re-admit a test
 /// a criterion held back; every group here is eager, as every group dbt
 /// builds from YAML is, and an eager group re-admits nothing.
-fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
+fn eval(cx: &mut Ctx, spec: &Spec, negated: bool) -> Result<Vec<bool>, SelectError> {
     let n = cx.graph.nodes.len();
     Ok(match spec {
         Spec::Criteria { term, indirect } => {
@@ -1006,11 +1024,16 @@ fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
             if !mask.iter().any(|&m| m) {
                 cx.warnings.push(why_empty(cx.graph, term, cx.tests));
             }
-            bring_tests(cx.graph, &mut mask, *indirect, &cx.universe);
+            let mode = match cx.bound {
+                None => *indirect,
+                Some(bound) if (bound == Bound::High) != negated => Indirect::Eager,
+                Some(_) => Indirect::Empty,
+            };
+            bring_tests(cx.graph, &mut mask, mode, &cx.universe);
             mask
         }
         Spec::Ref { name, at, parents, children } => {
-            let mut mask = cx.named(name)?;
+            let mut mask = cx.named(name, negated)?;
             let direct = marked(&mask);
             neighbours(cx.graph, &direct, *at, *parents, *children, &cx.universe, &mut mask);
             mask
@@ -1018,7 +1041,7 @@ fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
         Spec::Union(parts) => {
             let mut out = vec![false; n];
             for part in parts {
-                for (i, m) in eval(cx, part)?.iter().enumerate() {
+                for (i, m) in eval(cx, part, negated)?.iter().enumerate() {
                     out[i] |= m;
                 }
             }
@@ -1029,7 +1052,7 @@ fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
             // node feeding both, which is the whole point of writing it.
             let mut acc: Option<Vec<bool>> = None;
             for part in parts {
-                let mask = eval(cx, part)?;
+                let mask = eval(cx, part, negated)?;
                 acc = Some(match acc {
                     None => mask,
                     Some(mut a) => {
@@ -1043,8 +1066,8 @@ fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
             acc.unwrap_or_else(|| vec![false; n])
         }
         Spec::Difference(keep, drop) => {
-            let mut out = eval(cx, keep)?;
-            for (i, d) in eval(cx, drop)?.iter().enumerate() {
+            let mut out = eval(cx, keep, negated)?;
+            for (i, d) in eval(cx, drop, !negated)?.iter().enumerate() {
                 if *d {
                     out[i] = false;
                 }
@@ -1062,6 +1085,29 @@ pub fn resolve_spec<'s>(
     tests: Tests,
     lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
 ) -> Result<Resolved, SelectError> {
+    run(graph, spec, tests, lookup, None)
+}
+
+/// The same tree with every criterion's mode replaced by one end of the range
+/// (`Bound`). Only for asking whether a mode could matter: the answer itself
+/// is never this one.
+pub fn resolve_bounded<'s>(
+    graph: &Graph,
+    spec: &Spec,
+    tests: Tests,
+    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
+    bound: Bound,
+) -> Result<Resolved, SelectError> {
+    run(graph, spec, tests, lookup, Some(bound))
+}
+
+fn run<'s>(
+    graph: &Graph,
+    spec: &Spec,
+    tests: Tests,
+    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
+    bound: Option<Bound>,
+) -> Result<Resolved, SelectError> {
     // Hooks carry no edges and cannot be drawn, so they are not in the universe
     // at all; dbt would list them for `resource_type:operation` and we do not.
     let universe: Vec<bool> = graph
@@ -1073,8 +1119,9 @@ pub fn resolve_spec<'s>(
                 && (node.kind != Kind::Test || tests == Tests::Eager)
         })
         .collect();
-    let mut cx = Ctx { graph, universe, tests, lookup, memo: HashMap::new(), stack: Vec::new(), warnings: Vec::new() };
-    let mask = eval(&mut cx, spec)?;
+    let mut cx =
+        Ctx { graph, universe, tests, lookup, bound, memo: HashMap::new(), stack: Vec::new(), warnings: Vec::new() };
+    let mask = eval(&mut cx, spec, false)?;
     let mut seen: HashSet<String> = HashSet::new();
     let mut warnings = cx.warnings;
     warnings.retain(|w| seen.insert(w.clone()));

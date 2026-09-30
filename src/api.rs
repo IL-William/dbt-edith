@@ -963,7 +963,8 @@ struct SelectorBody<'a> {
     #[serde(skip_serializing_if = "str::is_empty")]
     description: &'a str,
     /// The manifest dropped the `indirect_selection` that `selectors.yml`
-    /// sets, so this answer keeps tests the way dbt's default would.
+    /// sets, and this selector's answer could change with it: it keeps tests
+    /// the way dbt's default would.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     lost_indirect: bool,
     /// Selected tests left off the canvas because the tests box is off. A
@@ -1023,7 +1024,9 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
             exclude: String::new(),
             selector: named.map(|n| n.name.as_str()).unwrap_or(""),
             description: named.map(|n| n.description.as_str()).unwrap_or(""),
-            lost_indirect: graph.selectors.lost_indirect(),
+            // Only for a selector the lost setting could change, which a
+            // selector of tests alone never is.
+            lost_indirect: graph.selectors.lost_indirect() && graph.selectors.depends_on_indirect(&graph, &name),
             hidden_tests: shown.hidden_tests,
             graph: sub,
         })
@@ -2419,6 +2422,7 @@ mod tests {
             "selectors": {
                 "checks": { "name": "checks", "description": "Every test.", "definition": { "method": "resource_type", "value": "test" } },
                 "ci": { "name": "ci", "definition": { "method": "state", "value": "modified" } },
+                "orders": { "name": "orders", "definition": { "method": "fqn", "value": "orders" } },
             },
         }))
         .unwrap();
@@ -2444,6 +2448,12 @@ mod tests {
         let off = body_of(port, get("/api/select?q=--selector%20checks&tests=0", &h)).await;
         assert!(off.contains(r#""matched":1"#) && off.contains(r#""hidden_tests":1"#), "{off}");
         assert!(off.contains(r#""nodes":[]"#), "{off}");
+
+        // The manifest lost indirect_selection, but a selector of tests alone
+        // cannot change with it, so only the one reaching a model says so.
+        assert!(!on.contains("lost_indirect"), "{on}");
+        let orders = body_of(port, get("/api/select?q=--selector%20orders&tests=1", &h)).await;
+        assert!(orders.contains(r#""lost_indirect":true"#), "{orders}");
 
         let pasted = body_of(port, get("/api/select?q=dbt%20ls%20--selector%20checks", &h)).await;
         assert!(pasted.contains(r#""stripped":true"#), "{pasted}");

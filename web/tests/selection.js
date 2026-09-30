@@ -67,6 +67,9 @@ check('nothing matches', filterSelectors(menu, 'zzz'), []);
 check('a manifest that kept indirect_selection has nothing to say', selectNotes({ lost_indirect: false }), []);
 var lost = selectNotes({ lost_indirect: true });
 check('one that lost it says so, once', lost.length, 1);
+check('the menu says it about the manifest, not about one selector',
+  selectorsNote({ lost_indirect: true })[0].indexOf('says so when drawn') > 0, true);
+check('and says nothing when nothing was lost', selectorsNote({ selectors: [] }), []);
 check('first, so the cap on warnings never drops it',
   selectWarnings(lost.concat(['a', 'b', 'c', 'd', 'e']))[0], lost[0]);
 check('a selector of tests alone, with the tests box off, says why the canvas is empty',

@@ -2908,11 +2908,20 @@ function filterSelectors(list, q) {
 }
 
 /* Said before any warning, so the cap on warnings can never drop it: it
-   changes what every test in the answer means (0032). */
+   changes what every test in the answer means (0032). The server sends it
+   only for a selector the lost setting could change. */
 function selectNotes(sub) {
   return sub && sub.lost_indirect
-    ? ['This manifest lost the indirect_selection selectors.yml sets, so tests follow dbt\'s default here; '
-      + 're-parse with a recent dbt Fusion to fix it, and dbt ls settles any doubt.']
+    ? ['This manifest lost the indirect_selection selectors.yml sets, and this selector\'s tests depend on it: '
+      + 'they follow dbt\'s default here. Re-parse with a recent dbt Fusion to fix it; dbt ls settles any doubt.']
+    : [];
+}
+
+/* The menu's footer, about the manifest rather than any one selector. */
+function selectorsNote(body) {
+  return body && body.lost_indirect
+    ? ['This manifest lost the indirect_selection selectors.yml sets. '
+      + 'A selector whose tests depend on it says so when drawn.']
     : [];
 }
 
@@ -5012,7 +5021,7 @@ async function openSelectorMenu(anchor) {
   filter.setAttribute('aria-label', 'Filter the named selectors');
   const rows = Object.assign(document.createElement('div'), { className: 'selrows' });
   el.append(filter, rows);
-  for (const note of selectNotes(body)) {
+  for (const note of selectorsNote(body)) {
     el.append(Object.assign(document.createElement('div'), { className: 'selnote', textContent: note }));
   }
 

@@ -26,7 +26,9 @@ end" divergence, and `+` and `@` walk into tests, as dbt's graph does. A
 selector is resolved whole or refused whole, with the reason: `state:`,
 `result:` and `source_status:`, a reference to nothing, and a cycle. When the
 manifest carries no `indirect_selection` but `selectors.yml` sets one outside a
-comment, the answer says so; that one word is all the file is read for.
+comment, a selector whose answer could change says so: resolved with every
+criterion at the fewest tests it could bring and at the most, the two differ.
+That one word is all the file is read for.
 
 For a named selector the tests checkbox filters the drawing, never the answer.
 On, each selected test is drawn with the models it belongs to, dimmed when the

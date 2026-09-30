@@ -51,7 +51,8 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   select them; off, a selector that keeps only tests says so instead of
   looking empty.
 - An amber note says when the manifest lost the `indirect_selection` that
-  `selectors.yml` sets, which some dbt Fusion releases do.
+  `selectors.yml` sets, which some dbt Fusion releases do, on each selector
+  whose answer that could change.
 - With tests on, a test excluded by name stays out of a typed selection, and
   `+` and `@` reach tests the way dbt's graph does.
 

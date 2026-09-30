@@ -302,7 +302,10 @@ dbt Fusion 2.0.6: all 85 selectors this build resolves answer what
 to 315 names; the other 54 are empty in dbt too. `ci` is refused for its
 `state:`. The same manifest with `indirect_selection` stripped, which is how
 2.0.0-preview.196 writes it, answers 30 of the 85 differently, 325 names too
-many in all, and shows the note. All 86, 84 of them tests only, resolve over
+many in all. It shows the note on 40, those 30 among them: the note is for a
+selector the lost setting could change, found by resolving it with every
+criterion at the fewest tests and at the most. A selector of tests alone never
+shows it; the first version showed it on all 85, which taught nothing. All 86, 84 of them tests only, resolve over
 HTTP in 2.5 s in a debug build, 26 ms for the median one and 144 ms for the
 largest. Driven in headless Chrome on the preview.196 manifest: the menu and
 its filter, tests off and on, a refused selector, a pasted `dbt ls --selector`.
