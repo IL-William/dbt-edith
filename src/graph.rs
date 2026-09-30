@@ -777,6 +777,7 @@ impl Graph {
                         materialized: &owner.materialized,
                         disabled: owner.disabled,
                         context: false,
+                        attached: None,
                         depth: depth[&c],
                         sub,
                         tests: column.tests.len(),
@@ -967,6 +968,7 @@ impl Graph {
                         materialized: &n.materialized,
                         disabled: n.disabled,
                         context: false,
+                        attached: self.attached_at(n, &pos),
                         depth: depth[&i],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -978,6 +980,15 @@ impl Graph {
                 .collect(),
             edges,
         }
+    }
+
+    /// Where a drawn test's declaring model sits among the drawn nodes: dbt's
+    /// `attached_node`, which a singular test, having no YAML, does not have.
+    fn attached_at(&self, n: &Node, pos: &HashMap<u32, usize>) -> Option<usize> {
+        if n.kind != Kind::Test || n.attached.is_empty() {
+            return None;
+        }
+        self.index.get(&n.attached).and_then(|i| pos.get(i)).copied()
     }
 
     /// Draws an arbitrary set of nodes, the one a selector expression resolved
@@ -1088,6 +1099,7 @@ impl Graph {
                         materialized: &n.materialized,
                         disabled: n.disabled,
                         context: in_context.contains(&i),
+                        attached: self.attached_at(n, &pos),
                         depth: depth[p],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -1133,6 +1145,10 @@ pub struct LineageNode<'a> {
     /// the selection.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub context: bool,
+    /// A test only: where in `nodes` the model whose YAML declares it sits,
+    /// when that model is drawn. The canvas hangs the test under it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached: Option<usize>,
     pub depth: i32,
     /// Column mode only: the second line of the node box.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -1360,6 +1376,24 @@ mod tests {
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
         assert!(lineage["focus"].is_number(), "and every other mode still sends one");
+    }
+
+    #[test]
+    fn a_drawn_test_names_the_model_whose_yaml_declares_it() {
+        let g = tested();
+        let at = |id: &str| g.index[id];
+        let picked = vec![at("model.shop.dim_customers"), at("model.shop.dim_legacy"), at("test.shop.rel_a"), at("test.shop.combo")];
+        let sub = serde_json::to_value(g.selection(&picked, &[], true, 100)).unwrap();
+        let nodes = sub["nodes"].as_array().unwrap();
+        let find = |name: &str| nodes.iter().find(|n| n["name"] == name).unwrap();
+        let owner = find("rel_a")["attached"].as_u64().unwrap() as usize;
+        assert_eq!(nodes[owner]["name"], "dim_customers", "the model it is declared on, not the one it points at");
+        assert!(find("combo").get("attached").is_none(), "no attached_node, nothing to name");
+        assert!(find("dim_customers").get("attached").is_none(), "a model is attached to nothing");
+
+        // With its model off the canvas, the test names nothing either.
+        let alone = serde_json::to_value(g.selection(&[at("test.shop.rel_a")], &[], true, 100)).unwrap();
+        assert!(alone["nodes"][0].get("attached").is_none());
     }
 
     #[test]
