@@ -152,7 +152,7 @@ for (var k = 0; k < 2422; k++) {
 var capped = { mode: 'select', select: 'big+', exclude: '', matched: 2422, counts: { model: 2422 }, truncated: true,
   nodes: drawn, edges: new Array(512), names: all, warnings: ['mdoel_x matches nothing'] };
 var facts = exportFacts(capped, ctx);
-check('the mode, in words', facts.kicker, 'Selection');
+check('the mode, in words', facts.kicker, 'Custom selection');
 ok('a capped selection says so', facts.lines[0].indexOf('400 of 2422 drawn') >= 0);
 check('and lists what it left out', facts.undrawn.length, 2022);
 check('a mistyped name is not silently missing', facts.warnings, ['mdoel_x matches nothing']);

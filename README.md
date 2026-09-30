@@ -221,7 +221,7 @@ sub-graphs around whichever model you are looking at.
 | click a lineage node | select it, fill the Node panel |
 | double-click a lineage node | re-centre the lineage on it and open its file |
 | `+N` badge on a node | pull in one more level of parents or children |
-| the Selection button above the graph | draw your own set of models, in dbt selector syntax |
+| the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector |
 | wheel / drag | zoom and pan the lineage |
 | Export above the graph | save what the canvas shows as one HTML file anyone can open |
 | Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
@@ -616,7 +616,7 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **eye** beside the depth boxes draws the data tests on the canvas too, each
+The **tests** eye beside the depth boxes draws the data tests on the canvas too, each
 hanging off the models it reads. It is off to start with and turns amber when
 on, because tests can outnumber the models several times over: hundreds of
 boxes slow the canvas and bury what it was drawn for. Its tooltip says so.
@@ -636,9 +636,9 @@ before it ends: a way of reading the graph, not a better layout of it
 ([0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md)). An exported
 file and a copied image keep the bands, with each name written at the top.
 
-### Selecting with an expression
+### Custom selection
 
-The **Selection** button above the graph swaps the canvas from one model's
+The **Custom selection** button above the graph swaps the canvas from one model's
 neighbourhood to whatever a dbt selector matches, so you can draw the set you
 actually work on:
 
