@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Everything that has to pass before a change is done: Rust tests, both audits,
-# the Snowflake script's tests, the browser harnesses, and a syntax check on the
-# frontend the harnesses cannot catch.
+# the Snowflake script's tests, the selection engine against dbt itself, the
+# browser harnesses, and a syntax check on the frontend the harnesses cannot catch.
 #
 # JavaScriptCore ships with macOS. Elsewhere, set JSC to a JavaScript shell
 # (jsc, d8, node) or accept that the browser half is skipped.
@@ -65,6 +65,24 @@ else
     echo "SNOWFLAKE SCRIPT FAILED"
     failed=$((failed + 1))
   fi
+fi
+
+echo
+echo "== dbt itself =="
+# The Custom selection box against `dbt ls` on tests/fixtures/jaffle_shop (0033). It
+# needs dbt-core and dbt-duckdb, so it skips itself without them; CI runs it for
+# two versions of dbt-core every time. DBT_PYTHON names a Python that has them,
+# and DBT a dbt executable to run instead, dbt Fusion included.
+py=${DBT_PYTHON:-python3}
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+else
+  out=$("$py" scripts/compare_with_dbt.py 2>&1)
+  case $? in
+    0) echo "dbt ok ($(printf '%s\n' "$out" | head -1 | cut -d, -f1): $(printf '%s\n' "$out" | tail -1))" ;;
+    2) printf '%s\n' "$out" | tail -1 ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DBT COMPARISON FAILED"; failed=$((failed + 1)) ;;
+  esac
 fi
 
 echo

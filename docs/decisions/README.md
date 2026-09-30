@@ -38,6 +38,8 @@ it is built this way, for whoever changes it next.
 | [0030](0030-find-is-the-apps-own.md) | Find is the app's own, and the shortcut list opens on ? | adding a keyboard shortcut, or changing what Cmd/Ctrl + F does |
 | [0031](0031-column-lineage-is-picked-by-tool.md) | Column lineage is picked by tool, and Snowflake sits behind its own setting | adding a source of column lineage, or anything that only works on Snowflake |
 | [0032](0032-named-selectors-from-the-manifest.md) | A named selector is read from the manifest and resolved whole | changing how `--selector` resolves, how a criterion brings its tests, or what the tests checkbox does in Selection |
+| [0033](0033-selections-are-checked-against-dbt.md) | Selections are checked against dbt itself, on a copy of Jaffle Shop | changing how a selection resolves, touching `tests/fixtures/jaffle_shop/`, or a failing `dbt` job |
+| [0034](0034-a-test-hangs-under-its-model.md) | A test hangs under the model whose YAML declares it | changing where the canvas draws a test, or what `attached` in a lineage payload means |
 
 ## Keeping these honest
 

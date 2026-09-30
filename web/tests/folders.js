@@ -229,9 +229,12 @@ group('each folder its own run of columns', function () {
     ['not_null_stg_orders_id', 'models/shop/20_clean/schema.yml', 'test'],
     ['unique_hub_order_id', 'models/shop/30_vault/schema.yml', 'test'],
   ], [['stg_orders', 'hub_order'], ['stg_orders', 'not_null_stg_orders_id'], ['hub_order', 'unique_hub_order_id']]);
-  var tc = columnsOf(tested, dagLayout(tested, MODEL, 'shop'));
-  check('a test sits one column right of its model, inside its model\'s run',
-    [tc.stg_orders, tc.not_null_stg_orders_id, tc.hub_order, tc.unique_hub_order_id], [0, 1, 2, 3]);
+  var tl = dagLayout(tested, MODEL, 'shop'), tb = function (s) { return tl.boxes[tested.at[s]]; };
+  // A test takes no column of its own: it hangs under its model (0034), so it
+  // stays in its model's band whatever folder its YAML sits in.
+  check('a test hangs under its model, inside its model\'s band, and takes no column',
+    [columnsOf(tested, tl).hub_order, tb('not_null_stg_orders_id').x - tb('stg_orders').x,
+      tb('unique_hub_order_id').x - tb('hub_order').x, tb('unique_hub_order_id').y > tb('hub_order').y], [1, 18, 18, true]);
 
   var off = generatedLayers(150, 3);
   ok('off, the canvas is drawn exactly as it always was',

@@ -57,6 +57,11 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   `+` and `@` reach tests the way dbt's graph does.
 - The Selection mode of the lineage is called Custom selection, and each of
   the three mode buttons says what it draws when the pointer rests on it.
+- With tests on, a test hangs under the model whose YAML declares it, a
+  one-line box joined to it by a stem, where it took a column of its own
+  beside it (0034). A singular test hangs under the last built of its inputs.
+- A line into a test is dotted and grey, where the lines between models are
+  solid, and dash and dot when it runs against its direction.
 - The tests checkbox above the lineage is an eye labelled tests, amber while
   open, whose tooltip warns that data tests can be hundreds of boxes, which
   slows the canvas and buries the models.

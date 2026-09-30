@@ -101,8 +101,10 @@ group('columns', function () {
   var tested = graph(['stg_a', 'int_a', 'fct_a', 'not_null_stg_a_id', 'relationships_fct_a_id'],
     [['stg_a', 'int_a'], ['int_a', 'fct_a'], ['stg_a', 'not_null_stg_a_id'], ['int_a', 'relationships_fct_a_id'], ['fct_a', 'relationships_fct_a_id']],
     [function (nodes) { nodes[3].kind = 'test'; nodes[4].kind = 'test'; }]);
+  // What dagLayers alone decides; dagLayout hangs these tests under their
+  // models instead (0034), in the group about that below.
   var t = columns(tested);
-  check('a test sits one column right of its model', t.not_null_stg_a_id, t.stg_a + 1);
+  check('left to itself, a test would sit one column right of its model', t.not_null_stg_a_id, t.stg_a + 1);
   check('and one right of the later of two', t.relationships_fct_a_id, t.fct_a + 1);
 
   var focus = reported.at.int_payments, layer = layersOf(reported).layer;
@@ -406,13 +408,15 @@ group('fast enough to redraw on every click', function () {
 });
 
 group('level lanes, unless they cost the height', function () {
-  // Models with their tests ticked: a stack of sinks beside every model, the
-  // shape that sent Brandes and Kopf into a staircase twice the needed height.
+  // A stack of sinks beside every model, the shape that sent Brandes and Kopf
+  // into a staircase twice the needed height. Tests drew it once; they hang
+  // under their models now (0034), so the sinks are models, and the shape
+  // stays tested.
   function tested(models, each) {
     var d = generated(models, 2);
     for (var m = 0; m < models; m++) {
       for (var t = 0; t < each; t++) {
-        d.nodes.push({ id: 'test.shop.t' + m + '_' + t, name: 'not_null_' + m + '_' + t, depth: 0, kind: 'test' });
+        d.nodes.push({ id: 'model.shop.t' + m + '_' + t, name: 'sink_' + m + '_' + t, depth: 0, kind: 'model' });
         d.edges.push([m, d.nodes.length - 1]);
       }
     }
@@ -451,9 +455,103 @@ group('level lanes, unless they cost the height', function () {
   check('so Brandes and Kopf stays, rather than a switch worse on both counts', O.bbox.y1 - O.bbox.y0, bkSpan);
 });
 
+group('a test hangs under the model whose YAML declares it', function () {
+  // stg_a feeds int_a feeds fct_a; customers is read by nothing, so it sits
+  // in the last column, right of fct_a's; late_mart sits after fct_a.
+  var d = graph(['stg_a', 'int_a', 'fct_a', 'customers', 'late_mart',
+    'not_null_stg_a_id', 'unique_stg_a_id', 'rel_fct_a_customers', 'assert_int_matches_stg', 'rel_int_a_late', 'orphan_test',
+    'rel_int_a_customers'],
+  [['stg_a', 'int_a'], ['int_a', 'fct_a'], ['fct_a', 'late_mart'], ['stg_a', 'customers'],
+    ['stg_a', 'not_null_stg_a_id'], ['stg_a', 'unique_stg_a_id'],
+    ['fct_a', 'rel_fct_a_customers'], ['customers', 'rel_fct_a_customers'],
+    ['stg_a', 'assert_int_matches_stg'], ['int_a', 'assert_int_matches_stg'],
+    ['int_a', 'rel_int_a_late'], ['late_mart', 'rel_int_a_late'],
+    ['int_a', 'rel_int_a_customers'], ['customers', 'rel_int_a_customers']],
+  [function (nodes, at) {
+    ['not_null_stg_a_id', 'unique_stg_a_id', 'rel_fct_a_customers', 'assert_int_matches_stg', 'rel_int_a_late', 'orphan_test',
+      'rel_int_a_customers'].forEach(function (s) { nodes[at[s]].kind = 'test'; });
+    nodes[at.rel_int_a_customers].attached = at.int_a;
+    nodes[at.not_null_stg_a_id].attached = at.stg_a;
+    nodes[at.unique_stg_a_id].attached = at.stg_a;
+    nodes[at.rel_fct_a_customers].attached = at.fct_a;
+    nodes[at.rel_int_a_late].attached = at.int_a;
+  }]);
+  var L = dagLayout(d, MODEL), box = function (s) { return L.boxes[d.at[s]]; };
+  var at = function (s) { return d.edges.findIndex(function (e) { return d.nodes[e[1]].name === s && d.nodes[e[0]].name !== s; }); };
+  function under(test, host) {
+    var b = box(test), h = box(host);
+    return b.x === h.x + 18 && b.y >= h.y + h.h + 6 && b.h === 22 && b.w === h.w - 18;
+  }
+  ok('under its own model, in from its left edge', under('not_null_stg_a_id', 'stg_a') && under('unique_stg_a_id', 'stg_a'));
+  ok('by name, one line each, a gap apart', box('unique_stg_a_id').y - box('not_null_stg_a_id').y === 22 + 4);
+  ok('under the model it is declared on, not the one it points at', under('rel_fct_a_customers', 'fct_a'));
+  ok('a singular test, with no YAML, under the later of its inputs', under('assert_int_matches_stg', 'int_a'));
+  ok('a test no model reads keeps a column of its own', box('orphan_test').h === MODEL.h && box('orphan_test').w === MODEL.w);
+
+  var hostCols = {};
+  ['stg_a', 'int_a', 'fct_a', 'customers', 'late_mart'].forEach(function (s) { hostCols[s] = box(s).x; });
+  var bare = graph(['stg_a', 'int_a', 'fct_a', 'customers', 'late_mart'],
+    [['stg_a', 'int_a'], ['int_a', 'fct_a'], ['fct_a', 'late_mart'], ['stg_a', 'customers']]);
+  var B = dagLayout(bare, MODEL), bareCols = {};
+  bare.nodes.forEach(function (n, i) { bareCols[n.name] = B.boxes[i].x; });
+  check('the models keep the columns they have without their tests', hostCols, bareCols);
+
+  var stem = parse(L.paths[at('not_null_stg_a_id')]), h = box('stg_a'), b = box('not_null_stg_a_id');
+  check('its model reaches it by a stem from the model\'s lower edge',
+    stem.map(function (s) { return s.c + s.p.join(','); }),
+    ['M' + (h.x + 9) + ',' + (h.y + h.h), 'L' + (h.x + 9) + ',' + (b.y + 11), 'L' + b.x + ',' + (b.y + 11)]);
+  var other = d.edges.findIndex(function (e) { return d.nodes[e[0]].name === 'customers' && d.nodes[e[1]].name === 'rel_fct_a_customers'; });
+  var early = d.edges.findIndex(function (e) { return d.nodes[e[0]].name === 'stg_a' && d.nodes[e[1]].name === 'assert_int_matches_stg'; });
+  var late = d.edges.findIndex(function (e) { return d.nodes[e[0]].name === 'late_mart' && d.nodes[e[1]].name === 'rel_int_a_late'; });
+  var endOf = function (i) { var P = points(L.paths[i]); return P[P.length - 1]; };
+  ok('another parent from an earlier column reaches it on the left, solid',
+    !L.back[early] && endOf(early)[0] === box('assert_int_matches_stg').x);
+  ok('one from a later column comes back to its right edge, dashed like a turned edge',
+    L.back[late] === 1 && endOf(late)[0] === box('rel_int_a_late').x + box('rel_int_a_late').w);
+  var same = d.edges.findIndex(function (e) { return d.nodes[e[0]].name === 'customers' && d.nodes[e[1]].name === 'rel_int_a_customers'; });
+  var rb = box('rel_int_a_customers'), right = box('int_a').x + MODEL.w;
+  ok('the fixture puts customers in int_a\'s column', box('customers').x === box('int_a').x);
+  ok('and one from the same column loops out on the right, solid',
+    !L.back[same] && endOf(same)[0] === rb.x + rb.w && points(L.paths[same]).some(function (p) { return p[0] > right; }));
+  ok('the one from an earlier column still comes from the left', !L.back[other] && endOf(other)[0] === box('rel_fct_a_customers').x);
+
+  function apart(L) {
+    return L.boxes.every(function (a, i) {
+      return L.boxes.every(function (c, j) {
+        return i >= j || a.x + a.w <= c.x || c.x + c.w <= a.x || a.y + a.h <= c.y || c.y + c.h <= a.y;
+      });
+    });
+  }
+  ok('no box on another, the hanging ones included', apart(L));
+  ok('and the frame holds every box and every curve', within(L));
+
+  var again = shuffled(d);
+  again.nodes.forEach(function (n) { if (n.attached !== undefined) n.attached = d.nodes.length - 1 - n.attached; });
+  var M = dagLayout(again, MODEL), same = true;
+  again.nodes.forEach(function (n, i) {
+    var j = d.nodes.findIndex(function (m) { return m.id === n.id; });
+    if (JSON.stringify(M.boxes[i]) !== JSON.stringify(L.boxes[j])) same = false;
+  });
+  ok('the same picture whatever order the server lists the nodes in', same);
+
+  var crowd = generated(150, 4);
+  for (var m = 0; m < 150; m += 3) {
+    for (var k = 0; k < 4; k++) {
+      crowd.nodes.push({ id: 'test.shop.c' + m + '_' + k, name: 'not_null_' + m + '_' + k, depth: 0, kind: 'test', attached: m });
+      crowd.edges.push([m, crowd.nodes.length - 1]);
+    }
+  }
+  var C = dagLayout(crowd, MODEL);
+  ok('150 models carrying 200 tests: nothing overlaps, and the frame holds it all', apart(C) && within(C));
+});
+
 group('the canvas draws what the layout marks', function () {
   var css = read('web/app.css');
-  ok('render() gives a turned edge its own class', /class:\s*L\.back\[i\]\s*\?\s*'edge back'\s*:\s*'edge'/.test(lin));
+  ok('render() gives a turned edge its own class', /class:\s*\(?L\.back\[i\]\s*\?\s*'edge back'\s*:\s*'edge'/.test(lin));
+  ok('and a line into a test one more', /'edge'\)\s*\+\s*\(d\.nodes\[b\]\.kind === 'test' \? ' test' : ''\)/.test(lin));
+  ok('which is dotted, and a turned one dash and dot',
+    /\.edge\.test\s*\{[^}]*stroke-dasharray:\s*1 3/.test(css) && /\.edge\.test\.back\s*\{[^}]*stroke-dasharray:\s*5 3 1 3/.test(css));
+  ok('and comes before .edge.hi, so a selected one still turns accent', css.indexOf('.edge.test {') < css.indexOf('.edge.hi {'));
   ok('which is dashed', /\.edge\.back\s*\{[^}]*stroke-dasharray/.test(css));
   ok('without touching its colour, so a selected loop still turns accent', !/\.edge\.back\s*\{[^}]*stroke:/.test(css));
   // Edges sharing a lane lie on one line, so the one selected has to be the

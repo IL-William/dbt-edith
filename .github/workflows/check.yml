@@ -66,6 +66,29 @@ jobs:
           persist-credentials: false
       - run: python3 tools/test_sf_lineage.py
 
+  # The Custom selection box against dbt itself, on tests/fixtures/jaffle_shop (0033).
+  # Two versions of dbt-core, because 1.11 writes a selector reference out in
+  # place and 1.12 keeps it, and that shape is what src/selectors.rs reads. dbt
+  # goes into a throwaway venv; a script that skipped itself exits 2 and fails
+  # the job, so a broken install cannot pass for a clean comparison.
+  dbt:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dbt: ["1.11", "1.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: python3 -m venv "$RUNNER_TEMP/dbt"
+      - run: '"$RUNNER_TEMP/dbt/bin/pip" install --quiet "dbt-core~=${{ matrix.dbt }}.0" "dbt-duckdb~=1.11.0"'
+      - run: '"$RUNNER_TEMP/dbt/bin/python" scripts/compare_with_dbt.py'
+
   # A pull request that changes what the tool does says so in CHANGELOG.md,
   # which is the only file that keeps the order of what shipped. The label is
   # the way out for a refactor, a dependency bump or a documentation fix, since

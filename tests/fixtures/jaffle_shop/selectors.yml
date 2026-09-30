@@ -1,0 +1,124 @@
+# Added for dbt-edith. Each selector here is resolved by the Custom selection box
+# and by `dbt ls --selector`, and scripts/compare_with_dbt.py fails when they disagree.
+# Between them they use every indirect_selection mode, every graph operator, the
+# three set operations, a reference with and without operators of its own, the
+# shorthand and string forms, and one method the box refuses.
+selectors:
+  - name: recon_tests
+    description: Every reconciliation test.
+    definition:
+      intersection:
+        - method: tag
+          value: recon
+        - method: resource_type
+          value: test
+
+  - name: orders_eager
+    definition:
+      method: fqn
+      value: orders
+
+  - name: orders_cautious
+    definition:
+      method: fqn
+      value: orders
+      indirect_selection: cautious
+
+  - name: orders_buildable
+    definition:
+      method: fqn
+      value: orders
+      indirect_selection: buildable
+
+  - name: orders_empty
+    definition:
+      method: fqn
+      value: orders
+      indirect_selection: empty
+
+  - name: customers_and_upstream
+    description: customers and all it reads, with the tests that can be built from them.
+    definition:
+      method: fqn
+      value: customers
+      parents: true
+      indirect_selection: buildable
+
+  - name: recon_for_customers
+    description: The reconciliation tests whose inputs all sit upstream of customers.
+    definition:
+      intersection:
+        - method: fqn
+          value: customers
+          parents: true
+          indirect_selection: buildable
+        - method: selector
+          value: recon_tests
+
+  - name: staging_only
+    definition:
+      method: tag
+      value: staging
+      indirect_selection: empty
+
+  - name: staging_grown
+    description: A reference with an operator of its own, which dbt-core 1.11 drops.
+    definition:
+      method: selector
+      value: staging_only
+      children: true
+
+  - name: staging_children
+    definition:
+      method: tag
+      value: staging
+      children: true
+      children_depth: 1
+
+  - name: around_stg_orders
+    definition:
+      method: fqn
+      value: stg_orders
+      childrens_parents: true
+
+  - name: models_without_staging
+    definition:
+      union:
+        - method: path
+          value: models
+        - exclude:
+            - method: path
+              value: models/staging
+            - method: tag
+              value: recon
+
+  - name: tables_in_models
+    definition:
+      intersection:
+        - method: path
+          value: models
+        - method: config.materialized
+          value: table
+
+  - name: orders_without_recon
+    definition:
+      method: fqn
+      value: orders
+      exclude:
+        - method: tag
+          value: recon
+
+  - name: shorthand_and_strings
+    definition:
+      union:
+        - tag: raw
+        - 'stg_payments+1'
+
+  - name: staging_and_below
+    definition: 'tag:staging+'
+
+  - name: changed
+    description: Compares with another run, which this tool never reads.
+    definition:
+      method: state
+      value: modified

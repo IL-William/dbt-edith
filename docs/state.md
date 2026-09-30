@@ -314,6 +314,31 @@ largest. Driven in headless Chrome on the preview.196 manifest: the menu and
 its filter, tests off and on, a refused selector, a pasted `dbt ls --selector`.
 Not yet opened on the VM.
 
+Checked against dbt itself, added 2026-09-30 (0033): `scripts/compare_with_dbt.py`
+resolves the 16 named selectors of a Jaffle Shop copy in `tests/fixtures/`, and
+26 typed lines, with dbt-edith and with `dbt ls`, tests on. All 42 agree under
+dbt-core 1.11.15 and 1.12.5, which CI installs, and under dbt Fusion 2.0.6 run
+by hand; the 17th selector uses `state:` and is refused. The fixture gives each
+`indirect_selection` mode an answer of its own, 13, 11, 10 and 1 nodes for one
+model, because its first version had no test reading a model and its own
+ancestor, and buildable answered what cautious did. A run takes about 6 s with
+dbt in process.
+
+Tests under their model, added 2026-09-30 (0034): with tests on, a test hangs
+under the model whose YAML declares it, a one-line box on a stem, where it took
+the column after its model's like any reader. The layout runs on everything
+else with each host made taller by its stack, so with no test hanging, a
+canvas comes out exactly as before, and the models keep their columns either
+way. The server sends each test's `attached_node` as a position in the payload;
+a singular test, which has none, hangs under the parent in the furthest column.
+Driven in headless Chrome on the 18 825 node project: a model with 17 tests
+draws them as a list under it, and a reconciliation selector hangs each test
+under its model with the other models it reads coming in from the left. The
+staircase graph in `layout.js` hung its sinks under their models once they
+did, so its sinks are models now. Every line into a test is dotted and grey,
+dash and dot when turned, `.edge.test` sitting before `.edge.hi` so a selected
+one still turns accent. Not yet opened on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -453,6 +478,11 @@ cross-compile.
   only ever read as declarations, so nothing between the two may run at eval
   time. A `const` there does not survive either, which is why the chip caps are
   arguments of `testChips` and not a constant beside the cell.
+- **The comparison with dbt fails in CI when it skips itself**, since exit 2 is
+  not 0: a dbt that did not install reads as a failure, never as a pass. The
+  Jaffle Shop copy is upstream's with the additions its README lists; anything
+  added there goes in that list, and a case the engine should meet goes in the
+  fixture or in the script's `EXPRESSIONS`.
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
   tests eye, which dbt has no equivalent of in `dbt ls`. Not for a named
@@ -501,6 +531,8 @@ cross-compile.
   calls, read by `colours.js`, `export.js`, `layout.js` and `folders.js`. `W`, `H`, `HGAP` and
   `VGAP` sit above the slice, which is why sizes arrive as a `dim` argument, and
   nothing in it may touch the DOM or the module's `data`, `place` or `bbox`.
+  `RIDE`, the sizes of a test hanging under its model, sits inside it, beside
+  the `dagRiders` to `dagMount` functions that hang them (0034).
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.
@@ -508,9 +540,9 @@ cross-compile.
 ## Automated checks
 
 GitHub Actions runs `cargo test`, a RustSec audit of the lockfile, an OSV audit
-of `web/vendor/` and the Snowflake script's tests on every push and every
-Monday, and Dependabot opens weekly lockfile bumps. A pull request touching
-`src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
+of `web/vendor/`, the Snowflake script's tests and the comparison with dbt-core
+1.11 and 1.12 (0033) on every push and every Monday, and Dependabot opens
+weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
 `no changelog` label, and its branch and title have to read the way AGENTS.md
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21 since 2026-09-17, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not

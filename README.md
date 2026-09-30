@@ -616,10 +616,19 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **tests** eye beside the depth boxes draws the data tests on the canvas too, each
-hanging off the models it reads. It is off to start with and turns amber when
-on, because tests can outnumber the models several times over: hundreds of
-boxes slow the canvas and bury what it was drawn for. Its tooltip says so.
+The **tests** eye beside the depth boxes draws the data tests on the canvas too.
+It is off to start with and turns amber when on, because tests can outnumber the
+models several times over: hundreds of boxes slow the canvas and bury what it
+was drawn for. Its tooltip says so.
+
+A test hangs under the model whose YAML declares it, as a one-line box joined
+to it by a stem, the tests of one model listed by name. A singular test, which
+has no YAML, hangs under the last built of the models it reads. An edge from
+another model the test reads comes in from the left, loops out on the right
+when that model sits in the same column, and comes back dashed when it is built
+later. Every line into a test, the stem included, is dotted and grey, where the
+lines between models are solid: it links a check to what it checks rather than
+data to where it goes.
 
 The **folders** checkbox, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models
@@ -930,6 +939,17 @@ PyYAML, so they need no warehouse and nothing installed:
 
 ```
 python3 tools/test_sf_lineage.py
+```
+
+The Custom selection box is compared with dbt itself: every named selector
+and a list of typed expressions, resolved by dbt-edith and by `dbt ls` on a
+copy of dbt Labs' Jaffle Shop in `tests/fixtures/`, have to name the same
+nodes. It needs dbt-core and dbt-duckdb, and skips itself without them:
+
+```
+python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
+/tmp/dbt/bin/python scripts/compare_with_dbt.py
+DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executable, Fusion included
 ```
 
 ## Layout

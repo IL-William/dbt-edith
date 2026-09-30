@@ -36,6 +36,10 @@ const Lineage = (() => {
   };
   /* Anything else is a custom materialization, and deserves to be noticed. */
   const CUSTOM = '#ff6ec7';
+  /* A test hung under its model (0034): a one-line box, `indent` in from the
+     model's left edge so the stem joining them shows, `top` below the model and
+     `gap` apart. */
+  const RIDE = { h: 22, gap: 4, top: 6, indent: 18 };
 
   /* Column mode colours the edge rather than the box. Where a column is stored
      is not what you are reading that graph for: what happened to it between two
@@ -352,19 +356,160 @@ const Lineage = (() => {
      the layout then gives each folder a band of columns (0029). Left out, or
      null, it draws as it always has. */
   function dagLayout(d, dim, folders) {
-    const n = d.nodes.length, R = dagRank(d.nodes);
-    const F = folders == null ? null : dagFolders(d.nodes, d.edges, folders, dagLayers(n, d.edges, R).layer);
-    const lay = dagLayers(n, d.edges, R, F && F.band);
-    const g = dagProper(n, lay, R.rank, d.edge_kinds || [], dim.bundle);
+    // Tests with a model to hang under leave the grid: the rest is laid out as
+    // it always was, each host made taller by what hangs under it (0034).
+    const cut = dagRiders(d), c = cut ? cut.core : d;
+    const n = c.nodes.length, R = dagRank(c.nodes);
+    const F = folders == null ? null : dagFolders(c.nodes, c.edges, folders, dagLayers(n, c.edges, R).layer);
+    const lay = dagLayers(n, c.edges, R, F && F.band);
+    const hosts = cut && dagHosts(d, cut, lay.layer, R.rank);
+    const g = dagProper(n, lay, R.rank, c.edge_kinds || [], dim.bundle);
+    if (hosts) g.extra = dagStacks(hosts, n, dim.ride || RIDE);
     dagOrder(g, R);
     let y = bkCoords(g, dim);
     if (dagSpan(g, y, dim) > 1.5 * dagTallest(g, dim)) {
       const iso = isoCoords(g, dim);
       if (dagSpan(g, iso, dim) < dagSpan(g, y, dim)) y = iso;
     }
-    const L = dagDraw(d, g, lay, y, dim);
+    const L = dagDraw(c, g, lay, y, dim);
     if (F) dagBands(L, F, lay, dim);
-    return L;
+    return hosts ? dagMount(d, cut, hosts, L, dim) : L;
+  }
+
+  /* Which tests hang under a model rather than take a column of their own
+     (0034): every test with a drawn parent that is no test. A test read by
+     nothing but tests, or by nothing at all, stays in the grid. `core` is the
+     payload without them, for the layout proper, and `coreOf` finds a node's
+     place in it. Null when no test hangs anywhere, which leaves every other
+     canvas laid out exactly as before. */
+  function dagRiders(d) {
+    const n = d.nodes.length, parents = Array.from({ length: n }, () => []);
+    const isTest = (v) => d.nodes[v].kind === 'test';
+    d.edges.forEach(([a, b]) => { if (a !== b) parents[b].push(a); });
+    const rider = new Uint8Array(n);
+    let any = false;
+    for (let v = 0; v < n; v++) if (isTest(v) && parents[v].some((p) => !isTest(p))) { rider[v] = 1; any = true; }
+    if (!any) return null;
+    const keep = [], coreOf = new Int32Array(n).fill(-1);
+    for (let v = 0; v < n; v++) if (!rider[v]) { coreOf[v] = keep.length; keep.push(v); }
+    const edges = [], kinds = [], edgeOf = [];
+    d.edges.forEach(([a, b], i) => {
+      if (rider[a] || rider[b]) return;
+      edgeOf.push(i); edges.push([coreOf[a], coreOf[b]]);
+      if (d.edge_kinds) kinds.push(d.edge_kinds[i]);
+    });
+    const core = { mode: d.mode, nodes: keep.map((v) => d.nodes[v]), edges };
+    if (d.edge_kinds) core.edge_kinds = kinds;
+    return { rider, parents, isTest, keep, coreOf, edgeOf, core };
+  }
+
+  /* The model each test hangs under: the one whose YAML declares it, which the
+     server sends as `attached`, when it is drawn and read by the test. A
+     singular test has no YAML, so it takes the parent in the furthest column,
+     the last of its inputs to be built, then the first by name. Under a host,
+     tests go by name. */
+  function dagHosts(d, cut, layer, rank) {
+    const host = new Int32Array(d.nodes.length).fill(-1), stacks = new Map();
+    for (let v = 0; v < d.nodes.length; v++) {
+      if (!cut.rider[v]) continue;
+      const own = d.nodes[v].attached;
+      let h = own != null && cut.coreOf[own] >= 0 && !cut.isTest(own) && cut.parents[v].includes(own) ? cut.coreOf[own] : -1;
+      if (h < 0) {
+        for (const p of cut.parents[v]) {
+          if (cut.isTest(p)) continue;
+          const q = cut.coreOf[p];
+          if (h < 0 || layer[q] > layer[h] || (layer[q] === layer[h] && rank[q] < rank[h])) h = q;
+        }
+      }
+      host[v] = h;
+      if (!stacks.has(h)) stacks.set(h, []);
+      stacks.get(h).push(v);
+    }
+    const byName = (a, b) => {
+      const A = String(d.nodes[a].name), B = String(d.nodes[b].name);
+      if (A !== B) return A < B ? -1 : 1;
+      const I = String(d.nodes[a].id), J = String(d.nodes[b].id);
+      return I < J ? -1 : I > J ? 1 : a - b;
+    };
+    for (const list of stacks.values()) list.sort(byName);
+    return { host, stacks };
+  }
+
+  // How much taller each host is for the tests hanging under it.
+  function dagStacks(hosts, n, ride) {
+    const extra = new Float64Array(n);
+    hosts.stacks.forEach((list, h) => { extra[h] = ride.top + list.length * ride.h + (list.length - 1) * ride.gap; });
+    return extra;
+  }
+
+  /* Half a node's height: nothing for a lane, half a box for a box, and half
+     of what hangs under it besides for a host, whose box sits at the top of
+     the room it takes. */
+  function dagHalf(g, v, dim) {
+    if (g.dummy[v]) return 0;
+    return (dim.h + (g.extra && v < g.n ? g.extra[v] : 0)) / 2;
+  }
+
+  // Where an edge meets a node: a lane's line, or the middle of the box itself.
+  function dagAnchor(g, y, v, dim) {
+    return g.dummy[v] ? y[v] : y[v] - dagHalf(g, v, dim) + dim.h / 2;
+  }
+
+  /* The whole payload again, from the core's layout: every core box and edge
+     where it was drawn, and each hanging test under its host with a stem from
+     the host's lower edge. An edge from another parent reaches the test from
+     the left, the way every edge reaches its reader; from the same column it
+     loops out on the right, and from a later column it runs back, dashed, as a
+     turned edge does. The frame grows by every control point, so it holds the
+     curves too. */
+  function dagMount(d, cut, hosts, L, dim) {
+    const ride = dim.ride || RIDE, n = d.nodes.length;
+    const boxes = new Array(n), paths = new Array(d.edges.length), back = new Array(d.edges.length).fill(0);
+    cut.keep.forEach((v, c) => { boxes[v] = L.boxes[c]; });
+    const bb = L.bbox ? [L.bbox.x0, L.bbox.y0, L.bbox.x1, L.bbox.y1] : [Infinity, Infinity, -Infinity, -Infinity];
+    const grow = (x, yy) => {
+      bb[0] = Math.min(bb[0], x); bb[1] = Math.min(bb[1], yy);
+      bb[2] = Math.max(bb[2], x); bb[3] = Math.max(bb[3], yy);
+    };
+    hosts.stacks.forEach((list, h) => {
+      const hb = L.boxes[h];
+      list.forEach((v, i) => {
+        const b = { x: hb.x + ride.indent, y: hb.y + hb.h + ride.top + i * (ride.h + ride.gap), w: hb.w - ride.indent, h: ride.h, rider: true };
+        boxes[v] = b;
+        grow(b.x, b.y); grow(b.x + b.w, b.y + b.h);
+      });
+    });
+    cut.edgeOf.forEach((i, c) => { paths[i] = L.paths[c]; back[i] = L.back[c]; });
+    const mid = (b) => b.y + b.h / 2;
+    const curve = (pts) => {
+      pts.forEach(([x, yy]) => grow(x, yy));
+      const [p0, p1, p2, p3] = pts;
+      return `M${p0[0]},${p0[1]} C${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}`;
+    };
+    d.edges.forEach(([a, v], i) => {
+      if (paths[i] !== undefined) return;
+      const A = boxes[a], B = boxes[v];
+      if (cut.rider[v] && cut.keep[hosts.host[v]] === a) {
+        const x = A.x + ride.indent / 2;
+        paths[i] = `M${x},${A.y + A.h} L${x},${mid(B)} L${B.x},${mid(B)}`;
+        return;
+      }
+      const ay = mid(A), by = mid(B);
+      if (A.x + A.w < B.x) {
+        const dx = Math.max(34, (B.x - A.x - A.w) * 0.45);
+        paths[i] = curve([[A.x + A.w, ay], [A.x + A.w + dx, ay], [B.x - dx, by], [B.x, by]]);
+      } else if (A.x > B.x + B.w) {
+        const dx = Math.max(34, (A.x - B.x - B.w) * 0.45);
+        paths[i] = curve([[A.x, ay], [A.x - dx, ay], [B.x + B.w + dx, by], [B.x + B.w, by]]);
+        back[i] = 1;
+      } else {
+        const ear = Math.max(A.x + A.w, B.x + B.w) + 30;
+        paths[i] = curve([[A.x + A.w, ay], [ear, ay], [ear, by], [B.x + B.w, by]]);
+      }
+    });
+    const out = { boxes, paths, back, bbox: n ? { x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3] } : null };
+    if (L.bands) { out.bands = L.bands; out.against = L.against; }
+    return out;
   }
 
   /* Where each band is drawn: its columns, plus a margin that keeps the +N
@@ -392,7 +537,7 @@ const Lineage = (() => {
      above each box. */
   function dagGap(g, a, b, dim) {
     const da = g.dummy[a], db = g.dummy[b];
-    return (da ? 0 : dim.h / 2) + (db ? 0 : dim.h / 2) + (da && db ? dim.lane : dim.vgap) + (da !== db ? dim.badge : 0);
+    return dagHalf(g, a, dim) + dagHalf(g, b, dim) + (da && db ? dim.lane : dim.vgap) + (da !== db ? dim.badge : 0);
   }
 
   // The height of the tallest column stacked tight: no layout can be shorter.
@@ -400,7 +545,7 @@ const Lineage = (() => {
     let most = 0;
     for (const arr of g.layers) {
       if (!arr.length) continue;
-      let h = (g.dummy[arr[0]] ? 0 : dim.h / 2) + (g.dummy[arr[arr.length - 1]] ? 0 : dim.h / 2);
+      let h = dagHalf(g, arr[0], dim) + dagHalf(g, arr[arr.length - 1], dim);
       for (let i = 1; i < arr.length; i++) h += dagGap(g, arr[i - 1], arr[i], dim);
       most = Math.max(most, h);
     }
@@ -410,7 +555,7 @@ const Lineage = (() => {
   function dagSpan(g, y, dim) {
     let lo = Infinity, hi = -Infinity;
     for (let v = 0; v < g.N; v++) {
-      const half = g.dummy[v] ? 0 : dim.h / 2;
+      const half = dagHalf(g, v, dim);
       lo = Math.min(lo, y[v] - half); hi = Math.max(hi, y[v] + half);
     }
     return hi - lo;
@@ -601,7 +746,7 @@ const Lineage = (() => {
     const ext = runs.map((y) => {
       let lo = Infinity, hi = -Infinity;
       for (let i = 0; i < N; i++) {
-        const half = g.dummy[i] ? 0 : dim.h / 2;
+        const half = dagHalf(g, i, dim);
         lo = Math.min(lo, y[i] - half); hi = Math.max(hi, y[i] + half);
       }
       return [lo, hi];
@@ -763,7 +908,7 @@ const Lineage = (() => {
       bb[2] = Math.max(bb[2], x); bb[3] = Math.max(bb[3], yy);
     };
     const boxes = d.nodes.map((_, v) => {
-      const b = { x: g.layer[v] * step, y: r(y[v] - dim.h / 2), w: dim.w, h: dim.h };
+      const b = { x: g.layer[v] * step, y: r(y[v] - dagHalf(g, v, dim)), w: dim.w, h: dim.h };
       grow(b.x, b.y); grow(b.x + b.w, b.y + b.h);
       return b;
     });
@@ -781,9 +926,9 @@ const Lineage = (() => {
       }
       const chain = g.chainOf[k], last = chain.length - 1;
       const shift = lay.flip[k] && last === 1 && forward.has(chain[0] * n + chain[1]) ? 8 : 0;
-      let x = g.layer[chain[0]] * step + dim.w, yy = r(y[chain[0]]) + shift, s = `M${x},${yy}`;
+      let x = g.layer[chain[0]] * step + dim.w, yy = r(dagAnchor(g, y, chain[0], dim)) + shift, s = `M${x},${yy}`;
       for (let j = 1; j <= last; j++) {
-        const w = chain[j], x2 = g.layer[w] * step, y2 = r(y[w]) + (j === last ? shift : 0);
+        const w = chain[j], x2 = g.layer[w] * step, y2 = r(dagAnchor(g, y, w, dim)) + (j === last ? shift : 0);
         const dx = Math.max(34, (x2 - x) * 0.45);
         s += ` C${x + dx},${yy} ${x2 - dx},${y2} ${x2},${y2}`;
         x = x2; yy = y2;
@@ -957,7 +1102,10 @@ const Lineage = (() => {
     // exported page still find it by its two ends.
     d.edges.forEach(([a, b], i) => {
       const path = el('path', {
-        class: L.back[i] ? 'edge back' : 'edge', 'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i],
+        // A line into a test links a check to what it checks, not data to
+        // where it goes, so it is drawn apart: see `.edge.test`.
+        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : ''),
+        'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i],
       });
       // A custom property, not `stroke`: setting the property leaves `.edge.hi`
       // free to override the stroke outright, so selecting an edge still turns
@@ -971,28 +1119,38 @@ const Lineage = (() => {
     });
 
     d.nodes.forEach((n, i) => {
-      const g = el('g', { class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : ''), transform: `translate(${place[i].x},${place[i].y})` });
+      const b = place[i];
+      const g = el('g', {
+        class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '') + (b.rider ? ' rider' : ''),
+        transform: `translate(${b.x},${b.y})`,
+      });
       g.dataset.id = n.id;
-      g.appendChild(el('rect', { class: 'box', width: W, height: H }));
+      g.appendChild(el('rect', { class: 'box', width: b.w, height: b.h }));
       // Inline style, not a fill attribute: a CSS rule such as `.nd rect` would
       // outrank the attribute and repaint this bar in the box colour.
-      g.appendChild(el('rect', { class: 'kindbar', width: 6, height: H, style: `fill:${nodeColor(n)}` }));
+      g.appendChild(el('rect', { class: 'kindbar', width: 6, height: b.h, style: `fill:${nodeColor(n)}` }));
       // Ephemeral models are inlined into their children, nothing exists in the
       // warehouse, so they are drawn like the disabled ones: dashed.
       if (matLabel(n) === 'ephemeral') g.classList.add('off');
 
-      const t1 = el('text', { class: 't1', x: 12, y: 20 });
-      t1.textContent = clip(n.name, columnMode ? 24 : 27);
+      // A test hanging under its model is one line: its name. What it is, a
+      // test, the stem already says.
+      const t1 = el('text', { class: 't1', x: 12, y: b.rider ? b.h / 2 + 4 : 20 });
+      t1.textContent = clip(n.name, b.rider ? 25 : columnMode ? 24 : 27);
       g.appendChild(t1);
 
-      const t2 = el('text', { class: 't2', x: 12, y: 35 });
-      t2.textContent = clip(subtitle(n), columnMode ? 30 : 34);
-      g.appendChild(t2);
+      if (!b.rider) {
+        const t2 = el('text', { class: 't2', x: 12, y: 35 });
+        t2.textContent = clip(subtitle(n), columnMode ? 30 : 34);
+        g.appendChild(t2);
+      }
 
       if (roles[i]) g.appendChild(roleBadge(roles[i]));
 
-      if (n.hidden_up) g.appendChild(badge(-16, H / 2, `+${n.hidden_up}`, 'up', n));
-      if (n.hidden_down) g.appendChild(badge(W + 16, H / 2, `+${n.hidden_down}`, 'down', n));
+      // A hanging test's other inputs are counted on its right: its left is
+      // where the stem from its model runs.
+      if (n.hidden_up) g.appendChild(badge(b.rider ? b.w + 16 : -16, b.h / 2, `+${n.hidden_up}`, 'up', n));
+      if (n.hidden_down) g.appendChild(badge(b.w + 16, b.h / 2, `+${n.hidden_down}`, 'down', n));
 
       // An aria-label rather than a <title>: the native tooltip a <title> draws
       // would arrive a second after the hover card and sit on top of it. The
@@ -1122,7 +1280,7 @@ const Lineage = (() => {
     const spell = (t, full) => {
       if (!t || !full || t.textContent === full) return;
       const cls = t.getAttribute('class');
-      const room = W - 20;
+      const room = (+t.parentNode.querySelector('rect.box').getAttribute('width') || W) - 20;
       const natural = measure(cls, full);
       t.textContent = full;
       if (!natural.wide) return;
