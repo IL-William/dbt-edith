@@ -626,7 +626,9 @@ to it by a stem, the tests of one model listed by name. A singular test, which
 has no YAML, hangs under the last built of the models it reads. An edge from
 another model the test reads comes in from the left, loops out on the right
 when that model sits in the same column, and comes back dashed when it is built
-later.
+later. Every line into a test, the stem included, is dotted and grey, where the
+lines between models are solid: it links a check to what it checks rather than
+data to where it goes.
 
 The **folders** checkbox, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models

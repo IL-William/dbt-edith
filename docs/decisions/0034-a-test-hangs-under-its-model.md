@@ -23,8 +23,9 @@ boxes, by name, joined to the host by a stem from its lower edge.
 
 Another parent's edge reaches a hanging test from the left, loops out on the
 right from the host's own column, and comes back dashed from a later one, as
-a turned edge does. A test no model reads keeps a column. With nothing to hang,
-the canvas is laid out exactly as before.
+a turned edge does. Every line into a test is dotted, since it carries no data.
+A test no model reads keeps a column. With nothing to hang, the canvas is laid
+out exactly as before.
 
 ## Rejected
 

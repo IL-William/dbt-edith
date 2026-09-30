@@ -1102,7 +1102,10 @@ const Lineage = (() => {
     // exported page still find it by its two ends.
     d.edges.forEach(([a, b], i) => {
       const path = el('path', {
-        class: L.back[i] ? 'edge back' : 'edge', 'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i],
+        // A line into a test links a check to what it checks, not data to
+        // where it goes, so it is drawn apart: see `.edge.test`.
+        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : ''),
+        'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i],
       });
       // A custom property, not `stroke`: setting the property leaves `.edge.hi`
       // free to override the stroke outright, so selecting an edge still turns

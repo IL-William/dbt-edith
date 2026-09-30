@@ -547,7 +547,11 @@ group('a test hangs under the model whose YAML declares it', function () {
 
 group('the canvas draws what the layout marks', function () {
   var css = read('web/app.css');
-  ok('render() gives a turned edge its own class', /class:\s*L\.back\[i\]\s*\?\s*'edge back'\s*:\s*'edge'/.test(lin));
+  ok('render() gives a turned edge its own class', /class:\s*\(?L\.back\[i\]\s*\?\s*'edge back'\s*:\s*'edge'/.test(lin));
+  ok('and a line into a test one more', /'edge'\)\s*\+\s*\(d\.nodes\[b\]\.kind === 'test' \? ' test' : ''\)/.test(lin));
+  ok('which is dotted, and a turned one dash and dot',
+    /\.edge\.test\s*\{[^}]*stroke-dasharray:\s*1 3/.test(css) && /\.edge\.test\.back\s*\{[^}]*stroke-dasharray:\s*5 3 1 3/.test(css));
+  ok('and comes before .edge.hi, so a selected one still turns accent', css.indexOf('.edge.test {') < css.indexOf('.edge.hi {'));
   ok('which is dashed', /\.edge\.back\s*\{[^}]*stroke-dasharray/.test(css));
   ok('without touching its colour, so a selected loop still turns accent', !/\.edge\.back\s*\{[^}]*stroke:/.test(css));
   // Edges sharing a lane lie on one line, so the one selected has to be the

@@ -621,10 +621,16 @@ kbd {
 /* --edge-col is set per path in column mode, where the colour carries the role.
    `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
 .edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }
+/* A line into a test, the stem from its model included (0034): dotted, in the
+   tests' grey, since it carries no data. Before `.edge.hi`, so a selected one
+   still turns accent. */
+.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }
 .edge.hi { stroke: var(--accent); stroke-width: 2; }
 /* An edge drawn against its direction, where column lineage loops: with no
    arrowheads, left to right is the only direction a reader has (0027). */
 .edge.back { stroke-dasharray: 5 4; }
+/* Both at once, a test read from a later column: dash and dot. */
+.edge.test.back { stroke-dasharray: 5 3 1 3; }
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
 .nd:hover rect.box { stroke: var(--fg-dim); }
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }

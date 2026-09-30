@@ -335,7 +335,9 @@ Driven in headless Chrome on the 18 825 node project: a model with 17 tests
 draws them as a list under it, and a reconciliation selector hangs each test
 under its model with the other models it reads coming in from the left. The
 staircase graph in `layout.js` hung its sinks under their models once they
-did, so its sinks are models now. Not yet opened on the VM.
+did, so its sinks are models now. Every line into a test is dotted and grey,
+dash and dot when turned, `.edge.test` sitting before `.edge.hi` so a selected
+one still turns accent. Not yet opened on the VM.
 
 ## Deferred, in the order they were chosen
 
