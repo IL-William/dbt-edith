@@ -10,3 +10,11 @@ dbt-edith embeds the following libraries, unmodified, under `web/vendor/`.
 
 The full license texts are at the links above. The minified xterm.js build
 carries no header of its own, so its notice lives here.
+
+## Test fixtures
+
+The repository also carries, for its tests only and never in the binary:
+
+| Project | Version | License | Copyright |
+| --- | --- | --- | --- |
+| [jaffle_shop_duckdb](https://github.com/dbt-labs/jaffle_shop_duckdb), in `tests/fixtures/jaffle_shop/` with the additions its README lists | commit `20cc904` | Apache-2.0, its `LICENSE` beside it | dbt Labs |
