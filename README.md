@@ -461,9 +461,10 @@ profile, its target and role, all named in the button's tooltip. Nothing
 connects until you click a column, and the first click of a session may open a
 sign-in tab.
 
-**Snowflake's features are a setting of the project**, in the menu behind the
-gear in the top bar. Until you choose, they follow the manifest: on when its
-adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
+**Snowflake's features are a setting of the project**, a switch in the menu
+behind the gear in the top bar. They are marked alpha: none of them has yet been
+checked against a real warehouse. Until you choose, they follow the manifest:
+on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
 nor are the caches it wrote, nor the profile link below, and the server refuses
 every Snowflake route. More features that only make sense on Snowflake will sit
 behind the same setting.

@@ -248,9 +248,13 @@ page never read the caches `/api/meta` listed, and picking one called an
 show it. A tool is its newest cache, by the producer the header names; older
 files and other producers' stay under "other caches". Picking Snowflake is one
 request that also starts the script, so the old switch, and `POST /api/sidecar`,
-are gone. Snowflake's features sit behind a setting in a new gear menu, which
+are gone. Snowflake's features sit behind a switch in a new gear menu, which
 follows the manifest's adapter until the user chooses; off, the server refuses
-the tool, its caches, a fetch and the profile.
+the tool, its caches, a fetch and the profile. The switch and the Snowflake
+entry are marked alpha until the first real answer from a warehouse, under
+Waiting on a human below. The icon beside the switch is a snowflake drawn here,
+not Snowflake's logo: their marks are licensed only for uses they approve in
+writing, and this repository is public (0014).
 
 Driven in headless Chrome on an invented project with a collin, a Snowflake and
 a synthetic cache: the greyed Fusion entry and its tooltip, picking each entry,

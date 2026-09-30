@@ -110,6 +110,35 @@ kbd {
   padding: 2px 8px 3px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--fg-dim);
 }
 .envmenu .menunote { padding: 1px 8px 4px 26px; font-size: 11px; line-height: 1.4; color: var(--fg-dim); max-width: 340px; }
+/* Still being built, said in the one colour this app keeps for a warning. */
+.alpha {
+  flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: #10151c;
+  font: 600 9.5px/14px var(--ui); letter-spacing: .5px; text-transform: uppercase;
+}
+.envmenu.setmenu { width: 360px; max-width: calc(100vw - 8px); }
+.setmenu .menunote { padding-left: 32px; max-width: none; }
+.setrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.setrow:hover { background: var(--bg-3); }
+.setrow[aria-busy=true] { cursor: progress; }
+.setlbl { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.sficon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: var(--tool); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+/* A switch rather than a check mark: on and off have to read at a glance. */
+.envmenu button.switch {
+  position: relative; flex: 0 0 auto; width: 34px; height: 18px; padding: 0; margin-left: auto;
+  border: 1px solid #4a5870; border-radius: 9px; background: var(--bg); cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.envmenu button.switch .knob {
+  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: #8b97a8; transition: transform .15s, background .15s;
+}
+.envmenu button.switch[aria-checked=true] { background: var(--tool); border-color: var(--tool); }
+.envmenu button.switch[aria-checked=true] .knob { transform: translateX(16px); background: #fff; }
+.envmenu button.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.alphawarn {
+  margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid rgba(224, 163, 75, .45); border-radius: 4px;
+  background: rgba(224, 163, 75, .08); color: var(--warn); font-size: 11px; line-height: 1.45;
+}
 /* z-index 64: above the ambient chrome and the palette (50) and the toasts (60),
    below the env and crumb menus (65) and the modal (70). A card that opens by
    accident must never cover a surface that was opened on purpose. */

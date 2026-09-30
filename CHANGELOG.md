@@ -35,9 +35,9 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   Snowflake switch is gone, and Snowflake picked before its first fetch shows
   no other tool's edges under its name (0031).
 - A settings menu behind the gear in the top bar switches Snowflake's features
-  on or off for the project. Until you choose, they follow the manifest's
-  adapter; off, nothing of Snowflake is offered, its cache and the profile link
-  included (0031).
+  on or off for the project, and says they are still alpha. Until you choose,
+  they follow the manifest's adapter; off, nothing of Snowflake is offered, its
+  cache and the profile link included (0031).
 - Switching the column lineage tool no longer reads the manifest again: 25 ms
   instead of 440 ms on an 18 825 node project. Opening the menu reads a cache
   only when the file has changed, where it read every cache in full.

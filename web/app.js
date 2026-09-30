@@ -3088,7 +3088,7 @@ async function openSourceMenu(anchor) {
   const menu = document.createElement('div');
   menu.className = 'envmenu cllmenu';
   menu.setAttribute('role', 'menu');
-  const add = ({ label, sub, tool, on, disabled, title, pick }) => {
+  const add = ({ label, sub, tool, on, disabled, title, badge, pick }) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.setAttribute('role', 'menuitemradio');
@@ -3104,6 +3104,7 @@ async function openSourceMenu(anchor) {
       Object.assign(document.createElement('span'), { className: 'tooldot' }),
       Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }),
     );
+    if (badge) item.append(Object.assign(document.createElement('span'), { className: 'alpha', textContent: badge }));
     if (sub) item.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
     item.addEventListener('click', () => {
       if (disabled) return;
@@ -3114,7 +3115,7 @@ async function openSourceMenu(anchor) {
   };
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
-      pick: () => switchLineage({ tool: t.tool }) });
+      badge: t.tool === 'snowflake' ? 'alpha' : '', pick: () => switchLineage({ tool: t.tool }) });
   }
   if (others.length) {
     menu.appendChild(document.createElement('hr'));
@@ -3273,30 +3274,66 @@ function openSettingsMenu(anchor) {
   openPopup(anchor, menu);
 }
 
+/* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
+   their marks are for uses they approve in writing, and this repository is
+   public (0014). The name in text, and the colour, say which product it is. */
+function snowflakeIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'sficon');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const turn of [0, 60, 120]) {
+    const arm = document.createElementNS(ns, 'path');
+    arm.setAttribute('d', 'M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6');
+    arm.setAttribute('transform', `rotate(${turn} 8 8)`);
+    svg.appendChild(arm);
+  }
+  return svg;
+}
+
+/* One row per family of features: its name, a switch, what it covers and why
+   it is on or off. Snowflake's is marked alpha, since none of it has been
+   seen against a real warehouse yet (docs/state.md, Waiting on a human). */
 function paintSettingsMenu(menu) {
   const f = S.features || { snowflake: false, snowflake_set: false };
-  const row = document.createElement('button');
-  row.type = 'button';
-  row.setAttribute('role', 'menuitemcheckbox');
-  row.setAttribute('aria-checked', String(!!f.snowflake));
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  menu.textContent = '';
+  menu.append(el('div', 'menuhead', 'Settings for this project'));
+
+  const row = el('div', 'setrow');
   row.dataset.tool = 'snowflake';
-  if (f.snowflake) row.classList.add('on');
-  row.append(
-    Object.assign(document.createElement('span'), { className: 'check', textContent: f.snowflake ? '✓' : '' }),
-    Object.assign(document.createElement('span'), { className: 'tooldot' }),
-    Object.assign(document.createElement('span'), { className: 'lbl', textContent: 'Snowflake features' }),
-  );
+  const toggle = el('button', 'switch');
+  toggle.type = 'button';
+  toggle.setAttribute('role', 'switch');
+  toggle.setAttribute('aria-checked', String(!!f.snowflake));
+  toggle.setAttribute('aria-label', 'Snowflake features');
+  toggle.title = f.snowflake ? 'Switch Snowflake\'s features off for this project' : 'Switch Snowflake\'s features on for this project';
+  toggle.append(el('span', 'knob'));
+  row.append(snowflakeIcon(), el('span', 'setlbl', 'Snowflake features'), el('span', 'alpha', 'alpha'), toggle);
+  // The whole row is the target, the name included, and the switch is what
+  // the keyboard reaches. A second click while the first is on its way is
+  // dropped, or the two would race to the server.
+  let busy = false;
   row.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    row.setAttribute('aria-busy', 'true');
     await setFeatures({ snowflake: !f.snowflake });
-    menu.textContent = '';
     paintSettingsMenu(menu);
-    const again = menu.querySelector('button');
+    const again = menu.querySelector('.switch');
     if (again) again.focus();
   });
-  const note = (text) => Object.assign(document.createElement('div'), { className: 'menunote', textContent: text });
+
+  const note = (text) => el('div', 'menunote', text);
+  const warn = el('div', 'alphawarn');
+  warn.append(el('b', '', 'Alpha.'), document.createTextNode(
+    ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
+    + 'Expect rough edges, and check what they show against Snowflake itself.'));
   menu.append(row,
     note('Column lineage from Snowflake, fetched on click, and the profiles.yml link in the top bar.'),
-    note(featureNote(f, S.meta && S.meta.adapter)));
+    note(featureNote(f, S.meta && S.meta.adapter)),
+    warn);
 }
 
 async function setFeatures(body) {
