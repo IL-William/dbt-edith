@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Selection box against dbt itself, on the Jaffle Shop copy in tests/fixtures/.
+"""The Custom selection box against dbt itself, on the Jaffle Shop copy in tests/fixtures/.
 
 Every named selector of that project, and a list of typed expressions below,
 is resolved twice: by dbt-edith, over the manifest dbt just wrote, and by

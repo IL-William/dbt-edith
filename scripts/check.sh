@@ -69,7 +69,7 @@ fi
 
 echo
 echo "== dbt itself =="
-# The Selection box against `dbt ls` on tests/fixtures/jaffle_shop (0033). It
+# The Custom selection box against `dbt ls` on tests/fixtures/jaffle_shop (0033). It
 # needs dbt-core and dbt-duckdb, so it skips itself without them; CI runs it for
 # two versions of dbt-core every time. DBT_PYTHON names a Python that has them,
 # and DBT a dbt executable to run instead, dbt Fusion included.

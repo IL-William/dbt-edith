@@ -932,10 +932,10 @@ PyYAML, so they need no warehouse and nothing installed:
 python3 tools/test_sf_lineage.py
 ```
 
-The Selection box is compared with dbt itself: every named selector and a list
-of typed expressions, resolved by dbt-edith and by `dbt ls` on a copy of dbt
-Labs' Jaffle Shop in `tests/fixtures/`, have to name the same nodes. It needs
-dbt-core and dbt-duckdb, and skips itself without them:
+The Custom selection box is compared with dbt itself: every named selector
+and a list of typed expressions, resolved by dbt-edith and by `dbt ls` on a
+copy of dbt Labs' Jaffle Shop in `tests/fixtures/`, have to name the same
+nodes. It needs dbt-core and dbt-duckdb, and skips itself without them:
 
 ```
 python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
