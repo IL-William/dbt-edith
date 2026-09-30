@@ -126,9 +126,11 @@
         <div class="grow"></div>
         <div id="lineage-tools" class="tools">
           <span id="graph-mode" class="seg">
-            <button class="segbtn active" data-mode="model">Models</button>
+            <button class="segbtn active" data-mode="model"
+                    title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
-            <button class="segbtn" data-mode="select">Selection</button>
+            <button class="segbtn" data-mode="select"
+                    title="Any set of nodes you describe, drawn together: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label>up <input id="up" type="number" min="0" max="20" value="2"></label>

@@ -3403,7 +3403,8 @@ function paintTestsToggle(on) {
   const b = $('#with-tests');
   b.setAttribute('aria-pressed', String(on));
   b.title = testsTitle(on);
-  b.replaceChildren(testsEye(on));
+  // The eye alone reads as nothing in particular: the word says what it shows.
+  b.replaceChildren(testsEye(on), Object.assign(document.createElement('span'), { textContent: 'tests' }));
 }
 
 function snowflakeIcon() {
@@ -3606,7 +3607,9 @@ function paintMode() {
     b.classList.toggle('active', b.dataset.mode === S.graphMode);
     if (b.dataset.mode === 'column') {
       b.disabled = !S.colFocus;
-      b.title = S.colFocus ? '' : 'pick a column in the Catalog tab first';
+      b.title = S.colFocus
+        ? 'One column\'s lineage: the columns it is built from and the ones built from it.'
+        : 'One column\'s lineage. Pick a column in Catalog > Columns first.';
     }
   });
   $('#select-bar').classList.toggle('hidden', !selecting);
@@ -3805,7 +3808,7 @@ function exportFreshness(f) {
    paths, the manifest's and the column cache's, which have no business in a
    file that leaves the machine. */
 function exportFacts(sub, ctx) {
-  const kicker = { select: 'Selection', model: 'Lineage of a model', column: 'Column lineage' }[sub.mode] || 'Lineage';
+  const kicker = { select: 'Custom selection', model: 'Lineage of a model', column: 'Column lineage' }[sub.mode] || 'Lineage';
   const depths = sub.nodes.map((n) => n.depth || 0);
   const up = Math.max(0, ...depths.map((d) => -d));
   const down = Math.max(0, ...depths);
@@ -6282,7 +6285,7 @@ function shortcutSheet() {
       [['Enter'], 'Open or pick'],
       [['Escape'], 'Close'],
     ] },
-    { title: 'Selection box, above the lineage', keys: [
+    { title: 'Custom selection box, above the lineage', keys: [
       [['Enter'], 'Draw it now'],
       [['ArrowUp', 'ArrowDown'], 'Earlier expressions'],
     ] },

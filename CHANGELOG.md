@@ -55,9 +55,11 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   whose answer that could change.
 - With tests on, a test excluded by name stays out of a typed selection, and
   `+` and `@` reach tests the way dbt's graph does.
-- The tests checkbox above the lineage is an eye, amber while open, whose
-  tooltip warns that data tests can be hundreds of boxes, which slows the
-  canvas and buries the models.
+- The Selection mode of the lineage is called Custom selection, and each of
+  the three mode buttons says what it draws when the pointer rests on it.
+- The tests checkbox above the lineage is an eye labelled tests, amber while
+  open, whose tooltip warns that data tests can be hundreds of boxes, which
+  slows the canvas and buries the models.
 
 ## 0.6.0 - 2026-09-29
 

@@ -218,7 +218,7 @@ kbd {
 /* The tests toggle above the lineage, an eye (testsEye). On, it takes the
    warning colour: data tests can outnumber the models several times over,
    and every one is a box. Off, it is muted but not grey, so it stays found. */
-.eyebtn { display: inline-flex; align-items: center; justify-content: center; width: 26px; padding: 2px 0; color: var(--fg-dim); }
+.eyebtn { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-dim); }
 .eyebtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .eyebtn:hover { color: var(--fg); }
 .eyebtn[aria-pressed=true] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
