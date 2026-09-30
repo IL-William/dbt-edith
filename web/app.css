@@ -943,6 +943,10 @@ kbd {
 }
 #settings-btn:hover { border-color: var(--tool); background: rgba(41, 181, 232, .18); }
 #settings-btn .sficon { width: 15px; height: 15px; stroke-width: 1.5; }
+/* Off: muted, never grey, so it can still be found. */
+#settings-btn[data-on=false] { border-color: rgba(41, 181, 232, .25); background: transparent; }
+#settings-btn[data-on=false] .sficon { opacity: .7; filter: saturate(.45); }
+#settings-btn[data-on=false]:hover .sficon { opacity: 1; filter: none; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
   position: fixed; inset: 0; z-index: 72; background: #0009;

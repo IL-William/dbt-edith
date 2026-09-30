@@ -3194,12 +3194,14 @@ function applyLineage(info) {
   paintSettingsButton();
 }
 
-/* The button stays Snowflake's colour whether the features are on or off: it
-   is where they are found, and a grey one was easy to miss. Its tooltip says
-   which. */
+/* The button keeps Snowflake's colour whether the features are on or off:
+   it is where they are found, and a grey one was easy to miss. Off, it is only
+   muted, and its tooltip says which. */
 function paintSettingsButton() {
   const on = !!(S.features && S.features.snowflake);
-  $('#settings-btn').title = `Snowflake features: ${on ? 'on' : 'off'} for this project (alpha)`;
+  const b = $('#settings-btn');
+  b.dataset.on = String(on);
+  b.title = `Snowflake features: ${on ? 'on' : 'off'} for this project (alpha)`;
 }
 
 /* After the graph's column lineage changed: the Columns tab's counts, and the
