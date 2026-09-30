@@ -66,7 +66,7 @@ jobs:
           persist-credentials: false
       - run: python3 tools/test_sf_lineage.py
 
-  # The Selection box against dbt itself, on tests/fixtures/jaffle_shop (0032).
+  # The Selection box against dbt itself, on tests/fixtures/jaffle_shop (0033).
   # Two versions of dbt-core, because 1.11 writes a selector reference out in
   # place and 1.12 keeps it, and that shape is what src/selectors.rs reads. dbt
   # goes into a throwaway venv; a script that skipped itself exits 2 and fails

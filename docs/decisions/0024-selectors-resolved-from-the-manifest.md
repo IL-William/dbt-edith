@@ -1,6 +1,6 @@
 # 0024. A selector expression is resolved from the manifest, never by running dbt
 
-Date: 2026-09-19 · Status: accepted, amended by 0031 · Follows 0002
+Date: 2026-09-19 · Status: accepted, amended by 0032 · Follows 0002
 
 **Trigger:** read before changing how the Selection box matches, before adding a
 selector method, and before reaching for `dbt ls` to answer anything.

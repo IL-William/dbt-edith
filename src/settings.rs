@@ -34,13 +34,26 @@ pub struct Settings {
     /// Where a fresh browser tab starts; each tab then keeps its own choice.
     #[serde(default)]
     pub selected: Option<String>,
-    /// Snowflake column lineage on click. Off unless the user turned it on (0016).
+    /// Snowflake is the picked column-lineage tool, so its script runs and a
+    /// column click fetches. Off unless the user picked it (0016, 0031).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub snowflake_lineage: bool,
+    /// Whether Snowflake's features are offered at all: its column lineage and
+    /// the profile link. None follows the manifest's adapter, so a project on
+    /// another warehouse is never offered them unasked (0031). Off is written
+    /// out, because on a Snowflake project it is not the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snowflake_features: Option<bool>,
     /// Which column-lineage cache to merge, by file name. A project can hold one
     /// per producer, and the choice is the user's rather than the newest file's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cll_file: Option<String>,
+}
+
+/// Whether Snowflake's features are on: the user's choice for the project, or,
+/// until there is one, whether the manifest says the adapter is Snowflake.
+pub fn snowflake_features(chosen: Option<bool>, adapter: &str) -> bool {
+    chosen.unwrap_or_else(|| adapter.eq_ignore_ascii_case("snowflake"))
 }
 
 fn looks_absolute(value: &str, windows: bool) -> bool {
@@ -367,5 +380,33 @@ mod tests {
         let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
         assert!(!text.contains("snowflake_lineage"), "off is the default, so it is not written: {text}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn snowflake_features_follow_the_adapter_until_chosen() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-settings-feat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store { path: Some(dir.join("p.json")), project: "/work/shop".into(), lock: Default::default() };
+
+        // A file written before the choice existed has none.
+        std::fs::write(dir.join("p.json"), br#"{"version":1,"project":"/work/shop","snowflake_lineage":true}"#).unwrap();
+        assert_eq!(store.load().snowflake_features, None);
+
+        // Off is written out: on a Snowflake project it is not the default.
+        store.update(|s| s.snowflake_features = Some(false)).await.unwrap();
+        let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
+        assert!(text.contains("\"snowflake_features\": false"), "{text}");
+        let loaded = store.load();
+        assert_eq!(loaded.snowflake_features, Some(false));
+        assert!(loaded.snowflake_lineage, "choosing must not touch the picked tool");
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert!(snowflake_features(None, "snowflake"));
+        assert!(snowflake_features(None, "Snowflake"));
+        assert!(!snowflake_features(None, "postgres"));
+        assert!(!snowflake_features(None, ""), "a manifest naming no adapter offers nothing");
+        assert!(!snowflake_features(Some(false), "snowflake"), "the user's choice wins");
+        assert!(snowflake_features(Some(true), "bigquery"));
     }
 }

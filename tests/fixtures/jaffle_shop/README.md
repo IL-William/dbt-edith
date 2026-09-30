@@ -5,7 +5,7 @@ Apache-2.0 (see `LICENSE`), copied at commit `20cc904` of 2026-09-28 so the
 comparison with dbt runs without a network. Only what `dbt parse` reads was
 kept: no images, editor settings, lock files or Docker setup.
 
-Added for dbt-edith (0032), and nothing else changed:
+Added for dbt-edith (0033), and nothing else changed:
 
 - `selectors.yml`;
 - three singular tests under `tests/`, which give indirect selection its

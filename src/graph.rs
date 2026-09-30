@@ -247,7 +247,7 @@ pub struct Graph {
     pub by_name: HashMap<String, u32>,
     /// Macro calls in the editor resolve here, never against the nodes.
     pub macros: Macros,
-    /// `--selector NAME` resolves here, against the nodes above (0031).
+    /// `--selector NAME` resolves here, against the nodes above (0032).
     pub selectors: Selectors,
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
@@ -990,7 +990,7 @@ impl Graph {
     ///
     /// `context` is drawn beside the selection and marked as such: the models
     /// a selected test belongs to that a named selector did not select itself,
-    /// so the test hangs off something (0031). They count as models when the
+    /// so the test hangs off something (0032). They count as models when the
     /// canvas is capped, and never in anything the selection reports.
     pub fn selection(&self, picked: &[u32], context: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
         let mut members: Vec<u32> = picked.to_vec();

@@ -25,7 +25,7 @@ needs no warehouse, only Python 3.10 or later, and skips itself without one.
 The selection engine is compared with `dbt ls` on `tests/fixtures/jaffle_shop`,
 which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to a Python that has
 them, or `DBT` to a dbt executable. It skips itself without either, and CI runs
-it for two versions of dbt-core (0032).
+it for two versions of dbt-core (0033).
 Updating a vendored library means changing its version in
 `scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
 when they disagree.
@@ -47,8 +47,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   regex, YAML or HTTP crate is deliberate (0003).
 - **No build step for the frontend.** What ships is what is in `web/` (0004).
 - **Never run dbt.** The binary never talks to a warehouse either:
-  `tools/sf_lineage.py` does, started by the server only once the user switches
-  Snowflake lineage on, under their own credentials (0002, 0016).
+  `tools/sf_lineage.py` does, started by the server only once the user picks
+  Snowflake as the column lineage tool, with Snowflake's features on for the
+  project, under their own credentials (0002, 0016, 0031).
 - **Never return or log a `.env` value**, beyond the three things allowed to
   leave: resolved locations, `DBT_TARGET` (0012, 0017), and a resolved
   `env_var()` in the hover card, which passes two guards first (0019).
@@ -115,7 +116,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a field to a payload, a log line or a route | [0012](docs/decisions/0012-secrets-and-boundaries.md), [0017](docs/decisions/0017-the-profile-is-reachable.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
 | add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md) |
-| start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md) |
+| start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
+| add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |
 | make the server read files it was not asked for by name | [0020](docs/decisions/0020-search-never-opens-an-env-file.md) |
@@ -128,8 +130,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the folder bands, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md) |
-| resolve a named selector, or change which tests a criterion brings along | [0031](docs/decisions/0031-named-selectors-from-the-manifest.md) |
-| change how a selection resolves, or touch the Jaffle Shop fixture | [0032](docs/decisions/0032-selections-are-checked-against-dbt.md) |
+| resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
+| change how a selection resolves, or touch the Jaffle Shop fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |

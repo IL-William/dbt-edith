@@ -1,6 +1,6 @@
-# 0032. Selections are checked against dbt itself, on a copy of Jaffle Shop
+# 0033. Selections are checked against dbt itself, on a copy of Jaffle Shop
 
-Date: 2026-09-30 · Status: accepted · Follows 0013, 0024 and 0031
+Date: 2026-09-30 · Status: accepted · Follows 0013, 0024 and 0032
 
 **Trigger:** read before changing how a selection resolves, before touching
 `tests/fixtures/jaffle_shop/`, and when the `dbt` job fails in CI.
@@ -8,7 +8,7 @@ Date: 2026-09-30 · Status: accepted · Follows 0013, 0024 and 0031
 ## Context
 
 `src/select.rs` and `src/selectors.rs` re-implement dbt's selection (0024,
-0031). Their unit tests assert what the code's author read in dbt's source, so
+0032). Their unit tests assert what the code's author read in dbt's source, so
 a misreading sits in the code and in its test alike, and both pass. The only
 check against dbt itself was a one-off run of `dbt ls` on a client project,
 which cannot live in a public repository (0014).
@@ -24,7 +24,7 @@ lines with `dbt ls`, name for name.
 
 It needs dbt-core and dbt-duckdb, so it skips itself without them and
 check.sh still needs nothing installed (0013). CI installs dbt-core 1.11 and
-1.12, the two manifest shapes 0031 reads, and fails when it skips. `DBT` runs
+1.12, the two manifest shapes 0032 reads, and fails when it skips. `DBT` runs
 an executable instead, which is how dbt Fusion is compared, locally.
 
 ## Rejected

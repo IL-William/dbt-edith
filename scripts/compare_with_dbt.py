@@ -3,7 +3,7 @@
 
 Every named selector of that project, and a list of typed expressions below,
 is resolved twice: by dbt-edith, over the manifest dbt just wrote, and by
-`dbt ls`. The two lists of names have to be the same (0032). This is the only
+`dbt ls`. The two lists of names have to be the same (0033). This is the only
 check of the selector engine that does not rest on reading dbt's code right.
 
 dbt runs in this process, through `dbtRunner`, so it needs dbt-core and

@@ -8,7 +8,7 @@
 //! A typed line and a named selector from `selectors.yml` resolve through the
 //! same engine: a tree of criteria combined by set operations, which is what
 //! dbt's `SelectionSpec` is, with each criterion deciding for itself which
-//! tests it brings along (0031). `src/selectors.rs` builds the named trees.
+//! tests it brings along (0032). `src/selectors.rs` builds the named trees.
 //!
 //! Invariant: a disabled node is never returned, and never walked through.
 //! dbt's graph does not contain them, so an answer here must not contain them
