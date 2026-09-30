@@ -43,6 +43,9 @@ check('context is counted apart from the selection',
   selectStatus({ matched: 3, nodes: [{ name: 't1' }, { name: 't2' }, { name: 't3' }, { name: 'm', context: true }],
     edges: new Array(3), truncated: false }),
   '3 nodes · 3 edges · 1 for context');
+check('a canvas of context alone leads with it, never with 0 nodes',
+  selectStatus({ matched: 3, nodes: [{ context: true }, { context: true }], edges: new Array(1), truncated: false, hidden_tests: 3 }),
+  '2 for context · 1 edge · 3 tests hidden');
 check('tests the box keeps off the canvas are named',
   selectStatus({ matched: 7, nodes: new Array(2), edges: new Array(1), truncated: false, hidden_tests: 5 }),
   '2 nodes · 1 edge · 5 tests hidden');

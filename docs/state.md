@@ -293,8 +293,11 @@ brings its own tests, by its own `indirect_selection`, before the sets are
 combined, as dbt-core's `select_nodes_recursively` does. Typed lines go through
 the same engine now, so 0024's "applied once at the end" is gone, and `+` and
 `@` walk into tests as dbt's graph does. For a named selector the tests box
-filters the drawing only: on, a test's models are drawn beside it, dimmed when
-the selector did not pick them.
+filters the drawing only. A test's models are drawn either way, dimmed when the
+selector did not pick them; on, the test hangs off them, off, only it goes. The
+first version drew nothing at all with the box off for a selector of tests
+alone, and said why under the Selection bar, where the bar hid the sentence;
+the hint now sits in the middle of the pane, and that canvas shows the models.
 
 Measured on the 18 825 node project, parsed again from its current files with
 dbt Fusion 2.0.6: all 85 selectors this build resolves answer what
