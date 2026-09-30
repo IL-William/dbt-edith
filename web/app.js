@@ -3893,6 +3893,8 @@ function exportCanvasCss() {
     '.nd.off .t1, .nd.off .t2 { opacity: .55; }',
     '.nd.ctx { opacity: .45; }',
     '.nd.ctx:hover { opacity: .85; }',
+    '.nd.rider rect.box { fill: var(--bg-2); rx: 4; }',
+    '.nd.rider .t1 { font-size: 10.5px; }',
     '.nd.sel rect.box { stroke: #fff; }',
     '.nd .kindbar { stroke: none; rx: 3; }',
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',

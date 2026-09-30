@@ -616,10 +616,17 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **tests** eye beside the depth boxes draws the data tests on the canvas too, each
-hanging off the models it reads. It is off to start with and turns amber when
-on, because tests can outnumber the models several times over: hundreds of
-boxes slow the canvas and bury what it was drawn for. Its tooltip says so.
+The **tests** eye beside the depth boxes draws the data tests on the canvas too.
+It is off to start with and turns amber when on, because tests can outnumber the
+models several times over: hundreds of boxes slow the canvas and bury what it
+was drawn for. Its tooltip says so.
+
+A test hangs under the model whose YAML declares it, as a one-line box joined
+to it by a stem, the tests of one model listed by name. A singular test, which
+has no YAML, hangs under the last built of the models it reads. An edge from
+another model the test reads comes in from the left, loops out on the right
+when that model sits in the same column, and comes back dashed when it is built
+later.
 
 The **folders** checkbox, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models

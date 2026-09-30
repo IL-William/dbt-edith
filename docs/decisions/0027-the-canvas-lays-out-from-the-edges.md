@@ -1,6 +1,6 @@
 # 0027. The canvas lays out from the edges, and depth stays a distance
 
-Date: 2026-09-23 · Status: accepted, amended by 0029 · Amends 0006
+Date: 2026-09-23 · Status: accepted, amended by 0029 and 0034 · Amends 0006
 
 **Trigger:** read before changing where a box sits on the lineage canvas, or
 before reading `n.depth` for anything.
