@@ -38,8 +38,9 @@ const Lineage = (() => {
   const CUSTOM = '#ff6ec7';
   /* A test hung under its model (0034): a one-line box, `indent` in from the
      model's left edge so the stem joining them shows, `top` below the model and
-     `gap` apart. */
-  const RIDE = { h: 22, gap: 4, top: 6, indent: 18 };
+     `gap` apart. Past `fold` of them a model shows its first `fold` and a chip
+     for the rest, which opens them (0035). */
+  const RIDE = { h: 22, gap: 4, top: 6, indent: 18, fold: 5 };
 
   /* Column mode colours the edge rather than the box. Where a column is stored
      is not what you are reading that graph for: what happened to it between two
@@ -355,16 +356,17 @@ const Lineage = (() => {
      or '' when it is not known, which files every node as the project's own:
      the layout then gives each folder a band of columns (0029). Left out, or
      null, it draws as it always has. */
-  function dagLayout(d, dim, folders) {
+  function dagLayout(d, dim, folders, open) {
     // Tests with a model to hang under leave the grid: the rest is laid out as
     // it always was, each host made taller by what hangs under it (0034).
-    const cut = dagRiders(d), c = cut ? cut.core : d;
+    // `open` holds the ids of the models whose folded tests are shown (0035).
+    const cut = dagRiders(d), c = cut ? cut.core : d, ride = dim.ride || RIDE;
     const n = c.nodes.length, R = dagRank(c.nodes);
     const F = folders == null ? null : dagFolders(c.nodes, c.edges, folders, dagLayers(n, c.edges, R).layer);
     const lay = dagLayers(n, c.edges, R, F && F.band);
-    const hosts = cut && dagHosts(d, cut, lay.layer, R.rank);
+    const hosts = cut && dagHosts(d, cut, lay.layer, R.rank, ride.fold, open);
     const g = dagProper(n, lay, R.rank, c.edge_kinds || [], dim.bundle);
-    if (hosts) g.extra = dagStacks(hosts, n, dim.ride || RIDE);
+    if (hosts) g.extra = dagStacks(hosts, n, ride);
     dagOrder(g, R);
     let y = bkCoords(g, dim);
     if (dagSpan(g, y, dim) > 1.5 * dagTallest(g, dim)) {
@@ -407,8 +409,14 @@ const Lineage = (() => {
      server sends as `attached`, when it is drawn and read by the test. A
      singular test has no YAML, so it takes the parent in the furthest column,
      the last of its inputs to be built, then the first by name. Under a host,
-     tests go by name. */
-  function dagHosts(d, cut, layer, rank) {
+     tests go by name.
+
+     Past `fold` tests a host keeps its first `fold` and a chip counting the
+     rest, `hidden`, which are not drawn at all, their edges with them: a model
+     with a hundred tests would otherwise stand thousands of pixels tall. A
+     host whose id is in `open` shows them all, and a chip to fold them again.
+     Nothing here changes an answer, only how much of it is drawn (0035). */
+  function dagHosts(d, cut, layer, rank, fold, open) {
     const host = new Int32Array(d.nodes.length).fill(-1), stacks = new Map();
     for (let v = 0; v < d.nodes.length; v++) {
       if (!cut.rider[v]) continue;
@@ -431,14 +439,30 @@ const Lineage = (() => {
       const I = String(d.nodes[a].id), J = String(d.nodes[b].id);
       return I < J ? -1 : I > J ? 1 : a - b;
     };
-    for (const list of stacks.values()) list.sort(byName);
-    return { host, stacks };
+    const hidden = new Set(), chips = new Map(), limit = fold == null ? Infinity : fold;
+    stacks.forEach((list, h) => {
+      list.sort(byName);
+      if (list.length <= limit) return;
+      const id = d.nodes[cut.keep[h]].id;
+      if (open && open.has(id)) { chips.set(h, { id, open: true, count: list.length - limit }); return; }
+      chips.set(h, { id, open: false, count: list.length - limit });
+      for (const v of list.splice(limit)) hidden.add(v);
+    });
+    return { host, stacks, hidden, chips };
   }
 
-  // How much taller each host is for the tests hanging under it.
+  // What a fold chip says: how many more there are, or that they can fold again.
+  function foldLabel(c) {
+    return c.open ? 'fewer tests' : `+${c.count} more test${c.count === 1 ? '' : 's'}`;
+  }
+
+  // How much taller each host is for what hangs under it, a chip counting as a test.
   function dagStacks(hosts, n, ride) {
     const extra = new Float64Array(n);
-    hosts.stacks.forEach((list, h) => { extra[h] = ride.top + list.length * ride.h + (list.length - 1) * ride.gap; });
+    hosts.stacks.forEach((list, h) => {
+      const rows = list.length + (hosts.chips.has(h) ? 1 : 0);
+      extra[h] = ride.top + rows * ride.h + (rows - 1) * ride.gap;
+    });
     return extra;
   }
 
@@ -471,14 +495,23 @@ const Lineage = (() => {
       bb[0] = Math.min(bb[0], x); bb[1] = Math.min(bb[1], yy);
       bb[2] = Math.max(bb[2], x); bb[3] = Math.max(bb[3], yy);
     };
+    const chips = [];
     hosts.stacks.forEach((list, h) => {
-      const hb = L.boxes[h];
+      const hb = L.boxes[h], slot = (i) => ({ x: hb.x + ride.indent, y: hb.y + hb.h + ride.top + i * (ride.h + ride.gap), w: hb.w - ride.indent, h: ride.h });
       list.forEach((v, i) => {
-        const b = { x: hb.x + ride.indent, y: hb.y + hb.h + ride.top + i * (ride.h + ride.gap), w: hb.w - ride.indent, h: ride.h, rider: true };
+        const b = Object.assign(slot(i), { rider: true });
         boxes[v] = b;
         grow(b.x, b.y); grow(b.x + b.w, b.y + b.h);
       });
+      const chip = hosts.chips.get(h);
+      if (chip) {
+        const b = Object.assign(slot(list.length), { host: cut.keep[h], id: chip.id, open: chip.open, count: chip.count });
+        chips.push(b);
+        grow(b.x, b.y); grow(b.x + b.w, b.y + b.h);
+      }
     });
+    // A folded test is not drawn, and neither is any edge into it.
+    hosts.hidden.forEach((v) => { boxes[v] = null; });
     cut.edgeOf.forEach((i, c) => { paths[i] = L.paths[c]; back[i] = L.back[c]; });
     const mid = (b) => b.y + b.h / 2;
     const curve = (pts) => {
@@ -489,6 +522,7 @@ const Lineage = (() => {
     d.edges.forEach(([a, v], i) => {
       if (paths[i] !== undefined) return;
       const A = boxes[a], B = boxes[v];
+      if (!A || !B) { paths[i] = null; return; }
       if (cut.rider[v] && cut.keep[hosts.host[v]] === a) {
         const x = A.x + ride.indent / 2;
         paths[i] = `M${x},${A.y + A.h} L${x},${mid(B)} L${B.x},${mid(B)}`;
@@ -509,6 +543,7 @@ const Lineage = (() => {
     });
     const out = { boxes, paths, back, bbox: n ? { x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3] } : null };
     if (L.bands) { out.bands = L.bands; out.against = L.against; }
+    if (chips.length) { out.chips = chips; out.folded = hosts.hidden.size; }
     return out;
   }
 
@@ -943,6 +978,10 @@ const Lineage = (() => {
   let view = { k: 1, x: 0, y: 0 }, selected = null;
   // The folder bands drawn, and the layer over the canvas their names sit in.
   let bands = [], heads = null, drawn = null;
+  // The models whose folded tests are shown, by id, kept across redraws, and
+  // the options the last render() had, to draw again after a chip's click.
+  const unfolded = new Set();
+  let lastOpts = {};
   // Module scope, not init's: render() reads it to keep a hover card from
   // opening under a pointer that is in the middle of a pan.
   let drag = null;
@@ -1052,7 +1091,7 @@ const Lineage = (() => {
     const L = dagLayout(d, {
       w: W, h: H, hgap: HGAP, vgap: VGAP, lane: LANE, bundle: BUNDLE,
       badge: d.mode === 'column' ? TAG_ROOM : 0,
-    }, folders);
+    }, folders, unfolded);
     bbox = L.bbox;
     return L;
   }
@@ -1062,6 +1101,7 @@ const Lineage = (() => {
      what the bands added, for the line under the canvas; null without them. */
   function render(d, opts = {}) {
     data = d;
+    lastOpts = opts;
     const columnMode = d.mode === 'column';
     W = columnMode ? 180 : 200;
     H = columnMode ? 40 : 48;
@@ -1074,7 +1114,7 @@ const Lineage = (() => {
     const L = layout(d, opts.folders);
     place = L.boxes;
     bands = L.bands || [];
-    drawn = L.bands ? { folders: bands.length, against: L.against } : null;
+    drawn = L.bands || L.folded ? { folders: bands.length, against: L.against || 0, folded: L.folded || 0 } : null;
     root.textContent = '';
 
     const bandLayer = el('g', { class: 'bands' }), edgeLayer = el('g'), nodeLayer = el('g');
@@ -1101,6 +1141,7 @@ const Lineage = (() => {
     // One path per edge even when it runs through lanes, so select() and the
     // exported page still find it by its two ends.
     d.edges.forEach(([a, b], i) => {
+      if (!L.paths[i]) return;                // into a folded test
       const path = el('path', {
         // A line into a test links a check to what it checks, not data to
         // where it goes, so it is drawn apart: see `.edge.test`.
@@ -1120,6 +1161,7 @@ const Lineage = (() => {
 
     d.nodes.forEach((n, i) => {
       const b = place[i];
+      if (!b) return;                         // a folded test
       const g = el('g', {
         class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '') + (b.rider ? ' rider' : ''),
         transform: `translate(${b.x},${b.y})`,
@@ -1168,7 +1210,27 @@ const Lineage = (() => {
       nodeLayer.appendChild(g);
     });
 
-    fit();
+    // A chip under a model with more tests than show: it opens them, or
+    // folds them again. A button, so a keyboard reaches it too.
+    (L.chips || []).forEach((c) => {
+      const g = el('g', { class: 'nd rider fold', transform: `translate(${c.x},${c.y})`, role: 'button', tabindex: '0' });
+      g.setAttribute('aria-label', c.open ? `Fold the tests of ${d.nodes[c.host].name}` : `Show ${c.count} more tests of ${d.nodes[c.host].name}`);
+      g.appendChild(el('rect', { class: 'box', width: c.w, height: c.h }));
+      const t = el('text', { class: 't1', x: 12, y: c.h / 2 + 4 });
+      t.textContent = foldLabel(c);
+      g.appendChild(t);
+      const toggle = (e) => {
+        e.stopPropagation();
+        if (unfolded.has(c.id)) unfolded.delete(c.id); else unfolded.add(c.id);
+        const got = render(data, Object.assign({}, lastOpts, { keepView: true }));
+        handlers.onRefold && handlers.onRefold(data, got);
+      };
+      g.addEventListener('click', toggle);
+      g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(e); } });
+      nodeLayer.appendChild(g);
+    });
+
+    if (!opts.keepView) fit(); else apply();
     select(selected);
     return drawn;
   }

@@ -545,6 +545,68 @@ group('a test hangs under the model whose YAML declares it', function () {
   ok('150 models carrying 200 tests: nothing overlaps, and the frame holds it all', apart(C) && within(C));
 });
 
+group('past five, a model\'s tests fold under a chip', function () {
+  // wide carries 12 tests, five carries exactly 5, and one test of wide's is
+  // also read by five, so its second edge goes when it folds.
+  function tested(open) {
+    var d = graph(['stg', 'wide', 'five'], [['stg', 'wide'], ['stg', 'five']]);
+    for (var i = 0; i < 12; i++) {
+      d.nodes.push({ id: 'test.shop.w' + (i < 10 ? '0' : '') + i, name: 'test_w' + (i < 10 ? '0' : '') + i, depth: 0, kind: 'test', attached: 1 });
+      d.edges.push([1, d.nodes.length - 1]);
+    }
+    for (i = 0; i < 5; i++) {
+      d.nodes.push({ id: 'test.shop.f' + i, name: 'test_f' + i, depth: 0, kind: 'test', attached: 2 });
+      d.edges.push([2, d.nodes.length - 1]);
+    }
+    d.edges.push([2, 3 + 11]);
+    return { d: d, L: dagLayout(d, MODEL, null, open) };
+  }
+  function shown(L) { return L.boxes.filter(function (b) { return b && b.rider; }).length; }
+  function spread(L) {
+    var ok = true, B = L.boxes.filter(Boolean).concat(L.chips || []);
+    B.forEach(function (a, i) {
+      B.forEach(function (c, j) {
+        if (i < j && !(a.x + a.w <= c.x || c.x + c.w <= a.x || a.y + a.h <= c.y || c.y + c.h <= a.y)) ok = false;
+      });
+    });
+    return ok;
+  }
+  function holds(L) {
+    var b = L.bbox, fits = function (x, y) { return x >= b.x0 - 0.5 && x <= b.x1 + 0.5 && y >= b.y0 - 0.5 && y <= b.y1 + 0.5; };
+    return L.boxes.filter(Boolean).concat(L.chips || []).every(function (r) { return fits(r.x, r.y) && fits(r.x + r.w, r.y + r.h); })
+      && L.paths.filter(Boolean).every(function (s) { return points(s).every(function (p) { return fits(p[0], p[1]); }); });
+  }
+
+  var T = tested(null), L = T.L, wide = L.boxes[1];
+  check('five of twelve shown, five of five, and one chip', [shown(L), (L.chips || []).length], [10, 1]);
+  var chip = L.chips[0];
+  check('the chip counts the rest, under the fifth', [chip.count, chip.open, chip.id, foldLabel(chip)], [7, false, 'model.shop.wide', '+7 more tests']);
+  ok('in the slot after the fifth test, in line with them', chip.x === wide.x + 18 && chip.y === wide.y + wide.h + 6 + 5 * 26);
+  check('the folded ones are not drawn, and no edge reaches them', [L.boxes.slice(3 + 5, 3 + 12).every(function (b) { return b === null; }),
+    T.d.edges.every(function (e, i) { return L.boxes[e[1]] || L.paths[i] === null; })], [true, true]);
+  check('the first five by name stay', L.boxes.slice(3, 8).every(Boolean), true);
+  check('and the line under the canvas can count them', L.folded, 7);
+  ok('nothing overlaps, and the frame holds it all', spread(L) && holds(L));
+
+  var O = tested(new Set(['model.shop.wide'])).L;
+  check('opened, all twelve and a chip to fold them again', [shown(O), O.chips[0].open, foldLabel(O.chips[0])], [17, true, 'fewer tests']);
+  ok('opened, nothing overlaps either', spread(O) && holds(O));
+
+  var crowd = generated(150, 4);
+  for (var m = 0; m < 150; m++) {
+    for (var k = 0; k < 20; k++) {
+      crowd.nodes.push({ id: 'test.shop.c' + m + '_' + k, name: 'test_' + m + '_' + (k < 10 ? '0' : '') + k, depth: 0, kind: 'test', attached: m });
+      crowd.edges.push([m, crowd.nodes.length - 1]);
+    }
+  }
+  var plain = dagLayout(generated(150, 4), MODEL), C, t = best(function () { C = dagLayout(crowd, MODEL); });
+  ok('150 models of 20 tests each: five and a chip under every one', shown(C) === 750 && C.chips.length === 150 && C.folded === 2250);
+  ok('so the canvas grows by six rows a model at most, however many tests (' + Math.round(C.bbox.y1 - C.bbox.y0) + ' px tall)',
+    C.bbox.y1 - C.bbox.y0 <= (plain.bbox.y1 - plain.bbox.y0) + 150 * (6 + 6 * 26));
+  ok('nothing overlaps, and the frame holds it all', spread(C) && holds(C));
+  ok('3150 nodes laid out in under 250 ms (' + t + ' ms here)', t < 250);
+});
+
 group('the canvas draws what the layout marks', function () {
   var css = read('web/app.css');
   ok('render() gives a turned edge its own class', /class:\s*\(?L\.back\[i\]\s*\?\s*'edge back'\s*:\s*'edge'/.test(lin));

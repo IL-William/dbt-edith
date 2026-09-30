@@ -339,6 +339,17 @@ did, so its sinks are models now. Every line into a test is dotted and grey,
 dash and dot when turned, `.edge.test` sitting before `.edge.hi` so a selected
 one still turns accent. Not yet opened on the VM.
 
+Tests folded past five, added 2026-09-30 (0035): a hanging test costs 26 px, and
+the most tested node of that project carries 134, about 3 500 px of pile. Under
+a model the first five show and a chip opens the rest, per model, in place and
+without moving the view; folded tests and their edges are not drawn, and the
+status line counts them. The cap, which kept the canvas alive but emptied the
+models reached last of their tests, now takes one test per model a turn, in
+model mode and in Custom selection alike. In `layout.js`, 150 models of 20 tests
+each lay out 1 978 px tall with five and a chip under each. Driven in headless
+Chrome on that project: the node with 17 tests shows five and `+12 more tests`,
+opens to seventeen by click and folds again by keyboard. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -532,7 +543,9 @@ cross-compile.
   `VGAP` sit above the slice, which is why sizes arrive as a `dim` argument, and
   nothing in it may touch the DOM or the module's `data`, `place` or `bbox`.
   `RIDE`, the sizes of a test hanging under its model, sits inside it, beside
-  the `dagRiders` to `dagMount` functions that hang them (0034).
+  the `dagRiders` to `dagMount` functions that hang them (0034) and
+  `foldLabel`, the chip's words (0035). Which models are opened lives outside
+  it, in `unfolded`, and reaches `dagLayout` as its `open` argument.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

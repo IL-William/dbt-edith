@@ -40,6 +40,7 @@ it is built this way, for whoever changes it next.
 | [0032](0032-named-selectors-from-the-manifest.md) | A named selector is read from the manifest and resolved whole | changing how `--selector` resolves, how a criterion brings its tests, or what the tests checkbox does in Selection |
 | [0033](0033-selections-are-checked-against-dbt.md) | Selections are checked against dbt itself, on a copy of Jaffle Shop | changing how a selection resolves, touching `tests/fixtures/jaffle_shop/`, or a failing `dbt` job |
 | [0034](0034-a-test-hangs-under-its-model.md) | A test hangs under the model whose YAML declares it | changing where the canvas draws a test, or what `attached` in a lineage payload means |
+| [0035](0035-tests-fold-past-five.md) | A model's tests fold past five, and a capped canvas shares its room | changing how many tests show under a model, or which tests the canvas keeps when capped |
 
 ## Keeping these honest
 

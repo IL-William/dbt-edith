@@ -78,6 +78,7 @@ check('first, so the cap on warnings never drops it',
 check('a selector of tests alone, with the tests box off, says why the canvas is empty',
   selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): open the tests eye to see them.');
 check('the tests eye warns before it draws them', testsTitle(false).indexOf('hundreds') > 0, true);
+check('and counts them while it is open', [testsLabel(0), testsLabel(311)], ['tests', 'tests · 311']);
 check('and says how to hide them once they are drawn', /^Data tests shown.*Click to hide them\.$/.test(testsTitle(true)), true);
 check('one that matched nothing says that', selectEmptyText({ matched: 0 }), 'Nothing matched.');
 check('and some tests hidden among models is not the same thing',

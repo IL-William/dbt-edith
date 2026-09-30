@@ -643,6 +643,11 @@ kbd {
 /* A test hanging under its model (0034): a slip of the same box, one line. */
 .nd.rider rect.box { fill: var(--bg-2); rx: 4; }
 .nd.rider .t1 { font-size: 10.5px; }
+/* The chip for the tests folded under a model (0035): an outline, not a box. */
+.nd.fold { cursor: pointer; }
+.nd.fold rect.box { fill: transparent; stroke-dasharray: 3 3; }
+.nd.fold .t1 { fill: var(--fg-dim); }
+.nd.fold:hover .t1 { fill: var(--fg); }
 .nd.sel rect.box { stroke: #fff; }
 .nd .kindbar { stroke: none; rx: 3; }
 .nd .t1 { fill: var(--fg); font-size: 11.5px; }

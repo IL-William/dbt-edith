@@ -2653,6 +2653,7 @@ async function focusNode(id, { open = false } = {}) {
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
     paintLegend(sub);
+    paintTestsCount(sub);
     renderCatalog(detail);
     for (const kind of ['compiled', 'run']) {
       if (!$('#dock-' + kind).classList.contains('hidden')) loadArtifact(kind, id);
@@ -2682,6 +2683,7 @@ async function focusColumn(id, column) {
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
     paintLegend(sub);
+    paintTestsCount(sub);
     showDock('lineage');
   } catch (e) {
     toast('column lineage: ' + e.message, 'err');
@@ -2744,6 +2746,7 @@ async function runSelection() {
       $('#lineage-empty').classList.add('hidden');
       drawn = Lineage.render(sub, canvasOptions());
       paintLegend(sub);
+      paintTestsCount(sub);
     } else {
       Lineage.clear();
       emptyHint(selectEmptyText(sub));
@@ -2855,9 +2858,12 @@ function canvasStatus(sub, drawn) {
    a dashed edge in model mode would look like a loop dbt does not allow. */
 function foldersStatus(drawn) {
   if (!drawn) return '';
-  const n = drawn.folders, back = drawn.against;
-  return ` · ${n} folder${n === 1 ? '' : 's'}`
-    + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '');
+  const n = drawn.folders, back = drawn.against, folded = drawn.folded || 0;
+  // Folded tests are in the answer and off the canvas, under a chip that says
+  // how many (0035): the line counts them too, so nothing reads as missing.
+  return (n ? ` · ${n} folder${n === 1 ? '' : 's'}`
+    + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '') : '')
+    + (folded ? ` · ${folded} test${folded === 1 ? '' : 's'} folded` : '');
 }
 
 /* Four at most: a selector with twenty bad terms has one mistake in it, not
@@ -2936,6 +2942,11 @@ function selectEmptyText(sub) {
     return `This selector keeps only tests (${hidden}): open the tests eye to see them.`;
   }
   return 'Nothing matched.';
+}
+
+/* The word on the tests eye, with the count of tests sent when there are some. */
+function testsLabel(n) {
+  return n ? `tests · ${n}` : 'tests';
 }
 
 /* The tests toggle's words. Data tests can outnumber the models several times
@@ -3393,6 +3404,13 @@ function testsEye(on) {
   draw('circle', { cx: 8, cy: 8, r: 2.1 });
   if (!on) draw('path', { d: 'M2.6 13.4 13.4 2.6' });
   return svg;
+}
+
+/* How many tests the canvas was sent, beside the word on the eye, while it is
+   open: the number that decides how heavy the picture is. */
+function paintTestsCount(sub) {
+  const word = $('#with-tests span');
+  if (word) word.textContent = testsLabel(testsOn() && sub ? sub.nodes.filter((n) => n && n.kind === 'test').length : 0);
 }
 
 function testsOn() {
@@ -3897,6 +3915,10 @@ function exportCanvasCss() {
     '.nd.ctx:hover { opacity: .85; }',
     '.nd.rider rect.box { fill: var(--bg-2); rx: 4; }',
     '.nd.rider .t1 { font-size: 10.5px; }',
+    '.nd.fold { cursor: pointer; }',
+    '.nd.fold rect.box { fill: transparent; stroke-dasharray: 3 3; }',
+    '.nd.fold .t1 { fill: var(--fg-dim); }',
+    '.nd.fold:hover .t1 { fill: var(--fg); }',
     '.nd.sel rect.box { stroke: #fff; }',
     '.nd .kindbar { stroke: none; rx: 3; }',
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
@@ -6533,6 +6555,8 @@ async function boot() {
     },
     onHoverOut: hoverLeave,
     onHoverClose: closeHoverCard,
+    // A fold chip redrew the canvas in place: only the line under it changes.
+    onRefold: (d, drawn) => { $('#lineage-status').textContent = canvasStatus(d, drawn); },
     onOpen: (n) => {
       const { node: nodeId, column } = splitColId(n.id);
       if (column && sidecarOn()) {

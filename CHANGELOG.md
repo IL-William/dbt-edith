@@ -62,6 +62,12 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   beside it (0034). A singular test hangs under the last built of its inputs.
 - A line into a test is dotted and grey, where the lines between models are
   solid, and dash and dot when it runs against its direction.
+- Past five tests, a model shows its first five and a chip, `+12 more tests`,
+  that opens the rest and folds them again; the line under the canvas counts
+  the tests folded, and the open tests eye counts the tests on the canvas (0035).
+- A canvas capped for room keeps some tests of every model, one per model a
+  turn, where the models reached last lost all of theirs, and different ones
+  after every reload.
 - The tests checkbox above the lineage is an eye labelled tests, amber while
   open, whose tooltip warns that data tests can be hundreds of boxes, which
   slows the canvas and buries the models.
