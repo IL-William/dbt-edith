@@ -11,7 +11,7 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, both audits, the Snowflake script, browser tests, syntax
+./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
@@ -22,6 +22,10 @@ the browser half without a JavaScript shell. The second audit asks OSV about
 both audits on every push and every Monday, never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
+The selection engine is compared with `dbt ls` on `tests/fixtures/jaffle_shop`,
+which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to a Python that has
+them, or `DBT` to a dbt executable. It skips itself without either, and CI runs
+it for two versions of dbt-core (0033).
 Updating a vendored library means changing its version in
 `scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
 when they disagree.
@@ -127,6 +131,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
+| change how a selection resolves, or touch the Jaffle Shop fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
