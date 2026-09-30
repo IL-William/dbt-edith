@@ -708,8 +708,10 @@ or `source_status:` is listed but refused, with the reason, since those compare
 with another run's artifacts, which this tool does not read; **dbt ls** still
 types its command. And some dbt Fusion releases, 2.0.0-preview.196 among them,
 write the manifest without `indirect_selection`. When `selectors.yml` sets it
-and the manifest lost it, an amber note says so, and every criterion answers
-with dbt's default until the project is re-parsed with a dbt that keeps it.
+and the manifest lost it, every criterion answers with dbt's default until the
+project is re-parsed with a dbt that keeps it, and an amber note says so on
+each selector whose answer that could change. A selector of tests alone never
+shows it: it brings no tests of its own for a mode to let through.
 
 ### Sharing the graph
 

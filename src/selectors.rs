@@ -17,7 +17,7 @@
 //! one word, and nothing read from it leaves this module.
 
 use crate::graph::{Graph, Kind};
-use crate::select::{self, Depth, Indirect, Resolved, SelectError, Spec, Tests};
+use crate::select::{self, Bound, Depth, Indirect, Resolved, SelectError, Spec, Tests};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -372,6 +372,24 @@ impl Selectors {
     }
 }
 
+impl Selectors {
+    /// Whether the `indirect_selection` a manifest lost could change this
+    /// selector's answer. It is resolved at both ends of the range, every
+    /// criterion bringing the fewest tests it could and the most; when the two
+    /// agree, no setting in between changes a thing, and a note saying it
+    /// might would only be noise. A selector of tests alone is the usual case.
+    pub fn depends_on_indirect(&self, graph: &Graph, name: &str) -> bool {
+        let Some(Named { spec: Some(spec), .. }) = self.get(name) else { return false };
+        let low = select::resolve_bounded(graph, spec, Tests::Eager, &|n: &str| self.spec_of(n), Bound::Low);
+        let high = select::resolve_bounded(graph, spec, Tests::Eager, &|n: &str| self.spec_of(n), Bound::High);
+        match (low, high) {
+            (Ok(low), Ok(high)) => low.nodes != high.nodes,
+            // Unreachable for a selector that resolved; saying so is the safe side.
+            _ => true,
+        }
+    }
+}
+
 /// What a named selector's answer puts on the canvas.
 #[derive(Debug, Default, PartialEq)]
 pub struct Shown {
@@ -550,6 +568,37 @@ mod tests {
         )]));
         assert_eq!(pick(&g, "fusion"), ["recon_customers_count", "recon_orders_totals"]);
         assert!(!g.selectors.carries_indirect);
+    }
+
+    #[test]
+    fn a_lost_mode_matters_only_where_it_could_change_the_answer() {
+        let recon = json!({ "method": "tag", "value": "recon" });
+        let tests = json!({ "method": "resource_type", "value": "test" });
+        let g = graph(named(&[
+            // Tests picked by name bring none of their own: no mode changes it.
+            ("tests_only", json!({ "intersection": [recon.clone(), tests.clone()] })),
+            ("tests_minus_recon", json!({ "union": [tests.clone(), { "exclude": [recon.clone()] }] })),
+            // A model brings its tests, as many as the mode lets through.
+            ("recon_near_customers", json!({ "intersection": [
+                { "method": "fqn", "value": "customers", "parents": true }, recon,
+            ]})),
+            // Under an exclusion the order turns round: more tests in the half
+            // taken away leave fewer in the answer, and that is caught too.
+            ("orders_minus_customers", json!({ "union": [
+                { "method": "fqn", "value": "orders" },
+                { "exclude": [{ "method": "fqn", "value": "customers" }] },
+            ]})),
+            ("by_reference", json!({ "method": "selector", "value": "recon_near_customers" })),
+        ]));
+        let depends = |name: &str| g.selectors.depends_on_indirect(&g, name);
+        assert!(!depends("tests_only"));
+        assert!(!depends("tests_minus_recon"));
+        assert!(depends("recon_near_customers"));
+        assert!(depends("orders_minus_customers"));
+        assert!(depends("by_reference"), "through a reference as well");
+        assert!(!depends("absent"));
+        // And the answer itself is still the eager one, whatever was asked.
+        assert_eq!(pick(&g, "recon_near_customers"), ["recon_customers_count", "recon_orders_totals"]);
     }
 
     #[test]
