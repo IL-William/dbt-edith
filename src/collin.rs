@@ -8,7 +8,7 @@
 use crate::envs::{self, Status, Vars};
 use crate::graph::{Graph, Kind};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug)]
 pub struct RawColLineage {
@@ -83,22 +83,36 @@ impl RawColLineage {
 /// One cache file found next to the manifest.
 ///
 /// `edges` is deliberately absent: the list is built by reading each file's
-/// header and discarding the edge array, so opening the selector does not parse
-/// tens of megabytes. The active cache's edge count comes from the graph, which
-/// already knows it.
+/// header and discarding the edge array, once per version of the file
+/// (`Headers`), so opening the selector does not parse tens of megabytes. The
+/// active cache's edge count comes from the graph, which already knows it.
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 pub struct Available {
     /// File name, never a path: it is what the UI shows and hands back, and a
     /// path from the browser is a path the browser chose (0015).
     pub file: String,
     pub source: String,
+    /// The tool the menu files this cache under, from `source`: empty for any
+    /// other producer, whose cache is still offered on its own.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub tool: &'static str,
     pub target: String,
     pub generated_at: String,
     pub mtime: u64,
 }
 
+/// The tools the column-lineage menu offers, in its order (0031).
+pub const TOOLS: [&str; 3] = ["fusion", "collin", "snowflake"];
+
+/// The tool a cache belongs to, by the producer it names and never by its file
+/// name: a synthetic cache renamed `column_lineage.snowflake.json` must not
+/// pass for the warehouse's answer (0008).
+pub fn tool_of(source: &str) -> &'static str {
+    TOOLS.iter().find(|t| t.eq_ignore_ascii_case(source.trim())).copied().unwrap_or("")
+}
+
 /// Just the header, with the edges parsed and thrown away.
-#[derive(serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default, Clone)]
 struct Header {
     #[serde(default)]
     version: u32,
@@ -115,7 +129,7 @@ struct Header {
 ///
 /// The bare `column_lineage.json` is what every producer wrote before this
 /// existed, so an empty source keeps it rather than inventing a new name.
-pub fn path_for(target_dir: &Path, source: &str) -> std::path::PathBuf {
+pub fn path_for(target_dir: &Path, source: &str) -> PathBuf {
     let clean: String = source
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
@@ -128,13 +142,53 @@ pub fn path_for(target_dir: &Path, source: &str) -> std::path::PathBuf {
     }
 }
 
-/// Every cache in the target directory, most recently written first.
+/// A cache's header, or None when this build cannot read the file.
+fn header(path: &Path) -> Option<Header> {
+    let bytes = std::fs::read(path).ok()?;
+    let head = serde_json::from_slice::<Header>(&bytes).ok()?;
+    (head.version <= 1).then_some(head)
+}
+
+/// The tool whose answer a cache file holds, read from its header: empty when
+/// it holds another producer's, or cannot be read.
+pub fn tool_in(path: &Path) -> &'static str {
+    header(path).map_or("", |h| tool_of(&h.source))
+}
+
+/// Headers already read, by file name, with the size and modification time
+/// they were read at.
+///
+/// Reading a header means reading the whole file: serde skips the edges
+/// without keeping them, but it still has to walk past every one of them, and
+/// three caches of 250 000 edges took about 95 ms to list. The menu lists them
+/// each time it opens, so a file is read again only when its size or its time
+/// changes, which leaves a `stat` per file.
+#[derive(Default)]
+pub struct Headers(std::sync::Mutex<HashMap<String, Seen>>);
+
+struct Seen {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    head: Option<Header>,
+}
+
+/// Every cache in the target directory, most recently written first, with
+/// every header read from disk. Startup lists once, so it keeps nothing.
+pub fn discover(target_dir: &Path) -> Vec<Available> {
+    discover_cached(target_dir, &Headers::default())
+}
+
+/// Every cache in the target directory, most recently written first, reading
+/// only the headers `headers` has not seen at this size and time.
 ///
 /// A file that cannot be read is left out rather than reported: the selector
 /// offers what can actually be loaded, and `load` still explains itself when one
-/// of them is chosen and turns out to be broken.
-pub fn discover(target_dir: &Path) -> Vec<Available> {
+/// of them is chosen and turns out to be broken. A file caught half written is
+/// read again once it is whole, since writing it moves its time.
+pub fn discover_cached(target_dir: &Path, headers: &Headers) -> Vec<Available> {
     let Ok(entries) = std::fs::read_dir(target_dir) else { return Vec::new() };
+    let Ok(mut seen) = headers.0.lock() else { return Vec::new() };
+    let mut present: HashSet<String> = HashSet::new();
     let mut out: Vec<Available> = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -142,35 +196,33 @@ pub fn discover(target_dir: &Path) -> Vec<Available> {
             continue;
         }
         let path = entry.path();
-        if !path.is_file() {
+        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        if !meta.is_file() {
             continue;
         }
-        let Ok(bytes) = std::fs::read(&path) else { continue };
-        let Ok(head) = serde_json::from_slice::<Header>(&bytes) else { continue };
-        if head.version > 1 {
-            continue;
+        let (len, modified) = (meta.len(), meta.modified().ok());
+        present.insert(name.clone());
+        let fresh = seen.get(&name).is_some_and(|s| s.len == len && s.modified == modified);
+        if !fresh {
+            seen.insert(name.clone(), Seen { len, modified, head: header(&path) });
         }
+        let Some(head) = seen.get(&name).and_then(|s| s.head.clone()) else { continue };
         out.push(Available {
             file: name,
+            tool: tool_of(&head.source),
             source: head.source,
             target: head.target,
             generated_at: head.generated_at,
-            mtime: std::fs::metadata(&path)
-                .and_then(|m| m.modified())
-                .ok()
+            mtime: modified
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
         });
     }
+    // A file gone is forgotten, so one of the same name written later is read.
+    seen.retain(|name, _| present.contains(name));
     out.sort_by(|a, b| b.mtime.cmp(&a.mtime).then_with(|| a.file.cmp(&b.file)));
     out
-}
-
-/// The cache to load when the user has not chosen one: the most recent, which
-/// is almost always the one just written.
-pub fn default_choice(found: &[Available]) -> Option<&Available> {
-    found.first()
 }
 
 /// Resolves a file name coming from the browser against what discovery found.
@@ -180,6 +232,84 @@ pub fn default_choice(found: &[Available]) -> Option<&Available> {
 /// directory (0015).
 pub fn resolve_choice<'a>(found: &'a [Available], wanted: &str) -> Option<&'a Available> {
     found.iter().find(|a| a.file == wanted)
+}
+
+/// The cache a tool's entry stands for: its most recent, which is almost
+/// always the one just written. Discovery already sorts that way.
+pub fn latest_of<'a>(found: &'a [Available], tool: &str) -> Option<&'a Available> {
+    found.iter().find(|a| a.tool == tool)
+}
+
+/// Whether a cache may be offered at all. With Snowflake's features off, what
+/// Snowflake answered is not offered either, fetched or dumped (0031).
+pub fn offered(a: &Available, snowflake: bool) -> bool {
+    snowflake || a.tool != "snowflake"
+}
+
+/// The cache to load when nothing was asked for: at startup, and when
+/// Snowflake's features go off under the graph.
+///
+/// Snowflake picked and allowed means its newest cache, or its own file before
+/// the first fetch, so the menu never names Snowflake over another tool's
+/// edges. Otherwise the saved choice, then the most recent cache offered.
+/// With nothing found, the legacy name is kept while a Snowflake `dump` may
+/// still land there, and nothing is loaded at all otherwise.
+pub fn choose(target_dir: &Path, found: &[Available], saved: Option<&str>, live: bool, snowflake: bool) -> PathBuf {
+    if live && snowflake {
+        return latest_of(found, "snowflake").map_or_else(|| path_for(target_dir, "snowflake"), |a| target_dir.join(&a.file));
+    }
+    let saved = saved.and_then(|f| resolve_choice(found, f)).filter(|a| offered(a, snowflake));
+    if let Some(a) = saved.or_else(|| found.iter().find(|a| offered(a, snowflake))) {
+        return target_dir.join(&a.file);
+    }
+    if found.is_empty() && snowflake {
+        return target_dir.join("column_lineage.json");
+    }
+    PathBuf::new()
+}
+
+/// What the browser asks the graph to hold: a tool, or one cache by name.
+pub enum Wanted<'a> {
+    Tool(&'a str),
+    File(&'a str),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Refusal {
+    SnowflakeOff,
+    UnknownTool,
+    NoCache(String),
+}
+
+/// The file a request names, and whether Snowflake fetches on click from now
+/// on, which is exactly when Snowflake is the tool picked. Neither a tool nor a
+/// file name from the browser is ever joined onto a path: a tool is matched
+/// against `TOOLS`, a file against discovery (0015).
+pub fn pick(target_dir: &Path, found: &[Available], wanted: Wanted, snowflake: bool) -> Result<(PathBuf, bool), Refusal> {
+    match wanted {
+        Wanted::Tool(asked) => {
+            let tool = TOOLS.iter().copied().find(|t| *t == asked).ok_or(Refusal::UnknownTool)?;
+            let live = tool == "snowflake";
+            if live && !snowflake {
+                return Err(Refusal::SnowflakeOff);
+            }
+            match latest_of(found, tool) {
+                Some(a) => Ok((target_dir.join(&a.file), live)),
+                None if live => Ok((path_for(target_dir, "snowflake"), true)),
+                None => Err(Refusal::NoCache(format!(
+                    "no column lineage from {tool} beside the manifest: expected {}",
+                    path_for(Path::new(""), tool).display()
+                ))),
+            }
+        }
+        Wanted::File(name) => {
+            let a = resolve_choice(found, name).ok_or_else(|| Refusal::NoCache("no such column lineage cache beside the manifest".into()))?;
+            if !offered(a, snowflake) {
+                return Err(Refusal::SnowflakeOff);
+            }
+            Ok((target_dir.join(&a.file), false))
+        }
+    }
 }
 
 /// Why a cache from another source is left alone: a synthetic cache looks
@@ -554,13 +684,130 @@ mod tests {
         assert!(resolve_choice(&found, "column_lineage.collin.json").is_some());
         assert!(resolve_choice(&found, "../manifest.json").is_none());
         assert!(resolve_choice(&found, "column_lineage.broken.json").is_none());
-        assert!(default_choice(&found).is_some());
+        assert_eq!((collin.tool, latest_of(&found, "snowflake").map(|a| a.tool)), ("collin", Some("snowflake")));
+        assert_eq!(tool_in(&dir.join("column_lineage.snowflake.json")), "snowflake");
+        assert_eq!(tool_in(&dir.join("column_lineage.broken.json")), "");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_header_is_read_again_only_when_its_file_changes() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-collin-seen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("column_lineage.collin.json");
+        let body = |source: &str| format!(r#"{{"version":1,"source":"{source}","edges":[]}}"#);
+        std::fs::write(&path, body("collin")).unwrap();
+        let headers = Headers::default();
+        assert_eq!(discover_cached(&dir, &headers)[0].tool, "collin");
+
+        // Same size, time put back: the header kept is the one already read.
+        let at = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, body("flinch")).unwrap();
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(at).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].source, "collin");
+        assert_eq!(discover(&dir)[0].source, "flinch", "without the cache, the file itself");
+
+        // A new time is a new file.
+        let later = at + std::time::Duration::from_secs(5);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].source, "flinch");
+
+        // Gone is forgotten, and a broken file is left out until it is whole.
+        std::fs::remove_file(&path).unwrap();
+        assert!(discover_cached(&dir, &headers).is_empty());
+        std::fs::write(&path, "{\"version\":1,\"sou").unwrap();
+        assert!(discover_cached(&dir, &headers).is_empty());
+        std::fs::write(&path, body("collin")).unwrap();
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later + std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(discover_cached(&dir, &headers)[0].tool, "collin");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn discovery_of_a_missing_directory_is_empty_not_an_error() {
         assert!(discover(Path::new("/nope/not/here")).is_empty());
+    }
+
+    /// Newest first, as discovery returns them.
+    fn found(caches: &[(&str, &str)]) -> Vec<Available> {
+        caches
+            .iter()
+            .enumerate()
+            .map(|(i, (file, source))| Available {
+                file: file.to_string(),
+                source: source.to_string(),
+                tool: tool_of(source),
+                target: String::new(),
+                generated_at: String::new(),
+                mtime: 100 - i as u64,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_cache_belongs_to_a_tool_by_the_producer_it_names() {
+        assert_eq!(tool_of("snowflake"), "snowflake");
+        assert_eq!(tool_of("Collin"), "collin");
+        assert_eq!(tool_of(" fusion "), "fusion");
+        assert_eq!(tool_of("synthetic"), "");
+        assert_eq!(tool_of(""), "");
+        // The file name plays no part: this is a synthetic cache, whatever it is called.
+        let f = found(&[("column_lineage.snowflake.json", "synthetic")]);
+        assert!(latest_of(&f, "snowflake").is_none());
+    }
+
+    #[test]
+    fn with_nothing_asked_the_saved_cache_then_the_newest_offered_is_loaded() {
+        let t = Path::new("/t");
+        let f = found(&[
+            ("column_lineage.snowflake.json", "snowflake"),
+            ("column_lineage.collin.json", "collin"),
+            ("column_lineage.json", "snowflake"),
+        ]);
+        // Snowflake picked: its newest cache, whatever was saved.
+        assert_eq!(choose(t, &f, Some("column_lineage.collin.json"), true, true), t.join("column_lineage.snowflake.json"));
+        // Picked but not allowed any more: as if it had never been picked.
+        assert_eq!(choose(t, &f, None, true, false), t.join("column_lineage.collin.json"));
+        assert_eq!(choose(t, &f, Some("column_lineage.json"), false, true), t.join("column_lineage.json"));
+        assert_eq!(choose(t, &f, None, false, true), t.join("column_lineage.snowflake.json"));
+        // A saved Snowflake cache is not loaded while its features are off.
+        assert_eq!(choose(t, &f, Some("column_lineage.json"), false, false), t.join("column_lineage.collin.json"));
+
+        // Snowflake picked before its first fetch: its own file, not collin's edges.
+        let only_collin = found(&[("column_lineage.collin.json", "collin")]);
+        assert_eq!(choose(t, &only_collin, None, true, true), t.join("column_lineage.snowflake.json"));
+        // Only Snowflake's, and Snowflake off: nothing at all.
+        let only_snow = found(&[("column_lineage.json", "snowflake")]);
+        assert_eq!(choose(t, &only_snow, None, false, false), PathBuf::new());
+        // Nothing found: the legacy name, where a dump may still land, unless
+        // what lands there could only be Snowflake's.
+        assert_eq!(choose(t, &[], None, false, true), t.join("column_lineage.json"));
+        assert_eq!(choose(t, &[], None, false, false), PathBuf::new());
+    }
+
+    #[test]
+    fn a_pick_is_a_tool_or_a_discovered_file_and_snowflake_only_when_allowed() {
+        let t = Path::new("/t");
+        let f = found(&[
+            ("column_lineage.collin.json", "collin"),
+            ("column_lineage.json", "snowflake"),
+            ("column_lineage.synthetic.json", "synthetic"),
+        ]);
+        assert_eq!(pick(t, &f, Wanted::Tool("collin"), false), Ok((t.join("column_lineage.collin.json"), false)));
+        assert_eq!(pick(t, &f, Wanted::Tool("snowflake"), true), Ok((t.join("column_lineage.json"), true)));
+        assert_eq!(pick(t, &f, Wanted::Tool("snowflake"), false), Err(Refusal::SnowflakeOff));
+        assert_eq!(pick(t, &[], Wanted::Tool("snowflake"), true), Ok((t.join("column_lineage.snowflake.json"), true)));
+        let Err(Refusal::NoCache(why)) = pick(t, &f, Wanted::Tool("fusion"), true) else { panic!("fusion has no cache") };
+        assert!(why.contains("column_lineage.fusion.json"), "{why}");
+        assert_eq!(pick(t, &f, Wanted::Tool("../x"), true), Err(Refusal::UnknownTool));
+        assert_eq!(pick(t, &f, Wanted::Tool("Collin"), true), Err(Refusal::UnknownTool), "the menu sends the constant");
+
+        assert_eq!(pick(t, &f, Wanted::File("column_lineage.synthetic.json"), false), Ok((t.join("column_lineage.synthetic.json"), false)));
+        // A file is always a static cache, even one of Snowflake's.
+        assert_eq!(pick(t, &f, Wanted::File("column_lineage.json"), true), Ok((t.join("column_lineage.json"), false)));
+        assert_eq!(pick(t, &f, Wanted::File("column_lineage.json"), false), Err(Refusal::SnowflakeOff));
+        assert!(matches!(pick(t, &f, Wanted::File("../manifest.json"), true), Err(Refusal::NoCache(_))));
     }
 
     #[test]

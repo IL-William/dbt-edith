@@ -1,6 +1,6 @@
 # 0021. One column-lineage cache per producer, and the user picks
 
-Date: 2026-09-18 · Status: accepted · Amends 0008 and 0016
+Date: 2026-09-18 · Status: accepted, amended by 0031 · Amends 0008 and 0016
 
 **Trigger:** read before adding a source of column lineage, or before changing
 where one writes.
@@ -31,6 +31,9 @@ Snowflake whatever is loaded.
 
 Fetching from Snowflake is that same choice made explicitly, so it writes to its
 own file and makes it active.
+*Amended by [0031](0031-column-lineage-is-picked-by-tool.md): the user picks a
+tool, which stands for its newest cache, and a fetch adds to the Snowflake cache
+on screen when there is one.*
 
 ## Rejected
 

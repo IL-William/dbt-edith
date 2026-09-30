@@ -1,4 +1,4 @@
-# 0031. A named selector is read from the manifest and resolved whole
+# 0032. A named selector is read from the manifest and resolved whole
 
 Date: 2026-09-29 · Status: accepted · Amends 0024
 

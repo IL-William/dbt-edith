@@ -1,8 +1,9 @@
 //! The Snowflake script, `tools/sf_lineage.py serve`, started and stopped here.
 //!
 //! The binary never talks to a warehouse. It starts the script only once the
-//! user has switched Snowflake lineage on, and the script connects on its first
-//! request, so a sign-in tab can only ever follow a click (0016).
+//! user has picked Snowflake as the column lineage tool (0031), and the script
+//! connects on its first request, so a sign-in tab can only ever follow a click
+//! (0016).
 //!
 //! Two rules hold everywhere in this file:
 //!   - nothing here can hang the server. Every wait has a deadline, and
@@ -166,7 +167,7 @@ pub struct Sidecar {
     running: tokio::sync::Mutex<Option<Running>>,
     status: Mutex<Status>,
     /// The profile the script named. Outlives the script, so the file stays
-    /// reachable while the switch is off, which is when it gets corrected.
+    /// reachable while another tool is picked, which is when it gets corrected.
     profiles: Mutex<Option<PathBuf>>,
     /// What the last start used. A restart repeats it rather than working it
     /// out again, so it cannot quietly pick another interpreter.
@@ -196,6 +197,12 @@ impl Sidecar {
 
     pub fn set_enabled(&self, on: bool) {
         self.enabled.store(on, Ordering::SeqCst);
+    }
+
+    /// Says "starting" ahead of a start run in the background, so the page
+    /// polls for how it ends rather than reading "off" and stopping there.
+    pub fn mark_starting(&self) {
+        self.set_state("starting");
     }
 
     pub fn status(&self) -> Status {
@@ -440,7 +447,7 @@ impl Sidecar {
                 if let Some(run) = slot.take() {
                     self.shut(run).await;
                 }
-                Err(QueryError::own("Snowflake lineage was switched off"))
+                Err(QueryError::own("Snowflake stopped being the column lineage tool"))
             }
             Waited::Gone | Waited::Late => {
                 let late = matches!(waited, Waited::Late);
@@ -686,7 +693,7 @@ done
         let started = Instant::now();
         assert_eq!(car.stop().await.state, "off");
         let answer = tokio::time::timeout(Duration::from_secs(5), asking).await.expect("the request must return").unwrap();
-        assert_eq!(answer.unwrap_err().message, "Snowflake lineage was switched off");
+        assert_eq!(answer.unwrap_err().message, "Snowflake stopped being the column lineage tool");
         assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
         assert!(gone(&dir));
         std::fs::remove_dir_all(&dir).unwrap();

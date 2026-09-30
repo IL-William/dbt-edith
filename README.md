@@ -185,7 +185,8 @@ it is used against day to day.
 | the Git tab reports no repository | `git` is not on `PATH`, or the folder is not a clone | check `git -C <project> status` |
 | column types are missing in the Catalog | no `catalog.json` | dbt Fusion: `dbt compile --write-catalog`; dbt-core: `dbt docs generate` |
 | the URL says a port other than 4321 | 4321 was busy, so it walked forward to a free one | use the URL it printed, or pass `--port` |
-| the Snowflake lineage switch says `failed` | the script could not start, and its tooltip says why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
+| the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
+| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the snowflake in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | no browser opened | `--no-open`, or no default browser | open the printed URL by hand |
 | a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
@@ -210,7 +211,9 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Alt + W`, or middle-click a tab | close a tab |
 | `Cmd/Ctrl + \`` | jump to the terminal |
-| click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when the switch is on |
+| click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
+| the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
+| the snowflake in the top bar | Snowflake's features on or off for the project |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
@@ -431,32 +434,54 @@ File types get their own icon and colour; `.sql` files use a database glyph.
 
 ### Column lineage
 
-Column-level edges come from Snowflake's `SNOWFLAKE.CORE.GET_LINEAGE`, read by
-`tools/sf_lineage.py`. dbt-edith itself never connects to Snowflake: it has no
-HTTP client, no TLS and no credential handling, and keeping it that way is what
-lets it ship as one dependency-free binary. The script owns the connection and
-reads your dbt profile, so SSO, key-pair and password targets all work
-unchanged.
+Column-level edges come from one of three tools, picked in the menu in the top
+bar, next to the model counts. The same menu sits in Catalog > Columns.
 
-**Switch it on in Catalog > Columns, then click a column.** The switch is
-remembered per project. Switching on starts the script and checks everything
-that needs no network: a Python with the connector, your profile, its target
-and role, all named in the switch's tooltip. Nothing connects until you click a
-column, and the first click of a session may open a sign-in tab.
+| | Tool | Where its edges come from |
+| --- | --- | --- |
+| orange | **Fusion** | `target/column_lineage.fusion.json`. Nothing here writes one yet: dbt Fusion keeps its lineage as parquet under `target/index/` |
+| magenta | **Collin** | `target/column_lineage.collin.json`, parsed out of the compiled SQL by collin (0023) |
+| cyan | **Snowflake** | `SNOWFLAKE.CORE.GET_LINEAGE`, fetched when you click a column |
 
-In the top bar, next to the model counts, `profiles.yml` names the file the
-script read, and opens it in the editor. It is the one file outside the project dbt-edith opens, and only
-because the script says which one it is (0017). Saving it restarts the script,
-since the profile is read once, when it starts. When Snowflake refuses the
-connection, the message points at that file rather than leaving you with an
-error code.
+The button names the tool whose edges are on screen, in its colour, and how
+many there are; its tooltip names the file and who wrote it. A tool with
+nothing to offer is greyed, and its tooltip says which file it lacks. A tool
+stands for its newest cache: any other file beside the manifest, an older one
+of a tool's or one written by something else, is listed under "other caches"
+and can still be picked. The choice is remembered per project.
+
+**Snowflake is the one tool that fetches.** Pick it, then click a column. The
+edges come from `tools/sf_lineage.py`; dbt-edith itself never connects to
+Snowflake: it has no HTTP client, no TLS and no credential handling, and
+keeping it that way is what lets it ship as one dependency-free binary. The
+script owns the connection and reads your dbt profile, so SSO, key-pair and
+password targets all work unchanged. Picking Snowflake starts the script and
+checks everything that needs no network: a Python with the connector, your
+profile, its target and role, all named in the button's tooltip. Nothing
+connects until you click a column, and the first click of a session may open a
+sign-in tab.
+
+**Snowflake's features are a setting of the project**, a switch in the menu
+behind the snowflake in the top bar. They are marked alpha: none of them has yet been
+checked against a real warehouse. Until you choose, they follow the manifest:
+on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
+nor are the caches it wrote, nor the profile link below, and the server refuses
+every Snowflake route. More features that only make sense on Snowflake will sit
+behind the same setting.
+
+In the top bar, next to the menu, `profiles.yml` names the file the script
+read, and opens it in the editor. It is the one file outside the project
+dbt-edith opens, and only because the script says which one it is (0017).
+Saving it restarts the script, since the profile is read once, when it starts.
+When Snowflake refuses the connection, the message points at that file rather
+than leaving you with an error code.
 
 A click asks for that column's upstream and downstream lineage, as deep as the
 `up` and `down` boxes say and at most five levels, which is `GET_LINEAGE`'s
-limit. What comes back is added to `target/column_lineage.json` and drawn with
-columns as nodes, so it is still there after a restart and stays readable with
-the switch off. Changing `up` or `down` redraws what has been fetched; clicking
-a column asks Snowflake again.
+limit. What comes back is added to the Snowflake cache on screen, or to
+`target/column_lineage.snowflake.json` when there is none, and drawn with
+columns as nodes, so it is still there after a restart. Changing `up` or `down`
+redraws what has been fetched; clicking a column asks Snowflake again.
 
 **Which objects are asked about follows the environment pill** in the status
 bar. On `manifest` that is the relation your last dbt run built, usually your
@@ -482,15 +507,16 @@ thousands of calls: always scope the dump.
 
 ```
 python tools/sf_lineage.py dump --select model_a,model_b \
-  --out target/column_lineage.json
+  --out target/column_lineage.snowflake.json
 ```
 
-dbt-edith picks `target/column_lineage.json` up on its own, the same way it picks
-up `catalog.json`, and reloads when the file changes. `--column-lineage <path>`
-overrides the location. With edges present, the Catalog > Columns table gains a
-Lineage column and the canvas gains a Models / Columns switch. With no edges and
-the switch off, nothing changes: the Columns table is exactly as it was and the
-Columns switch stays disabled.
+dbt-edith finds every `target/column_lineage*.json` on its own, the same way it
+picks up `catalog.json`, and reloads the one on screen when it changes.
+`--column-lineage <path>` overrides which file is loaded at startup. With edges
+present, the Catalog > Columns table gains a Lineage column and the canvas gains
+a Models / Columns switch. With no edges and Snowflake not picked, nothing
+changes: the Columns table is exactly as it was and the Columns switch stays
+disabled.
 
 ### Where a model lives
 
@@ -667,7 +693,7 @@ It is resolved from the manifest too, where dbt stores every selector already
 parsed, and resolved whole. Each criterion keeps its own `indirect_selection`,
 so a `buildable` one keeps only the tests whose inputs all sit upstream of the
 selection, and an `empty` one keeps none, as `dbt ls --selector` would
-([0031](docs/decisions/0031-named-selectors-from-the-manifest.md)).
+([0032](docs/decisions/0032-named-selectors-from-the-manifest.md)).
 
 The **tests** checkbox means something else here. The selector's definition
 already decided which tests belong, so the box only decides what is drawn. Off,
@@ -835,7 +861,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [-p, --port 4321]               tries up to 20 ports from there, then gives up
          [--manifest path/manifest.json] default <project>/target/manifest.json
          [--catalog path/catalog.json]   default <project>/target/catalog.json
-         [--column-lineage path.json]    default <project>/target/column_lineage.json
+         [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              overrides the shell below
          [--no-open]                     do not open a browser at startup
 ```
@@ -868,7 +894,7 @@ JavaScript engine, no install required, from the repository root:
 JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
 $JSC web/tests/tabs.js        # preview/pinned tab state machine
 $JSC web/tests/explorer.js    # git and unsaved colouring, including folders
-$JSC web/tests/collineage.js  # composite column ids and node subtitles
+$JSC web/tests/collineage.js  # composite column ids, node subtitles, and the column lineage menu
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks
 $JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
 $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
@@ -907,7 +933,7 @@ src/api.rs        HTTP + WebSocket handlers
 src/collin.rs     the column lineage cache, merged like catalog.json
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
-src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
+src/sidecar.rs    the Snowflake script: started once Snowflake is picked, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs     macros from the manifest, and which one a call in the editor reaches
 src/freshness.rs  whether manifest.json still matches the files dbt would parse

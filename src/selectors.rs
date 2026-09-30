@@ -2,7 +2,7 @@
 //! tree dbt resolves each one to.
 //!
 //! The manifest stores every selector already parsed, so nothing here reads
-//! YAML (0031). It arrives in more than one shape. dbt-core writes `exclude`
+//! YAML (0032). It arrives in more than one shape. dbt-core writes `exclude`
 //! as a list and keeps each criterion's `indirect_selection`; 1.13 keeps a
 //! `method: selector` as a reference by name, where 1.11 writes the referenced
 //! definition in place. dbt Fusion matches 1.13 since a fix of 2026-08-18.
