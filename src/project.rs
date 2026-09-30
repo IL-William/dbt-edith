@@ -17,7 +17,7 @@
 use std::path::Path;
 
 /// A project file larger than this is not one anyone maintains by hand.
-const MAX_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProjectVar {

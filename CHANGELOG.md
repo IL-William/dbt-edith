@@ -24,6 +24,22 @@ tagged, and nothing was ever installed from it.
 went on collecting work for eleven more pull requests and the tag was never
 cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 
+## Unreleased
+
+- The Selection bar picks a named selector from `selectors.yml`, from a
+  Selectors menu or as `--selector name` in the box, and draws what
+  `dbt ls --selector` would list, resolved from the manifest with each
+  criterion's own `indirect_selection` (0031). A selector using `state:` is
+  listed but refused, with the reason.
+- For a named selector the tests checkbox only filters the drawing. On, each
+  test is drawn with the models it belongs to, dimmed when the selector did not
+  select them; off, a selector that keeps only tests says so instead of
+  looking empty.
+- An amber note says when the manifest lost the `indirect_selection` that
+  `selectors.yml` sets, which some dbt Fusion releases do.
+- With tests on, a test excluded by name stays out of a typed selection, and
+  `+` and `@` reach tests the way dbt's graph does.
+
 ## 0.6.0 - 2026-09-29
 
 - `Cmd/Ctrl + F` finds inside the file being edited, the Compiled and Run SQL

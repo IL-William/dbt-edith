@@ -628,10 +628,13 @@ understood, and the box rewrites itself to the part that was resolved.
 | `tag:`, `path:`, `file:`, `package:` | the usual dbt methods, with `*` and `?` wildcards |
 | `resource_type:`, `source:`, `exposure:` | by kind, by source, by exposure |
 | `config.materialized:` | and `config.schema`, `config.database`, `config.alias`, `config.incremental_strategy`, `config.unique_key` |
+| `--selector name` | a named selector from `selectors.yml`, [below](#named-selectors) |
 
 Disabled nodes are never returned, as in dbt. Tests take part only when the
-**tests** checkbox is on, and then a test joins whenever a parent of it did,
-which is dbt's own default. A term that matches nothing is called out under the
+**tests** checkbox is on, and then each term brings the tests of what it
+selected, a test joining whenever a parent of it did, which is dbt's own
+default. So a test excluded by name stays out, and `+` and `@` reach tests the
+way dbt's graph does. A term that matches nothing is called out under the
 box rather than dropped, and it says whether the term matched only disabled
 nodes or only tests. The count beside the box is the whole selection; the line
 in the corner is what fits on the canvas, which says `400 of 2422 drawn` when a
@@ -650,6 +653,37 @@ which is the only routine reason the two counts differ.
 A method this build does not know, `state:` for instance, is refused by name
 rather than ignored, because a silently dropped term would draw far too much and
 look right doing it.
+
+#### Named selectors
+
+The **Selectors** button beside the box lists the selectors the project defines
+in `selectors.yml`, with their descriptions, filtered as you type. Picking one
+writes `--selector name` into the box, which you can also type, or paste as
+`dbt ls --selector name`. A named selector stands alone, as it does in dbt,
+which ignores `--select` and `--exclude` beside it: the box refuses them
+instead.
+
+It is resolved from the manifest too, where dbt stores every selector already
+parsed, and resolved whole. Each criterion keeps its own `indirect_selection`,
+so a `buildable` one keeps only the tests whose inputs all sit upstream of the
+selection, and an `empty` one keeps none, as `dbt ls --selector` would
+([0031](docs/decisions/0031-named-selectors-from-the-manifest.md)).
+
+The **tests** checkbox means something else here. The selector's definition
+already decided which tests belong, so the box only decides what is drawn. Off,
+the tests stay off the canvas and the corner counts them, and a selector that
+keeps only tests says so rather than looking empty. On, each test is drawn with
+the models it belongs to, dimmed when the selector did not select them itself,
+so you see what a test reads and how the tests chain. The count, **Copy** and
+**dbt ls** are the selector's own answer either way.
+
+Two things are said rather than guessed. A selector using `state:`, `result:`
+or `source_status:` is listed but refused, with the reason, since those compare
+with another run's artifacts, which this tool does not read; **dbt ls** still
+types its command. And some dbt Fusion releases, 2.0.0-preview.196 among them,
+write the manifest without `indirect_selection`. When `selectors.yml` sets it
+and the manifest lost it, an amber note says so, and every criterion answers
+with dbt's default until the project is re-parsed with a dbt that keeps it.
 
 ### Sharing the graph
 
@@ -844,7 +878,7 @@ $JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
 $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
 $JSC web/tests/grep.js        # what a search result says, and where the match falls
-$JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls
+$JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls, named selectors
 $JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outline
 $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
@@ -872,6 +906,7 @@ src/graph.rs      compact node vector, adjacency, search, lineage BFS, selection
 src/api.rs        HTTP + WebSocket handlers
 src/collin.rs     the column lineage cache, merged like catalog.json
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
+src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
 src/sidecar.rs    the Snowflake script: started by the switch, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs     macros from the manifest, and which one a call in the editor reaches
@@ -900,7 +935,7 @@ covered.
 ## Not there yet
 
 A used-by count per macro, run status and timing from `run_results.json`,
-named selectors from `selectors.yml`, CTE names in the breadcrumb bar,
+which models no scheduled job covers, CTE names in the breadcrumb bar,
 persisting open tabs between sessions, and a second column lineage source using
 dbt Fusion's local index, which needs no warehouse privileges.
 

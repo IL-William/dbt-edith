@@ -50,6 +50,10 @@ check('a neighbourhood is its model',
 check('a column is model.column', exportTitle({ mode: 'column', focus: 0, focus_column: 'amount',
   nodes: [{ name: 'amount', sub: 'fct_orders  ·  number' }], edges: [] }), 'fct_orders.amount');
 check('nothing drawn has no name', exportTitle({ mode: 'select', nodes: [], edges: [] }), '');
+check('a named selector is called by its name',
+  exportTitle({ mode: 'select', selector: 'nightly', select: '', nodes: [{}], edges: [] }), '--selector nightly');
+check('and so is its file', exportFileName(shortTitle('--selector nightly', 60), '2026-09-29'),
+  'lineage-selector-nightly-2026-09-29.html');
 
 var many = [];
 for (var i = 1; i <= 30; i++) many.push('model_' + (i < 10 ? '0' : '') + i);
@@ -94,6 +98,10 @@ var withTest = hood(1, 0);
 withTest.nodes.push({ name: 'not_null_fct_orders_id', kind: 'test', depth: 0 });
 check('tests on the canvas are not excluded', exportCommand(withTest), 'dbt ls --select "1+fct_orders" --output name');
 check('a source is not selected by a bare name', exportCommand(hood(1, 1, 'source')), '');
+// Its definition decides its tests, and dbt ignores --exclude beside --selector.
+check('a named selector is checked by name, never with tests excluded',
+  exportCommand({ mode: 'select', selector: 'nightly', select: '', counts: { model: 2 }, nodes: [{}], edges: [] }),
+  'dbt ls --selector "nightly" --output name');
 check('column lineage has no dbt equivalent',
   exportCommand({ mode: 'column', focus: 0, nodes: [{ name: 'amount', kind: 'model', depth: 0 }], edges: [] }), '');
 
@@ -153,6 +161,17 @@ check('where it came from', facts.lines[1],
 check('when, and how true', facts.lines[2],
   'Exported 2026-09-23 14:05 UTC+02:00 with dbt-edith 0.5.0. The manifest then matched the project\'s files.');
 ok('the command comes along', facts.command.indexOf('dbt ls --select "big+"') === 0);
+var named = { mode: 'select', selector: 'recon', select: '', description: 'Every reconciliation test.',
+  lost_indirect: true, matched: 2, counts: { test: 2 }, truncated: true, edges: [], warnings: [],
+  names: ['t1', 't2', 'orders'],
+  nodes: [{ name: 't1', kind: 'test' }, { name: 'orders', kind: 'model', context: true }] };
+var namedFacts = exportFacts(named, ctx);
+check('a named selector\'s description heads the facts', namedFacts.lines[0], 'Every reconciliation test.');
+ok('a manifest that lost indirect_selection says so in the file too',
+  namedFacts.warnings.length === 1 && namedFacts.warnings[0].indexOf('indirect_selection') >= 0);
+// `orders` shares a name with a match that was not drawn; the box drawn for
+// context accounts for nothing, so the match is still listed as left out.
+check('a context box is no drawn match', namedFacts.undrawn, ['t2', 'orders']);
 var colFacts = exportFacts({ mode: 'column', focus: 0, focus_column: 'amount', truncated: false, edges: [[1, 0]],
   nodes: [{ name: 'amount', sub: 'fct_orders  ·  number', depth: 0 }, { name: 'amount', sub: 'stg_payments', depth: -1 }] }, ctx);
 check('column mode, and how far it reaches', colFacts.lines[0], 'amount · 2 columns · 1 edges  ·  1 level up, 0 down');

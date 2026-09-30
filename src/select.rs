@@ -5,11 +5,17 @@
 //! against `dbt ls -s` is this module's whole contract, and every place it
 //! knowingly differs is named in a comment beside the code that differs.
 //!
+//! A typed line and a named selector from `selectors.yml` resolve through the
+//! same engine: a tree of criteria combined by set operations, which is what
+//! dbt's `SelectionSpec` is, with each criterion deciding for itself which
+//! tests it brings along (0031). `src/selectors.rs` builds the named trees.
+//!
 //! Invariant: a disabled node is never returned, and never walked through.
 //! dbt's graph does not contain them, so an answer here must not contain them
 //! either, not even as a stepping stone between two enabled nodes.
 
 use crate::graph::{Graph, Kind, Node};
+use std::collections::{HashMap, HashSet};
 
 /// What the expression may grow to before it is refused, in bytes. Well past
 /// any selector a person types, and short enough that a pasted file is caught
@@ -90,8 +96,51 @@ pub struct Expr {
 pub enum Tests {
     /// Tests are not in the universe: no term matches one, and none is added.
     Excluded,
-    /// dbt's default indirect selection: a test joins when a parent is in.
+    /// Tests are in the universe, and each criterion brings its own along the
+    /// way its `Indirect` says; a typed one is always eager, as dbt's is.
     Eager,
+}
+
+/// dbt's `indirect_selection`: which tests a criterion brings along with what
+/// it selected. The command line sets it once, a YAML selector per criterion.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Indirect {
+    /// A test joins when any of its parents is selected.
+    Eager,
+    /// Only when every parent is selected.
+    Cautious,
+    /// When every parent is selected, an ancestor of a selected node, or a source.
+    Buildable,
+    /// No test joins that was not selected in its own right.
+    Empty,
+}
+
+impl Indirect {
+    pub fn by_name(name: &str) -> Option<Indirect> {
+        Some(match name {
+            "eager" => Indirect::Eager,
+            "cautious" => Indirect::Cautious,
+            "buildable" => Indirect::Buildable,
+            "empty" => Indirect::Empty,
+            _ => return None,
+        })
+    }
+}
+
+/// A selection as dbt holds one once parsed: criteria combined by set
+/// operations, nested as deep as a YAML selector nests them. A typed line is
+/// the shallow case, a union of intersections minus an exclude half.
+#[derive(Clone, Debug)]
+pub enum Spec {
+    Criteria { term: Term, indirect: Indirect },
+    /// `method: selector`: another named selector's whole answer, grown by the
+    /// reference's own operators. It brings no tests of its own, since the
+    /// selector it names already decided which ones belong.
+    Ref { name: String, at: bool, parents: Option<Depth>, children: Option<Depth> },
+    Union(Vec<Spec>),
+    Intersection(Vec<Spec>),
+    /// The first set without the second.
+    Difference(Box<Spec>, Box<Spec>),
 }
 
 /// What the resolver decided, and what it could not do.
@@ -113,6 +162,10 @@ pub enum SelectError {
     EmptyTerm { pos: usize },
     BadDepth { term: String, pos: usize },
     BadSource { value: String, pos: usize },
+    MissingSelector { pos: usize },
+    SelectorAlone { pos: usize },
+    UnknownSelector { name: String },
+    UnsupportedSelector { name: String, reason: String },
 }
 
 impl SelectError {
@@ -127,6 +180,10 @@ impl SelectError {
             SelectError::EmptyTerm { .. } => "empty_term",
             SelectError::BadDepth { .. } => "bad_depth",
             SelectError::BadSource { .. } => "bad_source",
+            SelectError::MissingSelector { .. } => "missing_selector",
+            SelectError::SelectorAlone { .. } => "selector_alone",
+            SelectError::UnknownSelector { .. } => "unknown_selector",
+            SelectError::UnsupportedSelector { .. } => "unsupported_selector",
         }
     }
 
@@ -137,7 +194,9 @@ impl SelectError {
             | SelectError::UnknownFlag { pos, .. }
             | SelectError::EmptyTerm { pos }
             | SelectError::BadDepth { pos, .. }
-            | SelectError::BadSource { pos, .. } => Some(*pos),
+            | SelectError::BadSource { pos, .. }
+            | SelectError::MissingSelector { pos }
+            | SelectError::SelectorAlone { pos } => Some(*pos),
             _ => None,
         }
     }
@@ -158,8 +217,8 @@ impl std::fmt::Display for SelectError {
             }
             SelectError::UnknownFlag { flag, .. } => write!(
                 f,
-                "unknown option `{flag}`. Only --select and --exclude are understood here, \
-                 after an optional dbt command"
+                "unknown option `{flag}`. Only --select, --exclude and --selector are understood \
+                 here, after an optional dbt command"
             ),
             SelectError::EmptyTerm { .. } => write!(f, "a comma with no term beside it"),
             SelectError::BadDepth { term, .. } => {
@@ -169,6 +228,21 @@ impl std::fmt::Display for SelectError {
                 f,
                 "`source:{value}`: expected source, source.table or package.source.table"
             ),
+            SelectError::MissingSelector { .. } => {
+                write!(f, "`--selector` needs the name of a selector from selectors.yml")
+            }
+            SelectError::SelectorAlone { .. } => write!(
+                f,
+                "a named selector stands alone: dbt ignores --select and --exclude beside \
+                 --selector, so this box does not take them either"
+            ),
+            SelectError::UnknownSelector { name } => write!(
+                f,
+                "no selector named `{name}` in this manifest; the Selectors menu lists the ones it records"
+            ),
+            SelectError::UnsupportedSelector { name, reason } => {
+                write!(f, "selector `{name}` cannot be resolved here: {reason}")
+            }
         }
     }
 }
@@ -565,6 +639,49 @@ fn parse_term(raw: &str, pos: usize) -> Result<Term, SelectError> {
     })
 }
 
+/// A YAML selector's string criterion, `tag:nightly+`, read as one typed term.
+pub(crate) fn term(raw: &str) -> Result<Term, SelectError> {
+    parse_term(raw, 0)
+}
+
+/// A YAML selector's criterion, which arrives split into its parts rather than
+/// as text. It gets the checks a typed term gets, and a `raw` spelled the way
+/// the command line would spell it, so a warning can name it.
+pub(crate) fn criterion(
+    method: &str,
+    value: &str,
+    at: bool,
+    parents: Option<Depth>,
+    children: Option<Depth>,
+) -> Result<Term, SelectError> {
+    let Some(m) = method_by_name(method) else {
+        return Err(SelectError::UnknownMethod { method: method.to_string(), pos: 0 });
+    };
+    if value.is_empty() {
+        return Err(SelectError::EmptyTerm { pos: 0 });
+    }
+    if m == Method::Source && value.split('.').count() > 3 {
+        return Err(SelectError::BadSource { value: value.to_string(), pos: 0 });
+    }
+    let depth = |d: Depth| d.map(|n| n.to_string()).unwrap_or_default();
+    let mut raw = String::new();
+    if at {
+        raw.push('@');
+    }
+    if let Some(d) = parents {
+        raw.push_str(&depth(d));
+        raw.push('+');
+    }
+    raw.push_str(method);
+    raw.push(':');
+    raw.push_str(value);
+    if let Some(d) = children {
+        raw.push('+');
+        raw.push_str(&depth(d));
+    }
+    Ok(Term { method: m, value: value.to_string(), at, parents, children, raw })
+}
+
 fn parse_union(tokens: &Tokens) -> Result<(Union, String), SelectError> {
     let mut groups: Vec<Vec<Term>> = Vec::new();
     for (at, tok) in tokens {
@@ -613,6 +730,78 @@ impl Expr {
         let (exclude, excluded) = parse_union(&exclude)?;
         Ok(Expr { include, exclude, select, excluded, stripped })
     }
+
+    /// The typed line as the tree a YAML selector would build: each whitespace
+    /// group an intersection, their union, minus the exclude half. Every
+    /// criterion is eager, the default of `--indirect-selection`, and dbt
+    /// parses the exclude half eager whatever that flag says.
+    pub fn spec(&self) -> Spec {
+        let half = |u: &Union| {
+            Spec::Union(
+                u.0.iter()
+                    .map(|group| {
+                        Spec::Intersection(
+                            group
+                                .iter()
+                                .map(|t| Spec::Criteria { term: t.clone(), indirect: Indirect::Eager })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            )
+        };
+        let include = half(&self.include);
+        if self.exclude.0.is_empty() {
+            include
+        } else {
+            Spec::Difference(Box::new(include), Box::new(half(&self.exclude)))
+        }
+    }
+}
+
+/// The name in a `--selector NAME`, when the line carries one, and whether a
+/// pasted dbt command was stripped off the front of it.
+///
+/// A named selector is a whole selection rather than a part of one: dbt
+/// ignores `--select` and `--exclude` beside it without a word. Refusing them
+/// here says so, where drawing the selector alone would quietly disagree with
+/// what was typed.
+pub fn selector_name(line: &str, extra_exclude: &str) -> Result<Option<(String, bool)>, SelectError> {
+    if line.len() > MAX_LEN {
+        return Err(SelectError::TooLong { len: line.len() });
+    }
+    let mut tokens = tokenize(line);
+    let stripped = strip_command(&mut tokens);
+    let Some(at) = tokens.iter().position(|(_, t)| t == "--selector" || t.starts_with("--selector=")) else {
+        return Ok(None);
+    };
+    let pos = tokens[at].0;
+    let (name, used) = match tokens[at].1.strip_prefix("--selector=") {
+        Some(v) => (v.to_string(), 1),
+        None => match tokens.get(at + 1) {
+            Some((_, v)) if !v.starts_with('-') => (v.clone(), 2),
+            _ => (String::new(), 1),
+        },
+    };
+    if name.is_empty() {
+        return Err(SelectError::MissingSelector { pos });
+    }
+    let other = tokens.iter().enumerate().find(|(i, _)| *i < at || *i >= at + used);
+    if let Some((_, (p, tok))) = other {
+        // `--output name` pasted along is an option this box does not know,
+        // which is the thing to say; a selection beside the name is the other.
+        let selecting = ["--select", "-s", "--exclude", "-e", "-m", "--models", "--model"].contains(&tok.as_str())
+            || tok.starts_with("--select=")
+            || tok.starts_with("--exclude=");
+        if tok.starts_with('-') && tok.len() > 1 && !selecting {
+            return Err(SelectError::UnknownFlag { flag: tok.clone(), pos: *p });
+        }
+        return Err(SelectError::SelectorAlone { pos: *p });
+    }
+    if !extra_exclude.trim().is_empty() {
+        return Err(SelectError::SelectorAlone { pos });
+    }
+    Ok(Some((name, stripped)))
 }
 
 /* ------------------------------------------------------------ resolving -- */
@@ -632,7 +821,11 @@ fn walk(graph: &Graph, seeds: &[u32], depth: Depth, up: bool, universe: &[bool],
         for &cur in &frontier {
             let node = &graph.nodes[cur as usize];
             let side = if up { &node.parents } else { &node.children };
-            for &nb in side {
+            // dbt's graph holds a test as a child of what it tests, so `+` and
+            // `@` reach it there; this one keeps tests apart, in `tests`, and
+            // the universe says whether they count at all.
+            let tests: &[u32] = if up { &[] } else { &node.tests };
+            for &nb in side.iter().chain(tests) {
                 if !universe[nb as usize] || seen[nb as usize] {
                     continue;
                 }
@@ -655,6 +848,39 @@ fn marked(mask: &[bool]) -> Vec<u32> {
     mask.iter().enumerate().filter(|(_, &m)| m).map(|(i, _)| i as u32).collect()
 }
 
+/// What a criterion's operators add around its direct matches, marked into
+/// `mask`. `@` first, so the `+` depths still count from the direct matches
+/// and not from what `@` dragged in, which is how dbt combines them.
+fn neighbours(
+    graph: &Graph,
+    direct: &[u32],
+    at: bool,
+    parents: Option<Depth>,
+    children: Option<Depth>,
+    universe: &[bool],
+    mask: &mut [bool],
+) {
+    if direct.is_empty() {
+        return;
+    }
+    if at {
+        let mut down = vec![false; graph.nodes.len()];
+        walk(graph, direct, None, false, universe, &mut down);
+        let mut seeds = direct.to_vec();
+        seeds.extend(marked(&down));
+        walk(graph, &seeds, None, true, universe, mask);
+        for (i, d) in down.iter().enumerate() {
+            mask[i] |= d;
+        }
+    }
+    if let Some(depth) = parents {
+        walk(graph, direct, depth, true, universe, mask);
+    }
+    if let Some(depth) = children {
+        walk(graph, direct, depth, false, universe, mask);
+    }
+}
+
 /// One term's own matches, then whatever its operators add around them.
 fn expand(graph: &Graph, term: &Term, universe: &[bool]) -> Vec<bool> {
     let mut mask = vec![false; graph.nodes.len()];
@@ -664,28 +890,55 @@ fn expand(graph: &Graph, term: &Term, universe: &[bool]) -> Vec<bool> {
         }
     }
     let direct = marked(&mask);
-    if direct.is_empty() {
-        return mask;
+    neighbours(graph, &direct, term.at, term.parents, term.children, universe, &mut mask);
+    mask
+}
+
+/// dbt's `expand_selection`: the tests a criterion's own answer brings with
+/// it. The candidates are the tests of what it selected, as in dbt, where they
+/// are the selected nodes' direct successors; each rule compares a test's
+/// parents with the answer as it stood before any test joined.
+fn bring_tests(graph: &Graph, mask: &mut [bool], mode: Indirect, universe: &[bool]) {
+    if mode == Indirect::Empty {
+        return;
     }
-    // `@` first, so the `+` depths below still count from the direct matches
-    // and not from what `@` dragged in, which is how dbt combines them.
-    if term.at {
-        let mut down = vec![false; graph.nodes.len()];
-        walk(graph, &direct, None, false, universe, &mut down);
-        let mut seeds = direct.clone();
-        seeds.extend(marked(&down));
-        walk(graph, &seeds, None, true, universe, &mut mask);
-        for (i, d) in down.iter().enumerate() {
-            mask[i] |= d;
+    let selected = marked(mask);
+    // Buildable's reach, walked once and only when a test asks for it.
+    let mut reach: Option<Vec<bool>> = None;
+    let mut joined: Vec<u32> = Vec::new();
+    for &i in &selected {
+        for &t in &graph.nodes[i as usize].tests {
+            if !universe[t as usize] || mask[t as usize] {
+                continue;
+            }
+            let parents = &graph.nodes[t as usize].parents;
+            let keep = match mode {
+                Indirect::Eager => true,
+                Indirect::Cautious => parents.iter().all(|&p| mask[p as usize]),
+                Indirect::Buildable => {
+                    let r = reach.get_or_insert_with(|| {
+                        let mut r = mask.to_vec();
+                        walk(graph, &selected, None, true, universe, &mut r);
+                        // dbt counts every source as buildable, reachable or not.
+                        for (k, n) in graph.nodes.iter().enumerate() {
+                            if n.kind == Kind::Source {
+                                r[k] = true;
+                            }
+                        }
+                        r
+                    });
+                    parents.iter().all(|&p| r[p as usize])
+                }
+                Indirect::Empty => false,
+            };
+            if keep {
+                joined.push(t);
+            }
         }
     }
-    if let Some(depth) = term.parents {
-        walk(graph, &direct, depth, true, universe, &mut mask);
+    for t in joined {
+        mask[t as usize] = true;
     }
-    if let Some(depth) = term.children {
-        walk(graph, &direct, depth, false, universe, &mut mask);
-    }
-    mask
 }
 
 /// Why a term found nothing, which is more use than dbt's flat warning.
@@ -700,40 +953,115 @@ fn why_empty(graph: &Graph, term: &Term, tests: Tests) -> String {
     format!("nothing matches `{}`", term.raw)
 }
 
-/// The union of intersections, with a warning for every term that found nothing.
-fn evaluate(graph: &Graph, union: &Union, universe: &[bool], tests: Tests, warn: &mut Vec<String>) -> Vec<bool> {
-    let mut out = vec![false; graph.nodes.len()];
-    for group in &union.0 {
-        let mut acc: Option<Vec<bool>> = None;
-        for term in group {
-            let mask = expand(graph, term, universe);
-            if !mask.iter().any(|&m| m) {
-                warn.push(why_empty(graph, term, tests));
-            }
-            // Intersecting the expanded sets, not the seeds: `+a,+b` is every
-            // node feeding both, which is the whole point of writing it.
-            acc = Some(match acc {
-                None => mask,
-                Some(mut a) => {
-                    for (i, m) in mask.iter().enumerate() {
-                        a[i] &= m;
-                    }
-                    a
-                }
-            });
-        }
-        if let Some(a) = acc {
-            for (i, m) in a.iter().enumerate() {
-                out[i] |= m;
-            }
-        }
-    }
-    out
+/// How deep one named selector may reach through others. Far past any real
+/// `selectors.yml`, and a bound on the recursion whatever a manifest holds.
+const MAX_REFS: usize = 64;
+
+/// A resolution in progress: the graph, who may be selected, and what the
+/// named selectors reached so far have answered.
+struct Ctx<'g, 's> {
+    graph: &'g Graph,
+    universe: Vec<bool>,
+    tests: Tests,
+    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
+    memo: HashMap<String, Vec<bool>>,
+    stack: Vec<String>,
+    warnings: Vec<String>,
 }
 
-/// Resolves a parsed expression against the graph.
-pub fn resolve(graph: &Graph, expr: &Expr, tests: Tests) -> Resolved {
-    let n = graph.nodes.len();
+impl Ctx<'_, '_> {
+    /// A named selector's answer, computed once however often it is named.
+    fn named(&mut self, name: &str) -> Result<Vec<bool>, SelectError> {
+        if let Some(done) = self.memo.get(name) {
+            return Ok(done.clone());
+        }
+        // `src/selectors.rs` refuses a cycle before anything is resolved;
+        // this is the guard for whatever reaches here some other way.
+        if self.stack.iter().any(|s| s == name) || self.stack.len() >= MAX_REFS {
+            let reason = format!("it reaches itself through {}", self.stack.join(", "));
+            return Err(SelectError::UnsupportedSelector { name: name.to_string(), reason });
+        }
+        let lookup = self.lookup;
+        let Some(spec) = lookup(name) else {
+            return Err(SelectError::UnknownSelector { name: name.to_string() });
+        };
+        self.stack.push(name.to_string());
+        let answer = eval(self, spec);
+        self.stack.pop();
+        let answer = answer?;
+        self.memo.insert(name.to_string(), answer.clone());
+        Ok(answer)
+    }
+}
+
+/// dbt's `select_nodes_recursively`, direct nodes only. dbt also carries an
+/// indirect set up the tree, for a group whose own mode could re-admit a test
+/// a criterion held back; every group here is eager, as every group dbt
+/// builds from YAML is, and an eager group re-admits nothing.
+fn eval(cx: &mut Ctx, spec: &Spec) -> Result<Vec<bool>, SelectError> {
+    let n = cx.graph.nodes.len();
+    Ok(match spec {
+        Spec::Criteria { term, indirect } => {
+            let mut mask = expand(cx.graph, term, &cx.universe);
+            if !mask.iter().any(|&m| m) {
+                cx.warnings.push(why_empty(cx.graph, term, cx.tests));
+            }
+            bring_tests(cx.graph, &mut mask, *indirect, &cx.universe);
+            mask
+        }
+        Spec::Ref { name, at, parents, children } => {
+            let mut mask = cx.named(name)?;
+            let direct = marked(&mask);
+            neighbours(cx.graph, &direct, *at, *parents, *children, &cx.universe, &mut mask);
+            mask
+        }
+        Spec::Union(parts) => {
+            let mut out = vec![false; n];
+            for part in parts {
+                for (i, m) in eval(cx, part)?.iter().enumerate() {
+                    out[i] |= m;
+                }
+            }
+            out
+        }
+        Spec::Intersection(parts) => {
+            // Intersecting the expanded sets, not the seeds: `+a,+b` is every
+            // node feeding both, which is the whole point of writing it.
+            let mut acc: Option<Vec<bool>> = None;
+            for part in parts {
+                let mask = eval(cx, part)?;
+                acc = Some(match acc {
+                    None => mask,
+                    Some(mut a) => {
+                        for (i, m) in mask.iter().enumerate() {
+                            a[i] &= m;
+                        }
+                        a
+                    }
+                });
+            }
+            acc.unwrap_or_else(|| vec![false; n])
+        }
+        Spec::Difference(keep, drop) => {
+            let mut out = eval(cx, keep)?;
+            for (i, d) in eval(cx, drop)?.iter().enumerate() {
+                if *d {
+                    out[i] = false;
+                }
+            }
+            out
+        }
+    })
+}
+
+/// Resolves a selection tree. `lookup` finds a named selector's tree for a
+/// `Ref`; a typed line has none to find.
+pub fn resolve_spec<'s>(
+    graph: &Graph,
+    spec: &Spec,
+    tests: Tests,
+    lookup: &'s dyn Fn(&str) -> Option<&'s Spec>,
+) -> Result<Resolved, SelectError> {
     // Hooks carry no edges and cannot be drawn, so they are not in the universe
     // at all; dbt would list them for `resource_type:operation` and we do not.
     let universe: Vec<bool> = graph
@@ -745,38 +1073,22 @@ pub fn resolve(graph: &Graph, expr: &Expr, tests: Tests) -> Resolved {
                 && (node.kind != Kind::Test || tests == Tests::Eager)
         })
         .collect();
+    let mut cx = Ctx { graph, universe, tests, lookup, memo: HashMap::new(), stack: Vec::new(), warnings: Vec::new() };
+    let mask = eval(&mut cx, spec)?;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut warnings = cx.warnings;
+    warnings.retain(|w| seen.insert(w.clone()));
+    Ok(Resolved { nodes: marked(&mask), warnings })
+}
 
-    let mut warnings: Vec<String> = Vec::new();
-    let mut included = evaluate(graph, &expr.include, &universe, tests, &mut warnings);
-    if !expr.exclude.0.is_empty() {
-        let dropped = evaluate(graph, &expr.exclude, &universe, tests, &mut warnings);
-        for (i, d) in dropped.iter().enumerate() {
-            if *d {
-                included[i] = false;
-            }
-        }
-    }
+fn no_selectors(_: &str) -> Option<&'static Spec> {
+    None
+}
 
-    // Indirect selection, eager: a test joins when a parent survived. Graph
-    // builds `Node.tests` on every parent, so that rule needs no extra walk.
-    // dbt applies it per union component and then subtracts; doing it once at
-    // the end differs only when one parent of a test is excluded and another
-    // is not (0024).
-    if tests == Tests::Eager {
-        for i in 0..n {
-            if !included[i] {
-                continue;
-            }
-            for &t in &graph.nodes[i].tests {
-                if universe[t as usize] {
-                    included[t as usize] = true;
-                }
-            }
-        }
-    }
-
-    warnings.dedup();
-    Resolved { nodes: marked(&included), warnings }
+/// Resolves a parsed expression against the graph.
+pub fn resolve(graph: &Graph, expr: &Expr, tests: Tests) -> Resolved {
+    // A typed line names no selector, so nothing here can fail.
+    resolve_spec(graph, &expr.spec(), tests, &no_selectors).unwrap_or_default()
 }
 
 /// The one call the route makes.
@@ -1161,7 +1473,80 @@ mod tests {
         ] {
             // Either answer is fine, a panic is not.
             let _ = select(&g, line, "tag:nightly", Tests::Eager);
+            let _ = selector_name(line, "");
         }
+        for line in ["--selector=", "--selector= x", "--selector -", "dbt ls --selector", "--selector=é"] {
+            let _ = selector_name(line, "");
+        }
+    }
+
+    #[test]
+    fn a_test_excluded_by_name_stays_out_when_tests_are_on() {
+        // Each criterion brings its own tests before the difference is taken,
+        // as in dbt, so the one excluded by name cannot come back through its
+        // parent. The first engine added tests after subtracting, and did.
+        assert_eq!(
+            pick_with("dim_customers --exclude not_null_dim_customers_id", "", Tests::Eager),
+            ["dim_customers"]
+        );
+        // Excluding the parent takes its tests with it, since the exclude half
+        // is eager too.
+        assert!(pick_with("dim_customers --exclude dim_customers", "", Tests::Eager).is_empty());
+    }
+
+    #[test]
+    fn plus_walks_into_a_test_the_way_dbts_graph_does() {
+        assert_eq!(
+            pick_with("dim_customers+1", "", Tests::Eager),
+            ["dim_customers", "fct_orders", "not_null_dim_customers_id"]
+        );
+        // Off, a test is outside the universe and the walk never enters one.
+        assert_eq!(pick("dim_customers+1"), ["dim_customers", "fct_orders"]);
+    }
+
+    #[test]
+    fn a_typed_line_and_its_tree_resolve_alike() {
+        let g = graph();
+        let expr = Expr::parse("+fct_orders --exclude stg_orders", "").unwrap();
+        let tree = resolve_spec(&g, &expr.spec(), Tests::Eager, &no_selectors).unwrap();
+        assert_eq!(tree.nodes, resolve(&g, &expr, Tests::Eager).nodes);
+        assert!(matches!(expr.spec(), Spec::Difference(..)));
+        assert!(matches!(Expr::parse("a b", "").unwrap().spec(), Spec::Union(ref u) if u.len() == 2));
+    }
+
+    #[test]
+    fn a_named_selector_is_read_off_the_line_and_stands_alone() {
+        let name = |line: &str| selector_name(line, "").unwrap();
+        assert_eq!(name("--selector nightly"), Some(("nightly".to_string(), false)));
+        assert_eq!(name("--selector=nightly"), Some(("nightly".to_string(), false)));
+        assert_eq!(name("dbt ls --selector \"nightly\""), Some(("nightly".to_string(), true)));
+        assert_eq!(name("dbt build --selector nightly"), Some(("nightly".to_string(), true)));
+        assert_eq!(name("stg_orders+"), None, "a typed line is left to Expr::parse");
+        assert_eq!(name("--select stg_orders"), None);
+
+        let refused = |line: &str, exclude: &str| selector_name(line, exclude).unwrap_err();
+        assert_eq!(refused("--selector", ""), SelectError::MissingSelector { pos: 0 });
+        assert_eq!(refused("--selector --exclude x", "").code(), "missing_selector");
+        assert_eq!(refused("--selector nightly stg_orders", ""), SelectError::SelectorAlone { pos: 19 });
+        assert_eq!(refused("stg_orders --selector nightly", "").pos(), Some(0));
+        assert_eq!(refused("--selector nightly --exclude x", "").code(), "selector_alone");
+        assert_eq!(refused("--selector nightly -s x", "").code(), "selector_alone");
+        assert_eq!(
+            refused("dbt ls --selector nightly --output name", ""),
+            SelectError::UnknownFlag { flag: "--output".to_string(), pos: 26 }
+        );
+        assert_eq!(refused("--selector nightly", "stg_orders").code(), "selector_alone");
+        assert!(matches!(refused(&"x".repeat(MAX_LEN + 1), ""), SelectError::TooLong { .. }));
+    }
+
+    #[test]
+    fn a_criterion_from_yaml_is_checked_and_spelled_like_a_typed_one() {
+        let t = criterion("tag", "nightly", false, Some(Some(2)), Some(None)).unwrap();
+        assert_eq!((t.method, t.raw.as_str()), (Method::Tag, "2+tag:nightly+"));
+        assert_eq!(criterion("fqn", "shop", true, None, None).unwrap().raw, "@fqn:shop");
+        assert!(matches!(criterion("state", "modified", false, None, None), Err(SelectError::UnknownMethod { .. })));
+        assert!(matches!(criterion("tag", "", false, None, None), Err(SelectError::EmptyTerm { .. })));
+        assert!(matches!(criterion("source", "a.b.c.d", false, None, None), Err(SelectError::BadSource { .. })));
     }
 
     #[test]

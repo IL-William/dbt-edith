@@ -2729,13 +2729,11 @@ async function runSelection() {
     S.selectSub = sub;
     // A pasted command is written back as what was actually resolved, so the
     // box and the picture never say two different things.
-    if (sub.stripped) {
-      $('#select-input').value = sub.select + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
-    }
+    if (sub.stripped) $('#select-input').value = selectionText(sub);
     rememberSelection($('#select-input').value.trim());
     // Before drawing: the warnings make the bar taller, and the folder names
     // are placed below it.
-    paintSelectWarnings(selectWarnings(sub.warnings));
+    paintSelectWarnings(selectWarnings(selectNotes(sub).concat(sub.warnings || [])));
     let drawn = null;
     if (sub.nodes.length) {
       $('#lineage-empty').classList.add('hidden');
@@ -2743,14 +2741,16 @@ async function runSelection() {
       paintLegend(sub);
     } else {
       Lineage.clear();
-      emptyHint('Nothing matched.');
+      emptyHint(selectEmptyText(sub));
     }
     $('#select-sum').textContent = selectSummary(sub);
+    $('#select-sum').title = sub.description || '';
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
   } catch (e) {
     if (ask !== S.selectAsk) return;
     S.selectSub = null;
     $('#select-sum').textContent = '';
+    $('#select-sum').title = '';
     paintSelectWarnings([e.message], true);
   }
 }
@@ -2771,6 +2771,12 @@ function rememberSelection(expr) {
 /* A +N badge names its own box in the expression instead of bumping a depth
    box, because in this mode the text is what the picture is made of. */
 function expandSelection(dir, node) {
+  // A named selector is dbt's set as the project defined it: a term appended
+  // to it would be refused, since --selector stands alone.
+  if (S.selectSub && S.selectSub.selector) {
+    toast('a named selector is the project\'s own set: type an expression to grow it', 'err');
+    return;
+  }
   const box = $('#select-input');
   box.value = expandTerm(box.value, node.name, dir);
   runSelection();
@@ -2813,9 +2819,17 @@ function selectSummary(sub) {
    against what matched, so a capped picture says so instead of looking whole. */
 function selectStatus(sub) {
   if (!sub.matched) return '';
-  const drawn = sub.nodes.length;
+  // A model drawn only for a selected test's sake is no part of the answer,
+  // and a test the tests box keeps off the canvas still is (0031).
+  const context = sub.nodes.filter((n) => n && n.context).length;
+  const drawn = sub.nodes.length - context;
+  const hidden = sub.hidden_tests || 0;
   const head = sub.truncated ? `${drawn} of ${sub.matched} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
-  return `${head} · ${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
+  const tail = [
+    context && `${context} for context`,
+    hidden && `${hidden} test${hidden === 1 ? '' : 's'} hidden`,
+  ].filter(Boolean).map((s) => ` · ${s}`).join('');
+  return `${head} · ${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}${tail}`;
 }
 
 /* The line under the canvas, whichever mode drew it. One function rather than
@@ -2853,6 +2867,59 @@ function lsCommand(select, exclude) {
   const quote = (s) => '"' + String(s).replace(/"/g, '') + '"';
   const tail = exclude ? ` --exclude ${quote(exclude)}` : '';
   return `dbt ls --select ${quote(select)}${tail} --output name`;
+}
+
+/* A named selector's command has nothing else to carry: dbt ignores --select
+   and --exclude beside --selector, and so does the box. */
+function selectorCommand(name) {
+  return `dbt ls --selector "${String(name).replace(/"/g, '')}" --output name`;
+}
+
+/* What was resolved, in the box's own words. */
+function selectionText(sub) {
+  if (sub.selector) return `--selector ${sub.selector}`;
+  return (sub.select || '') + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
+}
+
+/* The name in a `--selector NAME` in the box, so the dbt ls button can still
+   type the command for a selector this build refused: dbt settles those too. */
+function boxSelector(text) {
+  const m = /(?:^|\s)--selector(?:=|\s+)["']?([^\s"']+)/.exec(String(text || ''));
+  return m ? m[1] : '';
+}
+
+/* The menu's filter. A name that matches comes before a description that
+   does, and each half keeps the list's order, which is by name. */
+function filterSelectors(list, q) {
+  const needle = String(q || '').trim().toLowerCase();
+  if (!needle) return (list || []).slice();
+  const byName = [];
+  const byText = [];
+  for (const s of list || []) {
+    if (s.name.toLowerCase().includes(needle)) byName.push(s);
+    else if ((s.description || '').toLowerCase().includes(needle)) byText.push(s);
+  }
+  return byName.concat(byText);
+}
+
+/* Said before any warning, so the cap on warnings can never drop it: it
+   changes what every test in the answer means (0031). */
+function selectNotes(sub) {
+  return sub && sub.lost_indirect
+    ? ['This manifest lost the indirect_selection selectors.yml sets, so tests follow dbt\'s default here; '
+      + 're-parse with a recent dbt Fusion to fix it, and dbt ls settles any doubt.']
+    : [];
+}
+
+/* Why the canvas is empty. A selector that keeps only tests, with the tests
+   box off, has not matched nothing, and saying so would send someone off to
+   debug a selector that works. */
+function selectEmptyText(sub) {
+  const hidden = (sub && sub.hidden_tests) || 0;
+  if (hidden && hidden === sub.matched) {
+    return `This selector keeps only tests (${hidden}): tick tests to see them.`;
+  }
+  return 'Nothing matched.';
 }
 
 function expandTerm(expr, name, dir) {
@@ -3331,9 +3398,12 @@ function relinkTools() {
   });
   $('#select-ls').addEventListener('click', () => {
     const sub = S.selectSub;
+    const named = sub ? sub.selector : boxSelector(box.value);
+    if (named) return sendToTerminal(selectorCommand(named));
     if (!sub) return toast('run a selection first', 'err');
     sendToTerminal(lsCommand(sub.select, sub.exclude || ''));
   });
+  $('#select-named').addEventListener('click', (e) => openSelectorMenu(e.currentTarget));
 }
 
 // ---------------------------------------------------------------- export --
@@ -3352,7 +3422,7 @@ function relinkTools() {
    its owner's name, which is how the server builds it. */
 function exportTitle(sub) {
   if (!sub || !sub.nodes || !sub.nodes.length) return '';
-  if (sub.mode === 'select') return (sub.select || '') + (sub.exclude ? ` --exclude ${sub.exclude}` : '');
+  if (sub.mode === 'select') return selectionText(sub);
   const f = sub.nodes[sub.focus];
   if (!f) return '';
   if (sub.mode !== 'column') return f.name;
@@ -3395,6 +3465,9 @@ function shortTitle(text, max) {
    lineage has no dbt equivalent. */
 function exportCommand(sub) {
   if (!sub || !sub.nodes || !sub.nodes.length) return '';
+  // A named selector's own definition decides its tests, and dbt would ignore
+  // an --exclude beside it anyway.
+  if (sub.mode === 'select' && sub.selector) return selectorCommand(sub.selector);
   const tested = sub.mode === 'select'
     ? !!(sub.counts && sub.counts.test)
     : sub.nodes.some((n) => n.kind === 'test');
@@ -3409,10 +3482,11 @@ function exportCommand(sub) {
 }
 
 /* What matched but did not fit on the canvas, by name. A multiset difference,
-   because a source and a model can share a name and each is a match. */
+   because a source and a model can share a name and each is a match. A box
+   drawn as context matched nothing, so it accounts for no name. */
 function undrawnNames(names, nodes) {
   const drawn = new Map();
-  for (const n of nodes || []) drawn.set(n.name, (drawn.get(n.name) || 0) + 1);
+  for (const n of nodes || []) if (!n.context) drawn.set(n.name, (drawn.get(n.name) || 0) + 1);
   const out = [];
   for (const name of names || []) {
     const left = drawn.get(name) || 0;
@@ -3469,8 +3543,8 @@ function exportFacts(sub, ctx) {
   ].filter(Boolean).join(' ');
   return {
     kicker,
-    lines: [counts, where, when].filter(Boolean),
-    warnings: sub.mode === 'select' ? selectWarnings(sub.warnings) : [],
+    lines: [sub.mode === 'select' && sub.description, counts, where, when].filter(Boolean),
+    warnings: sub.mode === 'select' ? selectWarnings(selectNotes(sub).concat(sub.warnings || [])) : [],
     command: exportCommand(sub),
     undrawn: sub.mode === 'select' && sub.truncated ? undrawnNames(sub.names, sub.nodes) : [],
   };
@@ -3532,6 +3606,8 @@ function exportCanvasCss() {
     '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
     '.nd.off rect.box { stroke-dasharray: 3 3; }',
     '.nd.off .t1, .nd.off .t2 { opacity: .55; }',
+    '.nd.ctx { opacity: .45; }',
+    '.nd.ctx:hover { opacity: .85; }',
     '.nd.sel rect.box { stroke: #fff; }',
     '.nd .kindbar { stroke: none; rx: 3; }',
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
@@ -4665,6 +4741,126 @@ function openEnvMenu(anchor) {
     },
   };
   (buttons.find((b) => b.classList.contains('on')) || buttons[0]).focus();
+}
+
+/* The named selectors, in a menu beside the Selection box. The environment
+   menu's rows with a filter on top, since a project can name dozens. Fetched
+   on every open rather than kept: the manifest reloads itself when dbt
+   rewrites it, and the list is short. A selector this build cannot resolve is
+   listed anyway, with the reason, so dbt ls can still settle it. */
+let selectorMenu = null;
+let selectorAsk = 0;
+
+function closeSelectorMenu({ refocus = false } = {}) {
+  if (!selectorMenu) return;
+  const { el, anchor, off } = selectorMenu;
+  selectorMenu = null;
+  off();
+  el.remove();
+  if (refocus && anchor.isConnected) anchor.focus();
+}
+
+async function openSelectorMenu(anchor) {
+  const reopen = selectorMenu && selectorMenu.anchor === anchor;
+  closeSelectorMenu();
+  const ask = ++selectorAsk;
+  if (reopen) return;                         // a second click on the button closes it
+  let body;
+  try { body = await api.get('/api/selectors'); } catch (e) { toast(e.message, 'err'); return; }
+  if (ask !== selectorAsk) return;
+  const all = body.selectors || [];
+
+  const el = document.createElement('div');
+  el.className = 'envmenu selmenu';
+  el.setAttribute('role', 'menu');
+  el.setAttribute('aria-label', 'Named selectors');
+  const filter = Object.assign(document.createElement('input'), {
+    type: 'text', spellcheck: false, autocomplete: 'off',
+    placeholder: `Filter ${all.length} selector${all.length === 1 ? '' : 's'}`,
+  });
+  filter.setAttribute('aria-label', 'Filter the named selectors');
+  const rows = Object.assign(document.createElement('div'), { className: 'selrows' });
+  el.append(filter, rows);
+  for (const note of selectNotes(body)) {
+    el.append(Object.assign(document.createElement('div'), { className: 'selnote', textContent: note }));
+  }
+
+  let hits = [];
+  let at = 0;
+  const pick = (s) => {
+    closeSelectorMenu();
+    $('#select-input').value = `--selector ${s.name}`;
+    clearTimeout(selectTimer);
+    runSelection();
+  };
+  const mark = () => {
+    [...rows.children].forEach((b, i) => b.classList.toggle('cur', i === at));
+    const cur = rows.children[at];
+    if (cur) cur.scrollIntoView({ block: 'nearest' });
+  };
+  const paint = () => {
+    hits = filterSelectors(all, filter.value);
+    rows.textContent = '';
+    if (!hits.length) {
+      const empty = all.length ? 'No selector matches.' : 'This manifest records no selectors.';
+      rows.append(Object.assign(document.createElement('div'), { className: 'selempty', textContent: empty }));
+      return;
+    }
+    hits.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'menuitem');
+      if (s.unsupported) b.classList.add('off');
+      b.title = s.unsupported ? `Cannot be resolved here: ${s.unsupported}` : (s.description || s.name);
+      b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: s.name }));
+      if (s.default) b.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'default' }));
+      const sub = s.unsupported || s.description;
+      if (sub) b.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
+      b.addEventListener('click', () => pick(s));
+      b.addEventListener('mousemove', () => { if (at !== i) { at = i; mark(); } });
+      rows.appendChild(b);
+    });
+    mark();
+  };
+  filter.addEventListener('input', () => { at = 0; paint(); });
+  document.body.appendChild(el);
+  paint();
+  const place = placeFloating(anchor.getBoundingClientRect(), el.getBoundingClientRect(),
+    { width: window.innerWidth, height: window.innerHeight }, 4);
+  el.style.top = `${place.top}px`;
+  el.style.left = `${place.left}px`;
+
+  const onKey = (e) => {
+    if (e.key === 'Tab') return closeSelectorMenu();
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (e.key !== 'Escape' && e.key !== 'Enter' && !step) return;
+    // Handled here only: the box, the editor and the global shortcuts never see it.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') closeSelectorMenu({ refocus: true });
+    else if (e.key === 'Enter') { if (hits[at]) pick(hits[at]); }
+    else if (hits.length) { at = (at + step + hits.length) % hits.length; mark(); }
+  };
+  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeSelectorMenu(); };
+  const onScroll = (e) => {
+    const t = e.target;
+    if (t === document || (t instanceof Node && t.contains(anchor))) closeSelectorMenu();
+  };
+  const onResize = () => closeSelectorMenu();
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onResize);
+  selectorMenu = {
+    el, anchor,
+    off: () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    },
+  };
+  filter.focus();
 }
 
 /* The Manage panel. Only real overrides are stored: a name equal to the

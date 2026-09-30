@@ -141,9 +141,11 @@
       <div id="dock-lineage" class="dock-pane">
         <div id="select-bar" class="select-bar hidden">
           <div class="select-row">
+            <button class="btn sm" id="select-named" aria-haspopup="menu"
+                    title="Pick one of the project's named selectors, as the manifest recorded selectors.yml">Selectors ▾</button>
             <input id="select-input" spellcheck="false" autocomplete="off"
-                   placeholder="stg_customers dim_customers+ tag:nightly"
-                   aria-label="dbt node selection expression">
+                   placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
+                   aria-label="dbt node selection expression, or --selector and a name">
             <span id="select-sum" class="sel-sum"></span>
             <button class="btn sm" id="select-copy" title="Copy the matching names, one per line">Copy</button>
             <button class="btn sm" id="select-ls"

@@ -14,6 +14,7 @@ mod manifest;
 mod project;
 mod pty;
 mod select;
+mod selectors;
 mod settings;
 mod sidecar;
 mod venv;

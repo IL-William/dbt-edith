@@ -37,6 +37,43 @@ check('one node and one edge are singular',
   '1 node · 1 edge');
 check('one node and no edge', selectStatus({ matched: 1, nodes: new Array(1), edges: [], truncated: false }),
   '1 node · 0 edges');
+// A named selector's answer is dbt's whatever the tests box says: a model drawn
+// for a test's sake is no part of it, and a test kept off the canvas still is.
+check('context is counted apart from the selection',
+  selectStatus({ matched: 3, nodes: [{ name: 't1' }, { name: 't2' }, { name: 't3' }, { name: 'm', context: true }],
+    edges: new Array(3), truncated: false }),
+  '3 nodes · 3 edges · 1 for context');
+check('tests the box keeps off the canvas are named',
+  selectStatus({ matched: 7, nodes: new Array(2), edges: new Array(1), truncated: false, hidden_tests: 5 }),
+  '2 nodes · 1 edge · 5 tests hidden');
+
+print('\n--- a named selector ---');
+check('its command carries nothing else', selectorCommand('nightly'), 'dbt ls --selector "nightly" --output name');
+check('a quote cannot escape into it', selectorCommand('a"b'), 'dbt ls --selector "ab" --output name');
+check('the box shows a selector as typed', selectionText({ selector: 'nightly', select: '' }), '--selector nightly');
+check('and an expression with its exclusion', selectionText({ select: 'a+', exclude: 'tag:x' }), 'a+ --exclude tag:x');
+check('an expression alone', selectionText({ select: 'a+' }), 'a+');
+check('a refused selector is still found in the box', boxSelector('--selector ci'), 'ci');
+check('pasted, with an equals sign', boxSelector('dbt ls --selector=ci --output name'), 'ci');
+check('quoted', boxSelector('dbt ls --selector "ci"'), 'ci');
+check('an expression names none', boxSelector('stg_orders+ --select x'), '');
+var menu = [{ name: 'daily', description: 'Runs at night' }, { name: 'nightly', description: 'Every mart' },
+  { name: 'marts', description: 'The nightly marts' }];
+check('an empty filter keeps the whole list', filterSelectors(menu, '').map(function (s) { return s.name; }),
+  ['daily', 'nightly', 'marts']);
+check('a name that matches comes before a description that does',
+  filterSelectors(menu, 'NIGHT').map(function (s) { return s.name; }), ['nightly', 'daily', 'marts']);
+check('nothing matches', filterSelectors(menu, 'zzz'), []);
+check('a manifest that kept indirect_selection has nothing to say', selectNotes({ lost_indirect: false }), []);
+var lost = selectNotes({ lost_indirect: true });
+check('one that lost it says so, once', lost.length, 1);
+check('first, so the cap on warnings never drops it',
+  selectWarnings(lost.concat(['a', 'b', 'c', 'd', 'e']))[0], lost[0]);
+check('a selector of tests alone, with the tests box off, says why the canvas is empty',
+  selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): tick tests to see them.');
+check('one that matched nothing says that', selectEmptyText({ matched: 0 }), 'Nothing matched.');
+check('and some tests hidden among models is not the same thing',
+  selectEmptyText({ matched: 5, hidden_tests: 2 }), 'Nothing matched.');
 
 print('\n--- warnings ---');
 check('nothing to say', selectWarnings([]), []);

@@ -562,6 +562,10 @@ kbd {
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
 .nd.off rect.box { stroke-dasharray: 3 3; }
 .nd.off .t1, .nd.off .t2 { opacity: .55; }
+/* A model drawn only because a selected test belongs to it (0031): there so
+   the test hangs off something, and dimmed so it never reads as selected. */
+.nd.ctx { opacity: .45; }
+.nd.ctx:hover { opacity: .85; }
 .nd.sel rect.box { stroke: #fff; }
 .nd .kindbar { stroke: none; rx: 3; }
 .nd .t1 { fill: var(--fg); font-size: 11.5px; }
@@ -620,6 +624,25 @@ kbd {
 }
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
+/* The named selectors menu: the environment menu's rows, a filter on top, and
+   a list that scrolls, since a project can name dozens of selectors. */
+.selmenu { width: 480px; max-width: calc(100vw - 8px); }
+.selmenu input {
+  width: 100%; box-sizing: border-box; margin-bottom: 4px; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font: 11px var(--mono);
+}
+.selmenu input:focus { outline: none; border-color: var(--accent-dim); }
+.selrows { max-height: 55vh; overflow-y: auto; }
+.selmenu button.cur { background: var(--bg-3); }
+.selmenu .lbl { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.selmenu button.off .lbl { opacity: .55; }
+.selmenu .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui); }
+.selmenu .tag {
+  font: 9.5px var(--mono); color: var(--accent); border: 1px solid var(--accent-dim);
+  border-radius: 3px; padding: 0 4px;
+}
+.selempty, .selnote { padding: 6px 8px; font: 11px var(--ui); color: var(--fg-dim); }
+.selnote { color: var(--warn); border-top: 1px solid var(--line); margin-top: 4px; }
 
 /* ------------------------------------------------------------- artifacts -- */
 /* The Compiled and Run tabs: same pane twice, over target/compiled/ and
