@@ -3,7 +3,7 @@
 Date: 2026-09-29 · Status: accepted · Amends 0024
 
 **Trigger:** read before changing how `--selector` resolves, how a criterion
-brings its tests along, or what the tests checkbox does in the Selection mode.
+brings its tests along, or what the tests eye does in the Selection mode.
 
 ## Context
 
@@ -30,7 +30,7 @@ comment, a selector whose answer could change says so: resolved with every
 criterion at the fewest tests it could bring and at the most, the two differ.
 That one word is all the file is read for.
 
-For a named selector the tests checkbox filters the drawing, never the answer.
+For a named selector the tests eye filters the drawing, never the answer.
 The models the selected tests belong to are drawn either way, dimmed when the
 selector did not select them; on, the tests hang off them, off, only the test
 boxes go. Counts, Copy and dbt ls stay dbt's answer.

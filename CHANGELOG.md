@@ -46,7 +46,7 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   `dbt ls --selector` would list, resolved from the manifest with each
   criterion's own `indirect_selection` (0032). A selector using `state:` is
   listed but refused, with the reason.
-- For a named selector the tests checkbox only filters the drawing. The
+- For a named selector the tests eye only filters the drawing. The
   models the selected tests belong to are drawn either way, dimmed when the
   selector did not select them; on, the tests hang off them, and off, only the
   test boxes go, so a selector of tests alone shows the models they check.
@@ -55,6 +55,9 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   whose answer that could change.
 - With tests on, a test excluded by name stays out of a typed selection, and
   `+` and `@` reach tests the way dbt's graph does.
+- The tests checkbox above the lineage is an eye, amber while open, whose
+  tooltip warns that data tests can be hundreds of boxes, which slows the
+  canvas and buries the models.
 
 ## 0.6.0 - 2026-09-29
 
