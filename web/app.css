@@ -519,6 +519,10 @@ kbd {
 .CodeMirror-merge-l-connect { fill: #2d1f1f; stroke: #6b4a4a; }
 .CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
 .empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }
+/* The lineage pane is no flex box, so the hint would sit at its top, under the
+   Selection bar that floats there: it fills the pane instead, and its words
+   land in the middle. */
+#lineage-empty { position: absolute; inset: 0; pointer-events: none; }
 
 .CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }

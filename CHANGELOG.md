@@ -46,10 +46,10 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   `dbt ls --selector` would list, resolved from the manifest with each
   criterion's own `indirect_selection` (0032). A selector using `state:` is
   listed but refused, with the reason.
-- For a named selector the tests checkbox only filters the drawing. On, each
-  test is drawn with the models it belongs to, dimmed when the selector did not
-  select them; off, a selector that keeps only tests says so instead of
-  looking empty.
+- For a named selector the tests checkbox only filters the drawing. The
+  models the selected tests belong to are drawn either way, dimmed when the
+  selector did not select them; on, the tests hang off them, and off, only the
+  test boxes go, so a selector of tests alone shows the models they check.
 - An amber note says when the manifest lost the `indirect_selection` that
   `selectors.yml` sets, which some dbt Fusion releases do, on each selector
   whose answer that could change.

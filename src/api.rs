@@ -2444,10 +2444,12 @@ mod tests {
         assert!(on.contains(r#""matched":1"#) && on.contains(r#""names":["not_null_orders_id"]"#), "{on}");
         assert_eq!(on.matches(r#""context":true"#).count(), 1, "the model is drawn for the test's sake: {on}");
 
-        // Off, the answer is the same one test, and none of it is drawn.
+        // Off, the answer is the same one test, left off the canvas, and the
+        // model it checks is drawn in its place, still as context.
         let off = body_of(port, get("/api/select?q=--selector%20checks&tests=0", &h)).await;
         assert!(off.contains(r#""matched":1"#) && off.contains(r#""hidden_tests":1"#), "{off}");
-        assert!(off.contains(r#""nodes":[]"#), "{off}");
+        assert_eq!(off.matches(r#""context":true"#).count(), 1, "{off}");
+        assert!(!off.contains("not_null_orders_id\",\"kind"), "no test box: {off}");
 
         // The manifest lost indirect_selection, but a selector of tests alone
         // cannot change with it, so only the one reaching a model says so.

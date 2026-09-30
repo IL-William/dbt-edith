@@ -401,15 +401,13 @@ pub struct Shown {
     pub hidden_tests: usize,
 }
 
-/// The tests box as a filter on an answer that is already dbt's: off, the
-/// tests go; on, they stay with the models they belong to beside them.
+/// The tests box as a filter on an answer that is already dbt's. Either way
+/// the models the selected tests belong to are drawn, dimmed where the
+/// selector did not pick them; off, only the test boxes go. So a selector of
+/// tests alone reads as its tests with the box on and as the models they check
+/// with it off, where an empty canvas would say nothing at all.
 pub fn shown(graph: &Graph, picked: &[u32], with_tests: bool) -> Shown {
     let is_test = |i: u32| graph.nodes[i as usize].kind == Kind::Test;
-    if !with_tests {
-        let drawn: Vec<u32> = picked.iter().copied().filter(|&i| !is_test(i)).collect();
-        let hidden_tests = picked.len() - drawn.len();
-        return Shown { drawn, context: Vec::new(), hidden_tests };
-    }
     let chosen: HashSet<u32> = picked.iter().copied().collect();
     let mut context: Vec<u32> = picked
         .iter()
@@ -423,7 +421,12 @@ pub fn shown(graph: &Graph, picked: &[u32], with_tests: bool) -> Shown {
         .collect();
     context.sort_unstable();
     context.dedup();
-    Shown { drawn: picked.to_vec(), context, hidden_tests: 0 }
+    if with_tests {
+        return Shown { drawn: picked.to_vec(), context, hidden_tests: 0 };
+    }
+    let drawn: Vec<u32> = picked.iter().copied().filter(|&i| !is_test(i)).collect();
+    let hidden_tests = picked.len() - drawn.len();
+    Shown { drawn, context, hidden_tests }
 }
 
 /// Whether `selectors.yml` sets `indirect_selection` outside a comment. The
@@ -692,15 +695,19 @@ mod tests {
         let on = shown(&g, &picked, true);
         assert_eq!(names(&g, &on.drawn), ["recon_customers_count", "recon_orders_totals"]);
         assert_eq!(names(&g, &on.context), ["customers", "orders"], "the models the tests belong to");
+        // Off, the tests go and the models they check stay: a selector of tests
+        // alone never draws an empty canvas.
         let off = shown(&g, &picked, false);
         assert!(off.drawn.is_empty());
+        assert_eq!(names(&g, &off.context), ["customers", "orders"]);
         assert_eq!(off.hidden_tests, 2);
 
         // A model the selector picked is drawn as itself, never as context.
         let mixed: Vec<u32> = ["model.shop.orders", "test.shop.not_null_orders_id"].iter().map(|id| g.index[*id]).collect();
         let on = shown(&g, &mixed, true);
         assert!(on.context.is_empty());
-        assert_eq!(shown(&g, &mixed, false).drawn, [g.index["model.shop.orders"]]);
+        let off = shown(&g, &mixed, false);
+        assert_eq!((off.drawn, off.context, off.hidden_tests), (vec![g.index["model.shop.orders"]], vec![], 1));
     }
 
     #[test]

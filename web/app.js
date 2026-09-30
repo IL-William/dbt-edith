@@ -2830,11 +2830,13 @@ function selectStatus(sub) {
   const drawn = sub.nodes.length - context;
   const hidden = sub.hidden_tests || 0;
   const head = sub.truncated ? `${drawn} of ${sub.matched} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
-  const tail = [
-    context && `${context} for context`,
-    hidden && `${hidden} test${hidden === 1 ? '' : 's'} hidden`,
-  ].filter(Boolean).map((s) => ` · ${s}`).join('');
-  return `${head} · ${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}${tail}`;
+  const edges = `${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
+  const tests = hidden && `${hidden} test${hidden === 1 ? '' : 's'} hidden`;
+  // Context alone on the canvas, a selector of tests with the tests box off,
+  // leads with what is there: `0 nodes` above a canvas of boxes reads as a bug.
+  if (!drawn && context && !sub.truncated) return [`${context} for context`, edges, tests].filter(Boolean).join(' · ');
+  const tail = [context && `${context} for context`, tests].filter(Boolean).map((s) => ` · ${s}`).join('');
+  return `${head} · ${edges}${tail}`;
 }
 
 /* The line under the canvas, whichever mode drew it. One function rather than

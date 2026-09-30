@@ -696,12 +696,13 @@ selection, and an `empty` one keeps none, as `dbt ls --selector` would
 ([0032](docs/decisions/0032-named-selectors-from-the-manifest.md)).
 
 The **tests** checkbox means something else here. The selector's definition
-already decided which tests belong, so the box only decides what is drawn. Off,
-the tests stay off the canvas and the corner counts them, and a selector that
-keeps only tests says so rather than looking empty. On, each test is drawn with
-the models it belongs to, dimmed when the selector did not select them itself,
-so you see what a test reads and how the tests chain. The count, **Copy** and
-**dbt ls** are the selector's own answer either way.
+already decided which tests belong, so the box only decides what is drawn.
+Either way the models the selected tests belong to are drawn, dimmed when the
+selector did not select them itself, so you see what a test reads and how the
+tests chain. On, the tests are drawn too, each hanging off its models; off,
+only the test boxes go and the corner counts them, so a selector that keeps
+only tests shows the models they check. The count, **Copy** and **dbt ls** are
+the selector's own answer either way.
 
 Two things are said rather than guessed. A selector using `state:`, `result:`
 or `source_status:` is listed but refused, with the reason, since those compare
