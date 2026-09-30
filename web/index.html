@@ -126,14 +126,18 @@
         <div class="grow"></div>
         <div id="lineage-tools" class="tools">
           <span id="graph-mode" class="seg">
-            <button class="segbtn active" data-mode="model">Models</button>
+            <button class="segbtn active" data-mode="model"
+                    title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
-            <button class="segbtn" data-mode="select">Selection</button>
+            <button class="segbtn" data-mode="select"
+                    title="Any set of nodes you describe, drawn together: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label>up <input id="up" type="number" min="0" max="20" value="2"></label>
           <label>down <input id="down" type="number" min="0" max="20" value="2"></label>
-          <label class="check"><input id="with-tests" type="checkbox"> tests</label>
+          <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
+          <button id="with-tests" class="btn sm eyebtn" type="button" aria-pressed="false"
+                  aria-label="Data tests on the canvas"></button>
           <label class="check"
                  title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><input id="by-folder" type="checkbox"> folders</label>
           <button class="btn sm" id="fit-btn">Fit</button>
@@ -145,9 +149,11 @@
       <div id="dock-lineage" class="dock-pane">
         <div id="select-bar" class="select-bar hidden">
           <div class="select-row">
+            <button class="btn sm" id="select-named" aria-haspopup="menu"
+                    title="Pick one of the project's named selectors, as the manifest recorded selectors.yml">Selectors ▾</button>
             <input id="select-input" spellcheck="false" autocomplete="off"
-                   placeholder="stg_customers dim_customers+ tag:nightly"
-                   aria-label="dbt node selection expression">
+                   placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
+                   aria-label="dbt node selection expression, or --selector and a name">
             <span id="select-sum" class="sel-sum"></span>
             <button class="btn sm" id="select-copy" title="Copy the matching names, one per line">Copy</button>
             <button class="btn sm" id="select-ls"

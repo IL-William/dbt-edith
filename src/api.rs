@@ -10,6 +10,7 @@ use crate::graph::{ColRef, Graph, Kind, Place};
 use crate::manifest::{RawCatalog, RawManifest};
 use crate::pty::{FromPty, PtySession, ShellSpec};
 use crate::select;
+use crate::selectors;
 use crate::sidecar;
 use crate::venv::VenvInfo;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -114,6 +115,7 @@ pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> a
             graph.macros.set_root(name);
         }
     }
+    graph.selectors.check_against(project);
     if catalog_path.exists() {
         match RawCatalog::load(catalog_path) {
             Ok(cat) => {
@@ -193,6 +195,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/compiled", get(compiled_sql))
         .route("/api/lineage", get(lineage))
         .route("/api/select", get(selection))
+        .route("/api/selectors", get(list_selectors))
         .route("/api/collineage", get(col_lineage))
         .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
@@ -953,6 +956,25 @@ struct SelectorBody<'a> {
     stripped: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     exclude: String,
+    /// The named selector resolved, when the box held `--selector NAME`.
+    /// `select` is empty then: the selector is the whole selection.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    selector: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    description: &'a str,
+    /// The manifest dropped the `indirect_selection` that `selectors.yml`
+    /// sets, and this selector's answer could change with it: it keeps tests
+    /// the way dbt's default would.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    lost_indirect: bool,
+    /// Selected tests left off the canvas because the tests box is off. A
+    /// named selector's answer is dbt's whatever the box says.
+    #[serde(skip_serializing_if = "is_zero")]
+    hidden_tests: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(serde::Serialize)]
@@ -966,24 +988,58 @@ struct SelectorFailed {
 
 /// Resolves a dbt node-selection expression against the manifest graph. dbt is
 /// never run for it, and never will be (0002, 0024).
+///
+/// `tests` means two things. For a typed line it puts tests in the universe or
+/// leaves them out, as it always has. For `--selector NAME` it only filters
+/// what is drawn: the selector's definition already decided which tests
+/// belong, and the answer stays dbt's either way (0032).
 async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuery>) -> Response {
     let graph = st.graph.read().await.clone();
+    let max = q.max.unwrap_or(400).min(3000);
+    let failed = |e: select::SelectError| {
+        let body = SelectorFailed { error: e.to_string(), code: e.code(), at: e.pos() };
+        (StatusCode::BAD_REQUEST, Json(body)).into_response()
+    };
+    let named = match select::selector_name(&q.q, &q.exclude) {
+        Ok(named) => named,
+        Err(e) => return failed(e),
+    };
+
+    if let Some((name, stripped)) = named {
+        let res = match graph.selectors.resolve(&graph, &name) {
+            Ok(res) => res,
+            Err(e) => return failed(e),
+        };
+        let shown = selectors::shown(&graph, &res.nodes, q.tests == 1);
+        let sub = graph.selection(&shown.drawn, &shown.context, q.tests == 1, max);
+        let (counts, names) = tally(&graph, &res.nodes);
+        let named = graph.selectors.get(&name);
+        return Json(SelectorBody {
+            matched: res.nodes.len(),
+            counts,
+            names,
+            warnings: res.warnings,
+            select: String::new(),
+            stripped,
+            exclude: String::new(),
+            selector: named.map(|n| n.name.as_str()).unwrap_or(""),
+            description: named.map(|n| n.description.as_str()).unwrap_or(""),
+            // Only for a selector the lost setting could change, which a
+            // selector of tests alone never is.
+            lost_indirect: graph.selectors.lost_indirect() && graph.selectors.depends_on_indirect(&graph, &name),
+            hidden_tests: shown.hidden_tests,
+            graph: sub,
+        })
+        .into_response();
+    }
+
     let tests = if q.tests == 1 { select::Tests::Eager } else { select::Tests::Excluded };
     let (expr, res) = match select::select(&graph, &q.q, &q.exclude, tests) {
         Ok(v) => v,
-        Err(e) => {
-            let body = SelectorFailed { error: e.to_string(), code: e.code(), at: e.pos() };
-            return (StatusCode::BAD_REQUEST, Json(body)).into_response();
-        }
+        Err(e) => return failed(e),
     };
-    let sub = graph.selection(&res.nodes, tests == select::Tests::Eager, q.max.unwrap_or(400).min(3000));
-    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for &i in &res.nodes {
-        *counts.entry(graph.nodes[i as usize].kind.as_str().to_string()).or_insert(0) += 1;
-    }
-    let mut names: Vec<&str> =
-        res.nodes.iter().take(MAX_NAMES).map(|&i| graph.nodes[i as usize].name.as_str()).collect();
-    names.sort_unstable();
+    let sub = graph.selection(&res.nodes, &[], tests == select::Tests::Eager, max);
+    let (counts, names) = tally(&graph, &res.nodes);
     Json(SelectorBody {
         matched: res.nodes.len(),
         counts,
@@ -992,9 +1048,64 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
         select: expr.select,
         stripped: expr.stripped,
         exclude: expr.excluded,
+        selector: "",
+        description: "",
+        lost_indirect: false,
+        hidden_tests: 0,
         graph: sub,
     })
     .into_response()
+}
+
+/// Everything a selection matched, counted by kind and listed by name, off
+/// the whole answer rather than what the canvas could draw.
+fn tally<'g>(graph: &'g Graph, nodes: &[u32]) -> (std::collections::HashMap<String, usize>, Vec<&'g str>) {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for &i in nodes {
+        *counts.entry(graph.nodes[i as usize].kind.as_str().to_string()).or_insert(0) += 1;
+    }
+    let mut names: Vec<&str> = nodes.iter().take(MAX_NAMES).map(|&i| graph.nodes[i as usize].name.as_str()).collect();
+    names.sort_unstable();
+    (counts, names)
+}
+
+#[derive(serde::Serialize)]
+struct SelectorEntry<'a> {
+    name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    description: &'a str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    default: bool,
+    /// Why this one cannot be resolved here. It is still listed, so the menu
+    /// can say so and the dbt ls button can still settle it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unsupported: Option<&'a str>,
+}
+
+#[derive(serde::Serialize)]
+struct SelectorsBody<'a> {
+    selectors: Vec<SelectorEntry<'a>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    lost_indirect: bool,
+}
+
+/// The named selectors the manifest records, for the menu beside the
+/// Selection box. Read-only, and nothing in it comes from `selectors.yml`
+/// itself, only from what dbt parsed out of it (0032).
+async fn list_selectors(State(st): State<Arc<AppState>>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let selectors = graph
+        .selectors
+        .list()
+        .iter()
+        .map(|n| SelectorEntry {
+            name: &n.name,
+            description: &n.description,
+            default: n.default,
+            unsupported: n.unsupported.as_deref(),
+        })
+        .collect();
+    Json(SelectorsBody { selectors, lost_indirect: graph.selectors.lost_indirect() }).into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -2270,6 +2381,9 @@ mod tests {
             ("q=state%3Amodified", "unknown_method"),
             ("q=--wat%20a", "unknown_flag"),
             ("q=a%2C%2Cb", "empty_term"),
+            ("q=--selector%20nightly", "unknown_selector"),
+            ("q=--selector%20a%20b", "selector_alone"),
+            ("q=--selector", "missing_selector"),
         ] {
             let body = body_of(port, get(&format!("/api/select?{query}"), &h)).await;
             assert!(body.starts_with("HTTP/1.1 400"), "{query}: {body}");
@@ -2283,6 +2397,72 @@ mod tests {
         // Read-only, so the guard asks for the Host and nothing more.
         assert!(status_of(port, get("/api/select?q=a", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// What a named selector keeps is settled in `selectors.rs`. This is what
+    /// only the route decides: the tests box filters the drawing and never the
+    /// answer, a model drawn for a test's sake says so, and the list names
+    /// the selector it cannot resolve rather than hiding it.
+    #[tokio::test]
+    async fn a_named_selector_is_listed_and_the_tests_box_only_filters_it() {
+        let root = temp_project("named");
+        std::fs::write(root.join("selectors.yml"), "selectors:\n  - indirect_selection: buildable\n").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.demo.orders": { "name": "orders", "resource_type": "model", "package_name": "demo", "fqn": ["demo", "orders"] },
+                "test.demo.not_null_orders_id": {
+                    "name": "not_null_orders_id", "resource_type": "test", "package_name": "demo",
+                    "fqn": ["demo", "not_null_orders_id"],
+                },
+            },
+            "parent_map": { "test.demo.not_null_orders_id": ["model.demo.orders"] },
+            "selectors": {
+                "checks": { "name": "checks", "description": "Every test.", "definition": { "method": "resource_type", "value": "test" } },
+                "ci": { "name": "ci", "definition": { "method": "state", "value": "modified" } },
+                "orders": { "name": "orders", "definition": { "method": "fqn", "value": "orders" } },
+            },
+        }))
+        .unwrap();
+        let mut graph = Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0);
+        graph.selectors.check_against(&root);
+        *st.graph.write().await = Arc::new(graph);
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let list = body_of(port, get("/api/selectors", &h)).await;
+        assert!(list.starts_with("HTTP/1.1 200"), "{list}");
+        assert!(list.contains(r#"{"name":"checks","description":"Every test."}"#), "{list}");
+        assert!(list.contains(r#""name":"ci","unsupported":"#), "listed, with its reason: {list}");
+        assert!(list.contains(r#""lost_indirect":true"#), "{list}");
+
+        let on = body_of(port, get("/api/select?q=--selector%20checks&tests=1", &h)).await;
+        assert!(on.starts_with("HTTP/1.1 200"), "{on}");
+        assert!(on.contains(r#""selector":"checks""#) && on.contains(r#""description":"Every test.""#), "{on}");
+        assert!(on.contains(r#""matched":1"#) && on.contains(r#""names":["not_null_orders_id"]"#), "{on}");
+        assert_eq!(on.matches(r#""context":true"#).count(), 1, "the model is drawn for the test's sake: {on}");
+
+        // Off, the answer is the same one test, left off the canvas, and the
+        // model it checks is drawn in its place, still as context.
+        let off = body_of(port, get("/api/select?q=--selector%20checks&tests=0", &h)).await;
+        assert!(off.contains(r#""matched":1"#) && off.contains(r#""hidden_tests":1"#), "{off}");
+        assert_eq!(off.matches(r#""context":true"#).count(), 1, "{off}");
+        assert!(!off.contains("not_null_orders_id\",\"kind"), "no test box: {off}");
+
+        // The manifest lost indirect_selection, but a selector of tests alone
+        // cannot change with it, so only the one reaching a model says so.
+        assert!(!on.contains("lost_indirect"), "{on}");
+        let orders = body_of(port, get("/api/select?q=--selector%20orders&tests=1", &h)).await;
+        assert!(orders.contains(r#""lost_indirect":true"#), "{orders}");
+
+        let pasted = body_of(port, get("/api/select?q=dbt%20ls%20--selector%20checks", &h)).await;
+        assert!(pasted.contains(r#""stripped":true"#), "{pasted}");
+        let ci = body_of(port, get("/api/select?q=--selector%20ci", &h)).await;
+        assert!(ci.starts_with("HTTP/1.1 400") && ci.contains("unsupported_selector"), "{ci}");
+
+        assert!(status_of(port, get("/api/selectors", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

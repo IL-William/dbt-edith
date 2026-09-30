@@ -5,8 +5,9 @@
 
 use crate::collin::RawColLineage;
 use crate::macros::Macros;
+use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -246,6 +247,8 @@ pub struct Graph {
     pub by_name: HashMap<String, u32>,
     /// Macro calls in the editor resolve here, never against the nodes.
     pub macros: Macros,
+    /// `--selector NAME` resolves here, against the nodes above (0032).
+    pub selectors: Selectors,
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
     pub meta: Meta,
@@ -254,6 +257,7 @@ pub struct Graph {
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
         let macros = Macros::build(raw.macros, &raw.metadata.project_name);
+        let selectors = Selectors::build(raw.selectors);
         let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len() + raw.sources.len());
         let mut index: HashMap<String, u32> = HashMap::with_capacity(nodes.capacity());
 
@@ -552,6 +556,7 @@ impl Graph {
             by_file,
             by_name,
             macros,
+            selectors,
             catalog_mtime: 0,
             cll: None,
         }
@@ -771,6 +776,7 @@ impl Graph {
                         schema: &owner.schema,
                         materialized: &owner.materialized,
                         disabled: owner.disabled,
+                        context: false,
                         depth: depth[&c],
                         sub,
                         tests: column.tests.len(),
@@ -960,6 +966,7 @@ impl Graph {
                         schema: &n.schema,
                         materialized: &n.materialized,
                         disabled: n.disabled,
+                        context: false,
                         depth: depth[&i],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -980,21 +987,33 @@ impl Graph {
     /// distance from anything, since a selection has no centre to measure one
     /// from. The canvas does not read it: it lays every mode out from the
     /// edges it draws (0027).
-    pub fn selection(&self, picked: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
+    ///
+    /// `context` is drawn beside the selection and marked as such: the models
+    /// a selected test belongs to that a named selector did not select itself,
+    /// so the test hangs off something (0032). They count as models when the
+    /// canvas is capped, and never in anything the selection reports.
+    pub fn selection(&self, picked: &[u32], context: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
         let mut members: Vec<u32> = picked.to_vec();
-        let truncated = members.len() > max_nodes;
-        if truncated {
+        members.extend_from_slice(context);
+        let in_context: HashSet<u32> = context.iter().copied().collect();
+        // Truncated means part of the selection is missing. Context cut for
+        // room is drawn as room allows, and says nothing about the answer.
+        let truncated = picked.len() > max_nodes;
+        if members.len() > max_nodes {
             // Cut by name, never by index: index order follows the manifest's
             // HashMap iteration in build(), so cutting by it would draw a
             // different subset of the same selection after every reload.
             //
             // Tests go last, because a selection with tests switched on is
             // mostly tests, and an alphabetical cut would fill the canvas with
-            // them and drop the models the selection was written for.
+            // them and drop the models the selection was written for. Context
+            // goes after everything: it is drawn for the tests' sake, and a
+            // named selector that keeps only tests can bring more of it than
+            // there are tests.
             members.sort_by(|&a, &b| {
                 let key = |i: u32| {
                     let n = &self.nodes[i as usize];
-                    (n.kind == Kind::Test, &n.name, &n.id)
+                    (in_context.contains(&i), n.kind == Kind::Test, &n.name, &n.id)
                 };
                 key(a).cmp(&key(b))
             });
@@ -1068,6 +1087,7 @@ impl Graph {
                         schema: &n.schema,
                         materialized: &n.materialized,
                         disabled: n.disabled,
+                        context: in_context.contains(&i),
                         depth: depth[p],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -1109,6 +1129,10 @@ pub struct LineageNode<'a> {
     pub schema: &'a str,
     pub materialized: &'a str,
     pub disabled: bool,
+    /// Drawn dimmed, as context for a selected test rather than as part of
+    /// the selection.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub context: bool,
     pub depth: i32,
     /// Column mode only: the second line of the node box.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -1282,7 +1306,7 @@ mod tests {
     #[test]
     fn a_selection_layers_every_component_from_its_own_zero() {
         let g = shapes();
-        let sub = g.selection(&all(&g, &["a", "b", "c", "d", "x", "y"]), false, 100);
+        let sub = g.selection(&all(&g, &["a", "b", "c", "d", "x", "y"]), &[], false, 100);
         for (name, want) in [("a", 0), ("b", 1), ("c", 1), ("d", 2), ("x", 0), ("y", 1)] {
             assert_eq!(by_name(&sub, name).depth, want, "{name}");
         }
@@ -1294,7 +1318,7 @@ mod tests {
     #[test]
     fn a_selection_counts_the_neighbours_it_left_out() {
         let g = shapes();
-        let sub = g.selection(&all(&g, &["b", "d"]), false, 100);
+        let sub = g.selection(&all(&g, &["b", "d"]), &[], false, 100);
         assert_eq!(by_name(&sub, "b").hidden_up, 1, "a is upstream and out of view");
         assert_eq!(by_name(&sub, "d").hidden_up, 1, "c is out of view, b is not");
         assert_eq!(by_name(&sub, "b").hidden_down, 0, "d is the only child and it is in view");
@@ -1307,7 +1331,7 @@ mod tests {
     fn a_capped_selection_says_so_and_cuts_the_same_way_twice() {
         let g = shapes();
         let picked = all(&g, &["a", "b", "c", "d", "x", "y"]);
-        let sub = g.selection(&picked, false, 3);
+        let sub = g.selection(&picked, &[], false, 3);
         assert!(sub.truncated);
         assert_eq!(sub.nodes.len(), 3);
         let mut drawn: Vec<&str> = sub.nodes.iter().map(|n| n.name).collect();
@@ -1322,7 +1346,7 @@ mod tests {
         // The test sorts first by name, so an alphabetical cut alone would keep
         // it and drop a model. With tests on, most of a selection is tests.
         let picked = vec![g.index["test.shop.aaa_not_null_a"], g.index["model.shop.a"]];
-        let sub = g.selection(&picked, true, 1);
+        let sub = g.selection(&picked, &[], true, 1);
         assert!(sub.truncated);
         assert_eq!(sub.nodes.iter().map(|n| n.name).collect::<Vec<_>>(), ["a"]);
     }
@@ -1331,11 +1355,30 @@ mod tests {
     fn only_a_selection_has_no_focus() {
         let g = shapes();
         let picked = all(&g, &["a", "b"]);
-        let select = serde_json::to_value(g.selection(&picked, false, 100)).unwrap();
+        let select = serde_json::to_value(g.selection(&picked, &[], false, 100)).unwrap();
         assert!(select.get("focus").is_none(), "a selection has no centre to send");
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
         assert!(lineage["focus"].is_number(), "and every other mode still sends one");
+    }
+
+    #[test]
+    fn only_a_context_node_says_so() {
+        let g = shapes();
+        let picked = vec![g.index["test.shop.aaa_not_null_a"]];
+        let sub = serde_json::to_value(g.selection(&picked, &[g.index["model.shop.a"]], true, 100)).unwrap();
+        let nodes = sub["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 2);
+        let flagged: Vec<&str> =
+            nodes.iter().filter(|n| n.get("context").is_some()).map(|n| n["name"].as_str().unwrap()).collect();
+        assert_eq!(flagged, ["a"], "the test is selected, the model it belongs to is context");
+        assert_eq!(sub["edges"].as_array().unwrap().len(), 1, "and the test hangs off it");
+
+        // A cut drops context before anything the selection chose, and the
+        // selection itself is whole, so nothing reads as truncated.
+        let capped = g.selection(&picked, &[g.index["model.shop.a"]], true, 1);
+        assert!(!capped.truncated);
+        assert_eq!(capped.nodes.iter().map(|n| n.name).collect::<Vec<_>>(), ["aaa_not_null_a"]);
     }
 
     /// `depth` is what the export turns back into dbt's `N+model+M`, which

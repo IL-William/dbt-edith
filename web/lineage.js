@@ -971,7 +971,7 @@ const Lineage = (() => {
     });
 
     d.nodes.forEach((n, i) => {
-      const g = el('g', { class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : ''), transform: `translate(${place[i].x},${place[i].y})` });
+      const g = el('g', { class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : ''), transform: `translate(${place[i].x},${place[i].y})` });
       g.dataset.id = n.id;
       g.appendChild(el('rect', { class: 'box', width: W, height: H }));
       // Inline style, not a fill attribute: a CSS rule such as `.nd rect` would
@@ -999,7 +999,7 @@ const Lineage = (() => {
       // group still needs an accessible name, and role="img" is what gets one
       // exposed on a bare <g>.
       g.setAttribute('role', 'img');
-      g.setAttribute('aria-label', `${n.id} ${n.file}`);
+      g.setAttribute('aria-label', `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => { e.stopPropagation(); select(n.id); handlers.onSelect && handlers.onSelect(n); });
       g.addEventListener('dblclick', (e) => { e.stopPropagation(); handlers.onOpen && handlers.onOpen(n); });
@@ -1141,7 +1141,7 @@ const Lineage = (() => {
       if (!n) return;
       nd.removeAttribute('aria-label');
       const title = el('title');
-      title.textContent = [n.name, subtitle(n), n.file].filter(Boolean).join('\n');
+      title.textContent = [n.name, subtitle(n), n.file, n.context && 'context, not selected'].filter(Boolean).join('\n');
       nd.insertBefore(title, nd.firstChild);
       spell(nd.querySelector('.t1'), n.name);
       spell(nd.querySelector('.t2'), subtitle(n));

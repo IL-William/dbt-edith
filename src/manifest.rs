@@ -25,6 +25,12 @@ pub struct RawManifest {
     /// editor can link a call to the right one (`src/macros.rs`).
     #[serde(default)]
     pub macros: HashMap<String, RawMacro>,
+    /// The named selectors of `selectors.yml`, as dbt parsed them. Left as a
+    /// value because dbt-core and each Fusion release shape it differently,
+    /// and a shape this program did not expect must never fail the whole
+    /// manifest: `src/selectors.rs` reads what it can and says what it cannot.
+    #[serde(default)]
+    pub selectors: serde_json::Value,
 }
 
 #[derive(serde::Deserialize, Default)]

@@ -41,6 +41,25 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 - Switching the column lineage tool no longer reads the manifest again: 25 ms
   instead of 440 ms on an 18 825 node project. Opening the menu reads a cache
   only when the file has changed, where it read every cache in full.
+- The Selection bar picks a named selector from `selectors.yml`, from a
+  Selectors menu or as `--selector name` in the box, and draws what
+  `dbt ls --selector` would list, resolved from the manifest with each
+  criterion's own `indirect_selection` (0032). A selector using `state:` is
+  listed but refused, with the reason.
+- For a named selector the tests eye only filters the drawing. The
+  models the selected tests belong to are drawn either way, dimmed when the
+  selector did not select them; on, the tests hang off them, and off, only the
+  test boxes go, so a selector of tests alone shows the models they check.
+- An amber note says when the manifest lost the `indirect_selection` that
+  `selectors.yml` sets, which some dbt Fusion releases do, on each selector
+  whose answer that could change.
+- With tests on, a test excluded by name stays out of a typed selection, and
+  `+` and `@` reach tests the way dbt's graph does.
+- The Selection mode of the lineage is called Custom selection, and each of
+  the three mode buttons says what it draws when the pointer rests on it.
+- The tests checkbox above the lineage is an eye labelled tests, amber while
+  open, whose tooltip warns that data tests can be hundreds of boxes, which
+  slows the canvas and buries the models.
 
 ## 0.6.0 - 2026-09-29
 

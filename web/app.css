@@ -215,6 +215,14 @@ kbd {
 }
 .btn:hover { background: #26303e; border-color: #3a475a; }
 .btn.sm { padding: 2px 7px; font-size: 11px; }
+/* The tests toggle above the lineage, an eye (testsEye). On, it takes the
+   warning colour: data tests can outnumber the models several times over,
+   and every one is a box. Off, it is muted but not grey, so it stays found. */
+.eyebtn { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-dim); }
+.eyebtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.eyebtn:hover { color: var(--fg); }
+.eyebtn[aria-pressed=true] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
+.eyebtn[aria-pressed=true]:hover { background: rgba(224, 163, 75, .2); }
 
 #body { flex: 1; display: flex; min-height: 0; }
 
@@ -519,6 +527,10 @@ kbd {
 .CodeMirror-merge-l-connect { fill: #2d1f1f; stroke: #6b4a4a; }
 .CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
 .empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }
+/* The lineage pane is no flex box, so the hint would sit at its top, under the
+   Selection bar that floats there: it fills the pane instead, and its words
+   land in the middle. */
+#lineage-empty { position: absolute; inset: 0; pointer-events: none; }
 
 .CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
@@ -618,6 +630,10 @@ kbd {
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
 .nd.off rect.box { stroke-dasharray: 3 3; }
 .nd.off .t1, .nd.off .t2 { opacity: .55; }
+/* A model drawn only because a selected test belongs to it (0032): there so
+   the test hangs off something, and dimmed so it never reads as selected. */
+.nd.ctx { opacity: .45; }
+.nd.ctx:hover { opacity: .85; }
 .nd.sel rect.box { stroke: #fff; }
 .nd .kindbar { stroke: none; rx: 3; }
 .nd .t1 { fill: var(--fg); font-size: 11.5px; }
@@ -676,6 +692,25 @@ kbd {
 }
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
+/* The named selectors menu: the environment menu's rows, a filter on top, and
+   a list that scrolls, since a project can name dozens of selectors. */
+.selmenu { width: 480px; max-width: calc(100vw - 8px); }
+.selmenu input {
+  width: 100%; box-sizing: border-box; margin-bottom: 4px; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font: 11px var(--mono);
+}
+.selmenu input:focus { outline: none; border-color: var(--accent-dim); }
+.selrows { max-height: 55vh; overflow-y: auto; }
+.selmenu button.cur { background: var(--bg-3); }
+.selmenu .lbl { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.selmenu button.off .lbl { opacity: .55; }
+.selmenu .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui); }
+.selmenu .tag {
+  font: 9.5px var(--mono); color: var(--accent); border: 1px solid var(--accent-dim);
+  border-radius: 3px; padding: 0 4px;
+}
+.selempty, .selnote { padding: 6px 8px; font: 11px var(--ui); color: var(--fg-dim); }
+.selnote { color: var(--warn); border-top: 1px solid var(--line); margin-top: 4px; }
 
 /* ------------------------------------------------------------- artifacts -- */
 /* The Compiled and Run tabs: same pane twice, over target/compiled/ and

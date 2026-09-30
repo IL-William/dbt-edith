@@ -285,6 +285,35 @@ The 46 MB more at startup is the price of the second graph. Memory after
 switching falls, because a switch no longer parses a 110 MB manifest to throw
 the old one away. What a large cache still costs is parsing its own JSON.
 
+Named selectors, added 2026-09-29 (0032): a menu beside the Selection box lists
+the selectors of `selectors.yml`, and `--selector name` in the box draws what
+`dbt ls --selector` lists. The manifest already holds every selector parsed, so
+the YAML scanner this item was deferred on was never needed. Each criterion
+brings its own tests, by its own `indirect_selection`, before the sets are
+combined, as dbt-core's `select_nodes_recursively` does. Typed lines go through
+the same engine now, so 0024's "applied once at the end" is gone, and `+` and
+`@` walk into tests as dbt's graph does. For a named selector the tests eye
+filters the drawing only. A test's models are drawn either way, dimmed when the
+selector did not pick them; on, the test hangs off them, off, only it goes. The
+first version drew nothing at all with the box off for a selector of tests
+alone, and said why under the Selection bar, where the bar hid the sentence;
+the hint now sits in the middle of the pane, and that canvas shows the models.
+
+Measured on the 18 825 node project, parsed again from its current files with
+dbt Fusion 2.0.6: all 85 selectors this build resolves answer what
+`dbt ls --selector` prints, name for name, 31 of them with something in it, up
+to 315 names; the other 54 are empty in dbt too. `ci` is refused for its
+`state:`. The same manifest with `indirect_selection` stripped, which is how
+2.0.0-preview.196 writes it, answers 30 of the 85 differently, 325 names too
+many in all. It shows the note on 40, those 30 among them: the note is for a
+selector the lost setting could change, found by resolving it with every
+criterion at the fewest tests and at the most. A selector of tests alone never
+shows it; the first version showed it on all 85, which taught nothing. All 86, 84 of them tests only, resolve over
+HTTP in 2.5 s in a debug build, 26 ms for the median one and 144 ms for the
+largest. Driven in headless Chrome on the preview.196 manifest: the menu and
+its filter, tests off and on, a refused selector, a pasted `dbt ls --selector`.
+Not yet opened on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -300,10 +329,14 @@ the old one away. What a large cache still costs is parsing its own JSON.
    for partial runs: a node absent from the file was not run, which is not the
    same as not tested. Per-node freshness would read the same mtimes 0025
    already walks, so the walk is the piece to reuse rather than repeat.
-3. **Named selectors, then orchestration coverage.** `src/select.rs` resolves a
-   typed expression; what is left is reading the project's `selectors.yml` and
-   offering those by name, which needs a hand-written YAML scanner (0018). Only
-   then scan the orchestrator's jobs to show which models no schedule covers.
+3. **Orchestration coverage.** Named selectors shipped on 2026-09-29 (0032);
+   what is left is scanning the orchestrator's jobs to show which models no
+   schedule covers. On the project this was built for, each job is a YAML file
+   in another repository, a dbt command (`run --select tag:x`, or
+   `test --selector name`) beside a cron schedule, so resolving one is the
+   engine that now exists. The open questions are where that repository is,
+   which is outside the project (0017), and an input format that is not one
+   client's layout (0014).
 4. **A var's definition line, clickable.** The card names
    `dbt_project.yml:<line>`. The scanner this was waiting for now exists:
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
@@ -406,10 +439,12 @@ cross-compile.
   `web/tests/selection.js` slices from `selectKindCounts` to
   `async function loadSidecar`, and `folders.js` and `export.js` read the same
   range, so anything new between those two has to be pure or it dies at eval
-  time rather than at an assertion. `web/tests/collineage.js` slices from
-  `function sidecarLabel` to `function profileLink`, which holds the column
-  lineage menu: only declarations there, and the tool table is
-  `lineageToolDefs()` rather than a constant for that reason. `humanAge` is now the
+  time rather than at an assertion. The named selector helpers live there,
+  `selectorCommand` to `selectEmptyText`, and the export slice calls them.
+  `web/tests/collineage.js` slices from `function sidecarLabel` to
+  `function profileLink`, which holds the column lineage menu: only
+  declarations there, and the tool table is `lineageToolDefs()` rather than a
+  constant for that reason. `humanAge` is now the
   start of two slices, `compiled.js` up to `freshnessBadge` and `freshness.js`
   up to `sendToTerminal`, so `artifactBar` between them is read by both and has
   to stay pure. `web/tests/testchips.js` slices from `testChips` to
@@ -420,7 +455,10 @@ cross-compile.
   arguments of `testChips` and not a constant beside the cell.
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
-  tests checkbox, which dbt has no equivalent of in `dbt ls`.
+  tests eye, which dbt has no equivalent of in `dbt ls`. Not for a named
+  selector, where the box only filters the drawing: there the usual answer is
+  the manifest, when a dbt Fusion that drops `indirect_selection` wrote it, and
+  the amber note says so (0032).
 - **`openFile` sits inside the slice `web/tests/tabs.js` evaluates.** Anything
   new it calls has to be stubbed there, or the harness dies with no output at
   all rather than a failed assertion.
