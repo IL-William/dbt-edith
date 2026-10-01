@@ -1,6 +1,6 @@
 # 0030. Find is the app's own, and the shortcut list opens on ?
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted, amended by 0037
 
 **Trigger:** read before adding a keyboard shortcut, or changing what
 `Cmd/Ctrl + F` does anywhere.
@@ -48,4 +48,5 @@ button in the top bar. `shortcutSheet` is its only source, and
 
 A new global shortcut is a `case` in `wireKeys` and a row in `shortcutSheet`,
 or the harness fails. `keyCombo` reads the physical key when Option is held on a
-Mac, where Option turns W into `∑`: `Alt + W` never matched there before.
+Mac, where Option turns W into `∑`: `Alt + W` never matched there before. That
+is a US keyboard, and 0037 says what a French one does instead.

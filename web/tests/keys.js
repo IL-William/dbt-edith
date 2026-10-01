@@ -23,6 +23,17 @@ check('Cmd+Option+P is P whatever Option typed',
   keyCombo({ key: 'ß', code: 'KeyP', metaKey: true, altKey: true }, true), 'Mod+Alt+P');
 check('Cmd+Option+N is N whatever Option typed',
   keyCombo({ key: 'Dead', code: 'KeyN', metaKey: true, altKey: true }, true), 'Mod+Alt+N');
+// A French Mac reaches neither Alt+W nor Alt+Shift+W, by both routes at once:
+// the key marked W sits at KeyZ, and the key at KeyW is marked Z and writes a
+// letter under Option, which the rule above leaves alone (0037).
+check('the key marked W on a French keyboard is KeyZ, so it is not Alt+W',
+  keyCombo({ key: '‹', code: 'KeyZ', altKey: true }, true), 'Alt+Z');
+check('  nor is the key at KeyW, which writes a letter there',
+  keyCombo({ key: 'Â', code: 'KeyW', altKey: true }, true) === 'Alt+W', false);
+check('Cmd+Option+X is X, the close that every layout can type',
+  keyCombo({ key: '≈', code: 'KeyX', metaKey: true, altKey: true }, true), 'Mod+Alt+X');
+check('  and with Shift for closing every tab',
+  keyCombo({ key: '˛', code: 'KeyX', metaKey: true, altKey: true, shiftKey: true }, true), 'Mod+Alt+Shift+X');
 check('Cmd+Option+S is S whatever Option typed', keyCombo({ key: 'ß', code: 'KeyS', metaKey: true, altKey: true }, true), 'Mod+Alt+S');
 check('Option alone typing a letter is someone writing',
   keyCombo({ key: 'Â', code: 'KeyW', altKey: true }, true) === 'Alt+W', false);
@@ -43,6 +54,7 @@ check('Mod on a Mac', keyLabel('Mod+K', true), '⌘K');
 check('Mod elsewhere', keyLabel('Mod+K', false), 'Ctrl+K');
 check('Apple\'s order for the glyphs', keyLabel('Mod+Alt+S', true), '⌥⌘S');
 check('  Option before Shift', keyLabel('Alt+Shift+W', true), '⌥⇧W');
+check('  three modifiers in Apple\'s order', keyLabel('Mod+Alt+Shift+X', true), '⌥⇧⌘X');
 check('  Shift before Cmd', keyLabel('Mod+Shift+G', true), '⇧⌘G');
 check('the written order elsewhere', keyLabel('Mod+Alt+S', false), 'Ctrl+Alt+S');
 check('Enter is Return on a Mac', keyLabel('Shift+Enter', true), '⇧↩');

@@ -96,6 +96,10 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   followed, and `Cmd/Ctrl + Alt + N` forward again, with two chevrons before the
   breadcrumbs that do the same and name where they lead. A tab closed in between
   is stepped over.
+- Closing a tab also answers to `Cmd/Ctrl + Alt + X`, and closing every tab to
+  `Cmd/Ctrl + Alt + Shift + X`. On a French keyboard `Alt + W` and
+  `Alt + Shift + W` cannot be typed at all, so until now neither could be used
+  there; both stay bound for the keyboards they do reach (0037).
 
 ## 0.6.0 - 2026-09-29
 

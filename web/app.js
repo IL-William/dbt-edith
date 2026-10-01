@@ -6655,8 +6655,8 @@ function shortcutSheet() {
       [['Mod+K'], 'Search models, sources and every file'],
       [['Mod+S'], 'Save the file'],
       [['Mod+Alt+S'], 'Save every modified file'],
-      [['Alt+W'], 'Close the tab'],
-      [['Alt+Shift+W'], 'Close every tab'],
+      [['Mod+Alt+X', 'Alt+W'], 'Close the tab'],
+      [['Mod+Alt+Shift+X', 'Alt+Shift+W'], 'Close every tab'],
       [['Mod+Alt+P'], 'Back to the link you followed'],
       [['Mod+Alt+N'], 'Forward again'],
       [['Mod+`'], 'Show the terminal'],
@@ -6768,7 +6768,9 @@ function buildShortcuts() {
   note.className = 'keys-note';
   note.textContent = IS_MAC
     ? '⌘W and ⌘H belong to the browser and to macOS, never to a page: one closes the browser tab, '
-      + 'the other hides the window. Hence ⌥W to close a tab here, and ? or F1 for this list.'
+      + 'the other hides the window. Hence ⌥W to close a tab here. On a French keyboard ⌥W and ⌥⇧W '
+      + 'cannot be typed at all, which is why the same two commands answer to ⌥⌘X and ⌥⇧⌘X, and why '
+      + 'back and forward ask for ⌘ (0037). ? or F1 opens this list.'
     : 'Ctrl+W belongs to the browser, never to a page: it closes the browser tab. Hence Alt+W to close a tab here.';
   panel.append(head, grid, note);
   box.append(panel);
@@ -6789,6 +6791,13 @@ function wireKeys() {
     switch (keyCombo(e, IS_MAC)) {
       case 'Mod+Alt+S': e.preventDefault(); saveAll(); return;
       case 'Mod+S': e.preventDefault(); save(); return;
+      /* X for the cross on the tab, and in the same place on every layout.
+         Alt+W and Alt+Shift+W stay bound for the keyboards they do reach, but
+         a French Mac is not one: there the key marked W is `KeyZ`, and the key
+         at `KeyW` is marked Z and writes a letter under Option, which keyCombo
+         leaves alone on purpose (0030, 0037). */
+      case 'Mod+Alt+X': e.preventDefault(); if (S.active) closeFile(S.active); return;
+      case 'Mod+Alt+Shift+X': e.preventDefault(); closeAll(); return;
       case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
       case 'Alt+Shift+W': e.preventDefault(); closeAll(); return;
       /* P for previous and N for next, and Cmd is not decoration: Option alone

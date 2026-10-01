@@ -210,10 +210,17 @@ sub-graphs around whichever model you are looking at.
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
-| `Alt + W`, or middle-click a tab | close a tab |
-| `Alt + Shift + W` | close every tab |
+| `Cmd/Ctrl + Alt + X`, `Alt + W`, or middle-click a tab | close a tab |
+| `Cmd/Ctrl + Alt + Shift + X`, or `Alt + Shift + W` | close every tab |
 | right-click a tab | close it, the others, those to its right, or those with nothing unsaved |
 | `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
+
+On a French keyboard `Alt + W` and `Alt + Shift + W` cannot be typed at all: the
+key marked W is the one a browser calls `KeyZ`, and the key at `KeyW` is marked
+Z and writes a letter under Option, which is left as typed rather than taken for
+a shortcut. The same two commands answer to `Cmd + Alt + X` and
+`Cmd + Alt + Shift + X`, and every shortcut this tool binds carries `Cmd` for
+that reason (0037).
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |

@@ -393,11 +393,21 @@ every other menu here is click-opened. `Cmd + Alt + P` and `Cmd + Alt + N` walk
 the two stacks of where following a link came from, with two chevrons before the
 breadcrumbs doing the same. Not `Alt + Left` and `Alt + Right`: CodeMirror binds
 those in both keymaps, and moving by word is worth more than the history. They
-shipped as `Alt + B` and `Alt + N` and were wrong: `keyCombo` leaves Option plus
-a letter as typed, since on some layouts it writes one, so on a keyboard where
-Option+B and Option+N produce letters both wrote into the file rather than
-moving. Cmd is what makes `keyCombo` read the physical key, as `Mod + Alt + S`
-already relied on, and it is the reason these two carry it. Back
+shipped as `Alt + B` and `Alt + N` and were wrong on a French keyboard, which is
+the one this is used on: both wrote into the file rather than moving. Chasing
+that turned up the wider fact (0037), that no `Alt + <letter>` reaches a French
+Mac at all, for two reasons at once. `e.code` names positions, so the key marked
+W arrives as `Alt + Z`; and the key at `KeyW`, marked Z, writes `Â` under Option,
+a letter `keyCombo` leaves as typed because that is someone writing. So
+`Alt + W`, shipped long before any of this, had never closed a tab there either,
+and `Alt + Shift + W` inherited it. Cmd is what lets `keyCombo` fall back to
+`e.code`, which `Mod + Alt + S` already relied on without anyone noticing, and
+it only holds for a letter in the same place on both layouts, so not A, Q, Z, W
+or M. Closing a tab now also answers to `Mod + Alt + X` and closing every tab to
+`Mod + Alt + Shift + X`, the old two staying bound for the keyboards they reach.
+What was tempting and wrong: dropping the Cmd escape in `keyCombo` so it would
+only remap a non-letter. `Cmd + Option + S` reports `∑` on that keyboard, so
+that would have broken `Mod + Alt + S` to fix nothing. Back
 lands on the `ref()` that was followed, since the click moved the cursor there
 before the jump, which is the call site you want again. The three close commands
 now share `dropTab` and `settleTabs`, because two of them drifting apart is what
