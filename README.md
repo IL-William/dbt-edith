@@ -204,6 +204,7 @@ sub-graphs around whichever model you are looking at.
 | click a `ref()` / `source()` / `source_model` name | jump to that model's file |
 | click a macro call, `{{ hub() }}` or `{{ dbt_utils.star() }}` | open the file that defines it, at its `{% macro %}` line |
 | click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
+| click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
 | `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, or filter the Catalog's columns |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
@@ -215,6 +216,7 @@ sub-graphs around whichever model you are looking at.
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
 | the snowflake in the top bar | Snowflake's features on or off for the project |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
+| hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
@@ -266,6 +268,22 @@ an installed package, because in dbt it does not either. Package macros open
 from `dbt_packages/`, and only once `dbt deps` has installed them. dbt's own
 macros (`is_incremental`, `run_query`) live outside the project and stay text,
 as do Jinja's builtins and a name that is no macro.
+
+In `dbt_project.yml` the keys under `models:`, `seeds:`, `snapshots:`,
+`analyses:`, `macros:` and `data_tests:` name folders, and each one opens its
+folder in the explorer, expanded, so a per-folder config and the folder it
+configures are one click apart. The level naming the project is dropped the way
+dbt drops it, a package key opens under `dbt_packages/`, and a last key naming
+one model opens that file instead. Where a folder starts comes from
+`model-paths` and its siblings, so a project that moved them is followed. A key
+that matches no folder is dashed rather than linked, and its card says so: dbt
+only mentions a config that configures nothing once, at parse time. A config
+written without its `+` is never mistaken for a folder: it is told apart the way
+dbt tells it apart, by dbt's own config names first and by the shape of the key
+second. A package that keeps its models somewhere unconventional opens at its
+own folder rather than at a guess. Hovering a key that did link names the folder, says when no
+resource in the manifest sits under it, and names the other roots it exists
+under when a project has several.
 
 Jinja in a model is coloured by role: delimiters and keywords in orange, what
 dbt itself provides (`ref`, `source`, `this`, `adapter`, `is_incremental`...) in

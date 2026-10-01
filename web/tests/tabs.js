@@ -13,6 +13,7 @@ function markRefs() {}
 function closeHoverCard() {}
 function markVars() {}
 function markMacros() {}
+function markProjectDirs() {}
 function modeFor() { return null; }
 function toast(m) { print('  toast: ' + m); }
 eval(fn);

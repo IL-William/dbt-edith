@@ -809,6 +809,14 @@ kbd {
 .cm-varlink { border-bottom: 1px dotted var(--seed); cursor: help; border-radius: 2px; }
 .cm-varlink:hover { color: var(--seed) !important; border-bottom-style: solid; background: #16281f; }
 
+/* A folder key in dbt_project.yml: dotted like a var rather than like a ref,
+   because the click lands in the tree and not on a node. Dashed when no folder
+   matches, which the card explains (0036). */
+.cm-dirlink { border-bottom: 1px dotted #8a7fb0; cursor: pointer; border-radius: 2px; }
+.cm-dirlink:hover { color: #b9a9e0 !important; border-bottom-style: solid; background: #211d2e; }
+.cm-dirlink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
+.cm-dirlink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
+
 /* ---------------------------------------------------------------- search -- */
 .grep-status { padding: 0 10px 6px; font-size: 11px; }
 .grep-file {

@@ -494,6 +494,95 @@ function yamlNameAt(line, col) {
   return { value, from, to };
 }
 
+/* The blocks of dbt_project.yml whose keys are folders. `vars`, `sources`,
+   `flags`, `dispatch`, `exposures`, `metrics`, `semantic-models` and
+   `saved-queries` nest the same way and are left alone: their keys are names,
+   never paths. Both spellings of the test block are here, since dbt-core 1.8
+   renamed it and projects carry either. */
+const PATH_BLOCKS = new Set(['models', 'seeds', 'snapshots', 'analyses', 'macros', 'tests', 'data_tests']);
+
+/* dbt's own config names, which is how dbt itself tells a config from a folder
+   in this file: a key is a config when it starts with `+` or is one of these,
+   and a path segment otherwise. The `+` is optional and plenty of projects
+   leave it off, so without this list `schema:` or `docs:` would read as a
+   folder that is not there.
+
+   Taken from what dbt writes: every key of `config` on a model, a seed and a
+   test node of an 18 825 node manifest, plus the snapshot and seed configs its
+   documentation lists, which that project has none of. A config dbt adds later
+   is the known cost of the list: written bare, it reads as a folder that is
+   missing until the name lands here. A folder genuinely named after a config
+   is the other cost, and it goes the safe way, staying plain text, because dbt
+   would not configure it either. */
+const DBT_CONFIGS = new Set([
+  'access', 'alias', 'as_columnstore', 'batch_size', 'begin', 'check_cols', 'classifiers',
+  'cluster_by', 'column_types', 'compute', 'concurrent_batches', 'contract', 'database',
+  'dbt_valid_to_current', 'delimiter', 'docs', 'enabled', 'error_if', 'event_time', 'fail_calc',
+  'file_format', 'freshness', 'full_refresh', 'grants', 'group', 'hard_deletes',
+  'incremental_predicates', 'incremental_strategy', 'indexes', 'invalidate_hard_deletes',
+  'latest_version_pointer', 'limit', 'lookback', 'materialized', 'meta', 'on_configuration_change',
+  'on_error', 'on_schema_change', 'packages', 'persist_docs', 'post-hook', 'post_hook',
+  'pre-hook', 'pre_hook', 'primary_key', 'query_tag', 'quote_columns', 'quoting', 'refresh_mode',
+  'schema', 'severity', 'snapshot_meta_column_names', 'sql_header', 'static_analysis',
+  'store_failures', 'store_failures_as', 'strategy', 'tags', 'target_database', 'target_lag',
+  'target_schema', 'transient', 'unique_key', 'updated_at', 'warn_if', 'where',
+]);
+
+/* The key written at `col`, and where its own text sits in the line. One layer
+   of quotes is left out, so a click on a quote does nothing, the way
+   yamlNameAt treats a value. */
+function yamlKeyRange(line, col) {
+  const written = line.slice(col);
+  const kv = yamlKey(written);
+  if (!kv || !kv.key) return null;
+  const q = written[0];
+  const quoted = (q === '"' || q === "'") && written[1 + kv.key.length] === q;
+  const from = col + (quoted ? 1 : 0);
+  return [from, from + kv.key.length];
+}
+
+/* Every key in dbt_project.yml that names a folder, as the chain of keys the
+   server places on disk (0036). One entry per key, so `models:` links to its
+   root and each level below links to its own folder.
+
+   Two rules keep a config out, the way dbt keeps one out: the name, since a
+   config may be written without its `+` here and DBT_CONFIGS is what dbt would
+   match it against, and the shape, since a key that carries a value on its
+   line opens no mapping and so can name no folder. The second catches a config
+   the first has not heard of. A key under a `+config`, or under a sequence
+   item, is out for the same reason: nothing below either is a path. */
+function projectPathKeys(text) {
+  const nodes = yamlOutline(text);
+  const lines = text.split('\n');
+  const starts = [];
+  let offset = 0;
+  for (const l of lines) { starts.push(offset); offset += l.length + 1; }
+
+  const out = [];
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodes[i].kind !== 'map') continue;
+    const chain = [];
+    let at = i;
+    let ok = true;
+    while (nodes[at].parent >= 0) {
+      const parent = nodes[nodes[at].parent];
+      // A sequence item is not a mapping key, whatever it holds.
+      if (parent.kind === 'seq') { ok = false; break; }
+      chain.unshift(nodes[at].label);
+      at = nodes[at].parent;
+    }
+    if (!ok) continue;
+    const block = nodes[at].label;
+    if (!PATH_BLOCKS.has(block)) continue;
+    if (chain.some((seg) => seg.startsWith('+') || DBT_CONFIGS.has(seg))) continue;
+    const range = yamlKeyRange(lines[nodes[i].line], nodes[i].col);
+    if (!range) continue;
+    const base = starts[nodes[i].line];
+    out.push({ block, chain, ranges: [[base + range[0], base + range[1]]] });
+  }
+  return out;
+}
+
 /* Calls inside Jinja, as the dotted name before a `(`: `hub`, `automate_dv.hub`.
    Only inside a block, since outside one `coalesce(` is SQL, and a project
    macro named like a SQL function would otherwise link every use of it.
@@ -699,17 +788,62 @@ async function markMacros(doc, path) {
   }
 }
 
+/* Links every folder key in dbt_project.yml to the folder it configures. The
+   chains come from the buffer and the answer from the server, the only side
+   that sees the disk and reads `model-paths` (0036). A chain it cannot place
+   is marked all the same, dashed: dbt says a config reaching nothing only once,
+   at parse time, and the card says it where the key is. Guarded like
+   markMacros, since ranges read from one text would land on the words of
+   another. */
+async function markProjectDirs(doc, path) {
+  if (path !== 'dbt_project.yml') return;                 // a package's own is its own
+  const scan = doc.dirScan = (doc.dirScan || 0) + 1;
+  const raw = doc.getValue();
+  if (raw.length > OUTLINE_MAX) return;
+  const keys = projectPathKeys(raw);
+  let answer = { placed: [], roots: {} };
+  if (keys.length) {
+    try { answer = await api.send('/api/project/resolve', 'POST', { keys: keys.map((k) => ({ block: k.block, chain: k.chain })) }); }
+    catch { return; }
+  }
+  if (doc.dirScan !== scan || doc.getValue() !== raw) return;
+  doc.getAllMarks().forEach((mk) => { if (mk.dirTarget) mk.clear(); });
+  const placed = new Map((answer.placed || []).map((p) => [dirKey(p), p]));
+  for (const key of keys) {
+    const target = placed.get(dirKey(key)) || { block: key.block, chain: key.chain, roots: dirRoots(answer.roots, key.block) };
+    for (const [from, to] of key.ranges) {
+      const mark = doc.markText(doc.posFromIndex(from), doc.posFromIndex(to), {
+        className: 'cm-dirlink' + (target.path ? '' : ' missing'),
+      });
+      mark.dirTarget = target;
+    }
+  }
+}
+
+/* The block and the chain together, which is how a mark finds its answer: a
+   pair, not a joined string, so a key holding a slash cannot collide. */
+const dirKey = (k) => JSON.stringify([k.block, k.chain]);
+
+/* Where the server looked, which is what a key that found nothing can say. */
+const dirRoots = (roots, block) => (roots || {})[block] || [];
+
 function wireRefClicks(cm) {
   cm.getWrapperElement().addEventListener('mousedown', (e) => {
     if (e.button !== 0 || e.altKey) return;              // alt-click still places the cursor
     const cl = e.target.classList;
-    if (!cl || !(cl.contains('cm-reflink') || cl.contains('cm-macrolink'))) return;
+    if (!cl || !(cl.contains('cm-reflink') || cl.contains('cm-macrolink') || cl.contains('cm-dirlink'))) return;
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const marks = cm.findMarksAt(pos);
     const macro = cl.contains('cm-macrolink') && marks.find((mk) => mk.macroTarget);
     if (macro) {
       e.preventDefault();
       openMacro(macro.macroTarget);
+      return;
+    }
+    const folder = cl.contains('cm-dirlink') && marks.find((mk) => mk.dirTarget);
+    if (folder) {
+      e.preventDefault();
+      openConfigPath(folder.dirTarget);
       return;
     }
     const mark = marks.find((mk) => mk.refTarget);
@@ -744,6 +878,22 @@ async function openMacro(t) {
   if (at) gotoPos(at.line, at.ch);
 }
 
+/* The folder a config key in dbt_project.yml configures, opened in the tree
+   rather than in a tab: there is nothing to read in a folder. A chain the
+   server could not place does nothing here, since the card is what explains
+   it. The lineage stays where it is, as it does for a macro: a folder is not a
+   node. */
+async function openConfigPath(t) {
+  if (!t.path) return;
+  showSide('files');
+  if (!t.dir) {
+    await openFile(t.path, { focusLineage: false, preview: true });
+    revealInTree(t.path);
+    return;
+  }
+  if (!await revealInTree(t.path, { expand: true })) toast(`${t.path} is not in the tree`, 'err');
+}
+
 /* Hovering a mark opens the card. The classList gate comes first because
    coordsChar snaps to the nearest character even far past the end of a line, so
    without it every move over the empty area to the right of a line would
@@ -755,9 +905,15 @@ function wireHovers(cm) {
     if (!cl) return hoverLeave();
     const isVar = cl.contains('cm-varlink');
     const isMacro = cl.contains('cm-macrolink');
-    if (!isVar && !isMacro && !cl.contains('cm-reflink')) return hoverLeave();
+    const isDir = cl.contains('cm-dirlink');
+    if (!isVar && !isMacro && !isDir && !cl.contains('cm-reflink')) return hoverLeave();
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const at = () => cm.charCoords(pos, 'window');
+    if (isDir) {
+      const dm = cm.findMarksAt(pos).find((mk) => mk.dirTarget);
+      if (!dm) return hoverLeave();
+      return hoverEnter('dir:' + dirKey(dm.dirTarget), at, (el) => fillDirCard(el, dm.dirTarget));
+    }
     if (isMacro) {
       const mm = cm.findMarksAt(pos).find((mk) => mk.macroTarget);
       if (!mm) return hoverLeave();
@@ -817,6 +973,7 @@ function initEditor() {
       markRefs(doc, path);
       markVars(doc);
       markMacros(doc, path);
+      markProjectDirs(doc, path);
       refreshOutline();
       renderCrumbs();
     }, 500);
@@ -1288,6 +1445,7 @@ async function openFile(path, { focusLineage = true, preview = false } = {}) {
   markRefs(doc, path);
   markVars(doc);
   markMacros(doc, path);
+  markProjectDirs(doc, path);
   activate(path, focusLineage);
 }
 
@@ -2224,18 +2382,21 @@ function markTreeSelection(path) {
 }
 
 /* Reveals a path in the tree, expanding folders as needed. */
-async function revealInTree(path) {
+async function revealInTree(path, { expand = false } = {}) {
   const parts = path.split('/');
   let container = $('#tree');
-  for (let i = 0; i < parts.length - 1; i++) {
+  // `expand` walks one level further, so the folder clicked opens rather than
+  // sitting selected and shut.
+  for (let i = 0; i < parts.length - (expand ? 0 : 1); i++) {
     const sub = parts.slice(0, i + 1).join('/');
     const row = [...container.children].find((c) => c.dataset && c.dataset.path === sub);
-    if (!row || !row.expand) return;
+    if (!row || !row.expand) return false;
     container = await row.expand();
   }
   markTreeSelection(path);
   const row = $$('#tree .row').find((r) => r.dataset.path === path);
   if (row) row.scrollIntoView({ block: 'nearest' });
+  return !!row;
 }
 
 // ------------------------------------------------------------ model list --
@@ -4830,6 +4991,44 @@ function fillVarCard(el, t) {
 /* A macro, from what its link already carries, so there is nothing to wait
    for. The package is the line that matters: a project and a package can both
    define `hub`, and this says which of the two the call reached. */
+/* A folder key in dbt_project.yml. The crumb is the folder itself, which is
+   what the click opens; the rest is what the key could not say on its own:
+   that the config reaches no resource, or that the same chain exists under
+   another root. A key the server could not place says where it looked. */
+function fillDirCard(el, t) {
+  const chain = t.chain.length ? t.chain.join(' > ') : t.block;
+  if (!t.path) {
+    const roots = (t.roots || []).join(', ');
+    hoverCardBody(el, { title: chain, sub: `${t.block} config` });
+    el.append(Object.assign(document.createElement('div'), {
+      className: 'hc-desc muted',
+      textContent: roots
+        ? `No such folder under ${roots}. dbt reports a config path that matches nothing as a warning when it parses the project.`
+        : `${t.block} has no readable path in this file, so there is nothing to look under.`,
+    }));
+    return;
+  }
+  hoverCardBody(el, { title: chain, sub: t.dir ? `${t.block} config` : `${t.block} config · one file`, crumb: t.path });
+  // Only a manifest that matches the project can turn "nothing under it" into
+  // "this config reaches nothing". A folder added since the last parse is in no
+  // manifest either, and saying it configures nothing would be a lie (0025).
+  if (t.nodes === 0) {
+    const fresh = S.fresh && S.fresh.state === 'fresh';
+    el.append(Object.assign(document.createElement('div'), {
+      className: 'hc-desc muted',
+      textContent: fresh
+        ? 'The folder is there, and no resource in the manifest sits under it: this config reaches nothing, which is what dbt warns about when it parses.'
+        : 'The folder is there, and no resource in the manifest sits under it. The manifest no longer matches the project, so a folder added since the last parse is the likelier reason.',
+    }));
+  }
+  if (t.also && t.also.length) {
+    el.append(Object.assign(document.createElement('div'), {
+      className: 'hc-counts',
+      textContent: 'also under: ' + t.also.join(', '),
+    }));
+  }
+}
+
 function fillMacroCard(el, t) {
   hoverCardBody(el, { title: t.name, sub: `macro · ${t.package}`, crumb: t.file });
   el.append(Object.assign(document.createElement('div'), {

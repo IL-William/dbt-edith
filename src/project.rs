@@ -415,6 +415,273 @@ fn name_in(text: &str) -> Option<String> {
     None
 }
 
+/// The directories a config block's keys are relative to, one list per block.
+/// dbt's defaults when the key is absent, and nothing at all when the key is
+/// there and unreadable: a guessed root would point a config at the wrong
+/// folder (0036).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ProjectPaths {
+    pub models: Vec<String>,
+    pub seeds: Vec<String>,
+    pub snapshots: Vec<String>,
+    pub analyses: Vec<String>,
+    pub macros: Vec<String>,
+    pub tests: Vec<String>,
+}
+
+impl Default for ProjectPaths {
+    fn default() -> Self {
+        let one = |d: &str| vec![d.to_string()];
+        ProjectPaths {
+            models: one("models"),
+            seeds: one("seeds"),
+            snapshots: one("snapshots"),
+            analyses: one("analyses"),
+            macros: one("macros"),
+            tests: one("tests"),
+        }
+    }
+}
+
+/// The extensions a leaf key may carry in each block, for the case where the
+/// last key of a chain names one resource rather than a directory. Per block,
+/// since a seed is never a `.sql`. `data_tests:` is `tests:` renamed in
+/// dbt-core 1.8, and both spellings are in the wild.
+const BLOCK_EXTS: &[(&str, &[&str])] = &[
+    ("models", &["sql", "py"]),
+    ("seeds", &["csv"]),
+    ("snapshots", &["sql"]),
+    ("analyses", &["sql"]),
+    ("macros", &["sql"]),
+    ("tests", &["sql"]),
+    ("data_tests", &["sql"]),
+];
+
+impl ProjectPaths {
+    /// The roots a block's keys are looked for under, and the extensions a
+    /// leaf may carry there, or None when the block is not one whose keys are
+    /// paths.
+    ///
+    /// A test block takes the model roots as well, and that is not a hedge: a
+    /// singular test lives under `test-paths`, while a generic test's fqn
+    /// mirrors the path of the model it hangs on, so one key under
+    /// `data_tests:` names a folder in the test tree and the next names one in
+    /// the model tree. The project this was built for writes both.
+    pub fn block(&self, block: &str) -> Option<(Vec<String>, &'static [&'static str])> {
+        let exts = BLOCK_EXTS.iter().find(|(b, _)| *b == block).map(|(_, e)| *e)?;
+        let roots = match block {
+            "models" => self.models.clone(),
+            "seeds" => self.seeds.clone(),
+            "snapshots" => self.snapshots.clone(),
+            "analyses" => self.analyses.clone(),
+            "macros" => self.macros.clone(),
+            "tests" | "data_tests" => [self.tests.clone(), self.models.clone()].concat(),
+            _ => return None,
+        };
+        Some((roots, exts))
+    }
+
+    /// Every block whose keys are paths, with the roots it searches: what the
+    /// editor needs to say where a key was looked for when it found nothing.
+    pub fn searched(&self) -> std::collections::BTreeMap<&'static str, Vec<String>> {
+        BLOCK_EXTS.iter().filter_map(|(b, _)| self.block(b).map(|(roots, _)| (*b, roots))).collect()
+    }
+}
+
+/// One root as a project-relative path, or None when it cannot be one: empty,
+/// or Jinja, which nothing here evaluates (0009).
+fn clean_root(s: String) -> Option<String> {
+    let s = crate::graph::slashed(s);
+    let s = s.trim().trim_start_matches("./").trim_end_matches('/').to_string();
+    if s.is_empty() || s.contains('{') {
+        return None;
+    }
+    Some(s)
+}
+
+/// The value of a `*-paths` key, in the three shapes a project writes it:
+/// `["models"]`, `models`, and a block sequence on the lines below. Anything
+/// else gives no roots at all, rather than a guess.
+fn path_list(lines: &[&str], at: &mut usize, rest: &str) -> Vec<String> {
+    let rest = rest.trim();
+    if !rest.is_empty() {
+        return match parse_value(rest) {
+            Value::List(items) => {
+                let cleaned: Option<Vec<String>> = items.into_iter().map(clean_root).collect();
+                cleaned.unwrap_or_default()
+            }
+            Value::Scalar(s) => clean_root(s).into_iter().collect(),
+            Value::Bad(_) => Vec::new(),
+        };
+    }
+    let mut out = Vec::new();
+    while *at < lines.len() {
+        let line = lines[*at];
+        if skippable(line) {
+            *at += 1;
+            continue;
+        }
+        match indent_of(line) {
+            Some(i) if i > 0 => {}
+            _ => break,
+        }
+        let Some(item) = line.trim().strip_prefix('-') else { return Vec::new() };
+        let item = item.trim();
+        if item.is_empty() {
+            return Vec::new();
+        }
+        match parse_value(item) {
+            Value::Scalar(s) => match clean_root(s) {
+                Some(root) => out.push(root),
+                None => return Vec::new(),
+            },
+            _ => return Vec::new(),
+        }
+        *at += 1;
+    }
+    out
+}
+
+/// The six resource path keys, read with the same scanner the `vars:` block
+/// uses. `source-paths` and `data-paths` are what they were called before
+/// dbt 1.0, and projects on the VM still carry them.
+pub fn paths_in(text: &str) -> ProjectPaths {
+    let mut out = ProjectPaths::default();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut j = 0;
+    while j < lines.len() {
+        let line = lines[j];
+        j += 1;
+        if skippable(line) || indent_of(line) != Some(0) {
+            continue;
+        }
+        let Some((key, rest)) = split_key(line) else { continue };
+        // A key written twice: the last one wins, as dbt reads it.
+        let value = |out: &mut Vec<String>, j: &mut usize| *out = path_list(&lines, j, rest);
+        match key.as_str() {
+            "model-paths" | "source-paths" => value(&mut out.models, &mut j),
+            "seed-paths" | "data-paths" => value(&mut out.seeds, &mut j),
+            "snapshot-paths" => value(&mut out.snapshots, &mut j),
+            "analysis-paths" => value(&mut out.analyses, &mut j),
+            "macro-paths" => value(&mut out.macros, &mut j),
+            "test-paths" => value(&mut out.tests, &mut j),
+            _ => {}
+        }
+    }
+    out
+}
+
+pub fn read_paths(root: &Path) -> ProjectPaths {
+    let path = root.join("dbt_project.yml");
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return ProjectPaths::default();
+    };
+    if !meta.is_file() || meta.len() > MAX_BYTES {
+        return ProjectPaths::default();
+    }
+    match std::fs::read(&path) {
+        Ok(bytes) => paths_in(&crate::envs::decode(&bytes)),
+        Err(_) => ProjectPaths::default(),
+    }
+}
+
+/// Where a chain of config keys points inside the project.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Placed {
+    pub path: String,
+    /// False when the chain's last key named one resource file rather than a
+    /// directory, which decides whether the click opens a tab or the tree.
+    pub dir: bool,
+    /// The other roots the same chain exists under, when a block has several.
+    /// The click goes to `path`; the card says there is more to it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<String>,
+}
+
+/// Where `dbt deps` put a package, when it put one there at all. Asked of the
+/// disk rather than of the manifest, because a package of macros alone owns no
+/// node to be named by and would read as a folder that is not there.
+fn installed_package(root: &Path, name: &str) -> Option<String> {
+    crate::macros::PACKAGE_DIRS
+        .iter()
+        .map(|dir| format!("{dir}/{name}"))
+        .find(|rel| crate::files::resolve(root, rel).is_ok_and(|p| p.is_dir()))
+}
+
+/// Where a chain of config keys under `block` points, or None when nothing is
+/// there. `name` is the project's own name, so the level dbt requires under
+/// each block is dropped; a first key naming an installed package is looked
+/// for where `dbt deps` puts it, under that package's conventional roots,
+/// since reading its own `dbt_project.yml` is refused (0036).
+pub fn place(
+    root: &Path,
+    paths: &ProjectPaths,
+    name: Option<&str>,
+    block: &str,
+    chain: &[String],
+) -> Option<Placed> {
+    let (own_roots, exts) = paths.block(block)?;
+    let own_roots = own_roots.as_slice();
+    // A key holding a separator is one name to dbt and matches no resource, so
+    // a link built from it would point at the one folder it does not reach.
+    if chain.iter().any(|s| s.trim().is_empty() || s.contains('/') || s.contains('\\') || s.starts_with('+')) {
+        return None;
+    }
+
+    let default_roots = ProjectPaths::default().block(block).map(|(r, _)| r);
+    let first = chain.first().map(String::as_str);
+    // The project's own level first, since dbt requires it; then a package,
+    // which is the only other thing that level can be.
+    let package = match first {
+        Some(f) if Some(f) != name => installed_package(root, f),
+        _ => None,
+    };
+    let (prefixes, roots, rest): (Vec<String>, &[String], &[String]) = match (first, &package) {
+        (Some(f), _) if Some(f) == name => (vec![String::new()], own_roots, &chain[1..]),
+        (Some(_), Some(dir)) => (
+            vec![format!("{dir}/")],
+            default_roots.as_deref().unwrap_or(own_roots),
+            &chain[1..],
+        ),
+        _ => (vec![String::new()], own_roots, chain),
+    };
+
+    let tail = rest.join("/");
+    let mut candidates = Vec::new();
+    for prefix in &prefixes {
+        for base in roots {
+            candidates.push(if tail.is_empty() { format!("{prefix}{base}") } else { format!("{prefix}{base}/{tail}") });
+        }
+    }
+
+    // Through files::resolve, so a chain climbing out with `..`, a drive letter
+    // or a folder symlinked in from elsewhere is refused like any other path.
+    let on_disk = |rel: &String, dir: bool| {
+        crate::files::resolve(root, rel).is_ok_and(|p| if dir { p.is_dir() } else { p.is_file() })
+    };
+    let mut dirs = candidates.iter().filter(|rel| on_disk(rel, true));
+    if let Some(first) = dirs.next() {
+        return Some(Placed { path: first.clone(), dir: true, also: dirs.cloned().collect() });
+    }
+    if tail.is_empty() {
+        return package.filter(|_| rest.is_empty()).map(|dir| Placed { path: dir, dir: true, also: Vec::new() });
+    }
+    let mut files = candidates
+        .iter()
+        .flat_map(|rel| exts.iter().map(move |ext| format!("{rel}.{ext}")))
+        .filter(|rel| on_disk(rel, false));
+    if let Some(first) = files.next() {
+        return Some(Placed { path: first, dir: false, also: files.collect() });
+    }
+    // A package naming no folder of its own still has a folder: the package.
+    // Its roots are in its own project file, which is not read (0036), so this
+    // is as far as a key that is only a package name goes.
+    match package {
+        Some(dir) if rest.is_empty() => Some(Placed { path: dir, dir: true, also: Vec::new() }),
+        _ => None,
+    }
+}
+
 pub fn read(root: &Path) -> ProjectVars {
     let path = root.join("dbt_project.yml");
     let Ok(meta) = std::fs::metadata(&path) else {
@@ -678,5 +945,206 @@ mod tests {
     fn line_numbers_are_one_based() {
         let p = scan("name: demo\n\nvars:\n  alpha: 1\n");
         assert_eq!(p.vars[0].line, 4);
+    }
+
+    // ------------------------------------------------------- resource paths --
+
+    /// A throwaway project tree, named after the test so two can run at once.
+    fn tree(tag: &str, dirs: &[&str], files: &[&str]) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("dbt-edith-paths-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for dir in dirs {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        for file in files {
+            let at = root.join(file);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(at, "").unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn the_defaults_are_dbts_own_when_no_key_says_otherwise() {
+        let p = paths_in("name: demo\n");
+        assert_eq!(p, ProjectPaths::default());
+        assert_eq!(p.models, ["models"]);
+        assert_eq!(p.analyses, ["analyses"]);
+    }
+
+    #[test]
+    fn a_flow_sequence_a_scalar_and_a_block_sequence_all_read() {
+        assert_eq!(paths_in("model-paths: [\"models\", 'extra']\n").models, ["models", "extra"]);
+        assert_eq!(paths_in("model-paths: models\n").models, ["models"]);
+        assert_eq!(paths_in("model-paths:\n  - models\n  - extra\nseed-paths: [seeds]\n").models, ["models", "extra"]);
+    }
+
+    #[test]
+    fn a_block_sequence_does_not_swallow_the_keys_after_it() {
+        let p = paths_in("model-paths:\n  - models\nmacro-paths: [mac]\n");
+        assert_eq!(p.models, ["models"]);
+        assert_eq!(p.macros, ["mac"]);
+    }
+
+    #[test]
+    fn the_pre_1_0_names_are_read_too() {
+        assert_eq!(paths_in("source-paths: [app]\n").models, ["app"]);
+        assert_eq!(paths_in("data-paths: [raw]\n").seeds, ["raw"]);
+    }
+
+    #[test]
+    fn a_value_that_cannot_be_read_gives_no_roots_at_all() {
+        // No root rather than a guess: a wrong root links a config to the
+        // wrong folder, which is worse than no link (0036).
+        assert!(paths_in("model-paths: \"{{ var('where') }}\"\n").models.is_empty());
+        assert!(paths_in("model-paths: [[a]]\n").models.is_empty());
+        assert!(paths_in("model-paths:\n  - models\n  - [a]\n").models.is_empty());
+        assert!(paths_in("model-paths:\n").models.is_empty());
+    }
+
+    #[test]
+    fn a_root_is_tidied_the_way_every_other_path_here_is() {
+        assert_eq!(paths_in("model-paths: [\"./models/\"]\n").models, ["models"]);
+        assert_eq!(paths_in("model-paths: [\"models\\\\staging\"]\n").models, ["models/staging"]);
+    }
+
+    #[test]
+    fn a_tab_in_the_indentation_drops_the_line() {
+        assert_eq!(paths_in(" \tmodel-paths: [app]\n").models, ["models"]);
+    }
+
+    #[test]
+    fn a_chain_places_a_folder_under_the_root_the_project_names() {
+        let root = tree("dir", &["app/staging/crm"], &[]);
+        let paths = paths_in("model-paths: [app]\n");
+        let p = place(&root, &paths, Some("demo"), "models", &str_chain(&["demo", "staging", "crm"])).unwrap();
+        assert_eq!(p.path, "app/staging/crm");
+        assert!(p.dir);
+        assert!(p.also.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_block_key_itself_places_its_root() {
+        let root = tree("block", &["models"], &[]);
+        let p = place(&root, &ProjectPaths::default(), Some("demo"), "models", &[]).unwrap();
+        assert_eq!(p.path, "models");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_leaf_naming_one_resource_places_its_file() {
+        let root = tree("leaf", &["models/staging"], &["models/staging/stg_orders.sql", "seeds/countries.csv"]);
+        let d = ProjectPaths::default();
+        let model = place(&root, &d, Some("demo"), "models", &str_chain(&["demo", "staging", "stg_orders"])).unwrap();
+        assert_eq!((model.path.as_str(), model.dir), ("models/staging/stg_orders.sql", false));
+        // Per block: a seed is never a .sql.
+        let seed = place(&root, &d, Some("demo"), "seeds", &str_chain(&["demo", "countries"])).unwrap();
+        assert_eq!(seed.path, "seeds/countries.csv");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_second_root_answers_when_the_first_has_nothing_and_the_card_hears_about_both() {
+        let root = tree("also", &["models/staging", "extra/staging"], &[]);
+        let paths = paths_in("model-paths: [other, models, extra]\n");
+        let p = place(&root, &paths, Some("demo"), "models", &str_chain(&["staging"])).unwrap();
+        assert_eq!(p.path, "models/staging");
+        assert_eq!(p.also, ["extra/staging"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_package_key_is_looked_for_where_dbt_deps_puts_it() {
+        let root = tree("pkg", &["dbt_packages/automate_dv/macros/hub"], &[]);
+        // The root project moved its own models; a package keeps the
+        // conventional roots, since its own project file is not read (0036).
+        let paths = paths_in("model-paths: [app]\n");
+        let p = place(&root, &paths, Some("demo"), "macros", &str_chain(&["automate_dv", "hub"])).unwrap();
+        assert_eq!(p.path, "dbt_packages/automate_dv/macros/hub");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_package_key_alone_falls_back_to_the_package_folder() {
+        // A package that keeps its models somewhere this project cannot guess
+        // still has one folder worth opening: its own.
+        let root = tree("pkgroot", &["dbt_packages/dbt_artifacts/elsewhere"], &[]);
+        let d = ProjectPaths::default();
+        let p = place(&root, &d, Some("demo"), "models", &str_chain(&["dbt_artifacts"])).unwrap();
+        assert_eq!(p.path, "dbt_packages/dbt_artifacts");
+        // One level deeper there is nothing honest to point at.
+        assert!(place(&root, &d, Some("demo"), "models", &str_chain(&["dbt_artifacts", "staging"])).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_package_is_known_by_its_folder_not_by_a_node() {
+        // dbt_utils ships macros and no node at all, so the manifest never
+        // names it; the folder dbt deps wrote is what says it is a package.
+        let root = tree("pkgmacro", &["dbt_modules/dbt_utils/macros/sql"], &[]);
+        let p = place(&root, &ProjectPaths::default(), Some("demo"), "macros", &str_chain(&["dbt_utils", "sql"])).unwrap();
+        assert_eq!(p.path, "dbt_modules/dbt_utils/macros/sql");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nothing_on_disk_is_no_answer() {
+        let root = tree("none", &["models"], &[]);
+        let d = ProjectPaths::default();
+        assert!(place(&root, &d, Some("demo"), "models", &str_chain(&["demo", "stagin"])).is_none());
+        // A block whose keys are not paths never had an answer to give.
+        assert!(place(&root, &d, Some("demo"), "sources", &str_chain(&["demo"])).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_key_holding_a_separator_or_a_plus_is_refused() {
+        let root = tree("odd", &["models/staging"], &[]);
+        let d = ProjectPaths::default();
+        // To dbt `staging/crm` is one name matching no resource, so a link
+        // from it would point at the folder the config does not reach.
+        assert!(place(&root, &d, Some("demo"), "models", &str_chain(&["staging/crm"])).is_none());
+        assert!(place(&root, &d, Some("demo"), "models", &str_chain(&["staging\\crm"])).is_none());
+        assert!(place(&root, &d, Some("demo"), "models", &str_chain(&["+tags"])).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_chain_cannot_climb_out_of_the_project() {
+        let root = tree("escape", &["models"], &[]);
+        let paths = paths_in("model-paths: [\"../elsewhere\"]\n");
+        assert!(place(&root, &paths, Some("demo"), "models", &[]).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn both_spellings_of_the_test_block_share_one_root() {
+        let root = tree("tests", &["checks/generic"], &[]);
+        let paths = paths_in("test-paths: [checks]\n");
+        for block in ["tests", "data_tests"] {
+            let p = place(&root, &paths, Some("demo"), block, &str_chain(&["generic"])).unwrap();
+            assert_eq!(p.path, "checks/generic");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_test_key_may_name_a_folder_in_either_tree() {
+        // A singular test sits under test-paths; a generic test's fqn mirrors
+        // the path of the model it hangs on, and real projects write both.
+        let root = tree("twotrees", &["tests/singular", "models/staging"], &[]);
+        let d = ProjectPaths::default();
+        let singular = place(&root, &d, Some("demo"), "data_tests", &str_chain(&["demo", "singular"])).unwrap();
+        assert_eq!(singular.path, "tests/singular");
+        let generic = place(&root, &d, Some("demo"), "data_tests", &str_chain(&["demo", "staging"])).unwrap();
+        assert_eq!(generic.path, "models/staging");
+        // The model tree is not searched for anything else.
+        assert!(place(&root, &d, Some("demo"), "seeds", &str_chain(&["demo", "staging"])).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn str_chain(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
     }
 }

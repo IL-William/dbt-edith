@@ -26,6 +26,15 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 
 ## Unreleased
 
+- A folder key in `dbt_project.yml` opens its folder in the explorer, expanded:
+  the chain of keys under `models:` and its five path-valued siblings is placed
+  on disk under `model-paths` and the rest, which nothing read until now
+  (0036). A key naming an installed package opens it under `dbt_packages/`. A
+  key matching no folder is dashed instead, and its card says dbt only warns
+  about that at parse time; a key that opens a folder holding no resource says
+  so too, unless the manifest is the stale one. A config written without its
+  `+` is never taken for a folder, by dbt's own rule: the name first, then the
+  shape.
 - A menu in the top bar picks where column lineage comes from, Fusion, Collin
   or Snowflake, each in its own colour, where a read-only chip used to name the
   source (0031). A tool with nothing to offer is greyed and says which file it

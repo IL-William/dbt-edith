@@ -7,7 +7,8 @@ belongs here. Last updated 2026-09-29.
 
 ## Shipped
 
-Editor with clickable `ref()`, `source()` and macro calls and Jinja coloured by role,
+Editor with clickable `ref()`, `source()`, macro calls and the folder keys of
+`dbt_project.yml`, and Jinja coloured by role,
 lineage graph in model and column modes, column lineage from the tool picked in
 the top bar, Snowflake's fetched when a column is clicked (0016, 0031),
 terminal, file explorer with git and
@@ -350,6 +351,30 @@ each lay out 1 978 px tall with five and a chip under each. Driven in headless
 Chrome on that project: the node with 17 tests shows five and `+12 more tests`,
 opens to seventeen by click and folds again by keyboard. Not yet on the VM.
 
+Folder keys in `dbt_project.yml`, added 2026-10-01 (0036): a key under
+`models:`, or under its five path-valued siblings, opens the folder it
+configures in the explorer, expanded, so a per-folder config and its folder are
+one click apart. The chains are scanned in the browser and placed on disk by
+the server, which reads `model-paths` and the rest for the first time in this
+binary. A key that matches nothing is dashed and its card says dbt only warns
+about that at parse time; a key that opens a folder with no resource under it
+says that too, which is the manifest's one job here. What keeps the dashed mark
+honest is dbt's own rule for this file, a key being a config when it starts with
+`+` or carries one of dbt's config names and a path segment otherwise, with the
+shape of the key as a second guard: `DBT_CONFIGS` in `web/app.js` holds those
+names, read off the `config` of a model, a seed and a test node of that
+project's manifest and completed from the documentation for the resources it
+has none of. A package is recognised by the folder `dbt deps` wrote, not by a
+node carrying its name, so a package of macros alone is recognised too, and a
+key that is only a package name opens the package folder. On the 18 825 node project all 553 keys of its
+project file resolve, in 160 ms for the whole round trip, 12 of them onto
+folders the manifest has nothing under and one of them a package, which opens
+under `dbt_packages/`. The card only calls a config dead when the freshness
+badge says the manifest matches the project, since on a branch the folder is
+usually newer than the parse. Driven in headless Chrome on that
+project and on a copy of Jaffle Shop with no manifest at all, which is the case
+the disk answers and the manifest could not. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -470,6 +495,14 @@ cross-compile.
   normalises it once, at the boundary, so nothing downstream has to ask. If
   paths ever look doubled, unmatched in the tree, or open twice as two tabs,
   that normalisation is the first thing to check.
+- **`model-paths` and its five siblings are read in one place**,
+  `project::paths_in`, and only the folder links use them (0036).
+  `src/freshness.rs` still assumes `macros/`, so the gap 0025 records is
+  narrower than it was but not closed.
+- **A key in `dbt_project.yml` that matches no folder stays dashed on purpose**,
+  and a key that matches nothing at all in a block whose paths could not be read
+  gets no link. Neither is a bug: refusing to guess a root is 0018's rule, and
+  0036 says what each mark means.
 - **The test harnesses slice `web/app.js` by function name** (0013). Renaming a
   sliced function breaks its harness; `./scripts/check.sh` catches it.
   `web/tests/selection.js` slices from `selectKindCounts` to
@@ -510,7 +543,10 @@ cross-compile.
   too and which holds `jinjaBlockEnd`, the comment mask's own dependency; from
   `function yamlIndent` to `/* ATX headings`; and from `const DECLARING_LISTS`
   to `async function markRefs`. Everything in those ranges stays pure.
-  `markMacros` is called from `openFile`, which is why `tabs.js` stubs it.
+  `markMacros` is called from `openFile`, which is why `tabs.js` stubs it, and
+  `markProjectDirs` is called from there too and stubbed beside it.
+  `web/tests/projectdirs.js` reads both of those ranges as well, so the folder
+  key scanner sits in the second one and stays pure like everything around it.
 - **`web/tests/find.js` slices** `web/app.js` from `function escapeRegExp` to
   `const findPrefs`, which is every pure piece of find, and from
   `function columnMatches` to `function focusColumnFilter`. Both of those sit

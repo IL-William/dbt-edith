@@ -208,6 +208,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/file", get(read_file).put(write_file))
         .route("/api/resolve", post(resolve))
         .route("/api/macros/resolve", post(resolve_macros))
+        .route("/api/project/resolve", post(resolve_project_keys))
         .route("/api/git", get(git_status))
         .route("/api/freshness", get(freshness_status))
         .route("/api/git/branches", get(git_branches))
@@ -887,6 +888,90 @@ async fn resolve_macros(State(st): State<Arc<AppState>>, Json(b): Json<MacroCall
     .await;
     match found {
         Ok(links) => Json(links).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ProjectKeysBody {
+    keys: Vec<ProjectKey>,
+}
+
+#[derive(Deserialize, serde::Serialize, Clone)]
+struct ProjectKey {
+    /// The config block the chain hangs from, `models` or one of its five
+    /// siblings. Echoed back, with the chain, because that pair is how the
+    /// editor finds its marks again.
+    block: String,
+    chain: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct ProjectPlace {
+    #[serde(flatten)]
+    key: ProjectKey,
+    path: String,
+    dir: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    also: Vec<String>,
+    /// How many manifest nodes sit under the folder. None when there is no
+    /// manifest yet, so the card can stay silent rather than claim a zero it
+    /// cannot stand behind; Some(0) is a config that reaches nothing, which is
+    /// what dbt warns about at parse time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nodes: Option<usize>,
+}
+
+#[derive(serde::Serialize)]
+struct ProjectResolved {
+    placed: Vec<ProjectPlace>,
+    /// The roots each block was searched under, so the card can name where a
+    /// key was looked for even when it was not found.
+    roots: std::collections::BTreeMap<&'static str, Vec<String>>,
+}
+
+/// More config keys than any hand-maintained project file holds: the one this
+/// was built for writes 553 of them, so the bound is well above that rather
+/// than near it, and past it the request is not an editor asking.
+const MAX_PROJECT_KEYS: usize = 4_000;
+
+/// A chain of config keys in `dbt_project.yml` is deeper than any project
+/// nests its folders.
+const MAX_PROJECT_DEPTH: usize = 12;
+
+/// Maps the folder keys found in `dbt_project.yml` onto the folders they
+/// configure, and answers only for those on disk, since nothing else can be
+/// revealed in the tree (0036). The project file is read fresh, so a saved
+/// `model-paths` edit takes effect on the next scan rather than the next
+/// restart.
+async fn resolve_project_keys(State(st): State<Arc<AppState>>, Json(b): Json<ProjectKeysBody>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let root = st.root.clone();
+    // A stat or two per key, which on the VM's disk is not free.
+    let found = tokio::task::spawn_blocking(move || {
+        let paths = crate::project::read_paths(&root);
+        let name = crate::project::name(&root);
+        let counted = !graph.nodes.is_empty();
+        let mut seen = std::collections::HashSet::new();
+        let placed = b
+            .keys
+            .into_iter()
+            .filter(|k| k.chain.len() <= MAX_PROJECT_DEPTH)
+            .filter(|k| seen.insert((k.block.clone(), k.chain.clone())))
+            .take(MAX_PROJECT_KEYS)
+            .filter_map(|key| {
+                let p = crate::project::place(&root, &paths, name.as_deref(), &key.block, &key.chain)?;
+                let under = format!("{}/", p.path);
+                let nodes = (counted && p.dir)
+                    .then(|| graph.nodes.iter().filter(|n| n.file.starts_with(&under)).count());
+                Some(ProjectPlace { key, path: p.path, dir: p.dir, also: p.also, nodes })
+            })
+            .collect::<Vec<_>>();
+        ProjectResolved { placed, roots: paths.searched() }
+    })
+    .await;
+    match found {
+        Ok(answer) => Json(answer).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
