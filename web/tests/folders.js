@@ -310,6 +310,8 @@ group('the line under the canvas', function () {
   check('in selection mode too', canvasStatus({ mode: 'select', matched: 3, nodes: new Array(3), edges: new Array(2) },
     { folders: 1, against: 2 }), '3 nodes · 2 edges · 1 folder · 2 edges against their order');
   check('nothing matched, nothing said', canvasStatus({ mode: 'select', matched: 0, nodes: [], edges: [] }, null), '');
+  check('tests folded under their models are counted, folders or not', canvasStatus(sub, { folders: 0, against: 0, folded: 7 }),
+    '12 nodes · 15 edges · 7 tests folded');
 });
 
 group('the page asks for it', function () {

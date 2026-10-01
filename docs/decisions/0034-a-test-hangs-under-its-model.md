@@ -1,6 +1,6 @@
 # 0034. A test hangs under the model whose YAML declares it
 
-Date: 2026-09-30 · Status: accepted · Amends 0027
+Date: 2026-09-30 · Status: accepted, amended by 0035 · Amends 0027
 
 **Trigger:** read before changing where the canvas draws a test, or what
 `attached` in a lineage payload means.

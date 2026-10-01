@@ -912,15 +912,32 @@ impl Graph {
         }
 
         if with_tests {
-            let members: Vec<u32> = depth.keys().copied().collect();
-            for m in members {
-                let d = depth[&m];
-                for &t in &self.nodes[m as usize].tests {
+            // One test per model a turn, each model's by name: a cap reached
+            // halfway leaves every model some of its tests. Filling model after
+            // model, in the HashMap's order, left the last ones none, and a
+            // different last ones after every reload.
+            let mut models: Vec<u32> = depth.keys().copied().collect();
+            models.sort_by(|&a, &b| self.by_name_then_id(a, b));
+            let lists: Vec<Vec<u32>> = models
+                .iter()
+                .map(|&m| {
+                    let mut t = self.nodes[m as usize].tests.clone();
+                    t.sort_by(|&a, &b| self.by_name_then_id(a, b));
+                    t
+                })
+                .collect();
+            let turns = lists.iter().map(Vec::len).max().unwrap_or(0);
+            'fill: for turn in 0..turns {
+                for (k, &m) in models.iter().enumerate() {
+                    let Some(&t) = lists[k].get(turn) else { continue };
+                    if depth.contains_key(&t) {
+                        continue;
+                    }
                     if depth.len() >= max_nodes {
                         truncated = true;
-                        break;
+                        break 'fill;
                     }
-                    depth.entry(t).or_insert(d);
+                    depth.insert(t, depth[&m]);
                 }
             }
         }
@@ -982,6 +999,37 @@ impl Graph {
         }
     }
 
+    fn by_name_then_id(&self, a: u32, b: u32) -> std::cmp::Ordering {
+        let (x, y) = (&self.nodes[a as usize], &self.nodes[b as usize]);
+        (&x.name, &x.id).cmp(&(&y.name, &y.id))
+    }
+
+    /// Each test's place among the tests of the model it hangs under on the
+    /// canvas, by name: its declaring model when that is among `members`,
+    /// otherwise its first parent there. The cap takes the first of every
+    /// model before the second of any.
+    fn test_turns(&self, members: &[u32]) -> HashMap<u32, usize> {
+        let set: HashSet<u32> = members.iter().copied().collect();
+        let mut groups: HashMap<u32, Vec<u32>> = HashMap::new();
+        for &i in members {
+            let n = &self.nodes[i as usize];
+            if n.kind != Kind::Test {
+                continue;
+            }
+            let declared = self.index.get(&n.attached).copied().filter(|h| set.contains(h));
+            let host = declared.or_else(|| n.parents.iter().copied().find(|p| set.contains(p))).unwrap_or(u32::MAX);
+            groups.entry(host).or_default().push(i);
+        }
+        let mut turn = HashMap::new();
+        for mut list in groups.into_values() {
+            list.sort_by(|&a, &b| self.by_name_then_id(a, b));
+            for (k, t) in list.into_iter().enumerate() {
+                turn.insert(t, k);
+            }
+        }
+        turn
+    }
+
     /// Where a drawn test's declaring model sits among the drawn nodes: dbt's
     /// `attached_node`, which a singular test, having no YAML, does not have.
     fn attached_at(&self, n: &Node, pos: &HashMap<u32, usize>) -> Option<usize> {
@@ -1017,14 +1065,16 @@ impl Graph {
             //
             // Tests go last, because a selection with tests switched on is
             // mostly tests, and an alphabetical cut would fill the canvas with
-            // them and drop the models the selection was written for. Context
-            // goes after everything: it is drawn for the tests' sake, and a
-            // named selector that keeps only tests can bring more of it than
-            // there are tests.
+            // them and drop the models the selection was written for. Among
+            // them, each model's first test comes before any model's second, so
+            // a cut leaves every model some. Context goes after everything: it
+            // is drawn for the tests' sake, and a named selector that keeps
+            // only tests can bring more of it than there are tests.
+            let turn = self.test_turns(&members);
             members.sort_by(|&a, &b| {
                 let key = |i: u32| {
                     let n = &self.nodes[i as usize];
-                    (in_context.contains(&i), n.kind == Kind::Test, &n.name, &n.id)
+                    (in_context.contains(&i), n.kind == Kind::Test, turn.get(&i).copied().unwrap_or(0), &n.name, &n.id)
                 };
                 key(a).cmp(&key(b))
             });
@@ -1376,6 +1426,55 @@ mod tests {
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
         assert!(lineage["focus"].is_number(), "and every other mode still sends one");
+    }
+
+    /// Three models in a chain, four tests on each.
+    fn crowded() -> Graph {
+        let mut nodes = serde_json::Map::new();
+        let mut parents = serde_json::Map::new();
+        for (m, up) in [("a", None), ("b", Some("a")), ("c", Some("b"))] {
+            nodes.insert(format!("model.shop.{m}"), serde_json::json!({ "name": m, "resource_type": "model", "package_name": "shop" }));
+            if let Some(up) = up {
+                parents.insert(format!("model.shop.{m}"), serde_json::json!([format!("model.shop.{up}")]));
+            }
+            for t in 1..=4 {
+                let id = format!("test.shop.t_{m}{t}");
+                nodes.insert(id.clone(), serde_json::json!({
+                    "name": format!("t_{m}{t}"), "resource_type": "test", "package_name": "shop",
+                    "attached_node": format!("model.shop.{m}"),
+                }));
+                parents.insert(id, serde_json::json!([format!("model.shop.{m}")]));
+            }
+        }
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes, "parent_map": parents })).unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    fn tests_per_model(sub: &Lineage) -> Vec<(String, usize)> {
+        let mut out: Vec<(String, usize)> = ["a", "b", "c"]
+            .iter()
+            .map(|m| (m.to_string(), sub.nodes.iter().filter(|n| n.name.starts_with(&format!("t_{m}"))).count()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_capped_canvas_leaves_every_model_its_share_of_tests() {
+        let g = crowded();
+        // Three models and room for six tests: two each, never four, four, none.
+        let sub = g.lineage(g.index["model.shop.b"], 1, 1, true, 9);
+        assert!(sub.truncated);
+        assert_eq!(tests_per_model(&sub), [("a".into(), 2), ("b".into(), 2), ("c".into(), 2)]);
+        // Nodes come in index order, which follows the manifest's HashMap: the
+        // set kept is what the cap decides, so the set is compared.
+        let mut names: Vec<&str> = sub.nodes.iter().map(|n| n.name).filter(|n| n.starts_with("t_a")).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["t_a1", "t_a2"], "each model's first tests, by name");
+
+        let all: Vec<u32> = (0..g.nodes.len() as u32).filter(|&i| !g.nodes[i as usize].disabled).collect();
+        let picked = g.selection(&all, &[], true, 9);
+        assert_eq!(tests_per_model(&picked), [("a".into(), 2), ("b".into(), 2), ("c".into(), 2)]);
     }
 
     #[test]

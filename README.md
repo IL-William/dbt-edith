@@ -630,6 +630,12 @@ later. Every line into a test, the stem included, is dotted and grey, where the
 lines between models are solid: it links a check to what it checks rather than
 data to where it goes.
 
+Past five, a model shows its first five tests by name and a chip, `+12 more
+tests`, that opens the rest; `fewer tests` folds them again. The line under the
+canvas counts what is folded, and the eye, while open, counts the tests on the
+canvas. When the canvas is capped for room, every model keeps some of its tests:
+the cap takes one test per model a turn.
+
 The **folders** checkbox, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models
 drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
