@@ -387,6 +387,40 @@ MergeView host and hides the diff pane, which only `closeFile` did: closing a
 diff that way left its two documents in the page. The tab bar also scrolls to
 the active tab, which it never did while the bar overflowed. Not yet on the VM.
 
+A tab's own menu and a way back, added 2026-10-01: right-click a tab for Close,
+Close others, Close to the right and Close saved, the app's first context menu;
+every other menu here is click-opened. `Cmd + Alt + P` and `Cmd + Alt + N` walk
+the two stacks of where following a link came from, with two chevrons before the
+breadcrumbs doing the same. Not `Alt + Left` and `Alt + Right`: CodeMirror binds
+those in both keymaps, and moving by word is worth more than the history. They
+shipped as `Alt + B` and `Alt + N` and were wrong on a French keyboard, which is
+the one this is used on: both wrote into the file rather than moving. Chasing
+that turned up the wider fact (0037), that no `Alt + <letter>` reaches a French
+Mac at all, for two reasons at once. `e.code` names positions, so the key marked
+W arrives as `Alt + Z`; and the key at `KeyW`, marked Z, writes `Â` under Option,
+a letter `keyCombo` leaves as typed because that is someone writing. So
+`Alt + W`, shipped long before any of this, had never closed a tab there either,
+and `Alt + Shift + W` inherited it. Cmd is what lets `keyCombo` fall back to
+`e.code`, which `Mod + Alt + S` already relied on without anyone noticing, and
+it only holds for a letter in the same place on both layouts, so not A, Q, Z, W
+or M. Closing a tab now also answers to `Mod + Alt + X` and closing every tab to
+`Mod + Alt + Shift + X`, `Alt + W` staying bound for the keyboards it reaches.
+`Alt + Shift + W` is gone instead of kept: it was a modifier away from
+`Shift + Cmd + W`, which closes the browser window, and it had shipped in no
+release. Picking a key next to a destructive one is the mistake there, not the
+layout.
+What was tempting and wrong: dropping the Cmd escape in `keyCombo` so it would
+only remap a non-letter. `Cmd + Option + S` reports `∑` on that keyboard, so
+that would have broken `Mod + Alt + S` to fix nothing. Back
+lands on the `ref()` that was followed, since the click moved the cursor there
+before the jump, which is the call site you want again. The three close commands
+now share `dropTab` and `settleTabs`, because two of them drifting apart is what
+left a diff's MergeView in the page. Driven in headless Chrome on the 18 889 node
+project: three palette jumps walk back and forward with the chevrons greying at
+each end, a ref() click returns to its own line, Close to the right leaves
+exactly the tabs to the left, and two edited files draw one confirmation naming
+both. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -545,6 +579,13 @@ cross-compile.
   selector, where the box only filters the drawing: there the usual answer is
   the manifest, when a dbt Fusion that drops `indirect_selection` wrote it, and
   the amber note says so (0032).
+- **`function renderTabs` is an end marker now**, for
+  `web/tests/closetabs.js`, which slices `web/app.js` from `function
+  closeTargets` to it. Only `closeTargets` may sit in that range, and it stays
+  pure: anything else put between the two has to be pure or the harness dies at
+  eval time. `web/tests/jumps.js` slices `function nextJump` to
+  `function jump(`, which is the same arrangement for the back stack, so
+  `nextJump` may not reach for `S` or the DOM.
 - **`openFile` sits inside the slice `web/tests/tabs.js` evaluates.** Anything
   new it calls has to be stubbed there, or the harness dies with no output at
   all rather than a failed assertion.

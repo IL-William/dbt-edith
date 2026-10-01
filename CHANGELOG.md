@@ -88,6 +88,21 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   a closed diff's two documents in the page.
 - The tab bar scrolls to the active tab, so a file reached by `Cmd/Ctrl + K`
   or from the Open editors list is no longer off the end of a full bar.
+- Right-click a tab, in the bar or in Open editors, for Close, Close others,
+  Close to the right and Close saved. A command that would take nothing is
+  greyed, and one confirmation covers the lot, naming every file that would
+  lose work.
+- `Cmd/Ctrl + Alt + P` goes back to the `ref()`, macro call or search hit you
+  followed, and `Cmd/Ctrl + Alt + N` forward again, with two chevrons before the
+  breadcrumbs that do the same and name where they lead. A tab closed in between
+  is stepped over.
+- Closing a tab also answers to `Cmd/Ctrl + Alt + X`, and closing every tab to
+  `Cmd/Ctrl + Alt + Shift + X`. On a French keyboard `Alt + W` cannot be typed
+  at all, so closing a tab by key was never possible there; it stays bound for
+  the keyboards it does reach (0037).
+- `Alt + Shift + W` for closing every tab, added earlier in this same unreleased
+  run, is gone: it sat one modifier from `Shift + Cmd + W`, which closes the
+  browser window. `Cmd/Ctrl + Alt + Shift + X` is the key for it.
 
 ## 0.6.0 - 2026-09-29
 

@@ -132,7 +132,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md) |
 | change the folder bands, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
-| add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md) |
+| add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
 | change how a selection resolves, or touch the Jaffle Shop fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
