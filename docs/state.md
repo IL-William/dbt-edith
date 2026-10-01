@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-09-29.
+belongs here. Last updated 2026-10-01.
 
 ## Shipped
 
@@ -374,6 +374,18 @@ badge says the manifest matches the project, since on a branch the folder is
 usually newer than the parse. Driven in headless Chrome on that
 project and on a copy of Jaffle Shop with no manifest at all, which is the case
 the disk answers and the manifest could not. Not yet on the VM.
+
+A header above the tree, added 2026-10-01: the project's name and two buttons,
+one collapsing every folder and one reopening the tree down to the file being
+edited. The collapse needed no new state, since what the tree knows about what
+is open is `.kids.hidden` and `.row.open` in the DOM, and the children already
+read stay there, held by `row.loading`, so reopening a folder fetches nothing.
+The reveal reuses `revealInTree`, and both share `projectPath`, pulled out of
+`activate`, since a tab's key is not a path for a diff or the profile.
+`Alt + Shift + W` closes every tab, and `closeAll` now removes a diff tab's
+MergeView host and hides the diff pane, which only `closeFile` did: closing a
+diff that way left its two documents in the page. The tab bar also scrolls to
+the active tab, which it never did while the bar overflowed. Not yet on the VM.
 
 ## Deferred, in the order they were chosen
 

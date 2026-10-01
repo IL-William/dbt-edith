@@ -57,6 +57,21 @@
         </div>
         <div id="oe-list" class="oe-list"></div>
       </div>
+      <div class="oe-head tree-head">
+        <span class="oe-title" id="tree-title">Project</span>
+        <div class="grow"></div>
+        <!-- Both glyphs are drawn here, like the file icons: no vendor icon set is bundled. -->
+        <button class="icon" id="reveal-btn" title="Reveal the open file in the tree">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/>
+               <path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2"/></svg>
+        </button>
+        <button class="icon" id="collapse-btn" title="Collapse all folders">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 3.4L8 6.6l3.2-3.2"/>
+               <path d="M4.8 12.6L8 9.4l3.2 3.2"/></svg>
+        </button>
+      </div>
       <div id="tree" class="tree"></div>
     </div>
     <div id="side-git" class="side-pane hidden">
