@@ -387,6 +387,21 @@ MergeView host and hides the diff pane, which only `closeFile` did: closing a
 diff that way left its two documents in the page. The tab bar also scrolls to
 the active tab, which it never did while the bar overflowed. Not yet on the VM.
 
+A tab's own menu and a way back, added 2026-10-01: right-click a tab for Close,
+Close others, Close to the right and Close saved, the app's first context menu;
+every other menu here is click-opened. `Alt + B` and `Alt + N` walk the two
+stacks of where following a link came from, with two chevrons before the
+breadcrumbs doing the same. Not `Alt + Left` and `Alt + Right`: CodeMirror binds
+those in both keymaps, and moving by word is worth more than the history. Back
+lands on the `ref()` that was followed, since the click moved the cursor there
+before the jump, which is the call site you want again. The three close commands
+now share `dropTab` and `settleTabs`, because two of them drifting apart is what
+left a diff's MergeView in the page. Driven in headless Chrome on the 18 889 node
+project: three palette jumps walk back and forward with the chevrons greying at
+each end, a ref() click returns to its own line, Close to the right leaves
+exactly the tabs to the left, and two edited files draw one confirmation naming
+both. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links shipped on 2026-09-23 (0028); the
@@ -545,6 +560,13 @@ cross-compile.
   selector, where the box only filters the drawing: there the usual answer is
   the manifest, when a dbt Fusion that drops `indirect_selection` wrote it, and
   the amber note says so (0032).
+- **`function renderTabs` is an end marker now**, for
+  `web/tests/closetabs.js`, which slices `web/app.js` from `function
+  closeTargets` to it. Only `closeTargets` may sit in that range, and it stays
+  pure: anything else put between the two has to be pure or the harness dies at
+  eval time. `web/tests/jumps.js` slices `function nextJump` to
+  `function jump(`, which is the same arrangement for the back stack, so
+  `nextJump` may not reach for `S` or the DOM.
 - **`openFile` sits inside the slice `web/tests/tabs.js` evaluates.** Anything
   new it calls has to be stubbed there, or the harness dies with no output at
   all rather than a failed assertion.

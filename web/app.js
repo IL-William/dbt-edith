@@ -12,6 +12,7 @@ const S = {
   cm: null,
   term: null, ws: null, fit: null,
   preview: null,              // path of the reusable preview tab, VS Code style
+  back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
   gitMod: new Set(), gitUnt: new Set(),
   gitModDirs: new Set(), gitUntDirs: new Set(),
@@ -851,6 +852,7 @@ function wireRefClicks(cm) {
     e.preventDefault();
     const t = mark.refTarget;
     if (!t.id) return toast(`${t.name} is not in the manifest`, 'err');
+    pushJump();
     if (mark.declared) return focusDeclared(t.id);
     openFile(t.file, { focusLineage: false, preview: true });
     focusNode(t.id);
@@ -870,6 +872,7 @@ function focusDeclared(id) {
 /* The file a macro is defined in, at its `{% macro %}` line. The lineage stays
    on the model being read: a macro is not a node. */
 async function openMacro(t) {
+  pushJump();
   await openFile(t.file, { focusLineage: false, preview: true });
   const f = S.open.get(t.file);
   if (S.active !== t.file || !f || !f.doc) return;          // it could not be opened
@@ -1628,14 +1631,22 @@ function projectPath(key) {
   return f.kind === 'profile' ? '' : f.kind === 'diff' ? f.path : key;
 }
 
-function closeFile(path) {
-  const f = S.open.get(path);
-  if (f && f.dirty && !confirm(`${path} has unsaved changes. Close anyway?`)) return;
-  if (f && f.host) f.host.remove();
-  S.open.delete(path);
-  S.order = S.order.filter((p) => p !== path);
-  if (S.preview === path) S.preview = null;
-  if (S.active === path) {
+/* Takes one tab down without asking anything and without drawing: a diff owns
+   a MergeView element outside the editor host, which has to go with it. The
+   three close commands all come through here, so none of them can forget it. */
+function dropTab(key) {
+  const f = S.open.get(key);
+  if (!f) return;
+  if (f.host) f.host.remove();
+  S.open.delete(key);
+  S.order = S.order.filter((p) => p !== key);
+  if (S.preview === key) S.preview = null;
+}
+
+/* Where the editor lands once tabs have gone, and the one redraw a close does,
+   however many tabs it took. */
+function settleTabs() {
+  if (!S.active || !S.open.has(S.active)) {
     S.active = S.order[S.order.length - 1] || null;
     if (S.active) activate(S.active);
     else {
@@ -1647,6 +1658,25 @@ function closeFile(path) {
     }
   }
   renderTabs();
+}
+
+function closeFile(path) {
+  const f = S.open.get(path);
+  if (f && f.dirty && !confirm(`${path} has unsaved changes. Close anyway?`)) return;
+  dropTab(path);
+  settleTabs();
+}
+
+/* One confirmation for the lot, naming the files that would lose work, rather
+   than one dialog per tab. */
+function closeMany(keys, what) {
+  if (!keys.length) return;
+  const dirty = keys.filter((p) => S.open.get(p) && S.open.get(p).dirty);
+  if (dirty.length && !confirm(
+    `${dirty.length} file${dirty.length > 1 ? 's have' : ' has'} unsaved changes.\n\n`
+    + `${dirty.join('\n')}\n\n${what} The files themselves are not touched.`)) return;
+  for (const key of keys) dropTab(key);
+  settleTabs();
 }
 
 async function saveFile(path) {
@@ -1689,23 +1719,21 @@ async function saveAll() {
 }
 
 function closeAll() {
-  const dirty = S.order.filter((p) => S.open.get(p).dirty);
-  if (dirty.length && !confirm(
-    `${dirty.length} file${dirty.length > 1 ? 's have' : ' has'} unsaved changes.\n\n` +
-    `${dirty.join('\n')}\n\nClose every tab anyway? The files themselves are not touched.`)) return;
-  // A diff tab owns a MergeView element outside the editor host. closeFile
-  // removes it and this left it behind, with the diff pane still showing.
-  for (const f of S.open.values()) if (f.host) f.host.remove();
-  S.open.clear();
-  S.order = [];
-  S.active = null;
-  S.preview = null;
-  $('#editor-host').style.display = 'none';
-  $('#diff-host').classList.add('hidden');
-  $('#editor-empty').classList.remove('hidden');
-  renderTabs();
-  updateStatus();
-  renderCrumbs();
+  closeMany([...S.order], 'Close every tab anyway?');
+}
+
+/* Which tabs a close command takes, in the order they would go. Pure, so the
+   edges are checked rather than argued about: the kept tab, the last tab, a
+   bar with one tab in it. */
+function closeTargets(what, keep, order, open) {
+  if (what === 'saved') return order.filter((p) => !(open.get(p) || {}).dirty);
+  // A tab closed while its menu was open: indexOf would be -1 and `right`
+  // would then slice from 0 and take the whole bar.
+  const at = order.indexOf(keep);
+  if (at < 0) return [];
+  if (what === 'others') return order.filter((p) => p !== keep);
+  if (what === 'right') return order.slice(at + 1);
+  return [keep];
 }
 
 function renderTabs() {
@@ -1714,6 +1742,7 @@ function renderTabs() {
   for (const path of S.order) {
     const f = S.open.get(path);
     const t = document.createElement('div');
+    t.dataset.key = path;
     t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '');
     const name = document.createElement('span');
     name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' ? fileName(f.path) : base(path);
@@ -1754,6 +1783,7 @@ function renderOpenEditors() {
   for (const path of S.order) {
     const f = S.open.get(path);
     const row = document.createElement('div');
+    row.dataset.key = path;
     row.className = 'oe-row'
       + (path === S.active ? ' active' : '')
       + (f.dirty ? ' dirty' : '')
@@ -1791,6 +1821,90 @@ function renderOpenEditors() {
     list.appendChild(row);
   }
 }
+
+/* The commands a tab's own menu offers, each with the tabs it would take.
+   Right-click is the first context menu in the app; every other menu here is
+   click-opened, and this one is the one people arrive expecting. */
+function openTabMenu(anchor, key) {
+  if (closePopup(anchor)) return;
+  const menu = document.createElement('div');
+  menu.className = 'envmenu';
+  menu.setAttribute('role', 'menu');
+  menu.append(Object.assign(document.createElement('div'),
+    { className: 'menuhead', textContent: base(projectPath(key) || key) }));
+
+  for (const [what, label, phrase] of [
+    ['close', 'Close', 'Close it anyway?'],
+    ['others', 'Close others', 'Close the other tabs anyway?'],
+    ['right', 'Close to the right', 'Close them anyway?'],
+    ['saved', 'Close saved', 'Close the saved tabs anyway?'],
+  ]) {
+    const keys = closeTargets(what, key, S.order, S.open);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
+    if (keys.length > 1) {
+      b.append(Object.assign(document.createElement('span'),
+        { className: 'sub', textContent: String(keys.length) }));
+    }
+    // openPopup's roving focus skips these, so a command that would take
+    // nothing is neither clickable nor reachable by arrow.
+    if (!keys.length) b.setAttribute('aria-disabled', 'true');
+    else b.addEventListener('click', () => { closePopup(); closeMany(keys, phrase); });
+    menu.append(b);
+  }
+  openPopup(anchor, menu);
+}
+
+/* Following a ref(), a macro or a search hit moves the cursor somewhere nobody
+   typed, and until now there was no way back. Two stacks, the way a browser
+   keeps them: going somewhere new empties the forward one. */
+const JUMPS = 50;
+
+function here() {
+  const f = S.active && S.open.get(S.active);
+  if (!f) return null;
+  // A diff and the profile have no cursor worth keeping, only the tab.
+  const at = f.kind === 'diff' || !S.cm ? null : S.cm.getCursor();
+  return at ? { key: S.active, line: at.line, ch: at.ch } : { key: S.active };
+}
+
+/* Called before a jump, never after: afterwards the place left is gone. */
+function pushJump() {
+  const at = here();
+  if (!at) return;
+  S.back.push(at);
+  if (S.back.length > JUMPS) S.back.shift();
+  S.fwd = [];
+  renderCrumbs();
+}
+
+/* The first entry still worth going to, with the rest of the stack. A tab
+   closed since is skipped rather than purged on close, because closing a file
+   and opening it again is the ordinary thing to do. */
+function nextJump(stack, open) {
+  const rest = stack.slice();
+  while (rest.length) {
+    const at = rest.pop();
+    if (open.has(at.key)) return { at, rest };
+  }
+  return { at: null, rest };
+}
+
+function jump(from, to) {
+  const { at, rest } = nextJump(S[from], S.open);
+  S[from] = rest;
+  if (!at) return renderCrumbs();
+  const back = here();
+  if (back) S[to].push(back);
+  if (S.active !== at.key) activate(at.key);
+  if (at.line !== undefined) gotoPos(at.line, at.ch);
+  renderCrumbs();
+}
+
+const jumpBack = () => jump('back', 'fwd');
+const jumpForward = () => jump('fwd', 'back');
 
 function updateStatus() {
   const s = $('#status-file');
@@ -2031,13 +2145,17 @@ function renderCrumbs() {
   const f = S.active ? S.open.get(S.active) : null;
   /* Hidden for a diff, which holds two documents and no cursor, and for the
      profile, which lives outside the project where /api/dir cannot list. */
-  if (!f || f.kind === 'diff' || f.kind === 'profile') {
-    bar.textContent = '';
+  bar.textContent = '';
+  if (!f) {
     bar.classList.add('hidden');
     return;
   }
-  bar.textContent = '';
   bar.classList.remove('hidden');
+  bar.append(navButton('back'), navButton('fwd'));
+  /* A diff holds two documents and no cursor, and the profile lives outside
+     the project where /api/dir cannot list, so neither gets a path. The
+     chevrons stay: they are how you get back out of one. */
+  if (f.kind === 'diff' || f.kind === 'profile') return;
 
   const segs = pathCrumbs(S.active);
   segs.forEach((seg, i) => {
@@ -2055,6 +2173,24 @@ function renderCrumbs() {
   }
   // A deep path scrolls: the end is the part that says where you are.
   bar.scrollLeft = bar.scrollWidth;
+}
+
+/* Where following a link came from, and where it went. Greyed at the end of
+   its stack rather than hidden, so the pair does not shift the path sideways
+   as you move. */
+function navButton(which) {
+  const b = document.createElement('button');
+  b.className = 'crumb nav';
+  b.type = 'button';
+  b.textContent = which === 'back' ? '\u2039' : '\u203a';
+  const live = nextJump(S[which], S.open).at;
+  b.disabled = !live;
+  b.title = which === 'back'
+    ? `Back${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Alt+B', IS_MAC)})`
+    : `Forward${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Alt+N', IS_MAC)})`;
+  b.setAttribute('aria-label', b.title);
+  b.addEventListener('click', which === 'back' ? jumpBack : jumpForward);
+  return b;
 }
 
 function crumbSep() {
@@ -2146,6 +2282,7 @@ async function openCrumbMenu(anchor, spec) {
       pick: () => {
         if (entry.dir) return openCrumbMenu(anchor, { kind: 'path', dir: entry.path, current: '' });
         closeCrumbMenu();
+        pushJump();
         openFile(entry.path, { preview: true });
         revealInTree(entry.path);
       },
@@ -4739,7 +4876,7 @@ function renderCatalog(n) {
     const open = document.createElement('button');
     open.className = 'btn sm';
     open.textContent = 'Open file';
-    open.addEventListener('click', () => { openFile(n.file, { focusLineage: false }); revealInTree(n.file); });
+    open.addEventListener('click', () => { pushJump(); openFile(n.file, { focusLineage: false }); revealInTree(n.file); });
     title.appendChild(open);
   }
   const crumb = document.createElement('div');
@@ -5863,6 +6000,7 @@ function catalogPreview(body, n) {
       a.addEventListener('click', () => focusNode(r.id));
       a.addEventListener('dblclick', () => {
         if (!r.file) return;
+        pushJump();
         openFile(r.file, { focusLineage: false });
         revealInTree(r.file);
       });
@@ -6310,6 +6448,7 @@ function choosePalette(i) {
   const h = palHits[i ?? palIndex];
   if (!h) return;
   closePalette();
+  pushJump();
   if (h.kind === 'file') {
     openFile(h.path, { preview: true });
     revealInTree(h.path);
@@ -6518,6 +6657,8 @@ function shortcutSheet() {
       [['Mod+Alt+S'], 'Save every modified file'],
       [['Alt+W'], 'Close the tab'],
       [['Alt+Shift+W'], 'Close every tab'],
+      [['Alt+B'], 'Back to where following a link came from'],
+      [['Alt+N'], 'Forward again'],
       [['Mod+`'], 'Show the terminal'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
     ] },
@@ -6650,6 +6791,16 @@ function wireKeys() {
       case 'Mod+S': e.preventDefault(); save(); return;
       case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
       case 'Alt+Shift+W': e.preventDefault(); closeAll(); return;
+      /* Not Alt+Left and Alt+Right, which CodeMirror binds in both its keymaps,
+         and moving by word is worth more than the history. Option+N is the
+         dead key for a tilde, so a box someone writes prose in keeps it; the
+         editor does not, where going back is the whole point. */
+      case 'Alt+B':
+        if (isTyping(e.target) && !e.target.closest('.CodeMirror')) return;
+        e.preventDefault(); jumpBack(); return;
+      case 'Alt+N':
+        if (isTyping(e.target) && !e.target.closest('.CodeMirror')) return;
+        e.preventDefault(); jumpForward(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
       case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
       // An editor with the focus has answered this already, and said so.
@@ -6717,6 +6868,14 @@ function wireKeys() {
   $('#save-all-btn').addEventListener('click', (e) => { e.stopPropagation(); saveAll(); });
   $('#close-all-btn').addEventListener('click', (e) => { e.stopPropagation(); closeAll(); });
   $('#collapse-btn').addEventListener('click', collapseTree);
+  for (const sel of ['#tabbar', '#oe-list']) {
+    $(sel).addEventListener('contextmenu', (e) => {
+      const el = e.target.closest('[data-key]');
+      if (!el) return;
+      e.preventDefault();
+      openTabMenu(el, el.dataset.key);
+    });
+  }
   $('#reveal-btn').addEventListener('click', revealActive);
   $('#oe-head').addEventListener('click', () => {
     const box = $('#open-editors');
@@ -6804,7 +6963,7 @@ async function boot() {
       }
       if (column) return focusColumn(nodeId, column);
       focusNode(nodeId);
-      if (n.file) { openFile(n.file, { focusLineage: false }); revealInTree(n.file); }
+      if (n.file) { pushJump(); openFile(n.file, { focusLineage: false }); revealInTree(n.file); }
     },
     onExpand: (dir, n) => {
       if (S.graphMode === 'select') return expandSelection(dir, n);

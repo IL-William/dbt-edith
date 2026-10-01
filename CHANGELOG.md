@@ -88,6 +88,13 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   a closed diff's two documents in the page.
 - The tab bar scrolls to the active tab, so a file reached by `Cmd/Ctrl + K`
   or from the Open editors list is no longer off the end of a full bar.
+- Right-click a tab, in the bar or in Open editors, for Close, Close others,
+  Close to the right and Close saved. A command that would take nothing is
+  greyed, and one confirmation covers the lot, naming every file that would
+  lose work.
+- `Alt + B` goes back to the `ref()`, macro call or search hit you followed,
+  and `Alt + N` forward again, with two chevrons before the breadcrumbs that do
+  the same and name where they lead. A tab closed in between is stepped over.
 
 ## 0.6.0 - 2026-09-29
 

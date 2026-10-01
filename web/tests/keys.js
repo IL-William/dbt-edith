@@ -13,6 +13,8 @@ print('--- keyCombo ---');
 check('Cmd on a Mac is Mod', keyCombo({ key: 's', code: 'KeyS', metaKey: true }, true), 'Mod+S');
 check('Ctrl elsewhere is Mod', keyCombo({ key: 's', code: 'KeyS', ctrlKey: true }, false), 'Mod+S');
 check('Option makes ∑ of W on a Mac, and it is still W', keyCombo({ key: '∑', code: 'KeyW', altKey: true }, true), 'Alt+W');
+check('Option makes ∫ of B, and it is still B', keyCombo({ key: '∫', code: 'KeyB', altKey: true }, true), 'Alt+B');
+check('Option+N is a dead key on a Mac, and it is still N', keyCombo({ key: 'Dead', code: 'KeyN', altKey: true }, true), 'Alt+N');
 check('Cmd+Option+S is S whatever Option typed', keyCombo({ key: 'ß', code: 'KeyS', metaKey: true, altKey: true }, true), 'Mod+Alt+S');
 check('Option alone typing a letter is someone writing',
   keyCombo({ key: 'Â', code: 'KeyW', altKey: true }, true) === 'Alt+W', false);

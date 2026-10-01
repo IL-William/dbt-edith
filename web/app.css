@@ -444,6 +444,10 @@ kbd {
 }
 .crumb:hover, .crumb.open { background: var(--bg-3); color: var(--fg); }
 .crumb:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* The two chevrons before the path: a hair wider than a crumb so the pair
+   reads as one control, and still there when its stack is empty. */
+.crumb.nav { padding: 0 3px; color: var(--fg-dim); font-size: 14px; }
+.crumb.nav:disabled { opacity: .3; cursor: default; background: none; }
 .crumb-sep { flex: 0 0 auto; color: #5a677a; font-size: 12px; }
 .sicon { font: 10px var(--mono); color: var(--fg-dim); letter-spacing: -.5px; }
 .sicon[data-kind=map] { color: var(--accent); }
