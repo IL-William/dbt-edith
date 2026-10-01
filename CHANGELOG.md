@@ -80,6 +80,14 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
 - The tests checkbox above the lineage is an eye labelled tests, amber while
   open, whose tooltip warns that data tests can be hundreds of boxes, which
   slows the canvas and buries the models.
+- The file explorer has a header carrying the project's name and two buttons:
+  one collapses every folder at once, the other reopens the tree down to the
+  file being edited. Reopening a collapsed folder asks the server nothing.
+- `Alt + Shift + W` closes every tab, where only the button in Open editors
+  did. Closing them all now takes the diff pane down with them, where it left
+  a closed diff's two documents in the page.
+- The tab bar scrolls to the active tab, so a file reached by `Cmd/Ctrl + K`
+  or from the Open editors list is no longer off the end of a full bar.
 
 ## 0.6.0 - 2026-09-29
 

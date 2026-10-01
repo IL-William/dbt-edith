@@ -1614,10 +1614,18 @@ function activate(path, focusLineage = true) {
   updateStatus();
   refreshOutline();
   renderCrumbs();
-  // A profile is not in the project, so no tree row and no node answer to it.
-  const inProject = f.kind === 'profile' ? '' : f.kind === 'diff' ? f.path : path;
+  const inProject = projectPath(path);
   markTreeSelection(inProject);
   if (focusLineage && inProject) syncNode(inProject);
+}
+
+/* The project path a tab points at, which is not its key: a diff is keyed
+   `diff:<path>`, and a profile is not in the project at all, so no tree row and
+   no node answer to it. */
+function projectPath(key) {
+  const f = S.open.get(key);
+  if (!f) return '';
+  return f.kind === 'profile' ? '' : f.kind === 'diff' ? f.path : key;
 }
 
 function closeFile(path) {
@@ -1685,11 +1693,15 @@ function closeAll() {
   if (dirty.length && !confirm(
     `${dirty.length} file${dirty.length > 1 ? 's have' : ' has'} unsaved changes.\n\n` +
     `${dirty.join('\n')}\n\nClose every tab anyway? The files themselves are not touched.`)) return;
+  // A diff tab owns a MergeView element outside the editor host. closeFile
+  // removes it and this left it behind, with the diff pane still showing.
+  for (const f of S.open.values()) if (f.host) f.host.remove();
   S.open.clear();
   S.order = [];
   S.active = null;
   S.preview = null;
   $('#editor-host').style.display = 'none';
+  $('#diff-host').classList.add('hidden');
   $('#editor-empty').classList.remove('hidden');
   renderTabs();
   updateStatus();
@@ -1718,6 +1730,10 @@ function renderTabs() {
     t.addEventListener('dblclick', () => { if (S.preview === path) { S.preview = null; renderTabs(); } });
     t.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeFile(path); } });
     bar.appendChild(t);
+    // The bar scrolls, so a tab reached by Cmd+K or from the sidebar list can
+    // sit off screen. `nearest` so the page itself never moves, and no focus()
+    // here: the cursor belongs to the editor.
+    if (path === S.active) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
   renderOpenEditors();
   paintTree();
@@ -1733,6 +1749,7 @@ function renderOpenEditors() {
   $('#oe-count').textContent = String(S.order.length);
   $('#save-all-btn').disabled = dirty === 0;
   $('#close-all-btn').disabled = S.order.length === 0;
+  $('#reveal-btn').disabled = !S.active || !projectPath(S.active);
 
   for (const path of S.order) {
     const f = S.open.get(path);
@@ -2397,6 +2414,23 @@ async function revealInTree(path, { expand = false } = {}) {
   const row = $$('#tree .row').find((r) => r.dataset.path === path);
   if (row) row.scrollIntoView({ block: 'nearest' });
   return !!row;
+}
+
+/* Everything the tree knows about what is open is in the DOM, from loadDir: a
+   folder is open when its `.kids` is not hidden. So a global collapse is those
+   two classes and nothing to keep in step. The children stay in the DOM, held
+   by row.loading, so reopening a folder asks /api/dir nothing a second time. */
+function collapseTree() {
+  $$('#tree .kids').forEach((k) => k.classList.add('hidden'));
+  $$('#tree .row.open').forEach((r) => r.classList.remove('open'));
+}
+
+/* The companion of the collapse: after flattening the tree, the file being
+   edited is the one folder worth reopening. */
+function revealActive() {
+  const path = S.active ? projectPath(S.active) : '';
+  if (!path) return toast('no file to reveal');
+  revealInTree(path);
 }
 
 // ------------------------------------------------------------ model list --
@@ -6483,6 +6517,7 @@ function shortcutSheet() {
       [['Mod+S'], 'Save the file'],
       [['Mod+Alt+S'], 'Save every modified file'],
       [['Alt+W'], 'Close the tab'],
+      [['Alt+Shift+W'], 'Close every tab'],
       [['Mod+`'], 'Show the terminal'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
     ] },
@@ -6614,6 +6649,7 @@ function wireKeys() {
       case 'Mod+Alt+S': e.preventDefault(); saveAll(); return;
       case 'Mod+S': e.preventDefault(); save(); return;
       case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
+      case 'Alt+Shift+W': e.preventDefault(); closeAll(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
       case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
       // An editor with the focus has answered this already, and said so.
@@ -6680,6 +6716,8 @@ function wireKeys() {
   $('#branches').addEventListener('click', (e) => { if (e.target.id === 'branches') e.currentTarget.classList.add('hidden'); });
   $('#save-all-btn').addEventListener('click', (e) => { e.stopPropagation(); saveAll(); });
   $('#close-all-btn').addEventListener('click', (e) => { e.stopPropagation(); closeAll(); });
+  $('#collapse-btn').addEventListener('click', collapseTree);
+  $('#reveal-btn').addEventListener('click', revealActive);
   $('#oe-head').addEventListener('click', () => {
     const box = $('#open-editors');
     box.classList.toggle('collapsed');
@@ -6716,6 +6754,7 @@ function applyMeta(meta) {
   dropNodeCache();
   S.meta = meta;
   $('#project').textContent = meta.project || '(no manifest)';
+  $('#tree-title').textContent = meta.project || 'Project';
   const c = meta.counts || {};
   $('#counts').textContent = '';
   for (const k of ['model', 'source', 'seed', 'snapshot', 'test']) {

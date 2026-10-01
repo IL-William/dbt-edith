@@ -288,6 +288,10 @@ kbd {
   cursor: pointer; user-select: none; flex: 0 0 auto;
 }
 .oe-head:hover { background: var(--bg-3); }
+/* The same row above the tree, where there is nothing to fold: the tree fills
+   the pane and the title is a label, not a toggle. */
+.tree-head { cursor: default; }
+.tree-head:hover { background: none; }
 .oe-title { font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--fg-dim); }
 .oe-count {
   font: 10px var(--mono); background: var(--bg-3); border-radius: 8px;

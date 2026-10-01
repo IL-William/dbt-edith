@@ -211,6 +211,7 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Alt + W`, or middle-click a tab | close a tab |
+| `Alt + Shift + W` | close every tab |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
@@ -449,6 +450,13 @@ server-side, cached for 1.5 s and polled every 5 s, so committing from the
 built-in terminal clears the colours on its own.
 
 File types get their own icon and colour; `.sql` files use a database glyph.
+
+The header above the tree names the project and carries two buttons. The first
+collapses every folder, which is what following three `ref()` calls into a deep
+project usually calls for; folders already read stay in the page, so reopening
+one asks the server nothing. The second reopens the tree down to the file being
+edited, and is greyed when the open tab is the dbt profile, which lives outside
+the project.
 
 ### Column lineage
 
