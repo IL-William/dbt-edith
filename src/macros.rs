@@ -22,7 +22,7 @@ use std::path::Path;
 
 /// Where `dbt deps` installs a package, in a folder named after it: the name
 /// dbt has used since 1.0, then the one before it.
-const PACKAGE_DIRS: &[&str] = &["dbt_packages", "dbt_modules"];
+pub(crate) const PACKAGE_DIRS: &[&str] = &["dbt_packages", "dbt_modules"];
 
 #[derive(Clone, Debug)]
 pub struct Macro {

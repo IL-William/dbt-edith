@@ -119,6 +119,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
+| link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |
 | make the server read files it was not asked for by name | [0020](docs/decisions/0020-search-never-opens-an-env-file.md) |
 | show the structure inside a file, or parse SQL for it | [0022](docs/decisions/0022-the-outline-is-scanned-in-the-browser.md) |
