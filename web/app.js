@@ -2186,8 +2186,8 @@ function navButton(which) {
   const live = nextJump(S[which], S.open).at;
   b.disabled = !live;
   b.title = which === 'back'
-    ? `Back${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Alt+B', IS_MAC)})`
-    : `Forward${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Alt+N', IS_MAC)})`;
+    ? `Back${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Mod+Alt+P', IS_MAC)})`
+    : `Forward${live ? ' to ' + base(projectPath(live.key) || live.key) : ''} (${keyLabel('Mod+Alt+N', IS_MAC)})`;
   b.setAttribute('aria-label', b.title);
   b.addEventListener('click', which === 'back' ? jumpBack : jumpForward);
   return b;
@@ -6657,8 +6657,8 @@ function shortcutSheet() {
       [['Mod+Alt+S'], 'Save every modified file'],
       [['Alt+W'], 'Close the tab'],
       [['Alt+Shift+W'], 'Close every tab'],
-      [['Alt+B'], 'Back to where following a link came from'],
-      [['Alt+N'], 'Forward again'],
+      [['Mod+Alt+P'], 'Back to the link you followed'],
+      [['Mod+Alt+N'], 'Forward again'],
       [['Mod+`'], 'Show the terminal'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
     ] },
@@ -6791,16 +6791,15 @@ function wireKeys() {
       case 'Mod+S': e.preventDefault(); save(); return;
       case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
       case 'Alt+Shift+W': e.preventDefault(); closeAll(); return;
-      /* Not Alt+Left and Alt+Right, which CodeMirror binds in both its keymaps,
-         and moving by word is worth more than the history. Option+N is the
-         dead key for a tilde, so a box someone writes prose in keeps it; the
-         editor does not, where going back is the whole point. */
-      case 'Alt+B':
-        if (isTyping(e.target) && !e.target.closest('.CodeMirror')) return;
-        e.preventDefault(); jumpBack(); return;
-      case 'Alt+N':
-        if (isTyping(e.target) && !e.target.closest('.CodeMirror')) return;
-        e.preventDefault(); jumpForward(); return;
+      /* P for previous and N for next, and Cmd is not decoration: Option alone
+         with a letter is left as typed, since on some layouts it writes one
+         (keyCombo). Option+B and Option+N were tried and wrote into the file on
+         a keyboard where both produce a letter. Cmd is what makes keyCombo read
+         the physical key, as it already does for Mod+Alt+S. Not Alt+Left and
+         Alt+Right either, which CodeMirror binds in both its keymaps, nor
+         Mod+Alt+Left and Mod+Alt+Right, which Chrome takes for its tabs. */
+      case 'Mod+Alt+P': e.preventDefault(); jumpBack(); return;
+      case 'Mod+Alt+N': e.preventDefault(); jumpForward(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
       case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
       // An editor with the focus has answered this already, and said so.

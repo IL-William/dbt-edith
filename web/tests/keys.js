@@ -13,8 +13,16 @@ print('--- keyCombo ---');
 check('Cmd on a Mac is Mod', keyCombo({ key: 's', code: 'KeyS', metaKey: true }, true), 'Mod+S');
 check('Ctrl elsewhere is Mod', keyCombo({ key: 's', code: 'KeyS', ctrlKey: true }, false), 'Mod+S');
 check('Option makes ∑ of W on a Mac, and it is still W', keyCombo({ key: '∑', code: 'KeyW', altKey: true }, true), 'Alt+W');
-check('Option makes ∫ of B, and it is still B', keyCombo({ key: '∫', code: 'KeyB', altKey: true }, true), 'Alt+B');
-check('Option+N is a dead key on a Mac, and it is still N', keyCombo({ key: 'Dead', code: 'KeyN', altKey: true }, true), 'Alt+N');
+// Option with a letter is left as typed, whatever key it came from: on some
+// layouts Option+B and Option+N write a letter, and binding them wrote it into
+// the file instead of moving. Cmd is what recovers the physical key, which is
+// why back and forward ask for it.
+check('Option+B writing a letter is not Alt+B',
+  keyCombo({ key: 'ß', code: 'KeyB', altKey: true }, true) === 'Alt+B', false);
+check('Cmd+Option+P is P whatever Option typed',
+  keyCombo({ key: 'ß', code: 'KeyP', metaKey: true, altKey: true }, true), 'Mod+Alt+P');
+check('Cmd+Option+N is N whatever Option typed',
+  keyCombo({ key: 'Dead', code: 'KeyN', metaKey: true, altKey: true }, true), 'Mod+Alt+N');
 check('Cmd+Option+S is S whatever Option typed', keyCombo({ key: 'ß', code: 'KeyS', metaKey: true, altKey: true }, true), 'Mod+Alt+S');
 check('Option alone typing a letter is someone writing',
   keyCombo({ key: 'Â', code: 'KeyW', altKey: true }, true) === 'Alt+W', false);

@@ -389,10 +389,15 @@ the active tab, which it never did while the bar overflowed. Not yet on the VM.
 
 A tab's own menu and a way back, added 2026-10-01: right-click a tab for Close,
 Close others, Close to the right and Close saved, the app's first context menu;
-every other menu here is click-opened. `Alt + B` and `Alt + N` walk the two
-stacks of where following a link came from, with two chevrons before the
+every other menu here is click-opened. `Cmd + Alt + P` and `Cmd + Alt + N` walk
+the two stacks of where following a link came from, with two chevrons before the
 breadcrumbs doing the same. Not `Alt + Left` and `Alt + Right`: CodeMirror binds
-those in both keymaps, and moving by word is worth more than the history. Back
+those in both keymaps, and moving by word is worth more than the history. They
+shipped as `Alt + B` and `Alt + N` and were wrong: `keyCombo` leaves Option plus
+a letter as typed, since on some layouts it writes one, so on a keyboard where
+Option+B and Option+N produce letters both wrote into the file rather than
+moving. Cmd is what makes `keyCombo` read the physical key, as `Mod + Alt + S`
+already relied on, and it is the reason these two carry it. Back
 lands on the `ref()` that was followed, since the click moved the cursor there
 before the jump, which is the call site you want again. The three close commands
 now share `dropTab` and `settleTabs`, because two of them drifting apart is what

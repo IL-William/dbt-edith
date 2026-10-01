@@ -213,7 +213,7 @@ sub-graphs around whichever model you are looking at.
 | `Alt + W`, or middle-click a tab | close a tab |
 | `Alt + Shift + W` | close every tab |
 | right-click a tab | close it, the others, those to its right, or those with nothing unsaved |
-| `Alt + B` / `Alt + N` | back to the link you followed, and forward again |
+| `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |

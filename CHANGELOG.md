@@ -92,9 +92,10 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   Close to the right and Close saved. A command that would take nothing is
   greyed, and one confirmation covers the lot, naming every file that would
   lose work.
-- `Alt + B` goes back to the `ref()`, macro call or search hit you followed,
-  and `Alt + N` forward again, with two chevrons before the breadcrumbs that do
-  the same and name where they lead. A tab closed in between is stepped over.
+- `Cmd/Ctrl + Alt + P` goes back to the `ref()`, macro call or search hit you
+  followed, and `Cmd/Ctrl + Alt + N` forward again, with two chevrons before the
+  breadcrumbs that do the same and name where they lead. A tab closed in between
+  is stepped over.
 
 ## 0.6.0 - 2026-09-29
 
