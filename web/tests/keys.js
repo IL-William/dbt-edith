@@ -39,8 +39,6 @@ check('Option alone typing a letter is someone writing',
   keyCombo({ key: 'Â', code: 'KeyW', altKey: true }, true) === 'Alt+W', false);
 check('elsewhere the letter is the one on the key', keyCombo({ key: 'w', code: 'KeyZ', altKey: true }, false), 'Alt+W');
 check('Shift is named for a letter', keyCombo({ key: 'G', code: 'KeyG', metaKey: true, shiftKey: true }, true), 'Mod+Shift+G');
-check('Option+Shift+W types „ on a Mac, and it is still W',
-  keyCombo({ key: '„', code: 'KeyW', altKey: true, shiftKey: true }, true), 'Alt+Shift+W');
 check('  and for a named key', keyCombo({ key: 'Enter', code: 'Enter', shiftKey: true }, false), 'Shift+Enter');
 check('  but not for a symbol, where it is in the character', keyCombo({ key: '?', code: 'Slash', shiftKey: true }, true), '?');
 check('? typed with Shift on a French keyboard', keyCombo({ key: '?', code: 'KeyM', shiftKey: true }, true), '?');
@@ -53,7 +51,6 @@ print('\n--- keyLabel ---');
 check('Mod on a Mac', keyLabel('Mod+K', true), '⌘K');
 check('Mod elsewhere', keyLabel('Mod+K', false), 'Ctrl+K');
 check('Apple\'s order for the glyphs', keyLabel('Mod+Alt+S', true), '⌥⌘S');
-check('  Option before Shift', keyLabel('Alt+Shift+W', true), '⌥⇧W');
 check('  three modifiers in Apple\'s order', keyLabel('Mod+Alt+Shift+X', true), '⌥⇧⌘X');
 check('  Shift before Cmd', keyLabel('Mod+Shift+G', true), '⇧⌘G');
 check('the written order elsewhere', keyLabel('Mod+Alt+S', false), 'Ctrl+Alt+S');

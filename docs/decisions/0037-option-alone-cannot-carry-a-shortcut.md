@@ -29,8 +29,10 @@ layouts, which rules out A, Q, Z, W and M.
 A shortcut the app binds carries Cmd and a position-stable letter: back and
 forward are `Mod + Alt + P` and `Mod + Alt + N`, closing a tab `Mod + Alt + X`
 and closing every tab `Mod + Alt + Shift + X`, X reading as the cross on the
-tab. `Alt + W` and `Alt + Shift + W` stay bound for the keyboards they reach,
-and the note under the shortcut list says which keys work where.
+tab. `Alt + W` stays bound for the keyboards it reaches, and the note under the
+shortcut list says which keys work where. `Alt + Shift + W` is not kept beside
+it: it was a modifier away from `Shift + Cmd + W`, which closes the browser
+window, and it had shipped in no release.
 
 ## Rejected
 

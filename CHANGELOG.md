@@ -97,9 +97,12 @@ cut, so everything the bump was meant to carry ships as 0.6.0 instead.
   breadcrumbs that do the same and name where they lead. A tab closed in between
   is stepped over.
 - Closing a tab also answers to `Cmd/Ctrl + Alt + X`, and closing every tab to
-  `Cmd/Ctrl + Alt + Shift + X`. On a French keyboard `Alt + W` and
-  `Alt + Shift + W` cannot be typed at all, so until now neither could be used
-  there; both stay bound for the keyboards they do reach (0037).
+  `Cmd/Ctrl + Alt + Shift + X`. On a French keyboard `Alt + W` cannot be typed
+  at all, so closing a tab by key was never possible there; it stays bound for
+  the keyboards it does reach (0037).
+- `Alt + Shift + W` for closing every tab, added earlier in this same unreleased
+  run, is gone: it sat one modifier from `Shift + Cmd + W`, which closes the
+  browser window. `Cmd/Ctrl + Alt + Shift + X` is the key for it.
 
 ## 0.6.0 - 2026-09-29
 

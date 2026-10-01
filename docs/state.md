@@ -404,7 +404,11 @@ and `Alt + Shift + W` inherited it. Cmd is what lets `keyCombo` fall back to
 `e.code`, which `Mod + Alt + S` already relied on without anyone noticing, and
 it only holds for a letter in the same place on both layouts, so not A, Q, Z, W
 or M. Closing a tab now also answers to `Mod + Alt + X` and closing every tab to
-`Mod + Alt + Shift + X`, the old two staying bound for the keyboards they reach.
+`Mod + Alt + Shift + X`, `Alt + W` staying bound for the keyboards it reaches.
+`Alt + Shift + W` is gone instead of kept: it was a modifier away from
+`Shift + Cmd + W`, which closes the browser window, and it had shipped in no
+release. Picking a key next to a destructive one is the mistake there, not the
+layout.
 What was tempting and wrong: dropping the Cmd escape in `keyCombo` so it would
 only remap a non-letter. `Cmd + Option + S` reports `∑` on that keyboard, so
 that would have broken `Mod + Alt + S` to fix nothing. Back
