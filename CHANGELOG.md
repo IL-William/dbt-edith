@@ -15,6 +15,28 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.2.0 - 2026-10-10
+
+- The API and the terminal want the key each launch prints in its link, which
+  the link turns into a cookie, so no other program on the machine reaches the
+  project, its `.env` files, the profile or a shell, under any account and
+  whatever headers it writes (0052). A tab opened without the link, or kept
+  from an earlier launch, says so in a red bar at the top.
+- The profile opens with its passwords, tokens and private keys replaced by
+  `<hidden by dbt-edith>`, and saving puts them back unless one was typed over,
+  so no credential from `profiles.yml` reaches the browser (0054).
+- Opening a project runs nothing in it: the status bar reads a venv's Python
+  and dbt versions from its files, and a venv git tracks, which came with the
+  repository, is never run, for the status bar or the Snowflake script (0053).
+- Replies are no longer kept in the browser's disk cache, other sites cannot
+  load them or hold this window, the terminal's WebSocket is allowed on this
+  port alone, and a request the browser marks as coming from another site is
+  refused.
+- Saving the profile goes through a temporary file only its owner can read, so
+  its password is never readable by another account, even for an instant.
+- `scripts/build_windows.sh` builds the `.exe` for the VM and writes its
+  SHA-256 beside it, to check with `certutil` before running the copy.
+
 ## 1.1.0 - 2026-10-10
 
 - A Snowsight menu beside each relation in Catalog > Location opens its table

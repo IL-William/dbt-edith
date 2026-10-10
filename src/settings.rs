@@ -133,14 +133,16 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension(format!("json.tmp-{}", std::process::id()));
-    std::fs::write(&tmp, bytes)?;
-    // A rename puts a new file in the target's place, carrying whatever mode the
-    // umask gave it rather than the one the target had. Settings do not care;
-    // `~/.dbt/profiles.yml` does, since it can hold a warehouse password and is
-    // commonly 0600 (0017). Without this, saving it from the editor once turns
-    // it into 0644. The in-place fallback below truncates rather than replaces,
-    // so it keeps the mode on its own.
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(format!(".tmp-{}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+    write_private(&tmp, bytes)?;
+    // A rename puts a new file in the target's place, carrying the mode the
+    // temporary file was given rather than the one the target had. Settings do
+    // not care; `~/.dbt/profiles.yml` does, since it can hold a warehouse
+    // password and is commonly 0600 (0017). Without this, saving it from the
+    // editor once would change its mode. The in-place fallback below truncates
+    // rather than replaces, so it keeps the mode on its own.
     keep_mode(path, &tmp);
     let mut last_error = None;
     for attempt in 0..3 {
@@ -160,9 +162,30 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))
 }
 
-/// Gives `tmp` the mode `target` already has, so replacing it does not widen it.
-/// A target that does not exist yet leaves the umask to decide, which is what
-/// creating a file normally does.
+/// Writes a file that only its owner can read from the moment it exists. The
+/// bytes may be a profile's password, and a file created through the umask is
+/// readable by every account on the machine until `keep_mode` narrows it.
+/// `create_new`: a file already sitting at that name, or a link planted there,
+/// is never written through.
+#[cfg(unix)]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let _ = std::fs::remove_file(path);
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?;
+    file.write_all(bytes)
+}
+
+/// Windows has no mode: a new file takes its ACL from the directory, which is
+/// where the target's came from too.
+#[cfg(not(unix))]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
+}
+
+/// Gives `tmp` the mode `target` already has, so replacing it changes nothing
+/// about who may read it. A target that does not exist yet keeps the private
+/// mode `write_private` gave it.
 #[cfg(unix)]
 fn keep_mode(target: &Path, tmp: &Path) {
     use std::os::unix::fs::PermissionsExt;
@@ -171,8 +194,6 @@ fn keep_mode(target: &Path, tmp: &Path) {
     }
 }
 
-/// Windows has no mode to carry: a new file takes its ACL from the directory,
-/// which is where the target's came from too.
 #[cfg(not(unix))]
 fn keep_mode(_target: &Path, _tmp: &Path) {}
 
@@ -267,14 +288,42 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_atomic_leaves_a_new_file_to_the_umask() {
+    fn write_atomic_creates_a_new_file_private() {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("dbt-edith-mode-new-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("settings.json");
         write_atomic(&path, b"{}\n").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert!(mode != 0, "a created file still gets a mode");
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The temporary file holds the new profile, password included, before it
+    /// takes the target's place: it must never be readable by another account,
+    /// whatever the umask, and whatever the target's mode is later set back to.
+    #[cfg(unix)]
+    #[test]
+    fn the_temporary_file_is_private_from_its_first_byte() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mode-tmp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = dir.join("profiles.yml.tmp-1");
+        // A stale one, world-readable, is replaced rather than written through.
+        std::fs::write(&tmp, b"stale").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&tmp, b"password: hunter2\n").unwrap();
+        assert_eq!(std::fs::metadata(&tmp).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "password: hunter2\n");
+
+        // A target someone made readable stays as readable: the write changes
+        // the content, never who may read it.
+        let shared = dir.join("shared.yml");
+        std::fs::write(&shared, b"before\n").unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic(&shared, b"after\n").unwrap();
+        assert_eq!(std::fs::metadata(&shared).unwrap().permissions().mode() & 0o777, 0o644);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

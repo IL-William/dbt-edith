@@ -35,7 +35,7 @@ when they disagree.
 ```
 cargo run -- /path/to/dbt-project --port 4399 --no-open    # debug: serves web/ from disk
 cargo build --release                                      # release: embeds web/
-cargo build --release --target x86_64-pc-windows-gnu       # the VM's .exe
+./scripts/build_windows.sh                                 # the VM's .exe, and its SHA-256
 ```
 
 Debug reads `web/` from disk, so edit and refresh. Release embeds it, so a
@@ -57,11 +57,15 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   leave: resolved locations, `DBT_TARGET` (0012, 0017), and a resolved
   `env_var()` in the hover card, which passes two guards first (0019).
 - **Nothing outside the project is read or written**, except the dbt profile,
-  found where dbt looks for it, through its own route (0017, 0049).
+  found where dbt looks for it, through its own route (0017, 0049), and that
+  route never sends its passwords, tokens or keys (0054).
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
-  guard in `src/api.rs`, and no CORS header is ever added (0015).
+  guard in `src/api.rs`, and no CORS header is ever added (0015). Every
+  `/api/` and `/ws/` route also wants the key the launch printed (0052).
+- **Nothing in the project runs on its own.** Learn about a venv from its files,
+  never by running it, and never run one git tracks (0053).
 - **Bump the version in `Cargo.toml`** for anything anyone installs, and turn
   `## Unreleased` into `## <version> - <date>` in the same pull request: CI
   refuses one without the other. Merging it is the whole release: the release
@@ -121,8 +125,10 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | persist anything, or add a write endpoint | [0011](docs/decisions/0011-settings-outside-the-project.md) |
 | add a field to a payload, a log line or a route | [0012](docs/decisions/0012-secrets-and-boundaries.md), [0017](docs/decisions/0017-the-profile-is-reachable.md) |
 | change which `profiles.yml` is opened, or when it can be | [0049](docs/decisions/0049-the-profile-is-found-where-dbt-looks.md) |
+| change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
-| add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md) |
+| add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md), [0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md) |
+| run a program found in the project, or ask a venv what it holds | [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
@@ -164,7 +170,7 @@ in both.
 
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
-concern each: `envs`, `project`, `profiles`, `settings`, `git`, `collin`, `collin_run`, `select`,
+concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
 `selectors`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only

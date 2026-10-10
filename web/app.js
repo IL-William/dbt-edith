@@ -57,6 +57,7 @@ const S = {
   outline: null,              // { path, nodes } scanned for the breadcrumb's symbol half
   crumbLine: -1,              // the line that half was last drawn for
   version: '',                // this build's version, named in an exported graph
+  keyless: false,             // the server refused this tab for want of its launch key (0052)
 };
 
 // ------------------------------------------------------------------ util --
@@ -73,15 +74,35 @@ function apiError(text, fallback) {
 const api = {
   async get(path) {
     const r = await fetch(path);
-    if (!r.ok) throw apiError(await r.text(), r.statusText);
+    if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
   },
   async send(path, method, body) {
     const r = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw apiError(await r.text(), r.statusText);
+    if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
   },
 };
+
+/* The body of a refused request. A 401 is the server saying this tab never got
+   its launch key: every later request will fail the same way, so it is said
+   once, in a bar that stays, rather than in a toast per request (0052). */
+async function refusal(r) {
+  const text = await r.text();
+  if (r.status === 401) keyMissing(text);
+  return text;
+}
+
+function keyMissing(text) {
+  if (S.keyless) return;
+  S.keyless = true;
+  const bar = document.createElement('div');
+  bar.className = 'keyless';
+  bar.setAttribute('role', 'alert');
+  bar.textContent = (text || 'no key for this server in this tab')
+    + '. The terminal where dbt-edith runs shows it after "open". A link from an earlier launch no longer works.';
+  document.body.prepend(bar);
+}
 
 /* One /api/node payload per node, shared by the catalog, the ref() marks and the
    hover card. The server rediscovers the .env files and walks the graph twice on
@@ -2199,7 +2220,8 @@ function updateStatus() {
   }
   if (f.kind === 'profile') {
     const at = S.cm.getCursor();
-    s.textContent = `${f.path}  ·  ${at.line + 1}:${at.ch + 1}${f.dirty ? '  ·  modified' : ''}  ·  outside the project`;
+    const hidden = f.hidden ? `  ·  ${f.hidden} secret${f.hidden === 1 ? '' : 's'} kept on the server` : '';
+    s.textContent = `${f.path}  ·  ${at.line + 1}:${at.ch + 1}${f.dirty ? '  ·  modified' : ''}  ·  outside the project${hidden}`;
     return;
   }
   const c = S.cm.getCursor();
@@ -4568,10 +4590,17 @@ async function openProfiles() {
     let body;
     try { body = await api.get('/api/profiles'); }
     catch (e) { return toast('profile: ' + e.message, 'err'); }
-    S.open.set(key, { kind: 'profile', path: body.path, doc: CodeMirror.Doc(body.content, 'text/x-yaml'), dirty: false });
+    S.open.set(key, { kind: 'profile', path: body.path, doc: CodeMirror.Doc(body.content, 'text/x-yaml'), dirty: false, hidden: body.hidden || 0 });
     S.order.push(key);
+    // The secrets never reach the page (0054): saying so here is what keeps
+    // anyone from thinking the password was wiped.
+    if (body.hidden) toast(hiddenNote(body.hidden), 'ok');
   }
   activate(key, false);
+}
+
+function hiddenNote(n) {
+  return `${n} secret value${n === 1 ? '' : 's'} hidden: leave the placeholder to keep one, or type over it to change it`;
 }
 
 /* The script reads the profile once, when it starts, so a correction that does
@@ -7762,7 +7791,9 @@ function connectTerm() {
     if (typeof e.data === 'string') S.term.write(e.data);
     else S.term.write(new Uint8Array(e.data));
   };
-  S.ws.onclose = () => S.term.write('\r\n\x1b[90m[disconnected - press Enter to start a new shell]\x1b[0m\r\n');
+  S.ws.onclose = () => S.term.write(S.keyless
+    ? '\r\n\x1b[90m[no shell: this tab has no key for this server, see the bar at the top]\x1b[0m\r\n'
+    : '\r\n\x1b[90m[disconnected - press Enter to start a new shell]\x1b[0m\r\n');
 }
 
 // ---------------------------------------------------------------- palette --
@@ -8451,10 +8482,12 @@ async function boot() {
     venvEl.title = [v.path, v.dbt && ('dbt: ' + v.dbt),
       v.source === 'activated' ? 'activated when dbt-edith started'
         : 'found in the project but not activated; source its activate script in the terminal',
-      v.others.length ? 'also found: ' + v.others.join(', ') : ''].filter(Boolean).join('\n');
+      v.others.length ? 'also found: ' + v.others.join(', ') : '',
+      committedNote(v)].filter(Boolean).join('\n');
   } else {
     venvEl.textContent = 'no venv';
-    venvEl.title = 'no VIRTUAL_ENV when dbt-edith started, and none found in the project';
+    venvEl.title = ['no VIRTUAL_ENV when dbt-edith started, and none found in the project', committedNote(v)]
+      .filter(Boolean).join('\n');
   }
   document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
   $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
@@ -8466,5 +8499,14 @@ async function boot() {
   window.addEventListener('resize', () => Lineage.fit());
 }
 
-boot().catch((e) => toast('startup failed: ' + e.message, 'err'));
+/* A venv git tracks came with the repository, so whoever wrote the repository
+   wrote its python too: the server never runs it, and this says why it is not
+   the one shown (0053). */
+function committedNote(v) {
+  const names = v.committed || [];
+  return names.length ? `committed to the repository, so never run by dbt-edith: ${names.join(', ')}` : '';
+}
+
+// Without the key the bar at the top already says why, once.
+boot().catch((e) => { if (!S.keyless) toast('startup failed: ' + e.message, 'err'); });
 })();

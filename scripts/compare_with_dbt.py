@@ -105,9 +105,17 @@ class Edith:
             [str(binary), str(project), "--manifest", str(manifest), "--port", str(self.port), "--no-open"],
             stdout=self.log, stderr=subprocess.STDOUT, env=env,
         )
+        # The API wants the key the launch prints in its `open` line (0052),
+        # so it is read there, as a person would read it, before anything is asked.
+        self.key = None
         deadline = time.time() + 60
         while True:
             try:
+                if self.key is None:
+                    found = re.search(r"\?key=([0-9a-f]{64})", (home / "server.log").read_text())
+                    if not found:
+                        raise ConnectionError("no key printed yet")
+                    self.key = found.group(1)
                 self.get("/api/meta")
                 return
             except (urllib.error.URLError, ConnectionError):
@@ -118,8 +126,9 @@ class Edith:
 
     def get(self, path):
         url = f"http://127.0.0.1:{self.port}{path}"
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {self.key}"})
         try:
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with urllib.request.urlopen(request, timeout=30) as r:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             return json.load(e)

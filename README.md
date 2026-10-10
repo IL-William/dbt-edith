@@ -11,7 +11,8 @@ binary itself and a browser.
 dbt-edith /path/to/dbt/project
 ```
 
-It prints a `http://127.0.0.1:4321` URL and opens it.
+It prints a `http://127.0.0.1:4321/?key=…` URL and opens it. The key is this
+launch's own: a tab opened without it can read nothing.
 
 Changing dbt-edith itself rather than using it: [AGENTS.md](AGENTS.md) is the
 short version, and [docs/decisions/](docs/decisions/) says why it is built this
@@ -70,11 +71,21 @@ manager):
 
 ```
 rustup target add x86_64-pc-windows-gnu
-cargo build --release --target x86_64-pc-windows-gnu
+./scripts/build_windows.sh
 ```
 
-Copy `target/x86_64-pc-windows-gnu/release/dbt-edith.exe` to the machine and run
-it: no installer, no admin rights. It imports nothing but Windows system
+The script builds `target/x86_64-pc-windows-gnu/release/dbt-edith.exe` and
+prints its SHA-256, which it also writes beside it in `dbt-edith.exe.sha256`.
+Copy the `.exe` to the machine and, before running it, check that it is the file
+that was built:
+
+```
+certutil -hashfile dbt-edith.exe SHA256
+```
+
+The two hashes must match. A file that came through a share or a remote desktop
+can be a different one, and nothing else would say so. Then run it: no
+installer, no admin rights. It imports nothing but Windows system
 libraries, so there is no runtime to place beside it. The terminal uses ConPTY,
 which ships with Windows 10 and 11. Windows may warn about an unsigned
 executable that arrived by copy, which is what an in-house build looks like
@@ -159,8 +170,9 @@ opens a browser:
   dbt-edith  1.0.0  (v1.0.0, built 2026-10-10)
   project   /home/you/analytics
   shell     /bin/zsh -l
-  venv      dbt-env (activated, python 3.12)
-  open      http://127.0.0.1:4321
+  venv      dbt-env (activated, python 3.12.4)
+  open      http://127.0.0.1:4321/?key=3f9c…
+            the key in it is this launch's: a tab opened without it can read nothing
 ```
 
 Those lines are worth reading once: they say which project, manifest, shell and
@@ -168,7 +180,13 @@ Python environment were picked up, which is where nearly every setup mistake
 shows up first. The version carries the build it came from, from
 `git describe`, so two installs of the same release are still told apart; the
 status bar shows the same thing at the bottom right of the page, and `dbt-edith
---version` prints it without starting anything. `Ctrl+C` in that terminal stops the server. Every flag is listed
+--version` prints it without starting anything. `Ctrl+C` in that terminal stops the server.
+
+The key in the link is what lets that tab use the server: opening the link
+swaps it for a cookie and takes it out of the address bar, so bookmarks and new
+tabs work until the browser closes. Every launch draws a new one, so after a
+restart, open the link it printed again
+([0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md)). Every flag is listed
 under [Options](#options).
 
 Only the manifest fields the UI needs are read and the rest is ignored, so a
@@ -190,7 +208,8 @@ it is used against day to day.
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |
 | Snowsight says a relation's object does not exist | the *resolved* relation is the config before the `generate_*_name` macros, or a source that is a view was asked for as a table | open the *built* relation instead, or the object from its schema's page |
-| no browser opened | `--no-open`, or no default browser | open the printed URL by hand |
+| no browser opened | `--no-open`, or no default browser | open the printed URL by hand, key included |
+| a red bar says `no key for this server in this tab` | the tab was not opened from the link this launch printed, or dbt-edith restarted since | open the link it printed; the browser keeps the key until it closes |
 | a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
 
 ## Why
@@ -503,6 +522,13 @@ button's tooltip names the file it found. Grey, with an amber dot, it names
 where dbt would read one and found none. It is the one file outside the project
 dbt-edith opens, and saving it writes that file in place: dbt-edith never
 creates one (0017, 0049).
+
+Its passwords, tokens and private keys stay on the server. The editor shows
+`<hidden by dbt-edith>` in their place, and the status bar counts them. Saving
+with the placeholder left as it is keeps the value on disk; typing over it
+replaces it. An `env_var()` is shown as it is, since it names where a secret is
+rather than holding one
+([0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md)).
 
 ### Column lineage
 
@@ -1004,6 +1030,13 @@ dbt-edith started and `venv (inactive)` when it was merely found in the project,
 with the Python and dbt versions in the tooltip. When several are present, the
 one that actually contains dbt wins.
 
+Those versions are read from the venv's files, `pyvenv.cfg` and the names of
+its installed packages: opening a project runs nothing it holds. A venv that git
+tracks came with the repository, and its `python` was written by whoever wrote
+the repository, so dbt-edith never runs it, neither for the status bar nor for
+the Snowflake script; the tooltip names it
+([0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md)).
+
 ### Git
 
 A third sidebar tab stages, commits, pulls and pushes, and the branch name in
@@ -1171,6 +1204,7 @@ src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: block of dbt_project.yml, read by hand
 src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened
+src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs        working tree status and the git commands the UI can run
 src/settings.rs   per-project settings, kept outside the project
 src/venv.rs       which Python environment is in play
@@ -1187,8 +1221,9 @@ The server binds to `127.0.0.1` only, and every file path is resolved against
 the project root, so nothing outside the opened project is reachable. Requests
 must come from its own page: a `Host` or `Origin` naming anything else gets a
 `403`, which keeps other web pages in your browser away from the terminal and
-the git buttons. [SECURITY.md](SECURITY.md) spells out what is and is not
-covered.
+the git buttons. Beyond that, the API and the terminal want the key the launch
+printed, which no other program on the machine has seen, whatever headers it
+writes. [SECURITY.md](SECURITY.md) spells out what is and is not covered.
 
 ## Not there yet
 

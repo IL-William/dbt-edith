@@ -55,6 +55,9 @@ it is built this way, for whoever changes it next.
 | [0049](0049-the-profile-is-found-where-dbt-looks.md) | The profile is found where dbt looks, whatever the warehouse | changing which `profiles.yml` dbt-edith opens, or what decides whether it can be opened |
 | [0050](0050-the-terminal-activates-the-venv-it-was-handed.md) | The terminal activates the venv dbt-edith was started in | changing what the terminal types on its own, or which Python environment its shell starts with |
 | [0051](0051-a-relation-opens-in-snowsight-by-its-name.md) | A relation opens in Snowsight by its name, on the session's account | linking a dbt object to Snowsight, or changing how a Snowsight address is spelled |
+| [0052](0052-the-api-wants-the-key-this-launch-printed.md) | The API wants the key this launch printed | adding a route, changing what the printed link holds, or letting anything reach the API without the key |
+| [0053](0053-a-project-is-read-before-anything-in-it-runs.md) | A project is read before anything in it runs | running a program found in the project, or changing how a venv's Python and dbt versions are learned |
+| [0054](0054-the-profile-is-edited-without-its-secrets.md) | The profile is edited without its secrets | changing what `/api/profiles` sends or accepts, or which keys of a profile are secret |
 
 ## Keeping these honest
 
