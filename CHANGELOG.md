@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.0.1 - 2026-10-10
+
+- A new terminal activates the virtual environment dbt-edith was started in,
+  typing its activate script once the shell has read its startup files, so
+  `dbt` there is the venv's even when `~/.bashrc` puts pyenv's shims or conda
+  first, and `deactivate` exists (0050). The venv's `PATH` reached the shell,
+  but those startup files then pushed it behind another `dbt`.
+
 ## 1.0.0 - 2026-10-10
 
 - dbt-edith is published under the Functional Source License 1.1 with an MIT

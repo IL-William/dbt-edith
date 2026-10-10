@@ -59,6 +59,11 @@ pub fn has_snowflake_connector(venv: &Path) -> bool {
             .unwrap_or(false)
 }
 
+/// The virtual environment this process was started in, if it still exists.
+pub fn activated() -> Option<PathBuf> {
+    std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from).filter(|p| p.exists())
+}
+
 fn is_venv(p: &Path) -> bool {
     p.join("pyvenv.cfg").exists() || bin(p, "python").exists()
 }
@@ -78,7 +83,7 @@ pub fn detect(root: &Path) -> VenvInfo {
     // A bare venv with no dbt in it is the least useful answer, so rank those last.
     found.sort_by_key(|p| (!bin(p, "dbt").exists(), p.clone()));
 
-    let active = std::env::var("VIRTUAL_ENV").ok().map(PathBuf::from).filter(|p| p.exists());
+    let active = activated();
     let chosen = match &active {
         Some(p) => Some(p.clone()),
         None => found.first().cloned(),

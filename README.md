@@ -1074,7 +1074,9 @@ same list. The terminal runs `$SHELL -l` on macOS
 and Linux, and Git Bash on Windows, falling back to PowerShell when Git Bash is
 not installed. It starts with the environment dbt-edith was started in: activate
 the project's virtual environment first, and `dbt` in the terminal is that
-environment's.
+environment's. Each new terminal then types that environment's own activate
+script, `source …/activate` for bash and zsh, so it comes first again after
+your `~/.bashrc` or `~/.zshrc`, which may have put pyenv or conda before it.
 
 ## Tests
 
