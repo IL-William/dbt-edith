@@ -210,6 +210,10 @@ kbd {
 .freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
 .freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
 .freshbadge .drift:empty { display: none; }
+/* What a collin run leaves behind it until its report is opened, in
+   collin's colour so it reads as collin's and not as the manifest's. */
+.collinbadge, .collinbadge:hover { border-color: var(--tool); }
+.collinbadge .lbl { color: var(--tool); }
 /* The same dot again at the head of the hover card, so the card is visibly
    about the thing the pointer is on. */
 .hovercard .freshdot { border-radius: 50%; background: var(--fg-dim); }
@@ -503,6 +507,31 @@ kbd {
 
 #editor-host { flex: 1; min-height: 0; }
 #diff-host { flex: 1; min-height: 0; position: relative; }
+/* collin's report, a tab of the editor: figures, then findings by who acts. */
+.reportbody { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 28px; }
+.reportbody > p { margin: 4px 0 0; }
+.reporttiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.reporttile { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.reporttile .rlabel, .reporttile .rsub { font-size: 11px; color: var(--fg-dim); }
+.reporttile .rvalue { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.reportgroup { margin-top: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
+.reportgroup[data-group=rerun] { border-left-color: var(--warn); }
+.reportgroup[data-group=project] { border-left-color: var(--accent); }
+.reportgroup[data-group=collin] { border-left-color: #e070d0; }
+.reportgroup h3 { margin: 0; font-size: 13.5px; }
+.reportgroup > p { margin: 0 0 6px; font-size: 12px; }
+.reportfinding { border-top: 1px solid var(--line); padding: 3px 0; }
+.reportfinding summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.reportfinding summary::-webkit-details-marker { display: none; }
+.reportfinding summary::before { content: "\25b8"; color: var(--fg-dim); width: 10px; }
+.reportfinding[open] summary::before { content: "\25be"; }
+.reportfinding .rcount { font: 11px var(--mono); color: var(--fg-dim); }
+.reportfinding .rlever { margin: 1px 0 4px 18px; color: var(--fg-dim); font-size: 12px; max-width: 760px; }
+.rentries { margin: 0 0 4px; padding-left: 36px; font-size: 12px; }
+.rentries li { margin: 1px 0; overflow-wrap: anywhere; }
+.rentries .rcol, .rentries .rrel { font: 11.5px var(--mono); }
+.rentries .rcol { cursor: pointer; color: var(--fg); }
+.rentries .rcol:hover { text-decoration: underline; }
 .diffpane { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .diffpane.hidden { display: none; }
 .diff-head { flex: 0 0 auto; background: var(--bg-2); border-bottom: 1px solid var(--line); padding: 5px 10px 4px; }

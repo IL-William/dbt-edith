@@ -1246,7 +1246,7 @@ function initEditor() {
   S.cm.on('change', () => {
     if (!S.active) return;
     const f = S.open.get(S.active);
-    if (!f || f.kind === 'diff') return;
+    if (!f || ownsPane(f)) return;
     const pinned = S.preview === S.active;
     if (pinned) S.preview = null;       // editing a preview tab pins it
     if (f && !f.dirty) { f.dirty = true; renderTabs(); }
@@ -1671,7 +1671,7 @@ function activeEditor() {
   const f = S.active && S.open.get(S.active);
   if (!f) return null;
   if (f.kind === 'diff') return f.mv ? f.mv.editor() : null;
-  return S.cm;
+  return ownsPane(f) ? null : S.cm;
 }
 
 /* Where an element sits, by pane. Everything in the dock belongs to the tab on
@@ -1888,14 +1888,21 @@ function decorateDiff(mv, pane) {
   pane.appendChild(ruler);
 }
 
+/* A tab that owns a pane of its own in #diff-host rather than a CodeMirror
+   Doc: a diff, or collin's report. Neither has a cursor or a file to save. */
+function ownsPane(f) {
+  return !!f && (f.kind === 'diff' || f.kind === 'report');
+}
+
 function activate(path, focusLineage = true) {
   S.active = path;
   const f = S.open.get(path);
   $('#editor-empty').classList.add('hidden');
-  if (f.kind === 'diff') {
+  if (ownsPane(f)) {
     $('#editor-host').style.display = 'none';
     $('#diff-host').classList.remove('hidden');
-    mountDiff(path);
+    if (f.kind === 'diff') mountDiff(path);
+    else mountReport(path);
   } else {
     $('#diff-host').classList.add('hidden');
     $('#editor-host').style.display = '';
@@ -1917,7 +1924,7 @@ function activate(path, focusLineage = true) {
 function projectPath(key) {
   const f = S.open.get(key);
   if (!f) return '';
-  return f.kind === 'profile' ? '' : f.kind === 'diff' ? f.path : key;
+  return f.kind === 'profile' || f.kind === 'report' ? '' : f.kind === 'diff' ? f.path : key;
 }
 
 /* Takes one tab down without asking anything and without drawing: a diff owns
@@ -1970,7 +1977,7 @@ function closeMany(keys, what) {
 
 async function saveFile(path) {
   const f = S.open.get(path);
-  if (f && f.kind === 'diff') return true;
+  if (ownsPane(f)) return true;
   if (!f || !f.dirty) return true;
   if (f.kind === 'profile') return saveProfile(path, f);
   try {
@@ -2034,9 +2041,10 @@ function renderTabs() {
     t.dataset.key = path;
     t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '');
     const name = document.createElement('span');
-    name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' ? fileName(f.path) : base(path);
+    name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || f.kind === 'report' ? fileName(f.path) : base(path);
     name.title = f.kind === 'diff' ? f.path + '  (HEAD against the working tree)'
       : f.kind === 'profile' ? f.path + '  (the dbt profile, outside the project)'
+      : f.kind === 'report' ? 'What collin found reading the compiled SQL, from target/collin.report.json'
       : path;
     const x = document.createElement('span');
     x.className = 'x';
@@ -2089,10 +2097,12 @@ function renderOpenEditors() {
 
     const nm = document.createElement('span');
     nm.className = 'nm';
-    nm.textContent = base(path);
+    // collin's report is keyed `collin:report`, which is no path to show.
+    const report = f.kind === 'report';
+    nm.textContent = report ? f.path : base(path);
     const dir = document.createElement('span');
     dir.className = 'dir';
-    dir.textContent = dirOf(path);
+    dir.textContent = report ? 'target' : dirOf(path);
 
     const sv = document.createElement('button');
     sv.className = 'icon save';
@@ -2104,7 +2114,7 @@ function renderOpenEditors() {
     });
 
     row.append(state, nm, dir, sv);
-    row.title = path;
+    row.title = report ? 'target/collin.report.json' : path;
     row.addEventListener('click', () => activate(path));
     row.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeFile(path); } });
     list.appendChild(row);
@@ -2155,7 +2165,7 @@ function here() {
   const f = S.active && S.open.get(S.active);
   if (!f) return null;
   // A diff and the profile have no cursor worth keeping, only the tab.
-  const at = f.kind === 'diff' || !S.cm ? null : S.cm.getCursor();
+  const at = ownsPane(f) || !S.cm ? null : S.cm.getCursor();
   return at ? { key: S.active, line: at.line, ch: at.ch } : { key: S.active };
 }
 
@@ -2218,6 +2228,10 @@ function updateStatus() {
   const f = S.open.get(S.active);
   if (f.kind === 'diff') {
     s.textContent = `${f.path}  ·  diff against HEAD  ·  read only`;
+    return;
+  }
+  if (f.kind === 'report') {
+    s.textContent = 'target/collin.report.json  ·  read only';
     return;
   }
   if (f.kind === 'profile') {
@@ -2462,7 +2476,7 @@ function renderCrumbs() {
   /* A diff holds two documents and no cursor, and the profile lives outside
      the project where /api/dir cannot list, so neither gets a path. The
      chevrons stay: they are how you get back out of one. */
-  if (f.kind === 'diff' || f.kind === 'profile') return;
+  if (ownsPane(f) || f.kind === 'profile') return;
 
   const segs = pathCrumbs(S.active);
   segs.forEach((seg, i) => {
@@ -4212,10 +4226,15 @@ async function openSourceMenu(anchor) {
     menu.appendChild(item);
   };
   const update = collinUpdateRow(S.collin, S.cllTool);
+  const report = collinReportRow(S.collin, S.cllTool);
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
       badge: t.alpha ? 'alpha' : '',
       pick: t.install ? installCollin : () => switchLineage({ tool: t.tool }) });
+    if (t.tool === 'collin' && report) {
+      add({ label: report.label, sub: report.sub, tool: 'collin', on: false, title: report.title, action: true,
+        pick: openCollinReport });
+    }
     if (t.tool === 'collin' && update) {
       add({ label: update.label, sub: update.sub, tool: 'collin', on: false, title: update.title, action: true,
         urgent: update.urgent, pick: () => sendToTerminal(update.command) });
@@ -4286,6 +4305,7 @@ async function regenerateCollin() {
    a pick goes on, so its edges appear once it is done. */
 function paintCollin(was) {
   paintSourceButton();
+  paintCollinBadge();
   const now = S.collin ? S.collin.state : '';
   if (now !== was && S.node) renderCatalog(S.node);
   clearTimeout(S.collinPoll);
@@ -4298,6 +4318,316 @@ function paintCollin(was) {
   } else if (was === 'running' && now === 'failed') {
     toast('collin: ' + (S.collin.error || 'the run failed'), 'err');
   }
+}
+
+/* What each kind of finding in collin's report is, and what would remove it,
+   filed under who acts: the artifacts dbt wrote, the project itself, a reader,
+   or collin. The server only files the report by kind (src/collin_report.rs);
+   the words are the page's, as a column's notes are. */
+function collinFindingText(kind) {
+  const t = {
+    no_compiled_sql: ['rerun', 'No compiled SQL',
+      'dbt wrote no SQL for these models, so their edges are matched by column name. Run dbt compile, then Regenerate.'],
+    compiled_elsewhere: ['rerun', 'Compiled for another target',
+      'Their file in target/compiled/ reads a table the manifest does not give the model, so it was set aside. '
+        + 'Run dbt compile with the target the manifest was written for, then Regenerate.'],
+    catalog_elsewhere: ['rerun', 'Catalog entry for another table',
+      'catalog.json describes another table than the manifest names, so nothing was checked against the warehouse. '
+        + 'Run dbt docs generate with the target the manifest was written for.'],
+    columns_missing: ['rerun', 'Columns the warehouse has and the SQL does not produce',
+      'The table is older than the code, or the code dropped them. Running the model rebuilds the table.'],
+    columns_unexpected: ['rerun', 'Columns the SQL produces and the warehouse lacks',
+      'The table has not been rebuilt since the code changed. Running the model rebuilds it.'],
+    yaml_stale: ['project', 'YAML behind the warehouse',
+      'The columns the YAML documents disagree with the table. Update the model\'s YAML.'],
+    thin: ['project', 'Compile far thinner than its YAML',
+      'Either the YAML is stale, or a macro that reads the warehouse at compile time found its source missing.'],
+    undeclared_relation: ['project', 'Tables dbt was not told of',
+      'The SQL reads a table that is neither a source nor a ref, so the lineage stops there. '
+        + 'Declare it as a source, or read it through ref.'],
+    unknown_parent: ['project', 'Parents with no known columns',
+      'collin had no column list for them. Document their columns in YAML, or build them so the catalog has them.'],
+    unbacked_read: ['project', 'Read from a CTE that lacks the column',
+      'This compile cannot run as it is: usually a macro that read the warehouse at compile time and found a relation missing.'],
+    merged_scope: ['project', 'Two CTEs or subqueries of one name',
+      'This collin read them as one, so it did not trust the compile. Renaming one of them is enough, '
+        + 'and collin reads two CTEs of one name apart from 0.4.0.'],
+    relation_collision: ['project', 'Tables claimed by several nodes',
+      'More than one dbt node names this table, often a source declared twice. An edge from it names the node '
+        + 'the reading model depends on, and the first by name when it depends on both or neither.'],
+    short_upstream: ['project', 'Columns read downstream that this model\'s list lacks',
+      'A child reads them, so they exist: the table or the YAML collin had for this model is behind its code.'],
+    phantom: ['project', 'Columns copied from a CTE that lacks them',
+      'The shape of a select * over a parent whose column list is short: that parent\'s YAML or table is behind.'],
+    parse_failed: ['check', 'SQL collin could not parse',
+      'Their edges are matched by column name. If the SQL runs, the parser is at fault, and collin wants to hear of it.'],
+    ambiguous: ['check', 'Matched by name to every parent that has it',
+      'Right for a union, wrong for a lookup join. Check it in the SQL.'],
+    engine_issue: ['check', 'Noted while reading',
+      'collin\'s engine raised these and nothing else is wrong with the model. The codes are in target/collin.report.json.'],
+    lost_in_expression: ['collin', 'Columns lost inside an expression',
+      'The SQL reads names collin never placed, in a form it does not read yet.'],
+    lost_unresolved: ['collin', 'Columns the SQL has and no edge came out for',
+      'collin lost their lineage. Nothing in the project explains it.'],
+  }[kind];
+  // A kind from a later collin is listed rather than dropped.
+  const [group, title, lever] = t || ['check', kind, 'A kind of finding this dbt-edith does not know yet.'];
+  return { group, title, lever };
+}
+
+function collinGroupText(group) {
+  return {
+    rerun: ['Rerun dbt', 'What dbt wrote is behind the project, or from another target.'],
+    project: ['Fix in the project', 'The project says less than its SQL reads, or disagrees with its warehouse.'],
+    check: ['Check by hand', 'collin read these, and a person has to say whether it read them right.'],
+    collin: ["collin's to fix", 'The SQL is fine and collin lost the lineage.'],
+  }[group] || [group, ''];
+}
+
+/* The report's findings under their group, in the order the groups are
+   worked through: rerunning dbt first, since it can clear the rest. */
+function collinReportGroups(findings) {
+  const groups = ['rerun', 'project', 'check', 'collin'].map((group) => {
+    const [label, desc] = collinGroupText(group);
+    return { group, label, desc, findings: [] };
+  });
+  for (const f of findings || []) {
+    const t = collinFindingText(f.kind);
+    groups.find((g) => g.group === t.group).findings.push(Object.assign({}, f, { title: t.title, lever: t.lever }));
+  }
+  return groups.filter((g) => g.findings.length);
+}
+
+/* The kinds whose items are columns of the entry's model, which a click can
+   point at in its Columns tab. */
+function collinItemsAreColumns(kind) {
+  return ['columns_missing', 'columns_unexpected', 'unbacked_read', 'short_upstream', 'phantom', 'ambiguous',
+    'lost_in_expression', 'lost_unresolved'].includes(kind);
+}
+
+/* What follows an entry's columns: how many were cut, and the CTE they were
+   read from or copied through. */
+function collinEntryTail(kind, e) {
+  const shown = (e.items || []).length;
+  const more = e.of > shown ? ` and ${e.of - shown} more` : '';
+  const via = e.detail && { unbacked_read: `from ${e.detail}`, phantom: `through ${e.detail}` }[kind];
+  return more + (via ? `, ${via}` : '');
+}
+
+/* What follows the model's name on an entry's line, as text. */
+function collinEntryText(kind, e) {
+  if (collinItemsAreColumns(kind)) return (e.items || []).join(', ') + collinEntryTail(kind, e);
+  switch (kind) {
+    case 'no_compiled_sql':
+    case 'parse_failed':
+      return e.detail || '';
+    case 'compiled_elsewhere':
+      return e.detail ? `target/${e.detail}` : '';
+    case 'catalog_elsewhere':
+      return e.detail ? `the catalog describes ${e.detail}` : '';
+    case 'thin':
+      return e.detail ? `${e.detail} columns` : '';
+    default:
+      return (e.items || []).join(', ') + collinEntryTail(kind, e);
+  }
+}
+
+/* The figures over the report, each only when the report has its counters:
+   an older collin wrote fewer. A share is rounded down, so a run one column
+   short never reads as 100%. */
+function collinReportTiles(t) {
+  if (!t) return [];
+  const has = (...keys) => keys.every((k) => typeof t[k] === 'number');
+  const pct = (a, b) => (b ? `${Math.floor((1000 * a) / b) / 10}%` : '');
+  const tiles = [];
+  if (has('models', 'parsed')) {
+    const read = t.parsed - (t.sql_from_files_set_aside || 0);
+    tiles.push({ label: 'SQL read', value: `${read} of ${t.models}`, sub: t.parse_failed ? `${t.parse_failed} did not parse` : 'models' });
+  }
+  if (has('columns_covered', 'columns_total') && t.columns_total) {
+    tiles.push({ label: 'Columns with an edge', value: pct(t.columns_covered, t.columns_total),
+      sub: `${t.columns_covered} of ${t.columns_total}` });
+  }
+  if (has('columns_covered_independent', 'columns_total_independent') && t.columns_total_independent) {
+    tiles.push({ label: 'Against the warehouse or YAML', value: pct(t.columns_covered_independent, t.columns_total_independent),
+      sub: 'columns built from constants aside' });
+  }
+  if (has('edges_parsed', 'edges_inferred')) {
+    tiles.push({ label: 'Edges', value: String(t.edges_parsed + t.edges_inferred),
+      sub: t.edges_inferred ? `${t.edges_inferred} matched by name` : 'all read from the SQL' });
+  }
+  if (has('confirmed', 'degraded', 'unchecked')) {
+    tiles.push({ label: 'Checked against the warehouse', value: `${t.confirmed} confirmed`,
+      sub: `${t.degraded} behind their code · ${t.unchecked} not in the catalog` });
+  }
+  if (has('columns_root') && t.columns_root) {
+    tiles.push({ label: 'Built from constants', value: String(t.columns_root), sub: 'columns with no parent to find' });
+  }
+  return tiles;
+}
+
+/* The badge a run leaves behind it until its report is opened. Only a run
+   finished since the page last looked: two runs in a row both read done, and
+   the counter is what tells them apart. */
+function collinBadge(cl, seen) {
+  if (!cl || cl.state !== 'done' || !cl.report || !cl.report.to_investigate) return null;
+  if ((cl.run || 0) <= (seen || 0)) return null;
+  const n = cl.report.to_investigate;
+  return { text: `${n} to investigate`,
+    title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.\nClick to open its report.` };
+}
+
+/* The line under Collin in the menu that opens the report, whenever Collin's
+   own cache is on screen and its report says something. */
+function collinReportRow(cl, tool) {
+  if (!cl || tool !== 'collin' || !cl.report) return null;
+  const n = cl.report.to_investigate || 0;
+  return { label: "Open collin's report", sub: n ? `${n} to investigate` : 'nothing to investigate',
+    title: "What collin's last run found, grouped by what would fix it." };
+}
+
+/* collin's report as a tab beside the files: something to work through model
+   by model, each opening next to it. Read again on every opening, so a run
+   since the last one shows. */
+async function openCollinReport() {
+  const key = 'collin:report';
+  let view;
+  try { view = await api.get('/api/collineage/report'); }
+  catch (e) { return toast('collin report: ' + e.message, 'err'); }
+  const f = S.open.get(key);
+  if (f) {
+    f.view = view;
+    if (f.host) f.host.remove();
+    f.host = null;
+  } else {
+    S.open.set(key, { kind: 'report', path: "collin's report", view, dirty: false, host: null });
+    S.order.push(key);
+  }
+  if (S.collin) S.collinSeen = S.collin.run || 0;
+  paintCollinBadge();
+  activate(key, false);
+}
+
+function paintCollinBadge() {
+  const el = $('#collin-badge');
+  if (!el) return;
+  // A run finished before the page loaded is not news to anyone.
+  if (S.collinSeen === undefined && S.collin) S.collinSeen = S.collin.run || 0;
+  const b = collinBadge(S.collin, S.collinSeen);
+  el.classList.toggle('hidden', !b);
+  if (!b) return;
+  el.querySelector('.lbl').textContent = b.text;
+  el.title = b.title;
+}
+
+/* A model named in the report, opened with its Columns tab, where collin's
+   notes on each column already are. */
+function openReportNode(id, column) {
+  S.catTab = 'columns';
+  S.colHighlight = column || null;
+  showDock('catalog');
+  focusNode(id, { open: true });
+}
+
+function mountReport(key) {
+  const f = S.open.get(key);
+  const host = $('#diff-host');
+  [...host.children].forEach((c) => c.classList.add('hidden'));
+  if (!f.host) {
+    f.host = collinReportPane(key, f.view);
+    host.appendChild(f.host);
+  }
+  f.host.classList.remove('hidden');
+}
+
+function collinReportPane(key, view) {
+  const el = (tag, className, textContent) => Object.assign(document.createElement(tag), className ? { className } : {},
+    textContent !== undefined ? { textContent } : {});
+  const pane = el('div', 'diffpane reportpane');
+  const head = el('div', 'diff-head');
+  const title = el('div', 'diff-title');
+  const dot = el('span', 'tooldot');
+  dot.dataset.tool = 'collin';
+  const written = view.generated_at ? cacheAge(Math.floor(Date.parse(view.generated_at) / 1000)) : '';
+  const about = [view.project, view.adapter, view.dbt_version && `dbt ${view.dbt_version}`, written && `written ${written}`];
+  title.append(dot, el('b', '', "collin's report"), el('span', 'diff-state', about.filter(Boolean).join(' · ')),
+    el('div', 'grow'));
+  const again = el('button', 'btn sm', 'Read again');
+  again.title = 'Read target/collin.report.json again';
+  again.addEventListener('click', openCollinReport);
+  const close = el('button', 'icon', '×');
+  close.title = 'Close the report';
+  close.addEventListener('click', () => closeFile(key));
+  title.append(again, close);
+  head.append(title);
+
+  const body = el('div', 'reportbody');
+  const tiles = el('div', 'reporttiles');
+  for (const t of collinReportTiles(view.totals)) {
+    const tile = el('div', 'reporttile');
+    tile.append(el('div', 'rlabel', t.label), el('div', 'rvalue', t.value), el('div', 'rsub', t.sub));
+    tiles.append(tile);
+  }
+  body.append(tiles);
+  const n = view.to_investigate || 0;
+  body.append(el('p', 'muted', n
+    ? `${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at. A name opens the model, whose Columns tab says what collin noted on each column.`
+    : 'Nothing to investigate: every model collin read came out clean.'));
+
+  for (const g of collinReportGroups(view.findings)) {
+    const section = el('section', 'reportgroup');
+    section.dataset.group = g.group;
+    section.append(el('h3', '', g.label), el('p', 'muted', g.desc));
+    for (const f of g.findings) {
+      const d = el('details', 'reportfinding');
+      // A short list is worth seeing at once; a long one is a count first.
+      d.open = f.entries.length <= 5;
+      const sum = el('summary');
+      sum.append(el('span', 'rtitle', f.title), el('span', 'rcount', String(f.entries.length)));
+      d.append(sum, el('p', 'rlever', f.lever));
+      const list = el('ul', 'rentries');
+      for (const e of f.entries) {
+        const li = el('li');
+        const node = f.kind !== 'relation_collision';
+        const name = el(node ? 'a' : 'span', node ? 'filelink' : 'rrel', node ? shortId(e.id) : e.id);
+        if (node) {
+          name.title = e.id;
+          name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id); });
+        }
+        li.append(name);
+        if (f.kind === 'relation_collision') {
+          li.append(el('span', 'muted', ' claimed by '));
+          (e.items || []).forEach((id, i) => {
+            if (i) li.append(el('span', 'muted', ', '));
+            const a = el('a', 'filelink', shortId(id));
+            a.title = id;
+            a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(id); });
+            li.append(a);
+          });
+        } else if (collinItemsAreColumns(f.kind) && (e.items || []).length) {
+          li.append(el('span', 'muted', ': '));
+          e.items.forEach((c, i) => {
+            if (i) li.append(el('span', 'muted', ', '));
+            const a = el('a', 'rcol', c);
+            a.title = `Open ${shortId(e.id)} with ${c} picked out in its Columns tab`;
+            a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id, c); });
+            li.append(a);
+          });
+          const tail = collinEntryTail(f.kind, e);
+          if (tail) li.append(el('span', 'muted', tail));
+        } else {
+          const text = collinEntryText(f.kind, e);
+          if (text) li.append(el('span', 'muted', ': ' + text));
+        }
+        list.append(li);
+      }
+      d.append(list);
+      section.append(d);
+    }
+    body.append(section);
+  }
+  pane.append(head, body);
+  return pane;
 }
 
 /* What a failed fetch should say. Only a connection Snowflake refused points at
@@ -8669,6 +8999,7 @@ function wireKeys() {
   // one thing the user would type next. dbt still runs in their terminal, under
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
+  $('#collin-badge').addEventListener('click', openCollinReport);
   // Keyed on the state, so a card being read is not rebuilt under the pointer
   // by a poll that changed nothing.
   $('#fresh-badge').addEventListener('mouseenter', (e) => {

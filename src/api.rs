@@ -226,6 +226,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/snowflake/clone", get(clone_plan))
         .route("/api/snowflake/clone/into", post(remember_clone_into))
         .route("/api/collineage/generate", post(generate_col_lineage))
+        .route("/api/collineage/report", get(collin_report_page))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
@@ -724,6 +725,19 @@ async fn collin_report(st: &Arc<AppState>, tool: &str) -> Option<Arc<collin_run:
     let st = st.clone();
     // Reading it parses megabytes once per run: off the runtime, like the cache.
     tokio::task::spawn_blocking(move || st.collin_report.get(&st.target_dir.join(collin_run::REPORT))).await.ok().flatten()
+}
+
+/// collin's report filed by kind, for the report page. Not tied to the tool
+/// on screen, as the notes are: the page says what collin's last run found,
+/// and a run renames its report into place with its cache or not at all, so
+/// the two describe one run.
+async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
+    let shared = st.clone();
+    let read = tokio::task::spawn_blocking(move || shared.collin_report.get(&shared.target_dir.join(collin_run::REPORT)));
+    match read.await.ok().flatten() {
+        Some(report) => Json(&report.overview).into_response(),
+        None => (StatusCode::NOT_FOUND, "collin has written no report here yet: pick Collin, or press Regenerate").into_response(),
+    }
 }
 
 /// What a collin run reads and writes, or None when no collin executable is
@@ -3115,6 +3129,30 @@ mod tests {
     /// The same request as a program that never saw the printed link sends it.
     fn keyless(request: String) -> String {
         request.replace(&format!("Authorization: Bearer {TEST_KEY}\r\n"), "")
+    }
+
+    /// The page reads the report whichever tool is on screen: it says what
+    /// collin's last run found, not what the graph holds.
+    #[tokio::test]
+    async fn the_report_page_files_collins_findings_by_kind() {
+        let root = temp_project("report-page");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let none = status_of(port, get("/api/collineage/report", &h)).await;
+        assert!(none.ends_with("404 Not Found"), "{none}");
+        let report = r#"{"totals":{"models":2,"parsed":2},"models":[{"unique_id":"model.demo.a","yaml_stale":true}]}"#;
+        std::fs::write(target.join(collin_run::REPORT), report).unwrap();
+        let page = body_of(port, get("/api/collineage/report", &h)).await;
+        assert!(page.contains(r#""findings":[{"kind":"yaml_stale","entries":[{"id":"model.demo.a"}]}]"#), "{page}");
+        assert!(page.contains(r#""to_investigate":1"#), "{page}");
+        assert!(page.contains(r#""totals":{"models":2,"parsed":2}"#), "{page}");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The graph `serve()` builds is empty, so this asserts on status codes and
