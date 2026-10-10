@@ -4,6 +4,7 @@
 mod api;
 mod clone;
 mod collin;
+mod collin_compare;
 mod collin_report;
 mod collin_run;
 mod compiled;

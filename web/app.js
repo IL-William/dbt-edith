@@ -1889,9 +1889,15 @@ function decorateDiff(mv, pane) {
 }
 
 /* A tab that owns a pane of its own in #diff-host rather than a CodeMirror
-   Doc: a diff, or collin's report. Neither has a cursor or a file to save. */
+   Doc: a diff, collin's report, or two collin versions compared. None has a
+   cursor or a file to save. */
 function ownsPane(f) {
-  return !!f && (f.kind === 'diff' || f.kind === 'report');
+  return !!f && (f.kind === 'diff' || collinTab(f));
+}
+
+/* collin's report or a comparison of versions: a tab no file stands behind. */
+function collinTab(f) {
+  return !!f && (f.kind === 'report' || f.kind === 'compare');
 }
 
 function activate(path, focusLineage = true) {
@@ -1902,7 +1908,7 @@ function activate(path, focusLineage = true) {
     $('#editor-host').style.display = 'none';
     $('#diff-host').classList.remove('hidden');
     if (f.kind === 'diff') mountDiff(path);
-    else mountReport(path);
+    else mountCollinTab(path);
   } else {
     $('#diff-host').classList.add('hidden');
     $('#editor-host').style.display = '';
@@ -1924,7 +1930,7 @@ function activate(path, focusLineage = true) {
 function projectPath(key) {
   const f = S.open.get(key);
   if (!f) return '';
-  return f.kind === 'profile' || f.kind === 'report' ? '' : f.kind === 'diff' ? f.path : key;
+  return f.kind === 'profile' || collinTab(f) ? '' : f.kind === 'diff' ? f.path : key;
 }
 
 /* Takes one tab down without asking anything and without drawing: a diff owns
@@ -2041,10 +2047,11 @@ function renderTabs() {
     t.dataset.key = path;
     t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '');
     const name = document.createElement('span');
-    name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || f.kind === 'report' ? fileName(f.path) : base(path);
+    name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || collinTab(f) ? fileName(f.path) : base(path);
     name.title = f.kind === 'diff' ? f.path + '  (HEAD against the working tree)'
       : f.kind === 'profile' ? f.path + '  (the dbt profile, outside the project)'
       : f.kind === 'report' ? 'What collin found reading the compiled SQL, from target/collin.report.json'
+      : f.kind === 'compare' ? 'What two collin versions read, from the runs kept in target/collin/'
       : path;
     const x = document.createElement('span');
     x.className = 'x';
@@ -2097,12 +2104,13 @@ function renderOpenEditors() {
 
     const nm = document.createElement('span');
     nm.className = 'nm';
-    // collin's report is keyed `collin:report`, which is no path to show.
-    const report = f.kind === 'report';
+    // collin's tabs are keyed `collin:report` and `collin:compare`, which are
+    // no path to show.
+    const report = collinTab(f);
     nm.textContent = report ? f.path : base(path);
     const dir = document.createElement('span');
     dir.className = 'dir';
-    dir.textContent = report ? 'target' : dirOf(path);
+    dir.textContent = report ? (f.kind === 'report' ? 'target' : 'target/collin') : dirOf(path);
 
     const sv = document.createElement('button');
     sv.className = 'icon save';
@@ -2114,7 +2122,7 @@ function renderOpenEditors() {
     });
 
     row.append(state, nm, dir, sv);
-    row.title = report ? 'target/collin.report.json' : path;
+    row.title = !report ? path : f.kind === 'report' ? 'target/collin.report.json' : 'target/collin/';
     row.addEventListener('click', () => activate(path));
     row.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeFile(path); } });
     list.appendChild(row);
@@ -2232,6 +2240,10 @@ function updateStatus() {
   }
   if (f.kind === 'report') {
     s.textContent = 'target/collin.report.json  ·  read only';
+    return;
+  }
+  if (f.kind === 'compare') {
+    s.textContent = `target/collin/${f.pair.a} against target/collin/${f.pair.b}  ·  read only`;
     return;
   }
   if (f.kind === 'profile') {
@@ -4232,6 +4244,7 @@ async function openSourceMenu(anchor) {
   const report = collinReportRow(S.collin, S.cllTool);
   const versions = collinVersionRows(S.collin, S.cllTool);
   const install = collinInstallRow(S.collin, S.cllTool);
+  const compare = collinCompareRow(S.collin, S.cllTool);
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
       badge: t.alpha ? 'alpha' : '',
@@ -4247,6 +4260,10 @@ async function openSourceMenu(anchor) {
       }
       const gone = collinChosenGone(S.collin);
       if (gone && S.cllTool === 'collin') menu.appendChild(Object.assign(document.createElement('div'), { className: 'menunote', textContent: gone }));
+      if (compare) {
+        add({ label: compare.label, sub: compare.sub, tool: 'collin', on: false, title: compare.title, action: true,
+          pick: () => openCollinCompare() });
+      }
       if (install) {
         add({ label: install.label, sub: install.sub, tool: 'collin', on: false, title: install.title, action: true,
           pick: askCollinVersion });
@@ -4546,12 +4563,12 @@ function openReportNode(id, column) {
   focusNode(id, { open: true });
 }
 
-function mountReport(key) {
+function mountCollinTab(key) {
   const f = S.open.get(key);
   const host = $('#diff-host');
   [...host.children].forEach((c) => c.classList.add('hidden'));
   if (!f.host) {
-    f.host = collinReportPane(key, f.view);
+    f.host = f.kind === 'report' ? collinReportPane(key, f.view) : collinComparePane(key, f.view, f.pair);
     host.appendChild(f.host);
   }
   f.host.classList.remove('hidden');
@@ -4723,6 +4740,201 @@ async function askCollinVersion() {
   } catch (e) {
     toast('collin: ' + e.message, 'err');
   }
+}
+
+/* The line under Collin that compares two versions, once two have a kept run
+   to compare (0061). */
+function collinCompareRow(cl, tool) {
+  const kept = (cl && cl.kept) || [];
+  if (tool !== 'collin' || kept.length < 2) return null;
+  return { label: 'Compare collin versions', sub: `${kept.length} kept`,
+    title: 'What two collin versions read in this project, from the last run of each: figures, findings, '
+      + 'edges gained and lost, and the models where they moved.' };
+}
+
+/* The pair a comparison starts on: the newest kept version against the one
+   before it, B against A. */
+function collinComparePair(kept) {
+  const k = kept || [];
+  return k.length < 2 ? null : { a: k[1], b: k[0] };
+}
+
+/* A counter of collin's report in words, for the ones a reader looks for
+   first; any other keeps its name. */
+function collinTotalLabel(key) {
+  return {
+    models: 'Models', parsed: 'SQL parsed', parse_failed: 'SQL that did not parse',
+    sql_from_files: 'SQL from target/compiled/', sql_from_files_set_aside: 'Compiled files set aside',
+    confirmed: 'Confirmed by the warehouse', degraded: 'Behind their code', unchecked: 'Not in the catalog',
+    edges_parsed: 'Edges read from the SQL', edges_inferred: 'Edges matched by name', edges_indirect: 'Indirect edges',
+    columns_covered: 'Columns with an edge', columns_total: 'Columns', columns_covered_independent:
+      'Columns with an edge, against the warehouse or YAML', columns_total_independent: 'Columns in the warehouse or YAML',
+    columns_root: 'Columns built from constants', columns_lost: 'Columns lost', yaml_stale: 'YAML behind the warehouse',
+    undeclared: 'Models reading a table dbt was not told of', scope_merged: 'Models with two scopes of one name',
+    catalog_elsewhere: 'Catalog entries for another table', thin: 'Compiles far thinner than their YAML',
+  }[key] || key.replace(/_/g, ' ');
+}
+
+/* Figures on both sides as rows, the ones that moved first, each keeping its
+   order otherwise. A figure one side lacks is shown as a dash, not a zero:
+   that version's report does not count it. */
+function collinDeltaRows(deltas, label) {
+  const rows = (deltas || []).map((d, i) => {
+    const a = typeof d.a === 'number' ? d.a : null;
+    const b = typeof d.b === 'number' ? d.b : null;
+    const diff = a !== null && b !== null ? b - a : null;
+    // A counter one report lacks and the other has at zero has not moved.
+    return { key: d.key, label: label ? label(d.key) : d.key, a, b, diff, moved: (a || 0) !== (b || 0), i };
+  });
+  rows.sort((x, y) => (y.moved - x.moved) || (x.i - y.i));
+  return rows;
+}
+
+function signed(n) {
+  return n === null ? '' : n > 0 ? `+${n}` : String(n);
+}
+
+/* One edge as a line: `orders.id → customers.id`, a relation no node owns
+   kept whole. */
+function collinEdgeText(e) {
+  const end = (id, col) => `${id.startsWith('rel:') ? id : shortId(id)}.${col}`;
+  return `${end(e.from, e.from_col)} → ${end(e.to, e.to_col)}`;
+}
+
+/* What one model's line says moved. */
+function collinMoveText(m) {
+  const bits = [];
+  if (m.a !== m.b && m.a && m.b) bits.push(`${m.a} → ${m.b}`);
+  if (m.gained) bits.push(`${m.gained} gained`);
+  if (m.lost) bits.push(`${m.lost} lost`);
+  if (m.changed) bits.push(`${m.changed} with another role`);
+  return bits.join(' · ');
+}
+
+/* A kept run older than the manifest read another project than the one on
+   screen, so a difference may be the project's and not collin's. */
+function collinSideNote(side, manifestAt) {
+  if (!side) return '';
+  const age = cacheAge(side.mtime);
+  const behind = manifestAt && side.mtime && side.mtime < manifestAt ? ', before the manifest was last written' : '';
+  return `collin ${side.version}: ${side.edges} edges, run ${age}${behind}${side.report ? '' : ', no report kept'}`;
+}
+
+async function openCollinCompare(pair) {
+  const key = 'collin:compare';
+  const p = pair || (S.open.get(key) && S.open.get(key).pair) || collinComparePair(S.collin && S.collin.kept);
+  if (!p) return toast('collin: two versions need a kept run each to compare', 'err');
+  let view;
+  try { view = await api.get(`/api/collin/compare?a=${encodeURIComponent(p.a)}&b=${encodeURIComponent(p.b)}`); }
+  catch (e) { return toast('collin compare: ' + e.message, 'err'); }
+  const f = S.open.get(key);
+  if (f) {
+    Object.assign(f, { view, pair: p });
+    if (f.host) f.host.remove();
+    f.host = null;
+  } else {
+    S.open.set(key, { kind: 'compare', path: 'collin versions', view, pair: p, dirty: false, host: null });
+    S.order.push(key);
+  }
+  activate(key, false);
+}
+
+function collinComparePane(key, view, pair) {
+  const el = (tag, className, textContent) => Object.assign(document.createElement(tag), className ? { className } : {},
+    textContent !== undefined ? { textContent } : {});
+  const pane = el('div', 'diffpane reportpane');
+  const head = el('div', 'diff-head');
+  const title = el('div', 'diff-title');
+  const dot = el('span', 'tooldot');
+  dot.dataset.tool = 'collin';
+  title.append(dot, el('b', '', 'collin versions'));
+  const kept = (S.collin && S.collin.kept) || [pair.a, pair.b];
+  const pick = (side) => {
+    const s = el('select', 'versionpick');
+    for (const v of kept) s.append(Object.assign(el('option', '', v), { value: v, selected: v === pair[side] }));
+    s.addEventListener('change', () => openCollinCompare(Object.assign({}, pair, { [side]: s.value })));
+    return s;
+  };
+  title.append(el('span', 'diff-state', 'A'), pick('a'), el('span', 'diff-state', 'against B'), pick('b'),
+    el('div', 'grow'));
+  const close = el('button', 'icon', '×');
+  close.title = 'Close the comparison';
+  close.addEventListener('click', () => closeFile(key));
+  title.append(close);
+  head.append(title);
+
+  const body = el('div', 'reportbody');
+  const manifestAt = S.meta && S.meta.manifest_mtime;
+  body.append(el('p', 'muted', `A, ${collinSideNote(view.a, manifestAt)}.`), el('p', 'muted', `B, ${collinSideNote(view.b, manifestAt)}.`));
+  if (view.a.version === view.b.version) body.append(el('p', 'muted', 'A and B are one run: pick two versions.'));
+
+  const table = (rows, unit) => {
+    const t = el('table', 'cmptable');
+    const hr = el('tr');
+    hr.append(el('th', '', unit), el('th', 'num', `A ${view.a.version}`), el('th', 'num', `B ${view.b.version}`), el('th', 'num', 'B − A'));
+    t.append(hr);
+    for (const r of rows) {
+      const tr = el('tr', r.moved ? 'moved' : '');
+      tr.append(el('td', '', r.label), el('td', 'num', r.a === null ? '-' : String(r.a)),
+        el('td', 'num', r.b === null ? '-' : String(r.b)), el('td', 'num', signed(r.diff)));
+      t.append(tr);
+    }
+    return t;
+  };
+  const section = (heading, desc) => {
+    const s = el('section', 'reportgroup');
+    s.append(el('h3', '', heading));
+    if (desc) s.append(el('p', 'muted', desc));
+    body.append(s);
+    return s;
+  };
+
+  const edges = section('Edges', `B has ${view.gained} edge${view.gained === 1 ? '' : 's'} A lacks, A has ${view.lost} B lacks, `
+    + `and ${view.changed} ${view.changed === 1 ? 'is' : 'are'} read with another role.`);
+  edges.append(table(collinDeltaRows(view.kinds), 'By role'), table(collinDeltaRows(view.origins,
+    (k) => ({ rel: 'a table no node owns' }[k] || k)), 'From'));
+
+  if (view.models.length) {
+    const s = section('Models that moved', `${view.models_moved} model${view.models_moved === 1 ? '' : 's'}, the most first`
+      + (view.models_moved > view.models.length ? `, ${view.models.length} listed` : '') + '. A name opens the model.');
+    const list = el('ul', 'rentries');
+    for (const m of view.models) {
+      const li = el('li');
+      const a = el('a', 'filelink', shortId(m.id));
+      a.title = m.id;
+      a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(m.id); });
+      li.append(a, el('span', 'muted', ': ' + collinMoveText(m)));
+      list.append(li);
+    }
+    s.append(list);
+  }
+
+  const edgeList = (heading, count, items, line) => {
+    if (!count) return;
+    const d = el('details', 'reportfinding');
+    const sum = el('summary');
+    sum.append(el('span', 'rtitle', heading), el('span', 'rcount', String(count)));
+    d.append(sum);
+    const list = el('ul', 'rentries');
+    for (const e of items) list.append(el('li', 'rrel', line(e)));
+    if (count > items.length) list.append(el('li', 'muted', `and ${count - items.length} more`));
+    d.append(list);
+    edges.append(d);
+  };
+  edgeList('Only in B', view.gained, view.gained_edges, (e) => `${collinEdgeText(e)}  ${e.kind}`);
+  edgeList('Only in A', view.lost, view.lost_edges, (e) => `${collinEdgeText(e)}  ${e.kind}`);
+  edgeList('Another role', view.changed, view.changed_edges, (e) => `${collinEdgeText(e)}  ${e.kind} → ${e.b_kind}`);
+
+  if (view.findings.length) {
+    section('Findings', 'Entries of each kind on the report page.')
+      .append(table(collinDeltaRows(view.findings, (k) => collinFindingText(k).title), 'Kind'));
+  }
+  if (view.totals.length) {
+    section('Figures', "Every counter in collin's report, those that moved first.")
+      .append(table(collinDeltaRows(view.totals, collinTotalLabel), 'Counter'));
+  }
+  pane.append(head, body);
+  return pane;
 }
 
 /* What a failed fetch should say. Only a connection Snowflake refused points at

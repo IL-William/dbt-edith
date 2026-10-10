@@ -236,6 +236,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/report", get(collin_report_page))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
+        .route("/api/collin/compare", get(compare_collin_versions))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
@@ -540,6 +541,9 @@ struct CollinBody {
     chosen: String,
     /// Whether there is a config directory to install a version into.
     can_install: bool,
+    /// The versions whose last run is kept to compare, newest first (0061).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    kept: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -641,6 +645,10 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
             versions: now.versions,
             chosen: st.collin_chosen.lock().ok().and_then(|c| c.clone()).unwrap_or_default(),
             can_install: st.collin_installs.is_some(),
+            kept: {
+                let target = st.target_dir.clone();
+                tokio::task::spawn_blocking(move || crate::collin_compare::kept(&target)).await.unwrap_or_default()
+            },
         }
     };
     MetaBody {
@@ -837,6 +845,7 @@ async fn collin_job(st: &Arc<AppState>) -> Option<collin_run::Job> {
 async fn regenerate(st: &Arc<AppState>) -> Option<collin_run::Status> {
     let job = collin_job(st).await?;
     let out = job.out.clone();
+    let (bin, report) = (job.bin.clone(), job.report.clone());
     let shown = st.clone();
     let status = st
         .collin
@@ -848,6 +857,17 @@ async fn regenerate(st: &Arc<AppState>) -> Option<collin_run::Status> {
             }
         })
         .await;
+    if status.state == "done" {
+        // Kept as this version's, to compare with another's (0061). A run
+        // that cannot be kept is still shown.
+        let (shared, cache) = (st.clone(), collin::path_for(&st.target_dir, "collin"));
+        let _ = tokio::task::spawn_blocking(move || {
+            let version = shared.collin_version.get(&bin)?;
+            let version = version.split_whitespace().next()?;
+            crate::collin_compare::keep(&shared.target_dir, version, &cache, &report).ok()
+        })
+        .await;
+    }
     Some(status)
 }
 
@@ -943,6 +963,32 @@ async fn collin_install_command(State(st): State<Arc<AppState>>, Query(q): Query
     match collin_run::install_command(dir, &q.version) {
         Some(command) => Json(InstallCommand { command }).into_response(),
         None => (StatusCode::CONFLICT, format!("{} holds a quote, which no shell reads back", dir.display())).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CompareQuery {
+    #[serde(default)]
+    a: String,
+    #[serde(default)]
+    b: String,
+}
+
+/// What two versions' kept runs read, B against A (0061). Both are matched
+/// against the versions kept, never joined onto a path (0015).
+async fn compare_collin_versions(State(st): State<Arc<AppState>>, Query(q): Query<CompareQuery>) -> Response {
+    let target = st.target_dir.clone();
+    let answer = tokio::task::spawn_blocking(move || {
+        let kept = crate::collin_compare::kept(&target);
+        let a = kept.iter().find(|v| **v == q.a).ok_or_else(|| format!("no kept run of collin {}", q.a))?;
+        let b = kept.iter().find(|v| **v == q.b).ok_or_else(|| format!("no kept run of collin {}", q.b))?;
+        crate::collin_compare::compare(&target, a, b).map_err(|e| format!("cannot compare: {e}"))
+    })
+    .await;
+    match answer {
+        Ok(Ok(c)) => Json(c).into_response(),
+        Ok(Err(why)) => (StatusCode::NOT_FOUND, why).into_response(),
+        Err(e) => err(e),
     }
 }
 
@@ -3327,6 +3373,30 @@ mod tests {
         let bad = status_of(port, get("/api/collin/install?version=0.4.0%3Brm", &h)).await;
         assert!(bad.ends_with("400 Bad Request"), "{bad}");
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Two versions compare only when both kept a run, named as kept.
+    #[tokio::test]
+    async fn two_kept_versions_compare_and_others_do_not() {
+        let root = temp_project("compare");
+        let target = root.join("target");
+        for (version, edges) in [("0.1.0", "[]"), ("0.4.0", r#"[{"from":"model.p.a","from_col":"x","to":"model.p.b","to_col":"x","kind":"passthrough"}]"#)] {
+            let dir = crate::collin_compare::kept_dir(&target).join(version);
+            std::fs::create_dir_all(&dir).unwrap();
+            let body = format!(r#"{{"version":1,"source":"collin","edges":{edges}}}"#);
+            std::fs::write(dir.join(crate::collin_compare::CACHE), body).unwrap();
+        }
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let meta = body_of(port, get("/api/meta", &h)).await;
+        assert!(meta.contains(r#""kept":["0.4.0","0.1.0"]"#), "{meta}");
+        let c = body_of(port, get("/api/collin/compare?a=0.1.0&b=0.4.0", &h)).await;
+        assert!(c.contains(r#""gained":1,"lost":0"#), "{c}");
+        let none = status_of(port, get("/api/collin/compare?a=0.1.0&b=..%2F..%2Fx", &h)).await;
+        assert!(none.ends_with("404 Not Found"), "{none}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

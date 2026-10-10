@@ -643,6 +643,15 @@ picking 0.1.0 ran it (4875 edges, 117 to investigate, 23 compiles set aside
 for two CTEs of one name), and picking the default back ran 0.4.0 (5548
 edges, 107).
 
+Two collin versions compared (0061): each run's cache and report are copied to
+`target/collin/<X.Y.Z>/`, and two kept runs compare on the server, figures,
+findings, edges by role and origin, the edges only one has, and the models
+where the most moved. Driven in headless Chrome on Fivetran's Shopify package,
+0.1.0 against 0.4.0: 703 edges gained, 30 lost, 600 with another role, the 630
+inferred edges gone and 23 models read from their SQL, 16 of them inferred
+and 7 unresolved before, columns with an edge from 4479 to 4996, which is what
+collin's own pull request for that change measured.
+
 The terminal's environment on Windows, fixed from a report on the
 VM: with dbt-edith started from a shell where the project's venv was active,
 `dbt ls` in the terminal ran a dbt-core installed elsewhere on the machine and
