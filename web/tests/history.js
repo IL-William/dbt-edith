@@ -1,24 +1,14 @@
-// The query history's pure parts: the Snowsight link, the role menu, the state
-// of a query, and how a row reads.
+// The query history's pure parts: the role menu, the state of a query, and how
+// a row reads. Its Snowsight link is in snowsight.js.
 // Run from the repository root: jsc web/tests/history.js
 var app = read('web/app.js');
-eval(app.slice(app.indexOf('function snowsightUrl'), app.indexOf('async function loadHistory')));
+eval(app.slice(app.indexOf('function historyRoles'), app.indexOf('async function loadHistory')));
 
 function check(label, got, want) {
   print((got === want ? 'PASS  ' : 'FAIL  ') + label + (got === want ? '' : '\n        expected ' + want + '\n        got      ' + got));
 }
 
-print('--- the link into Snowsight ---');
-var session = { org: 'MYORG', account: 'MY_ACCOUNT', user: 'SOMEONE', role: 'TRANSFORMER' };
-check('organization and account name the page, in lower case',
-      snowsightUrl(session, '01b7a2c4-0000-003b'),
-      'https://app.snowflake.com/myorg/my_account/#/compute/history/queries/01b7a2c4-0000-003b/detail');
-check('no organization, no link', snowsightUrl({ account: 'MY_ACCOUNT' }, '01b7'), '');
-check('no session yet, no link', snowsightUrl(null, '01b7'), '');
-check('every part is escaped', snowsightUrl({ org: 'a/b', account: 'c?d' }, 'e#f'),
-      'https://app.snowflake.com/a%2Fb/c%3Fd/#/compute/history/queries/e%23f/detail');
-
-print('\n--- the role menu ---');
+print('--- the role menu ---');
 var targets = [
   { name: 'dev', role: 'transformer', same_login: true },
   { name: 'prod', role: 'reporter', same_login: true },

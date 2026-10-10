@@ -395,6 +395,14 @@ class History(ScriptTest):
         self.assertEqual(answer["session"], {"account": "MY_ACCOUNT", "user": "SOMEONE", "role": "TRANSFORMER"})
         self.assertEqual(len(answer["rows"]), 20)
 
+    def test_the_session_alone_is_who_and_where_asked_once(self):
+        answers = self.ask({"id": 1, "op": "session"}, {"id": 2, "op": "history", "role": "*"}, {"id": 3, "op": "session"})
+        self.assertEqual(answers[1], {"id": 1, "session": {"org": "MYORG", "account": "MY_ACCOUNT", "user": "SOMEONE", "role": "TRANSFORMER"}})
+        self.assertEqual(answers[3]["session"], answers[1]["session"])
+        conn = self.connections[0][1]
+        self.assertEqual(conn.asked_who, 1, "the history reuses what the session op asked")
+        self.assertEqual(len(conn.history), 1, "the session op reads no history")
+
     def test_bad_requests_are_refused_before_connecting(self):
         answers = self.ask(
             {"id": 1, "op": "history", "role": ""},

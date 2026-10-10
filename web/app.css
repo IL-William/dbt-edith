@@ -72,12 +72,13 @@ kbd {
   background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
 }
-.envmenu button {
+.envmenu button, .envmenu a.menulink {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px;
   background: transparent; border: 0; border-radius: 4px; color: var(--fg);
-  font: 12px var(--ui); text-align: left; cursor: pointer;
+  font: 12px var(--ui); text-align: left; text-decoration: none; cursor: pointer;
 }
-.envmenu button:hover, .envmenu button:focus { background: var(--bg-3); outline: none; }
+.envmenu button:hover, .envmenu button:focus,
+.envmenu a.menulink:hover, .envmenu a.menulink:focus { background: var(--bg-3); outline: none; }
 .envmenu button.on .lbl { font-weight: 600; }
 .envmenu .check { width: 10px; color: var(--accent); }
 .envmenu .sub { margin-left: auto; padding-left: 14px; font: 10.5px var(--mono); color: var(--fg-dim); }
@@ -944,6 +945,9 @@ kbd {
 .relcell { display: flex; align-items: center; gap: 8px; }
 .relcell span { flex: 1; min-width: 0; }
 .relcell .btn { flex: 0 0 auto; font-family: var(--ui); }
+.btn.sfopen { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.btn.sfopen .sficon { width: 12px; height: 12px; }
+.sfmenu a.menulink .lbl { font-family: var(--mono); font-size: 11.5px; }
 
 .modal-box.wide { width: min(880px, 94vw); }
 .envpanel .loc td { vertical-align: middle; }

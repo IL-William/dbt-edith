@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.1.0 - 2026-10-10
+
+- A Snowsight menu beside each relation in Catalog > Location opens its table
+  or view, its schema or its database in Snowsight, on the account the
+  profile's target connects to (0051). It is there while Snowflake's features
+  are on, and the first one of a page asks Snowflake for the account, which may
+  bring a sign-in tab.
+
 ## 1.0.1 - 2026-10-10
 
 - A new terminal activates the virtual environment dbt-edith was started in,

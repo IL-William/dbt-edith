@@ -2,7 +2,8 @@
 //!
 //! The binary never talks to a warehouse. It starts the script only once a
 //! Snowflake feature wants it: Snowflake picked as the column lineage tool
-//! (0031), or the query history opened (0048). It stops once neither does. The
+//! (0031), the query history opened (0048), or a relation's Snowsight menu
+//! (0051). It stops once none does. The
 //! script connects on its first request, so a sign-in tab can only ever follow
 //! a click (0016).
 //!
@@ -260,9 +261,9 @@ enum Waited {
 pub struct Sidecar {
     /// Snowflake is the column lineage tool, so a column click fetches.
     enabled: AtomicBool,
-    /// The query history has been read, and keeps the script running when
-    /// another column lineage tool is picked.
-    history: AtomicBool,
+    /// The query history or a Snowsight menu has read from Snowflake, which
+    /// keeps the script running when another column lineage tool is picked.
+    reading: AtomicBool,
     running: tokio::sync::Mutex<Option<Running>>,
     status: Mutex<Status>,
     /// The profile the script named. Outlives the script, so the file stays
@@ -281,7 +282,7 @@ impl Sidecar {
     pub fn new(enabled: bool, deadlines: Deadlines) -> Sidecar {
         Sidecar {
             enabled: AtomicBool::new(enabled),
-            history: AtomicBool::new(false),
+            reading: AtomicBool::new(false),
             running: tokio::sync::Mutex::new(None),
             status: Mutex::new(Status { state: "off", ..Default::default() }),
             profiles: Mutex::new(None),
@@ -299,13 +300,13 @@ impl Sidecar {
         self.enabled.store(on, Ordering::SeqCst);
     }
 
-    pub fn set_history(&self, on: bool) {
-        self.history.store(on, Ordering::SeqCst);
+    pub fn set_reading(&self, on: bool) {
+        self.reading.store(on, Ordering::SeqCst);
     }
 
     /// Some feature still wants the script running.
     pub fn wanted(&self) -> bool {
-        self.enabled() || self.history.load(Ordering::SeqCst)
+        self.enabled() || self.reading.load(Ordering::SeqCst)
     }
 
     /// Says "starting" ahead of a start run in the background, so the page
@@ -530,6 +531,14 @@ impl Sidecar {
     pub async fn history(&self, role: Option<&str>, before: Option<&Cursor>) -> Result<History, QueryError> {
         let request = serde_json::json!({ "op": "history", "role": role, "before": before });
         serde_json::from_value(self.ask(request).await?).map_err(unreadable)
+    }
+
+    /// Who the connection is and on which account, connecting first if it has
+    /// not yet: what a Snowsight link names.
+    pub async fn session(&self) -> Result<SessionInfo, QueryError> {
+        let mut reply = self.ask(serde_json::json!({ "op": "session" })).await?;
+        let session = reply.get_mut("session").map(serde_json::Value::take).unwrap_or_default();
+        serde_json::from_value(session).map_err(unreadable)
     }
 
     /// Sends one request and waits for its reply. Requests go one at a time,
@@ -788,7 +797,7 @@ done
         let (dir, script) = fake("history", body);
         // Only the history wants it: the start still keeps the script.
         let car = Sidecar::new(false, quick());
-        car.set_history(true);
+        car.set_reading(true);
         let status = car.start(&sh(), &script, &dir).await;
         assert_eq!(status.state, "ready", "{status:?}");
         assert_eq!(status.targets.len(), 2);
@@ -815,6 +824,27 @@ done
         let sent = serde_json::to_string(&page.rows[0]).unwrap();
         assert!(!sent.contains("extra"), "a field this build does not name stays here: {sent}");
 
+        car.stop().await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_session_is_asked_on_its_own() {
+        let body = r#"echo '{"event":"ready","profile":"shop","target":"dev"}'
+while IFS= read -r line; do
+  case "$line" in
+    *'"op":"session"'*) echo '{"id":1,"session":{"org":"MYORG","account":"MY_ACCOUNT","user":"SOMEONE","role":"TRANSFORMER"}}' ;;
+    *'"op":"quit"'*) exit 0 ;;
+  esac
+done
+"#;
+        let (dir, script) = fake("session", body);
+        let car = Sidecar::new(false, quick());
+        car.set_reading(true);
+        assert_eq!(car.start(&sh(), &script, &dir).await.state, "ready");
+        let session = car.session().await.unwrap();
+        assert_eq!((session.org.as_str(), session.account.as_str()), ("MYORG", "MY_ACCOUNT"));
+        assert_eq!(car.status().state, "ready");
         car.stop().await;
         std::fs::remove_dir_all(&dir).unwrap();
     }

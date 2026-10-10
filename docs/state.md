@@ -683,6 +683,24 @@ naming `profiles.yml`, and no link without an organization. Not the deferred
 **Run history** below, which reads `run_results.json`. Not yet on the VM, nor
 against any warehouse.
 
+Snowsight from the Catalog (0051): with Snowflake's features on, each relation
+in the Location table, resolved and built, has a Snowsight menu beside its Copy
+button, listing the object, its schema and its database as links that open in a
+new tab. The account comes from a new `session` op of the script, which
+connects when nothing has, so the first menu of a page says it is asking
+Snowflake and may bring a sign-in tab; the page then keeps the answer until the
+profile is saved or the features go off. The flag that kept the script running
+for the history now keeps it for the menu too. Each part of the address is the
+name as Snowflake keeps it, an unquoted one upper-cased, and the object's kind
+comes from the materialization, a source being asked for as a table. Driven in
+headless Chrome on an invented project through a fake connector that takes two
+seconds to connect: the button only with the features on, the waiting note then
+the three links, a quoted source keeping its case, the arrow keys and Escape,
+and a refused connection naming `profiles.yml`. The addresses of a database, a
+schema, a table and a view match the ones a real account's Snowsight shows,
+organization and account in lower case. The menu itself has not yet run
+against a warehouse.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -764,7 +782,11 @@ cross-compile.
   own questions: whether the Snowsight URL built from the organization and
   account names opens the query, whether a role sees its user's queries under
   other roles, as the documentation implies, and whether reading the history
-  wakes the target's warehouse.
+  wakes the target's warehouse. The Snowsight menu (0051) adds its own: whether
+  a dynamic table lives under `dynamic-table` and a materialized view under
+  `view`, since Snowflake publishes no scheme for them, what Snowsight does
+  with a view asked for as a table, and whether a quoted lower-case name opens
+  as written.
 - **Two checks on Windows**: `.env` files with CRLF endings read correctly, and
   the time a node click takes there. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under

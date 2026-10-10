@@ -50,6 +50,7 @@ const S = {
   history: null,              // the query history on screen: rows, more, session, targets, busy, error
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
   historyAsk: 0,              // bumped per history request, so only the latest answer is drawn
+  sfSession: null,            // { org, account, user, role } of the script's connection, once asked
   nodeCache: new Map(),       // /api/node payloads, by query: hover asks far more often than click
   nodeGen: 0,                 // bumped when the manifest or a .env file changes under the cache
   vars: null,                 // payload of /api/vars, for the editor's var() marks
@@ -4377,10 +4378,11 @@ async function redrawLineage() {
 }
 
 /* One floating menu at a time, closed by a click outside it, Escape, a resize,
-   or a second click on the button that opened it. */
+   or a second click on the button that opened it. `closed` runs once it is
+   gone, however it went. */
 let popup = null;
 
-function openPopup(anchor, el) {
+function openPopup(anchor, el, closed) {
   closePopup();
   document.body.appendChild(el);
   const at = anchor.getBoundingClientRect();
@@ -4388,7 +4390,7 @@ function openPopup(anchor, el) {
   const below = at.bottom + 4 + box.height <= window.innerHeight;
   el.style.top = `${below ? at.bottom + 4 : Math.max(4, at.top - 4 - box.height)}px`;
   el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
-  const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"])')];
+  const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"]), a[href]')];
   const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopup(); };
   const onKey = (e) => {
     if (e.key === 'Tab') return closePopup();
@@ -4411,7 +4413,7 @@ function openPopup(anchor, el) {
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', onResize);
   popup = {
-    el, anchor,
+    el, anchor, closed,
     off: () => {
       document.removeEventListener('mousedown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
@@ -4427,9 +4429,11 @@ function openPopup(anchor, el) {
 function closePopup(anchor) {
   if (!popup) return false;
   const same = !!anchor && popup.anchor === anchor;
+  const { closed } = popup;
   popup.off();
   popup.el.remove();
   popup = null;
+  if (closed) closed();
   return same;
 }
 
@@ -4576,6 +4580,8 @@ async function saveProfile(key, f) {
   try {
     const saved = await api.send('/api/profiles', 'PUT', { content: f.doc.getValue() });
     f.dirty = false;
+    // The next connection reads the new profile, maybe for another account.
+    S.sfSession = null;
     await loadSidecar();
     if (S.node) renderCatalog(S.node);
     // The caller already says it saved; this is the part it cannot know.
@@ -4588,19 +4594,59 @@ async function saveProfile(key, f) {
   }
 }
 
+// -------------------------------------------------------------- Snowsight --
+/* Snowsight is a link, never a call: built from the organization and account
+   names the session reports, and opened by the browser in a new tab with no
+   referrer (0048, 0051). */
+
+/* The account's home in Snowsight, or '' while the organization is unknown: a
+   link built from the account locator alone would open the wrong page, or none. */
+function snowsightHome(session) {
+  if (!session || !session.org || !session.account) return '';
+  const seg = (s) => encodeURIComponent(String(s).toLowerCase());
+  return `https://app.snowflake.com/${seg(session.org)}/${seg(session.account)}/#`;
+}
+
+/* A query's page in Snowsight. */
+function snowsightUrl(session, queryId) {
+  const home = snowsightHome(session);
+  return home && queryId ? `${home}/compute/history/queries/${encodeURIComponent(queryId)}/detail` : '';
+}
+
+/* Where Snowsight files an object of one materialization, as its address
+   spells it. The manifest does not say what a source is, so it is asked for as
+   a table, which most are. */
+function snowsightKind(materialized) {
+  switch (materialized) {
+    case 'view': return { path: 'view', label: 'view', guess: '' };
+    case 'materialized_view': return { path: 'view', label: 'materialized view', guess: '' };
+    case 'dynamic_table': return { path: 'dynamic-table', label: 'dynamic table', guess: '' };
+    case 'source': return { path: 'table', label: 'table', guess: 'a source can be a view too: the manifest does not say' };
+    default: return { path: 'table', label: 'table', guess: '' };
+  }
+}
+
+/* One relation's pages in Snowsight, the object, its schema and its database,
+   each named as Snowflake keeps it: unquoted in upper case, quoted as written.
+   None while the account is unknown, or for a name that is not three parts. */
+function snowsightPlaces(session, parts, materialized) {
+  const home = snowsightHome(session);
+  if (!home || !parts || parts.length !== 3 || parts.some((p) => !p.name)) return [];
+  const [database, schema, object] = parts.map((p) => (p.quoted ? p.name : p.name.toUpperCase()));
+  const kind = snowsightKind(materialized);
+  const inDatabase = `${home}/data/databases/${encodeURIComponent(database)}`;
+  const inSchema = `${inDatabase}/schemas/${encodeURIComponent(schema)}`;
+  return [
+    { what: kind.label, name: object, url: `${inSchema}/${kind.path}/${encodeURIComponent(object)}`, guess: kind.guess },
+    { what: 'schema', name: schema, url: inSchema, guess: '' },
+    { what: 'database', name: database, url: inDatabase, guess: '' },
+  ];
+}
+
 // --------------------------------------------------------- query history --
 /* The user's own queries, read live from Snowflake by the script, twenty at a
    time (0048). Nothing of it is kept: closing the page forgets it, and the
    detail of a query is Snowsight's, one link away. */
-
-/* A query's page in Snowsight, or '' while the organization is unknown: a link
-   built from the account locator alone would open the wrong page, or none. */
-function snowsightUrl(session, queryId) {
-  if (!session || !session.org || !session.account || !queryId) return '';
-  const seg = (s) => encodeURIComponent(String(s).toLowerCase());
-  return `https://app.snowflake.com/${seg(session.org)}/${seg(session.account)}`
-    + `/#/compute/history/queries/${encodeURIComponent(queryId)}/detail`;
-}
 
 /* What the role menu offers. The connected target's role comes first, then the
    roles of the targets that sign in as it does, each once with every target
@@ -4699,6 +4745,7 @@ async function loadHistory({ more = false } = {}) {
   try {
     const page = await api.send('/api/snowflake/history', 'POST', body);
     if (ask !== S.historyAsk) return;
+    if (page.session) S.sfSession = page.session;
     S.history = {
       rows: more ? was.rows.concat(page.rows || []) : (page.rows || []),
       more: !!page.more,
@@ -4779,6 +4826,7 @@ function paintHistoryTab() {
   if (on) return;
   S.history = null;
   S.historyRole = null;
+  S.sfSession = null;
   if (S.dock === 'history') showDock('lineage');
 }
 
@@ -7042,8 +7090,9 @@ function catalogLocation(body, n) {
     const rel = resolvedRelation(rows, n.relation, file);
     tr.append(k, document.createElement('td'),
       relationCell(rel.text, rel.reason,
-        file ? `resolved with ${file}, before the generate_*_name macros` : 'as dbt parsed it, before the generate_*_name macros'),
-      relationCell(n.relation, '', 'where this manifest\'s target built it'));
+        file ? `resolved with ${file}, before the generate_*_name macros` : 'as dbt parsed it, before the generate_*_name macros',
+        n.materialized),
+      relationCell(n.relation, '', 'where this manifest\'s target built it', n.materialized));
     table.appendChild(tr);
   }
   body.appendChild(table);
@@ -7073,8 +7122,9 @@ function catalogLocation(body, n) {
   if (foot.children.length) body.appendChild(foot);
 }
 
-/* A full relation name with its own Copy button, or why there is none. */
-function relationCell(text, reason, what) {
+/* A full relation name with its own Copy button, and with Snowflake's
+   features on its Snowsight menu, or why there is none. */
+function relationCell(text, reason, what, materialized) {
   const td = document.createElement('td');
   if (!text) {
     td.className = 'nul';
@@ -7094,8 +7144,97 @@ function relationCell(text, reason, what) {
   copy.title = 'copy ' + text;
   copy.addEventListener('click', () => copyText(text));
   wrap.append(name, copy);
+  if (S.features && S.features.snowflake) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn sm sfopen';
+    open.dataset.tool = 'snowflake';
+    open.setAttribute('aria-haspopup', 'menu');
+    open.title = `open ${text} in Snowsight: the ${snowsightKind(materialized).label}, its schema or its database`;
+    open.append(snowflakeIcon(), document.createTextNode('Snowsight ▾'));
+    open.addEventListener('click', () => openSnowsightMenu(open, text, materialized));
+    wrap.append(open);
+  }
   td.appendChild(wrap);
   return td;
+}
+
+/* Where one relation opens in Snowsight. The account comes from the script's
+   session, so the first menu of a page may connect, and open a sign-in tab:
+   it waits for this click (0016, 0051). Its entries are links the browser
+   opens, never requests of ours. */
+async function openSnowsightMenu(anchor, relation, materialized) {
+  if (closePopup(anchor)) return;
+  const menu = document.createElement('div');
+  menu.className = 'envmenu sfmenu';
+  menu.dataset.tool = 'snowflake';
+  menu.setAttribute('role', 'menu');
+  if (S.sfSession) {
+    paintSnowsightMenu(menu, relation, materialized, {});
+    return openPopup(anchor, menu);
+  }
+  paintSnowsightMenu(menu, relation, materialized, { busy: true });
+  openPopup(anchor, menu);
+  let error = null;
+  try {
+    const body = await api.send('/api/snowflake/session', 'POST', {});
+    S.sfSession = body.session || {};
+    S.colAnswered = true;
+  } catch (e) {
+    error = e;
+  }
+  // Closed while Snowflake was asked, or another menu opened since.
+  if (!popup || popup.el !== menu) return;
+  paintSnowsightMenu(menu, relation, materialized, { error });
+  // Placed again for its new size. The script may have started for this, which
+  // the top bar shows once the menu is gone: repainting the Catalog now would
+  // close it.
+  openPopup(anchor, menu, loadSidecar);
+}
+
+function paintSnowsightMenu(menu, relation, materialized, { busy, error }) {
+  const note = (text, className = 'menunote') => Object.assign(document.createElement('div'), { className, textContent: text });
+  menu.replaceChildren(note('open in Snowsight', 'menuhead'));
+  if (busy) {
+    menu.append(note('Asking Snowflake which account the profile reaches.'
+      + (S.colAnswered ? '' : ' A sign-in tab may open if the session needs one.')));
+    return;
+  }
+  if (error) {
+    menu.append(note(`Snowflake did not answer: ${error.message}`));
+    // A refused connection or a script that could not start is the profile's
+    // business, so the file is one click away.
+    const link = (error.phase === 'connect' || error.phase === 'start') && profileLink();
+    if (link) {
+      const where = note('The connection comes from ');
+      where.append(link, document.createTextNode('.'));
+      menu.append(where);
+    }
+    return;
+  }
+  const places = snowsightPlaces(S.sfSession, splitRelation(relation), materialized);
+  if (!places.length) {
+    menu.append(note(snowsightHome(S.sfSession)
+      ? `${relation} is not a database.schema.object name.`
+      : 'No Snowsight link: the account\'s organization is unknown.'));
+    return;
+  }
+  for (const place of places) {
+    const a = document.createElement('a');
+    a.className = 'menulink';
+    a.setAttribute('role', 'menuitem');
+    a.href = place.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = [place.url, place.guess].filter(Boolean).join('\n');
+    a.append(
+      Object.assign(document.createElement('span'), { className: 'lbl', textContent: place.name }),
+      Object.assign(document.createElement('span'), { className: 'sub', textContent: place.what }),
+    );
+    // After the click, so the link is still in the page when the browser follows it.
+    a.addEventListener('click', () => setTimeout(closePopup));
+    menu.append(a);
+  }
 }
 
 function catalogPreview(body, n) {
