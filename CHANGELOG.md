@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.2.2 - 2026-10-10
+
+- In the Selection box, `*`, a model's name and an fqn pattern such as
+  `shop.staging.*` no longer select sources, which dbt reaches with `source:`
+  alone (0056). `*` listed every source of the project, and a name also
+  selected a source table of that name. A term only sources answer now says to
+  use `source:`.
+
 ## 1.2.1 - 2026-10-10
 
 - The same manifest gives the same answers on every start (0055). Opening a
