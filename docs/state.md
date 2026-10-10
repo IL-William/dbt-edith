@@ -720,8 +720,13 @@ gone and the cookie out of the page's reach, the terminal's socket opens, the
 profile shows two placeholders and saving a role keeps both secrets and the
 file's 0600; a second browser context gets the bar, a refused socket and a
 `401` on `.env`, and a tab reloaded after a restart gets the bar too. A
-committed venv's `python` that leaves a mark when run left none. Not yet on
-the VM, where a restart now means opening the new link.
+committed venv's `python` that leaves a mark when run left none. Compared with
+`main` on the 18 825 node project, every read route and the main screens in
+Chrome agree once ordering is set aside, as two runs of `main` do, and every
+write agrees on an invented project. That comparison caught two regressions
+before merging, both fixed: the venv tooltip named `dbt-autofix` for a Fusion
+venv, and the temporary file's name, one per process, failed two writes at
+once. Not yet on the VM, where a restart now means opening the new link.
 
 ## Deferred, in the order they were chosen
 

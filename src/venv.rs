@@ -58,31 +58,46 @@ fn site_packages(venv: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Packages that come with dbt-core rather than being chosen: naming them
-/// beside the adapter says nothing the user picked.
-const DBT_PARTS: [&str; 6] = ["dbt_common", "dbt_adapters", "dbt_extractor", "dbt_semantic_interfaces", "dbt_protos", "dbt_core_interface"];
-
-/// dbt-core's version and the adapters beside it, read from the names of their
+/// Which dbt a venv holds, and its adapters, read from the names of their
 /// `.dist-info` folders: `dbt_core-1.8.7.dist-info` says what `dbt --version`
-/// would, without running anything the project put there.
+/// would, without running anything the project put there. dbt Fusion is the
+/// package PyPI calls plain `dbt`, from version 2 on.
 fn dbt_versions(venv: &Path) -> String {
-    let mut found: Vec<(String, String)> = Vec::new();
+    let (mut fusion, mut core, mut adapters) = (None, None, Vec::new());
     for site in site_packages(venv) {
         let Ok(entries) = std::fs::read_dir(&site) else { continue };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let Some(stem) = name.strip_suffix(".dist-info") else { continue };
             let Some((package, version)) = stem.split_once('-') else { continue };
-            let package = package.to_ascii_lowercase().replace('-', "_");
-            if package.starts_with("dbt_") && !DBT_PARTS.contains(&package.as_str()) {
-                found.push((package.replace('_', "-"), version.to_string()));
+            match package.to_ascii_lowercase().replace('-', "_").as_str() {
+                "dbt" => fusion = Some(version.to_string()),
+                "dbt_core" => core = Some(version.to_string()),
+                // The base every adapter builds on, not one the user picked.
+                "dbt_adapters" => {}
+                p if p.starts_with("dbt_") && is_adapter(&entry.path()) => {
+                    adapters.push(format!("{} {version}", p.replace('_', "-")));
+                }
+                _ => {}
             }
         }
     }
-    // dbt-core first, then the adapters by name.
-    found.sort_by_key(|(name, _)| (name != "dbt-core", name.clone()));
-    found.dedup();
-    found.iter().map(|(name, version)| format!("{name} {version}")).collect::<Vec<_>>().join(", ")
+    adapters.sort();
+    adapters.dedup();
+    let fusion = fusion.map(|v| {
+        let major: u32 = v.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
+        // Before Fusion, `dbt` on PyPI was dbt-core's old umbrella package.
+        if major >= 2 { format!("dbt-fusion {v}") } else { format!("dbt {v}") }
+    });
+    fusion.into_iter().chain(core.map(|v| format!("dbt-core {v}"))).chain(adapters).collect::<Vec<_>>().join(", ")
+}
+
+/// An adapter installs its module under `dbt/adapters/`, which its `RECORD`
+/// lists. dbt's other packages, the experimental parser, `dbt-autofix` or
+/// Fusion's package tools, install nothing there, so their names stay out of
+/// the line that says which dbt runs.
+fn is_adapter(dist_info: &Path) -> bool {
+    std::fs::read_to_string(dist_info.join("RECORD")).is_ok_and(|record| record.lines().any(|l| l.starts_with("dbt/adapters/")))
 }
 
 /// Whether git tracks this venv, which no venv anyone made for themselves is:
@@ -207,8 +222,22 @@ mod tests {
             }
         }
         let site = dir.join("lib").join("python3.12").join("site-packages");
+        // `adapter:` marks a package that installs under dbt/adapters, as its
+        // RECORD then says; every other one installs its own module.
         for package in packages {
-            std::fs::create_dir_all(site.join(format!("{package}.dist-info"))).unwrap();
+            let (adapter, package) = match package.strip_prefix("adapter:") {
+                Some(p) => (true, p),
+                None => (false, *package),
+            };
+            let info = site.join(format!("{package}.dist-info"));
+            std::fs::create_dir_all(&info).unwrap();
+            let module = package.split('-').next().unwrap();
+            let record = if adapter {
+                format!("dbt/adapters/{}/__init__.py,,\n", module.trim_start_matches("dbt_"))
+            } else {
+                format!("{module}/__init__.py,,\n")
+            };
+            std::fs::write(info.join("RECORD"), record).unwrap();
         }
         dir
     }
@@ -217,7 +246,8 @@ mod tests {
     fn a_venv_is_read_from_disk_and_nothing_in_it_runs() {
         let root = project("read");
         venv(&root, ".venv", "home = /usr/bin\nversion = 3.12.4\n", &[
-            "dbt_core-1.8.7", "dbt_snowflake-1.8.3", "dbt_common-1.10.0", "dbt_adapters-1.7.0", "requests-2.32.3",
+            "dbt_core-1.8.7", "adapter:dbt_snowflake-1.8.3", "dbt_common-1.10.0", "adapter:dbt_adapters-1.7.0", "requests-2.32.3",
+            "dbt_core_experimental_parser-2.0.5", "dbt_extractor-0.6.0",
         ]);
         let info = detect_with(&root, None);
         assert_eq!(info.name, ".venv");
@@ -225,6 +255,23 @@ mod tests {
         assert_eq!(info.python, "3.12.4");
         assert_eq!(info.dbt, "dbt-core 1.8.7, dbt-snowflake 1.8.3", "dbt-core, then the adapter, and none of its parts");
         assert!(!root.join(".venv-ran").exists(), "opening a project ran a program it holds");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// dbt Fusion installs from PyPI as plain `dbt`, beside tools whose names
+    /// start with `dbt` too. `dbt --version` said `dbt-fusion 2.0.0-preview.196`
+    /// for the venv below; its package is what says so now.
+    #[test]
+    fn fusion_is_named_and_the_tools_beside_it_are_not() {
+        let root = project("fusion");
+        let dir = venv(&root, "fusion-env", "version = 3.12.13\n", &[
+            "dbt-2.0.0rc196", "dbt_autofix-0.21.1", "dbt_fusion_package_tools-0.21.1", "dbt_protos-1.0.541",
+        ]);
+        assert_eq!(dbt_versions(&dir), "dbt-fusion 2.0.0rc196");
+        let old = venv(&root, "old-env", "version = 3.8.10\n", &["dbt-0.18.1", "adapter:dbt_postgres-0.18.1"]);
+        assert_eq!(dbt_versions(&old), "dbt 0.18.1, dbt-postgres 0.18.1");
+        let none = venv(&root, "plain", "version = 3.12.1\n", &["requests-2.32.3"]);
+        assert_eq!(dbt_versions(&none), "");
         let _ = std::fs::remove_dir_all(&root);
     }
 
