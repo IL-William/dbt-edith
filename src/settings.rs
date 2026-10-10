@@ -133,15 +133,22 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let tmp = path.with_extension(format!("json.tmp-{}", std::process::id()));
-    std::fs::write(&tmp, bytes)?;
-    // A rename puts a new file in the target's place, carrying whatever mode the
-    // umask gave it rather than the one the target had. Settings do not care;
-    // `~/.dbt/profiles.yml` does, since it can hold a warehouse password and is
-    // commonly 0600 (0017). Without this, saving it from the editor once turns
-    // it into 0644. The in-place fallback below truncates rather than replaces,
-    // so it keeps the mode on its own.
-    keep_mode(path, &tmp);
+    // Named per write, not per process: two writes of one file at once, such
+    // as two requests that both start the Snowflake script, each get their
+    // own, and the last rename wins.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+    write_private(&tmp, bytes)?;
+    // The write changes the content, never who may read it: the file keeps
+    // the target's mode, or takes the one any new file there would get.
+    // `~/.dbt/profiles.yml` can hold a warehouse password and is commonly
+    // 0600 (0017); a rename alone would hand it back with the temporary
+    // file's mode. The in-place fallback below truncates rather than
+    // replaces, so it keeps the mode on its own.
+    settle_mode(path, &tmp);
     let mut last_error = None;
     for attempt in 0..3 {
         match std::fs::rename(&tmp, path) {
@@ -160,21 +167,58 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))
 }
 
-/// Gives `tmp` the mode `target` already has, so replacing it does not widen it.
-/// A target that does not exist yet leaves the umask to decide, which is what
-/// creating a file normally does.
+/// Writes a file only its owner can read from the moment it exists: the bytes
+/// may be a profile's password, and a file created through the umask is
+/// readable by every account on the machine until its mode is narrowed, long
+/// enough for another account to open it and read what follows. `create_new`,
+/// so nothing planted at that name is written through; one left by a crashed
+/// process of the same id is removed first.
 #[cfg(unix)]
-fn keep_mode(target: &Path, tmp: &Path) {
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let open = || std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path);
+    let mut file = match open() {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(path)?;
+            open()?
+        }
+        other => other?,
+    };
+    file.write_all(bytes)
+}
+
+/// Windows has no mode: a new file takes its ACL from the directory, which is
+/// where the target's came from too.
+#[cfg(not(unix))]
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
+}
+
+/// Gives `tmp` the mode `target` has, or, for a target that does not exist
+/// yet, the mode a file created there gets, learnt from an empty one: the
+/// umask is not readable without a system call std does not offer.
+#[cfg(unix)]
+fn settle_mode(target: &Path, tmp: &Path) {
     use std::os::unix::fs::PermissionsExt;
-    if let Ok(meta) = std::fs::metadata(target) {
-        let _ = std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(meta.permissions().mode()));
+    let mode = match std::fs::metadata(target) {
+        Ok(meta) => Some(meta.permissions().mode()),
+        Err(_) => {
+            let mut probe_name = tmp.file_name().unwrap_or_default().to_os_string();
+            probe_name.push(".mode");
+            let probe = tmp.with_file_name(probe_name);
+            let mode = std::fs::File::create(&probe).and_then(|f| f.metadata()).map(|m| m.permissions().mode()).ok();
+            let _ = std::fs::remove_file(&probe);
+            mode
+        }
+    };
+    if let Some(mode) = mode {
+        let _ = std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(mode));
     }
 }
 
-/// Windows has no mode to carry: a new file takes its ACL from the directory,
-/// which is where the target's came from too.
 #[cfg(not(unix))]
-fn keep_mode(_target: &Path, _tmp: &Path) {}
+fn settle_mode(_target: &Path, _tmp: &Path) {}
 
 pub struct Store {
     pub path: Option<PathBuf>,
@@ -265,16 +309,80 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A new file is created as any other file there would be: the private
+    /// mode is the temporary file's alone, never the result's.
     #[cfg(unix)]
     #[test]
-    fn write_atomic_leaves_a_new_file_to_the_umask() {
+    fn write_atomic_creates_a_new_file_as_the_umask_says() {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("dbt-edith-mode-new-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("settings.json");
         write_atomic(&path, b"{}\n").unwrap();
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert!(mode != 0, "a created file still gets a mode");
+        let reference = dir.join("reference");
+        std::fs::write(&reference, b"").unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), mode(&reference));
+        let strays: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
+        assert!(strays.is_empty(), "the probe and the temporary file are gone");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The temporary file holds the new profile, password included, before it
+    /// takes the target's place: it must never be readable by another account,
+    /// whatever the umask, and whatever the target's mode is later set back to.
+    #[cfg(unix)]
+    #[test]
+    fn the_temporary_file_is_private_from_its_first_byte() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mode-tmp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = dir.join("profiles.yml.tmp-1-0");
+        write_private(&tmp, b"password: hunter2\n").unwrap();
+        assert_eq!(std::fs::metadata(&tmp).unwrap().permissions().mode() & 0o777, 0o600);
+        // One left behind, world-readable, is replaced rather than written through.
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&tmp, b"password: hunter3\n").unwrap();
+        assert_eq!(std::fs::metadata(&tmp).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "password: hunter3\n");
+
+        // A target someone made readable stays as readable: the write changes
+        // the content, never who may read it.
+        let shared = dir.join("shared.yml");
+        std::fs::write(&shared, b"before\n").unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_atomic(&shared, b"after\n").unwrap();
+        assert_eq!(std::fs::metadata(&shared).unwrap().permissions().mode() & 0o777, 0o644);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two requests can write one file at once: both starting the Snowflake
+    /// script on a version's first run install it together. Each write
+    /// succeeds and the file ends whole, as one of them wrote it.
+    #[test]
+    fn writes_of_one_file_at_once_all_succeed() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("sf_lineage.py");
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        write_atomic(&path, format!("writer {t} write {i}\n").repeat(200).as_bytes()).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().expect("no write failed");
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let first = text.lines().next().unwrap().to_string();
+        assert!(text.lines().all(|l| l == first) && text.lines().count() == 200, "one whole write");
+        let strays: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
+        assert!(strays.is_empty(), "left behind {} temporary files", strays.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

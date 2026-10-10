@@ -1146,6 +1146,13 @@ kbd {
 .keys-what { color: #c2ccd9; }
 .keys-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
 
+/* A tab without the launch key can do nothing, and must say so where it is
+   seen first: above the top bar, for as long as the tab lives (0052). */
+.keyless {
+  background: #5a1f24; color: #ffd9dc; border-bottom: 1px solid #ef6b6b;
+  padding: 8px 14px; font-size: 12.5px; line-height: 1.45; flex: 0 0 auto;
+}
+
 /* ----------------------------------------------------------------- toast -- */
 #toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .toast {

@@ -701,6 +701,33 @@ schema, a table and a view match the ones a real account's Snowsight shows,
 organization and account in lower case. The menu itself has not yet run
 against a warehouse.
 
+Security pass of 2026-10-10 (0052, 0053, 0054). An audit of `main` found no
+traversal, injection or leak, and six places to tighten, all done here. The API
+and the terminal want the key each launch prints, turned into a cookie by the
+link, since `Host` and `Origin` are headers any local program writes: one
+`curl` with both used to get a shell. The profile reaches the page with its
+passwords, tokens and keys replaced by a placeholder that saving puts back.
+Opening a project no longer runs `python --version` and `dbt --version` from
+its venvs; their versions come from `pyvenv.cfg` and the `.dist-info` names,
+and a venv git tracks is never run. Replies are `no-store`, carry CORP, COOP and
+a Permissions-Policy, allow the terminal's socket on this port alone, and a
+non-read the browser marks as cross-site is refused. The profile's temporary
+file is born 0600. `scripts/build_windows.sh` writes the `.exe`'s SHA-256
+beside it. Checked by the Rust tests, against a real server over TCP: without
+the key, `.env` and the terminal answer `401`. Driven in headless Chrome on an
+invented project with an invented home: the link lands on `/` with the key
+gone and the cookie out of the page's reach, the terminal's socket opens, the
+profile shows two placeholders and saving a role keeps both secrets and the
+file's 0600; a second browser context gets the bar, a refused socket and a
+`401` on `.env`, and a tab reloaded after a restart gets the bar too. A
+committed venv's `python` that leaves a mark when run left none. Compared with
+`main` on the 18 825 node project, every read route and the main screens in
+Chrome agree once ordering is set aside, as two runs of `main` do, and every
+write agrees on an invented project. That comparison caught two regressions
+before merging, both fixed: the venv tooltip named `dbt-autofix` for a Fusion
+venv, and the temporary file's name, one per process, failed two writes at
+once. Not yet on the VM, where a restart now means opening the new link.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the

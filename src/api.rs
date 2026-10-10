@@ -80,6 +80,8 @@ pub struct AppState {
     /// Where dbt looks for its profile, the one file outside the project that
     /// is opened (0017, 0049).
     pub profiles: crate::profiles::Lookup,
+    /// This launch's key, printed in the link that opens the page (0052).
+    pub key: String,
 }
 
 impl AppState {
@@ -196,6 +198,7 @@ pub fn merge_cache(graph: &mut Graph, cll_path: &Path) {
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route("/", get(index))
         .route("/api/meta", get(meta))
         .route("/api/search", get(search))
         .route("/api/node", get(node))
@@ -248,6 +251,11 @@ pub fn router(state: Arc<AppState>) -> Router {
 // from any site can open a WebSocket to localhost, can POST here without a
 // preflight, and, through DNS rebinding, can become same-origin with this
 // server. So every request states where it comes from, and this checks (0015).
+//
+// Headers say where a request comes from; they prove nothing about who sent
+// it. Any program on the machine, under any account, can write them, so the
+// API also wants the key this launch printed, which only whoever started
+// dbt-edith has seen (0052).
 
 /// `Host` must name this server exactly: a rebound domain never does.
 fn host_allowed(host: Option<&str>, port: u16) -> bool {
@@ -267,6 +275,75 @@ fn origin_allowed(origin: Option<&str>, port: u16, required: bool) -> bool {
     }
 }
 
+/// A second opinion behind `Origin`, from the browser itself: it sends
+/// `Sec-Fetch-Site` on every request and no page can set it. `same-site`
+/// is refused too, since another port on 127.0.0.1 is the same site.
+fn fetch_site_allowed(site: Option<&str>) -> bool {
+    matches!(site, None | Some("same-origin") | Some("none"))
+}
+
+/// What the key guards: everything that reads the project or acts on it. The
+/// page's own files stay open, so a tab without the key can still say why
+/// nothing works.
+fn needs_key(path: &str) -> bool {
+    path.starts_with("/api/") || path.starts_with("/ws/")
+}
+
+/// The cookie carries the port because cookies are kept per host, not per
+/// port: two dbt-edith on one machine would otherwise overwrite each other's.
+fn key_cookie(port: u16) -> String {
+    format!("dbt_edith_{port}")
+}
+
+/// The key, from this server's cookie or, for a tool such as curl, from an
+/// `Authorization: Bearer` header.
+fn carries_key(req: &axum::extract::Request, st: &AppState) -> bool {
+    let name = key_cookie(st.port);
+    let in_cookie = req.headers().get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).any(|line| {
+        line.split(';').filter_map(|pair| pair.trim().split_once('=')).any(|(k, v)| k == name && same_key(v, &st.key))
+    });
+    let in_bearer = header_str(req, header::AUTHORIZATION)
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|v| same_key(v.trim(), &st.key));
+    in_cookie || in_bearer
+}
+
+/// Compared without stopping at the first difference, so the time a refusal
+/// takes says nothing about how much of a guess was right.
+fn same_key(given: &str, key: &str) -> bool {
+    let (a, b) = (given.as_bytes(), key.as_bytes());
+    if a.len() != b.len() || b.is_empty() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// A fresh key for this launch: 256 bits, as 64 hex characters.
+///
+/// No crate for it (0003). `RandomState` is seeded from the operating system's
+/// random source, once per thread, and the seed is the secret: hashing a
+/// counter with it is SipHash used as a keyed function, whose output nobody
+/// without the seed can predict. The thread is new so its seed serves this key
+/// alone, and no map elsewhere in the process hashes with it.
+pub fn new_key() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    std::thread::spawn(|| {
+        let seed = std::collections::hash_map::RandomState::new();
+        (0..4u64)
+            .map(|i| {
+                let mut h = seed.build_hasher();
+                h.write_u64(i);
+                format!("{:016x}", h.finish())
+            })
+            .collect::<String>()
+    })
+    .join()
+    .expect("the key thread does not panic")
+}
+
+/// What a request without the key is told. The page shows it as it is.
+pub const NO_KEY: &str = "no key for this server in this tab: open the link dbt-edith printed when it started";
+
 fn header_str<'a>(req: &'a axum::extract::Request, name: header::HeaderName) -> Option<&'a str> {
     req.headers().get(name).and_then(|v| v.to_str().ok())
 }
@@ -275,21 +352,31 @@ fn header_str<'a>(req: &'a axum::extract::Request, name: header::HeaderName) -> 
 /// policy says exactly that, and `frame-ancestors` keeps the terminal out of
 /// an invisible frame on someone else's site. `unsafe-inline` for styles is
 /// xterm.js, which injects a stylesheet of its own at runtime.
+///
+/// `no-store`: answers carry file contents, a `.env` the editor opened, the
+/// profile, and none of it belongs in the browser's disk cache. The page's own
+/// files are as cheap to send again, and a rebuilt binary is never hidden
+/// behind a cached `app.js` (0005). The two cross-origin policies keep another
+/// site from loading an answer, even unread, into its own process, or from
+/// holding a handle on this window.
 const HEADERS: &[(&str, &str)] = &[
-    (
-        "content-security-policy",
-        concat!(
-            "default-src 'none'; ",
-            "script-src 'self'; ",
-            "style-src 'self' 'unsafe-inline'; ",
-            "img-src 'self' data:; ",
-            "connect-src 'self' ws://127.0.0.1:* ws://localhost:*; ",
-            "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-        ),
-    ),
     ("x-content-type-options", "nosniff"),
     ("referrer-policy", "no-referrer"),
+    ("cache-control", "no-store"),
+    ("cross-origin-resource-policy", "same-origin"),
+    ("cross-origin-opener-policy", "same-origin"),
+    ("permissions-policy", "camera=(), microphone=(), geolocation=()"),
 ];
+
+/// The content security policy, with the terminal's WebSocket allowed on this
+/// port alone rather than on every port of the machine.
+fn csp(port: u16) -> String {
+    format!(
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
+         connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port}; \
+         base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
+}
 
 async fn guard(State(st): State<Arc<AppState>>, req: axum::extract::Request, next: Next) -> Response {
     let refused = || (StatusCode::FORBIDDEN, "refused: not from this server's own page").into_response();
@@ -301,13 +388,45 @@ async fn guard(State(st): State<Arc<AppState>>, req: axum::extract::Request, nex
     if !reads_only && !origin_allowed(header_str(&req, header::ORIGIN), st.port, upgrade) {
         return refused();
     }
-    let mut res = next.run(req).await;
+    if !reads_only && !fetch_site_allowed(header_str(&req, header::HeaderName::from_static("sec-fetch-site"))) {
+        return refused();
+    }
+    let mut res = if needs_key(req.uri().path()) && !carries_key(&req, &st) {
+        (StatusCode::UNAUTHORIZED, NO_KEY).into_response()
+    } else {
+        next.run(req).await
+    };
     let headers = res.headers_mut();
     for (name, value) in HEADERS {
-        headers.insert(
-            header::HeaderName::from_static(name),
-            header::HeaderValue::from_static(value),
-        );
+        headers.insert(header::HeaderName::from_static(name), header::HeaderValue::from_static(value));
+    }
+    if let Ok(policy) = header::HeaderValue::from_str(&csp(st.port)) {
+        headers.insert(header::CONTENT_SECURITY_POLICY, policy);
+    }
+    res
+}
+
+#[derive(Deserialize)]
+struct KeyQuery {
+    key: Option<String>,
+}
+
+/// The printed link lands here. A right key becomes this server's cookie, and
+/// the address loses it at once, so it stays neither in the address bar nor in
+/// a bookmark. A wrong or stale one sets nothing: the page loads, and its first
+/// request says what to do.
+async fn index(State(st): State<Arc<AppState>>, Query(q): Query<KeyQuery>, uri: Uri) -> Response {
+    let Some(given) = q.key else {
+        return static_asset(uri).await;
+    };
+    let mut res = (StatusCode::SEE_OTHER, [(header::LOCATION, "/")]).into_response();
+    if same_key(&given, &st.key) {
+        // No Max-Age: the key dies with the process, so the cookie may die
+        // with the browser. Strict, so no other site's request ever carries it.
+        let cookie = format!("{}={}; Path=/; HttpOnly; SameSite=Strict", key_cookie(st.port), st.key);
+        if let Ok(v) = header::HeaderValue::from_str(&cookie) {
+            res.headers_mut().insert(header::SET_COOKIE, v);
+        }
     }
     res
 }
@@ -1820,10 +1939,14 @@ const MAX_PROFILE_BYTES: u64 = 512 * 1024;
 #[derive(serde::Serialize)]
 struct ProfileBody {
     path: String,
+    /// The profile with its secrets replaced by `redact::HIDDEN` (0054).
     content: String,
+    /// How many values were replaced, so the page can say so.
+    hidden: usize,
 }
 
-fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
+/// The profile as it is on disk, secrets included. Never sent as it is.
+fn profile_text(path: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!("no profiles.yml at {}", path.display()),
         _ => format!("cannot read {}: {e}", path.display()),
@@ -1831,8 +1954,12 @@ fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
     if meta.len() > MAX_PROFILE_BYTES {
         return Err(format!("{} is far larger than a dbt profile, so it is left alone", path.display()));
     }
-    let content = std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    Ok(ProfileBody { path: path.display().to_string(), content })
+    std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
+}
+
+fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
+    let (content, hidden) = crate::redact::hide(&profile_text(path)?);
+    Ok(ProfileBody { path: path.display().to_string(), content, hidden })
 }
 
 /// Why a column click fetches nothing while Snowflake's features are on.
@@ -1883,10 +2010,19 @@ async fn write_profile(State(st): State<Arc<AppState>>, Json(b): Json<ProfileWri
     if !path.is_file() {
         return (StatusCode::NOT_FOUND, format!("no profiles.yml at {}", path.display())).into_response();
     }
+    // The page saw placeholders where the secrets are, and sends them back
+    // where it left them alone: those are the values on disk again (0054).
     let (target, content) = (path.clone(), b.content);
-    match tokio::task::spawn_blocking(move || crate::settings::write_atomic(&target, content.as_bytes())).await {
+    let written = tokio::task::spawn_blocking(move || -> Result<(), (StatusCode, String)> {
+        let on_disk = profile_text(&target).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+        let full = crate::redact::restore(&content, &on_disk).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+        crate::settings::write_atomic(&target, full.as_bytes())
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot write {}: {e}", target.display())))
+    })
+    .await;
+    match written {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot write {}: {e}", path.display())).into_response(),
+        Ok(Err(refused)) => return refused.into_response(),
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
     // A correction nobody reads is worse than no correction: the script holds
@@ -2701,6 +2837,7 @@ mod tests {
             cll_lock: tokio::sync::Mutex::new(()),
             seen: std::sync::Mutex::new([0; 3]),
             profiles,
+            key: TEST_KEY.into(),
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -2751,13 +2888,22 @@ mod tests {
         raw("GET", path, headers)
     }
 
+    /// The key `serve` gives its server. Every request built below carries it,
+    /// as the page's cookie would, unless passed through `keyless`.
+    const TEST_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     fn raw(method: &str, path: &str, headers: &[(&str, &str)]) -> String {
-        let mut r = format!("{method} {path} HTTP/1.1\r\n");
+        let mut r = format!("{method} {path} HTTP/1.1\r\nAuthorization: Bearer {TEST_KEY}\r\n");
         for (k, v) in headers {
             r.push_str(&format!("{k}: {v}\r\n"));
         }
         r.push_str("Content-Length: 0\r\nConnection: close\r\n\r\n");
         r
+    }
+
+    /// The same request as a program that never saw the printed link sends it.
+    fn keyless(request: String) -> String {
+        request.replace(&format!("Authorization: Bearer {TEST_KEY}\r\n"), "")
     }
 
     /// The graph `serve()` builds is empty, so this asserts on status codes and
@@ -2951,12 +3097,85 @@ mod tests {
         assert!(status_of(port, ws(None)).await.ends_with("403 Forbidden"));
         assert!(status_of(port, ws(Some(&own))).await.ends_with("101 Switching Protocols"));
 
+        // A request no page sent, from a browser that says so itself.
+        let same_site = raw("POST", "/api/git/fetch", &[("Host", &host), ("Origin", &own), ("Sec-Fetch-Site", "same-site")]);
+        assert!(status_of(port, same_site).await.ends_with("403 Forbidden"));
+        let own_page = raw("POST", "/api/reload", &[("Host", &host), ("Origin", &own), ("Sec-Fetch-Site", "same-origin")]);
+        assert!(status_of(port, own_page).await.ends_with("400 Bad Request"));
+
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Host and Origin are only words: any program on the machine, under any
+    /// account, writes the right ones. The key is what it cannot write (0052).
+    #[tokio::test]
+    async fn the_api_and_the_terminal_want_the_key_this_launch_printed() {
+        let root = temp_project("key");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+
+        // Right headers, no key: the project, the .env and the shell stay shut.
+        let read = keyless(get("/api/file?path=.env", &[("Host", &host)]));
+        let answer = body_of(port, read).await;
+        assert!(answer.starts_with("HTTP/1.1 401") && answer.contains(NO_KEY), "{answer}");
+        assert!(!answer.contains("hunter2"), "{answer}");
+        assert!(status_of(port, keyless(raw("POST", "/api/git/fetch", &[("Host", &host), ("Origin", &own)]))).await.ends_with("401 Unauthorized"));
+        let ws = |extra: Option<(&str, &str)>| {
+            let mut h = vec![
+                ("Host", host.as_str()),
+                ("Origin", own.as_str()),
+                ("Connection", "Upgrade"),
+                ("Upgrade", "websocket"),
+                ("Sec-WebSocket-Version", "13"),
+                ("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            ];
+            h.extend(extra);
+            keyless(get("/ws/pty", &h))
+        };
+        assert!(status_of(port, ws(None)).await.ends_with("401 Unauthorized"));
+        let wrong = format!("{}=0123", key_cookie(port));
+        assert!(status_of(port, ws(Some(("Cookie", &wrong)))).await.ends_with("401 Unauthorized"));
+        let other_port = format!("{}={}", key_cookie(port.wrapping_add(1)), st.key);
+        assert!(status_of(port, ws(Some(("Cookie", &other_port)))).await.ends_with("401 Unauthorized"));
+        let right = format!("theme=dark; {}={}", key_cookie(port), st.key);
+        assert!(status_of(port, ws(Some(("Cookie", &right)))).await.ends_with("101 Switching Protocols"));
+
+        // The page itself loads without it, so it can say what to do.
+        assert!(status_of(port, keyless(get("/", &[("Host", &host)]))).await.ends_with("200 OK"));
+        assert!(status_of(port, keyless(get("/app.js", &[("Host", &host)]))).await.ends_with("200 OK"));
+
+        // The printed link: the key becomes a cookie, and leaves the address.
+        let head = head_of(port, keyless(get(&format!("/?key={TEST_KEY}"), &[("Host", &host)]))).await;
+        assert!(head.starts_with("HTTP/1.1 303"), "{head}");
+        assert!(head.to_lowercase().contains("location: /\r\n"), "{head}");
+        let cookie = format!("set-cookie: {}={TEST_KEY}; Path=/; HttpOnly; SameSite=Strict", key_cookie(port));
+        assert!(head.contains(&cookie), "{head}");
+        // A stale link from a previous launch sets nothing.
+        let stale = head_of(port, keyless(get("/?key=0000", &[("Host", &host)]))).await;
+        assert!(stale.starts_with("HTTP/1.1 303") && !stale.to_lowercase().contains("set-cookie"), "{stale}");
+        // And the cookie it sets opens the API.
+        let with_cookie = keyless(get("/api/meta", &[("Host", &host), ("Cookie", &format!("{}={TEST_KEY}", key_cookie(port)))]));
+        assert!(status_of(port, with_cookie).await.ends_with("200 OK"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_key_is_long_unpredictable_and_compared_whole() {
+        let (a, b) = (new_key(), new_key());
+        assert_eq!(a.len(), 64);
+        assert!(a.bytes().all(|c| c.is_ascii_hexdigit()), "{a}");
+        assert_ne!(a, b, "two launches, two keys");
+        assert!(same_key(&a, &a));
+        assert!(!same_key(&a[..63], &a), "a prefix is not the key");
+        assert!(!same_key("", ""), "an empty key opens nothing");
+    }
+
     fn with_json(method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> String {
-        let mut r = format!("{method} {path} HTTP/1.1\r\n");
+        let mut r = format!("{method} {path} HTTP/1.1\r\nAuthorization: Bearer {TEST_KEY}\r\n");
         for (k, v) in headers {
             r.push_str(&format!("{k}: {v}\r\n"));
         }
@@ -3178,6 +3397,21 @@ b"}"#,
         let answer = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(answer.contains("target: dev"), "{answer}");
         assert!(answer.contains(&profile.display().to_string()), "{answer}");
+
+        // A password stays on the server, however the profile is edited (0054).
+        let secret = "shop:\n  target: dev\n  outputs:\n    dev:\n      user: ME\n      password: hunter2\n";
+        std::fs::write(&profile, secret).unwrap();
+        let answer = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        assert!(!answer.contains("hunter2"), "{answer}");
+        assert!(answer.contains(crate::redact::HIDDEN) && answer.contains(r#""hidden":1"#), "{answer}");
+        let edited = format!(r#"{{"content":"shop:\n  target: dev\n  outputs:\n    dev:\n      user: YOU\n      password: {}\n"}}"#, crate::redact::HIDDEN);
+        assert!(status_of(port, put(&edited)).await.ends_with("200 OK"));
+        assert_eq!(std::fs::read_to_string(&profile).unwrap(), secret.replace("ME", "YOU"));
+        let lost = format!(r#"{{"content":"shop:\n  outputs:\n    prod:\n      password: {}\n"}}"#, crate::redact::HIDDEN);
+        let refused = body_of(port, put(&lost)).await;
+        assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("shop.outputs.prod.password"), "{refused}");
+        assert_eq!(std::fs::read_to_string(&profile).unwrap(), secret.replace("ME", "YOU"), "nothing written");
+        std::fs::write(&profile, "shop:\n  target: dev\n").unwrap();
         // No other page may write it.
         let foreign = with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", "https://evil.example")], r#"{"content":"x"}"#);
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
@@ -3219,6 +3453,13 @@ b"}"#,
             // Clickjacking the terminal is the one this closes.
             assert!(head.contains("frame-ancestors 'none'"), "{path}: {head}");
             assert!(head.contains("default-src 'none'"), "{path}: {head}");
+            assert!(head.contains("cache-control: no-store"), "{path}: {head}");
+            assert!(head.contains("cross-origin-resource-policy: same-origin"), "{path}: {head}");
+            assert!(head.contains("cross-origin-opener-policy: same-origin"), "{path}: {head}");
+            assert!(head.contains("permissions-policy: camera=()"), "{path}: {head}");
+            // The terminal's socket on this port, never on any port.
+            assert!(head.contains(&format!("connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port};")), "{path}: {head}");
+            assert!(!head.contains(":*"), "{path}: {head}");
             // The stray whitespace a line continuation leaves behind is not
             // wrong, but it is a sign the policy was edited carelessly.
             assert!(!head.contains("  "), "double space in a header: {head}");

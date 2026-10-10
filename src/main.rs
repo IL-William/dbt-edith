@@ -15,6 +15,7 @@ mod manifest;
 mod profiles;
 mod project;
 mod pty;
+mod redact;
 mod select;
 mod selectors;
 mod settings;
@@ -151,7 +152,10 @@ async fn main() -> anyhow::Result<()> {
     // Bound before the state exists: the guard in api.rs compares Host and
     // Origin against the port actually taken, which may not be the one asked for.
     let listener = bind(args.port).await?;
-    let url = format!("http://{}", listener.local_addr()?);
+    // The key is in the link and nowhere else: whoever opens the page from it
+    // gets the cookie the API asks for, and nobody else can (0052).
+    let key = api::new_key();
+    let url = format!("http://{}/?key={key}", listener.local_addr()?);
     let state = Arc::new(api::AppState {
         port: listener.local_addr()?.port(),
         root: root.clone(),
@@ -176,7 +180,8 @@ async fn main() -> anyhow::Result<()> {
         snowflake_features: std::sync::Mutex::new(saved.snowflake_features),
         cll_lock: tokio::sync::Mutex::new(()),
         seen: std::sync::Mutex::new(seen),
-        profiles: profiles::Lookup::from_env(|key| std::env::var_os(key), cfg!(windows)),
+        profiles: profiles::Lookup::from_env(|name| std::env::var_os(name), cfg!(windows)),
+        key,
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));
@@ -202,7 +207,8 @@ async fn main() -> anyhow::Result<()> {
     if live {
         eprintln!("  column lineage from Snowflake, connecting on the first column click");
     }
-    eprintln!("  open      {url}\n");
+    eprintln!("  open      {url}");
+    eprintln!("            the key in it is this launch's: a tab opened without it can read nothing\n");
 
     if !args.no_open {
         open_browser(&url);
