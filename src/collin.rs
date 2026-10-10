@@ -344,7 +344,7 @@ pub fn add_to_file(path: &Path, edges: Vec<RawColEdge>, target: &str, now: u64) 
 }
 
 /// The parts of a relation name, split on the dots outside double quotes.
-fn relation_parts(relation: &str) -> Vec<&str> {
+pub(crate) fn relation_parts(relation: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let (mut start, mut quoted) = (0, false);
     for (i, c) in relation.char_indices() {

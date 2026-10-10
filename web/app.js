@@ -51,6 +51,8 @@ const S = {
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
   historyAsk: 0,              // bumped per history request, so only the latest answer is drawn
   sfSession: null,            // { org, account, user, role } of the script's connection, once asked
+  cloneFrom: null,            // where this tab last copied from: a .env file, '' for built, null before any
+  cloneMode: 'clone',         // clone | ctas, as last chosen in this tab
   nodeCache: new Map(),       // /api/node payloads, by query: hover asks far more often than click
   nodeGen: 0,                 // bumped when the manifest or a .env file changes under the cache
   vars: null,                 // payload of /api/vars, for the editor's var() marks
@@ -4565,8 +4567,10 @@ function paintSettingsMenu(menu) {
     ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
     + 'Expect rough edges, and check what they show against Snowflake itself.'));
   menu.append(row,
-    note('Column lineage from Snowflake, fetched on click, and the Query history tab, '
-      + 'read from Snowflake when it opens.'),
+    note('Column lineage from Snowflake, fetched on click; the Query history tab, read from Snowflake '
+      + 'when it opens; a Snowsight menu beside each relation in the Catalog; and Clone into my schema, '
+      + 'under a model\'s location, which writes the statements that copy it and its direct parents '
+      + 'from an environment into your schema, for you to run.'),
     note(featureNote(f, S.meta && S.meta.adapter)),
     warn);
 }
@@ -7148,6 +7152,18 @@ function catalogLocation(body, n) {
       textContent: 'Built outside its configured location: the generate_*_name macros redirect it for this target.',
     }));
   }
+  // In the foot rather than the relation row, which an ephemeral model lacks:
+  // copying what it reads is just what developing one needs (0058).
+  if (S.features && S.features.snowflake && ['model', 'seed', 'snapshot'].includes(n.kind) && !n.disabled) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn sm sfopen clonebtn';
+    b.dataset.tool = 'snowflake';
+    b.title = `write the statements that copy ${n.name} and its direct parents from an environment into your schema, for you to run`;
+    b.append(snowflakeIcon(), document.createTextNode('Clone into my schema'));
+    b.addEventListener('click', () => openClonePlan(n));
+    foot.append(b);
+  }
   if (foot.children.length) body.appendChild(foot);
 }
 
@@ -7264,6 +7280,328 @@ function paintSnowsightMenu(menu, relation, materialized, { busy, error }) {
     a.addEventListener('click', () => setTimeout(closePopup));
     menu.append(a);
   }
+}
+
+// ------------------------------------------------------------ clone (0058) --
+/* Statements that copy a model and its direct parents from an environment into
+   the developer's own schema. Written here, from the relations the Location
+   table resolves, and run by the user: dbt-edith sends them nowhere. The
+   functions down to openClonePlan are pure, and web/tests/clone.js slices them
+   out by those two names. */
+
+/* What one materialization is copied as. A table-like object is cloned, which
+   is instant and costs nothing until either side changes. A view becomes a
+   table, since a cloned view would go on reading the environment it came from,
+   and the object of that kind a local run may have left is dropped first: a
+   CREATE OR REPLACE TABLE does not replace an object of another kind. */
+function cloneShape(materialized, mode) {
+  const m = materialized || '';
+  if (m === 'semantic_view') return { action: 'skip', drop: '', reason: 'a semantic view holds no rows to copy' };
+  if (['table', 'incremental', 'snapshot', 'seed'].includes(m)) {
+    return { action: mode === 'ctas' ? 'ctas' : 'clone', drop: '', reason: '' };
+  }
+  const drop = { view: 'view', materialized_view: 'materialized view', dynamic_table: 'dynamic table' }[m] || '';
+  return { action: 'ctas', drop, reason: '' };
+}
+
+/* Where one node is copied from. Under a chosen file it is the relation the
+   Location table resolves with that file, and never the manifest's instead: a
+   copy from the wrong environment is worse than none. A database or schema
+   the config leaves unset is the target's, which the file does not say. With
+   no file, it is where this manifest's target built the node. */
+function cloneSource(item, file) {
+  if (!item.relation) return { text: '', reason: `${item.name} has no relation in the warehouse` };
+  if (!file) return { text: item.relation, reason: '' };
+  const env = item.location && item.location.envs ? item.location.envs[file] : null;
+  if (!env) return { text: '', reason: `${item.name} was not resolved against ${file}` };
+  // The table's own refusals first: a missing variable is the one to fix.
+  const rel = resolvedRelation(locationRows(item.location, file), item.relation, file);
+  if (!rel.text) return rel;
+  for (const key of ['database', 'schema']) {
+    if (env.status && env.status[key] && env.status[key].kind === 'parsed') {
+      return { text: '', reason: `${key} is not set in the config, so it comes from the target profile, not from ${file}` };
+    }
+  }
+  return rel;
+}
+
+/* The destination as typed: two names, each quoted or not. */
+function cloneInto(text) {
+  const t = (text || '').trim();
+  if (!t) return { text: '', reason: 'type the database.schema to clone into' };
+  const parts = splitRelation(t);
+  if (t.length > 255 || /[\u0000-\u001f\u007f]/.test(t) || parts.length !== 2 || parts.some((p) => !p.name.trim())) {
+    return { text: '', reason: 'the destination is a database and a schema: database.schema' };
+  }
+  return { text: t, reason: '' };
+}
+
+/* The destination before the user types one, and where it came from: what
+   they typed last time, then the profile's active target, then the sandbox
+   this manifest was built into, which only a manifest parsed with their own
+   target has. */
+function cloneIntoDefault(into) {
+  const i = into || {};
+  const p = i.profile || {};
+  if (i.remembered) return { text: i.remembered, from: 'what you typed last time' };
+  if (p.database && p.schema) {
+    const picked = p.target_from === 'DBT_TARGET' ? ', picked by DBT_TARGET' : '';
+    return { text: `${p.database}.${p.schema}`, from: `profile ${p.profile}, target ${p.target}${picked}` };
+  }
+  const why = p.why || 'the profile gives no target';
+  if (i.sandbox) return { text: i.sandbox, from: `where this manifest built nearly every model, since ${why}: confirm it` };
+  return { text: '', from: why };
+}
+
+/* One statement. Always TRANSIENT: dbt creates tables transient unless told
+   otherwise, Snowflake refuses to clone a transient table into a permanent
+   one, and a copy in a sandbox needs no Fail-safe. */
+function cloneStatement(source, target, shape) {
+  const drop = shape.drop ? `drop ${shape.drop} if exists ${target};\n` : '';
+  if (shape.action === 'clone') return `${drop}create or replace transient table ${target}\n    clone ${source};`;
+  return `${drop}create or replace transient table ${target} as\nselect * from ${source};`;
+}
+
+/* Two relations naming one object: an unquoted name is upper-cased by
+   Snowflake, a quoted one kept as written. */
+function cloneSameObject(a, b) {
+  const key = (t) => splitRelation(t).map((p) => (p.quoted ? p.name : p.name.toUpperCase())).join('\u0000');
+  return key(a) === key(b);
+}
+
+/* One row per node of the plan, with its statement or why there is none. The
+   copy keeps the source's own name, quotes included, so a local ref() finds it. */
+function cloneRows(plan, file, dest, mode) {
+  return plan.items.map((item) => {
+    const shape = cloneShape(item.materialized, mode);
+    const row = {
+      id: item.id, name: item.name, kind: item.kind, materialized: item.materialized,
+      why: item.why, via: item.via || '', changed: !!item.changed,
+      action: shape.action, source: '', target: '', sql: '', reason: '',
+    };
+    if (item.disabled) return Object.assign(row, { action: 'refused', reason: `${item.name} is disabled, so it is not built` });
+    if (shape.action === 'skip') return Object.assign(row, { reason: shape.reason });
+    const src = cloneSource(item, file);
+    if (!src.text) return Object.assign(row, { action: 'refused', reason: src.reason });
+    row.source = src.text;
+    if (!dest.text) return row;
+    const last = splitRelation(src.text).pop();
+    row.target = `${dest.text}.${last.quoted ? `"${last.name.replace(/"/g, '""')}"` : last.name}`;
+    if (cloneSameObject(row.source, row.target)) {
+      return Object.assign(row, { action: 'refused', reason: 'it already is where the copy would go' });
+    }
+    row.sql = cloneStatement(row.source, row.target, shape);
+    return row;
+  });
+}
+
+/* What the user should know before running them, only where it applies. */
+function cloneNotes(plan, rows, ctx) {
+  const notes = [];
+  const names = (list) => list.map((r) => r.name).join(', ');
+  const changed = rows.filter((r) => r.changed);
+  if (changed.length) {
+    notes.push(`${names(changed)} changed after this manifest was written: run dbt parse, or the parents listed may not be the ones it reads now.`);
+  } else if (ctx.stale) {
+    notes.push(`${ctx.stale}: the parents listed are the ones this manifest knew.`);
+  }
+  if (plan.ephemeral.includes(plan.name)) {
+    notes.push(`${plan.name} is ephemeral, so nothing of it is copied: only what it reads.`);
+  }
+  const through = plan.ephemeral.filter((e) => e !== plan.name);
+  if (through.length) {
+    notes.push(`${through.join(', ')} ${through.length === 1 ? 'is' : 'are'} ephemeral, with no object of ${through.length === 1 ? 'its' : 'their'} own: what ${through.length === 1 ? 'it reads' : 'they read'} is copied instead.`);
+  }
+  const copied = rows.filter((r) => r.sql);
+  if (copied.some((r) => cloneShape(r.materialized, 'clone').drop === 'view')) {
+    notes.push('A view is copied as a table of its rows today: a cloned view would go on reading the environment it came from.');
+  }
+  if (copied.some((r) => r.materialized === 'incremental')) {
+    notes.push('An incremental model is copied with the rows it holds, so a local dbt run adds to the copy rather than rebuilding it.');
+  }
+  if (copied.some((r) => r.materialized === 'snapshot')) {
+    notes.push('A snapshot is copied with its history.');
+  }
+  if (ctx.file) {
+    notes.push(`Locations are the config resolved with ${ctx.file}, before the generate_*_name macros: check them if your macros move schemas for that target.`);
+  } else if (ctx.sandbox && rows.some((r) => r.action === 'refused' && r.source && cloneSameObject(r.source, r.target))) {
+    notes.push('This manifest was built into the destination: pick an environment to copy from.');
+  }
+  if (ctx.dotenvTarget && ctx.profileTarget && ctx.dotenvTarget !== ctx.profileTarget) {
+    notes.push(`Your .env sets DBT_TARGET=${ctx.dotenvTarget}, which dbt reads only once your shell exports it: the destination comes from target ${ctx.profileTarget}.`);
+  }
+  notes.push('Copies are transient and not managed by dbt: a local dbt run into the same schema replaces them. '
+    + 'Running the statements needs a role that reads the source databases and writes the destination.');
+  return notes;
+}
+
+/* The comment the script opens with. No date, so the same plan reads the same. */
+function cloneHead(plan, file, dest) {
+  const from = file ? `where ${file} puts them` : 'where this manifest built them';
+  return [
+    `-- ${plan.name} and its direct parents, from ${from}, into ${dest.text || 'a destination still to type'}.`,
+    '-- Written by dbt-edith, which runs none of it: read it, then run it yourself.',
+  ];
+}
+
+/* The whole script: the picked statements, parents first and the model last,
+   and a line for every node that cannot be copied, so nothing goes missing
+   unnoticed. A node the user unticked is simply left out. */
+function cloneScript(rows, picked, head, blocked) {
+  const out = [...head, ''];
+  if (blocked) return out.concat(`-- ${blocked}`).join('\n') + '\n';
+  for (const r of rows) {
+    if (!r.sql) out.push(`-- skipped ${r.name}: ${r.reason}`, '');
+    else if (picked.has(r.id)) out.push(r.sql, '');
+  }
+  if (!rows.some((r) => r.sql && picked.has(r.id))) out.push('-- nothing to run');
+  return out.join('\n').replace(/\n+$/, '') + '\n';
+}
+
+/* The plan, asked again on every opening so it follows the manifest and the
+   .env files, in a modal the user reads and copies from. The destination they
+   type is kept for the project once the modal closes (0011). */
+async function openClonePlan(n) {
+  let plan;
+  try {
+    plan = await api.get('/api/snowflake/clone?id=' + encodeURIComponent(n.id));
+  } catch (e) {
+    toast('clone: ' + e.message, 'err');
+    return;
+  }
+  const files = S.envs ? S.envs.files.filter((f) => !f.hidden).map((f) => f.file) : [];
+  const was = S.cloneFrom;
+  const file = was !== null && (was === '' || files.includes(was)) ? was : (files.includes(S.env) ? S.env : '');
+  const first = cloneIntoDefault(plan.into);
+  const st = { plan, file, mode: S.cloneMode, into: first.text, from: first.from, unpicked: new Set(), script: '' };
+
+  const body = document.createElement('div');
+  body.className = 'envpanel clonepanel';
+  const seg = (choices, current, pick) => {
+    const box = document.createElement('div');
+    box.className = 'seg';
+    for (const [value, label, tip] of choices) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'segbtn' + (value === current() ? ' active' : '');
+      b.textContent = label;
+      if (tip) b.title = tip;
+      b.addEventListener('click', () => {
+        pick(value);
+        box.querySelectorAll('.segbtn').forEach((x) => x.classList.toggle('active', x === b));
+        paintClonePlan(view, st);
+      });
+      box.append(b);
+    }
+    return box;
+  };
+  const line = (label, ...parts) => {
+    const row = document.createElement('div');
+    row.className = 'clonehead';
+    row.append(Object.assign(document.createElement('span'), { className: 'k', textContent: label }), ...parts);
+    return row;
+  };
+  const sources = files.map((f) => [f, envDisplayName(f), `copy from where ${f} puts each node`]);
+  sources.push(['', 'built (manifest)', 'copy from where the target that produced this manifest built each node']);
+  const input = Object.assign(document.createElement('input'), { type: 'text', value: st.into, spellcheck: false });
+  input.setAttribute('aria-label', 'destination, database.schema');
+  input.placeholder = 'DATABASE.schema';
+  const from = Object.assign(document.createElement('span'), { className: 'muted' });
+  input.addEventListener('input', () => { st.into = input.value; paintClonePlan(view, st); });
+  body.append(
+    line('from', seg(sources, () => st.file, (v) => { st.file = v; })),
+    line('into', input, from),
+    line('as', seg([
+      ['clone', 'Clone', 'zero-copy clones for tables, seeds, snapshots and incremental models'],
+      ['ctas', 'Create as select', 'a real copy of the rows of every node'],
+    ], () => st.mode, (v) => { st.mode = v; })),
+  );
+  const view = {
+    from,
+    table: document.createElement('div'),
+    sources: Object.assign(document.createElement('p'), { className: 'muted' }),
+    notes: document.createElement('div'),
+    sql: Object.assign(document.createElement('pre'), { className: 'clonesql' }),
+  };
+  const copy = Object.assign(document.createElement('button'), { type: 'button', className: 'btn sm', textContent: 'Copy statements' });
+  // Straight from the click, before anything awaits, or the browser may
+  // refuse the clipboard.
+  copy.addEventListener('click', () => copyText(st.script, 'the statements'));
+  body.append(view.table, view.sources, view.notes, line('sql', copy), view.sql);
+  paintClonePlan(view, st);
+
+  await modal({ title: `Clone ${n.name} into your schema`, body, wide: true, actions: [{ id: 'close', label: 'Close' }] });
+  S.cloneFrom = st.file;
+  S.cloneMode = st.mode;
+  if (!plan.into.persist) return;
+  const typed = st.into.trim();
+  if (typed && cloneInto(typed).reason) return;
+  const p = plan.into.profile || {};
+  // The profile's own value, typed back, means "follow the profile" again.
+  const keep = !typed || (p.database && typed === `${p.database}.${p.schema}`) ? null : typed;
+  if (keep === (plan.into.remembered || null)) return;
+  try { await api.send('/api/snowflake/clone/into', 'POST', { into: keep }); } catch (e) { toast('clone: ' + e.message, 'err'); }
+}
+
+/* The parts of the modal that follow the choices: the destination's origin,
+   the table of nodes, the sources, the notes and the script. */
+function paintClonePlan(view, st) {
+  const dest = cloneInto(st.into);
+  const rows = cloneRows(st.plan, st.file, dest, st.mode);
+  view.from.textContent = dest.reason && st.into.trim() ? dest.reason : (st.into.trim() === cloneIntoDefault(st.plan.into).text ? st.from : 'typed here');
+  view.from.className = dest.reason && st.into.trim() ? 'env-missing' : 'muted';
+
+  const table = document.createElement('table');
+  table.className = 'loc';
+  const head = document.createElement('tr');
+  for (const label of ['', 'node', 'materialized', 'from', 'action']) head.append(Object.assign(document.createElement('th'), { textContent: label }));
+  table.append(head);
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const box = Object.assign(document.createElement('input'), { type: 'checkbox' });
+    box.disabled = !r.source || r.action === 'refused' || r.action === 'skip';
+    box.checked = !box.disabled && !st.unpicked.has(r.id);
+    box.setAttribute('aria-label', 'copy ' + r.name);
+    box.addEventListener('change', () => {
+      if (box.checked) st.unpicked.delete(r.id); else st.unpicked.add(r.id);
+      paintClonePlan(view, st);
+    });
+    const pick = document.createElement('td');
+    pick.append(box);
+    const name = document.createElement('td');
+    name.textContent = r.name;
+    name.title = r.why === 'model' ? 'the node asked for' : r.why === 'via' ? `read through ${r.via}, which is ephemeral` : 'a direct parent';
+    if (r.why !== 'parent') name.append(Object.assign(document.createElement('span'), { className: 'why', textContent: r.why === 'via' ? ` via ${r.via}` : ' (this one)' }));
+    const mat = Object.assign(document.createElement('td'), { className: 'k', textContent: r.materialized });
+    const src = document.createElement('td');
+    if (r.source && r.action !== 'refused') src.textContent = r.source;
+    else { src.textContent = r.reason; src.className = r.action === 'skip' ? 'nul' : 'env-missing'; }
+    const act = Object.assign(document.createElement('td'), { className: 'k' });
+    act.textContent = { clone: 'clone', ctas: 'create as select', skip: 'nothing to copy', refused: 'not copied' }[r.action] || r.action;
+    tr.append(pick, name, mat, src, act);
+    table.append(tr);
+  }
+  view.table.replaceChildren(table);
+
+  const srcs = st.plan.sources.map((s) => {
+    const at = cloneSource(s, st.file);
+    return `${s.name} (${at.text || at.reason})`;
+  });
+  view.sources.textContent = srcs.length ? `Read where they are, never copied: ${srcs.join('; ')}.` : '';
+  if (st.plan.other.length) view.sources.textContent += ` Also among the parents, with nothing to copy: ${st.plan.other.join(', ')}.`;
+
+  const dotenv = S.envs && S.envs.files.find((f) => f.file === '.env');
+  const p = st.plan.into.profile || {};
+  const fresh = S.fresh && S.fresh.state && S.fresh.state !== 'fresh' && S.fresh.state !== 'missing' ? freshnessBadge(S.fresh).head : '';
+  const notes = cloneNotes(st.plan, rows, {
+    file: st.file, stale: fresh, sandbox: st.plan.into.sandbox || '',
+    dotenvTarget: dotenv ? dotenv.target || '' : '', profileTarget: p.database ? p.target : '',
+  });
+  view.notes.replaceChildren(...notes.map((t) => Object.assign(document.createElement('p'), { className: 'clonenote', textContent: t })));
+
+  const picked = new Set(rows.filter((r) => r.sql && !st.unpicked.has(r.id)).map((r) => r.id));
+  st.script = cloneScript(rows, picked, cloneHead(st.plan, st.file, dest), dest.reason);
+  view.sql.textContent = st.script;
 }
 
 function catalogPreview(body, n) {

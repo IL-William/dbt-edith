@@ -223,6 +223,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/fetch", post(fetch_col_lineage))
         .route("/api/snowflake/history", post(query_history))
         .route("/api/snowflake/session", post(snowflake_session))
+        .route("/api/snowflake/clone", get(clone_plan))
+        .route("/api/snowflake/clone/into", post(remember_clone_into))
         .route("/api/collineage/generate", post(generate_col_lineage))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/features", post(set_features))
@@ -2326,6 +2328,199 @@ async fn start_reading(st: &Arc<AppState>) -> Result<(), Response> {
 }
 
 #[derive(Deserialize)]
+struct CloneQuery {
+    #[serde(default)]
+    id: String,
+}
+
+/// One node a clone covers, with its location resolved against every `.env`
+/// file, as `/api/node` sends it, so the page writes the very relation the
+/// Location table shows and switching the source asks nothing more.
+#[derive(serde::Serialize)]
+struct CloneItem<'a> {
+    id: &'a str,
+    name: &'a str,
+    kind: Kind,
+    materialized: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    package: &'a str,
+    file: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    relation: &'a str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    disabled: bool,
+    /// `model`, `parent` or `via`, the last with the ephemeral it came through.
+    why: &'static str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    via: &'a str,
+    /// Its file or its properties file is newer than the manifest, so the
+    /// parents listed may not be the ones it reads now (0025).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    changed: bool,
+    location: Location<'a>,
+}
+
+/// Where the clone lands, before the user says otherwise.
+#[derive(serde::Serialize)]
+struct CloneInto<'a> {
+    /// What the user typed last time, kept per project (0011).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remembered: Option<String>,
+    /// Whether a typed value can be kept at all.
+    persist: bool,
+    /// The profile's active target: its name, database and schema, or why not.
+    profile: crate::profiles::Target,
+    /// Where nearly every model of a sandbox manifest was built.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    sandbox: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct ClonePlanBody<'a> {
+    id: &'a str,
+    name: &'a str,
+    materialized: &'a str,
+    items: Vec<CloneItem<'a>>,
+    sources: Vec<CloneItem<'a>>,
+    ephemeral: Vec<&'a str>,
+    other: Vec<&'a str>,
+    into: CloneInto<'a>,
+}
+
+/// The nodes that cloning a model into the developer's schema copies, and
+/// where it lands (0058). Text for the page to write statements from: nothing
+/// starts and nothing reaches Snowflake, so this is a GET, behind Snowflake's
+/// features all the same (0031).
+async fn clone_plan(State(st): State<Arc<AppState>>, Query(q): Query<CloneQuery>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
+    let graph = st.graph.read().await.clone();
+    let Some(&focus) = graph.index.get(&q.id) else {
+        return (StatusCode::NOT_FOUND, "unknown node").into_response();
+    };
+    let n = &graph.nodes[focus as usize];
+    if !matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot) {
+        return (StatusCode::BAD_REQUEST, "only a model, a seed or a snapshot is cloned").into_response();
+    }
+    if n.disabled {
+        return (StatusCode::BAD_REQUEST, "a disabled node is not built, so there is nothing to clone").into_response();
+    }
+    let plan = crate::clone::plan(&graph, focus);
+    let remembered = st.settings.load().clone_into;
+    let persist = st.settings.path.is_some();
+
+    // The files a changed flag looks at: the project's own, since a package
+    // node's path is relative to its package, not to the project.
+    let project = graph.meta.project.clone();
+    let mine = |i: u32| {
+        let t = &graph.nodes[i as usize];
+        (t.package.is_empty() || t.package == project).then(|| (i, t.file.clone(), t.yml.clone()))
+    };
+    let checked: Vec<(u32, String, String)> = plan.items.iter().filter_map(|it| mine(it.node)).collect();
+    let manifest_at = graph.meta.manifest_mtime;
+    let (root, lookup) = (st.root.clone(), st.profiles.clone());
+    let read = tokio::task::spawn_blocking(move || {
+        let env_files = envs::discover(&root);
+        let target = match lookup.path(&root) {
+            None => crate::profiles::Target { why: NO_PROFILE.into(), ..Default::default() },
+            Some(path) => match profile_text(&path) {
+                Err(e) => crate::profiles::Target { why: e, ..Default::default() },
+                Ok(text) => crate::profiles::active_target(
+                    &text,
+                    &crate::project::profile(&root).unwrap_or_default(),
+                    lookup.target.as_deref(),
+                ),
+            },
+        };
+        let newer = |p: &str| !p.is_empty() && crate::files::mtime_secs(&root.join(freshness::rel(p))) > manifest_at;
+        let changed: Vec<u32> =
+            checked.into_iter().filter(|(_, file, yml)| manifest_at > 0 && (newer(file) || newer(yml))).map(|(i, _, _)| i).collect();
+        (env_files, target, changed)
+    })
+    .await;
+    let Ok((env_files, target, changed)) = read else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "the clone plan could not be read").into_response();
+    };
+
+    let item = |it: &crate::clone::Item| {
+        let t = &graph.nodes[it.node as usize];
+        let (why, via) = match it.why {
+            crate::clone::Why::Model => ("model", ""),
+            crate::clone::Why::Parent => ("parent", ""),
+            crate::clone::Why::Via(e) => ("via", graph.nodes[e as usize].name.as_str()),
+        };
+        CloneItem {
+            id: &t.id,
+            name: &t.name,
+            kind: t.kind,
+            materialized: &t.materialized,
+            package: &t.package,
+            file: &t.file,
+            relation: &t.relation,
+            disabled: t.disabled,
+            why,
+            via,
+            changed: changed.contains(&it.node),
+            // Resolved even when nothing is written, unlike the Catalog's
+            // table: a chosen file must refuse a node it cannot place, never
+            // fall back to the manifest's values without saying so.
+            location: Location {
+                written: &t.written,
+                parsed: &t.parsed,
+                built: Place { database: t.database.clone(), schema: t.schema.clone(), alias: t.alias.clone() },
+                envs: envs::resolve_all(&env_files, &t.written, &t.parsed),
+            },
+        }
+    };
+    let names = |list: &[u32]| list.iter().map(|&i| graph.nodes[i as usize].name.as_str()).collect::<Vec<_>>();
+    Json(ClonePlanBody {
+        id: &n.id,
+        name: &n.name,
+        materialized: &n.materialized,
+        items: plan.items.iter().map(item).collect(),
+        sources: plan.sources.iter().map(item).collect(),
+        ephemeral: names(&plan.ephemeral),
+        other: names(&plan.other),
+        into: CloneInto { remembered, persist, profile: target, sandbox: &graph.meta.sandbox },
+    })
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct CloneIntoBody {
+    into: Option<String>,
+}
+
+/// `database.schema`, each part optionally quoted. It is only ever written
+/// into text the user reads before running, so this keeps out nonsense, a
+/// third part above all, rather than injection.
+fn valid_destination(text: &str) -> bool {
+    let parts = collin::relation_parts(text);
+    text.len() <= 255 && !text.chars().any(char::is_control) && parts.len() == 2 && parts.iter().all(|p| !p.trim().is_empty())
+}
+
+/// Keeps the destination the user typed, for this project only. Touches that
+/// one setting, so it cannot undo a change saved from another tab, and is not
+/// an error without a configuration directory, only not kept (0011).
+async fn remember_clone_into(State(st): State<Arc<AppState>>, Json(b): Json<CloneIntoBody>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
+    let into = b.into.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    if into.as_deref().is_some_and(|v| !valid_destination(v)) {
+        return (StatusCode::BAD_REQUEST, "not a database.schema").into_response();
+    }
+    if st.settings.path.is_none() {
+        return Json(serde_json::json!({ "saved": false })).into_response();
+    }
+    match st.settings.update(|s| s.clone_into = into).await {
+        Ok(_) => Json(serde_json::json!({ "saved": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
 struct PathQuery {
     #[serde(default)]
     path: String,
@@ -3216,6 +3411,7 @@ mod tests {
             ("/api/features", r#"{"snowflake":true}"#),
             ("/api/snowflake/history", "{}"),
             ("/api/snowflake/session", "{}"),
+            ("/api/snowflake/clone/into", r#"{"into":"DEV_DB.dbt_someone"}"#),
         ] {
             let foreign = with_json("POST", path, &[("Host", &host), ("Origin", "https://evil.example")], body);
             assert!(status_of(port, foreign).await.ends_with("403 Forbidden"), "{path}");
@@ -3225,6 +3421,7 @@ mod tests {
         assert!(status_of(port, get("/api/features", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/history", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/session", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
+        assert!(status_of(port, get("/api/snowflake/clone/into", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/sidecar", &[("Host", &host)])).await.ends_with("200 OK"));
         let old = with_json("POST", "/api/sidecar", &[("Host", &host), ("Origin", &own)], r#"{"enabled":true}"#);
         assert!(status_of(port, old).await.ends_with("405 Method Not Allowed"));
@@ -3336,9 +3533,12 @@ b"}"#,
             ("/api/collineage/fetch", fetch),
             ("/api/snowflake/history", "{}"),
             ("/api/snowflake/session", "{}"),
+            ("/api/snowflake/clone/into", r#"{"into":"DEV_DB.dbt_someone"}"#),
         ] {
             assert!(status_of(port, post(path, body)).await.ends_with("409 Conflict"), "{path} {body}");
         }
+        let clone = get("/api/snowflake/clone?id=model.demo.orders", &[("Host", &host)]);
+        assert!(status_of(port, clone).await.ends_with("409 Conflict"));
 
         let picked = body_of(port, post("/api/collineage/source", r#"{"tool":"collin"}"#)).await;
         assert!(picked.starts_with("HTTP/1.1 200"), "{picked}");
@@ -3372,6 +3572,106 @@ b"}"#,
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A clone's plan: the parents by name with every environment's location,
+    /// the ephemeral walked through, the source listed, and the profile's
+    /// active target as the destination, its password left on disk (0058).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_clone_plan_names_its_parents_and_where_they_land() {
+        let root = temp_project("clone");
+        std::fs::write(root.join("dbt_project.yml"), "name: shop\nprofile: shop\n").unwrap();
+        std::fs::write(root.join(".env.uat"), "DBT_TARGET=uat\nSHOP_DB=ANALYTICS_UAT\nSHOP_RAW=RAW_UAT\n").unwrap();
+        let home = std::env::temp_dir().join(format!("dbt-edith-clone-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join(".dbt")).unwrap();
+        std::fs::write(
+            home.join(".dbt").join("profiles.yml"),
+            "shop:\n  target: dev\n  outputs:\n    dev:\n      type: snowflake\n      user: ME\n      password: s3cret-in-profile\n      database: DEV_DB\n      schema: dbt_someone\n",
+        )
+        .unwrap();
+        let (port, st, server) =
+            serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()), target: None }).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+
+        let model = |name: &str, materialized: &str, parents: &[&str]| {
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/{name}.sql"),
+                "database": "DEV_DB", "schema": "dbt_someone", "alias": name,
+                "relation_name": if materialized == "ephemeral" { serde_json::Value::Null } else { format!("DEV_DB.dbt_someone.{name}").into() },
+                "unrendered_config": { "database": "{{ env_var('SHOP_DB') }}", "schema": "marts" },
+                "config": { "materialized": materialized, "database": "DEV_DB", "schema": "marts" },
+                "depends_on": { "nodes": parents },
+            })
+        };
+        let build = || {
+            let raw: RawManifest = serde_json::from_value(serde_json::json!({
+                "metadata": { "project_name": "shop", "adapter_type": "snowflake" },
+                "nodes": {
+                    "model.shop.b": model("stg_orders", "view", &["source.shop.crm.orders"]),
+                    "model.shop.c": model("int_orders", "ephemeral", &["model.shop.b", "source.shop.crm.orders"]),
+                    "model.shop.a": model("zz_payments", "table", &[]),
+                    "model.shop.d": model("fct_orders", "incremental", &["model.shop.c", "model.shop.a"]),
+                },
+                "sources": {
+                    "source.shop.crm.orders": {
+                        "name": "orders", "resource_type": "source", "source_name": "crm", "package_name": "shop",
+                        "database": "RAW_DEV", "schema": "crm", "identifier": "ORDERS",
+                        "unrendered_database": "{{ env_var('SHOP_RAW') }}", "unrendered_schema": "crm",
+                        "relation_name": "RAW_DEV.crm.ORDERS",
+                    },
+                },
+            }))
+            .unwrap();
+            Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0))
+        };
+        *st.base.write().await = build();
+        *st.graph.write().await = build();
+        assert!(st.snowflake_allowed().await, "a Snowflake manifest switches the features on");
+
+        let plan = body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
+        assert!(plan.starts_with("HTTP/1.1 200"), "{plan}");
+        let items = &plan[plan.find(r#""items":["#).expect("items")..];
+        let at = |needle: &str| items.find(needle).unwrap_or_else(|| panic!("{needle} missing from {plan}"));
+        // Parents by name, the model last, and the view reached through the ephemeral.
+        assert!(at(r#""name":"stg_orders""#) < at(r#""name":"zz_payments""#));
+        assert!(at(r#""name":"zz_payments""#) < at(r#""name":"fct_orders""#));
+        assert!(plan.contains(r#""why":"via","via":"int_orders""#), "{plan}");
+        assert!(plan.contains(r#""ephemeral":["int_orders"]"#), "{plan}");
+        assert!(plan.contains(r#"".env.uat":{"place":{"database":"ANALYTICS_UAT","schema":"marts","alias":"""#), "{plan}");
+        assert!(plan.contains(r#""database":"RAW_UAT","schema":"crm""#), "the source resolves too: {plan}");
+        assert!(plan.contains(
+            r#""profile":{"profile":"shop","target":"dev","target_from":"profile","database":"DEV_DB","schema":"dbt_someone"}"#
+        ), "{plan}");
+        assert!(plan.contains(r#""persist":false"#), "{plan}");
+        assert!(!plan.contains("s3cret-in-profile") && !plan.contains("hunter2"), "a secret left the server");
+        assert!(!plan.contains(r#""user""#) && !plan.contains("ME\""), "{plan}");
+
+        // The same manifest gives the same bytes on every build (0055).
+        *st.graph.write().await = build();
+        assert_eq!(body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await, plan);
+
+        for (id, status) in [("model.shop.nope", "404 Not Found"), ("source.shop.crm.orders", "400 Bad Request")] {
+            let answer = status_of(port, get(&format!("/api/snowflake/clone?id={id}"), &[("Host", &host)])).await;
+            assert!(answer.ends_with(status), "{id}: {answer}");
+        }
+
+        let post = |body: &str| with_json("POST", "/api/snowflake/clone/into", &[("Host", &host), ("Origin", &own)], body);
+        let long = format!(r#"{{"into":"DEV_DB.{}"}}"#, "s".repeat(300));
+        for bad in [r#"{"into":"DEV_DB.dbt_someone.extra"}"#, r#"{"into":"DEV_DB"}"#, r#"{"into":"DEV_DB.\u0007"}"#, r#"{"into":"DEV_DB. "}"#, long.as_str()] {
+            assert!(status_of(port, post(bad)).await.ends_with("400 Bad Request"), "{bad}");
+        }
+        // Without a configuration directory it is not kept, and not an error.
+        let kept = body_of(port, post(r#"{"into":"DEV_DB.\"dbt.someone\""}"#)).await;
+        assert!(kept.starts_with("HTTP/1.1 200") && kept.ends_with(r#"{"saved":false}"#), "{kept}");
+        assert!(body_of(port, post(r#"{"into":null}"#)).await.ends_with(r#"{"saved":false}"#));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
     /// The one file outside the project dbt-edith opens, found where dbt looks
     /// for it: the route itself takes no path at all (0017), and needs no
     /// Snowflake (0049).
@@ -3393,7 +3693,7 @@ b"}"#,
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".dbt")).unwrap();
         let profile = home.join(".dbt").join("profiles.yml");
-        let (port, st, server) = serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()) }).await;
+        let (port, st, server) = serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()), target: None }).await;
         assert!(!st.snowflake_allowed().await);
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");

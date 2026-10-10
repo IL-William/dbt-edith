@@ -29,7 +29,9 @@ the editor reads and writes their files.
 - **Every file path is confined to the opened project.** `..`, absolute paths,
   drive letters and symlinks pointing out are refused. One file outside it is
   reachable: the dbt profile, found where dbt looks for it, and served only by
-  its own route. No path for it ever comes from the browser (0017, 0049).
+  its own route. No path for it ever comes from the browser (0017, 0049). The
+  clone route reads it as well, and sends only the active target's name,
+  database and schema (0058).
 - **The profile's secrets stay on the server.** Its route replaces every
   password, token and private key with a placeholder before sending it, and
   puts the value on disk back when the placeholder is saved unchanged (0054).
