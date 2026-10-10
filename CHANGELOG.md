@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.7.0 - 2026-10-10
+
+- Compare what two collin versions read in the project, from the last run of
+  each, kept under `target/collin/`: their figures and findings, edges by
+  role and by origin, the edges only one has, and the models where they moved
+  (0061).
+
 ## 1.6.0 - 2026-10-10
 
 - Install other collin versions beside the one you have, each at its tag in a

@@ -594,6 +594,14 @@ Cargo's advice to add the folder to your `PATH` can be ignored. The update
 line below applies to the default collin only: a version installed by tag
 stays that version (0060).
 
+**Two versions compare.** Each run's cache and report are copied to
+`target/collin/<version>/`, the latest run of each version. Once two versions
+have one, "Compare collin versions" under Collin opens a tab with B against A:
+every figure of the two reports, the findings per kind, the edges by role and
+by what they come from, the edges only one version has or reads with another
+role, and the models where the most moved, each a link to it. A run older than
+the manifest says so (0061).
+
 Once collin is installed and Collin is the tool picked, a line under Collin in
 the menu offers to update it. This dbt-edith expects collin 0.1.0 or later: an
 older one, or one that gives no version, gets "Update collin", which types the

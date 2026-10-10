@@ -466,3 +466,29 @@ check('...and is offered under Collin with one', collinInstallRow(two, 'collin')
 check('a typed version may carry its tag\'s v', collinVersionInput(' v0.4.0 '), '0.4.0');
 check('anything but three numbers is refused', [collinVersionInput('0.4'), collinVersionInput('0.4.0;rm'),
       collinVersionInput('main')].join('|'), '||');
+
+print('\n--- two collin versions compared ---');
+check('compared once two versions kept a run', collinCompareRow({ kept: ['0.4.0', '0.1.0'] }, 'collin').sub, '2 kept');
+check('...not with one', collinCompareRow({ kept: ['0.4.0'] }, 'collin'), null);
+check('...nor under another tool', collinCompareRow({ kept: ['0.4.0', '0.1.0'] }, 'fusion'), null);
+check('the newest against the one before it', JSON.stringify(collinComparePair(['0.4.0', '0.3.0', '0.1.0'])),
+      JSON.stringify({ a: '0.3.0', b: '0.4.0' }));
+check('no pair from one', collinComparePair(['0.4.0']), null);
+var drows = collinDeltaRows([{ key: 'models', a: 3, b: 3 }, { key: 'parsed', a: 2, b: 3 }, { key: 'columns_lost', b: 4 }], collinTotalLabel);
+check('the figures that moved come first, in their order',
+      drows.map(function (r) { return r.label + ' ' + (r.diff === null ? '?' : r.diff); }).join(', '),
+      'SQL parsed 1, Columns lost ?, Models 0');
+check('a figure one report lacks is no zero', drows[1].a, null);
+check('...and one it lacks while the other counts zero has not moved',
+      collinDeltaRows([{ key: 'catalog_elsewhere', b: 0 }])[0].moved, false);
+check('a counter with no words keeps its name', collinTotalLabel('read_through_star'), 'read through star');
+check('an edge reads model to model, by short name',
+      collinEdgeText({ from: 'model.shop.orders', from_col: 'id', to: 'model.shop.customers', to_col: 'order_id' }),
+      'orders.id → customers.order_id');
+check('a table no node owns is named whole',
+      collinEdgeText({ from: 'rel:RAW.DBO.T', from_col: 'k', to: 'model.shop.a', to_col: 'k' }), 'rel:RAW.DBO.T.k → a.k');
+check('a model that moved says how', collinMoveText({ a: 'inferred', b: 'parsed', gained: 12, lost: 0, changed: 3 }),
+      'inferred → parsed · 12 gained · 3 with another role');
+check('a run older than the manifest says so',
+      / before the manifest was last written/.test(collinSideNote({ version: '0.1.0', edges: 3, mtime: 100, report: true }, 200)), true);
+check('...and one without a report', / no report kept/.test(collinSideNote({ version: '0.1.0', edges: 3, mtime: 300 }, 200)), true);
