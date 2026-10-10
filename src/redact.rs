@@ -248,8 +248,10 @@ other:
     fn secrets_are_hidden_and_nothing_else_is() {
         let (shown, n) = hide(PROFILE);
         assert_eq!(n, 4, "{shown}");
-        for secret in ["hunter2", "rotated in May", "MIIEvQIBADANBg", "BEGIN PRIVATE KEY", "s3cret", "letmein"] {
-            assert!(!shown.contains(secret), "{secret} reached the page: {shown}");
+        // The message names the value by its place in the list, never the value:
+        // a failing test must not print what it was guarding.
+        for (i, value) in ["hunter2", "rotated in May", "MIIEvQIBADANBg", "BEGIN PRIVATE KEY", "s3cret", "letmein"].iter().enumerate() {
+            assert!(!shown.contains(value), "hidden value number {i} reached the page");
         }
         for kept in [
             "account: ab12345.eu-west-1",
