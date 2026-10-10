@@ -48,9 +48,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **No build step for the frontend.** What ships is what is in `web/` (0004).
 - **Never run dbt.** The binary never talks to a warehouse either:
   `tools/sf_lineage.py` does, started by the server only once the user picks
-  Snowflake as the column lineage tool or opens the query history, with
-  Snowflake's features on for the project, under their own credentials (0002,
-  0016, 0031, 0048). collin, which
+  Snowflake as the column lineage tool, opens the query history or a
+  relation's Snowsight menu, with Snowflake's features on for the project,
+  under their own credentials (0002, 0016, 0031, 0048, 0051). collin, which
   parses the compiled SQL and reaches nothing, is started only once Collin is
   picked, a column is clicked or Regenerate pressed, never at startup (0042).
 - **Never return or log a `.env` value**, beyond the three things allowed to
@@ -125,7 +125,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md) |
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
-| show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md) |
+| show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
 | start collin, change when it runs, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |

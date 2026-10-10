@@ -456,11 +456,13 @@ def cmd_serve(args):
               op means lineage too;
               {"id": 2, "op": "history", "role": "R" | "*" | null,
                "before": {"at": "<epoch ns>", "query_id": "..."} | null};
-              or {"op": "quit"}.
+              {"id": 3, "op": "session"}, for the account a Snowsight link
+               names; or {"op": "quit"}.
     Replies:  {"event": "profiles", "path": ...} and {"event": "ready", ...}
               once each, then {"id": 1, "rows": [...]} for lineage,
               {"id": 2, "session": {...}, "rows": [...], "more": bool} for
-              history, or {"id": 1, "error": "...", "phase": "connect" | "query"}.
+              history, {"id": 3, "session": {...}} for session, or
+              {"id": 1, "error": "...", "phase": "connect" | "query"}.
 
     The phase says whether the profile is to blame or not: a connection that
     Snowflake refuses points at profiles.yml, a query that fails does not.
@@ -518,6 +520,8 @@ def cmd_serve(args):
                 asked = lineage_request(req)
             elif op == "history":
                 asked = history_request(req)
+            elif op == "session":
+                asked = None
             else:
                 raise ValueError(f"unknown op {op!r}")
             # Whatever the connector prints mid-session, a renewed sign-in
@@ -535,11 +539,13 @@ def cmd_serve(args):
                     else:
                         if session is None:
                             session = session_info(cur)
+                        answer = {"session": session}
+                    if op == "history":
                         role, before = asked
                         if role is None:
                             role = kwargs.get("role") or session.get("role")
                         rows, more = query_history(cur, None if role == "*" else role, before)
-                        answer = {"session": session, "rows": rows, "more": more}
+                        answer.update(rows=rows, more=more)
                 finally:
                     cur.close()
             reply({"id": rid, **answer})

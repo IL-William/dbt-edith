@@ -189,6 +189,7 @@ it is used against day to day.
 | Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the snowflake in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |
+| Snowsight says a relation's object does not exist | the *resolved* relation is the config before the `generate_*_name` macros, or a source that is a view was asked for as a table | open the *built* relation instead, or the object from its schema's page |
 | no browser opened | `--no-open`, or no default browser | open the printed URL by hand |
 | a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
 
@@ -228,6 +229,7 @@ for that reason (0037).
 | the snowflake in the top bar | Snowflake's features on or off for the project |
 | the user and plug in the top bar | the dbt profile, opened in the editor; violet when there is one, grey with an amber dot when dbt would find none |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
+| Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
@@ -646,6 +648,16 @@ button, quoted part by part the way dbt quotes the built one. The resolved
 relation is only offered when it can be written for real: a database or schema
 left to the target profile, a placeholder or a missing variable says why
 instead.
+
+With Snowflake's features on, a **Snowsight** menu sits beside each Copy: the
+object, its schema and its database, each opened in Snowsight in a new tab. The
+account is the one your profile's target connects to, which the first menu of
+a page asks Snowflake for, so that click may bring a sign-in tab. The address
+is built from the name, as Snowflake keeps it: an unquoted part in upper case,
+a quoted one as written. A view opens as a view, a dynamic table as a dynamic
+table, and the rest as a table, a source included, since the manifest does not
+say what a source is
+([0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md)).
 
 Without an environment selected, *resolved* is the config as dbt parsed it,
 which means with whatever env vars happened to be loaded at the time. That is
@@ -1106,6 +1118,7 @@ $JSC web/tests/colours.js     # materialization colours, custom ones, and seeds 
 $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations
+$JSC web/tests/snowsight.js   # links into Snowsight: a query, and a relation's object, schema and database
 $JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
 $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from

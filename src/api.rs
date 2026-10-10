@@ -210,6 +210,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
         .route("/api/snowflake/history", post(query_history))
+        .route("/api/snowflake/session", post(snowflake_session))
         .route("/api/collineage/generate", post(generate_col_lineage))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/features", post(set_features))
@@ -483,7 +484,8 @@ async fn show_cache(st: &AppState, path: PathBuf) -> Result<(), Response> {
 }
 
 /// Switches fetching off at once, and stops the script in the background
-/// unless the query history still reads through it (0048): stopping waits on
+/// unless the query history or a Snowsight menu still reads through it (0048,
+/// 0051): stopping waits on
 /// a start still in progress, which can take a minute on a cold VM, and
 /// nothing should wait on that to show another tool's edges.
 fn stop_fetching(st: &Arc<AppState>) {
@@ -689,7 +691,7 @@ async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBod
             eprintln!("  snowflake features choice not saved: {e}");
         }
         if !on {
-            st.sidecar.set_history(false);
+            st.sidecar.set_reading(false);
             release_sidecar(&st);
         }
         // A path with no file behind it is chosen again too: it may be where
@@ -2131,13 +2133,8 @@ async fn query_history(State(st): State<Arc<AppState>>, Json(b): Json<HistoryBod
     if b.before.as_ref().is_some_and(|c| !c.valid()) {
         return (StatusCode::BAD_REQUEST, "not a page of history").into_response();
     }
-    st.sidecar.set_history(true);
-    if !st.sidecar.is_up() {
-        let status = st.sidecar.start_for(&st.root, &st.venv).await;
-        if status.state != "ready" {
-            let error = if status.error.is_empty() { "the Snowflake script is not running".to_string() } else { status.error };
-            return (StatusCode::BAD_GATEWAY, Json(FetchFailed { error, phase: "start".into() })).into_response();
-        }
+    if let Err(failed) = start_reading(&st).await {
+        return failed;
     }
     match st.sidecar.history(b.role.as_deref(), b.before.as_ref()).await {
         Ok(history) => {
@@ -2146,6 +2143,43 @@ async fn query_history(State(st): State<Arc<AppState>>, Json(b): Json<HistoryBod
         }
         Err(e) => (StatusCode::BAD_GATEWAY, Json(FetchFailed { error: e.message, phase: e.phase })).into_response(),
     }
+}
+
+#[derive(serde::Serialize)]
+struct SessionReply {
+    session: sidecar::SessionInfo,
+    target: String,
+}
+
+/// The account the profile reaches, which a relation's Snowsight menu names
+/// (0051). POST because the first one connects, and may open a sign-in tab.
+async fn snowflake_session(State(st): State<Arc<AppState>>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
+    if let Err(failed) = start_reading(&st).await {
+        return failed;
+    }
+    match st.sidecar.session().await {
+        Ok(session) => Json(SessionReply { session, target: st.sidecar.status().target }).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(FetchFailed { error: e.message, phase: e.phase })).into_response(),
+    }
+}
+
+/// Starts the script for a read that is not column lineage, unless it runs
+/// already, and keeps it running whichever tool is picked. A start that fails
+/// says so as its phase, which the page reads as the profile's business.
+async fn start_reading(st: &Arc<AppState>) -> Result<(), Response> {
+    st.sidecar.set_reading(true);
+    if st.sidecar.is_up() {
+        return Ok(());
+    }
+    let status = st.sidecar.start_for(&st.root, &st.venv).await;
+    if status.state == "ready" {
+        return Ok(());
+    }
+    let error = if status.error.is_empty() { "the Snowflake script is not running".to_string() } else { status.error };
+    Err((StatusCode::BAD_GATEWAY, Json(FetchFailed { error, phase: "start".into() })).into_response())
 }
 
 #[derive(Deserialize)]
@@ -2946,6 +2980,7 @@ mod tests {
             ("/api/collineage/fetch", fetch),
             ("/api/features", r#"{"snowflake":true}"#),
             ("/api/snowflake/history", "{}"),
+            ("/api/snowflake/session", "{}"),
         ] {
             let foreign = with_json("POST", path, &[("Host", &host), ("Origin", "https://evil.example")], body);
             assert!(status_of(port, foreign).await.ends_with("403 Forbidden"), "{path}");
@@ -2954,6 +2989,7 @@ mod tests {
         assert!(status_of(port, get("/api/collineage/fetch", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/features", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/history", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
+        assert!(status_of(port, get("/api/snowflake/session", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/sidecar", &[("Host", &host)])).await.ends_with("200 OK"));
         let old = with_json("POST", "/api/sidecar", &[("Host", &host), ("Origin", &own)], r#"{"enabled":true}"#);
         assert!(status_of(port, old).await.ends_with("405 Method Not Allowed"));
@@ -3064,6 +3100,7 @@ b"}"#,
             ("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#),
             ("/api/collineage/fetch", fetch),
             ("/api/snowflake/history", "{}"),
+            ("/api/snowflake/session", "{}"),
         ] {
             assert!(status_of(port, post(path, body)).await.ends_with("409 Conflict"), "{path} {body}");
         }
@@ -3089,7 +3126,7 @@ b"}"#,
 
         // Switched off, the user's choice wins over the adapter, the graph no
         // longer holds Snowflake's answer, and the history lets the script go.
-        st.sidecar.set_history(true);
+        st.sidecar.set_reading(true);
         let off = body_of(port, post("/api/features", r#"{"snowflake":false}"#)).await;
         assert!(!st.sidecar.wanted());
         assert!(off.starts_with("HTTP/1.1 200"), "{off}");
