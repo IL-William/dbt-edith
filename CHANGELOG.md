@@ -15,6 +15,20 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.2.1 - 2026-10-10
+
+- The same manifest gives the same answers on every start (0055). Opening a
+  properties file shows its first node by name in the lineage, equal search
+  hits read alphabetically, and a selection or a lineage capped for the canvas
+  keeps the same nodes and edges every time. Each start used to pick its own,
+  so one selection could draw a different number of edges after a restart.
+  Past 5 000 matches, Copy holds the first 5 000 names by name.
+
+- Under dbt-core, a test on a source's column that also reads a model, a
+  `relationships` one for instance, shows on that column in the source's
+  Catalog. It went to the model instead: onto its column of the same name, or
+  nowhere.
+
 ## 1.2.0 - 2026-10-10
 
 - The API and the terminal want the key each launch prints in its link, which

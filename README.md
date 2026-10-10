@@ -264,13 +264,14 @@ for that reason (0037).
 
 Opening a `.sql` or `.yml` file that belongs to a dbt node moves the lineage
 onto that node, so the graph follows the editor. A properties file declares
-several: when the lineage already shows one of them, it stays there. A file
-with no node yet, usually a model added or pulled since the last parse, says so
-on the canvas, naming the model still drawn there if there is one, and the
-lineage moves onto it by itself once `dbt parse` rewrites the manifest, which
-dbt-edith reloads on its own within seconds. A macro file says nothing: it has
-no node however fresh the manifest, and the lineage stays on the model you were
-reading.
+several: when the lineage already shows one of them, it stays there, and
+otherwise it moves onto the first of them by name, the same one every time. A
+file with no node yet, usually a model added or pulled since the last parse,
+says so on the canvas, naming the model still drawn there if there is one, and
+the lineage moves onto it by itself once `dbt parse` rewrites the manifest,
+which dbt-edith reloads on its own within seconds. A macro file says nothing:
+it has no node however fresh the manifest, and the lineage stays on the model
+you were reading.
 
 The lineage graph itself comes entirely from `manifest.json` (`parent_map`).
 No `.sql` file is ever parsed to build it: dbt already did that work.

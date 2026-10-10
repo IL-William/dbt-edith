@@ -58,6 +58,7 @@ it is built this way, for whoever changes it next.
 | [0052](0052-the-api-wants-the-key-this-launch-printed.md) | The API wants the key this launch printed | adding a route, changing what the printed link holds, or letting anything reach the API without the key |
 | [0053](0053-a-project-is-read-before-anything-in-it-runs.md) | A project is read before anything in it runs | running a program found in the project, or changing how a venv's Python and dbt versions are learned |
 | [0054](0054-the-profile-is-edited-without-its-secrets.md) | The profile is edited without its secrets | changing what `/api/profiles` sends or accepts, or which keys of a profile are secret |
+| [0055](0055-the-same-manifest-answers-the-same-on-every-start.md) | The same manifest answers the same way on every start | iterating a HashMap into anything a route returns, or changing the order the manifest is read in |
 
 ## Keeping these honest
 

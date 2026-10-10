@@ -1024,12 +1024,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
     let idx = if !q.id.is_empty() {
         graph.index.get(&q.id).copied()
     } else {
-        let key = q.file.replace('\\', "/");
-        graph
-            .by_file
-            .get(&key)
-            .and_then(|v| v.iter().find(|&&i| graph.nodes[i as usize].kind != Kind::Test).or(v.first()))
-            .copied()
+        graph.node_of_file(&q.file.replace('\\', "/"))
     };
     let Some(idx) = idx else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
@@ -1368,7 +1363,7 @@ struct SelectorBody<'a> {
     matched: usize,
     /// Everything that matched, counted by kind. Counted here rather than off
     /// the drawn nodes so a capped canvas still reports the whole selection.
-    counts: std::collections::HashMap<String, usize>,
+    counts: std::collections::BTreeMap<String, usize>,
     /// Every match, not only what was drawn, so the copied list is the whole
     /// answer. Sorted the way `dbt ls --output name` prints it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1486,13 +1481,16 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
 
 /// Everything a selection matched, counted by kind and listed by name, off
 /// the whole answer rather than what the canvas could draw.
-fn tally<'g>(graph: &'g Graph, nodes: &[u32]) -> (std::collections::HashMap<String, usize>, Vec<&'g str>) {
-    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+fn tally<'g>(graph: &'g Graph, nodes: &[u32]) -> (std::collections::BTreeMap<String, usize>, Vec<&'g str>) {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for &i in nodes {
         *counts.entry(graph.nodes[i as usize].kind.as_str().to_string()).or_insert(0) += 1;
     }
-    let mut names: Vec<&str> = nodes.iter().take(MAX_NAMES).map(|&i| graph.nodes[i as usize].name.as_str()).collect();
+    // Sorted before it is cut, so a list past the cap starts the way
+    // `dbt ls` prints it rather than with whichever nodes were numbered first.
+    let mut names: Vec<&str> = nodes.iter().map(|&i| graph.nodes[i as usize].name.as_str()).collect();
     names.sort_unstable();
+    names.truncate(MAX_NAMES);
     (counts, names)
 }
 
@@ -2750,6 +2748,28 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Past the cap, the names copied are the first by name, the way
+    /// `dbt ls` starts printing them, and not the first nodes by index sorted
+    /// afterwards. Here the ids and the names sort in opposite orders.
+    #[test]
+    fn a_long_selection_copies_its_first_names_by_name() {
+        let total = MAX_NAMES + 1;
+        let mut nodes = serde_json::Map::new();
+        for i in 0..total {
+            nodes.insert(
+                format!("model.shop.m{i:05}"),
+                serde_json::json!({ "name": format!("n{:05}", total - i), "resource_type": "model" }),
+            );
+        }
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let graph = Graph::build(raw, Path::new("manifest.json"), 0, 0);
+        let all: Vec<u32> = (0..total as u32).collect();
+        let (counts, names) = tally(&graph, &all);
+        assert_eq!(counts["model"], total, "the count is of everything");
+        assert_eq!(names.len(), MAX_NAMES);
+        assert_eq!((names[0], names[MAX_NAMES - 1]), ("n00001", "n05000"), "the last name by name is the one left out");
+    }
 
     #[test]
     fn host_must_name_this_server_exactly() {

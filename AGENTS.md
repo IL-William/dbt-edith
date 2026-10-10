@@ -155,6 +155,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
 | change how a selection resolves, or touch the Jaffle Shop fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md) |
+| iterate a HashMap into anything a route returns, or change the order nodes are numbered in | [0055](docs/decisions/0055-the-same-manifest-answers-the-same-on-every-start.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
