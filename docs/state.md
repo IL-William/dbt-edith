@@ -728,6 +728,21 @@ before merging, both fixed: the venv tooltip named `dbt-autofix` for a Fusion
 venv, and the temporary file's name, one per process, failed two writes at
 once. Not yet on the VM, where a restart now means opening the new link.
 
+Same answers on every start (0055): the manifest's sections are read sorted by
+unique_id, so a node's index, and every list and first-of-several that follows
+it, no longer changes between starts. Where the pick is one a person reads, it
+goes by name: the node a properties file shows, equal search hits, the names
+Copy keeps past 5 000. A dbt-core source test that also reads a model now
+hangs on the source's column. On the 18 825 node project, now 19 233, three
+starts of 1.2.0, asked the same 4 682 read requests, disagreed on 99: 21
+properties files, 39 selections with tests past the canvas cap, 9 capped
+lineages and 30 searches at their limit. Three starts of this build agree on
+all of them to the byte, and differ from 1.2.0 only in the version they report
+and where an answer was capped or had several candidates to pick from. In
+headless Chrome, two starts showed the same search list, the same node for
+each properties file and the same boxes and edges for each selection, where
+two starts of 1.2.0 differed on all three.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -824,6 +839,12 @@ cross-compile.
 
 ## Traps worth knowing
 
+- **A HashMap's order is new on every start**, and between two maps of one
+  run. Iterating one into a payload, a list, a cap or a first-of-several gives
+  each start its own answer, which a test building its graph once rarely
+  shows: `every_answer_is_the_same_on_every_start` builds one manifest nine
+  times for that reason. Read into a BTreeMap or sort by name, never by
+  whatever came out first (0055).
 - **A synthetic column-lineage cache looks exactly like a real one** apart from
   its `source` field. If the column graph looks suspiciously complete, check
   what produced the cache before trusting a screenshot of it.

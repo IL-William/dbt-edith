@@ -2,12 +2,19 @@
 //!
 //! Nodes are stored in a flat `Vec` and referenced by `u32` index, so adjacency
 //! lists stay small even on projects with tens of thousands of nodes.
+//!
+//! The same manifest numbers its nodes the same way on every start: `build`
+//! reads each section sorted by unique_id (`src/manifest.rs`). Every list kept
+//! by index, and every first-of-several taken from one, follows from that, so
+//! no answer depends on the start it was asked in. Where the pick means
+//! something to a person, which node a properties file opens on or which
+//! search hit comes first, it goes by name instead of by index.
 
 use crate::collin::RawColLineage;
 use crate::macros::Macros;
 use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -194,7 +201,8 @@ pub struct Meta {
     pub sandbox: String,
     pub sandbox_models: usize,
     pub load_ms: u128,
-    pub counts: HashMap<String, usize>,
+    /// Sorted, so the payload is byte for byte the same on every start.
+    pub counts: BTreeMap<String, usize>,
 }
 
 /// One column of one node. Valid only for the lifetime of a single `Arc<Graph>`,
@@ -258,6 +266,23 @@ pub struct Graph {
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
     pub meta: Meta,
+}
+
+/// The node whose YAML declares test `t`: dbt's `attached_node`, or else the
+/// parent declared in the test's own file, which is how a source test reads
+/// under dbt-core, where it has no `attached_node`. A singular test is a file
+/// of its own, so it has none.
+fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u32> {
+    if let Some(&i) = index.get(&t.attached) {
+        return Some(i);
+    }
+    if t.file.is_empty() {
+        return None;
+    }
+    t.parents.iter().copied().find(|&p| {
+        let p = &nodes[p as usize];
+        p.file == t.file || p.yml == t.file
+    })
 }
 
 impl Graph {
@@ -459,13 +484,17 @@ impl Graph {
             n.tests.dedup();
         }
 
-        // Hang every column-level test off the column it guards.
+        // Hang every column-level test off the column it guards, on the node
+        // whose YAML declares it. A source test under dbt-core has no
+        // `attached_node`, and a relationships one has the model it points at
+        // as a parent too: models are numbered before sources, so taking the
+        // first parent hung it on that model's column of the same name.
         for i in 0..nodes.len() {
             if nodes[i].kind != Kind::Test || nodes[i].column.is_empty() {
                 continue;
             }
             let owner = if nodes[i].attached.is_empty() {
-                nodes[i].parents.first().copied()
+                declaring(&nodes, &index, &nodes[i]).or_else(|| nodes[i].parents.first().copied())
             } else {
                 index.get(&nodes[i].attached).copied()
             };
@@ -480,13 +509,12 @@ impl Graph {
             }
         }
 
-        // A cell has to read the same way on every start, and node indices come
-        // out of HashMap iteration, so sorting on the index itself would shuffle
-        // the chips between runs. Rank the test nodes once, by the generic's
-        // name and then by dbt's generated name, and order each column by that
-        // rank. The dedup is on the index and never on a name: it guards against
-        // one test node being attached twice, which is the only duplicate that
-        // is not a second test.
+        // A cell reads its chips by the generic's name and then by dbt's
+        // generated name, the way the canvas groups a model's tests (0040),
+        // rather than by index, which is the unique_id's order. Rank the test
+        // nodes once and order each column by that rank. The dedup is on the
+        // index and never on a name: it guards against one test node being
+        // attached twice, which is the only duplicate that is not a second test.
         let mut order: Vec<u32> = (0..nodes.len() as u32)
             .filter(|&i| nodes[i as usize].kind == Kind::Test)
             .collect();
@@ -533,7 +561,7 @@ impl Graph {
             .filter(|(_, count)| enabled_models >= 20 && *count * 100 >= enabled_models * 95);
 
         let mut by_file: HashMap<String, Vec<u32>> = HashMap::new();
-        let mut counts: HashMap<String, usize> = HashMap::new();
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for (i, n) in nodes.iter().enumerate() {
             if n.disabled {
                 *counts.entry("disabled".to_string()).or_insert(0) += 1;
@@ -892,9 +920,26 @@ impl Graph {
             };
             hits.push((score * 1_000_000 + n.name.len().min(999) as u32 * 1000, i as u32));
         }
-        hits.sort_unstable();
+        // Equal scores read alphabetically. By index they would follow the
+        // unique_id, which puts the kind and the package before the name.
+        hits.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| self.by_name_then_id(a.1, b.1)));
         hits.truncate(limit);
         hits.into_iter().map(|(_, i)| i).collect()
+    }
+
+    /// The node a file shows in the lineage: the one it defines, or for a
+    /// properties file, which declares many, the first of them by name. A test
+    /// only when the file holds nothing else, a singular test's own file.
+    pub fn node_of_file(&self, file: &str) -> Option<u32> {
+        let found = self.by_file.get(file)?;
+        let first = |tests: bool| {
+            found
+                .iter()
+                .copied()
+                .filter(|&i| (self.nodes[i as usize].kind == Kind::Test) == tests)
+                .min_by(|&a, &b| self.by_name_then_id(a, b))
+        };
+        first(false).or_else(|| first(true))
     }
 
     /// Breadth-first upstream/downstream expansion around a focus node.
@@ -939,8 +984,7 @@ impl Graph {
         if with_tests {
             // One test per model a turn, each model's by name: a cap reached
             // halfway leaves every model some of its tests. Filling model after
-            // model, in the HashMap's order, left the last ones none, and a
-            // different last ones after every reload.
+            // model left the last ones none.
             let mut models: Vec<u32> = depth.keys().copied().collect();
             models.sort_by(|&a, &b| self.by_name_then_id(a, b));
             let lists: Vec<Vec<u32>> = models
@@ -1046,7 +1090,7 @@ impl Graph {
             if n.kind != Kind::Test {
                 continue;
             }
-            let declared = self.index.get(&n.attached).copied().filter(|h| set.contains(h));
+            let declared = self.host(n).filter(|h| set.contains(h));
             let host = declared.or_else(|| n.parents.iter().copied().find(|p| set.contains(p))).unwrap_or(u32::MAX);
             groups.entry(host).or_default().push(i);
         }
@@ -1066,16 +1110,14 @@ impl Graph {
     /// is a file of its own and has none. The browser looks for the test's
     /// line under this node's entry (0041).
     pub fn host_of(&self, n: &Node) -> Option<&Node> {
+        self.host(n).map(|i| &self.nodes[i as usize])
+    }
+
+    fn host(&self, n: &Node) -> Option<u32> {
         if n.kind != Kind::Test {
             return None;
         }
-        if let Some(&i) = self.index.get(&n.attached) {
-            return Some(&self.nodes[i as usize]);
-        }
-        n.parents
-            .iter()
-            .map(|&p| &self.nodes[p as usize])
-            .find(|p| !n.file.is_empty() && (p.file == n.file || p.yml == n.file))
+        declaring(&self.nodes, &self.index, n)
     }
 
     fn host_name(&self, n: &Node) -> &str {
@@ -1111,9 +1153,8 @@ impl Graph {
         // room is drawn as room allows, and says nothing about the answer.
         let truncated = picked.len() > max_nodes;
         if members.len() > max_nodes {
-            // Cut by name, never by index: index order follows the manifest's
-            // HashMap iteration in build(), so cutting by it would draw a
-            // different subset of the same selection after every reload.
+            // Cut by name, never by index: the index follows the unique_id,
+            // which puts the kind and the package before the name.
             //
             // Tests go last, because a selection with tests switched on is
             // mostly tests, and an alphabetical cut would fill the canvas with
@@ -1433,8 +1474,8 @@ mod tests {
         Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
     }
 
-    /// Positions in a Lineage follow HashMap iteration order, so every
-    /// assertion here reads a node by name instead.
+    /// Positions in a Lineage follow the index, which no test should have
+    /// to know, so every assertion here reads a node by name instead.
     fn by_name<'a>(sub: &'a Lineage<'a>, name: &str) -> &'a LineageNode<'a> {
         sub.nodes.iter().find(|n| n.name == name).expect(name)
     }
@@ -1540,8 +1581,8 @@ mod tests {
         let sub = g.lineage(g.index["model.shop.b"], 1, 1, true, 9);
         assert!(sub.truncated);
         assert_eq!(tests_per_model(&sub), [("a".into(), 2), ("b".into(), 2), ("c".into(), 2)]);
-        // Nodes come in index order, which follows the manifest's HashMap: the
-        // set kept is what the cap decides, so the set is compared.
+        // Nodes come in index order, which is not the order the cap fills in:
+        // the set kept is what the cap decides, so the set is compared.
         let mut names: Vec<&str> = sub.nodes.iter().map(|n| n.name).filter(|n| n.starts_with("t_a")).collect();
         names.sort_unstable();
         assert_eq!(names, ["t_a1", "t_a2"], "each model's first tests, by name");
@@ -1881,9 +1922,9 @@ mod tests {
         assert!(!dim.columns[0].tests.iter().any(|&i| g.nodes[i as usize].name == "combo"));
     }
 
-    /// Chip order is the generic's name, then dbt's generated name. The indices
-    /// a column holds come out of HashMap iteration, so without that rank the
-    /// same manifest would order one cell differently on every start.
+    /// Chip order is the generic's name, then dbt's generated name, and the
+    /// same on every start. Building the graph again is a new start: the maps
+    /// a manifest is read into once came out in a new order every time.
     #[test]
     fn column_tests_read_the_same_way_on_every_run() {
         let first = chips(&tested(), "model.shop.dim_customers").join(",");
@@ -1949,5 +1990,146 @@ mod tests {
         .unwrap();
         let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
         assert_eq!(chips(&g, "model.shop.dim_customers"), ["nn"]);
+    }
+
+    /// A hub with twelve children, each with two tests declared beside it in
+    /// one properties file and a singular test reading it and the hub, and a
+    /// seed in that file too, first by name though its id sorts after theirs.
+    fn restarted() -> String {
+        let mut nodes = serde_json::Map::new();
+        let mut parents = serde_json::Map::new();
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "original_file_path": format!("models/{name}.sql"),
+                                "patch_path": "shop://models/schema.yml" })
+        };
+        nodes.insert("model.shop.hub".into(), model("hub"));
+        nodes.insert("seed.shop.a_seed".into(), serde_json::json!({ "name": "a_seed", "resource_type": "seed",
+            "package_name": "shop", "original_file_path": "seeds/a_seed.csv", "patch_path": "shop://models/schema.yml" }));
+        for c in "abcdefghijkl".chars() {
+            let m = format!("m_{c}");
+            nodes.insert(format!("model.shop.{m}"), model(&m));
+            parents.insert(format!("model.shop.{m}"), serde_json::json!(["model.shop.hub"]));
+            for t in 1..=2 {
+                let id = format!("test.shop.t_{c}{t}");
+                nodes.insert(id.clone(), serde_json::json!({ "name": format!("t_{c}{t}"), "resource_type": "test",
+                    "package_name": "shop", "original_file_path": "models/schema.yml",
+                    "attached_node": format!("model.shop.{m}") }));
+                parents.insert(id, serde_json::json!([format!("model.shop.{m}")]));
+            }
+            let id = format!("test.shop.s_{c}");
+            nodes.insert(id.clone(), serde_json::json!({ "name": format!("s_{c}"), "resource_type": "test",
+                "package_name": "shop", "original_file_path": format!("tests/s_{c}.sql") }));
+            parents.insert(id, serde_json::json!([format!("model.shop.{m}"), "model.shop.hub"]));
+        }
+        serde_json::json!({ "nodes": nodes, "parent_map": parents }).to_string()
+    }
+
+    /// Building the graph again is a new start: the maps a manifest is read
+    /// into once handed its nodes over in a new order every time, and every
+    /// answer below followed it. The numbering, a capped lineage, a capped
+    /// selection, a search at its limit, a properties file and the counts
+    /// must all come out the same.
+    #[test]
+    fn every_answer_is_the_same_on_every_start() {
+        let text = restarted();
+        let answers = || {
+            let raw: RawManifest = serde_json::from_str(&text).unwrap();
+            let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+            let ids = |found: Vec<u32>| found.iter().map(|&i| g.nodes[i as usize].id.clone()).collect::<Vec<_>>();
+            let all: Vec<u32> = (0..g.nodes.len() as u32).collect();
+            [
+                format!("{:?}", ids(all.clone())),
+                serde_json::to_string(&g.lineage(g.index["model.shop.hub"], 1, 1, true, 9)).unwrap(),
+                serde_json::to_string(&g.selection(&all, &[], true, 20)).unwrap(),
+                format!("{:?}", ids(g.search("_", &[], 5))),
+                format!("{:?}", g.node_of_file("models/schema.yml").map(|i| g.nodes[i as usize].id.clone())),
+                serde_json::to_string(&g.meta.counts).unwrap(),
+            ]
+        };
+        let first = answers();
+        for _ in 0..8 {
+            assert_eq!(answers(), first);
+        }
+    }
+
+    #[test]
+    fn a_file_shows_the_node_it_defines_or_its_first_by_name() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders": { "name": "orders", "resource_type": "model",
+                    "original_file_path": "models/orders.sql", "patch_path": "shop://models/schema.yml" },
+                "model.shop.customers": { "name": "customers", "resource_type": "model",
+                    "original_file_path": "models/customers.sql", "patch_path": "shop://models/schema.yml" },
+                "test.shop.a_not_null_orders_id": { "name": "a_not_null_orders_id", "resource_type": "test",
+                    "original_file_path": "models/schema.yml", "attached_node": "model.shop.orders" },
+                "test.shop.assert_positive": { "name": "assert_positive", "resource_type": "test",
+                    "original_file_path": "tests/assert_positive.sql" },
+            },
+            "sources": {
+                "source.shop.billing.payments": { "name": "payments", "source_name": "billing",
+                    "resource_type": "source", "original_file_path": "models/schema.yml" },
+            },
+            "parent_map": {
+                "test.shop.a_not_null_orders_id": ["model.shop.orders"],
+                "test.shop.assert_positive": ["model.shop.orders"],
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let shown = |file: &str| g.node_of_file(file).map(|i| g.nodes[i as usize].id.as_str());
+        assert_eq!(shown("models/schema.yml"), Some("source.shop.billing.payments"), "billing.payments is first by name, though a source's id sorts after a model's");
+        assert_eq!(shown("models/orders.sql"), Some("model.shop.orders"));
+        assert_eq!(shown("tests/assert_positive.sql"), Some("test.shop.assert_positive"), "a test, when the file holds nothing else");
+        assert_eq!(shown("models/nowhere.yml"), None);
+    }
+
+    #[test]
+    fn equal_search_hits_read_alphabetically() {
+        let node = |name: &str, kind: &str| serde_json::json!({ "name": name, "resource_type": kind, "package_name": "shop" });
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.cab": node("cab", "model"),
+                "model.shop.abc": node("abc", "model"),
+                "model.shop.bca": node("bca", "model"),
+                "seed.shop.aac": node("aac", "seed"),
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let names: Vec<&str> = g.search("a", &[], 10).iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+        assert_eq!(names, ["aac", "abc", "bca", "cab"], "starting with the query first, then by name: the seed is not last for being a seed");
+        let names: Vec<&str> = g.search("a", &[], 1).iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+        assert_eq!(names, ["aac"], "and the limit keeps the first of them by name");
+    }
+
+    /// A source test under dbt-core has no `attached_node`, and a
+    /// relationships one has the model it points at among its parents. The
+    /// model's index comes first, so its first parent is the wrong node.
+    #[test]
+    fn a_source_test_hangs_on_the_source_it_is_declared_under() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.customers": { "name": "customers", "resource_type": "model",
+                    "original_file_path": "models/customers.sql", "patch_path": "shop://models/customers.yml",
+                    "columns": { "customer_id": { "name": "customer_id" } } },
+                "test.shop.source_relationships_raw_orders_customer_id": {
+                    "name": "source_relationships_raw_orders_customer_id", "resource_type": "test",
+                    "original_file_path": "models/sources.yml", "column_name": "customer_id",
+                    "test_metadata": { "name": "relationships" } },
+            },
+            "sources": {
+                "source.shop.raw.orders": { "name": "orders", "source_name": "raw", "resource_type": "source",
+                    "original_file_path": "models/sources.yml",
+                    "columns": { "customer_id": { "name": "customer_id" } } },
+            },
+            "parent_map": {
+                "test.shop.source_relationships_raw_orders_customer_id": ["model.shop.customers", "source.shop.raw.orders"],
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        assert_eq!(chips(&g, "source.shop.raw.orders"), ["source_relationships_raw_orders_customer_id"]);
+        assert!(chips(&g, "model.shop.customers").is_empty(), "the model it points at guards nothing");
     }
 }

@@ -3,24 +3,27 @@
 //! Only the fields the UI needs are declared: serde drops everything else while
 //! parsing, which keeps a 90 MB manifest from turning into a 1 GB object graph.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(serde::Deserialize, Default)]
 pub struct RawManifest {
     #[serde(default)]
     pub metadata: RawMetadata,
+    /// Sorted by unique_id, like `sources`, `exposures` and `disabled`:
+    /// `Graph::build` numbers the nodes in the order it reads them, and a
+    /// HashMap hands them over in a new order on every start.
     #[serde(default)]
-    pub nodes: HashMap<String, RawNode>,
+    pub nodes: BTreeMap<String, RawNode>,
     #[serde(default)]
-    pub sources: HashMap<String, RawNode>,
+    pub sources: BTreeMap<String, RawNode>,
     #[serde(default)]
-    pub exposures: HashMap<String, RawNode>,
+    pub exposures: BTreeMap<String, RawNode>,
     #[serde(default)]
     pub parent_map: HashMap<String, Vec<String>>,
     /// Nodes dbt parsed but left out of the graph. Their files still exist, so
     /// the editor must be able to jump to them.
     #[serde(default)]
-    pub disabled: HashMap<String, Vec<RawNode>>,
+    pub disabled: BTreeMap<String, Vec<RawNode>>,
     /// Every macro dbt could call, its own and the adapter's included, so the
     /// editor can link a call to the right one (`src/macros.rs`).
     #[serde(default)]
@@ -204,8 +207,10 @@ pub struct RawCatalog {
 
 #[derive(serde::Deserialize, Default)]
 pub struct CatalogNode {
+    /// Sorted, so two columns whose names differ only in case, which a quoted
+    /// identifier allows, meet `merge_catalog` in the same order every time.
     #[serde(default)]
-    pub columns: HashMap<String, CatalogColumn>,
+    pub columns: BTreeMap<String, CatalogColumn>,
 }
 
 #[derive(serde::Deserialize, Default)]
