@@ -630,7 +630,14 @@ inherited with the registry's variables, `PATH` included: the venv's `Scripts`
 folder was gone, and `VIRTUAL_ENV`, which the registry does not hold, stayed.
 `pty::command` now clears that environment and copies dbt-edith's own. Its test
 compares the two on every platform but can only fail on Windows, which CI does
-not run. The `.exe` cross-compiles; the fix has not run on the VM yet.
+not run. On the VM it was not enough: the venv reached the shell,
+second in `type -a dbt`, and `~/.bashrc` put pyenv-win's shims before it, while
+VS Code's terminal, which activates the venv after the startup files, had it
+first. So each new terminal now types the activate script of the venv
+dbt-edith was started in (0050), once the line editor reads on Unix and at once
+on Windows. Measured on macOS against `zsh -l` and its real `~/.zshrc`: the
+line showed once, after the prompt, and ran within 0.6 s. The `.exe`
+cross-compiles; the activation has not run on the VM yet.
 
 The profile on every project: the top bar showed
 `profiles.yml` only once the Snowflake script had run with Snowflake's
@@ -914,6 +921,12 @@ cross-compile.
   overwrites with the registry's variables, so an activated venv's `PATH` is
   lost there and nowhere else. Build the terminal's command through
   `pty::command`, which clears that copy and takes this process's.
+- **The shell's startup files reorder `PATH` after it is inherited.** A
+  `~/.bashrc` that puts pyenv's shims or conda first hides an inherited venv's
+  `dbt`, so getting the environment right is not enough: the venv's activate
+  script is typed after them (0050). Typing anything into a new terminal on
+  Unix before the line editor reads shows it twice; wait as
+  `pty::line_editor_ready` does.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

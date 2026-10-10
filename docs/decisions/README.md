@@ -53,6 +53,7 @@ it is built this way, for whoever changes it next.
 | [0045](0045-merging-a-version-bump-releases-it.md) | Merging a version bump releases it | changing how a release is started, what makes the tag, what a release's notes say, or the headings of CHANGELOG.md |
 | [0048](0048-the-query-history-is-read-live-and-never-kept.md) | The query history is read live, twenty at a time, and never kept | showing anything read from Snowflake other than column lineage, linking to Snowsight, or changing when the Snowflake script starts or stops |
 | [0049](0049-the-profile-is-found-where-dbt-looks.md) | The profile is found where dbt looks, whatever the warehouse | changing which `profiles.yml` dbt-edith opens, or what decides whether it can be opened |
+| [0050](0050-the-terminal-activates-the-venv-it-was-handed.md) | The terminal activates the venv dbt-edith was started in | changing what the terminal types on its own, or which Python environment its shell starts with |
 
 ## Keeping these honest
 

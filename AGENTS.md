@@ -143,6 +143,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | group, label or colour the tests under a model, or add a field a test carries in a payload | [0040](docs/decisions/0040-tests-hang-grouped-by-generic.md) |
 | change where opening a data test lands, or find a line in a properties file | [0041](docs/decisions/0041-a-test-opens-at-its-line.md) |
 | handle a key inside the terminal, or change what Ctrl + C does there | [0044](docs/decisions/0044-the-terminal-copies-like-windows-terminal.md) |
+| make the terminal type anything on its own, or change the environment its shell starts with | [0050](docs/decisions/0050-the-terminal-activates-the-venv-it-was-handed.md) |
 | change the folder bands, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
