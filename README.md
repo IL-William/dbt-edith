@@ -577,6 +577,23 @@ cargo install --locked --git https://github.com/IL-William/dbt-collin collin-cli
 Where cargo is not available, copy a `collin.exe` built elsewhere beside
 `dbt-edith.exe`.
 
+**Other collin versions sit beside it.** "Install another collin version…",
+under Collin in the menu, asks for a version and types the command that
+installs it at its tag into a folder of its own, under dbt-edith's config
+directory:
+
+```
+cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 --root "<config>/collin/0.3.0" collin-cli
+```
+
+Once it is built, the menu lists every collin there is, the one beside
+dbt-edith or on your `PATH` first, and the one picked runs for this project
+from then on. Its cache is written again by it, since a cache written by
+another version is treated as stale; the report says which collin wrote it.
+Cargo's advice to add the folder to your `PATH` can be ignored. The update
+line below applies to the default collin only: a version installed by tag
+stays that version (0060).
+
 Once collin is installed and Collin is the tool picked, a line under Collin in
 the menu offers to update it. This dbt-edith expects collin 0.1.0 or later: an
 older one, or one that gives no version, gets "Update collin", which types the

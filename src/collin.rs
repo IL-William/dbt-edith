@@ -99,6 +99,10 @@ pub struct Available {
     pub target: String,
     pub generated_at: String,
     pub mtime: u64,
+    /// What wrote it, `collin 0.4.0`, when the cache says: two caches of one
+    /// tool, written by two versions of it, are told apart by this.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub producer: String,
 }
 
 /// The tools the column-lineage menu offers, in its order (0031).
@@ -122,6 +126,8 @@ struct Header {
     target: String,
     #[serde(default)]
     generated_at: String,
+    #[serde(default)]
+    producer: String,
 }
 
 /// Where a producer writes. One file per source, so two producers never contend
@@ -213,6 +219,7 @@ pub fn discover_cached(target_dir: &Path, headers: &Headers) -> Vec<Available> {
             source: head.source,
             target: head.target,
             generated_at: head.generated_at,
+            producer: head.producer,
             mtime: modified
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
@@ -741,6 +748,7 @@ mod tests {
                 target: String::new(),
                 generated_at: String::new(),
                 mtime: 100 - i as u64,
+                producer: String::new(),
             })
             .collect()
     }

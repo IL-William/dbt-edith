@@ -5,7 +5,9 @@
 //! outside this binary (0023), and someone who never looks at column lineage
 //! never builds it. It is looked for beside dbt-edith, then on the PATH, and
 //! installed only when the user asks, by `cargo install` typed into their own
-//! terminal.
+//! terminal. Other versions can sit beside that one, each installed at a tag
+//! into its own folder under dbt-edith's config directory, and the one picked
+//! for the project is the one that runs (0060).
 //!
 //! Three rules hold here:
 //!   - nothing runs at startup. A run follows picking Collin, clicking a column
@@ -27,6 +29,9 @@ use std::time::{Duration, Instant};
 /// What the install entry types into the terminal, left for the user to run.
 /// The repository is public, so cargo needs no account to clone it.
 pub const INSTALL: &str = "cargo install --locked --git https://github.com/IL-William/dbt-collin collin-cli";
+
+/// collin's repository, public, so cargo needs no account to clone it.
+const REPO: &str = "https://github.com/IL-William/dbt-collin";
 
 /// The same, forced: what the update entry types when the collin found is older
 /// than `WANTS`. Without `--force`, cargo leaves a collin installed from
@@ -110,27 +115,89 @@ pub fn outdated(version: Option<&str>) -> bool {
     version.and_then(semver).map_or(true, |v| v < WANTS)
 }
 
-/// The version of the collin last asked, kept while the binary is the same
+/// The version each collin last asked gave, kept while its binary is the same
 /// file: the menu asks on every opening, and an answer is a process start.
+/// By path, since several can be installed side by side.
 #[derive(Default)]
-pub struct Versions(Mutex<Option<(PathBuf, Option<std::time::SystemTime>, Option<String>)>>);
+pub struct Versions(Mutex<std::collections::HashMap<PathBuf, (Option<std::time::SystemTime>, Option<String>)>>);
 
 impl Versions {
     pub fn get(&self, bin: &Path) -> Option<String> {
         let modified = mtime(bin);
-        if let Ok(slot) = self.0.lock() {
-            if let Some((path, m, v)) = slot.as_ref() {
-                if path == bin && *m == modified {
+        if let Ok(seen) = self.0.lock() {
+            if let Some((m, v)) = seen.get(bin) {
+                if *m == modified {
                     return v.clone();
                 }
             }
         }
         let v = version(bin);
-        if let Ok(mut slot) = self.0.lock() {
-            *slot = Some((bin.to_path_buf(), modified, v.clone()));
+        if let Ok(mut seen) = self.0.lock() {
+            seen.insert(bin.to_path_buf(), (modified, v.clone()));
         }
         v
     }
+}
+
+/// Where versions installed side by side live: `<config>/collin/<X.Y.Z>/`,
+/// each the `--root` of its own `cargo install`, so its binary is under `bin/`.
+pub fn installs_dir(config_dir: &Path) -> PathBuf {
+    config_dir.join("collin")
+}
+
+/// `0.4.0`, and nothing else: three numbers. A version names a folder and a
+/// tag, and one from the browser is checked against this before either.
+pub fn is_version(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// One collin installed side by side.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Install {
+    pub version: String,
+    pub bin: PathBuf,
+}
+
+/// The versions installed side by side, newest first. A folder that is not a
+/// version, or holds no collin yet, as while cargo is still building it, is
+/// not one.
+pub fn installed(dir: &Path) -> Vec<Install> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut out: Vec<Install> = entries
+        .flatten()
+        .filter_map(|e| {
+            let version = e.file_name().to_str().filter(|n| is_version(n))?.to_string();
+            let bin = e.path().join("bin").join(exe_name());
+            bin.is_file().then_some(Install { version, bin })
+        })
+        .collect();
+    out.sort_by(|a, b| semver(&b.version).cmp(&semver(&a.version)));
+    out
+}
+
+/// What installs `version` side by side, typed into the terminal for the user
+/// to run, as the plain install is (0042). Its tag, never `main`: a version
+/// picked by number has to stay that version. None when the folder's path
+/// holds a quote, which no shell would read back as one argument.
+pub fn install_command(dir: &Path, version: &str) -> Option<String> {
+    let root = dir.join(version);
+    let root = root.to_str().filter(|r| !r.contains('"'))?;
+    Some(format!("cargo install --locked --git {REPO} --tag v{version} --root \"{root}\" collin-cli"))
+}
+
+/// The collin that runs: the version picked for the project when it is
+/// installed, else the one beside dbt-edith or on the PATH.
+pub fn chosen_bin(installs: &[Install], chosen: Option<&str>) -> Option<PathBuf> {
+    match chosen.and_then(|v| installs.iter().find(|i| i.version == v)) {
+        Some(install) => Some(install.bin.clone()),
+        None => locate(),
+    }
+}
+
+/// `collin 0.4.0`, a cache's producer, to `0.4.0`.
+pub fn producer_version(producer: &str) -> Option<&str> {
+    producer.trim().strip_prefix("collin ").map(|v| v.split_whitespace().next().unwrap_or(v))
 }
 
 fn mtime(path: &Path) -> Option<std::time::SystemTime> {
@@ -186,6 +253,10 @@ pub struct Runner {
     runs: AtomicU64,
     status: Mutex<Status>,
     deadline: Duration,
+    /// The collin the last run used. A request waiting out a run takes its
+    /// outcome only when it asked for the same collin: one asking for another
+    /// version runs that one.
+    last_bin: Mutex<Option<PathBuf>>,
 }
 
 impl Runner {
@@ -195,6 +266,7 @@ impl Runner {
             runs: AtomicU64::new(0),
             status: Mutex::new(Status { state: "idle", ..Default::default() }),
             deadline,
+            last_bin: Mutex::new(None),
         }
     }
 
@@ -228,10 +300,14 @@ impl Runner {
     {
         let before = self.runs.load(Ordering::SeqCst);
         let _one = self.one.lock().await;
-        if self.runs.load(Ordering::SeqCst) != before {
+        let same_bin = self.last_bin.lock().map(|b| b.as_deref() == Some(job.bin.as_path())).unwrap_or(false);
+        if self.runs.load(Ordering::SeqCst) != before && same_bin {
             return self.status();
         }
         self.mark_running();
+        if let Ok(mut last) = self.last_bin.lock() {
+            *last = Some(job.bin.clone());
+        }
         let deadline = self.deadline;
         let outcome = tokio::task::spawn_blocking(move || run(&job, deadline))
             .await
@@ -743,6 +819,71 @@ mod tests {
         runner.generate(job(&d, silent), || async {}).await;
         assert!(!report.exists(), "a report left from an earlier run would describe another cache");
         assert_eq!(runner.status().run, 3);
+    }
+
+    #[test]
+    fn a_version_is_three_numbers_and_nothing_a_path_could_hide_in() {
+        for ok in ["0.4.0", "10.0.12"] {
+            assert!(is_version(ok), "{ok}");
+        }
+        for bad in ["", "0.4", "0.4.0.1", "v0.4.0", "0.4.0-rc1", "../0.4.0", "0..4", "0.4.x", "123456.0.0"] {
+            assert!(!is_version(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn versions_side_by_side_are_the_folders_holding_a_collin_newest_first() {
+        let d = dir("installed");
+        for (folder, with_bin) in [("0.3.0", true), ("0.10.0", true), ("0.4.0", false), ("notes", true)] {
+            let bin = d.join(folder).join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            if with_bin {
+                std::fs::write(bin.join(exe_name()), "").unwrap();
+            }
+        }
+        let found: Vec<String> = installed(&d).into_iter().map(|i| i.version).collect();
+        assert_eq!(found, ["0.10.0", "0.3.0"], "by number, not by name; one still building is not there yet");
+        assert!(installed(&d.join("missing")).is_empty());
+        let picked = chosen_bin(&installed(&d), Some("0.3.0"));
+        assert_eq!(picked, Some(d.join("0.3.0").join("bin").join(exe_name())));
+    }
+
+    #[test]
+    fn a_version_installs_at_its_tag_into_its_own_folder() {
+        let dir = Path::new("/home/me/.config/dbt-edith/collin");
+        assert_eq!(
+            install_command(dir, "0.3.0").unwrap(),
+            "cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 \
+             --root \"/home/me/.config/dbt-edith/collin/0.3.0\" collin-cli"
+        );
+        assert_eq!(install_command(Path::new("/odd\"dir"), "0.3.0"), None);
+    }
+
+    #[test]
+    fn a_producer_names_its_version() {
+        assert_eq!(producer_version("collin 0.4.0"), Some("0.4.0"));
+        assert_eq!(producer_version("snowflake"), None);
+        assert_eq!(producer_version(""), None);
+    }
+
+    #[tokio::test]
+    async fn a_request_for_another_collin_does_not_take_this_ones_outcome() {
+        let d = dir("two-bins");
+        let (a_dir, b_dir) = (d.join("a"), d.join("b"));
+        std::fs::create_dir_all(&a_dir).unwrap();
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let a = fake(&a_dir, "sleep 0.3\necho a > \"$out\"");
+        let b = fake(&b_dir, "echo b > \"$out\"");
+        let runner = Arc::new(Runner::new(Duration::from_secs(10)));
+        let (ra, rb) = (runner.clone(), runner.clone());
+        let (ja, jb) = (job(&d, a), job(&d, b));
+        let first = tokio::spawn(async move { ra.generate(ja, || async {}).await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let second = tokio::spawn(async move { rb.generate(jb, || async {}).await });
+        assert_eq!(first.await.unwrap().state, "done");
+        assert_eq!(second.await.unwrap().state, "done");
+        assert_eq!((runs(&a_dir), runs(&b_dir)), (1, 1), "each collin ran once");
+        assert_eq!(std::fs::read_to_string(d.join("column_lineage.collin.json")).unwrap().trim(), "b");
     }
 
     #[tokio::test]

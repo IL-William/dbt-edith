@@ -63,6 +63,7 @@ it is built this way, for whoever changes it next.
 | [0057](0057-a-selection-is-answered-on-the-command-line.md) | A selection is answered on the command line, without a server | adding a flag that answers and exits instead of serving, or letting anything but the page read the selection engine |
 | [0058](0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) | A model is cloned into your schema by statements you run | writing SQL for the user to run, changing what a clone copies or where it lands, or reading anything else out of the profile |
 | [0059](0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md) | collin's report is filed here, from the lists every collin writes | changing what the report page lists, what the badge counts, or how a collin run leaves its report |
+| [0060](0060-collin-versions-sit-side-by-side-and-one-is-picked.md) | collin versions sit side by side, and the project picks the one that runs | changing which collin runs, where versions are installed, or what makes collin's cache stale |
 
 ## Keeping these honest
 

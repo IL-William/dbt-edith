@@ -64,8 +64,15 @@ pub struct AppState {
     pub collin: collin_run::Runner,
     /// collin's last report, read again only when the file changes.
     pub collin_report: collin_run::Reports,
-    /// The installed collin's version, asked again only when the binary changes.
+    /// Each collin's version, asked again only when its binary changes.
     pub collin_version: collin_run::Versions,
+    /// Where collin versions are installed side by side, under dbt-edith's own
+    /// config directory: None without one, and then only the collin beside
+    /// dbt-edith or on the PATH runs (0060).
+    pub collin_installs: Option<PathBuf>,
+    /// The version picked for this project, held here as well as in the
+    /// settings, like `snowflake_features`.
+    pub collin_chosen: std::sync::Mutex<Option<String>>,
     /// The user's choice of Snowflake's features for this project, None until
     /// there is one. Held here as well as in the settings, so the choice lasts
     /// the session when there is no configuration directory to keep it in.
@@ -227,6 +234,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/snowflake/clone/into", post(remember_clone_into))
         .route("/api/collineage/generate", post(generate_col_lineage))
         .route("/api/collineage/report", get(collin_report_page))
+        .route("/api/collin/version", post(choose_collin_version))
+        .route("/api/collin/install", get(collin_install_command))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
@@ -522,6 +531,65 @@ struct CollinBody {
     /// others, while its own cache is the one on screen.
     #[serde(skip_serializing_if = "Option::is_none")]
     report: Option<collin_run::Summary>,
+    /// Every collin there is to pick: the one beside dbt-edith or on the PATH,
+    /// then those installed side by side, newest first (0060).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    versions: Vec<CollinVersion>,
+    /// The version picked for the project, which may no longer be installed.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    chosen: String,
+    /// Whether there is a config directory to install a version into.
+    can_install: bool,
+}
+
+#[derive(serde::Serialize)]
+struct CollinVersion {
+    /// `0.4.0`, or empty for a collin from before `--version`.
+    version: String,
+    /// `default`, the one beside dbt-edith or on the PATH, or `installed`.
+    origin: &'static str,
+    /// The one that runs.
+    runs: bool,
+}
+
+/// The collin that runs, what else there is to pick, and whether its cache
+/// needs a run: missing, older than the manifest, or written by another
+/// version of collin than the one that runs now.
+struct CollinNow {
+    bin: Option<PathBuf>,
+    version: Option<String>,
+    stale: bool,
+    versions: Vec<CollinVersion>,
+}
+
+async fn collin_now(st: &Arc<AppState>) -> CollinNow {
+    let shared = st.clone();
+    let chosen = st.collin_chosen.lock().ok().and_then(|c| c.clone());
+    let read = tokio::task::spawn_blocking(move || {
+        let installs = shared.collin_installs.as_deref().map(collin_run::installed).unwrap_or_default();
+        let bin = collin_run::chosen_bin(&installs, chosen.as_deref());
+        let version = bin.as_deref().and_then(|b| shared.collin_version.get(b));
+        let default = collin_run::locate();
+        let short = |v: Option<String>| v.as_deref().unwrap_or_default().split_whitespace().next().unwrap_or_default().to_string();
+        let mut versions = Vec::new();
+        if let Some(d) = &default {
+            let v = shared.collin_version.get(d);
+            versions.push(CollinVersion { version: short(v), origin: "default", runs: bin.as_ref() == Some(d) });
+        }
+        for i in &installs {
+            versions.push(CollinVersion { version: i.version.clone(), origin: "installed", runs: bin.as_ref() == Some(&i.bin) });
+        }
+        let out = collin::path_for(&shared.target_dir, "collin");
+        let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let found = collin::discover_cached(&shared.target_dir, &shared.cll_headers);
+        let wrote = found.iter().find(|a| a.file == name).and_then(|a| collin_run::producer_version(&a.producer).map(str::to_string));
+        // Only when both are known: a cache from a collin that names no
+        // version, or a collin that gives none, is judged by its time alone.
+        let other = matches!((&wrote, short(version.clone())), (Some(w), now) if !now.is_empty() && *w != now);
+        let stale = collin_run::stale(&out, &shared.manifest_path) || other;
+        CollinNow { bin, version, stale, versions }
+    });
+    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new() })
 }
 
 #[derive(serde::Serialize)]
@@ -557,25 +625,22 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         }
     };
     let collin = {
-        let (manifest, shared) = (st.manifest_path.clone(), st.clone());
-        let (found, stale, version) = tokio::task::spawn_blocking(move || {
-            let bin = collin_run::locate();
-            let version = bin.as_deref().and_then(|b| shared.collin_version.get(b));
-            (bin.is_some(), collin_run::stale(&collin_out, &manifest), version)
-        })
-        .await
-        .unwrap_or((false, false, None));
+        let now = collin_now(st).await;
+        let found = now.bin.is_some();
         let report = collin_report(st, cll_tool).await.map(|r| r.summary.clone());
         CollinBody {
             found,
-            stale,
+            stale: now.stale,
             install: collin_run::INSTALL,
-            outdated: found && collin_run::outdated(version.as_deref()),
-            version: version.unwrap_or_default(),
+            outdated: found && collin_run::outdated(now.version.as_deref()),
+            version: now.version.unwrap_or_default(),
             wants: collin_run::WANTS_TEXT,
             update: collin_run::UPDATE,
             status: st.collin.status(),
             report,
+            versions: now.versions,
+            chosen: st.collin_chosen.lock().ok().and_then(|c| c.clone()).unwrap_or_default(),
+            can_install: st.collin_installs.is_some(),
         }
     };
     MetaBody {
@@ -734,16 +799,29 @@ async fn collin_report(st: &Arc<AppState>, tool: &str) -> Option<Arc<collin_run:
 async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
     let shared = st.clone();
     let read = tokio::task::spawn_blocking(move || shared.collin_report.get(&shared.target_dir.join(collin_run::REPORT)));
-    match read.await.ok().flatten() {
-        Some(report) => Json(&report.overview).into_response(),
-        None => (StatusCode::NOT_FOUND, "collin has written no report here yet: pick Collin, or press Regenerate").into_response(),
-    }
+    let Some(report) = read.await.ok().flatten() else {
+        return (StatusCode::NOT_FOUND, "collin has written no report here yet: pick Collin, or press Regenerate").into_response();
+    };
+    // The report does not say which collin wrote it, and the cache of the same
+    // run does: with versions side by side, that is the first thing to know.
+    let name = collin::path_for(&st.target_dir, "collin").file_name().map(|n| n.to_string_lossy().into_owned());
+    let producer = caches(&st).await.into_iter().find(|a| Some(&a.file) == name.as_ref()).map(|a| a.producer).unwrap_or_default();
+    Json(ReportPage { overview: &report.overview, producer }).into_response()
+}
+
+#[derive(serde::Serialize)]
+struct ReportPage<'a> {
+    #[serde(flatten)]
+    overview: &'a crate::collin_report::Overview,
+    /// `collin 0.4.0`, from the cache the same run wrote.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    producer: String,
 }
 
 /// What a collin run reads and writes, or None when no collin executable is
 /// found. Every path is the server's own: nothing in a request names one.
-async fn collin_job(st: &AppState) -> Option<collin_run::Job> {
-    let bin = tokio::task::spawn_blocking(collin_run::locate).await.ok().flatten()?;
+async fn collin_job(st: &Arc<AppState>) -> Option<collin_run::Job> {
+    let bin = collin_now(st).await.bin?;
     Some(collin_run::Job {
         bin,
         project: st.root.clone(),
@@ -777,10 +855,8 @@ async fn regenerate(st: &Arc<AppState>) -> Option<collin_run::Status> {
 /// the manifest, without making the pick wait for it. The page polls until the
 /// run ends.
 async fn regenerate_in_background(st: &Arc<AppState>) {
-    let out = collin::path_for(&st.target_dir, "collin");
-    let manifest = st.manifest_path.clone();
-    let stale = tokio::task::spawn_blocking(move || collin_run::stale(&out, &manifest)).await.unwrap_or(false);
-    if !stale || collin_job(st).await.is_none() {
+    let now = collin_now(st).await;
+    if !now.stale || now.bin.is_none() {
         return;
     }
     st.collin.mark_running();
@@ -803,6 +879,70 @@ async fn generate_col_lineage(State(st): State<Arc<AppState>>) -> Response {
             .into_response(),
         Some(status) if status.state == "failed" => (StatusCode::BAD_GATEWAY, status.error).into_response(),
         Some(_) => Json(meta_body(&st).await).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CollinVersionBody {
+    /// A version installed side by side, or empty for the one beside
+    /// dbt-edith or on the PATH.
+    #[serde(default)]
+    version: String,
+}
+
+/// Picks the collin that runs for this project (0060). The version is matched
+/// against the folders found, never joined onto a path (0015). With Collin's
+/// cache on screen, a collin other than the one that wrote it runs at once,
+/// as a pick of Collin would.
+async fn choose_collin_version(State(st): State<Arc<AppState>>, Json(b): Json<CollinVersionBody>) -> Response {
+    let chosen = if b.version.is_empty() {
+        None
+    } else {
+        let dir = st.collin_installs.clone();
+        let installs = tokio::task::spawn_blocking(move || dir.as_deref().map(collin_run::installed).unwrap_or_default())
+            .await
+            .unwrap_or_default();
+        match installs.into_iter().find(|i| i.version == b.version) {
+            Some(i) => Some(i.version),
+            None => return (StatusCode::NOT_FOUND, format!("collin {} is not installed here", b.version)).into_response(),
+        }
+    };
+    if let Ok(mut c) = st.collin_chosen.lock() {
+        c.clone_from(&chosen);
+    }
+    if let Err(e) = st.settings.update(|s| s.collin_version = chosen).await {
+        eprintln!("  collin version not saved: {e}");
+    }
+    if st.cll() == collin::path_for(&st.target_dir, "collin") {
+        regenerate_in_background(&st).await;
+    }
+    Json(meta_body(&st).await).into_response()
+}
+
+#[derive(Deserialize)]
+struct InstallQuery {
+    #[serde(default)]
+    version: String,
+}
+
+#[derive(serde::Serialize)]
+struct InstallCommand {
+    command: String,
+}
+
+/// The command that installs a version side by side, for the page to type
+/// into the terminal. Nothing is run here: building it is the user's choice
+/// and their cargo's download (0042).
+async fn collin_install_command(State(st): State<Arc<AppState>>, Query(q): Query<InstallQuery>) -> Response {
+    if !collin_run::is_version(&q.version) {
+        return (StatusCode::BAD_REQUEST, "a collin version is three numbers, such as 0.4.0").into_response();
+    }
+    let Some(dir) = st.collin_installs.as_deref() else {
+        return (StatusCode::CONFLICT, "no config directory to install collin versions into: set DBT_EDITH_CONFIG_DIR").into_response();
+    };
+    match collin_run::install_command(dir, &q.version) {
+        Some(command) => Json(InstallCommand { command }).into_response(),
+        None => (StatusCode::CONFLICT, format!("{} holds a quote, which no shell reads back", dir.display())).into_response(),
     }
 }
 
@@ -3058,6 +3198,8 @@ mod tests {
             collin: collin_run::Runner::new(std::time::Duration::from_secs(10)),
             collin_report: Default::default(),
             collin_version: Default::default(),
+            collin_installs: Some(root.join("collin-installs")),
+            collin_chosen: std::sync::Mutex::new(None),
             snowflake_features: std::sync::Mutex::new(None),
             cll_lock: tokio::sync::Mutex::new(()),
             seen: std::sync::Mutex::new([0; 3]),
@@ -3129,6 +3271,64 @@ mod tests {
     /// The same request as a program that never saw the printed link sends it.
     fn keyless(request: String) -> String {
         request.replace(&format!("Authorization: Bearer {TEST_KEY}\r\n"), "")
+    }
+
+    /// A collin installed side by side is picked by its version, which must
+    /// be one found there, and a cache another version wrote is stale.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_collin_version_is_picked_among_those_installed() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_project("versions");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("manifest.json"), r#"{"metadata":{"project_name":"demo"}}"#).unwrap();
+        let bin = root.join("collin-installs").join("0.3.0").join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        // Copied into place rather than written there, so no test forking
+        // meanwhile holds it open for writing (see collin_run's `executable`).
+        let draft = root.join("collin.draft");
+        std::fs::write(&draft, "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.3.0 (abc1234)'\nexit 0\n").unwrap();
+        assert!(std::process::Command::new("cp").arg(&draft).arg(bin.join("collin")).status().unwrap().success());
+        std::fs::set_permissions(bin.join("collin"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Written after the manifest, so only its producer can make it stale.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let cache = |producer: &str| {
+            let body = format!(r#"{{"version":1,"source":"collin","producer":"{producer}","edges":[]}}"#);
+            std::fs::write(target.join("column_lineage.collin.json"), body).unwrap();
+        };
+        cache("collin 0.2.0");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let post = |body: &str| with_json("POST", "/api/collin/version", &[("Host", &host), ("Origin", &own)], body);
+        let h = [("Host", host.as_str())];
+
+        let unknown = status_of(port, post(r#"{"version":"0.9.0"}"#)).await;
+        assert!(unknown.ends_with("404 Not Found"), "{unknown}");
+        let walk = status_of(port, post(r#"{"version":"../../bin"}"#)).await;
+        assert!(walk.ends_with("404 Not Found"), "a name is matched against the folders found, never joined: {walk}");
+
+        let picked = body_of(port, post(r#"{"version":"0.3.0"}"#)).await;
+        assert!(picked.contains(r#""chosen":"0.3.0""#), "{picked}");
+        assert!(picked.contains(r#"{"version":"0.3.0","origin":"installed","runs":true}"#), "{picked}");
+        assert!(picked.contains(r#""stale":true"#), "a cache 0.2.0 wrote is stale under 0.3.0: {picked}");
+        assert_eq!(st.collin_chosen.lock().unwrap().as_deref(), Some("0.3.0"));
+        cache("collin 0.3.0");
+        let meta = body_of(port, get("/api/meta", &h)).await;
+        assert!(meta.contains(r#""stale":false"#), "{meta}");
+
+        let back = body_of(port, post(r#"{"version":""}"#)).await;
+        assert!(!back.contains(r#""chosen""#), "{back}");
+
+        let command = body_of(port, get("/api/collin/install?version=0.4.0", &h)).await;
+        assert!(command.contains("--tag v0.4.0 --root"), "{command}");
+        assert!(command.contains("collin-installs/0.4.0"), "{command}");
+        let bad = status_of(port, get("/api/collin/install?version=0.4.0%3Brm", &h)).await;
+        assert!(bad.ends_with("400 Bad Request"), "{bad}");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The page reads the report whichever tool is on screen: it says what

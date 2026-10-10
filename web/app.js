@@ -3983,6 +3983,9 @@ function shortVersion(v) {
    does not. dbt-edith itself never asks GitHub (0043). */
 function collinUpdateRow(cl, tool) {
   if (!cl || !cl.found || tool !== 'collin') return null;
+  // A version installed side by side is pinned to its tag: there is nothing
+  // newer to fetch for it, and these commands reach the default one.
+  if ((cl.versions || []).some((v) => v.runs && v.origin === 'installed')) return null;
   const v = shortVersion(cl.version);
   if (cl.outdated) {
     // "needs 0.2.0" over "before 0.2.0 → 0.2.0", which read as a range.
@@ -4227,6 +4230,8 @@ async function openSourceMenu(anchor) {
   };
   const update = collinUpdateRow(S.collin, S.cllTool);
   const report = collinReportRow(S.collin, S.cllTool);
+  const versions = collinVersionRows(S.collin, S.cllTool);
+  const install = collinInstallRow(S.collin, S.cllTool);
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
       badge: t.alpha ? 'alpha' : '',
@@ -4234,6 +4239,18 @@ async function openSourceMenu(anchor) {
     if (t.tool === 'collin' && report) {
       add({ label: report.label, sub: report.sub, tool: 'collin', on: false, title: report.title, action: true,
         pick: openCollinReport });
+    }
+    if (t.tool === 'collin') {
+      for (const v of versions) {
+        add({ label: v.label, sub: v.sub, tool: 'collin', on: false, title: v.title, action: true,
+          pick: v.runs ? () => {} : () => chooseCollinVersion(v.version) });
+      }
+      const gone = collinChosenGone(S.collin);
+      if (gone && S.cllTool === 'collin') menu.appendChild(Object.assign(document.createElement('div'), { className: 'menunote', textContent: gone }));
+      if (install) {
+        add({ label: install.label, sub: install.sub, tool: 'collin', on: false, title: install.title, action: true,
+          pick: askCollinVersion });
+      }
     }
     if (t.tool === 'collin' && update) {
       add({ label: update.label, sub: update.sub, tool: 'collin', on: false, title: update.title, action: true,
@@ -4549,7 +4566,8 @@ function collinReportPane(key, view) {
   const dot = el('span', 'tooldot');
   dot.dataset.tool = 'collin';
   const written = view.generated_at ? cacheAge(Math.floor(Date.parse(view.generated_at) / 1000)) : '';
-  const about = [view.project, view.adapter, view.dbt_version && `dbt ${view.dbt_version}`, written && `written ${written}`];
+  const about = [view.producer, view.project, view.adapter, view.dbt_version && `dbt ${view.dbt_version}`,
+    written && `written ${written}`];
   title.append(dot, el('b', '', "collin's report"), el('span', 'diff-state', about.filter(Boolean).join(' · ')),
     el('div', 'grow'));
   const again = el('button', 'btn sm', 'Read again');
@@ -4628,6 +4646,83 @@ function collinReportPane(key, view) {
   }
   pane.append(head, body);
   return pane;
+}
+
+/* The collins there are to pick under Collin in the menu, once there is more
+   than one, or a version was picked: the one beside dbt-edith or on the PATH,
+   then those installed side by side (0060). The one that runs says so. */
+function collinVersionRows(cl, tool) {
+  if (!cl || tool !== 'collin') return [];
+  const versions = cl.versions || [];
+  if (versions.length < 2 && !cl.chosen) return [];
+  return versions.map((v) => {
+    const name = v.version ? `collin ${v.version}` : 'collin, no version given';
+    const where = v.origin === 'installed' ? 'installed here' : 'beside dbt-edith or on the PATH';
+    return { label: name, sub: v.runs ? 'runs' : where, runs: !!v.runs, version: v.origin === 'installed' ? v.version : '',
+      title: v.runs ? `${name}, ${where}, is the one that runs for this project.`
+        : `Run ${name}, ${where}, for this project. Collin's cache is written again by it.` };
+  });
+}
+
+/* What the menu says when the version picked is no longer installed. */
+function collinChosenGone(cl) {
+  if (!cl || !cl.chosen) return null;
+  const there = (cl.versions || []).some((v) => v.origin === 'installed' && v.version === cl.chosen);
+  return there ? null : `collin ${cl.chosen}, picked for this project, is not installed here any more: the default one runs.`;
+}
+
+/* The line that installs another version beside the others, when there is a
+   config directory to put it in. */
+function collinInstallRow(cl, tool) {
+  if (!cl || tool !== 'collin' || !cl.can_install) return null;
+  return { label: 'Install another collin version…', sub: 'by tag',
+    title: 'Type the cargo command that installs a collin version of your choice into its own folder, '
+      + 'beside the one you have. Each can then be picked here.' };
+}
+
+/* A version as someone types it, `v0.4.0` or `0.4.0 `, to `0.4.0`, or '' when
+   it is not three numbers. The server checks again. */
+function collinVersionInput(text) {
+  const v = String(text || '').trim().replace(/^v/i, '');
+  return /^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(v) ? v : '';
+}
+
+/* Picks the collin that runs for this project. With Collin's cache on
+   screen, the new one runs at once, and the page polls until it is done. */
+async function chooseCollinVersion(version) {
+  try {
+    applyInfo(await api.send('/api/collin/version', 'POST', { version }));
+    toast(version ? `collin ${version} runs for this project` : 'the default collin runs for this project');
+  } catch (e) {
+    toast('collin: ' + e.message, 'err');
+  }
+}
+
+/* Asks which version to install, then types the command into the terminal,
+   where the user runs it: dbt-edith never downloads anything (0042). */
+async function askCollinVersion() {
+  const body = document.createElement('div');
+  body.append(Object.assign(document.createElement('p'), {
+    textContent: 'Which collin version? It is installed from its tag into a folder of its own, beside the collin you have, '
+      + 'and can then be picked under Collin. Building it takes a minute or two. Cargo then suggests adding that folder '
+      + 'to your PATH: there is no need, dbt-edith finds it there.',
+  }));
+  const input = Object.assign(document.createElement('input'), { type: 'text', className: 'versioninput', placeholder: '0.4.0',
+    spellcheck: false, autocomplete: 'off' });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#modal-actions').lastChild.click(); });
+  body.append(input);
+  const asked = modal({ title: 'Install a collin version', body,
+    actions: [{ id: 'no', label: 'Cancel' }, { id: 'ok', label: 'Type the command', style: 'primary' }] });
+  input.focus();
+  if (await asked !== 'ok') return;
+  const version = collinVersionInput(input.value);
+  if (!version) return toast('a collin version is three numbers, such as 0.4.0', 'err');
+  try {
+    const { command } = await api.get('/api/collin/install?version=' + encodeURIComponent(version));
+    sendToTerminal(command);
+  } catch (e) {
+    toast('collin: ' + e.message, 'err');
+  }
 }
 
 /* What a failed fetch should say. Only a connection Snowflake refused points at

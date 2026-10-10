@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.6.0 - 2026-10-10
+
+- Install other collin versions beside the one you have, each at its tag in a
+  folder of its own, and pick the one that runs for the project under Collin
+  in the menu. A cache another version wrote runs again under the one picked
+  (0060).
+
 ## 1.5.0 - 2026-10-10
 
 - Show collin's report whole, as a tab grouping every model and table it names

@@ -442,3 +442,27 @@ check('the menu opens the report under Collin, with its count',
 check('...and says when there is nothing', collinReportRow({ report: {} }, 'collin').sub, 'nothing to investigate');
 check('...not under another tool', collinReportRow({ report: {} }, 'snowflake'), null);
 check('...nor before a report exists', collinReportRow({ found: true }, 'collin'), null);
+
+print('\n--- collin versions side by side ---');
+var one = { found: true, versions: [{ version: '0.4.0', origin: 'default', runs: true }] };
+check('one collin and nothing picked: no version rows', collinVersionRows(one, 'collin').length, 0);
+var two = { found: true, version: '0.3.0 (abc)', wants: '0.1.0', can_install: true, chosen: '0.3.0',
+  versions: [{ version: '0.4.0', origin: 'default', runs: false }, { version: '0.3.0', origin: 'installed', runs: true }] };
+var rows = collinVersionRows(two, 'collin');
+check('each collin is a row, the one that runs says so',
+      rows.map(function (r) { return r.label + ' (' + r.sub + ')'; }).join(', '),
+      'collin 0.4.0 (beside dbt-edith or on the PATH), collin 0.3.0 (runs)');
+check('the default is picked back by the empty version', rows[0].version, '');
+check('an installed one by its own', rows[1].version, '0.3.0');
+check('not under another tool', collinVersionRows(two, 'snowflake').length, 0);
+check('a pinned version is not offered an update: its tag has nothing newer', collinUpdateRow(two, 'collin'), null);
+check('the default still is', collinUpdateRow(one, 'collin').label, 'Check for a newer collin');
+check('a picked version still installed says nothing', collinChosenGone(two), null);
+check('one removed since says the default runs',
+      collinChosenGone({ chosen: '0.2.0', versions: two.versions }),
+      'collin 0.2.0, picked for this project, is not installed here any more: the default one runs.');
+check('installing another needs a config directory', collinInstallRow({ can_install: false }, 'collin'), null);
+check('...and is offered under Collin with one', collinInstallRow(two, 'collin').label, 'Install another collin version…');
+check('a typed version may carry its tag\'s v', collinVersionInput(' v0.4.0 '), '0.4.0');
+check('anything but three numbers is refused', [collinVersionInput('0.4'), collinVersionInput('0.4.0;rm'),
+      collinVersionInput('main')].join('|'), '||');

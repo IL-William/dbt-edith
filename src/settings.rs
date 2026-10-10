@@ -53,6 +53,10 @@ pub struct Settings {
     /// and clearing the field goes back to it (0058).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clone_into: Option<String>,
+    /// The collin version picked for this project, among those installed side
+    /// by side. None runs the one beside dbt-edith or on the PATH (0060).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collin_version: Option<String>,
 }
 
 /// Whether Snowflake's features are on: the user's choice for the project, or,
