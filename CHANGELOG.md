@@ -15,6 +15,11 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+- Show collin's own findings on its report page when collin writes them, from
+  0.5.0: each with what collin saw, what it usually means and what to do, in
+  the same groups. A report from an older collin is filed here as before, and
+  two versions are still compared on that filing (0062).
+
 ## 1.7.0 - 2026-10-10
 
 - Compare what two collin versions read in the project, from the last run of

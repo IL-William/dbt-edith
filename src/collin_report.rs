@@ -1,11 +1,14 @@
 //! collin's report read whole, for the report page: every finding it holds,
 //! filed by kind, so the page can group them by what would remove them.
 //!
-//! Built from the lists collin has written since its 0.1.0, never from a
-//! section a later collin would have to add: a report from any collin a user
-//! still has installed reads the same way. Nothing here words a finding. The
-//! page does, as it words a column's notes, and the kinds are the contract
-//! between the two.
+//! Built from the lists collin has written since its 0.1.0: a report from any
+//! collin a user still has installed reads the same way, and two versions are
+//! compared on that filing. Nothing here words a kind. The page does, as it
+//! words a column's notes, and the kinds are the contract between the two.
+//!
+//! From 0.5.0 collin also writes its own findings, worded by collin. They are
+//! passed through beside the kinds, and the page shows them in their place
+//! when a report has them (0062).
 //!
 //! The report is collin's file, not a format this binary owns, so every field
 //! is read as optional and a list reshaped by a later collin costs that kind
@@ -56,9 +59,68 @@ pub struct Overview {
     pub totals: Map<String, Value>,
     /// Only the kinds with an entry, in `KINDS` order.
     pub findings: Vec<Finding>,
+    /// The findings collin wrote itself, from 0.5.0: none from an older one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub collin_findings: Vec<Written>,
     /// Models and relations the findings name, each once however many kinds
-    /// it is in: the number the badge shows.
+    /// it is in: the number the badge shows. Those collin's own findings name,
+    /// when it wrote some, since those are what the page then lists.
     pub to_investigate: usize,
+}
+
+/// A finding as collin writes it: its words are collin's, and every field is
+/// read as optional, as the rest of its report is.
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq)]
+pub struct Written {
+    pub category: String,
+    /// `inputs`, `project` or `collin`: who can act.
+    pub owner: String,
+    /// `error`, `warning` or `info`.
+    pub severity: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub why: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub action: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub columns: usize,
+    pub models: Vec<WrittenModel>,
+}
+
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq)]
+pub struct WrittenModel {
+    pub unique_id: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+}
+
+/// collin's own findings, in its order. One with no title or no model says
+/// nothing a reader can act on, and is left out.
+fn written(report: &Value) -> Vec<Written> {
+    list(report, "findings")
+        .iter()
+        .map(|f| Written {
+            category: text(f, "category"),
+            owner: text(f, "owner"),
+            severity: text(f, "severity"),
+            title: text(f, "title"),
+            why: text(f, "why"),
+            action: text(f, "action"),
+            columns: f.get("columns").and_then(Value::as_u64).unwrap_or(0) as usize,
+            models: list(f, "models")
+                .iter()
+                .map(|m| WrittenModel {
+                    unique_id: text(m, "unique_id"),
+                    name: text(m, "name"),
+                    detail: text(m, "detail"),
+                })
+                .filter(|m| !m.unique_id.is_empty())
+                .collect(),
+        })
+        .filter(|f| !f.title.is_empty() && !f.models.is_empty())
+        .collect()
 }
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
@@ -141,7 +203,12 @@ pub fn overview(report: &Value) -> Overview {
             Some(Finding { kind, entries })
         })
         .collect();
-    let to_investigate = findings.iter().flat_map(|f| f.entries.iter().map(|e| e.id.as_str())).collect::<BTreeSet<_>>().len();
+    let collin_findings = written(report);
+    let to_investigate = if collin_findings.is_empty() {
+        findings.iter().flat_map(|f| f.entries.iter().map(|e| e.id.as_str())).collect::<BTreeSet<_>>().len()
+    } else {
+        collin_findings.iter().flat_map(|f| f.models.iter().map(|m| m.unique_id.as_str())).collect::<BTreeSet<_>>().len()
+    };
     let totals = report
         .get("totals")
         .and_then(Value::as_object)
@@ -154,6 +221,7 @@ pub fn overview(report: &Value) -> Overview {
         adapter: text(report, "adapter"),
         totals,
         findings,
+        collin_findings,
         to_investigate,
     }
 }
@@ -376,5 +444,37 @@ mod tests {
     fn only_numbers_pass_through_from_the_totals() {
         let o = overview(&json!({ "totals": { "models": 2, "note": "x", "columns_root": 0 } }));
         assert_eq!(o.totals.keys().collect::<Vec<_>>(), ["columns_root", "models"]);
+    }
+
+    #[test]
+    fn collin_s_own_findings_pass_through_beside_the_kinds() {
+        let o = overview(&json!({
+            "models": [{ "unique_id": "model.p.a", "yaml_stale": true }],
+            "findings": [
+                { "category": "yaml_out_of_date", "owner": "project", "severity": "info",
+                  "title": "2 models' YAML disagrees with their table", "why": "w", "action": "a",
+                  "models": [{ "unique_id": "model.p.a", "name": "a" }, { "unique_id": "model.p.b", "name": "b" }] },
+                { "category": "table_older_than_code", "owner": "project", "severity": "warning",
+                  "title": "1 table has columns the code no longer writes", "columns": 3,
+                  "models": [{ "unique_id": "model.p.a", "name": "a", "detail": "x, y, z" }] },
+                { "category": "empty", "title": "says nothing", "models": [] },
+                { "title": "", "models": [{ "unique_id": "model.p.c" }] }
+            ]
+        }));
+        // The kinds are filed as before, for the comparison of two versions.
+        assert_eq!(kinds(&o), ["yaml_stale"]);
+        let shape: Vec<(&str, usize, usize)> =
+            o.collin_findings.iter().map(|f| (f.category.as_str(), f.models.len(), f.columns)).collect();
+        assert_eq!(shape, [("yaml_out_of_date", 2, 0), ("table_older_than_code", 1, 3)]);
+        assert_eq!(o.collin_findings[1].models[0].detail, "x, y, z");
+        // The badge counts what the page lists: collin's findings, each model once.
+        assert_eq!(o.to_investigate, 2);
+    }
+
+    #[test]
+    fn a_report_from_an_older_collin_has_no_findings_of_its_own() {
+        let o = overview(&json!({ "models": [{ "unique_id": "model.p.a", "yaml_stale": true }] }));
+        assert!(o.collin_findings.is_empty());
+        assert_eq!(o.to_investigate, 1, "counted from the kinds, as before");
     }
 }

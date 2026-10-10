@@ -4432,6 +4432,23 @@ function collinReportGroups(findings) {
   return groups.filter((g) => g.findings.length);
 }
 
+/* The findings collin wrote itself, from 0.5.0, under the same groups: its
+   inputs, the manifest and catalog dbt wrote, are what rerunning dbt fixes.
+   Its words are kept as written (0062). An owner this page does not know is
+   checked by hand. */
+function collinWrittenGroups(written) {
+  const groupOf = { inputs: 'rerun', project: 'project', collin: 'collin' };
+  const groups = ['rerun', 'project', 'check', 'collin'].map((group) => {
+    const [label, desc] = collinGroupText(group);
+    return { group, label, desc, findings: [] };
+  });
+  for (const f of written || []) {
+    const group = groupOf[f.owner] || 'check';
+    groups.find((g) => g.group === group).findings.push(f);
+  }
+  return groups.filter((g) => g.findings.length);
+}
+
 /* The kinds whose items are columns of the entry's model, which a click can
    point at in its Columns tab. */
 function collinItemsAreColumns(kind) {
@@ -4483,8 +4500,10 @@ function collinReportTiles(t) {
       sub: `${t.columns_covered} of ${t.columns_total}` });
   }
   if (has('columns_covered_independent', 'columns_total_independent') && t.columns_total_independent) {
+    // From 0.5.0 collin also sets aside the columns of a model reading only
+    // its own table, which have no parent in dbt either.
     tiles.push({ label: 'Against the warehouse or YAML', value: pct(t.columns_covered_independent, t.columns_total_independent),
-      sub: 'columns built from constants aside' });
+      sub: t.columns_self ? 'columns with no parent to find aside' : 'columns built from constants aside' });
   }
   if (has('edges_parsed', 'edges_inferred')) {
     tiles.push({ label: 'Edges', value: String(t.edges_parsed + t.edges_inferred),
@@ -4609,6 +4628,12 @@ function collinReportPane(key, view) {
     ? `${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at. A name opens the model, whose Columns tab says what collin noted on each column.`
     : 'Nothing to investigate: every model collin read came out clean.'));
 
+  if ((view.collin_findings || []).length) {
+    body.append(collinWrittenSections(view.collin_findings, el));
+    pane.append(head, body);
+    return pane;
+  }
+
   for (const g of collinReportGroups(view.findings)) {
     const section = el('section', 'reportgroup');
     section.dataset.group = g.group;
@@ -4663,6 +4688,41 @@ function collinReportPane(key, view) {
   }
   pane.append(head, body);
   return pane;
+}
+
+/* collin's own findings, as it worded them: what it saw, what that usually
+   means and what to do, then each model with what its entry says. */
+function collinWrittenSections(written, el) {
+  const out = document.createDocumentFragment();
+  for (const g of collinWrittenGroups(written)) {
+    const section = el('section', 'reportgroup');
+    section.dataset.group = g.group;
+    section.append(el('h3', '', g.label), el('p', 'muted', g.desc));
+    for (const f of g.findings) {
+      const d = el('details', 'reportfinding');
+      d.dataset.severity = f.severity || '';
+      d.open = f.models.length <= 5;
+      const sum = el('summary');
+      sum.append(el('span', 'rtitle', f.title), el('span', 'rcount', f.severity || ''));
+      d.append(sum);
+      if (f.why) d.append(el('p', 'muted', f.why));
+      if (f.action) d.append(el('p', 'rlever', f.action));
+      const list = el('ul', 'rentries');
+      for (const m of f.models) {
+        const li = el('li');
+        const a = el('a', 'filelink', m.name || shortId(m.unique_id));
+        a.title = m.unique_id;
+        a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(m.unique_id); });
+        li.append(a);
+        if (m.detail) li.append(el('span', 'muted', ': ' + m.detail));
+        list.append(li);
+      }
+      d.append(list);
+      section.append(d);
+    }
+    out.append(section);
+  }
+  return out;
 }
 
 /* The collins there are to pick under Collin in the menu, once there is more

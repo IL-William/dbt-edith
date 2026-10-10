@@ -640,7 +640,10 @@ ref, a parent with no known columns, a column a child reads and this model's
 list lacks. Check by hand: SQL collin could not parse, a column matched by name
 to every parent that has it. And what is collin's to fix. A name opens the
 model with its Columns tab, where the marks above say what was found on each
-column. It reads a report from any collin since 0.1.0 (0059).
+column. It reads a report from any collin since 0.1.0 (0059). From collin 0.5.0
+the report carries collin's own findings, each with what it saw, what that
+usually means and what to do, and the page shows those instead, in the same
+groups; the badge then counts the models they name (0062).
 
 **Snowflake's features are a setting of the project**, a switch in the menu
 behind the snowflake in the top bar. They are marked alpha: none of them has yet been
