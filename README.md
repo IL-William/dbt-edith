@@ -917,6 +917,46 @@ project is re-parsed with a dbt that keeps it, and an amber note says so on
 each selector whose answer that could change. A selector of tests alone never
 shows it: it brings no tests of its own for a mode to let through.
 
+#### From the command line
+
+The same engine answers without the browser. `--select` resolves one line,
+prints what it matches and exits, so a script or an agent skill can ask for a
+lineage with no server, no profile and no dbt:
+
+```
+dbt-edith path/to/project -s '+stg_orders+'          # one name per line, as dbt ls --output name prints them
+dbt-edith path/to/project -s 'stg_orders+' --exclude 'resource_type:test' --output json
+dbt-edith path/to/project --selector recon_tests
+```
+
+It takes what the box takes: the same methods and operators, `--exclude`
+inside the line or as a flag of its own, a pasted `dbt ls -s ...`, and a named
+selector as `--selector name`. Tests count as they do in `dbt ls`, a test
+joining whenever one of its parents is selected, and
+`--exclude 'resource_type:test'` leaves them out. `--output json` prints one
+object per node, with dbt's key names (`unique_id`, `resource_type`,
+`original_file_path`, `fqn`, `materialized`, `tags` and the rest) and
+`depends_on.nodes`, the node's parents, which is what tells the edges between
+two sets.
+
+stdout carries the answer and nothing else. stderr says what it is worth: the
+manifest that answered, when it was written and by which dbt, then the verdict
+the [freshness badge](#is-the-lineage-still-true) would give, naming the files
+newer than the manifest. The answer is the manifest's, not the working tree's,
+so after editing models, run `dbt parse` first or read that line.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | answered, an empty answer included, which stderr says |
+| 1 | refused: a method this build does not know such as `state:`, a malformed term, or a selector it cannot resolve, with the reason and a caret under the term |
+| 2 | nothing was asked: no project, no manifest, an unreadable one, or a wrong flag |
+
+With `--select` or `--selector` nothing is served: no port, no key, no browser,
+no settings read or written, no catalog
+([0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md)).
+On a 19 000 node project it answers in under a second, where `dbt ls` parses
+the project again for fifteen seconds or more.
+
 ### Sharing the graph
 
 **Export**, beside Fit, saves what the canvas shows as one HTML file named
@@ -1112,6 +1152,10 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              overrides the shell below
          [--no-open]                     do not open a browser at startup
+         [-s, --select "line"]           print what the line selects and exit, without serving
+         [--exclude "line"]              what --select leaves out
+         [--selector name]               print what a named selector selects and exit
+         [--output name|json]            what those two print, default one name per line
 ```
 
 A relative path in `--manifest`, `--catalog` or `--column-lineage` is relative
@@ -1177,10 +1221,11 @@ PyYAML, so they need no warehouse and nothing installed:
 python3 tools/test_sf_lineage.py
 ```
 
-The Custom selection box and the lineage are compared with dbt itself: every
-named selector, a list of typed expressions, and the nodes drawn around each
-model at one, two and twenty levels, resolved by dbt-edith and by `dbt ls`,
-have to name the same nodes. It runs on a copy of dbt Labs' Jaffle Shop in
+The Custom selection box, `--select` and the lineage are compared with dbt
+itself: every named selector and a list of typed expressions, asked of the box
+and of the command line, and the nodes drawn around each model at one, two and
+twenty levels, resolved by dbt-edith and by `dbt ls`, have to name the same
+nodes. It runs on a copy of dbt Labs' Jaffle Shop in
 `tests/fixtures/`, and on Fivetran's Shopify package, cloned at the tag
 `tests/fixtures/shopify/` names. It needs dbt-core and dbt-duckdb, and skips
 itself without them; without git or the network it skips Shopify:
@@ -1202,6 +1247,7 @@ src/collin.rs     the column lineage cache, merged like catalog.json
 src/collin_run.rs collin, found beside the binary or on PATH and run only on request
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
+src/ls.rs         --select and --selector: one selection printed, and no server
 src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs     macros from the manifest, and which one a call in the editor reaches

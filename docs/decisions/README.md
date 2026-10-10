@@ -60,6 +60,7 @@ it is built this way, for whoever changes it next.
 | [0054](0054-the-profile-is-edited-without-its-secrets.md) | The profile is edited without its secrets | changing what `/api/profiles` sends or accepts, or which keys of a profile are secret |
 | [0055](0055-the-same-manifest-answers-the-same-on-every-start.md) | The same manifest answers the same way on every start | iterating a HashMap into anything a route returns, or changing the order the manifest is read in |
 | [0056](0056-selections-and-the-lineage-are-checked-on-shopify-too.md) | Selections and the lineage are checked against dbt on Shopify too | changing how a selection or the lineage resolves, moving the Shopify tag, or a failing `dbt` job |
+| [0057](0057-a-selection-is-answered-on-the-command-line.md) | A selection is answered on the command line, without a server | adding a flag that answers and exits instead of serving, or letting anything but the page read the selection engine |
 
 ## Keeping these honest
 

@@ -15,6 +15,7 @@
 
 use crate::files::mtime_secs;
 use crate::git::{Drift, GitInfo, Head};
+use crate::graph::Graph;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -224,6 +225,25 @@ pub fn advise(state: &str, drift: &Drift) -> String {
         _ if drift.behind > 0 => format!("Pull {}, then parse again.", drift.base),
         _ => String::new(),
     }
+}
+
+/// The files a parse of this project reads for its own nodes, both per node: a
+/// model's schema.yml disappearing changes the manifest as surely as the
+/// model's file does. A node from an installed package is left out because its
+/// path is relative to the package directory, so it would read as a file that
+/// had vanished. What `check` takes as `node_files`.
+pub fn project_files(graph: &Graph) -> Vec<String> {
+    let project = &graph.meta.project;
+    let mut files: Vec<String> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.package.is_empty() || &n.package == project)
+        .flat_map(|n| [n.file.clone(), n.yml.clone()])
+        .filter(|p| !p.is_empty())
+        .collect();
+    files.sort();
+    files.dedup();
+    files
 }
 
 /// `manifest_at` is the manifest's own mtime, already held in the graph's meta,
