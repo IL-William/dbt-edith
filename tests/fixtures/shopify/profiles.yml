@@ -1,0 +1,10 @@
+# DuckDB in memory: dbt-edith's comparison only parses and lists, and neither
+# opens a connection, so no file is ever written for it.
+integration_tests:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: ":memory:"
+      schema: shopify_integration_tests
+      threads: 8

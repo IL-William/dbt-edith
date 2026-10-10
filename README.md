@@ -1177,14 +1177,18 @@ PyYAML, so they need no warehouse and nothing installed:
 python3 tools/test_sf_lineage.py
 ```
 
-The Custom selection box is compared with dbt itself: every named selector
-and a list of typed expressions, resolved by dbt-edith and by `dbt ls` on a
-copy of dbt Labs' Jaffle Shop in `tests/fixtures/`, have to name the same
-nodes. It needs dbt-core and dbt-duckdb, and skips itself without them:
+The Custom selection box and the lineage are compared with dbt itself: every
+named selector, a list of typed expressions, and the nodes drawn around each
+model at one, two and twenty levels, resolved by dbt-edith and by `dbt ls`,
+have to name the same nodes. It runs on a copy of dbt Labs' Jaffle Shop in
+`tests/fixtures/`, and on Fivetran's Shopify package, cloned at the tag
+`tests/fixtures/shopify/` names. It needs dbt-core and dbt-duckdb, and skips
+itself without them; without git or the network it skips Shopify:
 
 ```
 python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
-/tmp/dbt/bin/python scripts/compare_with_dbt.py
+/tmp/dbt/bin/python scripts/compare_with_dbt.py                 # every eighth Shopify model's lineage
+/tmp/dbt/bin/python scripts/compare_with_dbt.py --every-model   # all of them, as CI does
 DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executable, Fusion included
 ```
 

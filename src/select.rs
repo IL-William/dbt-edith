@@ -437,7 +437,9 @@ fn config_value<'a>(node: &'a Node, key: ConfigKey) -> &'a str {
 fn matches(term: &Term, node: &Node) -> bool {
     let v = term.value.as_str();
     match term.method {
-        Method::Fqn => fqn_match(v, &node.fqn),
+        // dbt's fqn method walks every node but the sources, so neither a bare
+        // name nor `*` ever selects one: `source:` is the only way to them.
+        Method::Fqn => node.kind != Kind::Source && fqn_match(v, &node.fqn),
         Method::Path => path_match(v, &node.file),
         Method::File => file_match(v, &node.file),
         Method::Tag => node.tags.iter().any(|t| glob(v, t)),
@@ -950,6 +952,11 @@ fn why_empty(graph: &Graph, term: &Term, tests: Tests) -> String {
     if tests == Tests::Excluded && any(&|n: &Node| n.kind == Kind::Test && !n.disabled) {
         return format!("`{}` matches only tests; switch tests on to see them", term.raw);
     }
+    if term.method == Method::Fqn
+        && graph.nodes.iter().any(|n| n.kind == Kind::Source && !n.disabled && fqn_match(&term.value, &n.fqn))
+    {
+        return format!("`{}` matches only sources, which dbt selects with `source:` alone", term.raw);
+    }
     format!("nothing matches `{}`", term.raw)
 }
 
@@ -1446,6 +1453,22 @@ mod tests {
         assert!(warnings("dim_customers", Tests::Excluded).is_empty());
     }
 
+    /// dbt's fqn method never walks a source, so a source table's name selects
+    /// nothing, the way `dbt ls -s customers` lists nothing here. Found on
+    /// Fivetran's Shopify, where `*` listed its 87 sources and dbt none.
+    #[test]
+    fn a_name_or_a_wildcard_never_selects_a_source() {
+        assert!(pick("customers").is_empty());
+        assert!(pick("crm.customers").is_empty(), "nor its fqn without the package");
+        assert!(pick("shop.crm.*").is_empty());
+        assert_eq!(
+            warnings("customers", Tests::Excluded),
+            ["`customers` matches only sources, which dbt selects with `source:` alone"]
+        );
+        assert_eq!(pick("source:crm.customers"), ["crm.customers"]);
+        assert_eq!(pick("+stg_customers"), ["crm.customers", "stg_customers"], "a parent is reached as a parent");
+    }
+
     #[test]
     fn every_method_matches_what_it_says() {
         // The source is in that directory too, in its sources.yml, and dbt
@@ -1599,12 +1622,12 @@ mod tests {
     #[test]
     fn a_selector_reaches_everything_the_universe_holds() {
         // `*` is the cheapest proof that the universe is what it claims: every
-        // enabled node but the hooks and, here, the tests.
+        // enabled node but the hooks, the sources, which the fqn method `*`
+        // goes through never reaches, and here the tests.
         assert_eq!(
             pick("*"),
             [
                 "country_codes",
-                "crm.customers",
                 "dim_customers",
                 "fct_orders",
                 "helper",

@@ -1,6 +1,6 @@
 [package]
 name = "dbt-edith"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 rust-version = "1.82"
 description = "A tiny browser-based IDE for dbt projects: editor, terminal and lineage from manifest.json"

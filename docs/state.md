@@ -743,6 +743,20 @@ headless Chrome, two starts showed the same search list, the same node for
 each properties file and the same boxes and edges for each selection, where
 two starts of 1.2.0 differed on all three.
 
+Checked against dbt on Shopify too (0056): `scripts/compare_with_dbt.py` clones
+Fivetran's Shopify package at the tag dbt-collin pins, installs its locked
+dependencies and parses its integration tests, then compares 29 typed lines
+and the lineage of its models, at one, two and twenty levels each way and at
+two with tests, with `dbt ls -s N+model+M`. The lineage agreed from the first
+run, on all 240 models. The typed lines did not: the fqn method reached
+sources, so `*` listed 87 sources dbt does not, and a bare name selected a
+source table of that name; it no longer does, and a term only sources answer
+says to use `source:`. Under dbt-core 1.12.5, 1052 answers agree in 96 s with
+`--every-model`, as CI runs it, and 212 in 23 s in check.sh, which compares
+every eighth Shopify model, against 6 s for Jaffle Shop alone before. dbt
+Fusion 2.0.6, run by hand, agrees on all but `file:shopify.yml`: it lists none
+of the 20 tests that file declares, where dbt-core lists them all.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -901,7 +915,9 @@ cross-compile.
   not 0: a dbt that did not install reads as a failure, never as a pass. The
   Jaffle Shop copy is upstream's with the additions its README lists; anything
   added there goes in that list, and a case the engine should meet goes in the
-  fixture or in the script's `EXPRESSIONS`.
+  fixture or in the script's `EXPRESSIONS`. Shopify is cloned at a pinned tag
+  and commit, so a case for it goes in `SHOPIFY_EXPRESSIONS`, and a tag moved
+  upstream fails the run rather than changing what it reads (0056).
 - **A selector answer is this tool's, not dbt's** (0024). When one looks wrong,
   the dbt ls button types the command that settles it; the usual answer is the
   tests eye, which dbt has no equivalent of in `dbt ls`. Not for a named
@@ -1005,7 +1021,8 @@ cross-compile.
 
 GitHub Actions runs `cargo test`, a RustSec audit of the lockfile, an OSV audit
 of `web/vendor/`, the Snowflake script's tests and the comparison with dbt-core
-1.11 and 1.12 (0033) on every push and every Monday, and Dependabot opens
+1.11 and 1.12 on Jaffle Shop and Shopify, every model's lineage included
+(0033, 0056), on every push and every Monday, and Dependabot opens
 weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
 `no changelog` label, and its branch and title have to read the way AGENTS.md
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
