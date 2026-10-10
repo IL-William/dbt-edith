@@ -604,6 +604,19 @@ compiled SQL, read from a CTE that lacks it, read downstream but missing here,
 or matched by name to several parents. The note over the table names those the
 table has no row for.
 
+**collin's report, whole.** After a run, a badge beside the column lineage
+button says how many models and tables collin named, "12 to investigate", until
+you open the report; "Open collin's report", under Collin in the menu, opens it
+at any time. It is a tab beside your files: collin's figures first, then every
+finding grouped by what would fix it. Rerun dbt: no compiled SQL, a compile for
+another target, a catalog of another table, a table older than its code. Fix in
+the project: a YAML behind the warehouse, a table read without a source or a
+ref, a parent with no known columns, a column a child reads and this model's
+list lacks. Check by hand: SQL collin could not parse, a column matched by name
+to every parent that has it. And what is collin's to fix. A name opens the
+model with its Columns tab, where the marks above say what was found on each
+column. It reads a report from any collin since 0.1.0 (0059).
+
 **Snowflake's features are a setting of the project**, a switch in the menu
 behind the snowflake in the top bar. They are marked alpha: none of them has yet been
 checked against a real warehouse. Until you choose, they follow the manifest:

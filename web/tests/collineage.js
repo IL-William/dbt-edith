@@ -385,3 +385,60 @@ check('...and reads as itself', connectionAdvice('Object does not exist', 'query
       'Snowflake: Object does not exist');
 check('a request this build got wrong points nowhere',
       connectionAdvice('depth must be a whole number', 'request', '/Users/me/.dbt/profiles.yml').file, undefined);
+
+print('\n--- collin\'s report page ---');
+// Every kind the server files a finding under has words here, rather than the
+// fallback a later collin's unknown kind gets.
+var rust = read('src/collin_report.rs');
+var kindList = rust.slice(rust.indexOf('pub const KINDS'), rust.indexOf('];', rust.indexOf('pub const KINDS')));
+var kinds = (kindList.match(/"[a-z_]+"/g) || []).map(function (k) { return k.slice(1, -1); });
+check('the server files findings under 19 kinds', kinds.length, 19);
+check('each of them is worded here', kinds.filter(function (k) { return collinFindingText(k).title === k; }).join(', '), '');
+check('...and filed under one of the four groups',
+      kinds.filter(function (k) { return ['rerun', 'project', 'check', 'collin'].indexOf(collinFindingText(k).group) < 0; }).join(', '), '');
+check('a kind from a later collin is listed, to be checked by hand',
+      JSON.stringify(collinFindingText('struct_field')), JSON.stringify({ group: 'check', title: 'struct_field',
+        lever: 'A kind of finding this dbt-edith does not know yet.' }));
+
+var groups = collinReportGroups([
+  { kind: 'lost_unresolved', entries: [{ id: 'model.p.c' }] },
+  { kind: 'yaml_stale', entries: [{ id: 'model.p.b' }] },
+  { kind: 'no_compiled_sql', entries: [{ id: 'model.p.a' }] },
+]);
+check('groups come rerun first, collin last, and only with something in them',
+      groups.map(function (g) { return g.group; }).join(' '), 'rerun project collin');
+check('a finding keeps its entries and gains its words',
+      groups[1].findings[0].title + ' | ' + groups[1].findings[0].entries[0].id, 'YAML behind the warehouse | model.p.b');
+check('no findings, no groups', collinReportGroups(undefined).length, 0);
+
+check('columns cut short say how many were left out',
+      collinEntryText('columns_missing', { items: ['a', 'b'], of: 30 }), 'a, b and 28 more');
+check('a column read from a CTE names it', collinEntryText('unbacked_read', { items: ['k'], detail: 'base' }), 'k, from base');
+check('a phantom names the CTE it came through', collinEntryText('phantom', { items: ['f'], detail: 'joined' }), 'f, through joined');
+check('a set aside compile names its file', collinEntryText('compiled_elsewhere', { detail: 'compiled/p/models/a.sql' }),
+      'target/compiled/p/models/a.sql');
+check('a thin compile gives its counts', collinEntryText('thin', { detail: '4 of 40' }), '4 of 40 columns');
+check('relations are listed as they are', collinEntryText('undeclared_relation', { items: ['RAW.DBO.ORDERS'] }), 'RAW.DBO.ORDERS');
+
+var tiles = collinReportTiles({ models: 10, parsed: 9, parse_failed: 1, sql_from_files_set_aside: 2,
+  columns_covered: 1999, columns_total: 2000, columns_covered_independent: 50, columns_total_independent: 50,
+  edges_parsed: 30, edges_inferred: 4, confirmed: 7, degraded: 1, unchecked: 2, columns_root: 0 });
+check('figures, each when the report has its counters',
+      tiles.map(function (t) { return t.label + '=' + t.value; }).join(' | '),
+      'SQL read=7 of 10 | Columns with an edge=99.9% | Against the warehouse or YAML=100% | Edges=34 | Checked against the warehouse=7 confirmed');
+check('a share one column short is never 100%', tiles[1].value, '99.9%');
+check('a report from an older collin shows what it has',
+      collinReportTiles({ models: 3, parsed: 3 }).map(function (t) { return t.label; }).join(', '), 'SQL read');
+
+var done = { state: 'done', run: 2, report: { to_investigate: 3 } };
+check('a run since the page last looked leaves a badge', collinBadge(done, 1).text, '3 to investigate');
+check('the run already seen leaves none', collinBadge(done, 2), null);
+check('a run with nothing to look at leaves none', collinBadge({ state: 'done', run: 2, report: {} }, 1), null);
+check('a run still going leaves none yet', collinBadge({ state: 'running', run: 2, report: { to_investigate: 3 } }, 1), null);
+check('a failed run leaves none: its toast said so', collinBadge({ state: 'failed', run: 2, report: { to_investigate: 3 } }, 1), null);
+
+check('the menu opens the report under Collin, with its count',
+      collinReportRow({ report: { to_investigate: 3 } }, 'collin').sub, '3 to investigate');
+check('...and says when there is nothing', collinReportRow({ report: {} }, 'collin').sub, 'nothing to investigate');
+check('...not under another tool', collinReportRow({ report: {} }, 'snowflake'), null);
+check('...nor before a report exists', collinReportRow({ found: true }, 'collin'), null);

@@ -62,6 +62,7 @@ it is built this way, for whoever changes it next.
 | [0056](0056-selections-and-the-lineage-are-checked-on-shopify-too.md) | Selections and the lineage are checked against dbt on Shopify too | changing how a selection or the lineage resolves, moving the Shopify tag, or a failing `dbt` job |
 | [0057](0057-a-selection-is-answered-on-the-command-line.md) | A selection is answered on the command line, without a server | adding a flag that answers and exits instead of serving, or letting anything but the page read the selection engine |
 | [0058](0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) | A model is cloned into your schema by statements you run | writing SQL for the user to run, changing what a clone copies or where it lands, or reading anything else out of the profile |
+| [0059](0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md) | collin's report is filed here, from the lists every collin writes | changing what the report page lists, what the badge counts, or how a collin run leaves its report |
 
 ## Keeping these honest
 

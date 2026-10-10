@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.5.0 - 2026-10-10
+
+- Show collin's report whole, as a tab grouping every model and table it names
+  by what would fix it: rerun dbt, fix in the project, check by hand, or
+  collin's own. A run leaves a badge saying how many there are to investigate
+  until the report is opened, and the Collin menu opens it at any time. A
+  failed run no longer leaves a new report beside the old cache (0059).
+
 ## 1.4.0 - 2026-10-10
 
 - Write the statements that clone a model and its direct parents from an

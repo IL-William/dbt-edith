@@ -157,6 +157,15 @@ pub struct Status {
     /// name the project's models.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub log: Vec<String>,
+    /// Runs finished since dbt-edith started. Two runs in a row both read
+    /// `done`, so this is how the page tells a report it has not seen yet from
+    /// the one it has.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub run: u64,
+}
+
+fn is_zero_u64(n: &u64) -> bool {
+    *n == 0
 }
 
 /// The files one run reads and writes.
@@ -190,7 +199,9 @@ impl Runner {
     }
 
     pub fn status(&self) -> Status {
-        self.status.lock().map(|s| s.clone()).unwrap_or_default()
+        let mut status = self.status.lock().map(|s| s.clone()).unwrap_or_default();
+        status.run = self.runs.load(Ordering::SeqCst);
+        status
     }
 
     fn set(&self, status: Status) {
@@ -228,13 +239,13 @@ impl Runner {
         let status = match outcome {
             Ok(log) => {
                 load().await;
-                Status { state: "done", error: String::new(), log }
+                Status { state: "done", log, ..Default::default() }
             }
-            Err((error, log)) => Status { state: "failed", error, log },
+            Err((error, log)) => Status { state: "failed", error, log, ..Default::default() },
         };
-        self.set(status.clone());
+        self.set(status);
         self.runs.fetch_add(1, Ordering::SeqCst);
-        status
+        self.status()
     }
 }
 
@@ -256,6 +267,10 @@ pub struct Summary {
     /// The commonest reasons a model's SQL was not read, most models first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub reasons: Vec<Reason>,
+    /// Models and relations the report page lists, for the badge a run
+    /// leaves behind it.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub to_investigate: usize,
 }
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
@@ -372,6 +387,9 @@ fn is_zero(n: &usize) -> bool {
 pub struct Report {
     pub summary: Summary,
     pub notes: std::collections::HashMap<String, ModelNote>,
+    /// The whole report filed by kind, for the report page. Built on the same
+    /// read, since the file runs to megabytes.
+    pub overview: crate::collin_report::Overview,
 }
 
 /// The report as collin writes it, every field optional: it is collin's file,
@@ -418,7 +436,10 @@ struct RawModel {
 const REASONS: usize = 3;
 
 pub fn read_report(path: &Path) -> Option<Report> {
-    let raw: RawReport = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    use serde::Deserialize;
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    let raw = RawReport::deserialize(&value).ok()?;
+    let overview = crate::collin_report::overview(&value);
     let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for m in &raw.models {
         if let Some(why) = m.parse_error.as_deref().filter(|w| !w.is_empty()) {
@@ -435,6 +456,7 @@ pub fn read_report(path: &Path) -> Option<Report> {
         from_files: t.sql_from_files,
         set_aside: t.sql_from_files_set_aside,
         reasons,
+        to_investigate: overview.to_investigate,
     };
     let notes = raw
         .models
@@ -452,7 +474,7 @@ pub fn read_report(path: &Path) -> Option<Report> {
             (m.unique_id, note)
         })
         .collect();
-    Some(Report { summary, notes })
+    Some(Report { summary, notes, overview })
 }
 
 /// The last report read, kept until the file changes: it runs to megabytes on
@@ -502,10 +524,19 @@ fn explain(log: &[String]) -> Option<String> {
         .or_else(|| log.last().cloned())
 }
 
+/// `path` with `.tmp` after its name, where a run writes before the rename.
+fn tmp_of(path: &Path) -> PathBuf {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    path.with_file_name(format!("{name}.tmp"))
+}
+
 fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String>)> {
-    let name = job.out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tmp = job.out.with_file_name(format!("{name}.tmp"));
+    let tmp = tmp_of(&job.out);
+    // The report too: written in place, a failed run left a new report
+    // beside the old cache, describing edges nobody could see.
+    let report_tmp = tmp_of(&job.report);
     let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&report_tmp);
     let mut child = Command::new(&job.bin)
         .arg("generate")
         .arg("--project")
@@ -517,7 +548,7 @@ fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String
         .arg("--out")
         .arg(&tmp)
         .arg("--report")
-        .arg(&job.report)
+        .arg(&report_tmp)
         .current_dir(&job.project)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -560,6 +591,7 @@ fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String
     let log: Vec<String> = tail.lock().map(|t| t.iter().cloned().collect()).unwrap_or_default();
     let fail = |error: String| {
         let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&report_tmp);
         Err((error, log.clone()))
     };
     match exit {
@@ -567,7 +599,16 @@ fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String
         Ok(status) if !status.success() => fail(explain(&log).unwrap_or_else(|| format!("collin exited with {status}"))),
         Ok(_) if !tmp.is_file() => fail(format!("collin finished without writing {}", tmp.display())),
         Ok(_) => match std::fs::rename(&tmp, &job.out) {
-            Ok(()) => Ok(log),
+            Ok(()) => {
+                // A report from an earlier run would describe another cache:
+                // without a new one, there is none.
+                if report_tmp.is_file() {
+                    let _ = std::fs::rename(&report_tmp, &job.report);
+                } else {
+                    let _ = std::fs::remove_file(&job.report);
+                }
+                Ok(log)
+            }
             Err(e) => fail(format!("cannot move collin's cache onto {}: {e}", job.out.display())),
         },
     }
@@ -598,12 +639,13 @@ mod tests {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    /// A stand-in for collin: a shell script that finds `--out` among its
-    /// arguments and runs `body` with it in `$out`.
+    /// A stand-in for collin: a shell script that finds `--out` and `--report`
+    /// among its arguments and runs `body` with them in `$out` and `$report`.
     fn fake(dir: &Path, body: &str) -> PathBuf {
         let bin = dir.join("collin");
         let script = format!(
-            "#!/bin/sh\nout=''\nwhile [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; shift; done\n\
+            "#!/bin/sh\nout=''\nreport=''\nwhile [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; \
+             [ \"$1\" = --report ] && report=\"$2\"; shift; done\n\
              echo run >> \"$(dirname \"$0\")/runs\"\n{body}\n"
         );
         executable(&bin, &script);
@@ -679,6 +721,28 @@ mod tests {
         let silent = fake(&d, "exit 0");
         let status = Runner::new(Duration::from_secs(10)).generate(job(&d, silent), || async {}).await;
         assert!(status.error.starts_with("collin finished without writing"), "{status:?}");
+    }
+
+    #[tokio::test]
+    async fn the_report_moves_into_place_with_its_cache_and_never_alone() {
+        let d = dir("report-run");
+        let report = d.join(REPORT);
+        std::fs::write(&report, "old").unwrap();
+        let failing = fake(&d, "echo new > \"$report\"\necho half > \"$out\"\nexit 1");
+        let runner = Runner::new(Duration::from_secs(10));
+        assert_eq!(runner.generate(job(&d, failing), || async {}).await.state, "failed");
+        assert_eq!(std::fs::read_to_string(&report).unwrap(), "old", "a failed run leaves the report of the cache on screen");
+        assert!(!d.join("collin.report.json.tmp").exists());
+
+        let writing = fake(&d, "echo new > \"$report\"\necho '{}' > \"$out\"");
+        let done = runner.generate(job(&d, writing), || async {}).await;
+        assert_eq!(std::fs::read_to_string(&report).unwrap().trim(), "new");
+        assert_eq!((done.state, done.run), ("done", 2), "every finished run counts, a failed one too");
+
+        let silent = fake(&d, "echo '{}' > \"$out\"");
+        runner.generate(job(&d, silent), || async {}).await;
+        assert!(!report.exists(), "a report left from an earlier run would describe another cache");
+        assert_eq!(runner.status().run, 3);
     }
 
     #[tokio::test]

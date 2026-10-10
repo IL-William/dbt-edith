@@ -620,6 +620,18 @@ node project's own report: 6 columns marked on a model with lost columns, 16 on
 one whose table is behind its compile with 5 compiled columns named as having
 no row, and 15 matched by name to two parents on one whose SQL did not parse.
 
+collin's report page (0059): the report was read for a summary and for the
+model on screen, never whole. The server now files it by kind, from the lists
+collin has written since 0.1.0, and the page shows it as an editor tab:
+collin's figures, then the findings grouped by who acts, each model a link to
+its Columns tab. A run leaves a badge with the count of models and tables named
+until the report is opened, told apart from the previous run by a counter on
+collin's status, and a run renames its report into place with its cache
+rather than writing it in place. Driven in headless Chrome on Fivetran's
+Shopify package with collin at 0.4.0's code: picking Collin ran it and left
+"107 to investigate", the badge and the menu both opened the tab, a name opened
+the model's Columns tab, and Regenerate brought the badge back.
+
 The terminal's environment on Windows, fixed from a report on the
 VM: with dbt-edith started from a shell where the project's venv was active,
 `dbt ls` in the terminal ran a dbt-core installed elsewhere on the machine and
