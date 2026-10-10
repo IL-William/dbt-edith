@@ -411,6 +411,19 @@ check('a finding keeps its entries and gains its words',
       groups[1].findings[0].title + ' | ' + groups[1].findings[0].entries[0].id, 'YAML behind the warehouse | model.p.b');
 check('no findings, no groups', collinReportGroups(undefined).length, 0);
 
+var written = collinWrittenGroups([
+  { owner: 'collin', title: 'c', models: [{ unique_id: 'model.p.c' }] },
+  { owner: 'project', title: 'p1', models: [{ unique_id: 'model.p.a' }] },
+  { owner: 'inputs', title: 'i', models: [{ unique_id: 'model.p.b' }] },
+  { owner: 'someone', title: 's', models: [{ unique_id: 'model.p.d' }] },
+  { owner: 'project', title: 'p2', models: [{ unique_id: 'model.p.e' }] },
+]);
+check('collin\'s own findings go under the same groups, its inputs first',
+      written.map(function (g) { return g.group + ':' + g.findings.map(function (f) { return f.title; }).join('+'); }).join(' '),
+      'rerun:i project:p1+p2 check:s collin:c');
+check('...keeping collin\'s order within a group, and its words', written[1].findings[1].title, 'p2');
+check('no findings of collin\'s own, no groups', collinWrittenGroups(undefined).length, 0);
+
 check('columns cut short say how many were left out',
       collinEntryText('columns_missing', { items: ['a', 'b'], of: 30 }), 'a, b and 28 more');
 check('a column read from a CTE names it', collinEntryText('unbacked_read', { items: ['k'], detail: 'base' }), 'k, from base');
