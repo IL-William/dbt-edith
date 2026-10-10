@@ -1,6 +1,6 @@
 # 0043. collin is updated by the command that installs it, and its version decides how
 
-Date: 2026-10-06 · Status: accepted · Amends 0042
+Date: 2026-10-06 · Status: accepted, amended by 0060 · Amends 0042
 
 **Trigger:** read before raising the collin version dbt-edith accepts, or
 changing what the menu offers once collin is installed.
@@ -38,6 +38,9 @@ to, and dbt-edith could not tell an old collin from a new one: collin had no
   changed.
 - **Pinning the install to a release tag.** The check could then never find
   anything newer than the tag dbt-edith was built with.
+  *Amended by [0060](0060-collin-versions-sit-side-by-side-and-one-is-picked.md):
+  other versions install at their tag beside the default, which this check
+  still updates.*
 
 ## Consequences
 

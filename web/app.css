@@ -214,6 +214,11 @@ kbd {
    collin's colour so it reads as collin's and not as the manifest's. */
 .collinbadge, .collinbadge:hover { border-color: var(--tool); }
 .collinbadge .lbl { color: var(--tool); }
+.versioninput {
+  width: 120px; font: 12px var(--mono); color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
+}
+.versioninput:focus { border-color: var(--accent-dim); outline: none; }
 /* The same dot again at the head of the hover card, so the card is visibly
    about the thing the pointer is on. */
 .hovercard .freshdot { border-radius: 50%; background: var(--fg-dim); }

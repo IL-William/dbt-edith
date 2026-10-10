@@ -206,6 +206,8 @@ async fn main() -> anyhow::Result<()> {
         collin: collin_run::Runner::new(std::time::Duration::from_secs(600)),
         collin_report: Default::default(),
         collin_version: Default::default(),
+        collin_installs: settings::config_dir(|key| std::env::var_os(key), cfg!(windows)).map(|d| collin_run::installs_dir(&d)),
+        collin_chosen: std::sync::Mutex::new(saved.collin_version.clone()),
         snowflake_features: std::sync::Mutex::new(saved.snowflake_features),
         cll_lock: tokio::sync::Mutex::new(()),
         seen: std::sync::Mutex::new(seen),

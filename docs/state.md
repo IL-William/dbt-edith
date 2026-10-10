@@ -632,6 +632,17 @@ Shopify package with collin at 0.4.0's code: picking Collin ran it and left
 "107 to investigate", the badge and the menu both opened the tab, a name opened
 the model's Columns tab, and Regenerate brought the badge back.
 
+collin versions side by side (0060): one collin at a time, the one beside the
+binary or on the PATH. Another version now installs at its tag into
+`<config>/collin/<X.Y.Z>/`, by a cargo command the menu types into the
+terminal, and the project picks the one that runs among those found. A cache
+whose `producer` names another version is stale, so a switch runs the new one.
+Driven in headless Chrome on Fivetran's Shopify package, the release v0.4.0 as
+default: the menu typed the command for 0.1.0, which built in about a minute;
+picking 0.1.0 ran it (4875 edges, 117 to investigate, 23 compiles set aside
+for two CTEs of one name), and picking the default back ran 0.4.0 (5548
+edges, 107).
+
 The terminal's environment on Windows, fixed from a report on the
 VM: with dbt-edith started from a shell where the project's venv was active,
 `dbt ls` in the terminal ran a dbt-core installed elsewhere on the machine and

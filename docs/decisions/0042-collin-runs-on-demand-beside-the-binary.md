@@ -1,6 +1,6 @@
 # 0042. collin runs on demand, as an executable found beside the binary
 
-Date: 2026-10-06 · Status: accepted · Amends 0023 and 0031
+Date: 2026-10-06 · Status: accepted, amended by 0060 · Amends 0023 and 0031
 
 **Trigger:** read before starting collin from the server, changing when it runs,
 or bundling any column lineage producer with dbt-edith.
