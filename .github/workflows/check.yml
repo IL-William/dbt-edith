@@ -1,0 +1,174 @@
+name: check
+
+on:
+  push:
+  pull_request:
+  # Advisories are published without anything being pushed, so both audits
+  # also run every Monday. A failure there is emailed to whoever last edited
+  # this schedule.
+  schedule:
+    - cron: "17 6 * * 1"
+
+# Nothing here writes anything back. A fork's pull request gets a read-only
+# token whatever this says, so the workflow is written to need nothing more.
+permissions:
+  contents: read
+
+# Third-party actions are pinned to a commit, not a tag: a tag can be moved to
+# point at new code, and this repository is public, so its CI runs on every
+# fork's pull request. Dependabot bumps these pins with the version comment.
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
+      # Merging a bump releases it, with its CHANGELOG.md section as the notes
+      # (0045), so the changelog has to be at the version Cargo.toml is at
+      # before it lands. Here, because this job is one main requires.
+      - name: CHANGELOG.md is at the version Cargo.toml names
+        run: scripts/release_notes.sh > /dev/null
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo test
+
+  # The lockfile against the RustSec advisory database. cargo-audit is run
+  # directly rather than through an action: it needs no token that way, so a
+  # fork's pull request gets the same result as a push.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  # web/vendor/ against OSV: nothing else reads it, not cargo audit, not
+  # Dependabot. Standard library Python, so there is nothing to install.
+  vendored:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 scripts/audit_vendored.py
+
+  # tools/sf_lineage.py against a fake connector and a fake PyYAML: no
+  # warehouse, and nothing to install.
+  sidecar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 tools/test_sf_lineage.py
+
+  # The Custom selection box against dbt itself, on tests/fixtures/jaffle_shop (0033).
+  # Two versions of dbt-core, because 1.11 writes a selector reference out in
+  # place and 1.12 keeps it, and that shape is what src/selectors.rs reads. dbt
+  # goes into a throwaway venv; a script that skipped itself exits 2 and fails
+  # the job, so a broken install cannot pass for a clean comparison.
+  dbt:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dbt: ["1.11", "1.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: python3 -m venv "$RUNNER_TEMP/dbt"
+      - run: '"$RUNNER_TEMP/dbt/bin/pip" install --quiet "dbt-core~=${{ matrix.dbt }}.0" "dbt-duckdb~=1.11.0"'
+      - run: '"$RUNNER_TEMP/dbt/bin/python" scripts/compare_with_dbt.py'
+
+  # A pull request that changes what the tool does says so in CHANGELOG.md,
+  # which is the only file that keeps the order of what shipped. The label is
+  # the way out for a refactor, a dependency bump or a documentation fix, since
+  # those change src/ or web/ without changing anything a user would notice.
+  changelog:
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'no changelog')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Both ends of the pull request have to be reachable to diff them.
+          fetch-depth: 0
+      - name: An entry under Unreleased, or the "no changelog" label
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          if ! printf '%s\n' "$changed" | grep -qE '^(src/|web/|tools/)'; then
+            echo "nothing under src/, web/ or tools/ changed"
+            exit 0
+          fi
+          if printf '%s\n' "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md changed"
+            exit 0
+          fi
+          echo "This pull request changes src/, web/ or tools/ without touching CHANGELOG.md."
+          echo "Add a line under '## Unreleased' saying what it does, or label the"
+          echo "pull request 'no changelog' if it changes nothing a user would notice."
+          exit 1
+
+  # The branch list and the pull request list get read far more often than they
+  # get written, which is the whole reason both have a shape. AGENTS.md, under
+  # Conventions, is the statement of it; this job is what keeps it true. A
+  # dependabot/ branch is skipped: Dependabot names its own branches and titles,
+  # and a red check on every bump would only teach everyone to ignore this one.
+  naming:
+    if: github.event_name == 'pull_request' && !startsWith(github.event.pull_request.head.ref, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: The branch says its kind, the title says what it does
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          bad=0
+          fail() { echo "  $1"; bad=1; }
+
+          echo "branch: $BRANCH"
+          if ! printf '%s' "$BRANCH" | grep -qE '^(feature|fix|deps|docs)/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            fail "not <kind>/<what-it-does> in kebab-case, kind being feature, fix, deps or docs"
+          fi
+
+          echo "title: $TITLE"
+          if [ "$(printf '%s' "$TITLE" | wc -w)" -lt 3 ]; then
+            fail "a label rather than a sentence: three words or more"
+          fi
+          case "$TITLE" in
+            [A-Z]*) ;;
+            *) fail "starts with a lower-case letter" ;;
+          esac
+          case "$TITLE" in
+            *.) fail "ends with a full stop" ;;
+          esac
+          case "${TITLE%% *}" in
+            */*) fail "starts with a branch name, as in 'Feature/breadcrumb bar'" ;;
+          esac
+          if [ "${#TITLE}" -gt 72 ]; then
+            fail "${#TITLE} characters, over the 72 that read in a list"
+          fi
+
+          if [ "$bad" -ne 0 ]; then
+            echo
+            echo "AGENTS.md, under Conventions, says what both should look like."
+            exit 1
+          fi
+          echo "ok"

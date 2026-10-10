@@ -1,0 +1,92 @@
+name: release
+
+# A version in Cargo.toml with no tag yet is released from main: the tag and the
+# GitHub release are created together at the commit that was pushed, and the
+# notes are that version's section of CHANGELOG.md (0045). Nothing is built: the
+# release is the source, as every release before this file was.
+#
+# The tag is made here rather than pushed by hand: one pushed by hand is the
+# step that gets left for later, and a version bumped on main and never tagged
+# is how 0.5.0 came not to exist.
+#
+# A pull request that touches this file reads the version and the notes without
+# publishing: tags here cannot be moved or deleted, so a broken release has to
+# be found before its tag exists.
+on:
+  push:
+    branches: [main]
+    # A release needs a new version, and this file in case the last attempt
+    # failed for a reason fixed here.
+    paths: [Cargo.toml, .github/workflows/release.yml]
+  pull_request:
+    paths: [.github/workflows/release.yml, scripts/release_notes.sh]
+  # A release that failed on something outside this repository, retried on
+  # main as it is.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two pushes to main in a row must not both find the same version untagged.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The version Cargo.toml names, whether main still owes it a release, and its
+  # notes, which fail this job when CHANGELOG.md has none for it.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      due: ${{ steps.read.outputs.due }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            due=false
+          elif gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$version" --silent 2>/dev/null; then
+            due=false
+          else
+            due=true
+          fi
+          echo "due=$due" >> "$GITHUB_OUTPUT"
+          echo "v$version, release due: $due"
+      - name: The notes
+        run: scripts/release_notes.sh
+
+  # Only this job can write, and only on main with a version still untagged.
+  release:
+    needs: version
+    if: needs.version.outputs.due == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            scripts/release_notes.sh
+            echo
+            echo "No binary is attached: dbt-edith is installed by building it, as"
+            echo "[the README](https://github.com/$GITHUB_REPOSITORY/blob/v$VERSION/README.md#install-it)"
+            echo "describes."
+          } > "$RUNNER_TEMP/notes.md"
+          # The tag is created with the release, at the commit this run checked
+          # out.
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Edith $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

@@ -1,0 +1,253 @@
+//! dbt-edith: a small browser IDE for dbt projects.
+//! Editor + terminal + lineage, served from one self-contained binary.
+
+mod api;
+mod collin;
+mod collin_run;
+mod compiled;
+mod envs;
+mod files;
+mod freshness;
+mod git;
+mod graph;
+mod macros;
+mod manifest;
+mod profiles;
+mod project;
+mod pty;
+mod select;
+mod selectors;
+mod settings;
+mod sidecar;
+mod venv;
+
+use clap::Parser;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+#[derive(Parser)]
+/// `version` is composed rather than taken from Cargo.toml alone: the package
+/// version only moves at a release, and the question after reinstalling is
+/// which build this is (see `build.rs`).
+#[command(
+    name = "dbt-edith",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("DBT_EDITH_BUILD"), ")"),
+    about = "Editor, terminal and dbt lineage in the browser"
+)]
+struct Args {
+    /// dbt project root
+    #[arg(default_value = ".")]
+    project: PathBuf,
+
+    /// Port to listen on (the next free port is used if this one is taken)
+    #[arg(short, long, default_value_t = 4321)]
+    port: u16,
+
+    /// Path to manifest.json (default: <project>/target/manifest.json)
+    #[arg(long)]
+    manifest: Option<PathBuf>,
+
+    /// Path to catalog.json (default: <project>/target/catalog.json)
+    #[arg(long)]
+    catalog: Option<PathBuf>,
+
+    /// Path to the column lineage cache (default: the tool last picked in the menu, else the newest target/column_lineage*.json)
+    #[arg(long)]
+    column_lineage: Option<PathBuf>,
+
+    /// Shell for the integrated terminal (default: $SHELL, or Git Bash on Windows)
+    #[arg(long)]
+    shell: Option<String>,
+
+    /// Do not open a browser window on startup
+    #[arg(long)]
+    no_open: bool,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let root = args
+        .project
+        .canonicalize()
+        .map(files::plain)
+        .map_err(|e| anyhow::anyhow!("cannot open {}: {e}", args.project.display()))?;
+    if !files::is_dbt_project(&root) {
+        eprintln!("  no dbt_project.yml in {} - point dbt-edith at the dbt project root", root.display());
+    }
+    let manifest_path = args.manifest.unwrap_or_else(|| root.join("target").join("manifest.json"));
+    let catalog_path = args.catalog.unwrap_or_else(|| root.join("target").join("catalog.json"));
+    // The store is built here rather than inside AppState because the cache the
+    // user last chose decides which file is loaded before the state exists.
+    let settings = settings::Store::new(&root);
+    let saved = settings.load();
+    let target_dir = manifest_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.join("target"));
+
+    // Loaded without column lineage first. That is the base every cache is
+    // merged into, and whether a Snowflake cache may be loaded at all depends on
+    // the adapter this manifest names (0031).
+    let base = if manifest_path.exists() {
+        eprintln!("  reading {}", manifest_path.display());
+        let (project, path, cat) = (root.clone(), manifest_path.clone(), catalog_path.clone());
+        let g = tokio::task::spawn_blocking(move || api::load_base(&project, &path, &cat)).await??;
+        let c = &g.meta.counts;
+        eprintln!(
+            "  {} nodes in {} ms  ({} models, {} sources, {} tests, {} macros)",
+            g.nodes.len(),
+            g.meta.load_ms,
+            c.get("model").unwrap_or(&0),
+            c.get("source").unwrap_or(&0),
+            c.get("test").unwrap_or(&0),
+            g.macros.len(),
+        );
+        if g.meta.catalog_columns > 0 {
+            eprintln!("  catalog.json merged ({} columns typed)", g.meta.catalog_columns);
+        } else {
+            eprintln!("  no catalog.json - column types stay as declared in YAML (run dbt compile --write-catalog)");
+        }
+        g
+    } else {
+        eprintln!("  no manifest at {} - lineage stays empty until dbt writes one", manifest_path.display());
+        graph::Graph::build(Default::default(), &manifest_path, 0, 0)
+    };
+
+    let snowflake = settings::snowflake_features(saved.snowflake_features, &base.meta.adapter);
+    let live = saved.snowflake_lineage && snowflake;
+    let found = collin::discover(&target_dir);
+    let cll_path = match args.column_lineage.clone() {
+        // Named on the command line, and still not loaded if it is Snowflake's
+        // answer while Snowflake's features are off.
+        Some(path) if !snowflake && collin::tool_in(&path) == "snowflake" => {
+            eprintln!("  {} not loaded: it holds Snowflake's lineage, and Snowflake's features are off", path.display());
+            PathBuf::new()
+        }
+        Some(path) => path,
+        None => {
+            // A project can hold one cache per producer: the saved choice, else
+            // the most recent that may be offered.
+            let offered: Vec<&str> = found
+                .iter()
+                .filter(|a| collin::offered(a, snowflake))
+                .map(|a| if a.source.is_empty() { a.file.as_str() } else { a.source.as_str() })
+                .collect();
+            if offered.len() > 1 {
+                eprintln!("  {} column lineage caches: {}", offered.len(), offered.join(", "));
+            }
+            collin::choose(&target_dir, &found, saved.cll_file.as_deref(), live, snowflake)
+        }
+    };
+    let (base, graph) = {
+        let path = cll_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let graph = api::with_cache(&base, &path);
+            (base, graph)
+        })
+        .await?
+    };
+
+    let seen = [graph.meta.manifest_mtime, graph.meta.catalog_mtime, graph.meta.cll_mtime];
+    let venv = venv::detect(&root);
+    let shell = pty::ShellSpec::detect(args.shell);
+    // Bound before the state exists: the guard in api.rs compares Host and
+    // Origin against the port actually taken, which may not be the one asked for.
+    let listener = bind(args.port).await?;
+    let url = format!("http://{}", listener.local_addr()?);
+    let state = Arc::new(api::AppState {
+        port: listener.local_addr()?.port(),
+        root: root.clone(),
+        manifest_path,
+        catalog_path,
+        cll_path: std::sync::RwLock::new(cll_path),
+        target_dir,
+        venv: venv.clone(),
+        file_index: tokio::sync::RwLock::new(Arc::new(files::scan(&root))),
+        settings,
+        graph: tokio::sync::RwLock::new(Arc::new(graph)),
+        base: tokio::sync::RwLock::new(Arc::new(base)),
+        cll_headers: Default::default(),
+        git: tokio::sync::Mutex::new(None),
+        fresh: tokio::sync::Mutex::new(None),
+        shell: shell.clone(),
+        sidecar: sidecar::Sidecar::new(live, Default::default()),
+        // Nothing runs here: collin is found and started only once asked (0042).
+        collin: collin_run::Runner::new(std::time::Duration::from_secs(600)),
+        collin_report: Default::default(),
+        collin_version: Default::default(),
+        snowflake_features: std::sync::Mutex::new(saved.snowflake_features),
+        cll_lock: tokio::sync::Mutex::new(()),
+        seen: std::sync::Mutex::new(seen),
+        profiles: profiles::Lookup::from_env(|key| std::env::var_os(key), cfg!(windows)),
+    });
+
+    tokio::spawn(api::watch_artifacts(state.clone()));
+    tokio::spawn(api::watch_remote(state.clone()));
+    tokio::spawn(api::watch_files(state.clone()));
+    if live {
+        // Starting runs no query: the script connects on the first click (0016).
+        let st = state.clone();
+        tokio::spawn(async move { st.sidecar.start_for(&st.root, &st.venv).await });
+    }
+
+    eprintln!("\n  dbt-edith  {}  ({})", env!("CARGO_PKG_VERSION"), env!("DBT_EDITH_BUILD"));
+    eprintln!("  project   {}", root.display());
+    eprintln!("  shell     {} {}", shell.program, shell.args.join(" "));
+    if !venv.name.is_empty() {
+        eprintln!(
+            "  venv      {} ({}{})",
+            venv.name,
+            if venv.source == "activated" { "activated" } else { "found in project, not activated" },
+            if venv.python.is_empty() { String::new() } else { format!(", python {}", venv.python) },
+        );
+    }
+    if live {
+        eprintln!("  column lineage from Snowflake, connecting on the first column click");
+    }
+    eprintln!("  open      {url}\n");
+
+    if !args.no_open {
+        open_browser(&url);
+    }
+
+    axum::serve(listener, api::router(state.clone()))
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+            eprintln!("\n  bye");
+        })
+        .await?;
+    state.sidecar.stop().await;
+    Ok(())
+}
+
+/// Binds to localhost only, walking forward if the port is already in use.
+async fn bind(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
+    for candidate in port..port.saturating_add(20) {
+        match tokio::net::TcpListener::bind(("127.0.0.1", candidate)).await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    anyhow::bail!("no free port in {}..{}", port, port.saturating_add(20))
+}
+
+fn open_browser(url: &str) {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(url);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", url]);
+        c
+    };
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(url);
+        c
+    };
+    let _ = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+}

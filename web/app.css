@@ -1,0 +1,1170 @@
+:root {
+  --bg: #12161d;
+  --bg-2: #171c25;
+  --bg-3: #1d2430;
+  --line: #2a3340;
+  --fg: #d7dee8;
+  --fg-dim: #8b97a8;
+  --accent: #4da3ff;
+  --accent-dim: #24486e;
+  --model: #4da3ff;
+  --source: #e0a34b;
+  --seed: #4ec78d;
+  --snapshot: #b98cf0;
+  --dbt-yaml: #9b87f5;   /* dbt's own YAML: the profile and dbt_project.yml */
+  --test: #7a879a;
+  --exposure: #ef7a9b;
+  --warn: #e0a34b;
+  --ok: #4ec78d;
+  --bad: #e06c75;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --side-w: 270px;
+  --dock-h: 44%;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+  font: 13px/1.45 var(--ui);
+  overflow: hidden;
+}
+.hidden { display: none !important; }
+.grow { flex: 1; }
+.muted { color: var(--fg-dim); }
+.pad { padding: 12px; }
+kbd {
+  font: 11px var(--mono); background: var(--bg-3); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 4px; color: var(--fg-dim);
+}
+
+/* ---------------------------------------------------------------- chrome -- */
+#topbar, #statusbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 10px; background: var(--bg-2); border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+#topbar { height: 38px; }
+/* Environment colours. Filled, so the environment behind every resolved value
+   stays visible from anywhere; manifest mode is only outlined. */
+[data-tone] { --tone: #c9b458; }
+[data-tone=dev] { --tone: #4ec78d; }
+[data-tone=ci] { --tone: #4da3ff; }
+[data-tone=qa] { --tone: #b98cf0; }
+[data-tone=stg] { --tone: #3fc1c9; }
+[data-tone=uat] { --tone: #e8905a; }
+[data-tone=prod] { --tone: #e06c75; }
+.envpill {
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  font: 600 11px/16px var(--ui); color: #10151c; background: var(--tone);
+  border: 1px solid var(--tone); border-radius: 9px; padding: 0 8px; cursor: pointer;
+}
+.envpill[data-tone=manifest] { background: transparent; color: var(--fg); border-color: #4a5870; }
+.envpill:hover { filter: brightness(1.15); }
+.envpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.envpill-k { font-weight: 400; opacity: .7; }
+.envpill-caret { font-size: 9px; opacity: .75; }
+.envpill.sm { font-size: 10px; line-height: 14px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; letter-spacing: 0; }
+.envmenu {
+  position: fixed; z-index: 65; min-width: 230px; max-width: 380px; padding: 4px;
+  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+}
+.envmenu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px;
+  background: transparent; border: 0; border-radius: 4px; color: var(--fg);
+  font: 12px var(--ui); text-align: left; cursor: pointer;
+}
+.envmenu button:hover, .envmenu button:focus { background: var(--bg-3); outline: none; }
+.envmenu button.on .lbl { font-weight: 600; }
+.envmenu .check { width: 10px; color: var(--accent); }
+.envmenu .sub { margin-left: auto; padding-left: 14px; font: 10.5px var(--mono); color: var(--fg-dim); }
+/* Something to do with the tool above, not another tool: no check, no dot, and
+   its label starts under that tool's name (8px padding, 10px check, 8px dot,
+   two 8px gaps). */
+.envmenu button.subaction { padding: 2px 8px 5px 42px; font-size: 11.5px; }
+.envmenu button.subaction .lbl { color: var(--fg-dim); }
+.envmenu button.subaction[data-urgent=true] .lbl { color: var(--warn); }
+.envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.envdot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: 0 0 auto; }
+.envdot[data-tone=manifest] { background: transparent; border: 1px solid #6f7f93; }
+/* Column lineage tools (0031). Their own attribute rather than data-tone, which
+   is the environments' colour. Each hue is far from the accent and from the
+   others, and the tool is always named beside it, never shown by colour alone. */
+[data-tool] { --tool: #6f7f93; }
+[data-tool=fusion] { --tool: #ff694b; }
+[data-tool=collin] { --tool: #e070d0; }
+[data-tool=snowflake] { --tool: #29b5e8; }
+.tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
+.btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
+.cllpick .tname { color: var(--tool); font-weight: 600; }
+.cllpick .tdetail, .cllpick .caret { color: var(--fg-dim); }
+.cllpick .caret { font-size: 11px; line-height: 1; }
+.btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
+.cllpick[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
+.cllpick[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.cllpick[data-tone=busy] .tstate { color: var(--warn); }
+.cllpick[data-tone=failed] .tstate { color: var(--bad); }
+.btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
+.envmenu [data-tool] .check { color: var(--tool); }
+.envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.envmenu button[aria-disabled=true] { opacity: .45; cursor: default; }
+.envmenu button[aria-disabled=true]:hover { background: transparent; }
+.envmenu .menuhead {
+  padding: 2px 8px 3px; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--fg-dim);
+}
+.envmenu .menunote { padding: 1px 8px 4px 26px; font-size: 11px; line-height: 1.4; color: var(--fg-dim); max-width: 340px; }
+/* Still being built, said in the one colour this app keeps for a warning. */
+.alpha {
+  flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: #10151c;
+  font: 600 9.5px/14px var(--ui); letter-spacing: .5px; text-transform: uppercase;
+}
+.envmenu.setmenu { width: 360px; max-width: calc(100vw - 8px); }
+.setmenu .menunote { padding-left: 32px; max-width: none; }
+.setrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.setrow:hover { background: var(--bg-3); }
+.setrow[aria-busy=true] { cursor: progress; }
+.setlbl { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.sficon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: var(--tool); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+/* A switch rather than a check mark: on and off have to read at a glance. */
+.envmenu button.switch {
+  position: relative; flex: 0 0 auto; width: 34px; height: 18px; padding: 0; margin-left: auto;
+  border: 1px solid #4a5870; border-radius: 9px; background: var(--bg); cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.envmenu button.switch .knob {
+  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: #8b97a8; transition: transform .15s, background .15s;
+}
+.envmenu button.switch[aria-checked=true] { background: var(--tool); border-color: var(--tool); }
+.envmenu button.switch[aria-checked=true] .knob { transform: translateX(16px); background: #fff; }
+.envmenu button.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.alphawarn {
+  margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid rgba(224, 163, 75, .45); border-radius: 4px;
+  background: rgba(224, 163, 75, .08); color: var(--warn); font-size: 11px; line-height: 1.45;
+}
+/* z-index 64: above the ambient chrome and the palette (50) and the toasts (60),
+   below the env and crumb menus (65) and the modal (70). A card that opens by
+   accident must never cover a surface that was opened on purpose. */
+.hovercard {
+  position: fixed; z-index: 64; min-width: 220px; max-width: 380px; padding: 8px 10px;
+  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  font: 12px var(--ui); color: var(--fg);
+}
+.hc-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.hc-head .dot { width: 8px; height: 8px; flex: 0 0 auto; }
+.hc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-head .offchip { margin-left: auto; }
+.hc-sub { margin-top: 2px; font: 10.5px var(--mono); color: var(--fg-dim); }
+.hc-crumb { margin-top: 1px; font: 10.5px var(--mono); color: #6f7d90; word-break: break-all; }
+.hc-desc { margin-top: 7px; line-height: 1.45; }
+.hc-counts { margin-top: 7px; font: 10.5px var(--mono); color: var(--fg-dim); }
+.hc-cols { margin-top: 7px; border-top: 1px solid var(--line); padding-top: 6px; }
+.hc-col { display: flex; gap: 10px; font: 11px var(--mono); line-height: 1.6; }
+.hc-col .c-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-col .c-type { margin-left: auto; color: var(--source); white-space: nowrap; }
+.hc-more { font: 10.5px var(--mono); color: var(--fg-dim); margin-top: 2px; }
+.hc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.hc-value {
+  margin-top: 7px; font: 12px var(--mono); word-break: break-all; white-space: pre-wrap;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
+}
+.hc-note { margin-top: 6px; font-size: 11px; line-height: 1.45; white-space: pre-line; }
+.hc-note.warn { color: var(--warn); }
+#status-branch { cursor: pointer; }
+#status-branch:hover { color: var(--accent); }
+#statusbar { height: 24px; border-bottom: none; border-top: 1px solid var(--line); font-size: 11px; gap: 14px; }
+/* One line whatever the width: every item keeps its size and only the file
+   path gives way, since the editor tab already shows the file name. */
+#statusbar > * { white-space: nowrap; flex: 0 0 auto; }
+#statusbar > #status-file { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#statusbar > .grow { flex: 1 1 0; }
+.brand { font-weight: 600; letter-spacing: .3px; }
+.brand b { color: var(--accent); font-weight: 600; }
+.sep { width: 1px; height: 18px; background: var(--line); }
+.chips { display: flex; gap: 6px; }
+.chip {
+  font: 11px var(--mono); color: var(--fg-dim);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 7px;
+}
+/* Manifest freshness, beside the reload button. The dot carries the state and
+   the text carries the age, because a colour on its own cannot say "two hours".
+   Drift from the default branch sits in its own dim segment: it is worth
+   knowing, but it does not make the lineage on screen wrong. */
+.freshbadge {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  font: 11px var(--mono); color: var(--fg-dim);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
+}
+.freshbadge:hover { background: #26303e; border-color: #3a475a; }
+.freshbadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: 0 0 auto; }
+.freshbadge[data-tone="ok"] .dot { background: var(--ok); }
+.freshbadge[data-tone="warn"] .dot { background: var(--warn); }
+.freshbadge[data-tone="bad"] .dot { background: var(--bad); }
+.freshbadge[data-tone="warn"] .lbl { color: var(--warn); }
+.freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
+.freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
+.freshbadge .drift:empty { display: none; }
+/* The same dot again at the head of the hover card, so the card is visibly
+   about the thing the pointer is on. */
+.hovercard .freshdot { border-radius: 50%; background: var(--fg-dim); }
+.hovercard .freshdot[data-tone="ok"] { background: var(--ok); }
+.hovercard .freshdot[data-tone="warn"] { background: var(--warn); }
+.hovercard .freshdot[data-tone="bad"] { background: var(--bad); }
+
+.btn {
+  font: 12px var(--ui); color: var(--fg); background: var(--bg-3);
+  border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer;
+}
+.btn:hover { background: #26303e; border-color: #3a475a; }
+.btn.sm { padding: 2px 7px; font-size: 11px; }
+/* The tests toggle above the lineage, an eye (testsEye). On, it takes the
+   warning colour: data tests can outnumber the models several times over,
+   and every one is a box. Off, it is muted but not grey, so it stays found. */
+.eyebtn { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-dim); }
+.eyebtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.eyebtn:hover { color: var(--fg); }
+.eyebtn[aria-pressed=true] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
+.eyebtn[aria-pressed=true]:hover { background: rgba(224, 163, 75, .2); }
+
+#body { flex: 1; display: flex; min-height: 0; }
+
+/* --------------------------------------------------------------- sidebar -- */
+#sidebar {
+  width: var(--side-w); flex: 0 0 auto; min-width: 150px;
+  display: flex; flex-direction: column; background: var(--bg-2); min-height: 0;
+}
+.tabs {
+  display: flex; align-items: center; gap: 2px; padding: 0 6px;
+  height: 30px; flex: 0 0 auto; border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.tab {
+  background: none; border: none; color: var(--fg-dim); font: 12px var(--ui);
+  padding: 4px 9px; border-radius: 4px 4px 0 0; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.side-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.filter {
+  margin: 6px; padding: 5px 8px; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 5px; font: 12px var(--ui); outline: none;
+}
+.filter:focus { border-color: var(--accent-dim); }
+.tree, .list { overflow: auto; flex: 1; padding: 4px 0 20px; }
+
+.row {
+  display: flex; align-items: center; gap: 6px; padding: 2px 8px;
+  cursor: pointer; white-space: nowrap; user-select: none;
+}
+.row:hover { background: var(--bg-3); }
+.row.sel { background: var(--accent-dim); }
+.row .nm { overflow: hidden; text-overflow: ellipsis; }
+.row .sub { color: var(--fg-dim); font-size: 11px; margin-left: auto; padding-left: 8px; }
+.caret {
+  width: 14px; height: 14px; flex: 0 0 auto; color: var(--fg-dim);
+  display: flex; align-items: center; justify-content: center;
+}
+.caret svg { transition: transform .12s ease; }
+.row.open > .caret svg { transform: rotate(90deg); }
+.ficon { width: 15px; height: 15px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+.ficon.sql { color: #fe6702; }
+.ficon.yml { color: #e0a34b; }
+.ficon.md { color: #7fa8d8; }
+.ficon.json { color: #4ec78d; }
+.ficon.csv { color: #56b98b; }
+.ficon.other { color: #6d7a8c; }
+
+/* Explorer status colours: green for buffers not yet written to disk, amber for
+   files that are saved but still absent from a commit. */
+.row .nm { color: var(--fg); }
+.row.file .nm { color: #aab6c6; }
+.row.st-unsaved .nm { color: var(--ok); }
+.row.st-modified .nm, .row.st-untracked .nm { color: var(--warn); }
+.row.st-untracked .nm { opacity: .85; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+
+/* --------------------------------------------------------- open editors -- */
+#open-editors { flex: 0 0 auto; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+#open-editors.collapsed .oe-list { display: none; }
+.oe-head {
+  display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px 0 4px;
+  cursor: pointer; user-select: none; flex: 0 0 auto;
+}
+.oe-head:hover { background: var(--bg-3); }
+/* The same row above the tree, where there is nothing to fold: the tree fills
+   the pane and the title is a label, not a toggle. */
+.tree-head { cursor: default; }
+.tree-head:hover { background: none; }
+.oe-title { font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--fg-dim); }
+.oe-count {
+  font: 10px var(--mono); background: var(--bg-3); border-radius: 8px;
+  padding: 0 6px; color: var(--fg-dim); min-width: 18px; text-align: center;
+}
+.icon {
+  display: flex; align-items: center; justify-content: center; width: 20px; height: 18px;
+  background: none; border: none; border-radius: 4px; color: var(--fg-dim); cursor: pointer; padding: 0;
+}
+.icon:hover { background: #2b3644; color: var(--fg); }
+.icon:disabled { opacity: .25; cursor: default; background: none; }
+.icon.warn:hover { color: var(--warn); }
+.oe-list { overflow: auto; max-height: 34vh; padding: 2px 0 4px; }
+.oe-row {
+  display: flex; align-items: center; gap: 6px; padding: 2px 6px 2px 4px;
+  cursor: pointer; white-space: nowrap; font-size: 12px;
+}
+.oe-row:hover { background: var(--bg-3); }
+.oe-row.active { background: var(--accent-dim); }
+.oe-row .state {
+  width: 16px; height: 16px; flex: 0 0 auto; display: flex; align-items: center;
+  justify-content: center; border-radius: 3px; color: var(--fg-dim); font-size: 13px; line-height: 1;
+  visibility: hidden;
+}
+.oe-row:hover .state, .oe-row.dirty .state { visibility: visible; }
+.oe-row.dirty .state { color: var(--warn); }
+.oe-row .state:hover { background: #38455a; color: var(--fg); }
+.oe-row .nm { overflow: hidden; text-overflow: ellipsis; }
+.oe-row.dirty .nm { color: var(--warn); }
+.oe-row.preview .nm { font-style: italic; }
+.oe-row .dir { color: var(--fg-dim); font-size: 10.5px; margin-left: auto; padding-left: 10px;
+  overflow: hidden; text-overflow: ellipsis; max-width: 58%; }
+.oe-row .save { flex: 0 0 auto; visibility: hidden; }
+.oe-row.dirty .save { visibility: visible; }
+
+/* ------------------------------------------------------------------- git -- */
+.tabbadge {
+  display: inline-block; min-width: 15px; margin-left: 5px; padding: 0 4px;
+  background: var(--accent-dim); border-radius: 8px; font: 9.5px var(--mono); text-align: center;
+}
+.git-head { display: flex; align-items: center; gap: 3px; padding: 5px 6px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.branchbtn {
+  display: flex; align-items: center; gap: 6px; max-width: 165px;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+  color: var(--fg); font: 11.5px var(--ui); padding: 3px 8px; cursor: pointer;
+}
+.branchbtn:hover { border-color: var(--accent); color: var(--accent); }
+.branchbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon .cnt {
+  position: absolute; margin: -12px 0 0 12px; font: 9px var(--mono);
+  background: var(--accent); color: #0b0f15; border-radius: 7px; padding: 0 3px;
+}
+.icon { position: relative; }
+.git-body { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.git-sec {
+  display: flex; align-items: center; gap: 6px; padding: 5px 8px 3px;
+  font: 600 10.5px var(--ui); text-transform: uppercase; letter-spacing: .7px; color: var(--fg-dim);
+}
+.git-sec .n { font-family: var(--mono); letter-spacing: 0; }
+.git-sec .act { margin-left: auto; font: 10px var(--ui); color: var(--accent); cursor: pointer; text-transform: none; letter-spacing: 0; }
+.git-sec .act:hover { text-decoration: underline; }
+.git-row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.git-row:hover { background: var(--bg-3); }
+.git-row .nm { overflow: hidden; text-overflow: ellipsis; }
+.git-row .dir { color: var(--fg-dim); font-size: 10.5px; margin-left: auto; padding-left: 8px; overflow: hidden; text-overflow: ellipsis; }
+.git-row .code { font: 10px var(--mono); width: 18px; flex: 0 0 auto; text-align: center; }
+.git-row .go { flex: 0 0 auto; visibility: hidden; }
+.git-row:hover .go { visibility: visible; }
+.st-M { color: var(--warn); } .st-A { color: var(--ok); } .st-D { color: #e06c75; }
+.st-U { color: #e06c75; font-weight: 600; } .st-R { color: var(--snapshot); } .st-Q { color: var(--fg-dim); }
+.git-commit { flex: 0 0 auto; padding: 6px; border-top: 1px solid var(--line); }
+#commit-msg {
+  width: 100%; resize: vertical; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px;
+  font: 12px var(--ui); outline: none; margin-bottom: 6px;
+}
+#commit-msg:focus { border-color: var(--accent-dim); }
+.btn.wide { width: 100%; }
+.git-empty { padding: 14px 10px; color: var(--fg-dim); font-size: 11.5px; text-align: center; }
+.conflict-banner {
+  margin: 6px; padding: 7px 9px; border-radius: 5px; font-size: 11.5px;
+  background: #2d1f1f; border: 1px solid #6b4a4a; color: #e0a0a0;
+}
+
+/* ----------------------------------------------------------------- modal -- */
+#modal { position: fixed; inset: 0; background: #000a; display: flex; align-items: center; justify-content: center; z-index: 70; }
+.modal-box {
+  width: min(560px, 92vw); background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 18px 20px; box-shadow: 0 18px 60px #0009;
+}
+.modal-box h2 { margin: 0 0 10px; font-size: 15px; }
+#modal-body { font-size: 12.5px; color: #c2ccd9; max-height: 46vh; overflow: auto; }
+#modal-body ul { margin: 8px 0; padding-left: 18px; font-family: var(--mono); font-size: 11.5px; }
+#modal-body pre {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
+  padding: 8px; font-size: 11px; white-space: pre-wrap; max-height: 30vh; overflow: auto;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.btn.danger { border-color: #6b4a4a; color: #e0a0a0; }
+.btn.danger:hover { background: #2d1f1f; border-color: #a05a5a; }
+.btn.primary { background: var(--accent-dim); border-color: var(--accent); }
+
+/* Conflict markers left in a file by git. */
+.cm-conflict-head { background: #2d1f1f; color: #e0a0a0 !important; font-weight: 600; }
+.cm-conflict-mid { background: #22293a; color: #8fa8d8 !important; }
+.conflict-bar { display: flex; gap: 6px; padding: 2px 0 2px 34px; font: 10.5px var(--ui); }
+.conflict-bar button {
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--fg-dim); padding: 1px 7px; cursor: pointer; font: 10.5px var(--ui);
+}
+.conflict-bar button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---------------------------------------------------------------- gutter -- */
+.gutter { background: var(--line); flex: 0 0 auto; }
+.gutter-v { width: 3px; cursor: col-resize; }
+.gutter-h { height: 3px; cursor: row-resize; }
+.gutter:hover, .gutter.drag { background: var(--accent); }
+
+/* ---------------------------------------------------------------- editor -- */
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#editor-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.tabbar {
+  display: flex; height: 30px; flex: 0 0 auto; overflow-x: auto;
+  border-bottom: 1px solid var(--line); background: var(--bg-2);
+}
+.ftab {
+  display: flex; align-items: center; gap: 7px; padding: 0 10px; cursor: pointer;
+  border-right: 1px solid var(--line); color: var(--fg-dim); white-space: nowrap; font-size: 12px;
+}
+.ftab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
+.ftab .x { opacity: .4; font-size: 14px; line-height: 1; }
+.ftab .x:hover { opacity: 1; }
+.ftab.dirty .x::before { content: "●"; font-size: 10px; }
+.ftab.dirty .x { opacity: .9; }
+.ftab.dirty .x:hover::before { content: "×"; font-size: 14px; }
+.ftab.preview span:first-child { font-style: italic; }
+
+/* ----------------------------------------------------------- breadcrumbs -- */
+.crumbs {
+  display: flex; align-items: center; height: 22px; flex: 0 0 auto;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+  font: 11.5px var(--ui); color: var(--fg-dim);
+}
+.crumbs::-webkit-scrollbar { height: 0; }
+.crumb {
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  height: 18px; padding: 0 5px; background: transparent; border: 0; border-radius: 3px;
+  color: inherit; font: inherit; white-space: nowrap; cursor: pointer;
+}
+.crumb:hover, .crumb.open { background: var(--bg-3); color: var(--fg); }
+/* The Catalog's own .crumb, further down, gives a margin that lifted every
+   segment 3.5px and cut the top off a hover, or off the round config button. */
+.crumbs .crumb { margin: 0; }
+.crumb:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* The two chevrons before the path: a hair wider than a crumb so the pair
+   reads as one control, and still there when its stack is empty. */
+.crumb.nav { padding: 0 3px; color: var(--fg-dim); font-size: 14px; }
+.crumb.nav:disabled { opacity: .3; cursor: default; background: none; }
+.crumb-sep { flex: 0 0 auto; color: #5a677a; font-size: 12px; }
+.sicon { font: 10px var(--mono); color: var(--fg-dim); letter-spacing: -.5px; }
+.sicon[data-kind=map] { color: var(--accent); }
+.sicon[data-kind=seq] { color: var(--source); }
+.sicon[data-kind=heading] { color: #7fa8d8; }
+/* z-index 65, alongside the env menu: both are opened on purpose, and each
+   closes the other on the mousedown that opens it, so they never overlap. */
+.crumbmenu {
+  position: fixed; z-index: 65; min-width: 200px; max-width: 420px;
+  max-height: 46vh; overflow-y: auto; padding: 4px;
+  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+}
+.crumbmenu button {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 8px;
+  background: transparent; border: 0; border-radius: 4px; color: var(--fg);
+  font: 12px var(--ui); text-align: left; white-space: nowrap; cursor: pointer;
+}
+.crumbmenu button:hover, .crumbmenu button:focus { background: var(--bg-3); outline: none; }
+.crumbmenu button.on { background: var(--accent-dim); }
+.crumbmenu button.on .lbl { font-weight: 600; }
+.crumbmenu .caret { width: 11px; height: 11px; }
+/* The keys of dbt_project.yml reaching a file (0038): pushed to the end of the
+   bar, past a gap that keeps it apart from the path when the bar overflows. */
+.crumb-gap { flex: 1 0 14px; }
+.crumb.cfg {
+  width: 18px; padding: 0; margin-right: 3px; justify-content: center; border-radius: 50%;
+  color: var(--dbt-yaml); border: 1px solid rgba(155, 135, 245, .5); background: rgba(155, 135, 245, .1);
+}
+.crumb.cfg:hover, .crumb.cfg.open { color: var(--dbt-yaml); border-color: var(--dbt-yaml); background: rgba(155, 135, 245, .2); }
+.cfgicon { width: 13px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.crumbmenu.config { max-width: 560px; }
+.crumbmenu .note {
+  max-width: 340px; padding: 4px 8px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
+  color: var(--fg-dim); font: 11px var(--ui); white-space: normal;
+}
+.crumbmenu.config .lbl { flex: none; }
+.crumbmenu .sets {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  margin-left: 6px; color: var(--fg-dim); font: 11px var(--mono);
+}
+
+#editor-host { flex: 1; min-height: 0; }
+#diff-host { flex: 1; min-height: 0; position: relative; }
+.diffpane { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.diffpane.hidden { display: none; }
+.diff-head { flex: 0 0 auto; background: var(--bg-2); border-bottom: 1px solid var(--line); padding: 5px 10px 4px; }
+.diff-title { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.diff-title b { font-weight: 600; }
+.diff-state { color: var(--fg-dim); font: 11px var(--mono); }
+.diff-lock {
+  font: 9.5px var(--mono); color: var(--fg-dim); border: 1px solid var(--line);
+  border-radius: 8px; padding: 0 6px;
+}
+.diff-crumb { font: 10.5px var(--mono); color: var(--fg-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-crumb .sep { opacity: .5; margin: 0 4px; }
+.diff-crumb .leaf { color: #aab6c6; }
+
+/* Per-line + and - next to the line numbers, as in a review UI. */
+.CodeMirror-gutter.diff-mark { width: 14px; }
+.diff-sign { font: 11px var(--mono); text-align: center; line-height: inherit; }
+.diff-sign.add { color: #56b98b; }
+.diff-sign.del { color: #d88; }
+
+/* Where one side has no matching lines at all. */
+.CodeMirror-merge-spacer {
+  background-image: repeating-linear-gradient(135deg,
+    transparent, transparent 4px, #2a3340 4px, #2a3340 5px);
+  background-color: #171c25;
+}
+
+/* Word-level changes inside a line. The addon ships a faint underline image
+   that vanishes on a dark background; a tint reads far better. */
+.CodeMirror-merge-r-inserted, .CodeMirror-merge-l-inserted {
+  background-image: none; background-color: #2f6b47; border-radius: 2px;
+}
+.CodeMirror-merge-r-deleted, .CodeMirror-merge-l-deleted {
+  background-image: none; background-color: #6b3a3a; border-radius: 2px;
+}
+
+/* Overview of where the changes are, clickable. */
+.diff-ruler { position: absolute; top: 0; right: 0; bottom: 0; width: 11px; z-index: 4; pointer-events: none; }
+.diff-ruler div { position: absolute; right: 1px; width: 8px; min-height: 2px; border-radius: 1px; cursor: pointer; pointer-events: auto; opacity: .75; }
+.diff-ruler div:hover { opacity: 1; }
+.diff-ruler .add { background: #2f6b47; }
+.diff-ruler .del { background: #6b4a4a; }
+.mergepane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+/* A percentage height only resolves against a parent that has a definite one.
+   The addon's panes are inline-blocks with auto height, so without this the
+   editors size themselves to their content, their own scrollers never engage,
+   and a long file is simply clipped with no way to scroll. */
+.mergepane .CodeMirror-merge { height: 100%; box-sizing: border-box; border: none; }
+.mergepane .CodeMirror-merge-pane,
+.mergepane .CodeMirror-merge-gap { height: 100%; box-sizing: border-box; }
+.mergepane .CodeMirror-merge .CodeMirror { height: 100%; }
+.CodeMirror-merge-gap { background: var(--bg-2); border-color: var(--line); }
+.CodeMirror-merge-r-chunk { background: #1c2c22; }
+.CodeMirror-merge-r-chunk-start { border-top: 1px solid #2f6b47; }
+.CodeMirror-merge-r-chunk-end { border-bottom: 1px solid #2f6b47; }
+.CodeMirror-merge-l-chunk { background: #2d1f1f; }
+.CodeMirror-merge-l-chunk-start { border-top: 1px solid #6b4a4a; }
+.CodeMirror-merge-l-chunk-end { border-bottom: 1px solid #6b4a4a; }
+.CodeMirror-merge-r-connect { fill: #1c2c22; stroke: #2f6b47; }
+.CodeMirror-merge-l-connect { fill: #2d1f1f; stroke: #6b4a4a; }
+.CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
+.empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }
+/* The lineage pane is no flex box, so the hint would sit at its top, under the
+   Selection bar that floats there: it fills the pane instead, and its words
+   land in the middle. */
+#lineage-empty { position: absolute; inset: 0; pointer-events: none; }
+
+.CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
+.CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
+.CodeMirror-linenumber { color: #4a5668; }
+.CodeMirror-cursor { border-left: 1.5px solid var(--accent); }
+.CodeMirror-selected { background: #2b3a4d !important; }
+.cm-s-default .cm-keyword { color: #c792ea; }
+.cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: #c3e88d; }
+.cm-s-default .cm-number { color: #f78c6c; }
+.cm-s-default .cm-comment { color: #5d6b7d; font-style: italic; }
+.cm-s-default .cm-variable-2, .cm-s-default .cm-atom { color: #82aaff; }
+.cm-s-default .cm-builtin { color: #ffcb6b; }
+/* Jinja keeps the orange that marks a template on its delimiters and keywords;
+   what sits inside takes the colour of what it is (jinjaToken in app.js). */
+.cm-jinja-delim, .cm-jinja-keyword { color: #ff9f6b; }
+.cm-jinja-dbt { color: #ffcb6b; }
+.cm-jinja-fn { color: #82aaff; }
+.cm-jinja-var { color: #eeffff; }
+.cm-jinja-param { color: #f07178; font-style: italic; }
+.cm-jinja-string { color: #c3e88d; }
+.cm-jinja-number { color: #f78c6c; }
+.cm-jinja-atom { color: #c792ea; }
+.cm-jinja-punct { color: #89ddff; }
+.cm-jinja-comment { color: #5d6b7d; font-style: italic; }
+
+/* ------------------------------------------------------------------ find -- */
+/* Inside CodeMirror's wrapper, top right, above the text and below nothing:
+   CodeMirror's scrollbars sit at 6, its dialogs at 15. Amber rather than the
+   accent, because the selection is already blue. */
+.findbar {
+  position: absolute; top: 4px; right: 16px; z-index: 12;
+  display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 5px;
+  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .45); font: 11px var(--ui); color: var(--fg-dim);
+}
+.findbar .find-q {
+  width: 190px; margin-right: 2px; padding: 3px 6px; outline: none;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+  font: 12px var(--mono);
+}
+.findbar .find-q:focus { border-color: var(--accent-dim); }
+.findbar .find-q.bad { border-color: var(--bad); }
+.find-opt {
+  min-width: 22px; height: 20px; padding: 0 4px; cursor: pointer;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--fg-dim); font: 11px var(--mono);
+}
+.find-opt:hover { background: var(--bg-3); color: var(--fg); }
+.find-opt[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #1b2a3d; }
+.find-wholeWord { text-decoration: underline; text-underline-offset: 2px; }
+.find-count { min-width: 72px; padding: 0 4px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.find-count.none { color: #e08b8b; }
+.findbar .icon { font-size: 13px; }
+.CodeMirror.find-open .CodeMirror-lines { padding-top: 36px; }
+.cm-findhit { background: rgba(224, 163, 75, .36); border-radius: 2px; }
+.cm-findcur { background: rgba(224, 163, 75, .55); outline: 1px solid var(--warn); border-radius: 2px; color: #fff !important; }
+
+/* ------------------------------------------------------------------ dock -- */
+#dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }
+.dock-pane { flex: 1; min-height: 0; position: relative; }
+.tools { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--fg-dim); padding-right: 4px; }
+.tools input[type=number] {
+  width: 42px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 2px 4px; font: 11px var(--mono);
+}
+.tools .check { display: flex; align-items: center; gap: 4px; }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.segbtn {
+  background: none; border: none; color: var(--fg-dim); font: 11px var(--ui);
+  padding: 3px 9px; cursor: pointer;
+}
+.segbtn:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); }
+.segbtn.active { background: var(--accent-dim); color: var(--fg); }
+.segbtn:disabled { opacity: .35; cursor: default; }
+.colchip {
+  display: flex; align-items: center; gap: 6px; font: 11px var(--mono);
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 4px 1px 9px;
+}
+.colchip b { color: var(--accent); font-weight: 600; }
+.colchip .x { cursor: pointer; opacity: .5; padding: 0 3px; font-size: 13px; line-height: 1; }
+.colchip .x:hover { opacity: 1; }
+
+/* --------------------------------------------------------------- lineage -- */
+#graph { width: 100%; height: 100%; display: block; background: var(--bg); cursor: grab; }
+#graph.panning { cursor: grabbing; }
+#graph text { font-family: var(--ui); user-select: none; }
+/* --edge-col is set per path in column mode, where the colour carries the role.
+   `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
+.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }
+/* A line into a test, the stem from its model included (0034): dotted, in the
+   tests' grey, since it carries no data. Before `.edge.hi`, so a selected one
+   still turns accent. */
+.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }
+.edge.hi { stroke: var(--accent); stroke-width: 2; }
+/* An edge drawn against its direction, where column lineage loops: with no
+   arrowheads, left to right is the only direction a reader has (0027). */
+.edge.back { stroke-dasharray: 5 4; }
+/* Both at once, a test read from a later column: dash and dot. */
+.edge.test.back { stroke-dasharray: 5 3 1 3; }
+.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
+.nd:hover rect.box { stroke: var(--fg-dim); }
+.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
+.nd.off rect.box { stroke-dasharray: 3 3; }
+.nd.off .t1, .nd.off .t2 { opacity: .55; }
+/* A model drawn only because a selected test belongs to it (0032): there so
+   the test hangs off something, and dimmed so it never reads as selected. */
+.nd.ctx { opacity: .45; }
+.nd.ctx:hover { opacity: .85; }
+/* A test hanging under its model (0034): a slip of the same box, one line. */
+.nd.rider rect.box { fill: var(--bg-2); rx: 4; }
+.nd.rider .t1 { font-size: 10.5px; }
+/* The chip for the tests folded under a model (0035): an outline, not a box. */
+.nd.fold { cursor: pointer; }
+.nd.fold rect.box { fill: transparent; stroke-dasharray: 3 3; }
+.nd.fold .t1 { fill: var(--fg-dim); }
+.nd.fold:hover .t1 { fill: var(--fg); }
+.nd.rider.singular rect.box { stroke-dasharray: 4 2; }
+.nd.group { cursor: pointer; }
+.nd .warnmark { fill: var(--warn); }
+.nd .warncount { font-size: 9px; }
+.nd.sel rect.box { stroke: #fff; }
+.nd .kindbar { stroke: none; rx: 3; }
+.nd .kindbar.seg { rx: 1.5; }
+.nd .t1 { fill: var(--fg); font-size: 11.5px; }
+.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }
+.nd .more { fill: var(--fg-dim); font-size: 9px; }
+/* A folder band, when the canvas is drawn by folder: the columns one folder's
+   nodes sit in, under the edges and the boxes (0029). Its name is written in
+   an exported file only; the canvas pins it over the window instead. */
+.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }
+.band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }
+/* Those pinned names. Every pointer goes through them, so a drag that starts
+   on one still pans the canvas. */
+.folder-heads { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+.folder-head {
+  position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font: 600 11px var(--ui); color: var(--fg); background: #1d2430e6;
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px;
+}
+.graph-status {
+  position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono);
+  color: var(--fg-dim); background: #12161dcc; padding: 2px 8px; border-radius: 4px;
+  pointer-events: none;
+}
+
+.legend {
+  position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  font: 10px var(--mono); color: var(--fg-dim); background: #12161dcc;
+  padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
+}
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* Amber like a selector's warning: the canvas is still right about the model
+   it draws, only not about the file in front. Above the folder names, and
+   never in the way of a drag. */
+.lineage-note {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 2;
+  max-width: calc(100% - 20px); box-sizing: border-box; pointer-events: none;
+  font: 11px var(--mono); color: var(--warn); background: #12161dee;
+  border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
+}
+
+/* The selector bar floats over the canvas, the way the legend and the status
+   bubble do. The dock is short, and a row that pushed the graph down would
+   cost more room than it is worth. */
+.select-bar {
+  position: absolute; top: 6px; left: 10px; right: 10px; z-index: 2;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.select-row { display: flex; align-items: center; gap: 6px; }
+#select-input {
+  flex: 1; min-width: 0; background: #12161dee; color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px;
+  font: 11px var(--mono);
+}
+#select-input:focus { outline: none; border-color: var(--accent-dim); }
+#select-input::placeholder { color: #55606f; }
+.sel-sum {
+  font: 11px var(--mono); color: var(--fg-dim); white-space: nowrap;
+  background: #12161dcc; padding: 2px 6px; border-radius: 4px;
+}
+/* Amber, not red: a term that matched nothing is worth reading, and the rest
+   of the expression was still drawn. */
+.sel-warn {
+  font: 11px var(--mono); color: var(--warn); background: #12161dee;
+  border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
+}
+.sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
+/* The named selectors menu: the environment menu's rows, a filter on top, and
+   a list that scrolls, since a project can name dozens of selectors. */
+.selmenu { width: 480px; max-width: calc(100vw - 8px); }
+.selmenu input {
+  width: 100%; box-sizing: border-box; margin-bottom: 4px; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font: 11px var(--mono);
+}
+.selmenu input:focus { outline: none; border-color: var(--accent-dim); }
+.selrows { max-height: 55vh; overflow-y: auto; }
+.selmenu button.cur { background: var(--bg-3); }
+.selmenu .lbl { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; }
+.selmenu button.off .lbl { opacity: .55; }
+.selmenu .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui); }
+.selmenu .tag {
+  font: 9.5px var(--mono); color: var(--accent); border: 1px solid var(--accent-dim);
+  border-radius: 3px; padding: 0 4px;
+}
+.selempty, .selnote { padding: 6px 8px; font: 11px var(--ui); color: var(--fg-dim); }
+.selnote { color: var(--warn); border-top: 1px solid var(--line); margin-top: 4px; }
+
+/* ------------------------------------------------------------- artifacts -- */
+/* The Compiled and Run tabs: same pane twice, over target/compiled/ and
+   target/run/. */
+.compiled-head { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+#dock-compiled, #dock-run { display: flex; flex-direction: column; }
+.compiled-body { flex: 1; min-height: 0; overflow: hidden; }
+.compiled-body .CodeMirror { height: 100%; }
+.fresh-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; row-gap: 3px;
+  padding: 7px 12px; font-size: 12px;
+  border-left: 3px solid var(--ok); background: #16211c;
+}
+/* Its own line, at full width: these paths run past a hundred characters and
+   the segment that identifies the file is the last one. */
+.artifact-path {
+  flex: 0 0 100%; min-width: 0; font: 11px var(--mono); text-align: left;
+  direction: rtl; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0; margin: 0; border: 0; background: none; color: var(--fg-dim);
+}
+.artifact-path.link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
+.artifact-path.link:hover { color: var(--accent); }
+.artifact-path.outside { cursor: default; opacity: .75; }
+.fresh-bar.stale { border-left-color: var(--warn); background: #241d12; }
+.fresh-bar.missing { border-left-color: #a05a5a; background: #241616; }
+.fresh-bar b { font-family: var(--mono); font-size: 11.5px; }
+.fresh-bar .why { color: var(--fg-dim); font-size: 11px; }
+.fresh-bar.stale .why { color: var(--warn); }
+.fresh-bar .grow { flex: 1; }
+.compiled-empty { padding: 16px; font-size: 12px; color: var(--fg-dim); }
+.compiled-empty code {
+  display: inline-block; font: 11.5px var(--mono); background: var(--bg-3);
+  border: 1px solid var(--line); border-radius: 4px; padding: 2px 7px; color: var(--fg); margin: 6px 0;
+}
+.compiled-empty ul { font: 10.5px var(--mono); padding-left: 16px; color: #5d6b7d; }
+
+/* ---------------------------------------------------------------- detail -- */
+.detail { overflow: auto; height: 100%; padding: 12px 14px; }
+.detail h2 { margin: 0 0 2px; font-size: 15px; }
+.detail .idline { font: 11px var(--mono); color: var(--fg-dim); margin-bottom: 10px; word-break: break-all; }
+.detail .kv { display: grid; grid-template-columns: 120px 1fr; gap: 3px 12px; font-size: 12px; margin-bottom: 12px; }
+.detail .kv dt { color: var(--fg-dim); }
+.detail .kv dd { margin: 0; font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.detail h3 { font-size: 12px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .6px; margin: 14px 0 6px; }
+.detail table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.detail td { padding: 2px 8px 2px 0; border-bottom: 1px solid var(--bg-3); vertical-align: top; }
+.detail td.c1 { font-family: var(--mono); white-space: nowrap; }
+.detail td.c2 { font-family: var(--mono); color: var(--source); white-space: nowrap; }
+/* Scoped to .links in the catalog: .stat .v.link is a different, plain link. */
+.detail .links, .cat-body .links { display: flex; flex-wrap: wrap; gap: 5px; }
+.detail .link, .cat-body .links .link {
+  font: 11px var(--mono); background: var(--bg-3); border: 1px solid var(--line);
+  border-radius: 4px; padding: 2px 7px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; user-select: none;
+}
+.detail .link:hover, .cat-body .links .link:hover { border-color: var(--accent); color: var(--accent); }
+.offchip {
+  font: 10px var(--mono); color: var(--warn); border: 1px solid #6b5a2a;
+  border-radius: 9px; padding: 1px 7px; margin-left: 8px;
+}
+.row.off .nm, .pres.off .p1 { color: var(--warn); opacity: .8; }
+.tagchip { font: 10px var(--mono); background: var(--accent-dim); border-radius: 9px; padding: 1px 7px; }
+
+/* ------------------------------------------------------------ ref links -- */
+/* A macro call links the same way a ref() does, to its definition, so it
+   looks the same; the card says which it is. */
+.cm-reflink, .cm-macrolink {
+  border-bottom: 1px dotted #6f7f93;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.cm-reflink:hover, .cm-macrolink:hover {
+  color: var(--accent) !important;
+  border-bottom: 1px solid var(--accent);
+  background: #1b2a3d;
+}
+.cm-reflink.dis { border-bottom-color: #7a6a3a; color: #b9a46a !important; }
+.cm-reflink.dis:hover { color: var(--warn) !important; border-bottom-color: var(--warn); background: #2b2415; }
+.cm-reflink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
+.cm-reflink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
+
+.cm-varlink { border-bottom: 1px dotted var(--seed); cursor: help; border-radius: 2px; }
+.cm-varlink:hover { color: var(--seed) !important; border-bottom-style: solid; background: #16281f; }
+
+/* A folder key in dbt_project.yml: dotted like a var rather than like a ref,
+   because the click lands in the tree and not on a node. Dashed when no folder
+   matches, which the card explains (0036). */
+.cm-dirlink { border-bottom: 1px dotted #8a7fb0; cursor: pointer; border-radius: 2px; }
+.cm-dirlink:hover { color: #b9a9e0 !important; border-bottom-style: solid; background: #211d2e; }
+.cm-dirlink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
+.cm-dirlink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
+
+/* ---------------------------------------------------------------- search -- */
+.grep-status { padding: 0 10px 6px; font-size: 11px; }
+.grep-file {
+  display: flex; align-items: baseline; gap: 6px; padding: 4px 10px 2px;
+  cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.grep-file:hover { background: var(--bg-3); }
+.grep-file .nm { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grep-file .dir {
+  color: var(--fg-dim); font: 10.5px var(--mono); font-weight: 400; margin-left: auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;
+}
+.grep-hit { display: flex; gap: 8px; padding: 1px 10px 1px 18px; cursor: pointer; font: 11px var(--mono); }
+.grep-hit:hover { background: var(--bg-3); }
+.grep-hit .ln { color: var(--fg-dim); min-width: 32px; text-align: right; flex: 0 0 auto; }
+.grep-hit .tx { color: #b9c4d2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grep-hit mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
+.grep-more { padding: 1px 10px 4px 18px; font: 10.5px var(--mono); color: var(--fg-dim); }
+
+/* --------------------------------------------------------------- catalog -- */
+.catalog { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.cat-head { flex: 0 0 auto; padding: 12px 16px 0; border-bottom: 1px solid var(--line); }
+.cat-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+.cat-title .dot { width: 9px; height: 9px; }
+.cat-title .btn { margin-left: auto; font-weight: 400; }
+.crumb { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 10px; word-break: break-all; }
+.crumb b { color: var(--fg); font-weight: 400; }
+.cat-tabs { display: flex; gap: 18px; }
+.ctab {
+  background: none; border: none; padding: 5px 0 7px; cursor: pointer;
+  color: var(--fg-dim); font: 600 11px var(--ui); letter-spacing: .8px;
+  border-bottom: 2px solid transparent; text-transform: uppercase;
+}
+.ctab:hover { color: var(--fg); }
+.ctab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.cat-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 24px; }
+.cat-body h3 {
+  font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase;
+  letter-spacing: .9px; margin: 18px 0 8px; font-weight: 600;
+}
+.cat-body h3:first-child { margin-top: 0; }
+.cat-desc { margin: 0; color: #c2ccd9; max-width: 90ch; }
+.stats { display: flex; flex-wrap: wrap; gap: 30px; }
+.stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 2px; }
+.stat .v { font-size: 15px; font-weight: 600; }
+.stat .v.link { cursor: pointer; }
+.stat .v.link:hover { color: var(--accent); }
+.loc { border-collapse: collapse; font-size: 11.5px; width: 100%; }
+.loc th {
+  text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--fg-dim); font-weight: 600; padding: 0 12px 5px 0; border-bottom: 1px solid var(--line);
+  cursor: help;
+}
+.loc td { padding: 4px 12px 4px 0; border-bottom: 1px solid #1f2733; font-family: var(--mono); word-break: break-all; }
+.loc td.k { font-family: var(--ui); color: var(--fg-dim); width: 70px; }
+.loc td.tpl { color: var(--source); }
+.loc td.moved { color: var(--warn); }
+.loc td.moved::after { content: '  \2192'; opacity: .7; }
+.loc-foot { display: flex; align-items: center; gap: 10px; margin-top: 7px; min-height: 22px; }
+.moved-note { font-size: 11px; color: var(--warn); }
+.loc td.moved.expected { color: #aab6c6; }
+.sandbox-note { font-size: 11px; color: var(--fg-dim); }
+
+/* Resolved cells that could not produce a usable name. Placeholder uses a dotted
+   underline so it never reads as the amber "moved" arrow next to it. */
+.loc td.env-missing, span.env-missing { color: #e06c75; }
+.loc td.env-placeholder, span.env-placeholder {
+  color: var(--warn); text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.loc td.env-unevaluated { color: var(--fg-dim); font-style: italic; }
+.loc tr.rel td { border-top: 1px solid var(--line); padding-top: 6px; }
+.loc th .envpill { cursor: pointer; text-transform: none; }
+.relcell { display: flex; align-items: center; gap: 8px; }
+.relcell span { flex: 1; min-width: 0; }
+.relcell .btn { flex: 0 0 auto; font-family: var(--ui); }
+
+.modal-box.wide { width: min(880px, 94vw); }
+.envpanel .loc td { vertical-align: middle; }
+.envpanel input[type=text] {
+  width: 11ch; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 2px 6px; font: 11.5px var(--mono);
+}
+.envpanel input[type=text]:focus { border-color: var(--accent-dim); outline: none; }
+.envpanel p { margin: 10px 0 0; font-size: 11px; }
+.kvline { display: grid; grid-template-columns: 130px 1fr; gap: 3px 12px; font-size: 12px; }
+.kvline dt { color: var(--fg-dim); }
+.kvline dd { margin: 0; font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+
+.coltools { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; }
+.coltools .grow { flex: 1; }
+.colfind { position: relative; display: inline-flex; align-items: center; }
+.colfilter {
+  width: 210px; padding: 3px 76px 3px 7px; outline: none;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px;
+  font: 11.5px var(--mono);
+}
+.colfilter:focus { border-color: var(--accent-dim); }
+.colcount {
+  position: absolute; right: 7px; pointer-events: none;
+  font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.cols .c-name mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
+.cols { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cols th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+  color: var(--fg-dim); font-weight: 600; padding: 0 10px 6px 0; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--bg-2);
+}
+.cols td { padding: 5px 10px 5px 0; border-bottom: 1px solid #1f2733; vertical-align: top; }
+.cols tr:hover td { background: #1a212c; }
+.cols tr.c-linked { cursor: pointer; }
+.cols tr.c-linked:hover td { background: #1f2b3a; }
+/* The name is not part of the click target, so it gets a text cursor and keeps
+   its colour on hover. The lineage cell is what lights up instead. */
+.cols tr.c-linked .c-name { cursor: text; user-select: text; }
+.cols tr.c-linked:hover .c-lin { color: var(--accent); }
+.cols tr.c-focus td { background: var(--accent-dim); }
+.cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
+.cols .c-lin b { color: var(--accent); font-weight: 600; }
+/* The count of tests this table cannot show. Underlined rather than coloured:
+   the toolbar's colours mean the column lineage tool and its state, nothing else. */
+.coltools .modeltests { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.coltools .modeltests:hover { color: var(--accent); }
+.coltools .colhint[data-tone="hint"] { color: var(--accent); }
+.coltools .colhint[data-tone="busy"] { color: var(--warn); }
+.coltools .colhint[data-tone="failed"] { color: #ef6b6b; }
+.coltools .colhint[data-tone="alpha"] { color: var(--warn); }
+/* What collin's report says about the model shown, full width under the tools. */
+.colnote {
+  margin: 0 0 8px; padding: 5px 8px; border-left: 2px solid var(--warn); background: rgba(224, 163, 75, .08);
+  color: var(--warn); font-size: 12px; line-height: 1.45;
+}
+.cols .c-ask { color: var(--fg-dim); font-style: italic; }
+.cols tr.c-linked:hover .c-ask { color: var(--accent); font-style: normal; }
+.filelink { color: var(--accent); cursor: pointer; text-decoration: none; }
+.filelink:hover { text-decoration: underline; }
+.cols .c-name { font-family: var(--mono); white-space: nowrap; }
+
+/* --------------------------------------------------------- query history -- */
+.history { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.histtools {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-bottom: 1px solid var(--line); font-size: 11px;
+}
+.histtools .sficon { width: 14px; height: 14px; }
+.histsaid { margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.histbody { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px 16px; }
+.histnote { margin: 0 0 8px; padding: 5px 8px; font-size: 12px; line-height: 1.45; }
+.histnote.bad { border-left: 2px solid var(--bad); background: rgba(224, 108, 117, .08); color: #e8a0a6; }
+.histtable { table-layout: auto; }
+.histtable td { white-space: nowrap; vertical-align: baseline; }
+.histtable .h-row { cursor: pointer; }
+.histtable .h-row.h-open td { background: #1f2b3a; }
+.histtable .h-when, .histtable .h-num { font-variant-numeric: tabular-nums; color: var(--fg-dim); }
+.histtable .h-num { text-align: right; }
+.histtable .h-mono { font: 11px var(--mono); }
+.histtable .h-type { color: var(--fg-dim); }
+/* The statement takes whatever the other columns leave. */
+.histtable .h-sql { width: 100%; max-width: 0; }
+.histtable .h-head, .histtable .h-err { overflow: hidden; text-overflow: ellipsis; font: 11.5px var(--mono); }
+.histtable .h-err { color: var(--bad); }
+.histtable .h-state { width: 10px; padding-right: 6px; }
+.qdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); vertical-align: 1px; }
+[data-state=ok] .qdot { background: var(--ok); }
+[data-state=failed] .qdot { background: var(--bad); }
+[data-state=cancelled] .qdot { background: transparent; border: 1px solid var(--fg-dim); }
+[data-state=running] .qdot, [data-state=queued] .qdot { background: var(--warn); }
+.histtable .h-detail td { background: var(--bg); white-space: normal; padding: 8px 10px; }
+.histtable .h-detail:hover td { background: var(--bg); }
+.h-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; }
+.h-bar code { font: 11px var(--mono); color: var(--fg); user-select: all; }
+.h-text {
+  margin: 0; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font: 11.5px/1.45 var(--mono); color: #c2ccd9; user-select: text;
+}
+.histfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; }
+.envmenu.histmenu { min-width: 260px; }
+.cols .c-type { font-family: var(--mono); color: var(--source); white-space: nowrap; }
+.cols .c-desc { color: #b9c4d2; }
+.cols .c-undeclared .c-name { color: var(--fg-dim); font-style: italic; }
+.nul { color: #4a5668; }
+.testchip {
+  display: inline-block; font: 10px var(--mono); background: var(--bg-3);
+  border: 1px solid #3a4756; border-radius: 9px; padding: 1px 7px; margin: 0 3px 3px 0; white-space: nowrap;
+}
+.testchip.nn { border-color: #3e6b52; color: #7fd6a6; }
+.testchip.un { border-color: #3e5a6b; color: #7fb8d6; }
+/* The Tests cell is capped in testChips rather than here: a max-width on a cell
+   of an auto-laid-out table is a suggestion, and a chip named
+   expect_column_values_to_not_match_like_pattern overrules it. The overflow chip
+   is dashed and not only another colour, because the two test tones are the
+   whole colour signal in this cell and have to stay legible. */
+.testchip[role="button"] { cursor: pointer; }
+.testchip[role="button"]:not(.more):hover, .testchip[role="button"]:not(.more):focus { border-color: var(--accent); outline: none; }
+.testchip.more { border-style: dashed; color: var(--fg-dim); cursor: pointer; }
+.testchip.more:hover, .testchip.more:focus { border-color: var(--accent); color: var(--accent); outline: none; }
+.hc-tests { margin-top: 7px; border-top: 1px solid var(--line); padding-top: 6px; }
+.hc-test { font: 11px var(--mono); line-height: 1.45; margin-bottom: 4px; }
+.hc-test .t-label { color: var(--fg); }
+.hc-test .t-name { display: block; color: var(--fg-dim); word-break: break-all; }
+
+/* -------------------------------------------------------------- terminal -- */
+#term { height: 100%; padding: 4px 2px 0 8px; background: #0e1219; }
+.xterm-viewport::-webkit-scrollbar { width: 8px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: #2f3b4c; border-radius: 4px; }
+
+/* --------------------------------------------------------------- palette -- */
+#palette { position: fixed; inset: 0; background: #0009; display: flex; justify-content: center; padding-top: 12vh; z-index: 50; }
+.palette-box { width: min(760px, 92vw); background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 18px 60px #0008; }
+#palette-input {
+  width: 100%; padding: 12px 14px; background: transparent; border: none; border-bottom: 1px solid var(--line);
+  color: var(--fg); font: 14px var(--ui); outline: none;
+}
+#palette-results { max-height: 52vh; overflow: auto; }
+.pres { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer; }
+.pres.on { background: var(--accent-dim); }
+.pres .p1 { font-size: 13px; }
+.pres .p2 { font: 11px var(--mono); color: var(--fg-dim); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------- shortcuts -- */
+.keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
+.keysbtn:hover { color: var(--fg); }
+/* Where Snowflake's features are found, so it keeps their colour on or off,
+   and a ring of it, where the grey gear it replaced was easy to miss. */
+#settings-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-color: rgba(41, 181, 232, .45); background: rgba(41, 181, 232, .08);
+}
+#settings-btn:hover { border-color: var(--tool); background: rgba(41, 181, 232, .18); }
+#settings-btn .sficon { width: 15px; height: 15px; stroke-width: 1.5; }
+/* Off: muted, never grey, so it can still be found. */
+#settings-btn[data-on=false] { border-color: rgba(41, 181, 232, .25); background: transparent; }
+#settings-btn[data-on=false] .sficon { opacity: .7; filter: saturate(.45); }
+#settings-btn[data-on=false]:hover .sficon { opacity: 1; filter: none; }
+/* The dbt profile, in the violet of dbt's own YAML while there is one to open. Missing, it
+   is grey and dimmed and carries a dot, so the button stays where the user
+   looks for it and says something is wrong. */
+#profile-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+#profile-btn[data-found=true] { color: var(--dbt-yaml); border-color: rgba(155, 135, 245, .5); background: rgba(155, 135, 245, .1); }
+#profile-btn[data-found=true]:hover { border-color: var(--dbt-yaml); background: rgba(155, 135, 245, .2); }
+#profile-btn[data-found=false] .profileicon { opacity: .5; }
+#profile-btn[data-found=false]::after {
+  content: ''; position: absolute; top: 0; right: 0;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
+}
+/* Above the palette and the modal: F1 can open it from either. */
+#shortcuts {
+  position: fixed; inset: 0; z-index: 72; background: #0009;
+  display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh;
+}
+.keys-box {
+  width: min(960px, 94vw); max-height: 84vh; overflow: auto; outline: none;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 14px 20px 12px; box-shadow: 0 18px 60px #0009;
+}
+.keys-head { display: flex; align-items: center; margin-bottom: 6px; }
+.keys-head h2 { margin: 0; font-size: 15px; }
+.keys-grid { column-width: 400px; column-gap: 32px; }
+.keys-grid section { break-inside: avoid; padding-bottom: 6px; }
+.keys-grid h3 {
+  font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase;
+  letter-spacing: .9px; margin: 10px 0 6px; font-weight: 600;
+}
+.keys-row { display: flex; align-items: baseline; gap: 12px; padding: 2px 0; font-size: 12px; }
+.keys-k { flex: 0 0 132px; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+/* Ctrl+Shift+G is three times the width of its Mac glyphs, and a pair of keys
+   that wraps reads as a row with no description. */
+.keys-box.pc .keys-k { flex-basis: 176px; }
+.keys-k kbd { color: var(--fg); white-space: nowrap; }
+.keys-what { color: #c2ccd9; }
+.keys-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
+
+/* ----------------------------------------------------------------- toast -- */
+#toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.toast {
+  background: var(--bg-3); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  padding: 7px 14px; border-radius: 5px; font-size: 12px; box-shadow: 0 6px 20px #0006;
+}
+.toast.err { border-left-color: #ef6b6b; }
+.toast.ok { border-left-color: var(--ok); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2b3746; border-radius: 5px; border: 2px solid var(--bg-2); }
+::-webkit-scrollbar-thumb:hover { background: #3b4a5d; }
+
+/* The role tag above a column box. Its colours are inline, set per role. */
+.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }
+.rolebadge rect { stroke-width: 1; }
+/* Where a jump to a test landed, lit and faded (0041). */
+.cm-flash { animation: cm-flash 1.8s ease-out; }
+@keyframes cm-flash { 0%, 40% { background: rgba(77, 163, 255, .38); box-shadow: inset 3px 0 0 var(--accent); } 100% { background: transparent; box-shadow: none; } }
+/* A column collin's report says something about. The colour of the note over
+   the table, which says how many there are. */
+.cols .c-flag {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 7px; cursor: help;
+  font: 600 10px var(--mono); color: var(--warn); background: rgba(224, 163, 75, .14);
+}

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dbt-edith</title>
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="stylesheet" href="vendor/codemirror.css">
+<link rel="stylesheet" href="vendor/cm-merge.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header id="topbar">
+  <span class="brand"><b>Edith</b></span>
+  <span class="sep"></span>
+  <span id="project" class="muted">loading…</span>
+  <span id="counts" class="chips"></span>
+  <span id="cll-pick-host"></span>
+  <div class="grow"></div>
+  <button id="palette-btn" class="btn" title="Search models and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
+  <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
+  <!-- Its icon is profileIcon(), drawn by the page; hidden while there is nowhere to look for a profile. -->
+  <button id="profile-btn" class="btn keysbtn hidden" type="button" aria-label="dbt profile"></button>
+  <!-- Its icon is snowflakeIcon(), drawn by the page, so the menu and the button share one drawing. -->
+  <button id="settings-btn" class="btn keysbtn" type="button" data-tool="snowflake" title="Snowflake features"
+          aria-label="Snowflake features" aria-haspopup="menu"></button>
+  <button id="fresh-badge" class="freshbadge hidden" type="button">
+    <span class="dot"></span><span class="lbl"></span><span class="drift"></span>
+  </button>
+  <button id="reload-btn" class="btn" title="Re-read manifest.json">Reload manifest</button>
+</header>
+
+<div id="body">
+
+  <aside id="sidebar">
+    <div class="tabs">
+      <button class="tab active" data-side="files">Files</button>
+      <button class="tab" data-side="models">Models</button>
+      <button class="tab" data-side="search">Search</button>
+      <button class="tab" data-side="git">Git<span id="git-badge" class="tabbadge hidden"></span></button>
+    </div>
+    <div id="side-files" class="side-pane">
+      <div id="open-editors">
+        <div class="oe-head" id="oe-head">
+          <span class="caret" id="oe-caret">&#9662;</span>
+          <span class="oe-title">Open editors</span>
+          <span class="oe-count" id="oe-count">0</span>
+          <div class="grow"></div>
+          <button class="icon" id="save-all-btn" title="Save all modified files">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v7M5 6.2l3 3 3-3M3 12.5h10"/></svg>
+          </button>
+          <button class="icon" id="close-all-btn" title="Close all tabs (files are not deleted)">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <div id="oe-list" class="oe-list"></div>
+      </div>
+      <div class="oe-head tree-head">
+        <span class="oe-title" id="tree-title">Project</span>
+        <div class="grow"></div>
+        <!-- Both glyphs are drawn here, like the file icons: no vendor icon set is bundled. -->
+        <button class="icon" id="reveal-btn" title="Reveal the open file in the tree">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round"><circle cx="8" cy="8" r="3.2"/>
+               <path d="M8 1.5v2.2M8 12.3v2.2M1.5 8h2.2M12.3 8h2.2"/></svg>
+        </button>
+        <button class="icon" id="collapse-btn" title="Collapse all folders">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 3.4L8 6.6l3.2-3.2"/>
+               <path d="M4.8 12.6L8 9.4l3.2 3.2"/></svg>
+        </button>
+      </div>
+      <div id="tree" class="tree"></div>
+    </div>
+    <div id="side-git" class="side-pane hidden">
+      <div class="git-head">
+        <button id="branch-btn" class="branchbtn" title="Switch branch">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round"><circle cx="4.5" cy="3.5" r="1.8"/><circle cx="4.5" cy="12.5" r="1.8"/>
+               <circle cx="11.5" cy="6" r="1.8"/><path d="M4.5 5.3v5.4M6.3 6h1.9a3 3 0 013 3v1.5"/></svg>
+          <span id="branch-name">…</span>
+        </button>
+        <div class="grow"></div>
+        <button class="icon" id="git-fetch" title="Fetch from origin">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M13.3 7a5.3 5.3 0 10-1.2 4.1"/><path d="M13.5 3.2V7H9.8"/></svg>
+        </button>
+        <button class="icon" id="git-pull" title="Pull (fast-forward only)">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.8 7.4L8 10.6l3.2-3.2M3 13.5h10"/></svg>
+          <span id="behind-n" class="cnt hidden"></span>
+        </button>
+        <button class="icon" id="git-push" title="Push to origin">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5"
+               stroke-linecap="round" stroke-linejoin="round"><path d="M8 13.5v-8M4.8 8.6L8 5.4l3.2 3.2M3 2.5h10"/></svg>
+          <span id="ahead-n" class="cnt hidden"></span>
+        </button>
+      </div>
+      <div id="git-body" class="git-body"></div>
+      <div class="git-commit">
+        <textarea id="commit-msg" rows="2" placeholder="Commit message" spellcheck="false"></textarea>
+        <button id="commit-btn" class="btn wide">Commit</button>
+      </div>
+    </div>
+
+    <div id="side-search" class="side-pane hidden">
+      <input id="grep-input" class="filter" placeholder="Search in all files…" spellcheck="false" autocomplete="off">
+      <div id="grep-status" class="muted grep-status"></div>
+      <div id="grep-results" class="list"></div>
+    </div>
+    <div id="side-models" class="side-pane hidden">
+      <input id="model-filter" class="filter" placeholder="Filter models and sources…" spellcheck="false">
+      <div id="model-list" class="list"></div>
+    </div>
+  </aside>
+
+  <div class="gutter gutter-v" id="gutter-side"></div>
+
+  <main id="main">
+    <section id="editor-pane">
+      <div id="tabbar" class="tabbar"></div>
+      <div id="crumbs" class="crumbs hidden" aria-label="Breadcrumbs"></div>
+      <div id="editor-host"></div>
+      <div id="diff-host" class="hidden"></div>
+      <div id="editor-empty" class="empty">
+        <p>Open a file from the sidebar, or press <kbd class="k-palette">⌘K</kbd>. <kbd>?</kbd> lists every shortcut.</p>
+      </div>
+    </section>
+
+    <div class="gutter gutter-h" id="gutter-dock"></div>
+
+    <section id="dock">
+      <div class="tabs">
+        <button class="tab active" data-dock="lineage">Lineage</button>
+        <button class="tab" data-dock="terminal">Terminal</button>
+        <button class="tab" data-dock="catalog">Catalog</button>
+        <button class="tab" data-dock="compiled" title="The model's SQL with the Jinja gone, from target/compiled/">Compiled</button>
+        <button class="tab" data-dock="run" title="The statement dbt executed to materialise it, from target/run/">Run</button>
+        <button class="tab hidden" data-dock="history" id="history-tab"
+                title="Your own queries in Snowflake over the last 7 days, read when the tab opens">Query history</button>
+        <div class="grow"></div>
+        <div id="lineage-tools" class="tools">
+          <span id="graph-mode" class="seg">
+            <button class="segbtn active" data-mode="model"
+                    title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
+            <button class="segbtn" data-mode="column" disabled>Columns</button>
+            <button class="segbtn" data-mode="select"
+                    title="Any set of nodes you describe, drawn together: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
+          </span>
+          <span id="col-chip" class="colchip hidden"></span>
+          <label>up <input id="up" type="number" min="0" max="20" value="2"></label>
+          <label>down <input id="down" type="number" min="0" max="20" value="2"></label>
+          <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
+          <button id="with-tests" class="btn sm eyebtn" type="button" aria-pressed="false"
+                  aria-label="Data tests on the canvas"></button>
+          <label class="check"
+                 title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><input id="by-folder" type="checkbox"> folders</label>
+          <button class="btn sm" id="fit-btn">Fit</button>
+          <button class="btn sm" id="export-btn"
+                  title="Save what the canvas shows as one HTML file: opens offline, zooms without blurring, prints to one page">Export</button>
+          <button class="btn sm" id="image-btn" title="Copy the canvas as a PNG, to paste into a ticket">Copy image</button>
+        </div>
+      </div>
+      <div id="dock-lineage" class="dock-pane">
+        <div id="select-bar" class="select-bar hidden">
+          <div class="select-row">
+            <button class="btn sm" id="select-named" aria-haspopup="menu"
+                    title="Pick one of the project's named selectors, as the manifest recorded selectors.yml">Selectors ▾</button>
+            <input id="select-input" spellcheck="false" autocomplete="off"
+                   placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
+                   aria-label="dbt node selection expression, or --selector and a name">
+            <span id="select-sum" class="sel-sum"></span>
+            <button class="btn sm" id="select-copy" title="Copy the matching names, one per line">Copy</button>
+            <button class="btn sm" id="select-ls"
+                    title="Type the dbt ls that should print the same list into the terminal, without running it">dbt ls</button>
+          </div>
+          <div id="select-warn" class="sel-warn hidden"></div>
+        </div>
+        <div id="lineage-empty" class="empty"><p>Select a model to see its lineage.</p></div>
+        <div id="lineage-note" class="lineage-note hidden" role="status"></div>
+        <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="lineage-legend" class="legend"></div>
+        <div id="lineage-status" class="graph-status"></div>
+      </div>
+      <div id="dock-terminal" class="dock-pane hidden">
+        <div id="term"></div>
+      </div>
+      <div id="dock-compiled" class="dock-pane hidden">
+        <div id="compiled-head" class="compiled-head"></div>
+        <div id="compiled-body" class="compiled-body"></div>
+      </div>
+      <div id="dock-run" class="dock-pane hidden">
+        <div id="run-head" class="compiled-head"></div>
+        <div id="run-body" class="compiled-body"></div>
+      </div>
+      <div id="dock-history" class="dock-pane hidden"></div>
+      <div id="dock-catalog" class="dock-pane hidden">
+        <div id="catalog" class="catalog"><p class="muted pad">No node selected. Open a model, or pick one in the lineage.</p></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer id="statusbar">
+  <span id="status-file" class="muted">no file</span>
+  <div class="grow"></div>
+  <span id="status-venv" class="muted"></span>
+  <button id="status-env" class="envpill hidden" type="button" aria-haspopup="menu"></button>
+  <span id="status-branch" class="muted" title="Switch branch"></span>
+  <span id="status-shell" class="muted"></span>
+  <span id="status-manifest" class="muted"></span>
+  <span id="status-build" class="muted"></span>
+</footer>
+
+<div id="palette" class="hidden">
+  <div class="palette-box">
+    <input id="palette-input" placeholder="Search models, sources and every file in the project…" spellcheck="false" autocomplete="off">
+    <div id="palette-results"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="branches" class="hidden">
+  <div class="palette-box">
+    <input id="branch-filter" placeholder="Switch to branch…" spellcheck="false" autocomplete="off">
+    <div id="branch-results"></div>
+  </div>
+</div>
+
+<div id="modal" class="hidden">
+  <div class="modal-box">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div id="modal-actions" class="modal-actions"></div>
+  </div>
+</div>
+
+<script src="vendor/codemirror.js"></script>
+<script src="vendor/diff_match_patch.js"></script>
+<script src="vendor/cm-merge.js"></script>
+<script src="vendor/cm-mode-sql.js"></script>
+<script src="vendor/cm-mode-yaml.js"></script>
+<script src="vendor/cm-mode-markdown.js"></script>
+<script src="vendor/cm-mode-jinja2.js"></script>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/xterm-addon-fit.js"></script>
+<script src="lineage.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
