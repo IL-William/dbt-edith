@@ -10,6 +10,7 @@ mod files;
 mod freshness;
 mod git;
 mod graph;
+mod ls;
 mod macros;
 mod manifest;
 mod profiles;
@@ -63,11 +64,37 @@ struct Args {
     /// Do not open a browser window on startup
     #[arg(long)]
     no_open: bool,
+
+    /// Resolve this dbt selection against the manifest, print it and exit, without serving
+    #[arg(short = 's', long, value_name = "LINE", allow_hyphen_values = true)]
+    select: Option<String>,
+
+    /// Leave these nodes out of --select, in the same syntax
+    #[arg(long, value_name = "LINE", allow_hyphen_values = true, requires = "select")]
+    exclude: Option<String>,
+
+    /// Resolve a selector of selectors.yml by name, print it and exit, without serving
+    #[arg(long, value_name = "NAME", conflicts_with = "select")]
+    selector: Option<String>,
+
+    /// What --select and --selector print: one name per line, or one JSON object per node
+    #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
+    output: ls::Output,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    // Answered before anything a server needs: no port, no key, no settings
+    // read or written, no catalog, no watcher (0057).
+    let query = match (args.select, args.selector) {
+        (Some(select), _) => Some(ls::Query::Line { select, exclude: args.exclude.unwrap_or_default() }),
+        (None, Some(name)) => Some(ls::Query::Named(name)),
+        (None, None) => None,
+    };
+    if let Some(query) = query {
+        std::process::exit(ls::run(&args.project, args.manifest.as_deref(), &query, args.output));
+    }
     let root = args
         .project
         .canonicalize()

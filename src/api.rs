@@ -119,15 +119,7 @@ struct Assets;
 /// 1.6 does not name the root project, and its macros are found by that name.
 pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
-    let mtime = mtime_secs(manifest_path);
-    let raw = RawManifest::load(manifest_path)?;
-    let mut graph = Graph::build(raw, manifest_path, mtime, started.elapsed().as_millis());
-    if !graph.macros.has_root() {
-        if let Some(name) = crate::project::name(project) {
-            graph.macros.set_root(name);
-        }
-    }
-    graph.selectors.check_against(project);
+    let mut graph = load_manifest(project, manifest_path)?;
     if catalog_path.exists() {
         match RawCatalog::load(catalog_path) {
             Ok(cat) => {
@@ -138,6 +130,23 @@ pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> a
             Err(e) => eprintln!("  catalog.json ignored: {e}"),
         }
     }
+    graph.meta.load_ms = started.elapsed().as_millis();
+    Ok(graph)
+}
+
+/// The manifest alone, with no catalog: all a selection needs, and so all the
+/// `--select` mode reads (0057).
+pub fn load_manifest(project: &Path, manifest_path: &Path) -> anyhow::Result<Graph> {
+    let started = std::time::Instant::now();
+    let mtime = mtime_secs(manifest_path);
+    let raw = RawManifest::load(manifest_path)?;
+    let mut graph = Graph::build(raw, manifest_path, mtime, started.elapsed().as_millis());
+    if !graph.macros.has_root() {
+        if let Some(name) = crate::project::name(project) {
+            graph.macros.set_root(name);
+        }
+    }
+    graph.selectors.check_against(project);
     graph.meta.load_ms = started.elapsed().as_millis();
     Ok(graph)
 }
@@ -2447,20 +2456,7 @@ async fn freshness_status(State(st): State<Arc<AppState>>) -> Response {
     let git = git_cached(&st).await;
     let graph = st.graph.read().await.clone();
     let manifest_at = graph.meta.manifest_mtime;
-    // This project's own nodes, both files each: a model's schema.yml
-    // disappearing changes the manifest as surely as the model's file does. A
-    // node from an installed package is left out because its path is relative
-    // to the package directory, so it would read as a file that had vanished.
-    let project = graph.meta.project.clone();
-    let mut node_files: Vec<String> = graph
-        .nodes
-        .iter()
-        .filter(|n| n.package.is_empty() || n.package == project)
-        .flat_map(|n| [n.file.clone(), n.yml.clone()])
-        .filter(|p| !p.is_empty())
-        .collect();
-    node_files.sort();
-    node_files.dedup();
+    let node_files = freshness::project_files(&graph);
 
     let root = st.root.clone();
     let f = tokio::task::spawn_blocking(move || freshness::check(&root, manifest_at, &node_files, &git))

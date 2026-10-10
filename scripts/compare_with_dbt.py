@@ -164,6 +164,10 @@ class Edith:
     """dbt-edith over the project copy and the manifest dbt wrote for it."""
 
     def __init__(self, binary, project, manifest, home):
+        self.binary, self.project, self.manifest = binary, project, manifest
+        # A directory of its own, which the one-shot mode must never create:
+        # it reads no settings and writes none (0057).
+        self.command_line_config = home / "command-line-config"
         self.port = free_port()
         self.log = open(home / "server.log", "w")
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"))
@@ -214,6 +218,18 @@ class Edith:
         if body.get("truncated"):
             return ["error: capped at 3000 nodes"]
         return sorted(n["name"] for n in body["nodes"])
+
+    def command_line(self, args):
+        """The same answer from `--select` or `--selector`, which resolves and
+        exits without serving (0057). Returns the names, or None and why."""
+        env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(self.command_line_config))
+        run = subprocess.run(
+            [str(self.binary), str(self.project), "--manifest", str(self.manifest)] + args,
+            capture_output=True, text=True, env=env, timeout=120,
+        )
+        if run.returncode != 0:
+            return None, f"exit {run.returncode}: {run.stderr.strip()}"
+        return sorted(line for line in run.stdout.splitlines() if line), None
 
     def stop(self):
         self.proc.terminate()
@@ -340,6 +356,7 @@ def compare_project(tally, binary, project, work, expressions, every_model):
     before = tally.compared
 
     edith = Edith(binary, project, manifest, work)
+    asked = agreed = 0
     try:
         listed = edith.get("/api/selectors")["selectors"]
         if sorted(s["name"] for s in listed) != recorded:
@@ -352,15 +369,35 @@ def compare_project(tally, binary, project, work, expressions, every_model):
                     print(f"PASS  --selector {name} is refused")
                 else:
                     tally.fail(f"--selector {name} is refused")
+                _, error = edith.command_line(["--selector", name])
+                if error and error.startswith("exit 1:"):
+                    tally.compared += 1
+                    print(f"PASS  --selector {name} is refused on the command line")
+                else:
+                    tally.fail(f"--selector {name} is refused on the command line, exit 1")
                 continue
             if s.get("unsupported"):
                 tally.fail(f"--selector {name} was refused: {s['unsupported']}")
                 continue
+            theirs = oracle.ls(["--selector", name])
             ours, error = edith.names(f"--selector {name}")
-            tally.check(f"--selector {name}", ours if error is None else [f"error: {error}"], oracle.ls(["--selector", name]))
+            tally.check(f"--selector {name}", ours if error is None else [f"error: {error}"], theirs)
+            ours, error = edith.command_line(["--selector", name])
+            asked += 1
+            agreed += tally.check(f"--selector {name}, command line", ours if error is None else [f"error: {error}"], theirs, quiet=True)
+        # The command line is given dbt's own arguments, so `--exclude` arrives
+        # as a flag there where the box reads it inside the line.
         for line in expressions:
+            theirs = oracle.ls(typed_args(line))
             ours, error = edith.names(line)
-            tally.check(line, ours if error is None else [f"error: {error}"], oracle.ls(typed_args(line)))
+            tally.check(line, ours if error is None else [f"error: {error}"], theirs)
+            ours, error = edith.command_line(typed_args(line))
+            asked += 1
+            agreed += tally.check(f"{line}, command line", ours if error is None else [f"error: {error}"], theirs, quiet=True)
+        verdict = "PASS" if agreed == asked else "FAIL"
+        print(f"{verdict}  the same {asked} selections on the command line: {agreed} agree with dbt")
+        if edith.command_line_config.exists():
+            tally.fail("the command line wrote settings")
 
         # dbt's `N+model+M` brings the tests of what it reaches, as the canvas
         # does with its tests box on; with the box off they are dropped by name.

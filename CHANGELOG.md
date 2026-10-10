@@ -15,6 +15,15 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.3.0 - 2026-10-10
+
+- Resolve a dbt selector from the command line with `--select` or
+  `--selector`, which prints the nodes and exits without serving (0057). Names
+  go to stdout as `dbt ls --output name` prints them, or one JSON object per
+  node with its parents, and stderr says which manifest answered and whether
+  files changed since, so a script or an agent skill gets the answer in under
+  a second where `dbt ls` parses the project again.
+
 ## 1.2.2 - 2026-10-10
 
 - In the Selection box, `*`, a model's name and an fqn pattern such as

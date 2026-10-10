@@ -757,6 +757,23 @@ every eighth Shopify model, against 6 s for Jaffle Shop alone before. dbt
 Fusion 2.0.6, run by hand, agrees on all but `file:shopify.yml`: it lists none
 of the 20 tests that file declares, where dbt-core lists them all.
 
+Selections on the command line (0057): `--select LINE` and
+`--selector NAME` resolve, print and exit, with no port, key, browser,
+settings or catalog, so an agent skill can ask for a lineage with one command.
+They go through the box's own entry points, in the route's order, with dbt's
+defaults rather than the box's: tests in, every name, no cap. `--output json`
+adds the parents of each node, which `dbt ls --output name` cannot give and a
+question about the edges between two layers needs. stderr names the manifest,
+its date and dbt version, then the freshness badge's verdict, written after
+the answer because the walk and git are most of the time. On the 19 233 node
+project, everything downstream of a staging model, tests excluded, came out as
+the same 355 names dbt Fusion 2.0.6's `dbt ls` printed, in 0.9 s, 0.16 s of it
+the manifest, where each `dbt ls` took 14 to 20 s. `scripts/compare_with_dbt.py`
+asks the command line every selection it asks the box, and checks it wrote no
+settings: 1 124 of 1 124 agree with `--every-model` under dbt-core 1.11.15
+and 1.12.5, for about 3 s more on check.sh's run. No skill is written here;
+the one on that project still runs `dbt ls`.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
