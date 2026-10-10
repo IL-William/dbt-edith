@@ -1179,3 +1179,16 @@ kbd {
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 7px; cursor: help;
   font: 600 10px var(--mono); color: var(--warn); background: rgba(224, 163, 75, .14);
 }
+
+/* Clone into my schema (0058). */
+.loc-foot .clonebtn { margin-left: auto; }
+.clonepanel .clonehead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 12px; }
+.clonepanel .clonehead > .k { color: var(--fg-dim); width: 36px; flex: 0 0 auto; }
+.clonepanel .clonehead input[type=text] { width: 36ch; }
+.clonepanel .clonehead .seg { flex-wrap: wrap; }
+.clonepanel .loc { margin: 4px 0 8px; }
+.clonepanel .loc td { word-break: break-word; }
+.clonepanel .loc td:first-child { width: 22px; }
+.clonepanel .why { color: var(--fg-dim); font-family: var(--ui); }
+.clonepanel p.clonenote { margin: 4px 0 0; font-size: 11px; color: var(--fg-dim); }
+.clonepanel pre.clonesql { max-height: 26vh; overflow: auto; margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; font: 11.5px var(--mono); white-space: pre; }

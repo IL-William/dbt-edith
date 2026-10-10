@@ -249,6 +249,7 @@ for that reason (0037).
 | the user and plug in the top bar | the dbt profile, opened in the editor; violet when there is one, grey with an amber dot when dbt would find none |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
+| Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
 | the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
@@ -685,6 +686,32 @@ a quoted one as written. A view opens as a view, a dynamic table as a dynamic
 table, and the rest as a table, a source included, since the manifest does not
 say what a source is
 ([0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md)).
+
+With Snowflake's features on, **Clone into my schema** sits under the table of
+a model, a seed or a snapshot. It writes the statements that copy the node and
+its direct parents from an environment into your own schema, so you can work
+on it without building everything above it. Nothing is sent to Snowflake: you
+read the statements, copy them and run them yourself.
+
+- **From** is one of your `.env` files, each node's relation being the one the
+  Location table resolves with it, or *built*, where this manifest's target put
+  it. A node the file cannot place says why and is left out, rather than copied
+  from somewhere else.
+- **Into** is `database.schema`, filled in from your profile's active target:
+  `DBT_TARGET` if dbt-edith was started with it, otherwise the profile's
+  `target:`. What you type instead is kept for the project. Each copy keeps the
+  name of what it copies, so your local `ref()` finds it.
+- **As** is Clone, zero-copy for a table, an incremental model, a seed or a
+  snapshot, or Create as select, a real copy of the rows. A view is always
+  copied as a table of its rows, after dropping a view of that name a local run
+  may have left. Every copy is transient, since Snowflake cannot clone a
+  transient table, which is what dbt builds, into a permanent one.
+
+An ephemeral parent has no object, so what it reads is copied instead. Sources
+are listed and left where they are. Untick a node to leave it out. The notes
+under the table say when the manifest is behind your files, so the parents
+listed may not be the ones the model reads now
+([0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md)).
 
 Without an environment selected, *resolved* is the config as dbt parsed it,
 which means with whatever env vars happened to be loaded at the time. That is
@@ -1197,6 +1224,7 @@ $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations
 $JSC web/tests/snowsight.js   # links into Snowsight: a query, and a relation's object, schema and database
+$JSC web/tests/clone.js       # Clone into my schema: what each node is copied as, from where, and the script
 $JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
 $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
@@ -1248,13 +1276,14 @@ src/collin_run.rs collin, found beside the binary or on PATH and run only on req
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
 src/ls.rs         --select and --selector: one selection printed, and no server
+src/clone.rs      which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
 src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs     macros from the manifest, and which one a call in the editor reaches
 src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: block of dbt_project.yml, read by hand
-src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened
+src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs        working tree status and the git commands the UI can run
 src/settings.rs   per-project settings, kept outside the project

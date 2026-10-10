@@ -387,21 +387,48 @@ fn push_var(out: &mut ProjectVars, var: ProjectVar) {
 
 /// The top-level `name:`, as a plain or quoted scalar and nothing else.
 pub fn name(root: &Path) -> Option<String> {
+    top_scalar(&project_text(root)?, "name")
+}
+
+/// The top-level `profile:`, the profile dbt reads the target from. No
+/// fallback to `name:`: dbt has none either.
+pub fn profile(root: &Path) -> Option<String> {
+    top_scalar(&project_text(root)?, "profile")
+}
+
+fn project_text(root: &Path) -> Option<String> {
     let path = root.join("dbt_project.yml");
     let meta = std::fs::metadata(&path).ok()?;
     if !meta.is_file() || meta.len() > MAX_BYTES {
         return None;
     }
-    name_in(&crate::envs::decode(&std::fs::read(&path).ok()?))
+    Some(crate::envs::decode(&std::fs::read(&path).ok()?))
 }
 
+/// The value half of a `key: value` line as a plain or quoted scalar, or None
+/// for anything else: a list, a mapping, a block scalar, an anchor.
+pub(crate) fn scalar(value: &str) -> Option<String> {
+    if value.trim().is_empty() {
+        return Some(String::new());
+    }
+    match parse_value(value) {
+        Value::Scalar(s) => Some(s),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
 fn name_in(text: &str) -> Option<String> {
+    top_scalar(text, "name")
+}
+
+fn top_scalar(text: &str, wanted: &str) -> Option<String> {
     for line in text.lines() {
         if indent_of(line) != Some(0) || skippable(line) {
             continue;
         }
         let Some((key, rest)) = split_key(line) else { continue };
-        if key != "name" {
+        if key != wanted {
             continue;
         }
         if rest.trim().is_empty() {
@@ -709,6 +736,17 @@ mod tests {
         assert_eq!(name_in("name:\n"), None);
         assert_eq!(name_in("name: \"{{ env_var('P') }}\"\n"), None);
         assert_eq!(name_in("models:\n  shop:\n    +schema: x\n"), None);
+    }
+
+    #[test]
+    fn the_profile_is_its_own_top_level_key() {
+        let text = "name: shop\nprofile: \"shop_profile\"  # dbt reads its target here\nmodels:\n  profile: no\n";
+        assert_eq!(top_scalar(text, "profile").as_deref(), Some("shop_profile"));
+        // No profile, no fallback to the name: dbt has none.
+        assert_eq!(top_scalar("name: shop\n", "profile"), None);
+        assert_eq!(scalar(" 'dev'  ").as_deref(), Some("dev"));
+        assert_eq!(scalar("*alias"), None);
+        assert_eq!(scalar("").as_deref(), Some(""));
     }
 
     fn names(p: &ProjectVars) -> Vec<&str> {

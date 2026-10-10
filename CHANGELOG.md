@@ -15,6 +15,16 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.4.0 - 2026-10-10
+
+- Write the statements that clone a model and its direct parents from an
+  environment into your own schema, with Clone into my schema under its
+  Location table while Snowflake's features are on (0058). The source is each
+  node's relation as the table resolves it with a `.env` file, the destination
+  comes from your profile's active target and can be typed over, and you run
+  the statements yourself: dbt-edith sends nothing to Snowflake.
+- The settings menu names every Snowflake feature, the Snowsight menu included.
+
 ## 1.3.0 - 2026-10-10
 
 - Resolve a dbt selector from the command line with `--select` or

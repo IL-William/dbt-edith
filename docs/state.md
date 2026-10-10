@@ -774,6 +774,24 @@ settings: 1 124 of 1 124 agree with `--every-model` under dbt-core 1.11.15
 and 1.12.5, for about 3 s more on check.sh's run. No skill is written here;
 the one on that project still runs `dbt ls`.
 
+Clone into my schema (0058): with Snowflake's features on, a button under a
+model's, a seed's or a snapshot's Location table writes the statements that
+copy it and its direct parents from an environment into the developer's
+schema, which the user copies and runs. It ports an agent skill written for
+the 19 233 node project, from the relations the Catalog already resolves: a new
+route lists the nodes, walking through ephemerals, with every `.env` file's
+resolution, and the page writes the SQL. The destination comes from the
+profile's active target, read by the scanner `redact` already used, now in
+`profiles`, and what the user types instead is kept per project. The settings
+menu now names every Snowflake feature, the Snowsight menu included, which it
+had missed. On that project, 3 516 nodes asked of the route answer 200, in
+under 11 ms each, and the same on two starts to the byte; for 40 models drawn
+by kind, with UAT, all 156 statements are the ones the skill's own script
+prints, character for character, ephemerals included. Every read request of
+the replayed sample answers as on `main`, the version aside. Driven in
+headless Chrome on an invented project with every materialization and on that
+project. Never run against a warehouse.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -859,7 +877,10 @@ cross-compile.
   a dynamic table lives under `dynamic-table` and a materialized view under
   `view`, since Snowflake publishes no scheme for them, what Snowsight does
   with a view asked for as a table, and whether a quoted lower-case name opens
-  as written.
+  as written. Clone into my schema (0058) has written statements nobody has
+  run yet: whether `drop view if exists` refuses on a second run once the copy
+  is a table, a create as select from a dynamic table or a materialized view,
+  and which grants the developer's role needs on the source databases.
 - **Two checks on Windows**: `.env` files with CRLF endings read correctly, and
   the time a node click takes there. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under
@@ -870,6 +891,12 @@ cross-compile.
 
 ## Traps worth knowing
 
+- **A clone's statements are written by `cloneShape` to `cloneScript`**, the
+  pure block `web/tests/clone.js` slices out up to `openClonePlan`: a helper
+  added after that name is outside the harness. A legacy snapshot configured
+  with `target_schema` is refused under an environment, because that key is
+  not read, and a package's files are never checked for changes since the
+  parse, since their paths are the package's (0058).
 - **A HashMap's order is new on every start**, and between two maps of one
   run. Iterating one into a payload, a list, a cap or a first-of-several gives
   each start its own answer, which a test building its graph once rarely

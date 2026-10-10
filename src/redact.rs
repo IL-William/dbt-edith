@@ -7,12 +7,14 @@
 //! (0054). Everything else in the file reaches the page as it is, so the
 //! account, the role or a target's name can still be corrected there.
 //!
-//! A line scanner, not a YAML parser (0003, 0018): a key is found by its
-//! indentation and the keys above it, and a value runs to the next line that
-//! is not indented further. That is every profile dbt's documentation shows.
+//! A line scanner, not a YAML parser (0003, 0018), shared with `profiles`,
+//! which reads the active target with it: a key is found by its indentation
+//! and the keys above it, and a value runs to the next line that is not
+//! indented further. That is every profile dbt's documentation shows.
 //! Only a flow mapping, `{ password: x }` on one line, is beyond it, and is
 //! sent as it is.
 
+use crate::profiles::{indent, key_line, lines};
 use std::collections::HashMap;
 
 /// What the page shows in place of a secret. Saved back unchanged, it means
@@ -29,44 +31,6 @@ pub fn secret_key(key: &str) -> bool {
         return false;
     }
     k == "pass" || crate::envs::sensitive_name(&k)
-}
-
-/// One line, without its ending, and the ending it had: a profile written on
-/// Windows keeps its `\r\n`.
-fn lines(text: &str) -> Vec<(&str, &str)> {
-    text.split_inclusive('\n')
-        .map(|l| {
-            let body = l.trim_end_matches(['\n', '\r']);
-            (body, &l[body.len()..])
-        })
-        .collect()
-}
-
-fn indent(body: &str) -> usize {
-    body.len() - body.trim_start_matches(' ').len()
-}
-
-/// The key a line opens, where its value starts, and its depth: `password: x`
-/// gives `password`, the byte just past the colon, and its indentation. A list
-/// item, `- name: x`, counts as indented to its key. None for a line that is
-/// blank, a comment, or the continuation of a value.
-fn key_line(body: &str) -> Option<(String, usize, usize)> {
-    let mut depth = indent(body);
-    let mut rest = &body[depth..];
-    if rest.is_empty() || rest.starts_with('#') {
-        return None;
-    }
-    while let Some(after) = rest.strip_prefix("- ") {
-        let gap = after.len() - after.trim_start_matches(' ').len();
-        depth += 2 + gap;
-        rest = &after[gap..];
-    }
-    let colon = rest.find(": ").or_else(|| rest.ends_with(':').then(|| rest.len() - 1))?;
-    let key = rest[..colon].trim().trim_matches(|c| c == '"' || c == '\'');
-    if key.is_empty() || key.contains(['{', '[', '#']) {
-        return None;
-    }
-    Some((key.to_string(), body.len() - rest.len() + colon + 1, depth))
 }
 
 /// A secret found in a profile: where its value is in the text, and the path

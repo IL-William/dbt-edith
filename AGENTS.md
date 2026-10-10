@@ -60,7 +60,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   `env_var()` in the hover card, which passes two guards first (0019).
 - **Nothing outside the project is read or written**, except the dbt profile,
   found where dbt looks for it, through its own route (0017, 0049), and that
-  route never sends its passwords, tokens or keys (0054).
+  route never sends its passwords, tokens or keys (0054). The clone route reads
+  it too, and sends only the active target's name, database and schema (0058).
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -159,6 +160,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change how a selection or the lineage resolves, or touch the Jaffle Shop or Shopify fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md), [0056](docs/decisions/0056-selections-and-the-lineage-are-checked-on-shopify-too.md) |
 | iterate a HashMap into anything a route returns, or change the order nodes are numbered in | [0055](docs/decisions/0055-the-same-manifest-answers-the-same-on-every-start.md) |
 | change what `--select` prints or exits with, or add a flag that answers without serving | [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
+| write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
@@ -175,7 +177,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
+`selectors`, `ls`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

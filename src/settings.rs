@@ -48,6 +48,11 @@ pub struct Settings {
     /// per producer, and the choice is the user's rather than the newest file's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cll_file: Option<String>,
+    /// The `database.schema` a clone lands in, as the user last typed it. None
+    /// until they type one: the profile's active target fills it in meanwhile,
+    /// and clearing the field goes back to it (0058).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clone_into: Option<String>,
 }
 
 /// Whether Snowflake's features are on: the user's choice for the project, or,
@@ -487,6 +492,28 @@ mod tests {
         store.update(|s| s.snowflake_lineage = false).await.unwrap();
         let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
         assert!(!text.contains("snowflake_lineage"), "off is the default, so it is not written: {text}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_clone_destination_is_kept_until_cleared() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-settings-clone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store { path: Some(dir.join("p.json")), project: "/work/shop".into(), lock: Default::default() };
+
+        // A file written before clones existed.
+        std::fs::write(dir.join("p.json"), br#"{"version":1,"project":"/work/shop","envs":{},"selected":".env.uat"}"#).unwrap();
+        assert_eq!(store.load().clone_into, None);
+
+        store.update(|s| s.clone_into = Some("DEV_DB.dbt_someone".into())).await.unwrap();
+        let loaded = store.load();
+        assert_eq!(loaded.clone_into.as_deref(), Some("DEV_DB.dbt_someone"));
+        assert_eq!(loaded.selected.as_deref(), Some(".env.uat"), "keeping it must not touch the selection");
+
+        store.update(|s| s.clone_into = None).await.unwrap();
+        let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
+        assert!(!text.contains("clone_into"), "cleared, the profile decides again: {text}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
