@@ -4551,7 +4551,7 @@ function collinBadge(cl, seen) {
   if (!cl || cl.state !== 'done' || !cl.report || !cl.report.to_investigate) return null;
   if ((cl.run || 0) <= (seen || 0)) return null;
   const n = cl.report.to_investigate;
-  return { text: `${n} to investigate`,
+  return { text: `${n} to investigate`, count: n,
     title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.` };
 }
 
@@ -7376,8 +7376,8 @@ function reportsSections(index) {
    collin's. The button carries it, and nothing opens by itself (0059). */
 function reportsNews(collin, run) {
   const news = [];
-  if (run) news.push({ key: 'run', tone: 'bad', text: run.text, title: run.title });
-  if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, title: collin.title });
+  if (run) news.push({ key: 'run', tone: 'bad', text: run.text, count: run.count, title: run.title });
+  if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, count: collin.count, title: collin.title });
   return news;
 }
 
@@ -7391,7 +7391,7 @@ function runBadge(run, seen) {
   const what = run.command ? `dbt ${run.command}` : 'The last dbt command';
   const said = [errors, run.fail ? `${run.fail} failed test${run.fail > 1 ? 's' : ''}` : ''].filter(Boolean);
   return { text: [errors, run.fail ? `${run.fail} failed` : ''].filter(Boolean).join(', '),
-    title: `${what} ended with ${said.join(' and ')}.` };
+    count: (run.error || 0) + (run.fail || 0), title: `${what} ended with ${said.join(' and ')}.` };
 }
 
 /* A dbt outcome as the section says it. One it does not know is shown as
@@ -7599,8 +7599,9 @@ function paintReportsNav() {
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
     row.append(dot, jel('span', '', sec.label));
+    // The rail is narrow: the count alone, the words being on the button.
     const n = news.find((x) => x.key === sec.key);
-    if (n) row.append(newsChip(n));
+    if (n) row.append(newsChip(Object.assign({}, n, { text: String(n.count) })));
     row.addEventListener('click', () => showReportSection(sec.key));
     return row;
   }));

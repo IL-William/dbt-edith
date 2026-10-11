@@ -546,7 +546,8 @@ kbd {
 }
 .reports-navrow:hover { background: var(--bg-3); color: var(--fg); }
 .reports-navrow[aria-current="true"] { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
-.reports-navrow .rnew { margin-left: auto; }
+.reports-navrow > span:not(.tooldot):not(.rnew) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-navrow .rnew { margin-left: auto; flex: 0 0 auto; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reports-view .diff-head { padding: 6px 12px 5px; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
