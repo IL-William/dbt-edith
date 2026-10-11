@@ -1464,10 +1464,18 @@ writes. [SECURITY.md](SECURITY.md) spells out what is and is not covered.
 
 ## Not there yet
 
-A used-by count per macro, run status and timing from `run_results.json`,
-which jobs test a model, CTE names in the breadcrumb bar,
-persisting open tabs between sessions, and a second column lineage source using
-dbt Fusion's local index, which needs no warehouse privileges.
+Not there yet:
+- a used-by count per macro;
+- run status and timing from `run_results.json`;
+- which jobs test a model;
+- CTE names in the breadcrumb bar;
+- a dbt section in Reports, with what the project holds counted and dbt's
+  warnings, including config paths in `dbt_project.yml` that apply to nothing;
+- a guided tour;
+- screenshots in this README;
+- persisting open tabs between sessions;
+- a second column lineage source using dbt Fusion's local index, which needs no
+  warehouse privileges.
 
 [docs/state.md](docs/state.md) has the list that is kept up to date, in the
 order the work was chosen, and says for each what deferred it. It is the only
