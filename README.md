@@ -1134,12 +1134,18 @@ schedules, which steps select nothing, and which jobs were read. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
 dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
-CI job or a merge job is not. Click a model to see its own jobs.
+CI job or a merge job is not. Click a model to open it, with the report left
+in place; *This node* then lists its jobs.
 
 Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
 in the menu behind the snowflake in the top bar: one or more folders or files,
-absolute or relative to the project, each an Airflow or a dbt Cloud source. Saving reads them at once and says what it found, file by file, with
-the line of anything it could not read. Only `.yml` and `.yaml` files are read,
+absolute or relative to the project, each an Airflow or a dbt Cloud source.
+Saving reads them at once and says what it found, file by file, with the line
+of anything it could not read. They are read again only when something moved:
+when the manifest is reloaded, or when the Jobs tab or the sources form opens
+and a job file was added, removed or changed since. A click inside the tab reads
+nothing, so a `git pull` in the jobs repository shows the next time the tab is
+opened. Only `.yml` and `.yaml` files are read,
 never a hidden file or one reached through a symlink, and what reaches the page
 is what was parsed: names, schedules and the selection in each command. The
 value of `--vars` or `--args` is shown as `…`, since that is where a secret

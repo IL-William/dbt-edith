@@ -893,6 +893,8 @@ kbd {
   background: none; border: 0; color: var(--fg); font: 12px var(--ui); text-align: left; cursor: pointer;
 }
 .jobs-row:hover { background: var(--bg-3); }
+.jobs-name { text-decoration: underline dotted var(--fg-dim); text-underline-offset: 3px; }
+.jobs-row:hover .jobs-name { color: var(--accent); text-decoration: underline solid; }
 .jobs-ref { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0 10px; min-width: 0; font-size: 12px; }
 .jobs-none {
   min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column;

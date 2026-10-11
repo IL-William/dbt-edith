@@ -2063,16 +2063,18 @@ async fn save_envs(State(st): State<Arc<AppState>>, Json(b): Json<OverridesBody>
 // ------------------------------------------------------------------ jobs ----
 
 /// Reads the jobs, or takes the last read, on a blocking thread: the first
-/// read of a source walks its folders and resolves every step (0063).
+/// read of a source walks its folders and resolves every step (0063). With
+/// `look`, the files are looked at first, and read again if one moved.
 async fn with_jobs<T: Send + 'static>(
     st: &Arc<AppState>,
+    look: bool,
     answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
 ) -> Result<T, Response> {
     let graph = st.graph.read().await.clone();
     let sources = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
     let st = st.clone();
     tokio::task::spawn_blocking(move || {
-        let read = st.jobs.get(&graph, &st.root, &sources);
+        let read = st.jobs.get(&graph, &st.root, &sources, look);
         answer(&graph, &read)
     })
     .await
@@ -2089,9 +2091,17 @@ struct JobsSummary {
     airflow_keys: &'static [(&'static str, &'static str)],
 }
 
-async fn jobs_summary(State(st): State<Arc<AppState>>) -> Response {
+/// `look=true` asks the jobs read to look at their files first; the page
+/// asks it when the Jobs tab or the sources form opens.
+#[derive(Deserialize)]
+struct LookQuery {
+    #[serde(default)]
+    look: bool,
+}
+
+async fn jobs_summary(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
     let saved = st.settings.path.is_some();
-    match with_jobs(&st, |_, read| crate::jobs::summary(read)).await {
+    match with_jobs(&st, q.look, |_, read| crate::jobs::summary(read)).await {
         Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
         Err(e) => e,
     }
@@ -2136,7 +2146,8 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
             false
         }
     };
-    match with_jobs(&st, |_, read| crate::jobs::summary(read)).await {
+    // Saving is how a person says the files are worth reading again.
+    match with_jobs(&st, true, |_, read| crate::jobs::summary(read)).await {
         Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
         Err(e) => e,
     }
@@ -2146,11 +2157,13 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
 struct JobsNodeQuery {
     #[serde(default)]
     id: String,
+    #[serde(default)]
+    look: bool,
 }
 
 /// Every step that acts on one node, grouped by job, with what reached it.
 async fn jobs_for_node(State(st): State<Arc<AppState>>, Query(q): Query<JobsNodeQuery>) -> Response {
-    let answer = with_jobs(&st, move |graph, read| {
+    let answer = with_jobs(&st, q.look, move |graph, read| {
         graph.index.get(&q.id).map(|&i| crate::jobs::for_node(graph, read, i))
     })
     .await;
@@ -2161,8 +2174,8 @@ async fn jobs_for_node(State(st): State<Arc<AppState>>, Query(q): Query<JobsNode
     }
 }
 
-async fn jobs_coverage(State(st): State<Arc<AppState>>) -> Response {
-    match with_jobs(&st, crate::jobs::coverage).await {
+async fn jobs_coverage(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
+    match with_jobs(&st, q.look, crate::jobs::coverage).await {
         Ok(view) => Json(view).into_response(),
         Err(e) => e,
     }
@@ -2176,7 +2189,7 @@ struct JobStepQuery {
 
 /// One step and every node it acts on, for comparing with `dbt ls` (0033).
 async fn job_step(State(st): State<Arc<AppState>>, Query(q): Query<JobStepQuery>) -> Response {
-    match with_jobs(&st, move |graph, read| crate::jobs::step_names(graph, read, q.n)).await {
+    match with_jobs(&st, false, move |graph, read| crate::jobs::step_names(graph, read, q.n)).await {
         Ok(Some(view)) => Json(view).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "no such step").into_response(),
         Err(e) => e,
@@ -3901,6 +3914,17 @@ mod tests {
         for answer in [&saved, &node, &coverage, &step] {
             assert!(!answer.contains("hunter2"), "{answer}");
         }
+
+        // A DAG added later is read when the page asks to look, not before.
+        std::fs::write(
+            outside.join("dags").join("added.yml"),
+            "dag:\n  id: shop_added\n  when: null\nsteps:\n  - name: all\n    run: dbt run --select customers\n",
+        )
+        .unwrap();
+        let unlooked = body_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
+        assert!(unlooked.contains(r#""never":[{"id":"model.shop.customers""#), "{unlooked}");
+        let looked = body_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await;
+        assert!(looked.contains(r#""jobs":2"#), "{looked}");
 
         let foreign = with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));

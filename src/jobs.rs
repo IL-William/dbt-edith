@@ -20,7 +20,7 @@ use crate::yaml::{self, Node, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
 pub const AIRFLOW: &str = "airflow";
 pub const DBT_CLOUD: &str = "dbt_cloud";
@@ -28,8 +28,6 @@ pub const DBT_CLOUD: &str = "dbt_cloud";
 pub const MAX_SOURCES: usize = 8;
 const MAX_FILES: usize = 5_000;
 const MAX_DEPTH: usize = 16;
-/// How long a look at the files' times holds: the tab asks on every click.
-const RECHECK: Duration = Duration::from_secs(3);
 /// Folders a walk never enters, besides hidden ones (0020). Only names no
 /// one gives a folder of jobs: `target` and `logs` are layers of DAGs in some
 /// repositories, which a longer list here once dropped without a word.
@@ -654,31 +652,31 @@ struct Held {
     graph: Weak<Graph>,
     sources: Vec<JobSource>,
     stamps: Vec<Stamp>,
-    checked: Instant,
     read: Arc<Read>,
 }
 
-/// The last read, kept until the manifest, the sources or a file changes.
+/// The last read, kept until the manifest is reloaded, the sources change, or
+/// a look at the files finds one added, removed or changed. Nothing looks on
+/// its own: the page asks to when the Jobs tab is opened or the sources form
+/// is shown or saved, never on a click inside the tab, since a job repository
+/// moves on a pull, not between two clicks.
 #[derive(Default)]
 pub struct Cache(Mutex<Option<Held>>);
 
 impl Cache {
-    pub fn get(&self, graph: &Arc<Graph>, root: &Path, sources: &[JobSource]) -> Arc<Read> {
+    pub fn get(&self, graph: &Arc<Graph>, root: &Path, sources: &[JobSource], look: bool) -> Arc<Read> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(h) = slot.as_mut() {
-            if Weak::ptr_eq(&h.graph, &Arc::downgrade(graph)) && h.sources == sources {
-                if h.checked.elapsed() < RECHECK {
-                    return h.read.clone();
-                }
-                if stamps_of(root, sources) == h.stamps {
-                    h.checked = Instant::now();
-                    return h.read.clone();
-                }
+        if let Some(h) = slot.as_ref() {
+            if Weak::ptr_eq(&h.graph, &Arc::downgrade(graph))
+                && h.sources == sources
+                && (!look || stamps_of(root, sources) == h.stamps)
+            {
+                return h.read.clone();
             }
         }
         let (read, stamps) = build(graph, root, sources);
         let read = Arc::new(read);
-        *slot = Some(Held { graph: Arc::downgrade(graph), sources: sources.to_vec(), stamps, checked: Instant::now(), read: read.clone() });
+        *slot = Some(Held { graph: Arc::downgrade(graph), sources: sources.to_vec(), stamps, read: read.clone() });
         read
     }
 }
@@ -1503,23 +1501,23 @@ jobs:
     }
 
     #[test]
-    fn the_cache_reads_again_once_a_file_changes() {
+    fn the_cache_reads_again_once_asked_to_look_and_a_file_changed() {
         let d = dir("cache");
         write(&d, "daily.yml", DAG);
         let g = Arc::new(graph());
         let sources = [source(AIRFLOW, &d, &[])];
         let cache = Cache::default();
-        let first = cache.get(&g, &d, &sources);
-        assert!(Arc::ptr_eq(&first, &cache.get(&g, &d, &sources)));
+        let first = cache.get(&g, &d, &sources, false);
+        assert!(Arc::ptr_eq(&first, &cache.get(&g, &d, &sources, true)), "nothing changed, so a look reads nothing");
         write(&d, "daily.yml", &DAG.replace("shop_daily", "shop_renamed").replace("tasks:", "tasks:\n  - task_id: more\n    command: seed"));
-        if let Some(h) = cache.0.lock().unwrap().as_mut() {
-            h.checked = Instant::now().checked_sub(RECHECK * 2).expect("a clock three seconds old");
-        }
-        let second = cache.get(&g, &d, &sources);
-        assert_eq!(second.jobs[0].name, "shop_renamed");
+        write(&d, "added.yml", "dag_id: added\nschedule: null\ntasks:\n  - task_id: t\n    command: run\n");
+        assert!(Arc::ptr_eq(&first, &cache.get(&g, &d, &sources, false)), "a click does not look");
+        let second = cache.get(&g, &d, &sources, true);
+        let names: Vec<&str> = second.jobs.iter().map(|j| j.name.as_str()).collect();
+        assert_eq!(names, ["added", "shop_renamed"]);
         // Another manifest is another answer, even over the same files.
         let other = Arc::new(graph());
-        assert!(!Arc::ptr_eq(&second, &cache.get(&other, &d, &sources)));
+        assert!(!Arc::ptr_eq(&second, &cache.get(&other, &d, &sources, false)));
     }
 
     /// The fixtures `scripts/compare_with_dbt.py` checks against dbt read

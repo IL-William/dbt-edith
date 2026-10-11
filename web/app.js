@@ -7047,23 +7047,31 @@ function jobsExample(kind, keys, defaults) {
   return '# one file per DAG\n' + jobsYaml(doc, 0).join('\n');
 }
 
-async function loadJobs() {
+/* `look` asks the server to look at the job files first, and read them again
+   if one moved: done when the tab is opened, never on a click inside it. Only
+   the first request of a run carries it. */
+async function loadJobs({ look = false } = {}) {
   const run = ++S.jobsRun;
   const body = $('#jobs-body');
   paintJobsHead();
   const id = S.focus;
+  const ask = (url) => {
+    const asked = look ? url + (url.includes('?') ? '&' : '?') + 'look=true' : url;
+    look = false;
+    return api.get(asked);
+  };
   // The proposed shape is the server's, so the example cannot drift from it.
   // With no node, whether any source is set decides what the tab offers.
   let summary = null;
   if (!S.jobsKeys || (S.jobsView === 'node' && !id)) {
-    try { summary = await api.get('/api/jobs'); }
+    try { summary = await ask('/api/jobs'); }
     catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
     if (run !== S.jobsRun) return;
     S.jobsKeys = summary.airflow_keys;
   }
   if (S.jobsView === 'coverage') {
     let cov;
-    try { cov = await api.get('/api/jobs/coverage'); }
+    try { cov = await ask('/api/jobs/coverage'); }
     catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
     if (run === S.jobsRun) renderCoverage(body, cov);
     return;
@@ -7074,7 +7082,7 @@ async function loadJobs() {
     return;
   }
   let view;
-  try { view = await api.get('/api/jobs/node?id=' + encodeURIComponent(id)); }
+  try { view = await ask('/api/jobs/node?id=' + encodeURIComponent(id)); }
   catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
   if (run === S.jobsRun) renderJobs(body, view, id);
 }
@@ -7189,9 +7197,13 @@ function jobsSection(title, groups, count, open) {
     folder.append(jel('summary', '', `${g.folder || '.'} (${g.rows.length})`));
     for (const r of g.rows) {
       const row = jel('button', 'jobs-row');
-      row.append(dot(r.kind), document.createTextNode(r.name));
-      row.title = r.id;
-      row.addEventListener('click', () => { S.jobsView = 'node'; focusNode(r.id); });
+      row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
+      // A package's node names a path inside its package, which the editor
+      // cannot open, so it is only focused.
+      const own = r.id.split('.')[1] === ((S.meta && S.meta.project) || '');
+      row.title = `${own ? 'Open' : 'Focus'} ${r.name}; This node then lists its jobs`;
+      // The report stays, so a list can be gone through one model at a time.
+      row.addEventListener('click', () => { pushJump(); focusNode(r.id, { open: own }); });
       folder.append(row);
     }
     sec.append(folder);
@@ -7254,7 +7266,7 @@ function jobsReadNote(s) {
 async function openJobSources() {
   closePopup();
   let summary;
-  try { summary = await api.get('/api/jobs'); }
+  try { summary = await api.get('/api/jobs?look=true'); }
   catch (e) { return toast('jobs: ' + e.message, 'err'); }
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
@@ -9519,7 +9531,7 @@ function showDock(which) {
   $('#dock-history').classList.toggle('hidden', which !== 'history');
   $('#dock-jobs').classList.toggle('hidden', which !== 'jobs');
   if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
-  if (which === 'jobs') loadJobs();
+  if (which === 'jobs') loadJobs({ look: true });
   // Read when the tab is first opened, never before: that click is what may
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();

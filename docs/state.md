@@ -1144,7 +1144,10 @@ cross-compile.
 - **The jobs cache holds the graph by a `Weak`.** `load_all` and a switch of
   column lineage replace the `Arc`, which reads every job again; the
   `Arc::make_mut` of a click's merge does not, and must never add nodes, since
-  each step's answer is a list of node indices.
+  each step's answer is a list of node indices. The job files themselves are
+  looked at only when a request says `look=true`, which the page sends when the
+  Jobs tab or the sources form opens; the user asked for nothing to be
+  checked while nothing moved, so a click in the tab never looks.
 - **A step's `dbt ls` is written by the server** (`Invocation::ls`), so the
   page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
   harness slices `web/app.js` from `function jobsScheduleText` to
