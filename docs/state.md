@@ -933,6 +933,80 @@ the figures it gave in 1.9.0. Not yet on the VM.
    showing, on a model, the steps that run its tests, through
    `graph.host_of`. Left out of 1.9.0 because a model with 48 tests would list
    one step 48 times unless they are grouped by step first.
+6. **A dbt section in Reports.** What the project holds, counted:
+   - models by materialization;
+   - tests, generic and singular, and how many are `severity: warn`;
+   - sources, seeds, snapshots and exposures;
+   - macros, the project's apart from each package's;
+   - disabled nodes.
+
+   Most of it is in the graph already. `Meta.counts` has the counts by kind
+   that the top bar shows, and `graph.macros` has the macros. So the section
+   reads no file and costs the index nothing (0064). The section opens the
+   lists behind each count, as the coverage does.
+7. **dbt's own warnings, from `logs/dbt.log`.** No artifact carries them:
+   `manifest.json` has no field for them, `run_results.json` only says how each
+   node's run or test ended, and a dbt Fusion 2.0 preview `run_results.json` of
+   a compile lists no result at all.
+   - **Where they are.** Both dbt-core and Fusion write the warnings to
+     `logs/dbt.log`, one event per line, with its name and code. For example,
+     Fusion writes `[warn ]: [UnusedResourceConfigPath (dbt1097)]: …` and puts
+     the details on the following lines. dbt-core logs the same event under the
+     code `I051`, and writes JSON lines with `--log-format-file json`.
+   - **The plan.** Show the last command's warnings, grouped by event, saying
+     how old the log is next to the manifest.
+   - **What reaches the page.** Only warn and error events leave, never a
+     debug line, which can carry SQL and connection details.
+   - **The traps.**
+     - The log holds the last commands only, appended to and rotated at
+       10 MB (`dbt.log.1`, `dbt.log.2`).
+     - Its folder can be moved with `--log-path` or `DBT_LOG_PATH`.
+     - A manifest copied from another machine comes without its log.
+8. **Warnings worked out here, without a run.** They hold for dbt-core and
+   Fusion alike, and when no log is there.
+   - **First, the one asked for:** config paths in `dbt_project.yml` that apply
+     to no resource, dbt's own `UnusedResourceConfigPath`. The keys are
+     already placed on their folders (0036, 0039). What is left is matching
+     each path against the nodes' `fqn` as dbt does, so that the answer agrees
+     with dbt's warning, and linking each one to its line.
+   - **Others worth ranking:**
+     - sources no model reads;
+     - sources without a freshness config, which `dbt source freshness`
+       skips;
+     - models with no test or no description;
+     - vars `dbt_project.yml` defines that no `var()` call reads, from 0018's
+       scanner;
+     - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
+     - a package in `packages.yml` that `dbt_packages/` does not hold.
+9. **A guided tour.** "Give me a tour", from the shortcut list (`?`), walks
+   through what dbt-edith does:
+   - the lineage and the Custom selection;
+   - the Catalog;
+   - the Jobs tab and Reports;
+   - the terminal and the palette.
+
+   Each step points at the element itself and says what it is for.
+   - **Which model it shows:** it picks a model of the project with parents
+     and children, so it works on any project.
+   - **What it skips:** a step whose feature is off, such as Snowflake, a job
+     source or a report, is skipped or says how to turn the feature on.
+   - **What it never does:** run anything, or change a setting.
+   - **When it appears:** offered once, then never again on its own, which
+     the settings remember.
+   - **How it is checked:** headless Chrome walks every step on Jaffle Shop.
+10. **Screenshots in the README**, taken on dbt's Jaffle Shop with invented
+    data only (0014). No name or figure of a client project appears, in the
+    images or around them.
+    - **Which:** the lineage, a Custom selection, the Catalog, the Jobs tab and
+      its coverage in Reports, and collin's report.
+    - **How they are taken:** a script retakes them through headless Chrome
+      over CDP, with the standard library only, as the checks are driven. They
+      can then follow the interface at each release that changes it.
+    - **Where they live, still open:**
+      - committed under `docs/`, versioned with the README, but every retake
+        adds to the history for good;
+      - a gist, as #16 used for its screenshots, light, but a README needs
+        links that last longer than one.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
