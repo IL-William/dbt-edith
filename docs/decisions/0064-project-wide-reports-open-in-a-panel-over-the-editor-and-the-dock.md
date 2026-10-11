@@ -23,7 +23,8 @@ next.
   again; while it is down, what is under it is `inert`.
 - **Anything that shows a file or a dock tab rolls it up**: a tab activated, a
   link in a report, the palette, the Models list, a dock tab, Escape, the
-  close keys. A tab shown because another closed does not.
+  close keys. A tab shown because another closed does not, nor a dock tab an
+  answer brings forward when it lands, after the panel was opened.
 - **A section is listed only when it has something to show**, from an index
   that reads file times and settings alone. A section reads its file when it
   is shown, and the job files are looked at then too, a third moment beside
@@ -35,6 +36,7 @@ next.
 - **Coverage leaves the Jobs tab**, which keeps the node in focus.
 - **A section on screen is never redrawn by itself.** Its Read again button
   says when the file behind it changed, which the freshness poll reports.
+  Shown again, it keeps the folds and the scroll it was left with.
 
 ## Rejected
 

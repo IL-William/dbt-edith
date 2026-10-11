@@ -49,8 +49,23 @@ print('\n--- coverage ---');
 var groups = jobsCoverageGroups([
   { folder: 'models/marts', name: 'a' }, { folder: 'models/marts', name: 'b' }, { folder: 'seeds', name: 'c' },
 ]);
-check('rows by folder, in the order sent', groups.map(function (g) { return g.folder + ':' + g.rows.length; }).join(' '), 'models/marts:2 seeds:1');
+function shape(gs) { return gs.map(function (g) { return g.folder + ':' + g.rows.map(function (r) { return r.name + (r.rest ? '@' + r.rest : ''); }).join(','); }).join(' '); }
+check('rows by folder, in the order sent, a row alone under no folder', shape(groups), 'models/marts:a,b :c@seeds');
 check('no rows', jobsCoverageGroups(undefined).length, 0);
+// A folder per model: each would be a folder to unfold for one file, so each
+// goes under the deepest folder it shares with another, and says the rest.
+var perModel = jobsCoverageGroups([
+  { folder: 'models/sales/orders', name: 'orders' }, { folder: 'models/sales/refunds', name: 'refunds' },
+  { folder: 'models/crm/accounts', name: 'accounts' }, { folder: 'models/crm/contacts', name: 'contacts' },
+  { folder: 'models/crm/contacts', name: 'contacts_v2' }, { folder: 'models/ops/shifts', name: 'shifts' },
+]);
+check('a folder of one is no level of its own, one of two stays one', shape(perModel),
+      'models/sales:orders@orders,refunds@refunds models/crm:accounts@accounts models/crm/contacts:contacts,contacts_v2 models:shifts@ops/shifts');
+check('a folder that holds two keeps them, with nothing left to say',
+      shape(jobsCoverageGroups([{ folder: 'models/a', name: 'x' }, { folder: 'models/a', name: 'y' }])), 'models/a:x,y');
+check('a row with no folder at all', shape(jobsCoverageGroups([{ folder: '', name: 'x' }])), ':x');
+check('the server\'s order holds within a group', shape(jobsCoverageGroups([
+  { folder: 'models/a/p', name: 'z' }, { folder: 'models/a/q', name: 'b' }])), 'models/a:z@p,b@q');
 check('the line over the lists', jobsCoverageLine({ total: 10, never: [1, 2], unscheduled: [3] }),
       '7 of 10 models, seeds and snapshots run in a scheduled job; 1 manual only, 2 in no job.');
 check('all covered', jobsCoverageLine({ total: 2, never: [], unscheduled: [] }), '2 of 2 models, seeds and snapshots run in a scheduled job.');

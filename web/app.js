@@ -70,6 +70,8 @@ const S = {
   reportsShown: null,         // the index entry the section on screen was read at
   reportsReturn: null,        // where focus goes back to when the panel is closed from the keyboard
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
+  reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
+  reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
 };
 
 // ------------------------------------------------------------------ util --
@@ -6754,6 +6756,8 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
    launch (0002). `run` is for the one button whose whole point is the command:
    the freshness badge, where the user has already chosen by clicking it. */
 function sendToTerminal(cmd, run) {
+  // Always on a click, and the terminal is what it asks to see.
+  closeReports();
   showDock('terminal');
   let tries = 0;
   const attempt = () => {
@@ -6908,15 +6912,32 @@ function jobsLinkRows(step) {
   return rows;
 }
 
-/* Coverage rows by folder, in the order the server sorted them. */
+/* Coverage rows by folder, in the order the server sorted them. A folder is
+   a level of its own only where it holds two of the rows or more: on a
+   project with a folder per model, every model would otherwise be a folder to
+   unfold. Each row goes under the deepest folder that gathers it with
+   another, `rest` saying its path below that one. A row nothing gathers ends
+   up alone, or under no folder, and the page lists it bare. */
 function jobsCoverageGroups(rows) {
-  const out = [];
+  const parts = (r) => (r.folder || '').split('/').filter(Boolean);
+  const held = new Map();
   for (const r of rows || []) {
-    const last = out[out.length - 1];
-    if (last && last.folder === r.folder) last.rows.push(r);
-    else out.push({ folder: r.folder, rows: [r] });
+    const p = parts(r);
+    for (let i = 1; i <= p.length; i++) {
+      const f = p.slice(0, i).join('/');
+      held.set(f, (held.get(f) || 0) + 1);
+    }
   }
-  return out;
+  const out = new Map();
+  for (const r of rows || []) {
+    const p = parts(r);
+    let at = p.length;
+    while (at > 0 && held.get(p.slice(0, at).join('/')) < 2) at--;
+    const folder = p.slice(0, at).join('/');
+    if (!out.has(folder)) out.set(folder, { folder, rows: [] });
+    out.get(folder).rows.push(Object.assign({}, r, { rest: p.slice(at).join('/') }));
+  }
+  return [...out.values()];
 }
 
 /* The sentence over the coverage lists. */
@@ -7158,19 +7179,28 @@ function jobsSection(title, groups, count, open, hint = '') {
   if (hint) head.title = hint;
   sec.append(head);
   for (const g of groups) {
+    // A folder of one is no level to unfold: the row is listed bare, its
+    // whole folder beside it.
+    if (g.rows.length === 1 || !g.folder) {
+      for (const r of g.rows) sec.append(jobsRow(r, r.folder));
+      continue;
+    }
     const folder = jel('details', 'jobs-folder');
     folder.open = open;
-    folder.append(jel('summary', '', `${g.folder || '.'} (${g.rows.length})`));
-    for (const r of g.rows) {
-      const row = jel('button', 'jobs-row');
-      row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
-      row.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
-      row.addEventListener('click', () => openFromReport(r.id, { dock: 'jobs' }));
-      folder.append(row);
-    }
+    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
+    for (const r of g.rows) folder.append(jobsRow(r, r.rest));
     sec.append(folder);
   }
   return sec;
+}
+
+function jobsRow(r, path) {
+  const row = jel('button', 'jobs-row');
+  row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
+  if (path) row.append(jel('span', 'jobs-path', path));
+  row.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
+  row.addEventListener('click', () => openFromReport(r.id, { dock: 'jobs' }));
+  return row;
 }
 
 function jobsStepList(title, refs) {
@@ -7493,22 +7523,61 @@ function reportHead({ title, tool, about, again, extra = [] }) {
   return head;
 }
 
-/* Draws one section, read again on every showing, so a run since the last
-   one shows. Only the latest of two quick clicks is drawn. */
+/* A fold of a section, known by its summary and those of the folds around
+   it, without the count a run changes. */
+function reportFoldKey(d) {
+  const names = [];
+  for (let at = d; at; at = at.parentElement ? at.parentElement.closest('details') : null) {
+    const sum = at.querySelector(':scope > summary');
+    const title = sum && (sum.querySelector('.rtitle') || sum);
+    names.unshift(title ? title.textContent.replace(/ \(\d+\)$/, '') : '');
+  }
+  return names.join(' › ');
+}
+
+/* Which folds of the section on screen are open, and where its list is
+   scrolled: a list of hundreds is gone through one model at a time, each
+   opened from it, and coming back must find it as it was left. */
+function keepReportPlace(view) {
+  const scroller = view.querySelector('.reportbody, .jobs-body');
+  if (!scroller) return null;
+  const open = {};
+  for (const d of scroller.querySelectorAll('details')) open[reportFoldKey(d)] = d.open;
+  return { open, scroll: scroller.scrollTop };
+}
+
+function restoreReportPlace(view, place) {
+  const scroller = view.querySelector('.reportbody, .jobs-body');
+  if (!place || !scroller) return;
+  for (const d of scroller.querySelectorAll('details')) {
+    const key = reportFoldKey(d);
+    if (key in place.open) d.open = place.open[key];
+  }
+  scroller.scrollTop = place.scroll;
+}
+
+/* Draws one section, read again on every showing so a run since the last
+   one shows, with the folds and the scroll it was left with. Only the latest
+   of two quick clicks is drawn. */
 async function showReportSection(key) {
-  const switching = key !== S.reportsSection || !$('#reports-view').children.length;
+  const view = $('#reports-view');
+  // Kept before anything replaces it, the placeholder included.
+  if (S.reportsDrawn) S.reportsPlace[S.reportsDrawn] = keepReportPlace(view) || S.reportsPlace[S.reportsDrawn];
   S.reportsSection = key;
   paintReportsNav();
   const ask = ++S.reportsAsk;
-  const view = $('#reports-view');
-  if (switching) view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
+  if (key !== S.reportsDrawn) {
+    view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
+    S.reportsDrawn = '';
+  }
   const shown = (S.reports && S.reports[key]) || null;
   const again = () => showReportSection(key);
   const drawn = key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
   view.replaceChildren(...drawn);
-  view.scrollTop = 0;
+  S.reportsDrawn = key;
+  restoreReportPlace(view, S.reportsPlace[key]);
   if (key === 'collin' && S.collin) S.collinSeen = S.collin.run || 0;
   paintReportsButton();
   paintReportsNav();
@@ -9723,10 +9792,11 @@ function showSide(which) {
 }
 
 /* `look` is off for a tab brought forward by a click in a report that has
-   just looked at the job files itself (0063). A dock tab asked for is a dock
-   tab to see, so the reports roll up. */
+   just looked at the job files itself (0063). The reports are left as they
+   are: a column's lineage brings the canvas forward when its answer lands,
+   seconds later with Snowflake, and must not roll up a panel opened since.
+   What the user asks for rolls them up itself. */
 function showDock(which, { look = true } = {}) {
-  closeReports();
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
   $('#dock-lineage').classList.toggle('hidden', which !== 'lineage');
@@ -9993,7 +10063,7 @@ function wireKeys() {
       case 'Mod+Alt+P': e.preventDefault(); jumpBack(); return;
       case 'Mod+Alt+N': e.preventDefault(); jumpForward(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
-      case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
+      case 'Mod+`': e.preventDefault(); closeReports(); showDock('terminal'); return;
       /* R for reports, in the same place on every layout, with Cmd so that
          keyCombo reads the key and not what Option typed (0037). */
       case 'Mod+Alt+R': e.preventDefault(); toggleReports(); return;

@@ -25,6 +25,11 @@ newest dated heading has to be the version `Cargo.toml` names.
   models to investigate riding on the Reports button where its badge was.
 - Move the Jobs tab's Coverage view into Reports, as Job coverage; the tab
   lists the jobs of the node in focus, with a button to the coverage.
+- Group the coverage's models under the deepest folder that holds two of them,
+  each row saying its path below it, and list a model no folder gathers bare:
+  with a folder per model, every model was a folder to unfold.
+- Find a section of Reports as it was left, its folds and its scroll, when it
+  is shown again after a model was opened from it.
 
 ## 1.9.0 - 2026-10-11
 

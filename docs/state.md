@@ -886,8 +886,13 @@ Jobs tab. A Reports button in the top bar now rolls a panel down over `#main`,
 the editor and the dock both, with a rail of sections: collin's report once a
 run wrote one, the job coverage once a source is named. The sidebar stays.
 Anything that shows a file or a dock tab rolls it up: `activate()`, a link in a
-report through `openFromReport`, the palette, the Models list, `showDock()`,
-Escape and the close keys. collin's badge became news on the button, under
+report through `openFromReport`, the palette, the Models list, the terminal's
+key and anything typed into it, Escape and the close keys. Shown again, a
+section keeps the folds and the scroll it was left with, so a list is gone
+through one model at a time. The coverage now groups a model under the
+deepest folder it shares with another, its path below that said on its row:
+on a project with a folder per model, a list of hundreds of models sat in as
+many folders of one, and now sits in a handful of shared folders. collin's badge became news on the button, under
 0059's rule, and the Jobs tab keeps the node in focus with a button to the
 coverage. `GET /api/reports` says which sections there are from file times and
 the settings alone, and `/api/freshness` carries `reports_at`, the newest
@@ -898,11 +903,10 @@ sidebar not, no key reaching the editor, Escape and `⌥⌘R`, the focus given
 back, a report's name and a coverage row each opening the model with its dock
 tab, and no roll under reduced motion; then collin 0.2.0 picked from the menu,
 its "5 to investigate" on the button, the panel opening on it, and the news
-gone once shown. On the 19 233 node project, against `main`, 62 of 65
-replayed read requests answer the same bytes, and the other three differ
-between two starts of one build as well; collin's section, from a 2.6 MB
-report, is drawn in 57 ms, and the job coverage in 830 ms, its first look at
-48 DAG files, with the figures of 1.9.0. Not yet on the VM.
+gone once shown. On a large real project, against `main`, every replayed
+read request answers the same bytes but where two starts of one build differ
+as well, both sections are drawn in under a second, and the coverage gives
+the figures it gave in 1.9.0. Not yet on the VM.
 
 ## Deferred, in the order they were chosen
 
@@ -1191,6 +1195,10 @@ cross-compile.
   it is clipped and `visibility: hidden`; open, what is under it is `inert`.
 - **`activate()` rolls the reports up, and `settleTabs` passes `keepReports`**,
   so closing a tab from the sidebar while they are down leaves them there.
+  `showDock` leaves them alone: a column's lineage brings the canvas forward
+  when its answer lands, seconds later with Snowflake, and must not roll up a
+  panel opened meanwhile, so the terminal's key and `sendToTerminal` close
+  them themselves.
   `focusNode` cannot close them, since a collin run's end calls it in the
   background: every way in from a report goes through `openFromReport`, and
   the Models list and the palette call `closeReports` themselves.

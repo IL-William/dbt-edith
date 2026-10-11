@@ -1133,13 +1133,16 @@ in the tab opens, turns the question round: which of the
 project's own models, seeds and snapshots no scheduled job runs, which run only
 in jobs nothing schedules (*Manual only*), which steps select nothing, and which
 jobs were read.
-An installed package's models are left out, so the report is about the
-project's own. A job counts as
+A model sits under the deepest folder it shares with another listed model,
+with the rest of its path beside its name, and one no folder gathers is listed
+on its own. An installed package's models are left out, so the report is about
+the project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
 dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
 CI job or a merge job is not. Click a model to open it: the reports roll up,
-and the Jobs tab lists its jobs.
+and the Jobs tab lists its jobs. Coming back finds the list as you left it,
+folds and scroll.
 
 Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
 in the menu behind the snowflake in the top bar: one or more folders or files,
