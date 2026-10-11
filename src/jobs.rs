@@ -1034,8 +1034,14 @@ pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
         }
     }
     let mut cov = Coverage { configured: !read.sources.is_empty(), ..Default::default() };
+    // An installed package's models are the package's to schedule or not: a
+    // project runs the ones it needs, and the rest would bury its own.
+    let root = graph.macros.root();
     for (i, node) in graph.nodes.iter().enumerate() {
         if node.disabled || !matches!(node.kind, Kind::Model | Kind::Seed | Kind::Snapshot) {
+            continue;
+        }
+        if !root.is_empty() && node.package != root {
             continue;
         }
         let row = Row { id: node.id.clone(), name: node.name.clone(), kind: node.kind.as_str(), folder: folder(graph, i as u32) };
@@ -1111,6 +1117,12 @@ mod tests {
                 "model.shop.orders": model("orders", "marts", &["daily"], "table"),
                 "model.shop.int_pivot": model("int_pivot", "marts", &[], "ephemeral"),
                 "model.shop.test": model("test", "marts", &[], "table"),
+                // An installed package's, which coverage leaves to its package.
+                "model.artifacts.runs": {
+                    "name": "runs", "resource_type": "model", "package_name": "artifacts",
+                    "original_file_path": "models/runs.sql", "fqn": ["artifacts", "runs"],
+                    "config": { "materialized": "table" },
+                },
                 "seed.shop.raw_orders": {
                     "name": "raw_orders", "resource_type": "seed", "package_name": "shop",
                     "original_file_path": "seeds/raw_orders.csv", "fqn": ["shop", "raw_orders"],
@@ -1429,7 +1441,7 @@ jobs:
         assert!(select_nodes(&two, &inv).unwrap_err().contains("more than one selector"));
         // No default: everything, sources included for freshness.
         let fresh = command::read("dbt source freshness").unwrap();
-        assert_eq!(select_nodes(&graph(), &fresh).unwrap().0.len(), 9);
+        assert_eq!(select_nodes(&graph(), &fresh).unwrap().0.len(), 10);
     }
 
     #[test]

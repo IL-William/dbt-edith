@@ -23,9 +23,11 @@ newest dated heading has to be the version `Cargo.toml` names.
   reached the node, its schedule, the jobs it waits for or starts, and a
   `dbt ls` button to check it against dbt. A step this tool cannot resolve is
   listed apart with the reason, never guessed (0063).
-- List, in the Jobs tab's Coverage view, the models, seeds and snapshots no
-  scheduled job runs, those run only by jobs nothing schedules, and the steps
-  that select nothing.
+- List, in the Jobs tab's Coverage view, the project's own models, seeds and
+  snapshots no scheduled job runs, those run only by jobs nothing schedules,
+  and the steps that select nothing, each model opening on a click.
+- Open an installed package's model from the lineage, the palette, the Models
+  list or Coverage, in `dbt_packages`, where it used to fail with no such file.
 - Read dbt Cloud jobs in dbt-jobs-as-code's schema, anchors and merges
   included, and Airflow DAGs in a proposed shape whose every key can be renamed
   to match a repository's own.

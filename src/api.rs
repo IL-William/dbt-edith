@@ -133,6 +133,7 @@ struct Assets;
 pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
     let mut graph = load_manifest(project, manifest_path)?;
+    graph.place_packages(project);
     if catalog_path.exists() {
         match RawCatalog::load(catalog_path) {
             Ok(cat) => {
@@ -1115,7 +1116,7 @@ async fn search(State(st): State<Arc<AppState>>, Query(q): Query<SearchQuery>) -
                 id: &n.id,
                 name: &n.name,
                 kind: n.kind,
-                file: &n.file,
+                file: n.on_disk(),
                 schema: &n.schema,
                 materialized: &n.materialized,
                 tests: n.tests.len(),
@@ -1268,7 +1269,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             id: &t.id,
             name: &t.name,
             kind: t.kind,
-            file: &t.file,
+            file: t.on_disk(),
             materialized: &t.materialized,
             disabled: t.disabled,
             test_name: &t.test_name,
@@ -1280,7 +1281,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         id: &n.id,
         name: &n.name,
         kind: n.kind,
-        file: &n.file,
+        file: n.on_disk(),
         yml: &n.yml,
         schema: &n.schema,
         database: &n.database,
@@ -1327,7 +1328,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
                                 id: &t.id,
                                 label: if t.test_name.is_empty() { &t.name } else { &t.test_name },
                                 name: &t.name,
-                                file: &t.file,
+                                file: t.on_disk(),
                             }
                         })
                         .collect(),
@@ -1375,7 +1376,7 @@ async fn resolve(State(st): State<Arc<AppState>>, Json(body): Json<ResolveBody>)
             Some(Resolved {
                 name: &n.name,
                 id: &n.id,
-                file: &n.file,
+                file: n.on_disk(),
                 kind: n.kind,
                 materialized: &n.materialized,
                 description: n.description.split('\n').next().unwrap_or(""),
@@ -2803,7 +2804,7 @@ async fn clone_plan(State(st): State<Arc<AppState>>, Query(q): Query<CloneQuery>
             kind: t.kind,
             materialized: &t.materialized,
             package: &t.package,
-            file: &t.file,
+            file: t.on_disk(),
             relation: &t.relation,
             disabled: t.disabled,
             why,

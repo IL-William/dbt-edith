@@ -7198,12 +7198,9 @@ function jobsSection(title, groups, count, open) {
     for (const r of g.rows) {
       const row = jel('button', 'jobs-row');
       row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
-      // A package's node names a path inside its package, which the editor
-      // cannot open, so it is only focused.
-      const own = r.id.split('.')[1] === ((S.meta && S.meta.project) || '');
-      row.title = `${own ? 'Open' : 'Focus'} ${r.name}; This node then lists its jobs`;
+      row.title = `Open ${r.name}; This node then lists its jobs`;
       // The report stays, so a list can be gone through one model at a time.
-      row.addEventListener('click', () => { pushJump(); focusNode(r.id, { open: own }); });
+      row.addEventListener('click', () => { pushJump(); focusNode(r.id, { open: true }); });
       folder.append(row);
     }
     sec.append(folder);

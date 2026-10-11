@@ -859,8 +859,14 @@ whether it takes a value. On that project's orchestration repository: 48 DAG
 files and 116 tasks, none refused or unresolved; 34 DAGs scheduled, 33 on a
 cron and one on an asset five test tasks update; six steps that select nothing,
 three on tags no model carries and three on tags only disabled models carry;
-and 3 213 of 3 508 models, seeds and snapshots run by a scheduled DAG, 294 only
-by manual ones, one by none. The first read takes 1.2 s in release, a node
+and 3 213 of the project's own 3 474 models, seeds and snapshots run by a
+scheduled DAG, 260 only by manual ones, one by none, the 34 of an installed
+package being left out of the count. Opening an installed package's node, from
+those lists, the palette, the Models list or the lineage, used to fail with no
+such file, since the manifest gives its path inside the package; it is now
+looked for in `dbt_packages` as a package macro is, and asked for there by
+every answer that names a file, while selection keeps dbt's path. The 34
+package nodes answer as on `main` but for that path. The first read takes 1.2 s in release, a node
 9 ms at the median and 55 ms at most. Ten distinct step shapes were compared
 with dbt Fusion 2.0.6's `dbt ls`: nine agree, and the tenth, a `test --selector`
 whose selector the VM's manifest wrote without its `indirect_selection: empty`,

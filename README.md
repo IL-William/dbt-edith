@@ -1128,9 +1128,11 @@ never guessed at: it is listed apart, under *Not resolved*, with the reason. A
 `{{ var }}` is only known when the job runs, and a flag this tool does not know
 might take a value or not.
 
-**Coverage**, at the top of the tab, turns the question round: which models,
-seeds and snapshots no scheduled job runs, which run only in jobs nothing
-schedules, which steps select nothing, and which jobs were read. A job counts as
+**Coverage**, at the top of the tab, turns the question round: which of the
+project's own models, seeds and snapshots no scheduled job runs, which run only
+in jobs nothing schedules, which steps select nothing, and which jobs were read.
+An installed package's models are left out, so the report is about the
+project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
 dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
