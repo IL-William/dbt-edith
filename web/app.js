@@ -6955,8 +6955,8 @@ function jobsCoverageLine(cov) {
   const covered = cov.total - cov.never.length - cov.unscheduled.length;
   const of = `${covered} of ${cov.total} models, seeds and snapshots run in a scheduled job`;
   const rest = [];
-  if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} only in jobs nothing schedules`);
-  if (cov.never.length) rest.push(`${cov.never.length} in none`);
+  if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} manual only`);
+  if (cov.never.length) rest.push(`${cov.never.length} in no job`);
   return of + (rest.length ? '; ' + rest.join(', ') : '') + '.';
 }
 
@@ -7187,10 +7187,12 @@ function renderJobs(body, view, id) {
 }
 
 /* One section of the coverage view, folders inside, open when short. */
-function jobsSection(title, groups, count, open) {
+function jobsSection(title, groups, count, open, hint = '') {
   const sec = jel('details', 'jobs-sec');
   sec.open = open;
-  sec.append(jel('summary', '', `${title} (${count})`));
+  const head = jel('summary', '', `${title} (${count})`);
+  if (hint) head.title = hint;
+  sec.append(head);
   for (const g of groups) {
     const folder = jel('details', 'jobs-folder');
     folder.open = open;
@@ -7226,7 +7228,8 @@ function renderCoverage(body, cov) {
   const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
   const short = (n) => n <= 50;
   out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
-  out.push(jobsSection('Run only by jobs nothing schedules', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length)));
+  out.push(jobsSection('Manual only', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
+    'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
   if (cov.ephemeral.length) {
     out.push(jobsSection('Ephemeral, so never run on their own', jobsCoverageGroups(cov.ephemeral), cov.ephemeral.length, false));
   }

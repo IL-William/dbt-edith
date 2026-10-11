@@ -52,7 +52,7 @@ var groups = jobsCoverageGroups([
 check('rows by folder, in the order sent', groups.map(function (g) { return g.folder + ':' + g.rows.length; }).join(' '), 'models/marts:2 seeds:1');
 check('no rows', jobsCoverageGroups(undefined).length, 0);
 check('the line over the lists', jobsCoverageLine({ total: 10, never: [1, 2], unscheduled: [3] }),
-      '7 of 10 models, seeds and snapshots run in a scheduled job; 1 only in jobs nothing schedules, 2 in none.');
+      '7 of 10 models, seeds and snapshots run in a scheduled job; 1 manual only, 2 in no job.');
 check('all covered', jobsCoverageLine({ total: 2, never: [], unscheduled: [] }), '2 of 2 models, seeds and snapshots run in a scheduled job.');
 
 print('\n--- what the form sends ---');

@@ -1130,7 +1130,8 @@ might take a value or not.
 
 **Coverage**, at the top of the tab, turns the question round: which of the
 project's own models, seeds and snapshots no scheduled job runs, which run only
-in jobs nothing schedules, which steps select nothing, and which jobs were read.
+in jobs nothing schedules (*Manual only*), which steps select nothing, and which
+jobs were read.
 An installed package's models are left out, so the report is about the
 project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
