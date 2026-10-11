@@ -534,8 +534,10 @@ mod tests {
 
     /// Setup commands, kept away from the machine's own git configuration: a
     /// global `commit.gpgsign` or hook would otherwise decide whether they work.
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let out = Command::new("git")
+    /// The identity is given, not left to git to guess: it guesses one from the
+    /// host name on a Mac, and refuses on a CI machine whose name has no domain.
+    fn setup(dir: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
             .arg("-C")
             .arg(dir)
             .args(args)
@@ -546,7 +548,11 @@ mod tests {
             .env("GIT_COMMITTER_NAME", "Ada")
             .env("GIT_COMMITTER_EMAIL", "ada@example.com")
             .output()
-            .unwrap();
+            .unwrap()
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let out = setup(dir, args);
         assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
@@ -653,8 +659,9 @@ mod tests {
         git(&dir, &["checkout", "-q", "main"]);
         write(&dir, "README.md", "ours\n");
         git(&dir, &["commit", "-q", "-am", "ours"]);
-        let merge = Command::new("git").arg("-C").arg(&dir).args(["merge", "-q", "other"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap();
+        let merge = setup(&dir, &["merge", "-q", "other"]);
         assert!(!merge.status.success(), "the merge should stop on the conflict");
+        assert!(String::from_utf8_lossy(&merge.stdout).contains("CONFLICT"), "stopped for another reason: {merge:?}");
 
         let info = status(&dir);
         assert!(info.merging);
