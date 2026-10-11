@@ -1,6 +1,6 @@
 # 0018. The `vars:` block is read by a scanner, not a YAML parser
 
-Date: 2026-09-18 · Status: accepted
+Date: 2026-09-18 · Status: accepted, amended by 0063
 
 **Trigger:** read before reading a `.yml` file from the server, or before
 reaching for a YAML parser.
@@ -42,3 +42,6 @@ The scanner sees only this project's own `vars:`. It cannot see `--vars` passed
 on the command line, nor a package's own defaults, so the card says what it read
 and from which line, and stops there. An `Unparsed` carries no text from the
 file, only a line number, so no value can escape through an error path.
+*Amended by [0063](0063-jobs-are-read-from-folders-you-name.md): job files,
+whose anchors and `<<` merges a line scanner cannot follow, are read into a
+tree by `src/yaml.rs`. The `vars:` block keeps its scanner.*

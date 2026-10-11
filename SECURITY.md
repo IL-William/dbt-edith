@@ -32,6 +32,13 @@ the editor reads and writes their files.
   its own route. No path for it ever comes from the browser (0017, 0049). The
   clone route reads it as well, and sends only the active target's name,
   database and schema (0058).
+- **The job folders the user names are read, and nothing else outside.** The
+  page may name folders holding the orchestrator's jobs, outside the project;
+  the key it needs already opens a shell, so this widens nothing (0052). Under
+  them only `.yml` and `.yaml` files are opened, never a hidden file or folder,
+  never through a symlink or a junction, at most 1 MiB each. What comes back
+  is what was parsed, names, schedules and commands, never a file's text, and
+  the value of `--vars`, `--args` or `--inline` is replaced by `…` (0063).
 - **The profile's secrets stay on the server.** Its route replaces every
   password, token and private key with a placeholder before sending it, and
   puts the value on disk back when the placeholder is saved unchanged (0054).

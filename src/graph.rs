@@ -16,7 +16,7 @@ use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Model,

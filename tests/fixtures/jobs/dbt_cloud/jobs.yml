@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dbt-labs/dbt-jobs-as-code/main/src/dbt_jobs_as_code/schemas/load_job_schema.json
+# Invented jobs over Jaffle Shop, in dbt-jobs-as-code's schema.
+defaults: &defaults
+  account_id: 1
+  project_id: 2
+  environment_id: 3
+  dbt_version: null
+  settings:
+    threads: 4
+    target_name: prod
+  execution:
+    timeout_seconds: 0
+  run_generate_sources: false
+  generate_docs: false
+  triggers: &no_triggers
+    github_webhook: false
+    git_provider_webhook: false
+    schedule: false
+
+jobs:
+  nightly:
+    <<: *defaults
+    name: Nightly build
+    linked_id: 1001
+    execute_steps:
+      - dbt seed
+      - dbt build --select +orders --exclude-resource-type test
+      - dbt test --select orders --indirect-selection cautious
+    schedule:
+      cron: "0 2 * * *"
+    triggers:
+      <<: *no_triggers
+      schedule: true
+
+  exports:
+    <<: *defaults
+    name: Exports
+    execute_steps:
+      - dbt run --models customers
+    job_completion_trigger_condition:
+      condition:
+        job_id: 1001
+        project_id: 2
+        statuses: [10]
+
+  pull_requests:
+    <<: *defaults
+    name: CI
+    job_type: ci
+    execute_steps:
+      - dbt build --select state:modified+
+    triggers:
+      <<: *no_triggers
+      github_webhook: true

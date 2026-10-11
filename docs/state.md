@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-10.
+belongs here. Last updated 2026-10-11.
 
 ## Shipped
 
@@ -845,6 +845,34 @@ a second tab would then be shown a partial answer as a whole one, and keeping
 the files' contents in memory, which still pays a stat per file to know they
 are current. Not yet on the VM.
 
+The Jobs tab (1.9.0, 0063): which Airflow DAGs and dbt Cloud jobs run the node
+in focus, read from YAML in folders named in the settings, outside the project,
+which is what the deferred orchestration coverage was waiting on. dbt Cloud is
+read in dbt-jobs-as-code's schema; Airflow in a proposed shape whose every key
+is a dotted path a source can rename, so the 19 233 node project's DAG factory,
+whose files are laid out its own way, reads with four renamed keys and no code
+of its own. A YAML reader
+written here, `src/yaml.rs`, builds the tree that jobs-as-code's anchors and
+`<<` merges need, and refuses a file whole at a line. `src/command.rs` reads a
+command line flag by known flag and refuses an unknown one rather than guess
+whether it takes a value. On that project's orchestration repository: 48 DAG
+files and 116 tasks, none refused or unresolved; 34 DAGs scheduled, 33 on a
+cron and one on an asset five test tasks update; six steps that select nothing,
+three on tags no model carries and three on tags only disabled models carry;
+and 3 213 of 3 508 models, seeds and snapshots run by a scheduled DAG, 294 only
+by manual ones, one by none. The first read takes 1.2 s in release, a node
+9 ms at the median and 55 ms at most. Ten distinct step shapes were compared
+with dbt Fusion 2.0.6's `dbt ls`: nine agree, and the tenth, a `test --selector`
+whose selector the VM's manifest wrote without its `indirect_selection: empty`,
+is the loss 0032 already names, 181 tests against 127, which the step now says.
+On Jaffle Shop, the invented jobs under `tests/fixtures/jobs/` agree with
+dbt-core's `dbt ls` step for step in `scripts/compare_with_dbt.py`. The walk
+first skipped any folder named `target` or `logs`, which on that repository is
+a layer of eight DAGs, without a word; only `node_modules` and `__pycache__` are
+skipped now. Every replayed read request answers as on `main`. Driven in
+headless Chrome on that project. Not yet on the VM, nor on a real
+dbt-jobs-as-code repository.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -860,19 +888,16 @@ are current. Not yet on the VM.
    for partial runs: a node absent from the file was not run, which is not the
    same as not tested. Per-node freshness would read the same mtimes 0025
    already walks, so the walk is the piece to reuse rather than repeat.
-3. **Orchestration coverage.** Named selectors have shipped (0032);
-   what is left is scanning the orchestrator's jobs to show which models no
-   schedule covers. On the project this was built for, each job is a YAML file
-   in another repository, a dbt command (`run --select tag:x`, or
-   `test --selector name`) beside a cron schedule, so resolving one is the
-   engine that now exists. The open questions are where that repository is,
-   which is outside the project (0017), and an input format that is not one
-   client's layout (0014).
-4. **A var's definition line, clickable.** The card names
+3. **A var's definition line, clickable.** The card names
    `dbt_project.yml:<line>`. The scanner this was waiting for now exists:
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
-5. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
+4. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
+5. **Which jobs test a model.** The Jobs tab resolves test steps with tests in
+   the universe, as dbt does, and lists them on a test node; what is left is
+   showing, on a model, the steps that run its tests, through
+   `graph.host_of`. Left out of 1.9.0 because a model with 48 tests would list
+   one step 48 times unless they are grouped by step first.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
@@ -1112,6 +1137,18 @@ cross-compile.
   script is typed after them (0050). Typing anything into a new terminal on
   Unix before the line editor reads shows it twice; wait as
   `pty::line_editor_ready` does.
+- **A job's terms go through `Expr::from_terms`, never `Expr::parse`.**
+  `parse` strips a pasted `dbt ls -s` off the front, so a model called `test`,
+  `source` or `run` would lose its term, and it reads `-e` as `--exclude`,
+  which dbt does not.
+- **The jobs cache holds the graph by a `Weak`.** `load_all` and a switch of
+  column lineage replace the `Arc`, which reads every job again; the
+  `Arc::make_mut` of a click's merge does not, and must never add nodes, since
+  each step's answer is a list of node indices.
+- **A step's `dbt ls` is written by the server** (`Invocation::ls`), so the
+  page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
+  harness slices `web/app.js` from `function jobsScheduleText` to
+  `async function loadJobs`; the DOM half sits after it.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.

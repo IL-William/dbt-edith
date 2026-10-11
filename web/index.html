@@ -27,8 +27,8 @@
   <!-- Its icon is profileIcon(), drawn by the page; hidden while there is nowhere to look for a profile. -->
   <button id="profile-btn" class="btn keysbtn hidden" type="button" aria-label="dbt profile"></button>
   <!-- Its icon is snowflakeIcon(), drawn by the page, so the menu and the button share one drawing. -->
-  <button id="settings-btn" class="btn keysbtn" type="button" data-tool="snowflake" title="Snowflake features"
-          aria-label="Snowflake features" aria-haspopup="menu"></button>
+  <button id="settings-btn" class="btn keysbtn" type="button" data-tool="snowflake" title="Settings for this project"
+          aria-label="Settings for this project" aria-haspopup="menu"></button>
   <button id="fresh-badge" class="freshbadge hidden" type="button">
     <span class="dot"></span><span class="lbl"></span><span class="drift"></span>
   </button>
@@ -141,6 +141,8 @@
         <button class="tab active" data-dock="lineage">Lineage</button>
         <button class="tab" data-dock="terminal">Terminal</button>
         <button class="tab" data-dock="catalog">Catalog</button>
+        <button class="tab" data-dock="jobs"
+                title="Which of the orchestrator's jobs run this node, read from their YAML">Jobs</button>
         <button class="tab" data-dock="compiled" title="The model's SQL with the Jinja gone, from target/compiled/">Compiled</button>
         <button class="tab" data-dock="run" title="The statement dbt executed to materialise it, from target/run/">Run</button>
         <button class="tab hidden" data-dock="history" id="history-tab"
@@ -201,6 +203,10 @@
         <div id="run-body" class="compiled-body"></div>
       </div>
       <div id="dock-history" class="dock-pane hidden"></div>
+      <div id="dock-jobs" class="dock-pane hidden">
+        <div id="jobs-head" class="compiled-head"></div>
+        <div id="jobs-body" class="jobs-body"></div>
+      </div>
       <div id="dock-catalog" class="dock-pane hidden">
         <div id="catalog" class="catalog"><p class="muted pad">No node selected. Open a model, or pick one in the lineage.</p></div>
       </div>

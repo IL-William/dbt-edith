@@ -7,12 +7,14 @@ mod collin;
 mod collin_compare;
 mod collin_report;
 mod collin_run;
+mod command;
 mod compiled;
 mod envs;
 mod files;
 mod freshness;
 mod git;
 mod graph;
+mod jobs;
 mod ls;
 mod macros;
 mod manifest;
@@ -25,6 +27,7 @@ mod selectors;
 mod settings;
 mod sidecar;
 mod venv;
+mod yaml;
 
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -214,6 +217,9 @@ async fn main() -> anyhow::Result<()> {
         seen: std::sync::Mutex::new(seen),
         profiles: profiles::Lookup::from_env(|name| std::env::var_os(name), cfg!(windows)),
         key,
+        // Nothing is read here: the first look at the Jobs tab reads them (0063).
+        job_sources: std::sync::Mutex::new(saved.job_sources.clone()),
+        jobs: Default::default(),
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));

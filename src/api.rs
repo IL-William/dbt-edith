@@ -19,7 +19,7 @@ use axum::extract::{Query, State};
 use axum::http::{header, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -89,6 +89,12 @@ pub struct AppState {
     pub profiles: crate::profiles::Lookup,
     /// This launch's key, printed in the link that opens the page (0052).
     pub key: String,
+    /// Where the orchestrator's jobs are read from, held here as well as in
+    /// the settings, like `collin_chosen` (0063).
+    pub job_sources: std::sync::Mutex<Vec<crate::settings::JobSource>>,
+    /// The jobs last read, kept until the manifest, the sources or a job file
+    /// changes.
+    pub jobs: crate::jobs::Cache,
 }
 
 impl AppState {
@@ -260,6 +266,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/git/pull", post(git_pull))
         .route("/api/git/fetch", post(git_fetch))
         .route("/api/git/merge-abort", post(git_merge_abort))
+        .route("/api/jobs", get(jobs_summary))
+        .route("/api/jobs/sources", put(save_job_sources))
+        .route("/api/jobs/node", get(jobs_for_node))
+        .route("/api/jobs/coverage", get(jobs_coverage))
+        .route("/api/jobs/step", get(job_step))
         .route("/api/reload", post(reload))
         .route("/ws/pty", get(ws_pty))
         .fallback(static_asset)
@@ -2049,6 +2060,129 @@ async fn save_envs(State(st): State<Arc<AppState>>, Json(b): Json<OverridesBody>
     }
 }
 
+// ------------------------------------------------------------------ jobs ----
+
+/// Reads the jobs, or takes the last read, on a blocking thread: the first
+/// read of a source walks its folders and resolves every step (0063).
+async fn with_jobs<T: Send + 'static>(
+    st: &Arc<AppState>,
+    answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
+) -> Result<T, Response> {
+    let graph = st.graph.read().await.clone();
+    let sources = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
+    let st = st.clone();
+    tokio::task::spawn_blocking(move || {
+        let read = st.jobs.get(&graph, &st.root, &sources);
+        answer(&graph, &read)
+    })
+    .await
+    .map_err(err)
+}
+
+#[derive(serde::Serialize)]
+struct JobsSummary {
+    #[serde(flatten)]
+    summary: crate::jobs::Summary,
+    /// False without a config directory: the sources then last the session.
+    saved: bool,
+    /// The Airflow keys and the shape this tool proposes, for the form.
+    airflow_keys: &'static [(&'static str, &'static str)],
+}
+
+async fn jobs_summary(State(st): State<Arc<AppState>>) -> Response {
+    let saved = st.settings.path.is_some();
+    match with_jobs(&st, |_, read| crate::jobs::summary(read)).await {
+        Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
+        Err(e) => e,
+    }
+}
+
+#[derive(Deserialize)]
+struct JobSourcesBody {
+    #[serde(default)]
+    sources: Vec<crate::settings::JobSource>,
+}
+
+/// Replaces the list of places jobs are read from. Each path must lead
+/// somewhere now; nothing under it is read until a route asks (0063).
+async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSourcesBody>) -> Response {
+    if b.sources.len() > crate::jobs::MAX_SOURCES {
+        return (StatusCode::BAD_REQUEST, format!("at most {} sources", crate::jobs::MAX_SOURCES)).into_response();
+    }
+    let mut sources = Vec::with_capacity(b.sources.len());
+    for mut s in b.sources {
+        s.path = s.path.trim().to_string();
+        s.label = s.label.trim().to_string();
+        s.keys.retain(|_, v| !v.trim().is_empty());
+        for v in s.keys.values_mut() {
+            *v = v.trim().to_string();
+        }
+        if let Some(why) = crate::jobs::check(&s) {
+            return (StatusCode::BAD_REQUEST, why).into_response();
+        }
+        let at = crate::jobs::locate(&st.root, &s.path);
+        if std::fs::symlink_metadata(&at).is_err() {
+            return (StatusCode::BAD_REQUEST, format!("nothing at {}", at.display())).into_response();
+        }
+        sources.push(s);
+    }
+    if let Ok(mut held) = st.job_sources.lock() {
+        held.clone_from(&sources);
+    }
+    let saved = match st.settings.update(|s| s.job_sources = sources).await {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("  job sources not saved: {e}");
+            false
+        }
+    };
+    match with_jobs(&st, |_, read| crate::jobs::summary(read)).await {
+        Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
+        Err(e) => e,
+    }
+}
+
+#[derive(Deserialize)]
+struct JobsNodeQuery {
+    #[serde(default)]
+    id: String,
+}
+
+/// Every step that acts on one node, grouped by job, with what reached it.
+async fn jobs_for_node(State(st): State<Arc<AppState>>, Query(q): Query<JobsNodeQuery>) -> Response {
+    let answer = with_jobs(&st, move |graph, read| {
+        graph.index.get(&q.id).map(|&i| crate::jobs::for_node(graph, read, i))
+    })
+    .await;
+    match answer {
+        Ok(Some(view)) => Json(view).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "unknown node").into_response(),
+        Err(e) => e,
+    }
+}
+
+async fn jobs_coverage(State(st): State<Arc<AppState>>) -> Response {
+    match with_jobs(&st, crate::jobs::coverage).await {
+        Ok(view) => Json(view).into_response(),
+        Err(e) => e,
+    }
+}
+
+#[derive(Deserialize)]
+struct JobStepQuery {
+    #[serde(default)]
+    n: usize,
+}
+
+/// One step and every node it acts on, for comparing with `dbt ls` (0033).
+async fn job_step(State(st): State<Arc<AppState>>, Query(q): Query<JobStepQuery>) -> Response {
+    match with_jobs(&st, move |graph, read| crate::jobs::step_names(graph, read, q.n)).await {
+        Ok(Some(view)) => Json(view).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "no such step").into_response(),
+        Err(e) => e,
+    }
+}
+
 #[derive(Deserialize)]
 struct ArtifactQuery {
     id: String,
@@ -3251,6 +3385,8 @@ mod tests {
             seen: std::sync::Mutex::new([0; 3]),
             profiles,
             key: TEST_KEY.into(),
+            job_sources: std::sync::Mutex::new(Vec::new()),
+            jobs: Default::default(),
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -3700,6 +3836,76 @@ mod tests {
         }
         r.push_str(&format!("Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
         r
+    }
+
+    /// Jobs are read from a folder outside the project that the page names,
+    /// once it leads somewhere, and what comes back is only what was parsed:
+    /// no secret from a command line, nothing from a `.env` beside it (0063).
+    #[tokio::test]
+    async fn jobs_are_read_from_a_folder_the_page_names() {
+        let root = temp_project("jobs");
+        let outside = std::env::temp_dir().join(format!("dbt-edith-api-jobs-outside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(outside.join("dags")).unwrap();
+        std::fs::write(
+            outside.join("dags").join("daily.yml"),
+            "dag:\n  id: shop_daily\n  when: \"0 5 * * *\"\nsteps:\n  - name: marts\n    run: 'run --select orders --vars ''{\"password\": \"hunter2\"}'''\n",
+        )
+        .unwrap();
+        std::fs::write(outside.join(".env"), "SECRET=hunter2\n").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders": { "name": "orders", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/orders.sql", "fqn": ["shop", "orders"] },
+                "model.shop.customers": { "name": "customers", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/customers.sql", "fqn": ["shop", "customers"] },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let put = |body: &str| with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", &own)], body);
+
+        let none = body_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        assert!(none.starts_with("HTTP/1.1 200") && none.contains(r#""configured":false"#), "{none}");
+
+        let keys = serde_json::json!({
+            "dag_id": "dag.id", "schedule": "dag.when", "tasks": "steps", "task_id": "name", "command": "run",
+        });
+        let body = |kind: &str, path: &str, keys: &serde_json::Value| {
+            serde_json::json!({ "sources": [{ "kind": kind, "path": path, "label": "orchestration", "keys": keys }] }).to_string()
+        };
+        let path = outside.to_string_lossy().into_owned();
+        for (sent, want) in [
+            (body("luigi", &path, &keys), "airflow or dbt_cloud"),
+            (body("airflow", &outside.join("missing").to_string_lossy(), &keys), "nothing at"),
+            (body("airflow", &path, &serde_json::json!({ "dag_id": "../x" })), "dotted key path"),
+        ] {
+            let refused = body_of(port, put(&sent)).await;
+            assert!(refused.starts_with("HTTP/1.1 400") && refused.contains(want), "{refused}");
+        }
+        assert!(st.job_sources.lock().unwrap().is_empty(), "nothing kept from a refusal");
+
+        let saved = body_of(port, put(&body("airflow", &path, &keys))).await;
+        assert!(saved.starts_with("HTTP/1.1 200"), "{saved}");
+        assert!(saved.contains(r#""jobs":1"#) && saved.contains(r#""saved":false"#), "{saved}");
+        let node = body_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        assert!(node.contains(r#""name":"shop_daily""#) && node.contains(r#""via":["orders"]"#), "{node}");
+        assert!(node.contains(r#""shown":"dbt run --select orders --vars …""#), "{node}");
+        let coverage = body_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
+        assert!(coverage.contains(r#""never":[{"id":"model.shop.customers""#), "{coverage}");
+        let step = body_of(port, get("/api/jobs/step?n=0", &[("Host", &host)])).await;
+        assert!(step.contains(r#""ids":["model.shop.orders"],"names":["orders"]"#), "{step}");
+        for answer in [&saved, &node, &coverage, &step] {
+            assert!(!answer.contains("hunter2"), "{answer}");
+        }
+
+        let foreign = with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
+        assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
+        assert!(status_of(port, keyless(get("/api/jobs", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
+        server.abort();
     }
 
     // Every route that can lead to warehouse queries under the user's own

@@ -62,6 +62,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   found where dbt looks for it, through its own route (0017, 0049), and that
   route never sends its passwords, tokens or keys (0054). The clone route reads
   it too, and sends only the active target's name, database and schema (0058).
+  The job folders the user names are read as well, their `.yml` and `.yaml`
+  files only, and only what was parsed from them leaves, never a `--vars` value
+  (0063).
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -139,6 +142,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change collin's report page, its badge, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
+| read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |
@@ -179,7 +183,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
+`selectors`, `ls`, `jobs`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

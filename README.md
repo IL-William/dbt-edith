@@ -245,7 +245,7 @@ for that reason (0037).
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
-| the snowflake in the top bar | Snowflake's features on or off for the project |
+| the snowflake in the top bar | Snowflake's features on or off for the project, and where its jobs are read from |
 | the user and plug in the top bar | the dbt profile, opened in the editor; violet when there is one, grey with an amber dot when dbt would find none |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
@@ -1100,6 +1100,85 @@ when a file is not there the tab names the paths it checked and offers to type
 `dbt compile --select <model>` or `dbt run --select <model>` into the integrated
 terminal, without pressing Enter for you.
 
+### Jobs
+
+The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
+the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
+step of it. The jobs are read from their YAML, wherever it lives, which is often
+another repository, and each step's dbt command is resolved by the same engine
+as Custom selection, never by running dbt.
+
+```
+AIRFLOW  DAG shop_daily   0 5 * * *                      orchestration · sales/shop_daily.yml:2
+  task marts    dbt run -s +tag:daily --exclude tag:wip    [dbt ls]
+                via +tag:daily · after stage · awaited by shop_reports › wait_daily
+DBT CLOUD  Job Daily build [[daily]]   0 */2 * * *       cloud · jobs.yml:14
+  step 3/3      dbt build --select +orders                 [dbt ls]
+                via +orders
+```
+
+**via** names the terms of the selection that reached the node, so a staging
+model listed under a marts task says why. **dbt ls** types into the terminal the
+`dbt ls` that should list what the step acts on, without running it, which is
+how you check this tool against dbt. A step that cannot be read or resolved is
+never guessed at: it is listed apart, under *Not resolved*, with the reason. A
+`state:modified+` compares with another run's artifacts, a `$MODELS` or a
+`{{ var }}` is only known when the job runs, and a flag this tool does not know
+might take a value or not.
+
+**Coverage**, at the top of the tab, turns the question round: which models,
+seeds and snapshots no scheduled job runs, which run only in jobs nothing
+schedules, which steps select nothing, and which jobs were read. A job counts as
+scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
+starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
+dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
+CI job or a merge job is not. Click a model to see its own jobs.
+
+Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
+in the menu behind the snowflake in the top bar: one or more folders or files,
+absolute or relative to the project, each an Airflow or a dbt Cloud source. Saving reads them at once and says what it found, file by file, with
+the line of anything it could not read. Only `.yml` and `.yaml` files are read,
+never a hidden file or one reached through a symlink, and what reaches the page
+is what was parsed: names, schedules and the selection in each command. The
+value of `--vars` or `--args` is shown as `…`, since that is where a secret
+would sit
+([0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md)).
+
+dbt Cloud jobs are read in [dbt-jobs-as-code](https://github.com/dbt-labs/dbt-jobs-as-code)'s
+schema, anchors and `<<` merges included: `name`, `execute_steps`,
+`schedule.cron`, `triggers`, `job_type`, `job_completion_trigger_condition`,
+`environment_id` and `settings.target_name`. With `run_generate_sources: true`,
+the `dbt source freshness` dbt Cloud runs first is listed as a step of its own.
+
+Airflow has no standard for this, so dbt-edith proposes a shape, one file per
+DAG, and lets every key be renamed:
+
+```yaml
+dag_id: sales_daily
+schedule: "0 6 * * *"        # a cron, a preset, null for manual, or a list of assets
+tasks:
+  - task_id: build_sales
+    command: dbt run --select tag:sales   # `dbt` in front is optional
+    depends_on: [stage_sales]             # optional, as is everything below
+    outlets: [sales_ready]
+sensors:
+  - task_id: wait_crm
+    external_dag_id: crm_daily
+    external_task_id: crm_load
+```
+
+A key is a dotted path, so a factory that writes `pipeline: {name: ...}` and
+calls its tasks `steps` and their command `dbt` is read with `pipeline.name`,
+`pipeline.cron`, `steps` and `dbt`. The tasks may also be a mapping keyed by
+task id, the way dag-factory writes them. A task with no command is not a
+dbt task and is left out. The form draws the example in your own keys as you
+type them.
+
+What the YAML cannot say, this tab cannot either: tasks a factory builds in
+Python, a paused DAG, a schedule on one task that only the factory interprets,
+`--vars` or `--target` changing which models are enabled, and sources with no
+freshness configured. A `--project-dir` is taken to name this project.
+
 ### Query history
 
 With Snowflake's features on, the dock has a **Query history** tab: the queries
@@ -1318,6 +1397,9 @@ src/collin_run.rs collin, found beside the binary or on PATH and run only on req
 src/select.rs     dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
 src/ls.rs         --select and --selector: one selection printed, and no server
+src/jobs.rs       the orchestrator's jobs, read from the folders named, and the nodes each step acts on
+src/command.rs    a dbt command line, read into what it runs and what it selects
+src/yaml.rs       a subset of YAML, anchors and merges included, read into a tree
 src/clone.rs      which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
 src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
@@ -1340,7 +1422,8 @@ tools/            sf_lineage.py, the only piece that talks to Snowflake
 ```
 
 The server binds to `127.0.0.1` only, and every file path is resolved against
-the project root, so nothing outside the opened project is reachable. Requests
+the project root, so nothing outside the opened project is reachable but the
+dbt profile and the job folders you name in the settings. Requests
 must come from its own page: a `Host` or `Origin` naming anything else gets a
 `403`, which keeps other web pages in your browser away from the terminal and
 the git buttons. Beyond that, the API and the terminal want the key the launch
@@ -1350,7 +1433,7 @@ writes. [SECURITY.md](SECURITY.md) spells out what is and is not covered.
 ## Not there yet
 
 A used-by count per macro, run status and timing from `run_results.json`,
-which models no scheduled job covers, CTE names in the breadcrumb bar,
+which jobs test a model, CTE names in the breadcrumb bar,
 persisting open tabs between sessions, and a second column lineage source using
 dbt Fusion's local index, which needs no warehouse privileges.
 
