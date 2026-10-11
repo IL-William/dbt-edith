@@ -2120,7 +2120,7 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
     if b.sources.len() > crate::jobs::MAX_SOURCES {
         return (StatusCode::BAD_REQUEST, format!("at most {} sources", crate::jobs::MAX_SOURCES)).into_response();
     }
-    let mut sources = Vec::with_capacity(b.sources.len());
+    let mut sources = Vec::new();
     for mut s in b.sources {
         s.path = s.path.trim().to_string();
         s.label = s.label.trim().to_string();
