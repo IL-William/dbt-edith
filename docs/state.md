@@ -824,6 +824,27 @@ the replayed sample answers as on `main`, the version aside. Driven in
 headless Chrome on an invented project with every materialization and on that
 project. Never run against a warehouse.
 
+A lighter status poll and a faster content search (1.8.1): measured on `main`
+against the 19 233 node project, every click answered within 72 ms, but the
+poll every 5 s cost the server about 0.8 s, and a content search 550 ms. Most
+of the poll was git's helper napping 30 ms before looking whether git had
+finished, which commands of 5 ms paid in full, ten times per round. It now
+naps 1 ms first, doubling to 30. The status takes two git calls, the branch,
+its upstream and how far apart they are coming from `git status
+--porcelain=v2 --branch`, and the freshness badge reuses the git directory the
+status read. A hidden tab stops polling and catches up when shown. The search
+reads its files on up to eight threads, in batches whose results are counted
+in index order, so the ceilings fall where one thread put them. On that
+project the poll went from 405 to 250 ms for the status, git's own status
+being 190 of it, and from 360 to 230 ms for the badge, the walk being most of
+it; the search from 550 to 165 ms. Every replayed read request, 60 searches
+and the git answers of 14 repository states, from an unborn branch and a
+deleted upstream to a rebase stopped on a conflict and a linked worktree,
+answer as on `main`. Rejected: cancelling a search a newer one replaces, since
+a second tab would then be shown a partial answer as a whole one, and keeping
+the files' contents in memory, which still pays a stat per file to know they
+are current. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -914,7 +935,9 @@ cross-compile.
   is a table, a create as select from a dynamic table or a materialized view,
   and which grants the developer's role needs on the source databases.
 - **Two checks on Windows**: `.env` files with CRLF endings read correctly, and
-  the time a node click takes there. The plan was to cache the per-node
+  the time a node click takes there. Also worth timing there: a content search
+  for a word no file holds, and `/api/git` and `/api/freshness` asked 3 s
+  apart, which take 165, 250 and 230 ms on a Mac. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under
   that on a Mac.
 - **A binary built before 0015 has no guard.** Anyone running one

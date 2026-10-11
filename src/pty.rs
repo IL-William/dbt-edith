@@ -379,9 +379,11 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_activation_runs_and_shows_once() {
-        // The marker is computed, so the typed line cannot contain it. Unsetting
+        // The marker is computed, so the typed line cannot contain it, and named
+        // unlike the venv's folder, which holds the process id: `venv-42` was
+        // found in the echoed path whenever that id began with 42. Unsetting
         // HISTFILE keeps the line out of the developer's own history.
-        let venv = fake_venv("typed", &[("activate", "unset HISTFILE\necho venv-$((40 + 2))\n")]);
+        let venv = fake_venv("typed", &[("activate", "unset HISTFILE\necho activated-$((40 + 2))\n")]);
         let bash = ShellSpec {
             program: "bash".into(),
             args: vec!["--norc".into(), "--noprofile".into(), "-i".into()],
@@ -393,7 +395,7 @@ mod tests {
 
         let mut seen = String::new();
         let deadline = Instant::now() + Duration::from_secs(20);
-        while !seen.contains("venv-42") && Instant::now() < deadline {
+        while !seen.contains("activated-42") && Instant::now() < deadline {
             match rx.try_recv() {
                 Ok(FromPty::Output(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
                 Ok(FromPty::Exited) => break,
@@ -406,7 +408,7 @@ mod tests {
         session.kill();
         std::fs::remove_dir_all(&venv).unwrap();
 
-        assert!(seen.contains("venv-42"), "the venv's script did not run: {seen:?}");
+        assert!(seen.contains("activated-42"), "the venv's script did not run: {seen:?}");
         assert_eq!(seen.matches(line.as_str()).count(), 1, "shown other than once: {seen:?}");
     }
 

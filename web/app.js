@@ -9531,7 +9531,12 @@ async function boot() {
   await loadDir($('#tree'), '', 0);
   refreshGit();
   refreshFreshness();
-  setInterval(() => { refreshGit(); refreshFreshness(); }, 5000);
+  // Each round costs the server a git status and a walk of the model folders,
+  // for a page nobody sees while its tab is hidden. It waits there instead, and
+  // catches up the moment the tab is shown again.
+  const poll = () => { if (!document.hidden) { refreshGit(); refreshFreshness(); } };
+  setInterval(poll, 5000);
+  document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());
 }
 

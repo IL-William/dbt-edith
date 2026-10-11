@@ -35,6 +35,10 @@ pub struct GitInfo {
     pub staged: Vec<FileChange>,
     pub unstaged: Vec<FileChange>,
     pub conflicted: Vec<String>,
+    /// As `git rev-parse --git-dir` printed it, for the freshness check to find
+    /// FETCH_HEAD without asking again. Never sent: it can be an absolute path.
+    #[serde(skip)]
+    pub git_dir: String,
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -89,6 +93,11 @@ pub fn run(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) 
     });
 
     let deadline = Instant::now() + timeout;
+    // Most of what the UI asks git is answered in a few milliseconds, so the
+    // first naps are short: a fixed 30 ms one made every such call cost 30, and
+    // the status poll makes several every five seconds. A long command still
+    // settles at one check per 30 ms.
+    let mut nap = Duration::from_millis(1);
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break Some(s),
@@ -98,7 +107,8 @@ pub fn run(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) 
                     let _ = child.wait();
                     break None;
                 }
-                std::thread::sleep(Duration::from_millis(30));
+                std::thread::sleep(nap);
+                nap = (nap * 2).min(Duration::from_millis(30));
             }
             Err(_) => break None,
         }
@@ -125,44 +135,61 @@ fn read(root: &Path, args: &[&str]) -> Option<String> {
 
 // ---------------------------------------------------------------- status ----
 
+/// Two git calls, because the status is polled every five seconds: one for
+/// where the project sits in the repository, one for everything else, the
+/// branch and its upstream included.
 pub fn status(root: &Path) -> GitInfo {
     let mut info = GitInfo::default();
 
-    // --show-prefix alone: anything touching HEAD fails in a repository with no
-    // commit yet, and such a repository still has a status worth showing.
-    let Some(prefix) = read(root, &["rev-parse", "--show-prefix"]) else {
+    // Neither flag touches HEAD, which fails in a repository with no commit
+    // yet, and such a repository still has a status worth showing. They print
+    // one line each, in the order asked, the prefix being empty at the top.
+    let Some(dirs) = read(root, &["rev-parse", "--show-prefix", "--git-dir"]) else {
         return info;
     };
     info.repo = true;
-    let prefix = prefix.trim().to_string();
-    info.branch = read(root, &["branch", "--show-current"]).unwrap_or_default().trim().to_string();
-    info.upstream = read(root, &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if !info.upstream.is_empty() {
-        if let Some(counts) = read(root, &["rev-list", "--left-right", "--count", "@{u}...HEAD"]) {
-            let mut it = counts.split_whitespace();
-            info.behind = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
-            info.ahead = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
-        }
-    }
-    info.merging = read(root, &["rev-parse", "--git-dir"])
-        .map(|d| Path::new(root).join(d.trim()).join("MERGE_HEAD").exists())
-        .unwrap_or(false);
+    let mut lines = dirs.split('\n').map(str::trim);
+    let prefix = lines.next().unwrap_or("").to_string();
+    info.git_dir = lines.next().unwrap_or("").to_string();
+    info.merging = !info.git_dir.is_empty() && root.join(&info.git_dir).join("MERGE_HEAD").exists();
 
     // --no-renames keeps every entry to a single record, so there is no paired
-    // "old path" entry to track while parsing.
-    let raw = run(root, &["status", "--porcelain=v1", "-z", "--no-renames"], &[], Duration::from_secs(30));
+    // "old path" entry to track while parsing. --branch adds the headers that
+    // `branch --show-current`, `rev-parse @{u}` and `rev-list --count` used to
+    // answer in three more processes.
+    let raw = run(
+        root,
+        &["status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--no-renames"],
+        &[],
+        Duration::from_secs(30),
+    );
     if !raw.ok {
         return info;
     }
 
-    for entry in raw.stdout.split('\0') {
-        if entry.len() < 4 {
+    let (mut upstream, mut counts) = ("", None);
+    let mut entries = raw.stdout.split('\0');
+    while let Some(entry) = entries.next() {
+        if let Some(header) = entry.strip_prefix("# ") {
+            match header.split_once(' ') {
+                // What `branch --show-current` printed: nothing when detached.
+                Some(("branch.head", "(detached)")) => {}
+                Some(("branch.head", name)) => info.branch = name.to_string(),
+                Some(("branch.upstream", name)) => upstream = name,
+                Some(("branch.ab", ab)) => counts = Some(ab),
+                _ => {}
+            }
             continue;
         }
-        let (code, path) = entry.split_at(3);
+        let Some((code, path)) = porcelain_v2(entry) else {
+            // A rename record is followed by its old path in an entry of its
+            // own. --no-renames should mean there are none; if one comes
+            // anyway, its old path must not be read as a record.
+            if entry.starts_with("2 ") {
+                entries.next();
+            }
+            continue;
+        };
         let path = match path.strip_prefix(prefix.as_str()) {
             Some(p) if !prefix.is_empty() => p.to_string(),
             _ if prefix.is_empty() => path.to_string(),
@@ -171,7 +198,6 @@ pub fn status(root: &Path) -> GitInfo {
         if path.is_empty() {
             continue;
         }
-        let code = code[..2].to_string();
         let (x, y) = (code.as_bytes()[0], code.as_bytes()[1]);
 
         if code == "??" {
@@ -193,12 +219,37 @@ pub fn status(root: &Path) -> GitInfo {
             info.unstaged.push(FileChange { path, code });
         }
     }
+    // git names an upstream as soon as one is configured, and counts commits
+    // only when its ref exists. `rev-parse @{u}` failed for one whose remote
+    // branch was deleted, and the page offers to publish such a branch again,
+    // so an upstream without counts is no upstream.
+    if let Some(ab) = counts {
+        let mut it = ab.split(' ');
+        info.upstream = upstream.to_string();
+        info.ahead = it.next().and_then(|v| v.strip_prefix('+')?.parse().ok()).unwrap_or(0);
+        info.behind = it.next().and_then(|v| v.strip_prefix('-')?.parse().ok()).unwrap_or(0);
+    }
     info.modified.sort();
     info.untracked.sort();
     info.staged.sort_by(|a, b| a.path.cmp(&b.path));
     info.unstaged.sort_by(|a, b| a.path.cmp(&b.path));
     info.conflicted.sort();
     info
+}
+
+/// The two-letter code and the path of one porcelain v2 record, the code
+/// spelled as v1 spelled it, with a space where v2 writes a dot, since that is
+/// what the page reads. Paths come last on each line and may hold spaces, so
+/// they are what remains after a fixed number of fields: 8 for a change, 10 for
+/// a conflict. None for anything else: headers, ignored files, renames.
+fn porcelain_v2(entry: &str) -> Option<(String, &str)> {
+    let (code, path) = match entry.split_once(' ')? {
+        ("?", path) => ("??", path),
+        ("1", rest) => (rest.get(..2)?, rest.splitn(8, ' ').nth(7)?),
+        ("u", rest) => (rest.get(..2)?, rest.splitn(10, ' ').nth(9)?),
+        _ => return None,
+    };
+    Some((code.replace('.', " "), path))
 }
 
 // -------------------------------------------------------------- branches ----
@@ -444,12 +495,11 @@ fn base_ref(root: &Path) -> String {
 
 /// How far this branch has fallen behind the default branch, read from refs
 /// already on disk. Nothing here touches the network: `fetch_quiet` is what
-/// keeps those refs current, and this only reports what it finds.
-pub fn drift(root: &Path) -> Drift {
+/// keeps those refs current, and this only reports what it finds. `git_dir` is
+/// the one `status` read, which saves the poll a process.
+pub fn drift(root: &Path, git_dir: &str) -> Drift {
     let mut d = Drift {
-        fetched_at: read(root, &["rev-parse", "--git-dir"])
-            .map(|g| crate::files::mtime_secs(&root.join(g.trim()).join("FETCH_HEAD")))
-            .unwrap_or(0),
+        fetched_at: if git_dir.is_empty() { 0 } else { crate::files::mtime_secs(&root.join(git_dir).join("FETCH_HEAD")) },
         ..Default::default()
     };
     d.base = base_ref(root);
@@ -468,4 +518,229 @@ pub fn drift(root: &Path) -> Drift {
 /// on disk and says when they were last refreshed.
 pub fn fetch_quiet(root: &Path) -> bool {
     run(root, &["fetch", "--quiet"], NET_ENV, Duration::from_secs(60)).ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-git-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Setup commands, kept away from the machine's own git configuration: a
+    /// global `commit.gpgsign` or hook would otherwise decide whether they work.
+    /// The identity is given, not left to git to guess: it guesses one from the
+    /// host name on a Mac, and refuses on a CI machine whose name has no domain.
+    fn setup(dir: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_AUTHOR_NAME", "Ada")
+            .env("GIT_AUTHOR_EMAIL", "ada@example.com")
+            .env("GIT_COMMITTER_NAME", "Ada")
+            .env("GIT_COMMITTER_EMAIL", "ada@example.com")
+            .output()
+            .unwrap()
+    }
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let out = setup(dir, args);
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    fn write(dir: &Path, rel: &str, text: &str) {
+        let path = dir.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    fn repo(dir: &Path) {
+        git(dir, &["init", "-q", "-b", "main"]);
+        write(dir, "README.md", "one\n");
+        git(dir, &["add", "README.md"]);
+        git(dir, &["commit", "-q", "-m", "first"]);
+    }
+
+    fn changes(v: &[FileChange]) -> Vec<(String, String)> {
+        v.iter().map(|c| (c.code.clone(), c.path.clone())).collect()
+    }
+
+    fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
+        v.iter().map(|(c, p)| (c.to_string(), p.to_string())).collect()
+    }
+
+    #[test]
+    fn outside_a_repository_there_is_no_status() {
+        let dir = scratch("none");
+        let info = status(&dir);
+        assert!(!info.repo);
+        assert!(info.branch.is_empty() && info.git_dir.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_repository_without_a_commit_still_has_a_status() {
+        let dir = scratch("unborn");
+        git(&dir, &["init", "-q", "-b", "trunk"]);
+        write(&dir, "models/a.sql", "select 1\n");
+        write(&dir, "models/b.sql", "select 2\n");
+        git(&dir, &["add", "models/a.sql"]);
+        let info = status(&dir);
+        assert!(info.repo);
+        assert_eq!(info.branch, "trunk");
+        assert_eq!(info.git_dir, ".git");
+        assert!(info.upstream.is_empty());
+        assert_eq!(changes(&info.staged), pairs(&[("A ", "models/a.sql")]));
+        assert_eq!(info.untracked, ["models/b.sql"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The codes are what porcelain v1 printed, which the page reads: a space
+    /// where nothing changed, never v2's dot. Paths are relative to the project,
+    /// which here sits one folder down, and a change outside it is left out.
+    #[test]
+    fn every_change_is_listed_under_the_project_with_v1_codes() {
+        let dir = scratch("codes");
+        repo(&dir);
+        for f in ["proj/models/edited.sql", "proj/models/staged.sql", "proj/models/both.sql", "proj/models/gone.sql", "proj/models/my model.sql", "elsewhere.txt"] {
+            write(&dir, f, "select 1\n");
+        }
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "files"]);
+        write(&dir, "proj/models/edited.sql", "select 2\n");
+        write(&dir, "proj/models/staged.sql", "select 2\n");
+        write(&dir, "proj/models/both.sql", "select 2\n");
+        git(&dir, &["add", "proj/models/staged.sql", "proj/models/both.sql"]);
+        write(&dir, "proj/models/both.sql", "select 3\n");
+        std::fs::remove_file(dir.join("proj/models/gone.sql")).unwrap();
+        write(&dir, "proj/models/my model.sql", "select 2\n");
+        write(&dir, "proj/models/added.sql", "select 1\n");
+        git(&dir, &["add", "proj/models/added.sql"]);
+        write(&dir, "proj/new_mart/revenue.sql", "select 1\n");
+        write(&dir, "elsewhere.txt", "changed\n");
+
+        let info = status(&dir.join("proj"));
+        assert!(info.repo && !info.merging);
+        assert_eq!(info.branch, "main");
+        assert!(Path::new(&info.git_dir).is_absolute(), "asked from a subfolder, git answers an absolute path");
+        assert_eq!(
+            changes(&info.staged),
+            pairs(&[("A ", "models/added.sql"), ("MM", "models/both.sql"), ("M ", "models/staged.sql")])
+        );
+        assert_eq!(
+            changes(&info.unstaged),
+            pairs(&[("MM", "models/both.sql"), (" M", "models/edited.sql"), (" D", "models/gone.sql"), (" M", "models/my model.sql")])
+        );
+        assert_eq!(
+            info.modified,
+            ["models/added.sql", "models/both.sql", "models/edited.sql", "models/gone.sql", "models/my model.sql", "models/staged.sql"]
+        );
+        assert_eq!(info.untracked, ["new_mart/"], "a new folder comes collapsed, as v1 gave it");
+        assert!(info.conflicted.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_conflict_is_listed_once_and_a_merge_is_noticed() {
+        let dir = scratch("conflict");
+        repo(&dir);
+        git(&dir, &["checkout", "-q", "-b", "other"]);
+        write(&dir, "README.md", "theirs\n");
+        git(&dir, &["commit", "-q", "-am", "theirs"]);
+        git(&dir, &["checkout", "-q", "main"]);
+        write(&dir, "README.md", "ours\n");
+        git(&dir, &["commit", "-q", "-am", "ours"]);
+        let merge = setup(&dir, &["merge", "-q", "other"]);
+        assert!(!merge.status.success(), "the merge should stop on the conflict");
+        assert!(String::from_utf8_lossy(&merge.stdout).contains("CONFLICT"), "stopped for another reason: {merge:?}");
+
+        let info = status(&dir);
+        assert!(info.merging);
+        assert_eq!(info.conflicted, ["README.md"]);
+        assert_eq!(info.modified, ["README.md"]);
+        assert!(info.staged.is_empty() && info.unstaged.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_upstream_and_how_far_apart_come_with_the_status() {
+        let dir = scratch("upstream");
+        let origin = dir.join("origin");
+        std::fs::create_dir_all(&origin).unwrap();
+        repo(&origin);
+        git(&dir, &["clone", "-q", origin.to_str().unwrap(), "clone"]);
+        let clone = dir.join("clone");
+        write(&origin, "README.md", "two\n");
+        git(&origin, &["commit", "-q", "-am", "upstream moved"]);
+        git(&clone, &["fetch", "-q"]);
+        for n in ["a", "b"] {
+            write(&clone, &format!("{n}.sql"), "select 1\n");
+            git(&clone, &["add", "."]);
+            git(&clone, &["commit", "-q", "-m", n]);
+        }
+
+        let info = status(&clone);
+        assert_eq!((info.branch.as_str(), info.upstream.as_str()), ("main", "origin/main"));
+        assert_eq!((info.ahead, info.behind), (2, 1));
+
+        // A branch whose remote branch was deleted keeps its configuration,
+        // and git still names it, but `rev-parse @{u}` failed for it: the page
+        // offers to publish it again.
+        git(&clone, &["checkout", "-q", "-b", "feature"]);
+        git(&clone, &["push", "-q", "-u", "origin", "feature"]);
+        assert_eq!(status(&clone).upstream, "origin/feature");
+        git(&origin, &["branch", "-q", "-D", "feature"]);
+        git(&clone, &["fetch", "-q", "--prune"]);
+        let gone = status(&clone);
+        assert_eq!(gone.branch, "feature");
+        assert!(gone.upstream.is_empty(), "{}", gone.upstream);
+        assert_eq!((gone.ahead, gone.behind), (0, 0));
+
+        // Detached, there is no branch to name and no upstream to count from.
+        git(&clone, &["checkout", "-q", "--detach", "main"]);
+        let detached = status(&clone);
+        assert!(detached.branch.is_empty() && detached.upstream.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_v2_record_gives_its_code_and_whole_path() {
+        let sha = "0".repeat(40);
+        let change = format!("1 .M N... 100644 100644 100644 {sha} {sha} models/my model.sql");
+        assert_eq!(porcelain_v2(&change), Some((" M".to_string(), "models/my model.sql")));
+        let conflict = format!("u UU N... 100644 100644 100644 100644 {sha} {sha} {sha} a b.sql");
+        assert_eq!(porcelain_v2(&conflict), Some(("UU".to_string(), "a b.sql")));
+        assert_eq!(porcelain_v2("? new dir/"), Some(("??".to_string(), "new dir/")));
+        assert_eq!(porcelain_v2("! ignored.log"), None);
+        assert_eq!(porcelain_v2("# branch.head main"), None);
+        assert_eq!(porcelain_v2(""), None);
+    }
+
+    /// The nap that replaced a fixed 30 ms one, which every call paid however
+    /// quick git was. The fastest of ten is judged rather than their average,
+    /// so a busy CI machine slowing a few of them proves nothing either way.
+    #[test]
+    fn a_quick_command_is_not_held_back() {
+        let dir = scratch("quick");
+        repo(&dir);
+        let fastest = (0..10)
+            .map(|_| {
+                let t = Instant::now();
+                assert!(run(&dir, &["rev-parse", "--git-dir"], &[], Duration::from_secs(20)).ok);
+                t.elapsed()
+            })
+            .min()
+            .unwrap();
+        assert!(fastest < Duration::from_millis(25), "{fastest:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
