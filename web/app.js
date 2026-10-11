@@ -6914,12 +6914,6 @@ function jobsStepLabel(job, step) {
   return `step ${step.n}/${job.steps}` + (step.implicit ? ', from run_generate_sources' : '');
 }
 
-/* What a step does to what it selects, when that is not running it. */
-function jobsVerbNote(step) {
-  if (step.unresolved || step.executes) return '';
-  return { compile: 'compiles only', clone: 'clones only', ls: 'lists only', show: 'previews only' }[step.verb] || '';
-}
-
 /* The lines that tie a job to others. */
 function jobsJobLinks(job) {
   const rows = [];
@@ -7057,11 +7051,15 @@ async function loadJobs() {
   const run = ++S.jobsRun;
   const body = $('#jobs-body');
   paintJobsHead();
+  const id = S.focus;
   // The proposed shape is the server's, so the example cannot drift from it.
-  if (!S.jobsKeys) {
-    try { S.jobsKeys = (await api.get('/api/jobs')).airflow_keys; }
+  // With no node, whether any source is set decides what the tab offers.
+  let summary = null;
+  if (!S.jobsKeys || (S.jobsView === 'node' && !id)) {
+    try { summary = await api.get('/api/jobs'); }
     catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
     if (run !== S.jobsRun) return;
+    S.jobsKeys = summary.airflow_keys;
   }
   if (S.jobsView === 'coverage') {
     let cov;
@@ -7070,10 +7068,9 @@ async function loadJobs() {
     if (run === S.jobsRun) renderCoverage(body, cov);
     return;
   }
-  const id = S.focus;
   if (!id) {
-    body.replaceChildren(Object.assign(document.createElement('div'), {
-      className: 'compiled-empty', textContent: 'Select a model first.' }));
+    if (!summary.sources.length) return jobsNoSource(body);
+    body.replaceChildren(jel('div', 'compiled-empty', 'Select a model first, or open Coverage for the whole project.'));
     return;
   }
   let view;
@@ -7109,15 +7106,19 @@ function jobsNoSource(body) {
     jel('p', '', 'Which jobs run this model is read from your orchestrator\'s YAML, wherever it lives, '
       + 'often in another repository. Name the folder, and say which format it is in.'),
   );
-  const add = jel('button', 'btn sm primary', 'Add a source');
+  const add = jel('button', 'btn primary', 'Add a source');
   add.addEventListener('click', openJobSources);
   box.append(add);
-  const formats = jel('div', 'jobs-formats');
+  // Folded, so the one thing to do stays in the middle of the tab.
+  const formats = jel('details', 'jobs-formats');
+  formats.append(jel('summary', '', 'The two formats read'));
+  const figs = jel('div', 'jobs-figs');
   for (const [title, kind] of [['Airflow, one file per DAG; every key can be renamed', 'airflow'], ['dbt Cloud, in dbt-jobs-as-code\'s schema', 'dbt_cloud']]) {
     const fig = jel('figure', 'jobs-example');
     fig.append(jel('figcaption', '', title), jel('pre', '', jobsExample(kind, {}, (S.jobsKeys || []))));
-    formats.append(fig);
+    figs.append(fig);
   }
+  formats.append(figs);
   box.append(formats);
   body.replaceChildren(box);
 }
@@ -7143,8 +7144,6 @@ function jobsCard(group, { reason = false } = {}) {
   for (const step of group.steps) {
     const line = jel('div', 'jobstep');
     line.append(jel('span', 'steplbl', jobsStepLabel(job, step)));
-    const note = jobsVerbNote(step);
-    if (note) line.append(jel('span', 'stepnote', note));
     line.append(jel('code', 'stepcmd', step.shown));
     if (step.ls) {
       const ls = jel('button', 'btn sm', 'dbt ls');
@@ -7337,7 +7336,7 @@ async function openJobSources() {
   foot.append(addAirflow, addCloud, jel('div', 'grow'), save);
   body.append(
     jel('p', 'muted', 'Folders or files holding your jobs, relative to the project or absolute. '
-      + 'An Airflow key is a dotted path: pipeline.name is name under pipeline:. Leave one empty for the shape shown.'),
+      + 'An Airflow key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
     list, foot, saved);
   paint();
   await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true });

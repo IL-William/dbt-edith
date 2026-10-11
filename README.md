@@ -1106,7 +1106,9 @@ The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
 the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
 step of it. The jobs are read from their YAML, wherever it lives, which is often
 another repository, and each step's dbt command is resolved by the same engine
-as Custom selection, never by running dbt.
+as Custom selection, never by running dbt. Only a step that runs, builds, tests
+or checks the node is listed: a `dbt compile` selects every model and runs
+none, so its job would sit under each of them.
 
 ```
 AIRFLOW  DAG shop_daily   0 5 * * *                      orchestration · sales/shop_daily.yml:2

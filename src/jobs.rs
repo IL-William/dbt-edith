@@ -736,7 +736,6 @@ pub struct StepView {
     pub verb: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub ls: String,
-    pub executes: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub implicit: bool,
     /// The terms of its selection that reach the node asked about.
@@ -830,7 +829,6 @@ fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepVi
         shown: s.shown.clone(),
         verb: s.verb().map(|v| v.name().to_string()).unwrap_or_default(),
         ls: s.inv.as_ref().and_then(Invocation::ls).unwrap_or_default(),
-        executes: s.executes(),
         implicit: s.implicit,
         via: Vec::new(),
         upstream: s.upstream.clone(),
@@ -906,14 +904,19 @@ fn grouped(graph: &Graph, read: &Read, hits: &[usize], node: Option<u32>) -> Vec
     groups
 }
 
-/// Every step that acts on one node, grouped by job.
+/// Every step that runs, builds, tests or checks one node, grouped by job. A
+/// `dbt compile` selects every model without running one, so it would put its
+/// job under every node; the steps that only compile, clone, list or preview
+/// are left out, as coverage leaves them out.
 pub fn for_node(graph: &Graph, read: &Read, node: u32) -> NodeJobs {
     let kind = graph.nodes[node as usize].kind;
-    let hits: Vec<usize> = (0..read.steps.len()).filter(|&i| read.steps[i].nodes.binary_search(&node).is_ok()).collect();
+    let hits: Vec<usize> =
+        (0..read.steps.len()).filter(|&i| read.steps[i].executes() && read.steps[i].nodes.binary_search(&node).is_ok()).collect();
     let maybe: Vec<usize> = (0..read.steps.len())
         .filter(|&i| {
             let s = &read.steps[i];
-            !s.unresolved.is_empty() && s.inv.as_ref().is_none_or(|inv| inv.kinds().is_some_and(|k| k.contains(&kind)))
+            !s.unresolved.is_empty()
+                && s.inv.as_ref().is_none_or(|inv| inv.verb.executes() && inv.kinds().is_some_and(|k| k.contains(&kind)))
         })
         .collect();
     NodeJobs {
@@ -1366,15 +1369,23 @@ jobs:
         let d = dir("node");
         write(&d, "daily.yml", DAG);
         write(&d, "cloud/jobs.yml", CLOUD);
+        // Selects orders, and every other model, without running any of them.
+        write(
+            &d,
+            "warm.yml",
+            "dag_id: warm\nschedule: \"@daily\"\ntasks:\n  - task_id: c\n    command: dbt compile\n  - task_id: l\n    command: dbt ls -s orders\n  - task_id: s\n    command: dbt compile -s state:modified\n",
+        );
         let g = graph();
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[]), source(DBT_CLOUD, &d.join("cloud"), &[])]);
         let orders = g.index["model.shop.orders"];
+        assert!(read.steps.iter().filter(|s| s.nodes.binary_search(&orders).is_ok()).count() > 2);
         let jobs = for_node(&g, &read, orders);
         let names: Vec<&str> = jobs.groups.iter().map(|g| g.job.name.as_str()).collect();
         assert_eq!(names, ["shop_daily", "Daily build"]);
         assert_eq!(jobs.groups[0].steps[0].via, ["+tag:daily"]);
         assert_eq!(jobs.groups[1].steps[0].via, ["+orders"]);
-        // The CI step and the templated one could hold any model.
+        // The CI step and the templated one could hold any model; an
+        // unresolved compile could not run it.
         assert_eq!(jobs.maybe.iter().map(|g| g.job.name.as_str()).collect::<Vec<_>>(), ["CI", "Templated"]);
     }
 

@@ -33,9 +33,6 @@ check('a task with no id', jobsStepLabel({ kind: 'airflow' }, { name: '', n: 2 }
 check('a dbt Cloud step by its place', jobsStepLabel({ kind: 'dbt_cloud', steps: 3 }, { n: 2 }), 'step 2/3');
 check('the step dbt Cloud adds', jobsStepLabel({ kind: 'dbt_cloud', steps: 3 }, { n: 1, implicit: true }),
       'step 1/3, from run_generate_sources');
-check('compile is said', jobsVerbNote({ verb: 'compile', executes: false }), 'compiles only');
-check('run says nothing', jobsVerbNote({ verb: 'run', executes: true }), '');
-check('an unresolved step says its reason elsewhere', jobsVerbNote({ verb: 'compile', executes: false, unresolved: 'x' }), '');
 
 print('\n--- what ties them to others ---');
 check('a job\'s sensors, triggers and environment',
