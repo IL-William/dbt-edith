@@ -2954,6 +2954,11 @@ async function refreshGit() {
 async function refreshFreshness() {
   try {
     const f = await api.get('/api/freshness');
+    // A poll that read run_results.json while dbt was writing it got the time
+    // without the counts; if dbt finished within the same second, the stamp
+    // did not move, so the index is asked again until it has them.
+    const run = S.reports && S.reports.run;
+    if (run && typeof run.error !== 'number') loadReportsIndex();
     const key = JSON.stringify(f);
     if (key === S.freshKey) return;
     S.freshKey = key;
@@ -7468,7 +7473,8 @@ function runNotes(run) {
   if (run.unknown && run.unknown.of) {
     warn.push(`${plural(run.unknown.of, 'result names a node', 'results name nodes')} the manifest no longer has.`);
   }
-  if (['compile', 'show', 'docs', 'generate'].includes(run.command)) {
+  // Commands that build nothing, and still write the file over the last run.
+  if (['compile', 'show', 'docs generate', 'run-operation'].includes(run.command)) {
     dim.push(`dbt ${run.command} wrote this file over the one before, so what the last run did is no longer in it.`);
   }
   if (!ran) dim.push('It ran no node.');
@@ -7804,6 +7810,14 @@ function openRunEntry(e) {
   if (e.kind === 'test') {
     closeReports();
     openTest(e, { pin: true });
+    return;
+  }
+  // A unit test is no node of the graph: its YAML is all there is to open.
+  if (e.kind === 'unit_test') {
+    closeReports();
+    pushJump();
+    openFile(e.file);
+    revealInTree(e.file);
     return;
   }
   openFromReport(e.id, { dock: e.kind === 'model' || e.kind === 'snapshot' ? 'run' : '' });

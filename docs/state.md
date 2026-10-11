@@ -913,10 +913,13 @@ terminal's to say. A section of Reports now reads `target/run_results.json`
 as dbt left it: the command and its selection, a tile per kind with what ran
 against what the manifest holds, the errors and failed tests with dbt's
 message, the warnings, the skipped nodes and the slowest. A model opens with
-its Run tab, a test at its line. What the command did not reach is counted,
-never listed, and the section says when the manifest was written since, when
-the run names tables the manifest names otherwise, and when `compile` wrote
-the file over a run. Errors and failed tests ride on the Reports button, the
+its Run tab, a test at its line, a unit test at its YAML, read from the
+manifest's own section of them. What the command did not reach is counted,
+never listed, an ephemeral model aside since it never runs on its own; and the
+section says when the manifest was written since, when the run names tables
+the manifest names otherwise, and when `compile`, `show`, `docs generate` or
+`run-operation` wrote the file over a run. A macro run by `run-operation` or
+`show --inline`'s query is no node gone from the manifest. Errors and failed tests ride on the Reports button, the
 index parsing the file once per write through `files::Cached`, which the
 section reads too. Statuses read in dbt-core's spelling and in Fusion's.
 Driven in headless Chrome on Jaffle Shop after a real `dbt build` with a model
@@ -1310,7 +1313,10 @@ cross-compile.
 - **`run_results.json` is parsed by the index too**, once per write, through
   the cache `/api/reports/run` reads (`files::Cached`): the button counts its
   errors and failed tests. A file dbt is still writing fails the parse, and the
-  index then lists the run by its time alone. Of `args`, only `which` or
+  index then lists the run by its time alone; the cache keeps that failure for
+  the same size and time, and the page asks the index again on every poll
+  until the counts are there, since dbt can finish within the second the
+  stamp already holds. Of `args`, only `which` or
   `command` and the three selection flags are declared: `invocation_command`
   and `vars` hold what the user typed, secrets included (0065).
 - **The page hears of a report written outside it through `reports_at`** in

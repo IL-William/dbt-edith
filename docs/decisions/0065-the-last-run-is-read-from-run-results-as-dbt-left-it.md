@@ -18,14 +18,19 @@ where a failure should be said.
 - **The file is read as dbt left it, and never kept.** dbt writes it again on
   every command that runs or compiles nodes, so it describes one invocation.
   The section names the command and its selection, says when the file was
-  written, and says so when `compile`, `show` or `docs generate` wrote it.
+  written, and says so when `compile`, `show`, `docs generate` or
+  `run-operation` wrote it over a run.
 - **Only the selection leaves.** `--select`, `--exclude` and `--selector`, and
   never `invocation_command`, `vars` or `env`, where a secret would sit, nor a
   result's `adapter_response` or compiled code (0012). A message is cut to
-  600 characters: the first lines, not the log.
+  600 characters: the first lines, not the log. dbt's message can quote a line
+  of the compiled SQL, which the Run tab already shows whole.
 - **A node absent from the file was not run**, which says nothing about it.
-  Each kind is counted as how many ran of how many the manifest holds; what
-  did not run is never listed.
+  Each kind is counted as how many ran of how many the manifest holds, an
+  ephemeral model aside since it never runs on its own; what did not run is
+  never listed. A result is gone from the manifest only for a kind the manifest
+  holds: unit tests are read from their own section of it, and a macro run by
+  `run-operation` or `show --inline`'s query never was a node.
 - **Whose run it is is said, not guessed.** The run and the manifest are the
   same invocation when their ids agree; a manifest written since says the
   project may have moved on; a table named otherwise than in the manifest

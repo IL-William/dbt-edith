@@ -204,10 +204,19 @@ pub fn counts(raw: &Raw) -> Counts {
     c
 }
 
+/// The command as it is typed: dbt-core names `docs generate` by its last
+/// word alone.
 fn command(raw: &Raw) -> String {
     let which = if raw.args.which.is_empty() { &raw.args.command } else { &raw.args.which };
-    which.trim().to_string()
+    match which.trim() {
+        "generate" => "docs generate".to_string(),
+        other => other.to_string(),
+    }
 }
+
+/// The kinds of node the graph holds, which a result can be missing from:
+/// a macro run by `run-operation` or `show --inline`'s query never is one.
+const INDEXED: [&str; 8] = ["model", "seed", "snapshot", "test", "source", "analysis", "exposure", "operation"];
 
 /// `--select a b`, as dbt was given it, a list or a string alike.
 fn terms(flag: &str, v: &Value) -> Option<String> {
@@ -250,6 +259,12 @@ fn kind_of(id: &str, node: Option<&Node>) -> String {
     }
 }
 
+/// Whether a node of this kind runs on its own: an ephemeral model is
+/// inlined into the models that read it and never in the results.
+fn runs(n: &Node) -> bool {
+    !n.disabled && n.materialized != "ephemeral"
+}
+
 /// The run against the manifest the page holds. `at` is the file's time and
 /// `manifest_invocation` the id the manifest was written under.
 pub fn report(raw: &Raw, graph: &Graph, at: u64, manifest_invocation: &str) -> Report {
@@ -268,15 +283,21 @@ pub fn report(raw: &Raw, graph: &Graph, at: u64, manifest_invocation: &str) -> R
     let mut other_target = 0;
     for r in &raw.results {
         let node = graph.index.get(&r.unique_id).map(|&i| &graph.nodes[i as usize]);
-        if node.is_none() && !r.unique_id.is_empty() {
+        let unit = graph.unit_tests.get(&r.unique_id);
+        let kind = kind_of(&r.unique_id, node);
+        // A node of a kind the graph holds and missing from it is gone from
+        // the manifest; a macro or an inline query never was in it.
+        let gone = node.is_none() && unit.is_none() && INDEXED.contains(&kind.as_str());
+        if gone && !r.unique_id.is_empty() {
             unknown.push(r.unique_id.clone());
         }
         let st = status(r.status.as_str().unwrap_or(""));
-        let kind = kind_of(&r.unique_id, node);
         *statuses.entry(st.clone()).or_default() += 1;
-        let k = kinds.entry(kind.clone()).or_insert_with(|| KindRun { kind: kind.clone(), ran: 0, of: 0, statuses: BTreeMap::new() });
-        k.ran += 1;
-        *k.statuses.entry(st.clone()).or_default() += 1;
+        if !gone {
+            let k = kinds.entry(kind.clone()).or_insert_with(|| KindRun { kind: kind.clone(), ran: 0, of: 0, statuses: BTreeMap::new() });
+            k.ran += 1;
+            *k.statuses.entry(st.clone()).or_default() += 1;
+        }
         if let (Some(n), Some(rel)) = (node, r.relation_name.as_str()) {
             if !rel.is_empty() && !n.relation.is_empty() && relation_key(rel) != relation_key(&n.relation) {
                 other_target += 1;
@@ -284,9 +305,12 @@ pub fn report(raw: &Raw, graph: &Graph, at: u64, manifest_invocation: &str) -> R
         }
         let entry = Entry {
             id: r.unique_id.clone(),
-            name: node.map(|n| n.name.clone()).unwrap_or_else(|| r.unique_id.rsplit('.').next().unwrap_or("").to_string()),
+            name: node
+                .map(|n| n.name.clone())
+                .or_else(|| unit.map(|u| u.name.clone()))
+                .unwrap_or_else(|| r.unique_id.rsplit('.').next().unwrap_or("").to_string()),
             kind,
-            file: node.map(|n| n.on_disk().to_string()).unwrap_or_default(),
+            file: node.map(|n| n.on_disk().to_string()).or_else(|| unit.map(|u| u.file.clone())).unwrap_or_default(),
             status: st.clone(),
             secs: r.execution_time.unwrap_or(0.0),
             failures: r.failures.as_u64(),
@@ -303,10 +327,13 @@ pub fn report(raw: &Raw, graph: &Graph, at: u64, manifest_invocation: &str) -> R
         }
         all.push(entry);
     }
-    for n in graph.nodes.iter().filter(|n| !n.disabled) {
+    for n in graph.nodes.iter().filter(|n| runs(n)) {
         if let Some(k) = kinds.get_mut(n.kind.as_str()) {
             k.of += 1;
         }
+    }
+    if let Some(k) = kinds.get_mut("unit_test") {
+        k.of = graph.unit_tests.len();
     }
 
     // In an order that is the same on every start (0055): what to look at
@@ -364,11 +391,18 @@ mod tests {
                     "original_file_path": "models/payments.sql", "fqn": ["shop", "payments"] },
                 "seed.shop.raw": { "name": "raw", "resource_type": "seed", "package_name": "shop",
                     "original_file_path": "seeds/raw.csv", "fqn": ["shop", "raw"] },
+                "model.shop.inlined": { "name": "inlined", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/inlined.sql", "fqn": ["shop", "inlined"],
+                    "config": { "materialized": "ephemeral" } },
                 "test.shop.not_null_orders_id.abc": { "name": "not_null_orders_id", "resource_type": "test",
                     "package_name": "shop", "original_file_path": "models/schema.yml", "fqn": ["shop", "not_null_orders_id"],
                     "column_name": "id", "attached_node": "model.shop.orders",
                     "test_metadata": { "name": "not_null", "kwargs": {} },
                     "depends_on": { "nodes": ["model.shop.orders"] } },
+            },
+            "unit_tests": {
+                "unit_test.shop.orders.counts_refunds": { "name": "counts_refunds", "resource_type": "unit_test",
+                    "original_file_path": "models/orders.yml" },
             },
         }))
         .unwrap();
@@ -421,7 +455,7 @@ mod tests {
         assert!(!r.same_invocation && !r.older_than_manifest, "the run came after the manifest");
         assert_eq!(r.other_target, 0, "the same table, quoted the same way");
         let models = r.kinds.iter().find(|k| k.kind == "model").unwrap();
-        assert_eq!((models.ran, models.of), (3, 3), "the gone model is counted as run, a model by its id");
+        assert_eq!((models.ran, models.of), (2, 3), "payments did not run, the gone model is not counted, the ephemeral one never runs");
         assert_eq!(r.problems.items.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), vec!["orders"]);
         let e = &r.problems.items[0];
         assert_eq!((e.file.as_str(), e.message.as_str()), ("models/orders.sql", "Database Error in model orders\n  syntax error"));
@@ -431,6 +465,31 @@ mod tests {
         assert_eq!(r.slowest[0].name, "customers");
         assert_eq!(r.unknown.items, vec!["model.shop.gone"]);
         assert_eq!(r.statuses.get("noop"), Some(&1));
+    }
+
+    #[test]
+    fn a_unit_test_a_macro_and_an_inline_query_are_no_node_gone() {
+        let g = graph();
+        let raw = parse(br#"{"args":{"which":"build"},"results":[
+            {"unique_id":"unit_test.shop.orders.counts_refunds","status":"fail","failures":1},
+            {"unique_id":"macro.shop.grant_select","status":"success"},
+            {"unique_id":"sql_operation.shop.inline_query","status":"success"}]}"#)
+        .unwrap();
+        let r = report(&raw, &g, 200, "");
+        assert_eq!(r.unknown.of, 0, "{:?}", r.unknown.items);
+        let unit = &r.problems.items[0];
+        assert_eq!((unit.name.as_str(), unit.file.as_str(), unit.kind.as_str()), ("counts_refunds", "models/orders.yml", "unit_test"));
+        let units = r.kinds.iter().find(|k| k.kind == "unit_test").unwrap();
+        assert_eq!((units.ran, units.of), (1, 1));
+        assert!(r.kinds.iter().any(|k| k.kind == "macro" && k.ran == 1));
+    }
+
+    #[test]
+    fn docs_generate_is_named_as_it_is_typed() {
+        let raw = parse(br#"{"args":{"which":"generate"},"results":[]}"#).unwrap();
+        assert_eq!(report(&raw, &graph(), 200, "").command, "docs generate");
+        let op = parse(br#"{"args":{"which":"run-operation"},"results":[]}"#).unwrap();
+        assert_eq!(counts(&op).command, "run-operation");
     }
 
     #[test]

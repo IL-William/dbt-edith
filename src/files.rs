@@ -25,8 +25,10 @@ pub fn mtime_secs(path: &Path) -> u64 {
 /// A file parsed once and kept until its size or modification time changes:
 /// dbt's artifacts run to megabytes, and the page asks again on every showing.
 /// None when the file is not there, and the parser's error when it is there
-/// and cannot be read, as when dbt is still writing it.
-pub struct Cached<T>(std::sync::Mutex<Option<(u64, Option<std::time::SystemTime>, std::sync::Arc<T>)>>);
+/// and cannot be read, as when dbt is still writing it. The error is kept as
+/// an answer is, so a file left broken is not read again on every poll.
+#[allow(clippy::type_complexity)]
+pub struct Cached<T>(std::sync::Mutex<Option<(u64, Option<std::time::SystemTime>, Result<std::sync::Arc<T>, String>)>>);
 
 impl<T> Default for Cached<T> {
     fn default() -> Self {
@@ -44,13 +46,12 @@ impl<T> Cached<T> {
         let (len, modified) = (meta.len(), meta.modified().ok());
         if let Some((l, m, held)) = slot.as_ref() {
             if *l == len && *m == modified {
-                return Ok(Some(held.clone()));
+                return held.clone().map(Some);
             }
         }
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-        let parsed = std::sync::Arc::new(parse(&bytes)?);
+        let parsed = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| parse(&bytes)).map(std::sync::Arc::new);
         *slot = Some((len, modified, parsed.clone()));
-        Ok(Some(parsed))
+        parsed.map(Some)
     }
 }
 

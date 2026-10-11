@@ -1220,7 +1220,8 @@ every `build`, `run`, `test`, `seed` or `snapshot`, and after `compile` too. It
 names the command and its selection, then counts what ran of each kind against
 what the manifest holds, and lists the errors and failed tests with dbt's
 message, the warnings, the skipped nodes and the slowest. A model opens with its
-Run tab, the SQL dbt executed; a test opens at its line in its YAML. A node the
+Run tab, the SQL dbt executed; a test opens at its line in its YAML, and a unit
+test at its YAML. A node the
 command did not reach is counted, never listed: not run says nothing about it.
 The section says when the manifest was written after the run, or when the run
 names tables the manifest names otherwise, likely another target. Errors and

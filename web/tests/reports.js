@@ -117,3 +117,11 @@ check('the coverage\'s in the warning colour', three[2].tone, 'warn');
 check('several at once: their counts alone', reportsChipTexts(three), ['3', '3', '+2']);
 check('one alone: its words', reportsChipTexts([three[2]]), ['2 more unscheduled']);
 check('none: nothing', reportsChipTexts([]), []);
+
+print('\n--- commands that build nothing ---');
+['compile', 'show', 'docs generate', 'run-operation'].forEach(function (c) {
+  check('dbt ' + c + ' wrote over the last run', runNotes({ command: c, kinds: [], unknown: { of: 0 } })[0].text,
+        'dbt ' + c + ' wrote this file over the one before, so what the last run did is no longer in it.');
+});
+check('a clone is a run', runNotes({ command: 'clone', kinds: [{ kind: 'model', ran: 2, of: 2, statuses: { ok: 2 } }], unknown: { of: 0 } }).length, 0);
+check('kinds dbt writes besides nodes read as headings', [runKindPlural('sql_operation', true), runKindPlural('macro', true)], ['Sql operations', 'Macros']);

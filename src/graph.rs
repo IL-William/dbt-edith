@@ -276,6 +276,15 @@ pub struct Graph {
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
     pub meta: Meta,
+    /// Unit tests by id: their name and YAML file. Not nodes: no lineage,
+    /// selection or search answers with one, only the last run names them.
+    pub unit_tests: BTreeMap<String, UnitTest>,
+}
+
+#[derive(Clone)]
+pub struct UnitTest {
+    pub name: String,
+    pub file: String,
 }
 
 /// The node whose YAML declares test `t`: dbt's `attached_node`, or else the
@@ -305,6 +314,11 @@ impl Node {
 
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
+        let unit_tests = raw
+            .unit_tests
+            .into_iter()
+            .map(|(id, u)| (id, UnitTest { name: u.name, file: u.original_file_path.replace('\\', "/") }))
+            .collect();
         let macros = Macros::build(raw.macros, &raw.metadata.project_name);
         let selectors = Selectors::build(raw.selectors);
         let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len() + raw.sources.len());
@@ -627,6 +641,7 @@ impl Graph {
             selectors,
             catalog_mtime: 0,
             cll: None,
+            unit_tests,
         }
     }
 
