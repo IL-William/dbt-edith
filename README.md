@@ -1206,8 +1206,12 @@ or a dock tab rolls the panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
 closes it. The button stays hidden while no section has anything to show.
 
-What is new since you last looked rides on the button, collin's "12 to
-investigate" for instance, and the panel opens on it. A section is read again
+What is new since you last looked rides on the button, a chip per report in
+its colour: the last run's errors and failed tests in red, collin's models to
+investigate in pink, and in orange how many more models no scheduled job runs
+than when you last looked at the coverage. Alone, a chip says its words, "12 to
+investigate"; with others, its count alone, so the button stays short, and the
+tooltip says each in full. The panel opens on the first of them. A section is read again
 each time it is shown, and never redrawn while you read it: when its file
 changes underneath, its **Read again** button says so (0064).
 

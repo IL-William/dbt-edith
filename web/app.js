@@ -73,6 +73,7 @@ const S = {
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
   reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
   runSeen: undefined,         // the last run's file time when its section was last shown, for the news
+  jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
 };
 
 // ------------------------------------------------------------------ util --
@@ -4551,7 +4552,7 @@ function collinBadge(cl, seen) {
   if (!cl || cl.state !== 'done' || !cl.report || !cl.report.to_investigate) return null;
   if ((cl.run || 0) <= (seen || 0)) return null;
   const n = cl.report.to_investigate;
-  return { text: `${n} to investigate`, count: n,
+  return { text: `${n} to investigate`, short: String(n),
     title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.` };
 }
 
@@ -7372,13 +7373,35 @@ function reportsSections(index) {
 }
 
 /* What is new in the reports since each was last shown, in the sections'
-   order: what runBadge says of the last run, what collinBadge says of
-   collin's. The button carries it, and nothing opens by itself (0059). */
-function reportsNews(collin, run) {
+   order: what runBadge says of the last run, collinBadge of collin's,
+   jobsBadge of the coverage. The button carries it, and nothing opens by
+   itself (0059). */
+function reportsNews(collin, run, jobs) {
   const news = [];
-  if (run) news.push({ key: 'run', tone: 'bad', text: run.text, count: run.count, title: run.title });
-  if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, count: collin.count, title: collin.title });
+  if (run) news.push({ key: 'run', tone: 'bad', text: run.text, short: run.short, title: run.title });
+  if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, short: collin.short, title: collin.title });
+  if (jobs) news.push({ key: 'jobs', tone: 'warn', text: jobs.text, short: jobs.short, title: jobs.title });
   return news;
+}
+
+/* What the chips on the button say: a report's words when it is the only one
+   with news, its count alone when several are, so the button stays short;
+   the tooltip has the words either way. */
+function reportsChipTexts(news) {
+  return (news || []).map((n) => (news.length > 1 ? n.short : n.text));
+}
+
+/* How many more models, seeds and snapshots no scheduled job runs than when
+   the coverage was last shown (0066). Fewer is no news, and the page lowers
+   what it last saw to match, so that a later rise counts from there. */
+function jobsBadge(jobs, seen) {
+  if (!jobs || typeof jobs.never !== 'number' || typeof seen !== 'number') return null;
+  const now = jobs.never + (jobs.unscheduled || 0);
+  if (now <= seen) return null;
+  const n = now - seen;
+  return { text: `${n} more unscheduled`, short: `+${n}`,
+    title: `${n} more model${n > 1 ? 's' : ''}, seed${n > 1 ? 's' : ''} or snapshot${n > 1 ? 's' : ''} than when you last looked `
+      + `${n > 1 ? 'are' : 'is'} run by no scheduled job: ${jobs.never} in no job, ${jobs.unscheduled || 0} manual only.` };
 }
 
 /* What the last run leaves on the button until its section is shown: its
@@ -7391,7 +7414,7 @@ function runBadge(run, seen) {
   const what = run.command ? `dbt ${run.command}` : 'The last dbt command';
   const said = [errors, run.fail ? `${run.fail} failed test${run.fail > 1 ? 's' : ''}` : ''].filter(Boolean);
   return { text: [errors, run.fail ? `${run.fail} failed` : ''].filter(Boolean).join(', '),
-    count: (run.error || 0) + (run.fail || 0), title: `${what} ended with ${said.join(' and ')}.` };
+    short: String((run.error || 0) + (run.fail || 0)), title: `${what} ended with ${said.join(' and ')}.` };
 }
 
 /* A dbt outcome as the section says it. One it does not know is shown as
@@ -7527,8 +7550,14 @@ function reportsNow() {
   // A run finished before the page loaded is not news to anyone.
   if (S.collinSeen === undefined && S.collin) S.collinSeen = S.collin.run || 0;
   if (S.runSeen === undefined && S.reports) S.runSeen = S.reports.run ? S.reports.run.at : 0;
+  const jobs = S.reports && S.reports.jobs;
+  if (jobs && typeof jobs.never === 'number') {
+    const now = jobs.never + (jobs.unscheduled || 0);
+    if (S.jobsSeen === undefined || now < S.jobsSeen) S.jobsSeen = now;
+  }
   const run = runBadge(S.reports && S.reports.run, S.runSeen);
-  return { sections: reportsSections(S.reports), news: reportsNews(collinBadge(S.collin, S.collinSeen), run) };
+  return { sections: reportsSections(S.reports),
+    news: reportsNews(collinBadge(S.collin, S.collinSeen), run, jobsBadge(jobs, S.jobsSeen)) };
 }
 
 function paintReportsButton() {
@@ -7538,7 +7567,8 @@ function paintReportsButton() {
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
-  btn.querySelector('.rnews').replaceChildren(...news.map(newsChip));
+  const texts = reportsChipTexts(news);
+  btn.querySelector('.rnews').replaceChildren(...news.map((n, i) => newsChip(Object.assign({}, n, { text: texts[i] }))));
 }
 
 /* Rolls the panel down over the editor and the dock, on the section asked
@@ -7601,7 +7631,7 @@ function paintReportsNav() {
     row.append(dot, jel('span', '', sec.label));
     // The rail is narrow: the count alone, the words being on the button.
     const n = news.find((x) => x.key === sec.key);
-    if (n) row.append(newsChip(Object.assign({}, n, { text: String(n.count) })));
+    if (n) row.append(newsChip(Object.assign({}, n, { text: n.short })));
     row.addEventListener('click', () => showReportSection(sec.key));
     return row;
   }));
@@ -7693,6 +7723,15 @@ async function showReportSection(key) {
   restoreReportPlace(view, S.reportsPlace[key]);
   if (key === 'collin' && S.collin) S.collinSeen = S.collin.run || 0;
   if (key === 'run' && shown) S.runSeen = shown.at;
+  // The coverage is counted by the index only once the jobs were read, which
+  // this section has just done: read again, so the counts it shows are seen.
+  if (key === 'jobs') {
+    await loadReportsIndex();
+    if (ask !== S.reportsAsk) return;
+    const jobs = S.reports && S.reports.jobs;
+    S.reportsShown = jobs || null;
+    if (jobs && typeof jobs.never === 'number') S.jobsSeen = jobs.never + (jobs.unscheduled || 0);
+  }
   paintReportsButton();
   paintReportsNav();
 }

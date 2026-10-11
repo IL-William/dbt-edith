@@ -843,10 +843,22 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
     let manifest_at = st.graph.read().await.meta.manifest_mtime;
     let run = last_run_counts(&st).await;
+    // The coverage's counts, for its news on the button, once the jobs were
+    // read and never by looking at their files (0066).
+    let counts = if sources > 0 && st.jobs.read_once() {
+        with_jobs(&st, false, |graph, read| {
+            let c = crate::jobs::coverage(graph, read);
+            JobsCounts { never: c.never.len(), unscheduled: c.unscheduled.len() }
+        })
+        .await
+        .ok()
+    } else {
+        None
+    };
     Json(ReportsIndex {
         run,
         collin: (report > 0).then_some(Stamp { at: report }),
-        jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at }),
+        jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at, counts }),
     })
     .into_response()
 }
@@ -924,6 +936,15 @@ struct Stamp {
 struct JobsIndex {
     sources: usize,
     at: u64,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    counts: Option<JobsCounts>,
+}
+
+/// Models, seeds and snapshots run by no job, and by none that is scheduled.
+#[derive(serde::Serialize)]
+struct JobsCounts {
+    never: usize,
+    unscheduled: usize,
 }
 
 /// The newest report file under `target/`, in seconds, polled with the
@@ -4124,6 +4145,9 @@ mod tests {
         assert!(node.contains(r#""shown":"dbt run --select orders --vars …""#), "{node}");
         let coverage = body_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
         assert!(coverage.contains(r#""never":[{"id":"model.shop.customers""#), "{coverage}");
+        // Read once, the coverage is counted in the Reports index, for its news.
+        let index = body_of(port, get("/api/reports", &[("Host", &host)])).await;
+        assert!(index.contains(r#""jobs":{"sources":1,"at":0,"never":1,"unscheduled":0}"#), "{index}");
         let step = body_of(port, get("/api/jobs/step?n=0", &[("Host", &host)])).await;
         assert!(step.contains(r#""ids":["model.shop.orders"],"names":["orders"]"#), "{step}");
         for answer in [&saved, &node, &coverage, &step] {

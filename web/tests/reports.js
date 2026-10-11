@@ -23,9 +23,9 @@ check('each in its tool\'s colour', reportsSections({ collin: { at: 5 } })[0].to
 
 print('\n--- what is new ---');
 check('nothing from collin, nothing new', reportsNews(null), []);
-var badge = { text: '3 to investigate', count: 3, title: 'collin\'s last run names 3 models or tables to look at.' };
+var badge = { text: '3 to investigate', short: '3', title: 'collin\'s last run names 3 models or tables to look at.' };
 check('collin\'s badge becomes news on the button', reportsNews(badge),
-      [{ key: 'collin', tool: 'collin', text: '3 to investigate', count: 3, title: badge.title }]);
+      [{ key: 'collin', tool: 'collin', text: '3 to investigate', short: '3', title: badge.title }]);
 
 print('\n--- where it opens ---');
 var both = reportsSections({ collin: { at: 5 }, jobs: { sources: 1, at: 3 } });
@@ -57,13 +57,13 @@ print('\n--- the last run ---');
 check('listed first once dbt wrote a run', keys(reportsSections({ collin: { at: 5 }, run: { at: 9 } })), ['run', 'collin']);
 var run = { at: 9, command: 'build', error: 1, fail: 2, warn: 3 };
 check('its errors and failures are news', runBadge(run, 5),
-      { text: '1 error, 2 failed', count: 3, title: 'dbt build ended with 1 error and 2 failed tests.' });
+      { text: '1 error, 2 failed', short: '3', title: 'dbt build ended with 1 error and 2 failed tests.' });
 check('once only: a run already seen is not', runBadge(run, 9), null);
 check('nor a run that went well', runBadge({ at: 9, command: 'run', error: 0, fail: 0, warn: 4 }, 0), null);
 check('nor a file still being written, with no counts', runBadge({ at: 9 }, 0), null);
 check('errors alone', runBadge({ at: 9, command: 'run', error: 2, fail: 0 }, 0).title, 'dbt run ended with 2 errors.');
 check('a command the file does not name', runBadge({ at: 9, error: 1 }, 0).title, 'The last dbt command ended with 1 error.');
-check('one failed test', runBadge({ at: 9, command: 'test', fail: 1 }, 0), { text: '1 failed', count: 1, title: 'dbt test ended with 1 failed test.' });
+check('one failed test', runBadge({ at: 9, command: 'test', fail: 1 }, 0), { text: '1 failed', short: '1', title: 'dbt test ended with 1 failed test.' });
 check('the run\'s news comes before collin\'s, in red',
       reportsNews(badge, runBadge(run, 0)).map(function (n) { return n.key + ':' + (n.tone || n.tool); }), ['run:bad', 'collin:collin']);
 check('the panel opens on the run\'s news first',
@@ -102,3 +102,18 @@ check('a test run says what it did not do',
       'dbt test runs tests alone: no model was built by it.');
 check('a failed test says how many rows it found', runEntryText({ status: 'fail', failures: 3, secs: 0.2 }), 'failed · 3 rows · 0.20 s');
 check('an error without a time', runEntryText({ status: 'error', secs: 0 }), 'error');
+
+print('\n--- the coverage\'s news, and a short button ---');
+check('nothing to compare before the coverage was seen', jobsBadge({ never: 3, unscheduled: 1 }, undefined), null);
+check('nor before the jobs were read', jobsBadge({ sources: 1, at: 3 }, 2), null);
+check('the same or fewer is no news', [jobsBadge({ never: 3, unscheduled: 1 }, 4), jobsBadge({ never: 1, unscheduled: 1 }, 4)], [null, null]);
+var more = jobsBadge({ never: 4, unscheduled: 2 }, 4);
+check('more unscheduled since the last look', [more.text, more.short], ['2 more unscheduled', '+2']);
+check('...said in full in the tooltip', more.title,
+      '2 more models, seeds or snapshots than when you last looked are run by no scheduled job: 4 in no job, 2 manual only.');
+var three = reportsNews(badge, runBadge(run, 0), more);
+check('three reports with news, in the sections\' order', three.map(function (n) { return n.key; }), ['run', 'collin', 'jobs']);
+check('the coverage\'s in the warning colour', three[2].tone, 'warn');
+check('several at once: their counts alone', reportsChipTexts(three), ['3', '3', '+2']);
+check('one alone: its words', reportsChipTexts([three[2]]), ['2 more unscheduled']);
+check('none: nothing', reportsChipTexts([]), []);

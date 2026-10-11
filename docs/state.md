@@ -925,6 +925,12 @@ in error, its child skipped and a failed singular test: 13 checks, then a
 poll and gone once shown. On a large real project, against `main`, every
 replayed read request answers the same bytes but where two starts of one
 build differ as well, and its Fusion `compile` reads as one that ran nothing.
+The job coverage has news too, how many more models no scheduled job runs than
+when it was last shown (0066), and with several reports to look at, each chip
+on the button gives its count alone. Driven with the three at once on Jaffle
+Shop: the coverage seen, then a collin run, a model added that no job selects
+and a failing test, the button reading "1", "5" and "+1" at 115 px, each chip
+going once its section is shown.
 
 ## Deferred, in the order they were chosen
 
@@ -1296,6 +1302,11 @@ cross-compile.
   `focusNode` cannot close them, since a collin run's end calls it in the
   background: every way in from a report goes through `openFromReport`, and
   the Models list and the palette call `closeReports` themselves.
+- **The index counts the job coverage only once the jobs were read**
+  (`jobs::Cache::read_once`), and with `look=false`: it never reads the job
+  files first, and a new manifest reads them again as the Jobs tab would
+  (0066). The page keeps what the coverage held when last shown, and lowers it
+  when the count falls, so news is a rise from there.
 - **`run_results.json` is parsed by the index too**, once per write, through
   the cache `/api/reports/run` reads (`files::Cached`): the button counts its
   errors and failed tests. A file dbt is still writing fails the parse, and the

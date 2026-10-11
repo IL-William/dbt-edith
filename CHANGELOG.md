@@ -24,6 +24,10 @@ newest dated heading has to be the version `Cargo.toml` names.
   dbt ran and a test at its line (0065).
 - Count the last run's errors and failed tests on the Reports button until its
   section is shown.
+- Say on the Reports button how many more models no scheduled job runs than
+  when the job coverage was last looked at (0066).
+- Keep the Reports button short: with several reports to look at, each chip
+  gives its count alone, the tooltip saying each in full.
 
 ## 1.10.0 - 2026-10-11
 
