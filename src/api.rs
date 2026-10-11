@@ -241,6 +241,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/snowflake/clone/into", post(remember_clone_into))
         .route("/api/collineage/generate", post(generate_col_lineage))
         .route("/api/collineage/report", get(collin_report_page))
+        .route("/api/reports", get(reports_index))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
@@ -827,6 +828,58 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
     let name = collin::path_for(&st.target_dir, "collin").file_name().map(|n| n.to_string_lossy().into_owned());
     let producer = caches(&st).await.into_iter().find(|a| Some(&a.file) == name.as_ref()).map(|a| a.producer).unwrap_or_default();
     Json(ReportPage { overview: &report.overview, producer }).into_response()
+}
+
+/// Which reports the panel has something to show in, and when each last
+/// changed (0064). Only file metadata and the settings are read: no report is
+/// parsed, collin never starts (0042) and no job file is looked at, since a
+/// section reads its own when it opens (0063).
+async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
+    let report = mtime_secs(&st.target_dir.join(collin_run::REPORT));
+    let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
+    let manifest_at = st.graph.read().await.meta.manifest_mtime;
+    Json(ReportsIndex {
+        collin: (report > 0).then_some(Stamp { at: report }),
+        jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at }),
+    })
+    .into_response()
+}
+
+#[derive(serde::Serialize)]
+struct ReportsIndex {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collin: Option<Stamp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs: Option<JobsIndex>,
+}
+
+/// When the file a section reads was last written, in seconds: a section on
+/// screen whose stamp moves says so rather than redrawing under the reader.
+#[derive(serde::Serialize)]
+struct Stamp {
+    at: u64,
+}
+
+/// The job sources named, and the manifest their steps are resolved against:
+/// the job files themselves are only looked at when the section opens.
+#[derive(serde::Serialize)]
+struct JobsIndex {
+    sources: usize,
+    at: u64,
+}
+
+/// The newest report file under `target/`, in seconds, polled with the
+/// freshness badge: that poll is how the page hears that a run wrote one,
+/// so the Reports button can say so without another timer (0064).
+fn reports_at(st: &AppState) -> u64 {
+    mtime_secs(&st.target_dir.join(collin_run::REPORT))
+}
+
+#[derive(serde::Serialize)]
+struct FreshnessBody {
+    #[serde(flatten)]
+    fresh: freshness::Freshness,
+    reports_at: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -2988,11 +3041,13 @@ async fn git_status(State(st): State<Arc<AppState>>) -> Response {
 /// How far `manifest.json` has drifted from the files it was parsed out of.
 /// Polled beside the git status, so it is cached for about as long.
 async fn freshness_status(State(st): State<Arc<AppState>>) -> Response {
+    // Outside the cache: two runs a second apart must not share a stamp.
+    let reports_at = reports_at(&st);
     {
         let cached = st.fresh.lock().await;
         if let Some((at, f)) = cached.as_ref() {
             if at.elapsed() < std::time::Duration::from_millis(2500) {
-                return Json(f.clone()).into_response();
+                return Json(FreshnessBody { fresh: f.clone(), reports_at }).into_response();
             }
         }
     }
@@ -3006,7 +3061,7 @@ async fn freshness_status(State(st): State<Arc<AppState>>) -> Response {
         .await
         .unwrap_or_default();
     *st.fresh.lock().await = Some((std::time::Instant::now(), f.clone()));
-    Json(f).into_response()
+    Json(FreshnessBody { fresh: f, reports_at }).into_response()
 }
 
 /// Runs one git action off the async runtime, then drops the status cache so
@@ -3571,6 +3626,46 @@ mod tests {
         assert!(page.contains(r#""to_investigate":1"#), "{page}");
         assert!(page.contains(r#""totals":{"models":2,"parsed":2}"#), "{page}");
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The index says which reports there are from file times and settings
+    /// alone: a job source whose folder is not even there is still counted,
+    /// since nothing is read until its section opens (0063, 0064).
+    #[tokio::test]
+    async fn the_reports_index_names_what_there_is_to_read_without_reading_it() {
+        let root = temp_project("reports");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let empty = body_of(port, get("/api/reports", &h)).await;
+        assert!(empty.starts_with("HTTP/1.1 200") && empty.ends_with("\r\n\r\n{}"), "{empty}");
+        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        assert!(fresh.contains(r#""reports_at":0"#) && fresh.contains(r#""state":"#), "{fresh}");
+
+        std::fs::write(target.join(collin_run::REPORT), r#"{"totals":{"models":1}}"#).unwrap();
+        let at = mtime_secs(&target.join(collin_run::REPORT));
+        let index = body_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(&format!(r#""collin":{{"at":{at}}}"#)), "{index}");
+        assert!(!index.contains(r#""jobs""#), "{index}");
+        // The badge's answer is cached for a moment, and the stamp is not.
+        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
+
+        st.job_sources.lock().unwrap().push(crate::settings::JobSource {
+            kind: "airflow".into(),
+            path: root.join("no-such-folder").to_string_lossy().into_owned(),
+            label: String::new(),
+            keys: Default::default(),
+        });
+        let index = body_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(r#""jobs":{"sources":1,"at":0}"#), "{index}");
+
+        assert!(status_of(port, keyless(get("/api/reports", &h))).await.ends_with("401 Unauthorized"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -17,11 +17,11 @@
   <span id="project" class="muted">loading…</span>
   <span id="counts" class="chips"></span>
   <span id="cll-pick-host"></span>
-  <!-- Shown after a collin run until its report is opened; collinBadge() decides. -->
-  <button id="collin-badge" class="freshbadge collinbadge hidden" type="button" data-tool="collin">
-    <span class="tooldot"></span><span class="lbl"></span>
-  </button>
   <div class="grow"></div>
+  <!-- Hidden while no report has anything to show; reportsNews() says what is new in them. -->
+  <button id="reports-btn" class="btn reportsbtn hidden" type="button" aria-controls="reports" aria-expanded="false">
+    Reports<span class="rnews"></span>
+  </button>
   <button id="palette-btn" class="btn" title="Search models and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
   <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
   <!-- Its icon is profileIcon(), drawn by the page; hidden while there is nowhere to look for a profile. -->
@@ -210,6 +210,13 @@
       <div id="dock-catalog" class="dock-pane hidden">
         <div id="catalog" class="catalog"><p class="muted pad">No node selected. Open a model, or pick one in the lineage.</p></div>
       </div>
+    </section>
+
+    <!-- Over the editor and the dock rather than in their place, so nothing under
+         it is measured again when it rolls up or down (0064). -->
+    <section id="reports" class="reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
+      <nav id="reports-nav" class="reports-nav" aria-label="Reports"></nav>
+      <div id="reports-view" class="reports-view"></div>
     </section>
   </main>
 </div>

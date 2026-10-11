@@ -622,10 +622,11 @@ no row, and 15 matched by name to two parents on one whose SQL did not parse.
 
 collin's report page (0059): the report was read for a summary and for the
 model on screen, never whole. The server now files it by kind, from the lists
-collin has written since 0.1.0, and the page shows it as an editor tab:
+collin has written since 0.1.0, and the page showed it as an editor tab, a
+section of Reports since 1.10.0 (0064):
 collin's figures, then the findings grouped by who acts, each model a link to
 its Columns tab. A run leaves a badge with the count of models and tables named
-until the report is opened, told apart from the previous run by a counter on
+until the report is opened, now news on the Reports button, told apart from the previous run by a counter on
 collin's status, and a run renames its report into place with its cache
 rather than writing it in place. Driven in headless Chrome on Fivetran's
 Shopify package with collin at 0.4.0's code: picking Collin ran it and left
@@ -878,6 +879,30 @@ a layer of eight DAGs, without a word; only `node_modules` and `__pycache__` are
 skipped now. Every replayed read request answers as on `main`. Driven in
 headless Chrome on that project. Not yet on the VM, nor on a real
 dbt-jobs-as-code repository.
+
+Reports (1.10.0, 0064): what speaks of the whole project sat in two places,
+collin's report in an editor tab behind a badge, and Coverage in a view of the
+Jobs tab. A Reports button in the top bar now rolls a panel down over `#main`,
+the editor and the dock both, with a rail of sections: collin's report once a
+run wrote one, the job coverage once a source is named. The sidebar stays.
+Anything that shows a file or a dock tab rolls it up: `activate()`, a link in a
+report through `openFromReport`, the palette, the Models list, `showDock()`,
+Escape and the close keys. collin's badge became news on the button, under
+0059's rule, and the Jobs tab keeps the node in focus with a button to the
+coverage. `GET /api/reports` says which sections there are from file times and
+the settings alone, and `/api/freshness` carries `reports_at`, the newest
+report file, which is how the page hears that a run wrote one. Driven in
+headless Chrome on Jaffle Shop with an invented report and a DAG over the
+staging models: 32 checks, the editor and the dock under the panel and the
+sidebar not, no key reaching the editor, Escape and `⌥⌘R`, the focus given
+back, a report's name and a coverage row each opening the model with its dock
+tab, and no roll under reduced motion; then collin 0.2.0 picked from the menu,
+its "5 to investigate" on the button, the panel opening on it, and the news
+gone once shown. On the 19 233 node project, against `main`, 62 of 65
+replayed read requests answer the same bytes, and the other three differ
+between two starts of one build as well; collin's section, from a 2.6 MB
+report, is drawn in 57 ms, and the job coverage in 830 ms, its first look at
+48 DAG files, with the figures of 1.9.0. Not yet on the VM.
 
 ## Deferred, in the order they were chosen
 
@@ -1152,12 +1177,28 @@ cross-compile.
   `Arc::make_mut` of a click's merge does not, and must never add nodes, since
   each step's answer is a list of node indices. The job files themselves are
   looked at only when a request says `look=true`, which the page sends when the
-  Jobs tab or the sources form opens; the user asked for nothing to be
-  checked while nothing moved, so a click in the tab never looks.
+  Jobs tab, the sources form or the Reports panel's job coverage opens; the
+  user asked for nothing to be checked while nothing moved, so a click in the
+  tab or the panel never looks, and a coverage row brings the Jobs tab forward
+  with `showDock('jobs', { look: false })`.
 - **A step's `dbt ls` is written by the server** (`Invocation::ls`), so the
   page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
   harness slices `web/app.js` from `function jobsScheduleText` to
   `async function loadJobs`; the DOM half sits after it.
+- **The Reports panel rolls up and down by its `.open` class, never
+  `.hidden`.** No transition leaves `display: none`, and the editor, the
+  terminal and the canvas under it must never be measured at nothing. Closed,
+  it is clipped and `visibility: hidden`; open, what is under it is `inert`.
+- **`activate()` rolls the reports up, and `settleTabs` passes `keepReports`**,
+  so closing a tab from the sidebar while they are down leaves them there.
+  `focusNode` cannot close them, since a collin run's end calls it in the
+  background: every way in from a report goes through `openFromReport`, and
+  the Models list and the palette call `closeReports` themselves.
+- **The page hears of a report written outside it through `reports_at`** in
+  the freshness poll, which is compared before anything else is repainted. A
+  new report's file belongs in `reports_at` and in the index, never in a timer
+  of its own. `web/tests/reports.js` slices `web/app.js` from
+  `function reportsSections` to `async function loadReportsIndex`.
 - **Reaching the server by any name other than `127.0.0.1` or `localhost`
   gets a 403** (0015). A tunnel or a proxy in front of it is not a supported
   setup, and the symptom is every request refused, not a blank page.
