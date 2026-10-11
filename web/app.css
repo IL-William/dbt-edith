@@ -98,6 +98,8 @@ kbd {
 [data-tool=fusion] { --tool: #ff694b; }
 [data-tool=collin] { --tool: #e070d0; }
 [data-tool=snowflake] { --tool: #29b5e8; }
+/* dbt's own artifacts in the reports: the last run, and what follows it. */
+[data-tool=dbt] { --tool: #ff694b; }
 .tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
 .btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
@@ -548,6 +550,20 @@ kbd {
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reports-view .diff-head { padding: 6px 12px 5px; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
+.rnew[data-tone=bad] { color: var(--bad); border-color: var(--bad); }
+.reporttile[data-tone=bad] .rvalue { color: var(--bad); }
+.reporttile[data-tone=warn] .rvalue { color: var(--warn); }
+.runnote { margin: 6px 0 0; font-size: 12px; color: var(--fg-dim); max-width: 900px; }
+.runnote[data-tone=warn] { color: var(--warn); }
+.reportbody > .reportfinding { margin-top: 10px; }
+.reportfinding[data-tone=bad] .rtitle { color: var(--bad); }
+.reportfinding[data-tone=warn] .rtitle { color: var(--warn); }
+/* dbt's own message under a node, its first lines as dbt wrote them. */
+.rmsg {
+  margin: 2px 0 6px; padding: 4px 8px; max-width: 900px; max-height: 9em; overflow: auto;
+  font: 11px/1.45 var(--mono); color: #c2ccd9; background: var(--bg-3); border-radius: 3px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 /* collin's report, a section of the reports: figures, then findings by who acts. */
 .reportbody { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 28px; }
 .reportbody > p { margin: 4px 0 0; }

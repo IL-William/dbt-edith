@@ -1199,8 +1199,9 @@ freshness configured. A `--project-dir` is taken to name this project.
 **Reports**, a sheet with a bar chart in the top bar whose name unfolds under
 the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
-collin's report once collin has written one, and the coverage of your jobs once
-the Jobs tab has a source. The sidebar stays, and anything that shows a file
+the last dbt command's results once dbt has written them, collin's report once
+collin has written one, and the coverage of your jobs once the Jobs tab has a
+source. The sidebar stays, and anything that shows a file
 or a dock tab rolls the panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
 closes it. The button stays hidden while no section has anything to show.
@@ -1209,6 +1210,17 @@ What is new since you last looked rides on the button, collin's "12 to
 investigate" for instance, and the panel opens on it. A section is read again
 each time it is shown, and never redrawn while you read it: when its file
 changes underneath, its **Read again** button says so (0064).
+
+**Last run** reads `target/run_results.json`, which dbt writes again after
+every `build`, `run`, `test`, `seed` or `snapshot`, and after `compile` too. It
+names the command and its selection, then counts what ran of each kind against
+what the manifest holds, and lists the errors and failed tests with dbt's
+message, the warnings, the skipped nodes and the slowest. A model opens with its
+Run tab, the SQL dbt executed; a test opens at its line in its YAML. A node the
+command did not reach is counted, never listed: not run says nothing about it.
+The section says when the manifest was written after the run, or when the run
+names tables the manifest names otherwise, likely another target. Errors and
+failed tests ride on the Reports button until you look (0065).
 
 ### Query history
 
@@ -1466,7 +1478,7 @@ writes. [SECURITY.md](SECURITY.md) spells out what is and is not covered.
 
 Not there yet:
 - a used-by count per macro;
-- run status and timing from `run_results.json`;
+- run status on the lineage canvas, from the last run Reports reads;
 - which jobs test a model;
 - CTE names in the breadcrumb bar;
 - a dbt section in Reports, with what the project holds counted and dbt's

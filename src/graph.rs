@@ -187,6 +187,10 @@ pub struct Meta {
     pub dbt_version: String,
     pub adapter: String,
     pub generated_at: String,
+    /// Kept to tell whether the last run wrote this manifest too (0065), and
+    /// never sent: the page has no use for it.
+    #[serde(skip)]
+    pub invocation_id: String,
     pub manifest_path: String,
     pub manifest_mtime: u64,
     pub catalog_mtime: u64,
@@ -597,6 +601,7 @@ impl Graph {
                 dbt_version: raw.metadata.dbt_version,
                 adapter: raw.metadata.adapter_type,
                 generated_at: raw.metadata.generated_at,
+                invocation_id: raw.metadata.invocation_id,
                 manifest_path: manifest_path.display().to_string(),
                 manifest_mtime: mtime,
                 sandbox: sandbox.as_ref().map(|((d, s), _)| format!("{d}.{s}")).unwrap_or_default(),

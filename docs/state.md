@@ -908,6 +908,24 @@ read request answers the same bytes but where two starts of one build differ
 as well, both sections are drawn in under a second, and the coverage gives
 the figures it gave in 1.9.0. Not yet on the VM.
 
+Last run (1.11.0, 0065): whether the last build went through was the
+terminal's to say. A section of Reports now reads `target/run_results.json`
+as dbt left it: the command and its selection, a tile per kind with what ran
+against what the manifest holds, the errors and failed tests with dbt's
+message, the warnings, the skipped nodes and the slowest. A model opens with
+its Run tab, a test at its line. What the command did not reach is counted,
+never listed, and the section says when the manifest was written since, when
+the run names tables the manifest names otherwise, and when `compile` wrote
+the file over a run. Errors and failed tests ride on the Reports button, the
+index parsing the file once per write through `files::Cached`, which the
+section reads too. Statuses read in dbt-core's spelling and in Fusion's.
+Driven in headless Chrome on Jaffle Shop after a real `dbt build` with a model
+in error, its child skipped and a failed singular test: 13 checks, then a
+`dbt test` run while the page was open, its "1 failed" on the button within a
+poll and gone once shown. On a large real project, against `main`, every
+replayed read request answers the same bytes but where two starts of one
+build differ as well, and its Fusion `compile` reads as one that ran nothing.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -918,11 +936,13 @@ the figures it gave in 1.9.0. Not yet on the VM.
    `depends_on.macros`, which named one project macro for all 300 models
    calling it (0028). Hooks are the gap: their operation nodes list what they
    call under dbt-core and nothing under Fusion.
-2. **Run history.** `run_results.json` gives status and timing per node. Status
-   as the box stroke in the graph, plus staleness against the manifest. Watch
-   for partial runs: a node absent from the file was not run, which is not the
-   same as not tested. Per-node freshness would read the same mtimes 0025
-   already walks, so the walk is the piece to reuse rather than repeat.
+2. **Run status on the canvas.** The last run is read since 1.11.0, in
+   Reports (0065); what is left is its status as the box stroke in the graph,
+   which waits on seeing whether the section is used, and has to say when the
+   run is for another target or older than the manifest, as the section does.
+   A history across commands is not planned: dbt rewrites the file each time,
+   and this tool keeps nothing of the project's. Per-node freshness would
+   read the same mtimes 0025 already walks.
 3. **A var's definition line, clickable.** The card names
    `dbt_project.yml:<line>`. The scanner this was waiting for now exists:
    `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
@@ -1276,6 +1296,12 @@ cross-compile.
   `focusNode` cannot close them, since a collin run's end calls it in the
   background: every way in from a report goes through `openFromReport`, and
   the Models list and the palette call `closeReports` themselves.
+- **`run_results.json` is parsed by the index too**, once per write, through
+  the cache `/api/reports/run` reads (`files::Cached`): the button counts its
+  errors and failed tests. A file dbt is still writing fails the parse, and the
+  index then lists the run by its time alone. Of `args`, only `which` or
+  `command` and the three selection flags are declared: `invocation_command`
+  and `vars` hold what the user typed, secrets included (0065).
 - **The page hears of a report written outside it through `reports_at`** in
   the freshness poll, which is compared before anything else is repainted. A
   new report's file belongs in `reports_at` and in the index, never in a timer

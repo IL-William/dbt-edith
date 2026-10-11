@@ -95,6 +95,8 @@ pub struct AppState {
     /// The jobs last read, kept until the manifest, the sources or a job file
     /// changes.
     pub jobs: crate::jobs::Cache,
+    /// The last dbt command's results, read again only when the file changes.
+    pub run_results: files::Cached<crate::run_results::Raw>,
 }
 
 impl AppState {
@@ -242,6 +244,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/generate", post(generate_col_lineage))
         .route("/api/collineage/report", get(collin_report_page))
         .route("/api/reports", get(reports_index))
+        .route("/api/reports/run", get(last_run_report))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
@@ -831,26 +834,81 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
 }
 
 /// Which reports the panel has something to show in, and when each last
-/// changed (0064). Only file metadata and the settings are read: no report is
-/// parsed, collin never starts (0042) and no job file is looked at, since a
-/// section reads its own when it opens (0063).
+/// changed (0064). File metadata and the settings, and nothing else but the
+/// last run's counts, which the button shows: collin's report is not parsed,
+/// collin never starts (0042) and no job file is looked at, since a section
+/// reads its own when it opens (0063).
 async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     let report = mtime_secs(&st.target_dir.join(collin_run::REPORT));
     let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
     let manifest_at = st.graph.read().await.meta.manifest_mtime;
+    let run = last_run_counts(&st).await;
     Json(ReportsIndex {
+        run,
         collin: (report > 0).then_some(Stamp { at: report }),
         jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at }),
     })
     .into_response()
 }
 
+/// The last run's counts, through the cache the section reads too, so one
+/// parse serves both until dbt writes the file again (0065). A file dbt is
+/// still writing is listed with its time alone.
+async fn last_run_counts(st: &Arc<AppState>) -> Option<RunIndex> {
+    let path = st.target_dir.join(crate::run_results::FILE);
+    let at = mtime_secs(&path);
+    if at == 0 {
+        return None;
+    }
+    let shared = st.clone();
+    let read = tokio::task::spawn_blocking(move || shared.run_results.get(&path, crate::run_results::parse)).await;
+    let counts = match read {
+        Ok(Ok(Some(raw))) => Some(crate::run_results::counts(&raw)),
+        _ => None,
+    };
+    Some(RunIndex { at, counts })
+}
+
+/// What the last dbt command ran, against the manifest on screen (0065).
+async fn last_run_report(State(st): State<Arc<AppState>>) -> Response {
+    let path = st.target_dir.join(crate::run_results::FILE);
+    let at = mtime_secs(&path);
+    let shared = st.clone();
+    let read = tokio::task::spawn_blocking(move || shared.run_results.get(&path, crate::run_results::parse)).await;
+    let raw = match read {
+        Ok(Ok(Some(raw))) => raw,
+        Ok(Ok(None)) => {
+            return (StatusCode::NOT_FOUND, "dbt has written no run_results.json here yet: run dbt build, run, test or seed").into_response()
+        }
+        Ok(Err(e)) => {
+            return (StatusCode::BAD_REQUEST, format!("target/run_results.json could not be read, dbt may still be writing it: {e}")).into_response()
+        }
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "reading target/run_results.json failed").into_response(),
+    };
+    let graph = st.graph.read().await.clone();
+    let invocation = graph.meta.invocation_id.clone();
+    let report = tokio::task::spawn_blocking(move || crate::run_results::report(&raw, &graph, at, &invocation)).await;
+    match report {
+        Ok(r) => Json(r).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "reading target/run_results.json failed").into_response(),
+    }
+}
+
 #[derive(serde::Serialize)]
 struct ReportsIndex {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run: Option<RunIndex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     collin: Option<Stamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jobs: Option<JobsIndex>,
+}
+
+#[derive(serde::Serialize)]
+struct RunIndex {
+    at: u64,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    counts: Option<crate::run_results::Counts>,
 }
 
 /// When the file a section reads was last written, in seconds: a section on
@@ -872,7 +930,7 @@ struct JobsIndex {
 /// freshness badge: that poll is how the page hears that a run wrote one,
 /// so the Reports button can say so without another timer (0064).
 fn reports_at(st: &AppState) -> u64 {
-    mtime_secs(&st.target_dir.join(collin_run::REPORT))
+    [collin_run::REPORT, crate::run_results::FILE].iter().map(|f| mtime_secs(&st.target_dir.join(f))).max().unwrap_or(0)
 }
 
 #[derive(serde::Serialize)]
@@ -3456,6 +3514,7 @@ mod tests {
             key: TEST_KEY.into(),
             job_sources: std::sync::Mutex::new(Vec::new()),
             jobs: Default::default(),
+            run_results: Default::default(),
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -3666,6 +3725,66 @@ mod tests {
         assert!(index.contains(r#""jobs":{"sources":1,"at":0}"#), "{index}");
 
         assert!(status_of(port, keyless(get("/api/reports", &h))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The last run: absent, unreadable while dbt writes it, then read against
+    /// the manifest, its counts in the index and its time in the stamp, and
+    /// never a secret dbt wrote beside the results (0065).
+    #[tokio::test]
+    async fn the_last_run_is_read_against_the_manifest_and_counted_in_the_index() {
+        let root = temp_project("last-run");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "invocation_id": "parse-1" },
+            "nodes": {
+                "model.shop.orders": { "name": "orders", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/orders.sql", "fqn": ["shop", "orders"] },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &target.join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let none = body_of(port, get("/api/reports/run", &h)).await;
+        assert!(none.starts_with("HTTP/1.1 404") && none.contains("no run_results.json"), "{none}");
+        let path = target.join(crate::run_results::FILE);
+        std::fs::write(&path, r#"{"results": ["#).unwrap();
+        let partial = body_of(port, get("/api/reports/run", &h)).await;
+        assert!(partial.starts_with("HTTP/1.1 400") && partial.contains("still be writing"), "{partial}");
+        let index = body_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(r#""run":{"at":"#) && !index.contains(r#""error""#), "listed by its time alone: {index}");
+
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "metadata": { "dbt_version": "1.9.0", "invocation_id": "build-2", "env": { "TOKEN": "hunter2" } },
+                "args": { "which": "build", "select": ["orders"], "vars": { "password": "hunter2" } },
+                "results": [
+                    { "unique_id": "model.shop.orders", "status": "error", "execution_time": 1.5, "message": "Database Error" },
+                    { "unique_id": "test.shop.gone.x", "status": "fail", "failures": 2 },
+                ],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let at = mtime_secs(&path);
+        let run = body_of(port, get("/api/reports/run", &h)).await;
+        assert!(run.starts_with("HTTP/1.1 200"), "{run}");
+        assert!(run.contains(r#""command":"build","selection":["--select orders"]"#), "{run}");
+        assert!(run.contains(r#""file":"models/orders.sql","status":"error""#), "{run}");
+        assert!(run.contains(r#""unknown":{"items":["test.shop.gone.x"],"of":1}"#), "{run}");
+        assert!(!run.contains("hunter2"), "{run}");
+        let index = body_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0}}"#)), "{index}");
+        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
+
+        assert!(status_of(port, keyless(get("/api/reports/run", &h))).await.ends_with("401 Unauthorized"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

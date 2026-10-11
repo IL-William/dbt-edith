@@ -46,6 +46,10 @@ pub struct RawMetadata {
     pub generated_at: String,
     #[serde(default)]
     pub adapter_type: String,
+    /// Which dbt command wrote it, to tell whether the last run's results
+    /// were written by the same one (0065).
+    #[serde(default)]
+    pub invocation_id: String,
 }
 
 #[derive(serde::Deserialize)]

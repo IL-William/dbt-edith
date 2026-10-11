@@ -15,6 +15,16 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.11.0 - 2026-10-11
+
+- Show the last dbt command's results in Reports, from
+  `target/run_results.json`: the command and its selection, what ran of each
+  kind against the manifest, the errors and failed tests with dbt's message,
+  the warnings, the skipped nodes and the slowest, a model opening with the SQL
+  dbt ran and a test at its line (0065).
+- Count the last run's errors and failed tests on the Reports button until its
+  section is shown.
+
 ## 1.10.0 - 2026-10-11
 
 - Gather what speaks of the whole project in a Reports panel that rolls down
