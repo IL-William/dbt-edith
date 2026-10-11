@@ -1,0 +1,22 @@
+# Every key renamed, as a source's settings would name them, and a command
+# without `dbt` in front, the way a factory adds it.
+pipeline:
+  name: jaffle_reports
+  cron: null
+steps:
+  - id: refresh
+    dbt: >-
+      run --full-refresh -s
+      customers+
+      1+orders
+      --exclude stg_payments+
+  - id: grants
+    dbt: "run-operation grant_select --args '{role: reporter}'"
+  - id: everything_else
+    dbt: build --exclude tag:staging --exclude resource_type:test
+  - id: freshness
+    dbt: source freshness
+waits:
+  - id: wait_marts
+    upstream_dag: jaffle_daily
+    upstream_task: marts

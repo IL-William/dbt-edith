@@ -1,0 +1,8 @@
+# Started by the asset jaffle_daily's marts task updates, not by a clock.
+dag_id: jaffle_on_marts
+schedule: [jaffle_marts]
+tasks:
+  - task_id: rebuild_orders
+    command: "dbt build --select @stg_orders --indirect-selection cautious"
+  - task_id: compile_all
+    command: dbt compile

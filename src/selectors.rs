@@ -29,7 +29,7 @@ const MAX_DEPTH: usize = 64;
 
 /// Methods that compare with the artifacts of another run, which dbt takes
 /// from `--state` and this tool never reads.
-const STATEFUL: &[&str] = &["state", "result", "source_status"];
+pub(crate) const STATEFUL: &[&str] = &["state", "result", "source_status"];
 
 #[derive(Clone, Debug)]
 pub struct Named {

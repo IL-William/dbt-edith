@@ -733,30 +733,64 @@ impl Expr {
         Ok(Expr { include, exclude, select, excluded, stripped })
     }
 
+    /// A selection already split into its values, as a job's command line
+    /// holds one (`src/command.rs`). Nothing is stripped off the front: a
+    /// model called `test` or `source` is a term here, where a pasted line
+    /// would lose it to `strip_command`.
+    pub fn from_terms(include: &[String], exclude: &[String]) -> Result<Expr, SelectError> {
+        let len: usize = include.iter().chain(exclude).map(|t| t.len() + 1).sum();
+        if len > MAX_LEN {
+            return Err(SelectError::TooLong { len });
+        }
+        if include.is_empty() {
+            return Err(SelectError::Empty);
+        }
+        let count = include.iter().chain(exclude).map(|t| t.split(',').count()).sum();
+        if count > MAX_TERMS {
+            return Err(SelectError::TooManyTerms { count });
+        }
+        // Offsets into the line the terms would make, joined by spaces.
+        let tokens = |terms: &[String]| -> Tokens {
+            let mut at = 0usize;
+            terms
+                .iter()
+                .map(|t| {
+                    let token = (at, t.clone());
+                    at += t.len() + 1;
+                    token
+                })
+                .collect()
+        };
+        let (include, select) = parse_union(&tokens(include))?;
+        let (exclude, excluded) = parse_union(&tokens(exclude))?;
+        Ok(Expr { include, exclude, select, excluded, stripped: false })
+    }
+
     /// The typed line as the tree a YAML selector would build: each whitespace
     /// group an intersection, their union, minus the exclude half. Every
-    /// criterion is eager, the default of `--indirect-selection`, and dbt
-    /// parses the exclude half eager whatever that flag says.
+    /// criterion is eager, the default of `--indirect-selection`.
     pub fn spec(&self) -> Spec {
-        let half = |u: &Union| {
+        self.spec_with(Indirect::Eager)
+    }
+
+    /// The same tree with the include half bringing its tests the way
+    /// `--indirect-selection` says. dbt parses the exclude half eager whatever
+    /// that flag says, so it is eager here too.
+    pub fn spec_with(&self, indirect: Indirect) -> Spec {
+        let half = |u: &Union, indirect: Indirect| {
             Spec::Union(
                 u.0.iter()
                     .map(|group| {
-                        Spec::Intersection(
-                            group
-                                .iter()
-                                .map(|t| Spec::Criteria { term: t.clone(), indirect: Indirect::Eager })
-                                .collect(),
-                        )
+                        Spec::Intersection(group.iter().map(|t| Spec::Criteria { term: t.clone(), indirect }).collect())
                     })
                     .collect(),
             )
         };
-        let include = half(&self.include);
+        let include = half(&self.include, indirect);
         if self.exclude.0.is_empty() {
             include
         } else {
-            Spec::Difference(Box::new(include), Box::new(half(&self.exclude)))
+            Spec::Difference(Box::new(include), Box::new(half(&self.exclude, Indirect::Eager)))
         }
     }
 }
@@ -1637,5 +1671,51 @@ mod tests {
                 "weekly_report"
             ]
         );
+    }
+
+    fn from_terms_names(include: &[&str], exclude: &[&str], indirect: Indirect) -> Vec<String> {
+        let g = graph();
+        let own = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let expr = Expr::from_terms(&own(include), &own(exclude)).expect("parses");
+        let res = resolve_spec(&g, &expr.spec_with(indirect), Tests::Eager, &no_selectors).unwrap();
+        let mut out: Vec<String> = res.nodes.iter().map(|&i| g.nodes[i as usize].name.clone()).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn terms_already_split_resolve_like_the_typed_line() {
+        assert_eq!(
+            from_terms_names(&["+fct_orders"], &["stg_orders"], Indirect::Eager),
+            pick_with("+fct_orders --exclude stg_orders", "", Tests::Eager)
+        );
+        assert_eq!(
+            from_terms_names(&["tag:nightly", "dim_customers"], &[], Indirect::Eager),
+            pick_with("tag:nightly dim_customers", "", Tests::Eager)
+        );
+    }
+
+    #[test]
+    fn terms_already_split_keep_a_word_a_pasted_line_would_strip() {
+        // `test` and `source` are dbt commands at the front of a typed line,
+        // and model names in a job's `--select test`.
+        let expr = Expr::from_terms(&["test".to_string(), "source".to_string()], &[]).unwrap();
+        assert_eq!(expr.select, "test source");
+        assert!(!expr.stripped);
+        assert_eq!(Expr::from_terms(&[], &["x".to_string()]).unwrap_err(), SelectError::Empty);
+        let many: Vec<String> = (0..65).map(|i| format!("m{i}")).collect();
+        assert!(matches!(Expr::from_terms(&many, &[]), Err(SelectError::TooManyTerms { .. })));
+    }
+
+    #[test]
+    fn the_indirect_mode_reaches_the_include_half_only() {
+        // The not_null test hangs off dim_customers alone, so eager and
+        // cautious both bring it, and empty does not.
+        assert!(from_terms_names(&["dim_customers"], &[], Indirect::Eager).contains(&"not_null_dim_customers_id".to_string()));
+        assert!(!from_terms_names(&["dim_customers"], &[], Indirect::Empty).contains(&"not_null_dim_customers_id".to_string()));
+        // An exclude half is eager whatever the flag says, so the test leaves
+        // with the model it hangs off.
+        let left = from_terms_names(&["tag:nightly"], &["dim_customers"], Indirect::Empty);
+        assert!(!left.contains(&"not_null_dim_customers_id".to_string()));
     }
 }

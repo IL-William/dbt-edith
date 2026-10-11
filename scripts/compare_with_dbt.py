@@ -22,6 +22,10 @@ Fetching Shopify needs git and the network, for GitHub and dbt's hub. Without
 them that project is skipped, and the run ends with exit 2 even when Jaffle
 Shop agreed, so CI, which treats a skip as a failure, never passes without it.
 
+On Jaffle Shop, the invented jobs under tests/fixtures/jobs/ are read too,
+from outside the project copy, and each step's selection is compared with the
+`dbt ls` the step's button types (0063).
+
 The lineage of every model is compared with --every-model, which CI passes.
 Without it, a project with more than 40 models has every eighth compared,
 which keeps this step of check.sh to about twenty seconds here.
@@ -35,6 +39,7 @@ Exit 0 when every answer agrees, 1 when one does not, 2 when skipped.
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -49,6 +54,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 JAFFLE = ROOT / "tests" / "fixtures" / "jaffle_shop"
 SHOPIFY = ROOT / "tests" / "fixtures" / "shopify"
+JOBS = ROOT / "tests" / "fixtures" / "jobs"
 
 # The tag dbt-collin pins too, so both repositories read the same project, and
 # its commit, so a tag moved upstream fails the run instead of changing it.
@@ -134,6 +140,23 @@ LINEAGE = [(1, 1, False), (2, 2, False), (20, 20, False), (2, 2, True)]
 # Selectors the box has to refuse, with dbt left out of it.
 REFUSED = {"changed"}
 
+# The job fixtures, as a person would list them in the settings: the renamed
+# folder with the keys it renames.
+JOB_SOURCES = [
+    {"kind": "airflow", "path": str(JOBS / "airflow"), "label": "airflow", "keys": {}},
+    {"kind": "airflow", "path": str(JOBS / "airflow_renamed"), "label": "renamed", "keys": {
+        "dag_id": "pipeline.name", "schedule": "pipeline.cron", "tasks": "steps", "task_id": "id",
+        "command": "dbt", "sensors": "waits", "sensor_id": "id",
+        "external_dag_id": "upstream_dag", "external_task_id": "upstream_task",
+    }},
+    {"kind": "dbt_cloud", "path": str(JOBS / "dbt_cloud"), "label": "cloud", "keys": {}},
+]
+
+# Steps dbt-edith has to leave unresolved, by the line it shows, and how many
+# steps the fixtures hold in all, so a fixture read short cannot pass.
+JOBS_UNRESOLVED = {"dbt build --select state:modified+"}
+JOB_STEPS = 15
+
 
 def skip(reason):
     print(f"SKIPPED: {reason}")
@@ -202,6 +225,18 @@ class Edith:
                 return json.load(r)
         except urllib.error.HTTPError as e:
             return json.load(e)
+
+    def send(self, path, method, body):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        request = urllib.request.Request(
+            url, data=json.dumps(body).encode(), method=method,
+            headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            return {"error": e.read().decode()}
 
     def names(self, line):
         body = self.get("/api/select?" + urllib.parse.urlencode({"q": line, "tests": 1}))
@@ -340,7 +375,42 @@ class Tally:
         print(f"FAIL  {label}")
 
 
-def compare_project(tally, binary, project, work, expressions, every_model):
+def compare_jobs(tally, edith, oracle):
+    """Each step of the job fixtures against the `dbt ls` its button types."""
+    summary = edith.send("/api/jobs/sources", "PUT", {"sources": JOB_SOURCES})
+    if "error" in summary:
+        tally.fail(f"the job sources were refused: {summary['error']}")
+        return
+    problems = [s.get("error") for s in summary["sources"] if s.get("error")]
+    problems += [f"{r['file']}:{r.get('line', 0)}: {r['message']}" for s in summary["sources"] for r in s.get("refused", [])]
+    if problems or summary["steps"] != JOB_STEPS:
+        tally.fail(f"the job fixtures read {summary['steps']} steps of {JOB_STEPS}: {problems}")
+    agreed = asked = 0
+    for n in range(summary["steps"]):
+        step = edith.get(f"/api/jobs/step?n={n}")
+        label = f"job step {step['shown']}"
+        if step.get("unresolved"):
+            if step["shown"] in JOBS_UNRESOLVED:
+                tally.compared += 1
+                print(f"PASS  {label} is unresolved: {step['unresolved']}")
+            else:
+                tally.fail(f"{label} was not resolved: {step['unresolved']}")
+            continue
+        if not step.get("ls"):
+            continue
+        args = shlex.split(step["ls"])
+        # `dbt ls` and `--output name` are what Dbt.ls adds itself.
+        if args[:2] != ["dbt", "ls"] or args[-2:] != ["--output", "name"]:
+            tally.fail(f"{label}: an ls line of another shape, {step['ls']}")
+            continue
+        theirs = oracle.ls(args[2:-2])
+        asked += 1
+        agreed += tally.check(label, step["names"], theirs)
+    verdict = "PASS" if agreed == asked and asked else "FAIL"
+    print(f"{verdict}  the job fixtures: {agreed} of {asked} steps select what dbt ls lists")
+
+
+def compare_project(tally, binary, project, work, expressions, every_model, jobs=False):
     """Every named selector, the typed lines, and the lineage of the models.
     Returns how many answers were compared, so a project that compared too few
     can be told from one that agreed."""
@@ -413,6 +483,8 @@ def compare_project(tally, binary, project, work, expressions, every_model):
                 agreed += tally.check(f"lineage of {name}, {up} up and {down} down, {box}", ours, theirs, quiet=True)
             verdict = "PASS" if agreed == len(sampled) else "FAIL"
             print(f"{verdict}  lineage {up} up and {down} down, {box}: {agreed} of {len(sampled)} models")
+        if jobs:
+            compare_jobs(tally, edith, oracle)
     finally:
         edith.stop()
     return tally.compared - before
@@ -436,7 +508,7 @@ def main():
         print("== Jaffle Shop")
         jaffle = work / "jaffle" / "project"
         shutil.copytree(JAFFLE, jaffle)
-        compared = compare_project(tally, binary, jaffle, jaffle.parent, EXPRESSIONS, every_model)
+        compared = compare_project(tally, binary, jaffle, jaffle.parent, EXPRESSIONS, every_model, jobs=True)
         # Fewer than this means the fixture or the listing broke, not that all is well.
         if compared < len(EXPRESSIONS) + 10:
             tally.fail(f"only {compared} answers compared on Jaffle Shop")

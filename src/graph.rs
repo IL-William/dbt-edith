@@ -16,7 +16,7 @@ use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Model,
@@ -128,7 +128,13 @@ pub struct Node {
     /// by splitting, which the matcher has to do anyway.
     pub fqn: String,
     pub kind: Kind,
+    /// `original_file_path`: relative to the project for its own nodes, to the
+    /// package for an installed package's. Selection matches on it as dbt does.
     pub file: String,
+    /// Where an installed package's node file is, relative to the project, once
+    /// `place_packages` found it; empty otherwise. What the page is sent and
+    /// opens, through `on_disk`.
+    pub place: String,
     pub yml: String,
     /// `compiled_path` as dbt wrote it, slashed and project-relative, or empty
     /// when the manifest carries none. Kept for every node and not only the
@@ -285,6 +291,14 @@ fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u
     })
 }
 
+impl Node {
+    /// The file to show and open: in the package's folder for an installed
+    /// package's node that was found there, `file` for every other.
+    pub fn on_disk(&self) -> &str {
+        if self.place.is_empty() { &self.file } else { &self.place }
+    }
+}
+
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
         let macros = Macros::build(raw.macros, &raw.metadata.project_name);
@@ -359,6 +373,7 @@ impl Graph {
                         .unwrap_or_default(),
                 ),
                 file,
+                place: String::new(),
                 compiled: slashed(raw_node.compiled_path.unwrap_or_default()),
                 schema: raw_node.schema.clone().unwrap_or_default(),
                 database: raw_node.database.clone().unwrap_or_default(),
@@ -820,7 +835,7 @@ impl Graph {
                         id: std::borrow::Cow::Owned(format!("{}::{}", owner.id, column.name)),
                         name: &column.name,
                         kind: owner.kind,
-                        file: &owner.file,
+                        file: owner.on_disk(),
                         schema: &owner.schema,
                         materialized: &owner.materialized,
                         disabled: owner.disabled,
@@ -925,6 +940,35 @@ impl Graph {
         hits.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| self.by_name_then_id(a.1, b.1)));
         hits.truncate(limit);
         hits.into_iter().map(|(_, i)| i).collect()
+    }
+
+    /// Finds each installed package's node file where `dbt deps` put it, as
+    /// `Macros::place` finds a package macro, and files the node under that
+    /// path instead of its path inside the package: `models/x.sql` in the
+    /// project is the project's own file, never the package's.
+    pub fn place_packages(&mut self, project: &std::path::Path) {
+        let root = self.macros.root().to_string();
+        if root.is_empty() {
+            return;
+        }
+        for (i, n) in self.nodes.iter_mut().enumerate() {
+            if n.file.is_empty() || n.package.is_empty() || n.package == root {
+                continue;
+            }
+            let found = crate::macros::PACKAGE_DIRS
+                .iter()
+                .map(|dir| format!("{dir}/{}/{}", n.package, n.file))
+                .find(|rel| crate::files::resolve(project, rel).is_ok_and(|p| p.is_file()));
+            let Some(rel) = found else { continue };
+            if let Some(held) = self.by_file.get_mut(&n.file) {
+                held.retain(|&j| j != i as u32);
+                if held.is_empty() {
+                    self.by_file.remove(&n.file);
+                }
+            }
+            self.by_file.entry(rel.clone()).or_default().push(i as u32);
+            n.place = rel;
+        }
     }
 
     /// The node a file shows in the lineage: the one it defines, or for a
@@ -1049,7 +1093,7 @@ impl Graph {
                         name: &n.name,
                         sub: String::new(),
                         kind: n.kind,
-                        file: &n.file,
+                        file: n.on_disk(),
                         schema: &n.schema,
                         materialized: &n.materialized,
                         disabled: n.disabled,
@@ -1237,7 +1281,7 @@ impl Graph {
                         name: &n.name,
                         sub: String::new(),
                         kind: n.kind,
-                        file: &n.file,
+                        file: n.on_disk(),
                         schema: &n.schema,
                         materialized: &n.materialized,
                         disabled: n.disabled,
@@ -2082,6 +2126,42 @@ mod tests {
         assert_eq!(shown("models/orders.sql"), Some("model.shop.orders"));
         assert_eq!(shown("tests/assert_positive.sql"), Some("test.shop.assert_positive"), "a test, when the file holds nothing else");
         assert_eq!(shown("models/nowhere.yml"), None);
+    }
+
+    #[test]
+    fn an_installed_package_node_is_found_where_dbt_deps_put_it() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-graph-packages-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for rel in ["models/runs.sql", "dbt_packages/artifacts/models/runs.sql"] {
+            std::fs::create_dir_all(dir.join(rel).parent().unwrap()).unwrap();
+            std::fs::write(dir.join(rel), "select 1").unwrap();
+        }
+        let model = |package: &str| {
+            serde_json::json!({ "name": format!("{package}_runs"), "resource_type": "model", "package_name": package,
+                "original_file_path": "models/runs.sql" })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "shop" },
+            "nodes": {
+                "model.shop.runs": model("shop"),
+                "model.artifacts.runs": model("artifacts"),
+                // Named by the manifest, never installed: left as it was.
+                "model.gone.runs": model("gone"),
+            },
+        }))
+        .unwrap();
+        let mut g = Graph::build(raw, &dir.join("target").join("manifest.json"), 0, 0);
+        g.place_packages(&dir);
+        let at = |id: &str| g.nodes[g.index[id] as usize].on_disk().to_string();
+        assert_eq!(at("model.shop.runs"), "models/runs.sql");
+        assert_eq!(at("model.artifacts.runs"), "dbt_packages/artifacts/models/runs.sql");
+        assert_eq!(at("model.gone.runs"), "models/runs.sql");
+        assert_eq!(g.nodes[g.index["model.artifacts.runs"] as usize].file, "models/runs.sql", "selection still matches dbt's path");
+        let shown = |file: &str| g.node_of_file(file).map(|i| g.nodes[i as usize].id.as_str());
+        assert_eq!(shown("dbt_packages/artifacts/models/runs.sql"), Some("model.artifacts.runs"));
+        let own = g.by_file["models/runs.sql"].iter().map(|&i| g.nodes[i as usize].id.as_str()).collect::<Vec<_>>();
+        assert!(!own.contains(&"model.artifacts.runs"), "{own:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

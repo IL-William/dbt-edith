@@ -1,6 +1,6 @@
 # 0017. The dbt profile is reachable, and it alone
 
-Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048 and 0049 · Supersedes 0012
+Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048, 0049 and 0063 · Supersedes 0012
 
 **Trigger:** read before opening, reading or writing anything outside the
 project.
@@ -38,6 +38,9 @@ reachable only while Snowflake's features are on for the project.*
 user's own query history, read by the script, leaves for the page too.*
 *Amended by [0049](0049-the-profile-is-found-where-dbt-looks.md): dbt-edith
 finds the profile where dbt looks for it, and it is reachable on every project.*
+*Amended by [0063](0063-jobs-are-read-from-folders-you-name.md): the YAML
+files under the job folders the user names are read too, and only what was
+parsed from them leaves.*
 
 ## Rejected
 

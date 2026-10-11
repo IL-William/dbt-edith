@@ -93,6 +93,12 @@ impl Macros {
         self.root = name;
     }
 
+    /// The root project's name, or empty when neither the manifest nor
+    /// `dbt_project.yml` gave one.
+    pub fn root(&self) -> &str {
+        &self.root
+    }
+
     fn get(&self, package: &str, name: &str) -> Option<&Macro> {
         let &i = self.by_package.get(package)?.get(name)?;
         Some(&self.list[i as usize])

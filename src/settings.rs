@@ -57,6 +57,25 @@ pub struct Settings {
     /// by side. None runs the one beside dbt-edith or on the PATH (0060).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collin_version: Option<String>,
+    /// Where the orchestrator's jobs are read from, in the order the user
+    /// listed them (0063).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub job_sources: Vec<JobSource>,
+}
+
+/// One place the orchestrator's jobs are read from (0063). Paths and key
+/// names only: nothing read from the files is ever kept here.
+#[derive(serde::Serialize, serde::Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct JobSource {
+    /// `airflow` or `dbt_cloud`.
+    pub kind: String,
+    /// A folder or a file, absolute or relative to the project.
+    pub path: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// Airflow only: the dotted key paths that differ from the proposed shape.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keys: BTreeMap<String, String>,
 }
 
 /// Whether Snowflake's features are on: the user's choice for the project, or,

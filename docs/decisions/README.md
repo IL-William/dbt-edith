@@ -66,6 +66,7 @@ it is built this way, for whoever changes it next.
 | [0060](0060-collin-versions-sit-side-by-side-and-one-is-picked.md) | collin versions sit side by side, and the project picks the one that runs | changing which collin runs, where versions are installed, or what makes collin's cache stale |
 | [0061](0061-each-collin-version-keeps-its-last-run-to-compare.md) | Each collin version keeps its last run, to compare with another's | changing what a collin run leaves under `target/collin/`, or what the comparison of two versions counts |
 | [0062](0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) | The report page shows collin's own findings when it writes them | changing what the report page lists for a collin that writes `findings`, or what the badge counts for it |
+| [0063](0063-jobs-are-read-from-folders-you-name.md) | Jobs are read from folders you name, outside the project | changing which job files are read, what leaves them, or how a job's dbt command is resolved |
 
 ## Keeping these honest
 

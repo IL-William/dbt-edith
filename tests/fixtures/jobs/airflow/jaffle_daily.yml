@@ -1,0 +1,19 @@
+# One DAG, in the shape dbt-edith proposes. Invented over Jaffle Shop.
+dag_id: jaffle_daily
+schedule: "0 6 * * *"
+tasks:
+  - task_id: load_seeds
+    command: dbt seed
+  - task_id: stage
+    command: dbt run --select tag:staging
+    depends_on: [load_seeds]
+  - task_id: marts
+    command: dbt run -s +customers orders --exclude tag:staging
+    depends_on: [stage]
+    outlets: [jaffle_marts]
+  - task_id: reconcile
+    command: dbt test --selector recon_tests
+    depends_on: [marts]
+  - task_id: notify
+    python_callable: send_report
+    depends_on: [reconcile]

@@ -15,6 +15,25 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.9.0 - 2026-10-11
+
+- Show which Airflow DAGs and dbt Cloud jobs run the node in focus, in a Jobs
+  tab beside Catalog, read from their YAML in folders named in the settings,
+  outside the project: each task or step with the terms of its selection that
+  reached the node, its schedule, the jobs it waits for or starts, and a
+  `dbt ls` button to check it against dbt. A step this tool cannot resolve is
+  listed apart with the reason, never guessed (0063).
+- List, in the Jobs tab's Coverage view, the project's own models, seeds and
+  snapshots no scheduled job runs, those run only by jobs nothing schedules,
+  and the steps that select nothing, each model opening on a click.
+- Open an installed package's model from the lineage, the palette, the Models
+  list or Coverage, in `dbt_packages`, where it used to fail with no such file.
+- Read dbt Cloud jobs in dbt-jobs-as-code's schema, anchors and merges
+  included, and Airflow DAGs in a proposed shape whose every key can be renamed
+  to match a repository's own.
+- Name the top bar's settings button for what it now holds, the project's
+  settings, rather than Snowflake's features alone.
+
 ## 1.8.1 - 2026-10-11
 
 - Ask git for the status in two calls rather than six, and the freshness badge
