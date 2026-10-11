@@ -51,7 +51,6 @@ const S = {
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
   historyAsk: 0,              // bumped per history request, so only the latest answer is drawn
   jobsRun: 0,                 // bumped per Jobs request, so only the latest answer is drawn
-  jobsView: 'node',           // the Jobs tab: node | coverage
   jobsKeys: null,             // the Airflow keys and the shape the server proposes (0063)
   sfSession: null,            // { org, account, user, role } of the script's connection, once asked
   cloneFrom: null,            // where this tab last copied from: a .env file, '' for built, null before any
@@ -63,6 +62,16 @@ const S = {
   crumbLine: -1,              // the line that half was last drawn for
   version: '',                // this build's version, named in an exported graph
   keyless: false,             // the server refused this tab for want of its launch key (0052)
+  collinSeen: undefined,      // collin's run counter when its report was last shown, for the news
+  reports: null,              // /api/reports: which reports have something to show, and when written
+  reportsAt: undefined,       // the newest report file the freshness poll last named
+  reportsOpen: false,         // the panel is rolled down over the editor and the dock (0064)
+  reportsSection: '',         // the section on screen in it, or last on screen this session
+  reportsShown: null,         // the index entry the section on screen was read at
+  reportsReturn: null,        // where focus goes back to when the panel is closed from the keyboard
+  reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
+  reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
+  reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
 };
 
 // ------------------------------------------------------------------ util --
@@ -1692,6 +1701,8 @@ function paneOf(el) {
    nothing of ours to search, and the browser's own find opens instead: over the
    lineage it finds a box by its name. */
 function findInPane(pane) {
+  // The reports cover every pane: the browser's own find searches them.
+  if (S.reportsOpen) return false;
   if (pane === 'catalog') return focusColumnFilter();
   if (pane === 'compiled' || pane === 'run') {
     const cm = S.artifactCm[pane];
@@ -1892,18 +1903,24 @@ function decorateDiff(mv, pane) {
 }
 
 /* A tab that owns a pane of its own in #diff-host rather than a CodeMirror
-   Doc: a diff, collin's report, or two collin versions compared. None has a
-   cursor or a file to save. */
+   Doc: a diff, or two collin versions compared. Neither has a cursor or a file
+   to save. */
 function ownsPane(f) {
   return !!f && (f.kind === 'diff' || collinTab(f));
 }
 
-/* collin's report or a comparison of versions: a tab no file stands behind. */
+/* A comparison of collin versions: a tab no file stands behind. collin's
+   report is a section of the reports instead (0064). */
 function collinTab(f) {
-  return !!f && (f.kind === 'report' || f.kind === 'compare');
+  return !!f && f.kind === 'compare';
 }
 
-function activate(path, focusLineage = true) {
+/* Showing a tab is asking for the editor, so the reports roll up: a file
+   opened from the sidebar, the palette or a link lands here. `keepReports` is
+   for a tab shown because another was closed, from the sidebar while the
+   reports stay down. */
+function activate(path, focusLineage = true, keepReports = false) {
+  if (!keepReports) closeReports();
   S.active = path;
   const f = S.open.get(path);
   $('#editor-empty').classList.add('hidden');
@@ -1953,7 +1970,7 @@ function dropTab(key) {
 function settleTabs() {
   if (!S.active || !S.open.has(S.active)) {
     S.active = S.order[S.order.length - 1] || null;
-    if (S.active) activate(S.active);
+    if (S.active) activate(S.active, true, true);
     else {
       $('#editor-host').style.display = 'none';
       $('#diff-host').classList.add('hidden');
@@ -2053,7 +2070,6 @@ function renderTabs() {
     name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || collinTab(f) ? fileName(f.path) : base(path);
     name.title = f.kind === 'diff' ? f.path + '  (HEAD against the working tree)'
       : f.kind === 'profile' ? f.path + '  (the dbt profile, outside the project)'
-      : f.kind === 'report' ? 'What collin found reading the compiled SQL, from target/collin.report.json'
       : f.kind === 'compare' ? 'What two collin versions read, from the runs kept in target/collin/'
       : path;
     const x = document.createElement('span');
@@ -2107,13 +2123,12 @@ function renderOpenEditors() {
 
     const nm = document.createElement('span');
     nm.className = 'nm';
-    // collin's tabs are keyed `collin:report` and `collin:compare`, which are
-    // no path to show.
-    const report = collinTab(f);
-    nm.textContent = report ? f.path : base(path);
+    // The comparison is keyed `collin:compare`, which is no path to show.
+    const compare = collinTab(f);
+    nm.textContent = compare ? f.path : base(path);
     const dir = document.createElement('span');
     dir.className = 'dir';
-    dir.textContent = report ? (f.kind === 'report' ? 'target' : 'target/collin') : dirOf(path);
+    dir.textContent = compare ? 'target/collin' : dirOf(path);
 
     const sv = document.createElement('button');
     sv.className = 'icon save';
@@ -2125,7 +2140,7 @@ function renderOpenEditors() {
     });
 
     row.append(state, nm, dir, sv);
-    row.title = !report ? path : f.kind === 'report' ? 'target/collin.report.json' : 'target/collin/';
+    row.title = compare ? 'target/collin/' : path;
     row.addEventListener('click', () => activate(path));
     row.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeFile(path); } });
     list.appendChild(row);
@@ -2239,10 +2254,6 @@ function updateStatus() {
   const f = S.open.get(S.active);
   if (f.kind === 'diff') {
     s.textContent = `${f.path}  ·  diff against HEAD  ·  read only`;
-    return;
-  }
-  if (f.kind === 'report') {
-    s.textContent = 'target/collin.report.json  ·  read only';
     return;
   }
   if (f.kind === 'compare') {
@@ -2946,6 +2957,10 @@ async function refreshFreshness() {
     S.freshKey = key;
     S.fresh = f;
     paintFreshness(f);
+    // A run that writes a report moves this stamp, and the index is read again
+    // only then. The first answer is only noted: boot has just read it.
+    if (S.reportsAt !== undefined && f.reports_at !== S.reportsAt) loadReportsIndex();
+    S.reportsAt = f.reports_at;
     // The watcher reloads the manifest when dbt rewrites it, and this poll is
     // the only way the page hears of it. Newer only: the answer is cached for
     // a moment, so it can trail a reload the button has just made. The canvas
@@ -3029,8 +3044,10 @@ async function refreshModels() {
     if (h.disabled) row.classList.add('off');
     row.append(dot(h), nm, sub);
     row.title = h.file;
-    row.addEventListener('click', () => focusNode(h.id, { open: false }));
-    row.addEventListener('dblclick', () => focusNode(h.id, { open: true }));
+    // A click here asks for the lineage and the Catalog, which the reports
+    // cover; focusNode cannot close them itself, since a run's end calls it.
+    row.addEventListener('click', () => { closeReports(); focusNode(h.id, { open: false }); });
+    row.addEventListener('dblclick', () => { closeReports(); focusNode(h.id, { open: true }); });
     list.appendChild(row);
   }
   if (!hits.length) list.innerHTML = '<p class="muted pad">No match.</p>';
@@ -3431,7 +3448,7 @@ async function focusNode(id, { open = false } = {}) {
     for (const kind of ['compiled', 'run']) {
       if (!$('#dock-' + kind).classList.contains('hidden')) loadArtifact(kind, id);
     }
-    if (S.dock === 'jobs' && S.jobsView === 'node') loadJobs();
+    if (S.dock === 'jobs') loadJobs();
     if (open && detail.file) openFile(detail.file, { focusLineage: false });
   } catch (e) { toast('lineage: ' + e.message, 'err'); }
 }
@@ -4255,7 +4272,7 @@ async function openSourceMenu(anchor) {
       pick: t.install ? installCollin : () => switchLineage({ tool: t.tool }) });
     if (t.tool === 'collin' && report) {
       add({ label: report.label, sub: report.sub, tool: 'collin', on: false, title: report.title, action: true,
-        pick: openCollinReport });
+        pick: () => openReports('collin') });
     }
     if (t.tool === 'collin') {
       for (const v of versions) {
@@ -4343,7 +4360,7 @@ async function regenerateCollin() {
    a pick goes on, so its edges appear once it is done. */
 function paintCollin(was) {
   paintSourceButton();
-  paintCollinBadge();
+  paintReportsButton();
   const now = S.collin ? S.collin.state : '';
   if (now !== was && S.node) renderCatalog(S.node);
   clearTimeout(S.collinPoll);
@@ -4353,6 +4370,9 @@ function paintCollin(was) {
     }, 1500);
   } else if (was === 'running' && now === 'done') {
     redrawLineage();
+    // The run wrote its report: the button says so now rather than at the
+    // next poll.
+    loadReportsIndex();
   } else if (was === 'running' && now === 'failed') {
     toast('collin: ' + (S.collin.error || 'the run failed'), 'err');
   }
@@ -4523,15 +4543,15 @@ function collinReportTiles(t) {
   return tiles;
 }
 
-/* The badge a run leaves behind it until its report is opened. Only a run
-   finished since the page last looked: two runs in a row both read done, and
-   the counter is what tells them apart. */
+/* What a run leaves on the Reports button until its report is shown. Only a
+   run finished since the page last looked: two runs in a row both read done,
+   and the counter is what tells them apart. */
 function collinBadge(cl, seen) {
   if (!cl || cl.state !== 'done' || !cl.report || !cl.report.to_investigate) return null;
   if ((cl.run || 0) <= (seen || 0)) return null;
   const n = cl.report.to_investigate;
   return { text: `${n} to investigate`,
-    title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.\nClick to open its report.` };
+    title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.` };
 }
 
 /* The line under Collin in the menu that opens the report, whenever Collin's
@@ -4540,50 +4560,13 @@ function collinReportRow(cl, tool) {
   if (!cl || tool !== 'collin' || !cl.report) return null;
   const n = cl.report.to_investigate || 0;
   return { label: "Open collin's report", sub: n ? `${n} to investigate` : 'nothing to investigate',
-    title: "What collin's last run found, grouped by what would fix it." };
-}
-
-/* collin's report as a tab beside the files: something to work through model
-   by model, each opening next to it. Read again on every opening, so a run
-   since the last one shows. */
-async function openCollinReport() {
-  const key = 'collin:report';
-  let view;
-  try { view = await api.get('/api/collineage/report'); }
-  catch (e) { return toast('collin report: ' + e.message, 'err'); }
-  const f = S.open.get(key);
-  if (f) {
-    f.view = view;
-    if (f.host) f.host.remove();
-    f.host = null;
-  } else {
-    S.open.set(key, { kind: 'report', path: "collin's report", view, dirty: false, host: null });
-    S.order.push(key);
-  }
-  if (S.collin) S.collinSeen = S.collin.run || 0;
-  paintCollinBadge();
-  activate(key, false);
-}
-
-function paintCollinBadge() {
-  const el = $('#collin-badge');
-  if (!el) return;
-  // A run finished before the page loaded is not news to anyone.
-  if (S.collinSeen === undefined && S.collin) S.collinSeen = S.collin.run || 0;
-  const b = collinBadge(S.collin, S.collinSeen);
-  el.classList.toggle('hidden', !b);
-  if (!b) return;
-  el.querySelector('.lbl').textContent = b.text;
-  el.title = b.title;
+    title: "What collin's last run found, grouped by what would fix it, in Reports." };
 }
 
 /* A model named in the report, opened with its Columns tab, where collin's
    notes on each column already are. */
 function openReportNode(id, column) {
-  S.catTab = 'columns';
-  S.colHighlight = column || null;
-  showDock('catalog');
-  focusNode(id, { open: true });
+  openFromReport(id, { dock: 'catalog', column });
 }
 
 function mountCollinTab(key) {
@@ -4591,34 +4574,24 @@ function mountCollinTab(key) {
   const host = $('#diff-host');
   [...host.children].forEach((c) => c.classList.add('hidden'));
   if (!f.host) {
-    f.host = f.kind === 'report' ? collinReportPane(key, f.view) : collinComparePane(key, f.view, f.pair);
+    f.host = collinComparePane(key, f.view, f.pair);
     host.appendChild(f.host);
   }
   f.host.classList.remove('hidden');
 }
 
-function collinReportPane(key, view) {
+/* What the head of collin's section says about the run that wrote it. */
+function collinReportAbout(view) {
+  const written = view.generated_at ? cacheAge(Math.floor(Date.parse(view.generated_at) / 1000)) : '';
+  return [view.producer, view.project, view.adapter, view.dbt_version && `dbt ${view.dbt_version}`,
+    written && `written ${written}`].filter(Boolean).join(' · ');
+}
+
+/* collin's report, the body of its section in the reports: something to work
+   through model by model, each opening in the editor as the panel rolls up. */
+function collinReportBody(view) {
   const el = (tag, className, textContent) => Object.assign(document.createElement(tag), className ? { className } : {},
     textContent !== undefined ? { textContent } : {});
-  const pane = el('div', 'diffpane reportpane');
-  const head = el('div', 'diff-head');
-  const title = el('div', 'diff-title');
-  const dot = el('span', 'tooldot');
-  dot.dataset.tool = 'collin';
-  const written = view.generated_at ? cacheAge(Math.floor(Date.parse(view.generated_at) / 1000)) : '';
-  const about = [view.producer, view.project, view.adapter, view.dbt_version && `dbt ${view.dbt_version}`,
-    written && `written ${written}`];
-  title.append(dot, el('b', '', "collin's report"), el('span', 'diff-state', about.filter(Boolean).join(' · ')),
-    el('div', 'grow'));
-  const again = el('button', 'btn sm', 'Read again');
-  again.title = 'Read target/collin.report.json again';
-  again.addEventListener('click', openCollinReport);
-  const close = el('button', 'icon', '×');
-  close.title = 'Close the report';
-  close.addEventListener('click', () => closeFile(key));
-  title.append(again, close);
-  head.append(title);
-
   const body = el('div', 'reportbody');
   const tiles = el('div', 'reporttiles');
   for (const t of collinReportTiles(view.totals)) {
@@ -4634,8 +4607,7 @@ function collinReportPane(key, view) {
 
   if ((view.collin_findings || []).length) {
     body.append(collinWrittenSections(view.collin_findings, el));
-    pane.append(head, body);
-    return pane;
+    return body;
   }
 
   for (const g of collinReportGroups(view.findings)) {
@@ -4690,8 +4662,7 @@ function collinReportPane(key, view) {
     }
     body.append(section);
   }
-  pane.append(head, body);
-  return pane;
+  return body;
 }
 
 /* collin's own findings, as it worded them: what it saw, what that usually
@@ -6785,6 +6756,8 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
    launch (0002). `run` is for the one button whose whole point is the command:
    the freshness badge, where the user has already chosen by clicking it. */
 function sendToTerminal(cmd, run) {
+  // Always on a click, and the terminal is what it asks to see.
+  closeReports();
   showDock('terminal');
   let tries = 0;
   const attempt = () => {
@@ -6939,15 +6912,32 @@ function jobsLinkRows(step) {
   return rows;
 }
 
-/* Coverage rows by folder, in the order the server sorted them. */
+/* Coverage rows by folder, in the order the server sorted them. A folder is
+   a level of its own only where it holds two of the rows or more: on a
+   project with a folder per model, every model would otherwise be a folder to
+   unfold. Each row goes under the deepest folder that gathers it with
+   another, `rest` saying its path below that one. A row nothing gathers ends
+   up alone, or under no folder, and the page lists it bare. */
 function jobsCoverageGroups(rows) {
-  const out = [];
+  const parts = (r) => (r.folder || '').split('/').filter(Boolean);
+  const held = new Map();
   for (const r of rows || []) {
-    const last = out[out.length - 1];
-    if (last && last.folder === r.folder) last.rows.push(r);
-    else out.push({ folder: r.folder, rows: [r] });
+    const p = parts(r);
+    for (let i = 1; i <= p.length; i++) {
+      const f = p.slice(0, i).join('/');
+      held.set(f, (held.get(f) || 0) + 1);
+    }
   }
-  return out;
+  const out = new Map();
+  for (const r of rows || []) {
+    const p = parts(r);
+    let at = p.length;
+    while (at > 0 && held.get(p.slice(0, at).join('/')) < 2) at--;
+    const folder = p.slice(0, at).join('/');
+    if (!out.has(folder)) out.set(folder, { folder, rows: [] });
+    out.get(folder).rows.push(Object.assign({}, r, { rest: p.slice(at).join('/') }));
+  }
+  return [...out.values()];
 }
 
 /* The sentence over the coverage lists. */
@@ -7063,22 +7053,15 @@ async function loadJobs({ look = false } = {}) {
   // The proposed shape is the server's, so the example cannot drift from it.
   // With no node, whether any source is set decides what the tab offers.
   let summary = null;
-  if (!S.jobsKeys || (S.jobsView === 'node' && !id)) {
+  if (!S.jobsKeys || !id) {
     try { summary = await ask('/api/jobs'); }
     catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
     if (run !== S.jobsRun) return;
     S.jobsKeys = summary.airflow_keys;
   }
-  if (S.jobsView === 'coverage') {
-    let cov;
-    try { cov = await ask('/api/jobs/coverage'); }
-    catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
-    if (run === S.jobsRun) renderCoverage(body, cov);
-    return;
-  }
   if (!id) {
     if (!summary.sources.length) return jobsNoSource(body);
-    body.replaceChildren(jel('div', 'compiled-empty', 'Select a model first, or open Coverage for the whole project.'));
+    body.replaceChildren(jel('div', 'compiled-empty', 'Select a model first, or open Reports for the coverage of the whole project.'));
     return;
   }
   let view;
@@ -7089,21 +7072,23 @@ async function loadJobs({ look = false } = {}) {
 
 const jel = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
 
-/* The head of the tab: what it is about, the two views, and the sources. */
+/* The head of the tab: the node it is about, the coverage of every model,
+   which lives in Reports (0064), and the sources. */
 function paintJobsHead() {
   const head = $('#jobs-head');
   const bar = jel('div', 'jobs-bar');
-  const tabs = jel('div', 'cat-tabs');
-  for (const [key, label] of [['node', 'This node'], ['coverage', 'Coverage']]) {
-    const t = jel('button', 'ctab' + (S.jobsView === key ? ' active' : ''), label);
-    t.addEventListener('click', () => { S.jobsView = key; loadJobs(); });
-    tabs.append(t);
+  const about = jel('span', 'jobs-about', (S.focus || '').split('.').pop());
+  bar.append(about, jel('div', 'grow'));
+  if (S.reports && S.reports.jobs) {
+    const coverage = jel('button', 'btn sm', 'Coverage in Reports');
+    coverage.title = 'Which models every job read runs, and which none does';
+    coverage.addEventListener('click', () => openReports('jobs'));
+    bar.append(coverage);
   }
-  const about = jel('span', 'jobs-about', S.jobsView === 'coverage' ? 'every job read, against every model' : (S.focus || '').split('.').pop());
   const sources = jel('button', 'btn sm', 'Sources…');
   sources.title = 'Where the jobs are read from, and how';
   sources.addEventListener('click', openJobSources);
-  bar.append(tabs, about, jel('div', 'grow'), sources);
+  bar.append(sources);
   head.replaceChildren(bar);
 }
 
@@ -7194,20 +7179,28 @@ function jobsSection(title, groups, count, open, hint = '') {
   if (hint) head.title = hint;
   sec.append(head);
   for (const g of groups) {
+    // A folder of one is no level to unfold: the row is listed bare, its
+    // whole folder beside it.
+    if (g.rows.length === 1 || !g.folder) {
+      for (const r of g.rows) sec.append(jobsRow(r, r.folder));
+      continue;
+    }
     const folder = jel('details', 'jobs-folder');
     folder.open = open;
-    folder.append(jel('summary', '', `${g.folder || '.'} (${g.rows.length})`));
-    for (const r of g.rows) {
-      const row = jel('button', 'jobs-row');
-      row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
-      row.title = `Open ${r.name}; This node then lists its jobs`;
-      // The report stays, so a list can be gone through one model at a time.
-      row.addEventListener('click', () => { pushJump(); focusNode(r.id, { open: true }); });
-      folder.append(row);
-    }
+    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
+    for (const r of g.rows) folder.append(jobsRow(r, r.rest));
     sec.append(folder);
   }
   return sec;
+}
+
+function jobsRow(r, path) {
+  const row = jel('button', 'jobs-row');
+  row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
+  if (path) row.append(jel('span', 'jobs-path', path));
+  row.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
+  row.addEventListener('click', () => openFromReport(r.id, { dock: 'jobs' }));
+  return row;
 }
 
 function jobsStepList(title, refs) {
@@ -7339,6 +7332,7 @@ async function openJobSources() {
         : 'No config directory is available, so these sources last until dbt-edith stops.';
       paint();
       if (S.dock === 'jobs') loadJobs();
+      loadReportsIndex();
     } catch (e) {
       toast('sources: ' + e.message, 'err');
     } finally {
@@ -7353,6 +7347,281 @@ async function openJobSources() {
   paint();
   await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true });
   if (S.dock === 'jobs') loadJobs();
+  if (S.reportsOpen && S.reportsSection === 'jobs') showReportSection('jobs');
+}
+
+// ---------------------------------------------------------------- reports --
+/* Reports on the whole project, in one panel rolled down over the editor and
+   the dock from the top bar (0064). The pure part runs from reportsSections to
+   loadReportsIndex, which web/tests/reports.js slices. */
+
+/* The sections there are, in the order they are worked through, each only
+   while it has something to show: collin's report once a run wrote one, the
+   coverage of the jobs once a source is named. */
+function reportsSections(index) {
+  const all = [
+    { key: 'collin', label: "collin's report", tool: 'collin',
+      title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
+    { key: 'jobs', label: 'Job coverage', tool: 'jobs',
+      title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
+  ];
+  return all.filter((sec) => !!(index && index[sec.key]));
+}
+
+/* What is new in the reports since each was last shown: for now what
+   collinBadge says of collin's last run. The button carries it, and nothing
+   opens by itself (0059). */
+function reportsNews(collin) {
+  return collin ? [{ key: 'collin', tool: 'collin', text: collin.text, title: collin.title }] : [];
+}
+
+/* The section the panel opens on: one with news, then the one read last this
+   session, then the first there is. */
+function reportsDefaultSection(sections, news, last) {
+  const has = (key) => sections.some((sec) => sec.key === key);
+  const fresh = (news || []).find((n) => has(n.key));
+  if (fresh) return fresh.key;
+  if (last && has(last)) return last;
+  return sections.length ? sections[0].key : '';
+}
+
+/* The button's tooltip: what the reports hold, then what is new in them. */
+function reportsButtonTitle(sections, news, key) {
+  const names = sections.map((sec) => sec.label).join(', ');
+  return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
+    .concat((news || []).map((n) => n.title)).join('\n');
+}
+
+/* Whether the file behind the section on screen changed after it was read:
+   the head then says so, rather than the section redrawing under the reader
+   (0059). A section whose report has gone is stale too. */
+function reportsStale(shown, index, key) {
+  if (!shown) return false;
+  return JSON.stringify(shown) !== JSON.stringify((index && index[key]) || null);
+}
+
+async function loadReportsIndex() {
+  try { S.reports = await api.get('/api/reports'); }
+  catch { return; }   // what the button said still stands: a poll never interrupts
+  paintReportsButton();
+  if (S.dock === 'jobs') paintJobsHead();
+  if (S.reportsOpen) paintReportsNav();
+}
+
+function newsChip(n) {
+  const chip = jel('span', 'rnew', n.text);
+  if (n.tool) chip.dataset.tool = n.tool;
+  return chip;
+}
+
+function reportsNow() {
+  // A run finished before the page loaded is not news to anyone.
+  if (S.collinSeen === undefined && S.collin) S.collinSeen = S.collin.run || 0;
+  return { sections: reportsSections(S.reports), news: reportsNews(collinBadge(S.collin, S.collinSeen)) };
+}
+
+function paintReportsButton() {
+  const btn = $('#reports-btn');
+  const { sections, news } = reportsNow();
+  btn.classList.toggle('hidden', !sections.length && !S.reportsOpen);
+  btn.classList.toggle('on', S.reportsOpen);
+  btn.setAttribute('aria-expanded', String(S.reportsOpen));
+  btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
+  btn.querySelector('.rnews').replaceChildren(...news.map(newsChip));
+}
+
+/* Rolls the panel down over the editor and the dock, on the section asked
+   for or the one reportsDefaultSection picks. The index is read first, so a
+   report written since the last poll is there to pick. */
+async function openReports(section) {
+  await loadReportsIndex();
+  const { sections, news } = reportsNow();
+  const key = sections.some((sec) => sec.key === section) ? section : reportsDefaultSection(sections, news, S.reportsSection);
+  if (!key) return toast('no report to show yet');
+  if (!S.reportsOpen) {
+    closeHoverCard();
+    closePopup();
+    S.reportsReturn = document.activeElement;
+    S.reportsOpen = true;
+    // Nothing under the panel takes a key or a Tab while it is down: the
+    // editor and the terminal lose the focus they had, and closeReports gives
+    // it back.
+    for (const id of ['#editor-pane', '#gutter-dock', '#dock']) $(id).inert = true;
+    const panel = $('#reports');
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    panel.focus({ preventScroll: true });
+  }
+  paintReportsButton();
+  showReportSection(key);
+}
+
+/* Rolls the panel up. `restore` gives the focus back to where it was when the
+   panel came down, for a close from the keyboard or from its own buttons; a
+   file opened from it is where the reader goes next instead. */
+function closeReports({ restore = false } = {}) {
+  if (!S.reportsOpen) return;
+  S.reportsOpen = false;
+  const panel = $('#reports');
+  panel.classList.remove('open');
+  panel.setAttribute('aria-hidden', 'true');
+  for (const id of ['#editor-pane', '#gutter-dock', '#dock']) $(id).inert = false;
+  const back = S.reportsReturn;
+  S.reportsReturn = null;
+  if (panel.contains(document.activeElement)) document.activeElement.blur();
+  if (restore && back && back.focus && document.body.contains(back) && !panel.contains(back)) back.focus();
+  paintReportsButton();
+}
+
+function toggleReports() {
+  if (S.reportsOpen) closeReports({ restore: true });
+  else openReports();
+}
+
+function paintReportsNav() {
+  const { sections, news } = reportsNow();
+  $('#reports-nav').replaceChildren(...sections.map((sec) => {
+    const row = jel('button', 'reports-navrow');
+    row.type = 'button';
+    row.title = sec.title;
+    if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
+    const dot = jel('span', 'tooldot');
+    dot.dataset.tool = sec.tool;
+    row.append(dot, jel('span', '', sec.label));
+    const n = news.find((x) => x.key === sec.key);
+    if (n) row.append(newsChip(n));
+    row.addEventListener('click', () => showReportSection(sec.key));
+    return row;
+  }));
+  paintReportStale();
+}
+
+function paintReportStale() {
+  const again = $('#reports-view .reports-again');
+  if (!again) return;
+  const stale = reportsStale(S.reportsShown, S.reports, S.reportsSection);
+  again.classList.toggle('stale', stale);
+  again.textContent = stale ? 'Newer results: read again' : 'Read again';
+}
+
+/* The head every section shares: what it is, what it was read from, and its
+   buttons, Read again saying when the file has changed since. */
+function reportHead({ title, tool, about, again, extra = [] }) {
+  const head = jel('div', 'diff-head');
+  const row = jel('div', 'diff-title');
+  const dot = jel('span', 'tooldot');
+  dot.dataset.tool = tool;
+  row.append(dot, jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
+  const read = jel('button', 'btn sm reports-again', 'Read again');
+  read.addEventListener('click', again);
+  const close = jel('button', 'icon', '×');
+  close.title = `Close the reports (${keyLabel('Escape', IS_MAC)})`;
+  close.setAttribute('aria-label', 'Close the reports');
+  close.addEventListener('click', () => closeReports({ restore: true }));
+  row.append(read, close);
+  head.append(row);
+  return head;
+}
+
+/* A fold of a section, known by its summary and those of the folds around
+   it, without the count a run changes. */
+function reportFoldKey(d) {
+  const names = [];
+  for (let at = d; at; at = at.parentElement ? at.parentElement.closest('details') : null) {
+    const sum = at.querySelector(':scope > summary');
+    const title = sum && (sum.querySelector('.rtitle') || sum);
+    names.unshift(title ? title.textContent.replace(/ \(\d+\)$/, '') : '');
+  }
+  return names.join(' › ');
+}
+
+/* Which folds of the section on screen are open, and where its list is
+   scrolled: a list of hundreds is gone through one model at a time, each
+   opened from it, and coming back must find it as it was left. */
+function keepReportPlace(view) {
+  const scroller = view.querySelector('.reportbody, .jobs-body');
+  if (!scroller) return null;
+  const open = {};
+  for (const d of scroller.querySelectorAll('details')) open[reportFoldKey(d)] = d.open;
+  return { open, scroll: scroller.scrollTop };
+}
+
+function restoreReportPlace(view, place) {
+  const scroller = view.querySelector('.reportbody, .jobs-body');
+  if (!place || !scroller) return;
+  for (const d of scroller.querySelectorAll('details')) {
+    const key = reportFoldKey(d);
+    if (key in place.open) d.open = place.open[key];
+  }
+  scroller.scrollTop = place.scroll;
+}
+
+/* Draws one section, read again on every showing so a run since the last
+   one shows, with the folds and the scroll it was left with. Only the latest
+   of two quick clicks is drawn. */
+async function showReportSection(key) {
+  const view = $('#reports-view');
+  // Kept before anything replaces it, the placeholder included.
+  if (S.reportsDrawn) S.reportsPlace[S.reportsDrawn] = keepReportPlace(view) || S.reportsPlace[S.reportsDrawn];
+  S.reportsSection = key;
+  paintReportsNav();
+  const ask = ++S.reportsAsk;
+  if (key !== S.reportsDrawn) {
+    view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
+    S.reportsDrawn = '';
+  }
+  const shown = (S.reports && S.reports[key]) || null;
+  const again = () => showReportSection(key);
+  const drawn = key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
+  if (ask !== S.reportsAsk) return;
+  S.reportsShown = shown;
+  view.replaceChildren(...drawn);
+  S.reportsDrawn = key;
+  restoreReportPlace(view, S.reportsPlace[key]);
+  if (key === 'collin' && S.collin) S.collinSeen = S.collin.run || 0;
+  paintReportsButton();
+  paintReportsNav();
+}
+
+async function collinSection(again) {
+  const head = (about) => reportHead({ title: "collin's report", tool: 'collin', about, again });
+  let view;
+  try { view = await api.get('/api/collineage/report'); }
+  catch (e) { return [head(''), jel('div', 'compiled-empty', e.message)]; }
+  return [head(collinReportAbout(view)), collinReportBody(view)];
+}
+
+async function jobsCoverageSection(again) {
+  const sources = jel('button', 'btn sm', 'Sources…');
+  sources.title = 'Where the jobs are read from, and how';
+  sources.addEventListener('click', openJobSources);
+  const head = reportHead({ title: 'Job coverage', tool: 'jobs', about: 'every job read, against every model of the project',
+    again, extra: [sources] });
+  // The job files are looked at as the section opens, never on a click in it
+  // (0063).
+  let cov;
+  try { cov = await api.get('/api/jobs/coverage?look=true'); }
+  catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
+  const body = jel('div', 'jobs-body');
+  renderCoverage(body, cov);
+  return [head, body];
+}
+
+/* A node named in a report, opened in the editor with the dock tab that says
+   the most about it. The panel rolls up first: the file is what was asked
+   for, and focusNode opens none for a node without one (0064). */
+async function openFromReport(id, { dock = '', column = '' } = {}) {
+  closeReports();
+  pushJump();
+  if (dock === 'catalog') {
+    S.catTab = 'columns';
+    S.colHighlight = column || null;
+    showDock('catalog');
+  }
+  await focusNode(id, { open: true });
+  // Once the focus has moved, so the tab reads the node once, and without
+  // looking at the job files again: the section looked as it opened (0063).
+  if (dock === 'jobs' && S.dock !== 'jobs') showDock('jobs', { look: false });
 }
 
 // -------------------------------------------------------------- hover card --
@@ -9403,6 +9672,8 @@ function choosePalette(i) {
   const h = palHits[i ?? palIndex];
   if (!h) return;
   closePalette();
+  // A node without a file opens nothing, so activate() would not close them.
+  closeReports();
   pushJump();
   if (h.kind === 'file') {
     openFile(h.path, { preview: true });
@@ -9520,7 +9791,12 @@ function showSide(which) {
   if (which === 'search') $('#grep-input').focus();
 }
 
-function showDock(which) {
+/* `look` is off for a tab brought forward by a click in a report that has
+   just looked at the job files itself (0063). The reports are left as they
+   are: a column's lineage brings the canvas forward when its answer lands,
+   seconds later with Snowflake, and must not roll up a panel opened since.
+   What the user asks for rolls them up itself. */
+function showDock(which, { look = true } = {}) {
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
   $('#dock-lineage').classList.toggle('hidden', which !== 'lineage');
@@ -9531,7 +9807,7 @@ function showDock(which) {
   $('#dock-history').classList.toggle('hidden', which !== 'history');
   $('#dock-jobs').classList.toggle('hidden', which !== 'jobs');
   if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
-  if (which === 'jobs') loadJobs({ look: true });
+  if (which === 'jobs') loadJobs({ look });
   // Read when the tab is first opened, never before: that click is what may
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();
@@ -9621,7 +9897,12 @@ function shortcutSheet() {
       [['Mod+Alt+P'], 'Back to the link you followed'],
       [['Mod+Alt+N'], 'Forward again'],
       [['Mod+`'], 'Show the terminal'],
+      [['Mod+Alt+R'], 'Open or close the reports'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
+    ] },
+    { title: 'Reports', keys: [
+      [['Escape'], 'Close them, from inside'],
+      [['Mod+Alt+X', 'Alt+W'], 'Close them too, rather than the tab under them'],
     ] },
     { title: 'Find', keys: [
       [['Mod+F'], 'In a file, or in Compiled or Run: find in that text'],
@@ -9751,6 +10032,13 @@ function buildShortcuts() {
   return box;
 }
 
+/* What a close key closes: the reports when they are down, since the tab
+   under them cannot be seen, and the tab otherwise. */
+function closeFront() {
+  if (S.reportsOpen) closeReports({ restore: true });
+  else if (S.active) closeFile(S.active);
+}
+
 function wireKeys() {
   window.addEventListener('keydown', (e) => {
     switch (keyCombo(e, IS_MAC)) {
@@ -9762,9 +10050,9 @@ function wireKeys() {
          marked Z and writes a letter under Option, which keyCombo leaves alone
          on purpose (0030, 0037). Alt+Shift+W is not kept beside it: it sat one
          modifier from Shift+Cmd+W, which closes the browser window. */
-      case 'Mod+Alt+X': e.preventDefault(); if (S.active) closeFile(S.active); return;
+      case 'Mod+Alt+X': e.preventDefault(); closeFront(); return;
       case 'Mod+Alt+Shift+X': e.preventDefault(); closeAll(); return;
-      case 'Alt+W': e.preventDefault(); if (S.active) closeFile(S.active); return;
+      case 'Alt+W': e.preventDefault(); closeFront(); return;
       /* P for previous and N for next, and Cmd is not decoration: Option alone
          with a letter is left as typed, since on some layouts it writes one
          (keyCombo). Option+B and Option+N were tried and wrote into the file on
@@ -9775,7 +10063,10 @@ function wireKeys() {
       case 'Mod+Alt+P': e.preventDefault(); jumpBack(); return;
       case 'Mod+Alt+N': e.preventDefault(); jumpForward(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
-      case 'Mod+`': e.preventDefault(); showDock('terminal'); return;
+      case 'Mod+`': e.preventDefault(); closeReports(); showDock('terminal'); return;
+      /* R for reports, in the same place on every layout, with Cmd so that
+         keyCombo reads the key and not what Option typed (0037). */
+      case 'Mod+Alt+R': e.preventDefault(); toggleReports(); return;
       // An editor with the focus has answered this already, and said so.
       case 'Mod+F':
         if (!e.defaultPrevented && findInPane(paneOf(e.target) || S.lastPane)) e.preventDefault();
@@ -9868,7 +10159,15 @@ function wireKeys() {
   // one thing the user would type next. dbt still runs in their terminal, under
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
-  $('#collin-badge').addEventListener('click', openCollinReport);
+  $('#reports-btn').addEventListener('click', toggleReports);
+  // On the panel rather than the document: a dialog over it answers its own
+  // Escape there, and must not take the panel with it.
+  $('#reports').addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeReports({ restore: true });
+  });
   // Keyed on the state, so a card being read is not rebuilt under the pointer
   // by a poll that changed nothing.
   $('#fresh-badge').addEventListener('mouseenter', (e) => {
@@ -9903,6 +10202,8 @@ function applyMeta(meta) {
   paintSourceButton();
   // And which nodes each job's selection reaches.
   if (S.dock === 'jobs') loadJobs();
+  // And the coverage the reports would show, which the index stamps with it.
+  loadReportsIndex();
 }
 
 /* A whole /api/meta answer: the graph's facts, then where its column lineage

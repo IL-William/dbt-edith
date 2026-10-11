@@ -15,6 +15,22 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.10.0 - 2026-10-11
+
+- Gather what speaks of the whole project in a Reports panel that rolls down
+  over the editor and the dock from the top bar or `Mod+Alt+R`, a section
+  each, and rolls up when a file, a model or a dock tab is opened (0064). Its
+  button is a glyph whose name unfolds on hover.
+- Show collin's report as a section of Reports rather than a tab, its count of
+  models to investigate riding on the Reports button where its badge was.
+- Move the Jobs tab's Coverage view into Reports, as Job coverage; the tab
+  lists the jobs of the node in focus, with a button to the coverage.
+- Group the coverage's models under the deepest folder that holds two of them,
+  each row saying its path below it, and list a model no folder gathers bare:
+  with a folder per model, every model was a folder to unfold.
+- Find a section of Reports as it was left, its folds and its scroll, when it
+  is shown again after a model was opened from it.
+
 ## 1.9.0 - 2026-10-11
 
 - Show which Airflow DAGs and dbt Cloud jobs run the node in focus, in a Jobs

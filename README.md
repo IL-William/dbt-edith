@@ -630,10 +630,10 @@ compiled SQL, read from a CTE that lacks it, read downstream but missing here,
 or matched by name to several parents. The note over the table names those the
 table has no row for.
 
-**collin's report, whole.** After a run, a badge beside the column lineage
-button says how many models and tables collin named, "12 to investigate", until
-you open the report; "Open collin's report", under Collin in the menu, opens it
-at any time. It is a tab beside your files: collin's figures first, then every
+**collin's report, whole.** After a run, the Reports button in the top bar says
+how many models and tables collin named, "12 to investigate", until you open
+the report; "Open collin's report", under Collin in the menu, opens it at any
+time. It is a section of [Reports](#reports): collin's figures first, then every
 finding grouped by what would fix it. Rerun dbt: no compiled SQL, a compile for
 another target, a catalog of another table, a table older than its code. Fix in
 the project: a YAML behind the warehouse, a table read without a source or a
@@ -1128,17 +1128,21 @@ never guessed at: it is listed apart, under *Not resolved*, with the reason. A
 `{{ var }}` is only known when the job runs, and a flag this tool does not know
 might take a value or not.
 
-**Coverage**, at the top of the tab, turns the question round: which of the
+**Job coverage**, a section of [Reports](#reports) that **Coverage in Reports**
+in the tab opens, turns the question round: which of the
 project's own models, seeds and snapshots no scheduled job runs, which run only
 in jobs nothing schedules (*Manual only*), which steps select nothing, and which
 jobs were read.
-An installed package's models are left out, so the report is about the
-project's own. A job counts as
+A model sits under the deepest folder it shares with another listed model,
+with the rest of its path beside its name, and one no folder gathers is listed
+on its own. An installed package's models are left out, so the report is about
+the project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
 dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
-CI job or a merge job is not. Click a model to open it, with the report left
-in place; *This node* then lists its jobs.
+CI job or a merge job is not. Click a model to open it: the reports roll up,
+and the Jobs tab lists its jobs. Coming back finds the list as you left it,
+folds and scroll.
 
 Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
 in the menu behind the snowflake in the top bar: one or more folders or files,
@@ -1189,6 +1193,22 @@ What the YAML cannot say, this tab cannot either: tasks a factory builds in
 Python, a paused DAG, a schedule on one task that only the factory interprets,
 `--vars` or `--target` changing which models are enabled, and sources with no
 freshness configured. A `--project-dir` is taken to name this project.
+
+### Reports
+
+**Reports**, a sheet with a bar chart in the top bar whose name unfolds under
+the pointer, rolls a panel down over the editor and the dock
+with what speaks of the whole project, a section each, listed on its left:
+collin's report once collin has written one, and the coverage of your jobs once
+the Jobs tab has a source. The sidebar stays, and anything that shows a file
+or a dock tab rolls the panel up again: a name in a report, a file in the
+tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
+closes it. The button stays hidden while no section has anything to show.
+
+What is new since you last looked rides on the button, collin's "12 to
+investigate" for instance, and the panel opens on it. A section is read again
+each time it is shown, and never redrawn while you read it: when its file
+changes underneath, its **Read again** button says so (0064).
 
 ### Query history
 
@@ -1372,6 +1392,7 @@ $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in wha
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
 $JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
+$JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
