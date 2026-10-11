@@ -664,6 +664,14 @@ struct Held {
 pub struct Cache(Mutex<Option<Held>>);
 
 impl Cache {
+    /// Whether the jobs were read at all since dbt-edith started. The Reports
+    /// index counts the coverage only once they were, so it never reads the
+    /// job files first; after that, a new manifest reads them again as the
+    /// Jobs tab would (0066).
+    pub fn read_once(&self) -> bool {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    }
+
     pub fn get(&self, graph: &Arc<Graph>, root: &Path, sources: &[JobSource], look: bool) -> Arc<Read> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(h) = slot.as_ref() {

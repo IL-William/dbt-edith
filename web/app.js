@@ -72,6 +72,8 @@ const S = {
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
   reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
+  runSeen: undefined,         // the last run's file time when its section was last shown, for the news
+  jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
 };
 
 // ------------------------------------------------------------------ util --
@@ -2952,6 +2954,11 @@ async function refreshGit() {
 async function refreshFreshness() {
   try {
     const f = await api.get('/api/freshness');
+    // A poll that read run_results.json while dbt was writing it got the time
+    // without the counts; if dbt finished within the same second, the stamp
+    // did not move, so the index is asked again until it has them.
+    const run = S.reports && S.reports.run;
+    if (run && typeof run.error !== 'number') loadReportsIndex();
     const key = JSON.stringify(f);
     if (key === S.freshKey) return;
     S.freshKey = key;
@@ -4550,7 +4557,7 @@ function collinBadge(cl, seen) {
   if (!cl || cl.state !== 'done' || !cl.report || !cl.report.to_investigate) return null;
   if ((cl.run || 0) <= (seen || 0)) return null;
   const n = cl.report.to_investigate;
-  return { text: `${n} to investigate`,
+  return { text: `${n} to investigate`, short: String(n),
     title: `collin's last run names ${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at.` };
 }
 
@@ -7360,6 +7367,8 @@ async function openJobSources() {
    coverage of the jobs once a source is named. */
 function reportsSections(index) {
   const all = [
+    { key: 'run', label: 'Last run', tool: 'dbt',
+      title: 'What the last dbt command ran and how each node ended, from target/run_results.json' },
     { key: 'collin', label: "collin's report", tool: 'collin',
       title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
@@ -7368,11 +7377,138 @@ function reportsSections(index) {
   return all.filter((sec) => !!(index && index[sec.key]));
 }
 
-/* What is new in the reports since each was last shown: for now what
-   collinBadge says of collin's last run. The button carries it, and nothing
-   opens by itself (0059). */
-function reportsNews(collin) {
-  return collin ? [{ key: 'collin', tool: 'collin', text: collin.text, title: collin.title }] : [];
+/* What is new in the reports since each was last shown, in the sections'
+   order: what runBadge says of the last run, collinBadge of collin's,
+   jobsBadge of the coverage. The button carries it, and nothing opens by
+   itself (0059). */
+function reportsNews(collin, run, jobs) {
+  const news = [];
+  if (run) news.push({ key: 'run', tone: 'bad', text: run.text, short: run.short, title: run.title });
+  if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, short: collin.short, title: collin.title });
+  if (jobs) news.push({ key: 'jobs', tone: 'warn', text: jobs.text, short: jobs.short, title: jobs.title });
+  return news;
+}
+
+/* What the chips on the button say: a report's words when it is the only one
+   with news, its count alone when several are, so the button stays short;
+   the tooltip has the words either way. */
+function reportsChipTexts(news) {
+  return (news || []).map((n) => (news.length > 1 ? n.short : n.text));
+}
+
+/* How many more models, seeds and snapshots no scheduled job runs than when
+   the coverage was last shown (0066). Fewer is no news, and the page lowers
+   what it last saw to match, so that a later rise counts from there. */
+function jobsBadge(jobs, seen) {
+  if (!jobs || typeof jobs.never !== 'number' || typeof seen !== 'number') return null;
+  const now = jobs.never + (jobs.unscheduled || 0);
+  if (now <= seen) return null;
+  const n = now - seen;
+  return { text: `${n} more unscheduled`, short: `+${n}`,
+    title: `${n} more model${n > 1 ? 's' : ''}, seed${n > 1 ? 's' : ''} or snapshot${n > 1 ? 's' : ''} than when you last looked `
+      + `${n > 1 ? 'are' : 'is'} run by no scheduled job: ${jobs.never} in no job, ${jobs.unscheduled || 0} manual only.` };
+}
+
+/* What the last run leaves on the button until its section is shown: its
+   errors and failed tests, only for a file written since the page last
+   looked, as collin's badge (0059). Warnings are for the section to say. */
+function runBadge(run, seen) {
+  if (!run || !(run.error || run.fail)) return null;
+  if ((run.at || 0) <= (seen || 0)) return null;
+  const errors = run.error ? `${run.error} error${run.error > 1 ? 's' : ''}` : '';
+  const what = run.command ? `dbt ${run.command}` : 'The last dbt command';
+  const said = [errors, run.fail ? `${run.fail} failed test${run.fail > 1 ? 's' : ''}` : ''].filter(Boolean);
+  return { text: [errors, run.fail ? `${run.fail} failed` : ''].filter(Boolean).join(', '),
+    short: String((run.error || 0) + (run.fail || 0)), title: `${what} ended with ${said.join(' and ')}.` };
+}
+
+/* A dbt outcome as the section says it. One it does not know is shown as
+   dbt wrote it. */
+function runStatusWord(status) {
+  return { ok: 'ok', error: 'error', fail: 'failed', warn: 'warned', skipped: 'skipped', partial: 'partly done',
+    noop: 'nothing to do', reused: 'reused' }[status] || status;
+}
+
+/* The order outcomes are listed in: what to look at first. */
+function runStatusRank(status) {
+  const at = ['error', 'fail', 'warn', 'partial', 'skipped', 'ok', 'noop', 'reused'].indexOf(status);
+  return at < 0 ? 99 : at;
+}
+
+function runSecs(s) {
+  if (typeof s !== 'number' || !isFinite(s)) return '';
+  if (s < 1) return `${s.toFixed(2)} s`;
+  if (s < 10) return `${s.toFixed(1)} s`;
+  if (s < 60) return `${Math.round(s)} s`;
+  return `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
+}
+
+/* `model` as a heading: `Models`; `unit_test` as `unit tests`. */
+function runKindPlural(kind, capital) {
+  const words = String(kind || 'node').replace(/_/g, ' ') + 's';
+  return capital ? words[0].toUpperCase() + words.slice(1) : words;
+}
+
+/* What the head says of the run: the command as dbt was given it, the
+   selection only, then the dbt that ran it and how long it took. */
+function runAbout(run) {
+  const cmd = run.command ? ['dbt ' + run.command].concat(run.selection || []).join(' ') : 'a dbt command';
+  // Fusion writes no time for a command that ran nothing, as a zero.
+  return [cmd, run.dbt_version && `dbt ${run.dbt_version}`, run.elapsed > 0 && runSecs(run.elapsed)].filter(Boolean).join(' · ');
+}
+
+/* What a reader has to know before trusting the section, warnings first. A
+   node the run did not reach is said in a count, never listed: absent from
+   the file, it was not run, which says nothing about it. */
+function runNotes(run) {
+  const warn = [], dim = [];
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const ran = (run.kinds || []).reduce((a, k) => a + k.ran, 0);
+  if (run.older_than_manifest) {
+    warn.push('The manifest was written after this run: a parse or another command since may have changed what the project holds.');
+  }
+  if (run.other_target) {
+    warn.push(`${plural(run.other_target, 'result names a table', 'results name tables')} the manifest names otherwise: this run was likely for another target.`);
+  }
+  if (run.unknown && run.unknown.of) {
+    warn.push(`${plural(run.unknown.of, 'result names a node', 'results name nodes')} the manifest no longer has.`);
+  }
+  // Commands that build nothing, and still write the file over the last run.
+  if (['compile', 'show', 'docs generate', 'run-operation'].includes(run.command)) {
+    dim.push(`dbt ${run.command} wrote this file over the one before, so what the last run did is no longer in it.`);
+  }
+  if (!ran) dim.push('It ran no node.');
+  else {
+    const short = (run.kinds || []).filter((k) => k.of > k.ran);
+    if (short.length) {
+      dim.push(`It ran ${short.map((k) => `${k.ran} of ${k.of} ${runKindPlural(k.kind)}`).join(', ')}: `
+        + 'a node it did not reach is not in it, which says nothing about that node.');
+    }
+  }
+  if (run.command === 'test') dim.push('dbt test runs tests alone: no model was built by it.');
+  return warn.map((text) => ({ tone: 'warn', text })).concat(dim.map((text) => ({ tone: '', text })));
+}
+
+/* The figures over the section: a tile per kind that ran, then the time. */
+function runTiles(run) {
+  const tiles = (run.kinds || []).map((k) => {
+    const st = k.statuses || {};
+    const sub = Object.keys(st).sort((a, b) => runStatusRank(a) - runStatusRank(b))
+      .map((s) => `${st[s]} ${runStatusWord(s)}`).join(' · ');
+    const tone = st.error || st.fail ? 'bad' : st.warn || st.partial ? 'warn' : '';
+    return { label: runKindPlural(k.kind, true), value: k.of ? `${k.ran} of ${k.of}` : String(k.ran), sub, tone };
+  });
+  if (run.elapsed > 0) tiles.push({ label: 'Took', value: runSecs(run.elapsed), sub: 'for the whole command', tone: '' });
+  return tiles;
+}
+
+/* What follows a node's name in a list: how it ended, how many rows a test
+   found, and how long it took. */
+function runEntryText(e) {
+  const bits = [runStatusWord(e.status)];
+  if (typeof e.failures === 'number' && e.failures > 0) bits.push(`${e.failures} row${e.failures > 1 ? 's' : ''}`);
+  if (e.secs) bits.push(runSecs(e.secs));
+  return bits.join(' · ');
 }
 
 /* The section the panel opens on: one with news, then the one read last this
@@ -7411,13 +7547,23 @@ async function loadReportsIndex() {
 function newsChip(n) {
   const chip = jel('span', 'rnew', n.text);
   if (n.tool) chip.dataset.tool = n.tool;
+  if (n.tone) chip.dataset.tone = n.tone;
+  chip.title = n.title || '';
   return chip;
 }
 
 function reportsNow() {
   // A run finished before the page loaded is not news to anyone.
   if (S.collinSeen === undefined && S.collin) S.collinSeen = S.collin.run || 0;
-  return { sections: reportsSections(S.reports), news: reportsNews(collinBadge(S.collin, S.collinSeen)) };
+  if (S.runSeen === undefined && S.reports) S.runSeen = S.reports.run ? S.reports.run.at : 0;
+  const jobs = S.reports && S.reports.jobs;
+  if (jobs && typeof jobs.never === 'number') {
+    const now = jobs.never + (jobs.unscheduled || 0);
+    if (S.jobsSeen === undefined || now < S.jobsSeen) S.jobsSeen = now;
+  }
+  const run = runBadge(S.reports && S.reports.run, S.runSeen);
+  return { sections: reportsSections(S.reports),
+    news: reportsNews(collinBadge(S.collin, S.collinSeen), run, jobsBadge(jobs, S.jobsSeen)) };
 }
 
 function paintReportsButton() {
@@ -7427,7 +7573,8 @@ function paintReportsButton() {
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
-  btn.querySelector('.rnews').replaceChildren(...news.map(newsChip));
+  const texts = reportsChipTexts(news);
+  btn.querySelector('.rnews').replaceChildren(...news.map((n, i) => newsChip(Object.assign({}, n, { text: texts[i] }))));
 }
 
 /* Rolls the panel down over the editor and the dock, on the section asked
@@ -7488,8 +7635,9 @@ function paintReportsNav() {
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
     row.append(dot, jel('span', '', sec.label));
+    // The rail is narrow: the count alone, the words being on the button.
     const n = news.find((x) => x.key === sec.key);
-    if (n) row.append(newsChip(n));
+    if (n) row.append(newsChip(Object.assign({}, n, { text: n.short })));
     row.addEventListener('click', () => showReportSection(sec.key));
     return row;
   }));
@@ -7572,15 +7720,107 @@ async function showReportSection(key) {
   }
   const shown = (S.reports && S.reports[key]) || null;
   const again = () => showReportSection(key);
-  const drawn = key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
+  const drawn = key === 'run' ? await runSection(again)
+    : key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
   view.replaceChildren(...drawn);
   S.reportsDrawn = key;
   restoreReportPlace(view, S.reportsPlace[key]);
   if (key === 'collin' && S.collin) S.collinSeen = S.collin.run || 0;
+  if (key === 'run' && shown) S.runSeen = shown.at;
+  // The coverage is counted by the index only once the jobs were read, which
+  // this section has just done: read again, so the counts it shows are seen.
+  if (key === 'jobs') {
+    await loadReportsIndex();
+    if (ask !== S.reportsAsk) return;
+    const jobs = S.reports && S.reports.jobs;
+    S.reportsShown = jobs || null;
+    if (jobs && typeof jobs.never === 'number') S.jobsSeen = jobs.never + (jobs.unscheduled || 0);
+  }
   paintReportsButton();
   paintReportsNav();
+}
+
+async function runSection(again) {
+  let run;
+  try { run = await api.get('/api/reports/run'); }
+  catch (e) { return [reportHead({ title: 'Last run', tool: 'dbt', about: '', again }), jel('div', 'compiled-empty', e.message)]; }
+  const about = [runAbout(run), run.at ? `written ${cacheAge(run.at)}` : ''].filter(Boolean).join(' · ');
+  const body = jel('div', 'reportbody');
+  const tiles = jel('div', 'reporttiles');
+  for (const t of runTiles(run)) {
+    const tile = jel('div', 'reporttile');
+    if (t.tone) tile.dataset.tone = t.tone;
+    tile.append(jel('div', 'rlabel', t.label), jel('div', 'rvalue', t.value), jel('div', 'rsub', t.sub));
+    tiles.append(tile);
+  }
+  body.append(tiles);
+  for (const n of runNotes(run)) {
+    const p = jel('p', 'runnote', n.text);
+    if (n.tone) p.dataset.tone = n.tone;
+    body.append(p);
+  }
+  const group = (title, list, open, tone) => {
+    if (!list.of) return;
+    const d = jel('details', 'reportfinding');
+    d.open = open;
+    if (tone) d.dataset.tone = tone;
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', title), jel('span', 'rcount', String(list.of)));
+    const ul = jel('ul', 'rentries');
+    for (const e of list.items) ul.append(runEntryRow(e));
+    if (list.of > list.items.length) ul.append(jel('li', 'muted', `and ${list.of - list.items.length} more`));
+    d.append(sum, ul);
+    body.append(d);
+  };
+  group('Errors and failed tests', run.problems, true, 'bad');
+  group('Warnings', run.warned, run.warned.of <= 20, 'warn');
+  group('Skipped', run.skipped, run.skipped.of <= 20, '');
+  group('Slowest', { items: run.slowest, of: run.slowest.length }, false, '');
+  if (run.unknown.of) {
+    const d = jel('details', 'reportfinding');
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', 'Not in the manifest'), jel('span', 'rcount', String(run.unknown.of)));
+    const ul = jel('ul', 'rentries');
+    for (const id of run.unknown.items) ul.append(jel('li', 'rrel', id));
+    if (run.unknown.of > run.unknown.items.length) ul.append(jel('li', 'muted', `and ${run.unknown.of - run.unknown.items.length} more`));
+    d.append(sum, ul);
+    body.append(d);
+  }
+  return [reportHead({ title: 'Last run', tool: 'dbt', about, again }), body];
+}
+
+/* One node of the run: its name opens it, then how it ended, then dbt's
+   message under it. */
+function runEntryRow(e) {
+  const li = jel('li', '');
+  const known = !!e.file;
+  const name = jel(known ? 'a' : 'span', known ? 'filelink' : 'rrel', e.name);
+  name.title = e.id;
+  if (known) name.addEventListener('click', (ev) => { ev.preventDefault(); openRunEntry(e); });
+  li.append(name, jel('span', 'muted', ' · ' + runEntryText(e)));
+  if (e.message) li.append(jel('div', 'rmsg', e.message));
+  return li;
+}
+
+/* A test opens at its line in its YAML (0041); a model with the SQL dbt ran
+   for it, which is where an error is read. */
+function openRunEntry(e) {
+  if (e.kind === 'test') {
+    closeReports();
+    openTest(e, { pin: true });
+    return;
+  }
+  // A unit test is no node of the graph: its YAML is all there is to open.
+  if (e.kind === 'unit_test') {
+    closeReports();
+    pushJump();
+    openFile(e.file);
+    revealInTree(e.file);
+    return;
+  }
+  openFromReport(e.id, { dock: e.kind === 'model' || e.kind === 'snapshot' ? 'run' : '' });
 }
 
 async function collinSection(again) {
@@ -7622,6 +7862,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
   // Once the focus has moved, so the tab reads the node once, and without
   // looking at the job files again: the section looked as it opened (0063).
   if (dock === 'jobs' && S.dock !== 'jobs') showDock('jobs', { look: false });
+  else if (dock && dock !== 'catalog' && dock !== 'jobs' && S.dock !== dock) showDock(dock);
 }
 
 // -------------------------------------------------------------- hover card --

@@ -141,6 +141,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start collin, change when it runs, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md) |
+| give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
+| read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
@@ -184,7 +186,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `jobs`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
+`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

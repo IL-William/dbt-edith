@@ -20,6 +20,7 @@ mod macros;
 mod manifest;
 mod profiles;
 mod project;
+mod run_results;
 mod pty;
 mod redact;
 mod select;
@@ -220,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         // Nothing is read here: the first look at the Jobs tab reads them (0063).
         job_sources: std::sync::Mutex::new(saved.job_sources.clone()),
         jobs: Default::default(),
+        run_results: Default::default(),
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));

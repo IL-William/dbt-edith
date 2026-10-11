@@ -68,6 +68,8 @@ it is built this way, for whoever changes it next.
 | [0062](0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) | The report page shows collin's own findings when it writes them | changing what the report page lists for a collin that writes `findings`, or what the badge counts for it |
 | [0063](0063-jobs-are-read-from-folders-you-name.md) | Jobs are read from folders you name, outside the project | changing which job files are read, what leaves them, or how a job's dbt command is resolved |
 | [0064](0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md) | Project-wide reports open in a panel over the editor and the dock | adding a report, or changing what opens or closes the Reports panel, what its button counts, or when a report's file is read |
+| [0065](0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md) | The last run is read from run_results.json as dbt left it | changing what the Last run section says, what leaves `target/run_results.json`, or when it is read |
+| [0066](0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) | Each report's news is a short chip on the Reports button | giving a report news on the Reports button, changing what a chip says, or letting the index count anything new |
 
 ## Keeping these honest
 

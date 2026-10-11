@@ -187,6 +187,10 @@ pub struct Meta {
     pub dbt_version: String,
     pub adapter: String,
     pub generated_at: String,
+    /// Kept to tell whether the last run wrote this manifest too (0065), and
+    /// never sent: the page has no use for it.
+    #[serde(skip)]
+    pub invocation_id: String,
     pub manifest_path: String,
     pub manifest_mtime: u64,
     pub catalog_mtime: u64,
@@ -272,6 +276,15 @@ pub struct Graph {
     pub catalog_mtime: u64,
     pub cll: Option<ColLineage>,
     pub meta: Meta,
+    /// Unit tests by id: their name and YAML file. Not nodes: no lineage,
+    /// selection or search answers with one, only the last run names them.
+    pub unit_tests: BTreeMap<String, UnitTest>,
+}
+
+#[derive(Clone)]
+pub struct UnitTest {
+    pub name: String,
+    pub file: String,
 }
 
 /// The node whose YAML declares test `t`: dbt's `attached_node`, or else the
@@ -301,6 +314,11 @@ impl Node {
 
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
+        let unit_tests = raw
+            .unit_tests
+            .into_iter()
+            .map(|(id, u)| (id, UnitTest { name: u.name, file: u.original_file_path.replace('\\', "/") }))
+            .collect();
         let macros = Macros::build(raw.macros, &raw.metadata.project_name);
         let selectors = Selectors::build(raw.selectors);
         let mut nodes: Vec<Node> = Vec::with_capacity(raw.nodes.len() + raw.sources.len());
@@ -597,6 +615,7 @@ impl Graph {
                 dbt_version: raw.metadata.dbt_version,
                 adapter: raw.metadata.adapter_type,
                 generated_at: raw.metadata.generated_at,
+                invocation_id: raw.metadata.invocation_id,
                 manifest_path: manifest_path.display().to_string(),
                 manifest_mtime: mtime,
                 sandbox: sandbox.as_ref().map(|((d, s), _)| format!("{d}.{s}")).unwrap_or_default(),
@@ -622,6 +641,7 @@ impl Graph {
             selectors,
             catalog_mtime: 0,
             cll: None,
+            unit_tests,
         }
     }
 

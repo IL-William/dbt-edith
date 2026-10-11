@@ -22,6 +22,39 @@ pub fn mtime_secs(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
+/// A file parsed once and kept until its size or modification time changes:
+/// dbt's artifacts run to megabytes, and the page asks again on every showing.
+/// None when the file is not there, and the parser's error when it is there
+/// and cannot be read, as when dbt is still writing it. The error is kept as
+/// an answer is, so a file left broken is not read again on every poll.
+#[allow(clippy::type_complexity)]
+pub struct Cached<T>(std::sync::Mutex<Option<(u64, Option<std::time::SystemTime>, Result<std::sync::Arc<T>, String>)>>);
+
+impl<T> Default for Cached<T> {
+    fn default() -> Self {
+        Cached(std::sync::Mutex::new(None))
+    }
+}
+
+impl<T> Cached<T> {
+    pub fn get(&self, path: &Path, parse: impl FnOnce(&[u8]) -> Result<T, String>) -> Result<Option<std::sync::Arc<T>>, String> {
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let Ok(meta) = std::fs::metadata(path) else {
+            *slot = None;
+            return Ok(None);
+        };
+        let (len, modified) = (meta.len(), meta.modified().ok());
+        if let Some((l, m, held)) = slot.as_ref() {
+            if *l == len && *m == modified {
+                return held.clone().map(Some);
+            }
+        }
+        let parsed = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| parse(&bytes)).map(std::sync::Arc::new);
+        *slot = Some((len, modified, parsed.clone()));
+        parsed.map(Some)
+    }
+}
+
 /// A canonical path in the spelling other programs accept. On Windows,
 /// `canonicalize` answers `\\?\C:\...`, and cmd.exe refuses that as a working
 /// directory: it falls back to `C:\Windows`, so dbt started from the terminal

@@ -34,6 +34,19 @@ pub struct RawManifest {
     /// manifest: `src/selectors.rs` reads what it can and says what it cannot.
     #[serde(default)]
     pub selectors: serde_json::Value,
+    /// dbt's unit tests, from 1.8 a section of their own and never a node:
+    /// their name and file only, so the last run can name one and open its
+    /// YAML (0065).
+    #[serde(default)]
+    pub unit_tests: BTreeMap<String, RawUnitTest>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct RawUnitTest {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub original_file_path: String,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -46,6 +59,10 @@ pub struct RawMetadata {
     pub generated_at: String,
     #[serde(default)]
     pub adapter_type: String,
+    /// Which dbt command wrote it, to tell whether the last run's results
+    /// were written by the same one (0065).
+    #[serde(default)]
+    pub invocation_id: String,
 }
 
 #[derive(serde::Deserialize)]
