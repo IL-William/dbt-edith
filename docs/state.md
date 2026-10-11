@@ -845,6 +845,21 @@ a second tab would then be shown a partial answer as a whole one, and keeping
 the files' contents in memory, which still pays a stat per file to know they
 are current. Not yet on the VM.
 
+The untracked cache offered, never set (0063, 1.9.0): of the 190 ms git's
+status took on the 19 233 node project, 170 went to looking through every
+folder for new files. With `core.untrackedCache` on, a copy of the repository
+answered in 27 ms with the same lists, a file created four folders down and
+then deleted included; `core.fsmonitor` brought 14 ms more only on top of it,
+for a daemon per repository. The Git panel now shows the command to copy once
+the status has been slow twice running, 100 ms or more until one comes under
+50, and neither key that turns the cache on or off is set; the config is read
+only then. Driven in headless Chrome on that copy: the note showed, Copy put
+the command on the clipboard, running it took the note away within one poll
+and it stayed away, `false` kept it from showing, and a small repository never
+showed it. Not yet on the VM, where whether the cache is trusted on its disk,
+which `git update-index --test-untracked-cache` answers, is worth checking
+before running it.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the

@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.9.0 - 2026-10-11
+
+- Offer `git config core.untrackedCache true` in the Git panel, to copy and
+  run, once git's status has been slow twice running on a clone where nobody
+  chose whether git may cache the folders it reads: on a 10 000 file project
+  it takes the status from 190 ms to 27. dbt-edith never runs it (0063).
+
 ## 1.8.1 - 2026-10-11
 
 - Ask git for the status in two calls rather than six, and the freshness badge

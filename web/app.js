@@ -3138,6 +3138,7 @@ function renderGit(info) {
     banner.append(document.createElement('br'), abort);
     host.append(banner);
   }
+  if (info.suggest_untracked_cache) host.append(untrackedCacheNote());
 
   const section = (label, count, action) => {
     const h = document.createElement('div');
@@ -3207,6 +3208,33 @@ function renderGit(info) {
   if (!changes) {
     host.append(Object.assign(document.createElement('div'), { className: 'git-empty', textContent: 'Working tree clean.' }));
   }
+}
+
+/* The server offers this once git's status has been slow for two polls and
+   nobody chose for the clone whether git may cache the folders it reads. The
+   command is shown for the user to run, never run for them: it changes how
+   their own git behaves in this clone (0063). */
+function untrackedCacheNote() {
+  const cmd = 'git config core.untrackedCache true';
+  const text = (t) => Object.assign(document.createElement('p'), { textContent: t });
+  const note = document.createElement('div');
+  note.className = 'git-note';
+  const line = document.createElement('div');
+  line.className = 'git-note-cmd';
+  const code = document.createElement('code');
+  code.textContent = cmd;
+  const copy = document.createElement('button');
+  copy.className = 'btn sm';
+  copy.textContent = 'Copy';
+  copy.addEventListener('click', () => copyText(cmd, 'the command'));
+  line.append(code, copy);
+  note.append(
+    text('git status is slow here: on every refresh, git reads each folder again looking for new files. '
+      + 'It can remember the folders that did not change instead, if this clone allows it:'),
+    line,
+    text('Run it in the terminal. It holds for this clone, your own git commands included. '
+      + 'Set it to false instead to keep git as it is, and this note goes too.'));
+  return note;
 }
 
 async function markResolved(path) {

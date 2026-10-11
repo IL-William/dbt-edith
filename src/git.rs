@@ -39,6 +39,15 @@ pub struct GitInfo {
     /// FETCH_HEAD without asking again. Never sent: it can be an absolute path.
     #[serde(skip)]
     pub git_dir: String,
+    /// How long `git status` itself took, which decides the next field.
+    #[serde(skip)]
+    pub status_ms: u64,
+    /// git's status has been slow on this repository for two polls running,
+    /// and nobody chose whether git may cache the folders it reads, so the
+    /// panel offers the setting for the user to run (0063). Set by the caller,
+    /// which keeps the streak across polls.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub suggest_untracked_cache: bool,
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -157,12 +166,14 @@ pub fn status(root: &Path) -> GitInfo {
     // "old path" entry to track while parsing. --branch adds the headers that
     // `branch --show-current`, `rev-parse @{u}` and `rev-list --count` used to
     // answer in three more processes.
+    let started = Instant::now();
     let raw = run(
         root,
         &["status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--no-renames"],
         &[],
         Duration::from_secs(30),
     );
+    info.status_ms = started.elapsed().as_millis() as u64;
     if !raw.ok {
         return info;
     }
@@ -250,6 +261,39 @@ fn porcelain_v2(entry: &str) -> Option<(String, &str)> {
         _ => return None,
     };
     Some((code.replace('.', " "), path))
+}
+
+// ------------------------------------------------------- untracked cache ----
+
+/// A status this slow is worth a setting. Measured on a 10 000 file project,
+/// where `git status` took 190 ms, 170 of them looking through every folder for
+/// new files, and 27 ms once git could cache the folders it had read.
+pub const SLOW_STATUS_MS: u64 = 100;
+/// And this quick means the cache, or a fast disk, already does the job.
+pub const QUICK_STATUS_MS: u64 = 50;
+
+/// How many polls running git's status has been slow, from the last count and
+/// the status just timed, counting no further than 2, the count that suggests
+/// the setting. Between the two thresholds the count stays where it was, so a
+/// repository hovering around 100 ms does not make the note come and go, and
+/// one slow status, a cold disk at the first poll, never shows it alone.
+pub fn slow_streak(was: u8, status_ms: u64) -> u8 {
+    if status_ms >= SLOW_STATUS_MS {
+        (was + 1).min(2)
+    } else if status_ms < QUICK_STATUS_MS {
+        0
+    } else {
+        was
+    }
+}
+
+/// Whether anyone chose for this clone whether git caches the folders it reads:
+/// `core.untrackedCache` set to anything, `false` included, or
+/// `feature.manyFiles`, which turns it on. Either way the choice was made and
+/// the panel has nothing to offer. git matches the pattern against names it
+/// has lowercased, whatever case they were written in.
+pub fn untracked_cache_chosen(root: &Path, env: &[(&str, &str)]) -> bool {
+    run(root, &["config", "--get-regexp", r"^(core\.untrackedcache|feature\.manyfiles)$"], env, Duration::from_secs(20)).ok
 }
 
 // -------------------------------------------------------------- branches ----
@@ -709,6 +753,34 @@ mod tests {
         git(&clone, &["checkout", "-q", "--detach", "main"]);
         let detached = status(&clone);
         assert!(detached.branch.is_empty() && detached.upstream.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_slow_polls_running_suggest_the_cache_and_one_quick_one_withdraws_it() {
+        let polls = |ms: &[u64]| ms.iter().fold(0, |was, &ms| slow_streak(was, ms));
+        assert_eq!(polls(&[190]), 1, "one slow status, a cold disk perhaps, is not enough");
+        assert_eq!(polls(&[190, 190]), 2);
+        assert_eq!(polls(&[190, 190, 190, 190]), 2);
+        assert_eq!(polls(&[190, 190, 80]), 2, "between the thresholds the note stays");
+        assert_eq!(polls(&[190, 80, 190]), 2, "and so does the count");
+        assert_eq!(polls(&[190, 190, 27]), 0, "a quick status withdraws it");
+        assert_eq!(polls(&[190, 27, 190]), 1);
+        assert_eq!(polls(&[80, 80, 80]), 0);
+    }
+
+    #[test]
+    fn any_choice_about_the_untracked_cache_counts_as_one() {
+        let dir = scratch("cache-choice");
+        repo(&dir);
+        let quiet: &[(&str, &str)] = &[("GIT_CONFIG_GLOBAL", "/dev/null"), ("GIT_CONFIG_NOSYSTEM", "1")];
+        assert!(!untracked_cache_chosen(&dir, quiet), "nothing chosen in a new clone");
+        for (key, value) in [("core.untrackedCache", "true"), ("core.UNTRACKEDCACHE", "false"), ("feature.manyFiles", "true")] {
+            git(&dir, &["config", key, value]);
+            assert!(untracked_cache_chosen(&dir, quiet), "{key} = {value}");
+            git(&dir, &["config", "--unset", key]);
+        }
+        assert!(!untracked_cache_chosen(&dir, quiet));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

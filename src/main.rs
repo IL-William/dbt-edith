@@ -200,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
         base: tokio::sync::RwLock::new(Arc::new(base)),
         cll_headers: Default::default(),
         git: tokio::sync::Mutex::new(None),
+        git_slow: std::sync::atomic::AtomicU8::new(0),
         fresh: tokio::sync::Mutex::new(None),
         shell: shell.clone(),
         sidecar: sidecar::Sidecar::new(live, Default::default()),

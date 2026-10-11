@@ -392,6 +392,14 @@ kbd {
   margin: 6px; padding: 7px 9px; border-radius: 5px; font-size: 11.5px;
   background: #2d1f1f; border: 1px solid #6b4a4a; color: #e0a0a0;
 }
+.git-note {
+  margin: 6px; padding: 7px 9px; border-radius: 5px; font-size: 11.5px;
+  border: 1px solid var(--line); color: var(--fg-dim);
+}
+.git-note p { margin: 0 0 6px; }
+.git-note p:last-child { margin: 6px 0 0; }
+.git-note-cmd { display: flex; align-items: center; gap: 6px; }
+.git-note-cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); color: var(--fg); }
 
 /* ----------------------------------------------------------------- modal -- */
 #modal { position: fixed; inset: 0; background: #000a; display: flex; align-items: center; justify-content: center; z-index: 70; }
