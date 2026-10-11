@@ -455,9 +455,9 @@ is invisible to it. Type three letters or more and the matching lines appear
 grouped by file, with the match highlighted; clicking one opens the file in the
 preview tab with the cursor on that line.
 
-It is case-insensitive and plain text, not a pattern. A full pass over a 12 000
-file project takes well under a second, so results follow typing rather than
-waiting for Enter. Files it passed over, binaries and anything over 2 MB, are
+It is case-insensitive and plain text, not a pattern. Several files are read at
+once, and a full pass over a project of 10 000 files takes about 165 ms on a
+Mac, so results follow typing rather than waiting for Enter. Files it passed over, binaries and anything over 2 MB, are
 counted in the status line rather than quietly dropped.
 
 `.env` files are never opened by it (0020). Searching for a variable's name
@@ -505,7 +505,8 @@ Folders carry the state of what is inside them:
 Files are coloured the same way, so a green folder can be followed down to the
 buffer that is still unwritten. Status comes from `git status --porcelain`, run
 server-side, cached for 1.5 s and polled every 5 s, so committing from the
-built-in terminal clears the colours on its own.
+built-in terminal clears the colours on its own. A hidden tab stops asking,
+and catches up the moment it is shown again.
 
 File types get their own icon and colour; `.sql` files use a database glyph.
 

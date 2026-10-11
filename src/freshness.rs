@@ -261,7 +261,7 @@ pub fn check(root: &Path, manifest_at: u64, node_files: &[String], git: &GitInfo
     // subprocess to fail, four times over, on a poll that repeats every few
     // seconds. The badge works without git, it just has less to say.
     let (head, drift) = if git.repo {
-        (crate::git::head(root), crate::git::drift(root))
+        (crate::git::head(root), crate::git::drift(root, &git.git_dir))
     } else {
         Default::default()
     };

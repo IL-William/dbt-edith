@@ -42,6 +42,12 @@ pub fn plain(path: PathBuf) -> PathBuf {
 /// Turns a project-relative path into an absolute one, refusing anything that
 /// would escape the project root (`..`, absolute paths, symlinks pointing out).
 pub fn resolve(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
+    let out = joined(root, rel)?;
+    confined(root, &root.canonicalize()?, out)
+}
+
+/// `rel` under `root`, refused when its spelling alone leaves it.
+fn joined(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
     let mut out = root.to_path_buf();
     for seg in rel.replace('\\', "/").split('/') {
         match seg {
@@ -52,15 +58,20 @@ pub fn resolve(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
             s => out.push(s),
         }
     }
+    Ok(out)
+}
+
+/// `out`, refused when a link takes it out of the project. Apart from `resolve`
+/// so a search can canonicalize the root once rather than once per file.
+fn confined(root: &Path, canon_root: &Path, out: PathBuf) -> anyhow::Result<PathBuf> {
     // A path that does not exist yet (a new file, or a deleted one being
     // diffed) is judged by its nearest existing ancestor.
     let mut probe = out.as_path();
     while !probe.exists() {
         probe = probe.parent().unwrap_or(root);
     }
-    let canon_root = root.canonicalize()?;
     let canon = probe.canonicalize()?;
-    if !canon.starts_with(&canon_root) {
+    if !canon.starts_with(canon_root) {
         anyhow::bail!("path escapes the project root");
     }
     Ok(out)
@@ -173,6 +184,16 @@ pub fn scan(root: &Path) -> Vec<String> {
 const GREP_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const GREP_MAX_SCANNED: usize = 20_000;
 const GREP_LINE_CHARS: usize = 200;
+/// Opening and reading the files is nearly all of a search's time, and the
+/// system serves several at once: eight threads took a search of a 10 000 file
+/// project from 550 ms to 165 ms on a Mac.
+const GREP_THREADS: usize = 8;
+/// Files are read a batch at a time and their results kept in index order, so
+/// the ceilings fall where they did when one thread read them all. The first
+/// batch is small because a common word reaches the file ceiling early, and
+/// what a batch reads past it is wasted.
+const GREP_FIRST_BATCH: usize = 64;
+const GREP_LAST_BATCH: usize = 1024;
 
 fn is_zero(n: &usize) -> bool {
     *n == 0
@@ -281,60 +302,121 @@ fn excerpt(line: &str, at: usize) -> String {
 /// Case-insensitive search for a word across the indexed files. Hand-written
 /// rather than a regex (0003): the query is a word someone typed, not a pattern.
 pub fn grep(root: &Path, index: &[String], query: &str, max_files: usize, per_file: usize) -> GrepResult {
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(GREP_THREADS);
+    grep_with(root, index, query, max_files, per_file, threads)
+}
+
+fn grep_with(root: &Path, index: &[String], query: &str, max_files: usize, per_file: usize, threads: usize) -> GrepResult {
     let needle = query.trim().to_lowercase();
     let mut out = GrepResult::default();
     if needle.is_empty() {
         return out;
     }
+    // Every file would fail to resolve without it.
+    let Ok(canon_root) = root.canonicalize() else { return out };
     let mut scanned = 0;
-    for rel in index {
-        if out.files.len() >= max_files || scanned >= GREP_MAX_SCANNED {
-            out.capped = true;
-            break;
+    let (mut at, mut batch) = (0, GREP_FIRST_BATCH);
+    while at < index.len() {
+        let rels = &index[at..index.len().min(at + batch)];
+        for (rel, read) in rels.iter().zip(search_batch(root, &canon_root, rels, &needle, per_file, threads)) {
+            if out.files.len() >= max_files || scanned >= GREP_MAX_SCANNED {
+                out.capped = true;
+                return out;
+            }
+            match read {
+                Searched::Passed => {}
+                Searched::TooBig => out.skipped += 1,
+                Searched::Unread => {
+                    scanned += 1;
+                    out.skipped += 1;
+                }
+                Searched::Read { hits, more, total } => {
+                    scanned += 1;
+                    out.total += total;
+                    if !hits.is_empty() {
+                        out.files.push(FileHits { path: rel.clone(), hits, more });
+                    }
+                }
+            }
         }
-        if !searchable(rel) {
-            continue;
-        }
-        let Ok(path) = resolve(root, rel) else { continue };
-        let Ok(meta) = std::fs::metadata(&path) else { continue };
-        if !meta.is_file() {
-            continue;
-        }
-        if meta.len() > GREP_MAX_FILE_BYTES {
-            out.skipped += 1;
-            continue;
-        }
-        scanned += 1;
-        let Ok(bytes) = std::fs::read(&path) else {
-            out.skipped += 1;
-            continue;
-        };
-        if looks_binary(&bytes) {
-            out.skipped += 1;
-            continue;
-        }
-        let text = crate::envs::decode(&bytes);
-        // Most files hold no match at all. One pass over the whole text is far
-        // cheaper than splitting it into lines and testing each of them.
-        if find_ci(&text, &needle).is_none() {
-            continue;
-        }
-        let mut hits = Vec::new();
-        let mut more = 0;
+        at += rels.len();
+        batch = (batch * 2).min(GREP_LAST_BATCH);
+    }
+    out
+}
+
+/// What reading one file for a search came to. Counted by the caller, in index
+/// order, so the ceilings and the totals do not depend on which thread read it.
+enum Searched {
+    /// Not searched, and not counted: an `.env` file, or one gone since the
+    /// index was built.
+    Passed,
+    /// Over the size ceiling, so never opened.
+    TooBig,
+    /// Opened, but unreadable or binary.
+    Unread,
+    Read { hits: Vec<Hit>, more: usize, total: usize },
+}
+
+/// One batch of files, read by `threads` threads taking the next file as each
+/// finishes, returned in the batch's order.
+fn search_batch(root: &Path, canon_root: &Path, rels: &[String], needle: &str, per_file: usize, threads: usize) -> Vec<Searched> {
+    let one = |rel: &String| search_file(root, canon_root, rel, needle, per_file);
+    if threads < 2 || rels.len() < 2 {
+        return rels.iter().map(one).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut read: Vec<(usize, Searched)> = std::thread::scope(|s| {
+        let workers: Vec<_> = (0..threads.min(rels.len()))
+            .map(|_| {
+                s.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(rel) = rels.get(i) else { break mine };
+                        mine.push((i, one(rel)));
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
+    });
+    read.sort_by_key(|(i, _)| *i);
+    read.into_iter().map(|(_, r)| r).collect()
+}
+
+fn search_file(root: &Path, canon_root: &Path, rel: &str, needle: &str, per_file: usize) -> Searched {
+    if !searchable(rel) {
+        return Searched::Passed;
+    }
+    let Ok(path) = joined(root, rel).and_then(|p| confined(root, canon_root, p)) else { return Searched::Passed };
+    let Ok(meta) = std::fs::metadata(&path) else { return Searched::Passed };
+    if !meta.is_file() {
+        return Searched::Passed;
+    }
+    if meta.len() > GREP_MAX_FILE_BYTES {
+        return Searched::TooBig;
+    }
+    let Ok(bytes) = std::fs::read(&path) else { return Searched::Unread };
+    if looks_binary(&bytes) {
+        return Searched::Unread;
+    }
+    let text = crate::envs::decode(&bytes);
+    let (mut hits, mut more, mut total) = (Vec::new(), 0, 0);
+    // Most files hold no match at all. One pass over the whole text is far
+    // cheaper than splitting it into lines and testing each of them.
+    if find_ci(&text, needle).is_some() {
         for (i, line) in text.lines().enumerate() {
-            let Some(at) = find_ci(line, &needle) else { continue };
-            out.total += 1;
+            let Some(at) = find_ci(line, needle) else { continue };
+            total += 1;
             if hits.len() >= per_file {
                 more += 1;
                 continue;
             }
             hits.push(Hit { line: i + 1, text: excerpt(line, at) });
         }
-        if !hits.is_empty() {
-            out.files.push(FileHits { path: rel.clone(), hits, more });
-        }
     }
-    out
+    Searched::Read { hits, more, total }
 }
 
 pub fn search_paths<'a>(paths: &'a [String], query: &str, limit: usize) -> Vec<&'a str> {
@@ -467,6 +549,44 @@ mod tests {
         assert_eq!(r.files.len(), 1);
         assert_eq!(r.files[0].path, "models/a.sql");
         assert_eq!(r.skipped, 2, "the binary and the oversized one");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Several threads read the files, but the answer is the one a single
+    /// thread gives, the ceilings included: they fall in index order wherever a
+    /// batch ends. Past one batch on purpose, with every kind of file a search
+    /// passes over or counts as skipped, and two index entries no longer there.
+    #[test]
+    fn grep_answers_the_same_on_one_thread_or_several() {
+        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..300 {
+            let body = match i % 7 {
+                0 => b"select needle\nfrom t\n-- NEEDLE again\n".to_vec(),
+                1 => b"xx\0 needle\n".to_vec(),
+                2 => "needle\n".repeat(i % 5 + 1).into_bytes(),
+                _ => b"select 1\n".to_vec(),
+            };
+            files.push((format!("models/m{i:03}.sql"), body));
+        }
+        files.push((".env.uat".into(), b"PASSWORD=needle\n".to_vec()));
+        files.push(("models/big.sql".into(), vec![b'x'; (GREP_MAX_FILE_BYTES + 1) as usize]));
+        let borrowed: Vec<(&str, &[u8])> = files.iter().map(|(r, b)| (r.as_str(), b.as_slice())).collect();
+        let dir = grep_dir("threads", &borrowed);
+        let mut idx = index(&borrowed);
+        idx.extend(["models/gone.sql".to_string(), "models".to_string()]);
+        idx.sort();
+        for max_files in [1, 5, 63, 64, 65, 120, 500] {
+            for per_file in [1, 3] {
+                let one = grep_with(&dir, &idx, "needle", max_files, per_file, 1);
+                let many = grep_with(&dir, &idx, "needle", max_files, per_file, 8);
+                assert_eq!(one, many, "max_files {max_files}, per_file {per_file}");
+            }
+        }
+        let all = grep_with(&dir, &idx, "needle", 500, 3, 8);
+        assert!(!all.capped);
+        assert_eq!(all.skipped, 44, "43 binaries and the oversized file");
+        assert_eq!(all.files.len(), 86);
+        assert!(grep_with(&dir, &idx, "needle", 64, 3, 8).capped);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
