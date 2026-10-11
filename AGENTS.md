@@ -123,6 +123,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a framework, a bundler, or upgrade CodeMirror | [0004](docs/decisions/0004-frontend-without-a-build-step.md) |
 | touch a frontend change that seems to have no effect | [0005](docs/decisions/0005-embedded-in-release-disk-in-debug.md) |
 | touch `src/git.rs` | [0007](docs/decisions/0007-git-through-the-cli.md) |
+| pass a setting to git, or change what the git panel suggests | [0063](docs/decisions/0063-a-slow-git-status-is-answered-with-a-setting-you-run.md) |
 | touch `src/envs.rs`, or evaluate Jinja | [0009](docs/decisions/0009-env-resolution-by-scanner.md) |
 | change the location table or the environment selector | [0010](docs/decisions/0010-moved-compares-parsed-with-built.md) |
 | persist anything, or add a write endpoint | [0011](docs/decisions/0011-settings-outside-the-project.md) |

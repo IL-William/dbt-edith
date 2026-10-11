@@ -508,6 +508,15 @@ server-side, cached for 1.5 s and polled every 5 s, so committing from the
 built-in terminal clears the colours on its own. A hidden tab stops asking,
 and catches up the moment it is shown again.
 
+On a large repository most of that status is git looking through every folder
+for new files. Once it has taken 100 ms or more twice running, and nobody chose
+for the clone whether git may cache those folders, the Git panel offers
+`git config core.untrackedCache true` to copy and run in the terminal: git then
+rereads only the folders that changed, which took a 10 000 file project from
+190 ms to 27. dbt-edith never runs it for you, since it changes how your own
+git behaves in that clone; setting it to `false` declines it, and the note
+goes (0063).
+
 File types get their own icon and colour; `.sql` files use a database glyph.
 
 The header above the tree names the project and carries two buttons. The first

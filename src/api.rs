@@ -55,6 +55,10 @@ pub struct AppState {
     pub cll_headers: collin::Headers,
     pub shell: ShellSpec,
     pub git: tokio::sync::Mutex<Option<(std::time::Instant, GitInfo)>>,
+    /// Polls running on which git's status was slow, kept across them so the
+    /// panel's note on the untracked cache neither flickers nor shows for one
+    /// cold start (`git::slow_streak`).
+    pub git_slow: std::sync::atomic::AtomicU8,
     /// Same idea as `git`, for the same reason: the badge polls on a timer and
     /// each answer costs a walk of the resource directories.
     pub fresh: tokio::sync::Mutex<Option<(std::time::Instant, freshness::Freshness)>>,
@@ -2825,10 +2829,20 @@ async fn git_cached(st: &Arc<AppState>) -> GitInfo {
             return info.clone();
         }
     }
-    let root = st.root.clone();
-    let info = tokio::task::spawn_blocking(move || git::status(&root))
-        .await
-        .unwrap_or_default();
+    let st2 = st.clone();
+    let info = tokio::task::spawn_blocking(move || {
+        let mut info = git::status(&st2.root);
+        if info.repo {
+            use std::sync::atomic::Ordering::Relaxed;
+            let streak = git::slow_streak(st2.git_slow.load(Relaxed), info.status_ms);
+            st2.git_slow.store(streak, Relaxed);
+            // Asked only of a slow repository, so a quick one pays nothing.
+            info.suggest_untracked_cache = streak == 2 && !git::untracked_cache_chosen(&st2.root, &[]);
+        }
+        info
+    })
+    .await
+    .unwrap_or_default();
     *cached = Some((std::time::Instant::now(), info.clone()));
     info
 }
@@ -3238,6 +3252,7 @@ mod tests {
             base: RwLock::new(Arc::new(Graph::build(Default::default(), &manifest, 0, 0))),
             cll_headers: Default::default(),
             git: tokio::sync::Mutex::new(None),
+            git_slow: std::sync::atomic::AtomicU8::new(0),
             fresh: tokio::sync::Mutex::new(None),
             shell: ShellSpec { program: "/bin/sh".into(), args: Vec::new() },
             sidecar: sidecar::Sidecar::new(false, Default::default()),
