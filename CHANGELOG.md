@@ -19,7 +19,8 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 - Gather what speaks of the whole project in a Reports panel that rolls down
   over the editor and the dock from the top bar or `Mod+Alt+R`, a section
-  each, and rolls up when a file, a model or a dock tab is opened (0064).
+  each, and rolls up when a file, a model or a dock tab is opened (0064). Its
+  button is a glyph whose name unfolds on hover.
 - Show collin's report as a section of Reports rather than a tab, its count of
   models to investigate riding on the Reports button where its badge was.
 - Move the Jobs tab's Coverage view into Reports, as Job coverage; the tab

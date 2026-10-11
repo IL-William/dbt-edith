@@ -212,10 +212,20 @@ kbd {
 .freshbadge .drift:empty { display: none; }
 /* The Reports button, and what is new in them on it: each section's news in
    its own colour, collin's as collin's, so it reads as the tool's. */
-.reportsbtn { display: inline-flex; align-items: center; gap: 6px; }
+/* A glyph alone until the pointer or the focus is on it, or the panel is down:
+   the top bar is full, and the name only needs saying to whoever reaches for it. */
+.reportsbtn { display: inline-flex; align-items: center; color: var(--fg-dim); padding: 4px 8px; }
+.reportsbtn:hover, .reportsbtn:focus-visible, .reportsbtn.on { color: var(--fg); }
+.reportsbtn svg { flex: 0 0 auto; }
+.reportsbtn .rlabel {
+  max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap;
+  transition: max-width .18s ease-out, opacity .18s ease-out, margin-left .18s ease-out;
+}
+.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { max-width: 80px; opacity: 1; margin-left: 6px; }
 .reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
-.reportsbtn .rnews { display: inline-flex; gap: 4px; }
+.reportsbtn .rnews { display: inline-flex; gap: 4px; margin-left: 6px; }
 .reportsbtn .rnews:empty { display: none; }
+@media (prefers-reduced-motion: reduce) { .reportsbtn .rlabel { transition: none; } }
 .rnew { font: 10.5px var(--mono); color: var(--tool, var(--accent)); border: 1px solid var(--tool, var(--accent)); border-radius: 8px; padding: 0 6px; }
 .versioninput {
   width: 120px; font: 12px var(--mono); color: var(--fg); background: var(--bg);

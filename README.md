@@ -1193,7 +1193,8 @@ freshness configured. A `--project-dir` is taken to name this project.
 
 ### Reports
 
-**Reports**, in the top bar, rolls a panel down over the editor and the dock
+**Reports**, a sheet with a bar chart in the top bar whose name unfolds under
+the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
 collin's report once collin has written one, and the coverage of your jobs once
 the Jobs tab has a source. The sidebar stays, and anything that shows a file
