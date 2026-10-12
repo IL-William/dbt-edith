@@ -561,6 +561,9 @@ kbd {
 .reports-navrow[aria-current="true"] { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
 .reports-navrow > span:not(.tooldot):not(.rnew) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports-navrow .rnew { margin-left: auto; flex: 0 0 auto; }
+/* A section with nothing to show yet, listed as where to set it up. */
+.reports-navrow.empty .tooldot { background: none; box-shadow: inset 0 0 0 1.5px var(--tool); }
+.reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .reports-view .diff-head { padding: 6px 12px 5px; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
@@ -997,6 +1000,23 @@ kbd {
 .jobs-read { font-size: 11.5px; margin-top: 8px; }
 .jobs-read .jobs-warn { margin: 3px 0 0; font-family: var(--mono); font-size: 11px; }
 .jobsrc-foot { display: flex; gap: 6px; align-items: center; }
+/* The picker under a source's path. */
+.jobsrc-browse {
+  display: flex; flex-direction: column; gap: 6px; margin: -2px 0 8px; padding: 6px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px;
+}
+.jobsrc-browse-bar, .jobsrc-browse-foot { display: flex; gap: 6px; align-items: center; }
+.jobsrc .jobsrc-note { margin: 0; color: var(--warn); font-size: 11px; }
+.jobsrc-note:empty { display: none; }
+.jobsrc-entries {
+  height: 200px; overflow: auto; padding: 2px 0;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 3px;
+}
+.jobsrc-entries .row { padding: 2px 8px; }
+.jobsrc-entries .row:focus-visible { outline: 1px solid var(--accent-dim); outline-offset: -1px; }
+.jobsrc-none { padding: 8px 10px; font-size: 11.5px; color: var(--fg-dim); }
+.jobsrc-as { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--fg-dim); }
+.jobsrc .btn.on { border-color: var(--accent-dim); color: var(--fg); }
 .setmore { margin-left: auto; font-size: 11px; color: var(--fg-dim); }
 
 /* ---------------------------------------------------------------- detail -- */

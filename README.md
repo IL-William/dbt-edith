@@ -1158,9 +1158,15 @@ CI job or a merge job is not. Click a model to open it: the reports roll up,
 and the Jobs tab lists its jobs. Coming back finds the list as you left it,
 folds and scroll.
 
-Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
-in the menu behind the snowflake in the top bar: one or more folders or files,
-absolute or relative to the project, each an Airflow or a dbt Cloud source.
+Point dbt-edith at the jobs with **Sources…** in the tab, **Add a source** in
+the Job coverage section of Reports, or **Orchestration** in the menu behind
+the snowflake in the top bar: one or more folders or files, absolute or
+relative to the project, each an Airflow or a dbt Cloud source. **Browse…**
+beside a path, open already on a source being added, lists one folder at a
+time, its folders and YAML files only: a click opens a folder or picks a file,
+and **Use** writes it from the project when it sits within two folders above
+it, in full otherwise
+([0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md)).
 Saving reads them at once. When every source found jobs, no file was refused
 and the sources were saved, the form closes on what it found: the Jobs tab when
 it is showing a model, Job coverage otherwise. Anything else keeps it open on

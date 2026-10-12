@@ -7349,15 +7349,16 @@ function paintJobsHead() {
   head.replaceChildren(bar);
 }
 
-/* No source yet: what this tab reads, and what it expects to find. */
+/* No source yet: what the Jobs tab and the coverage in Reports read, and what
+   they expect to find. */
 function jobsNoSource(body) {
   const box = jel('div', 'compiled-empty jobs-none');
   box.append(
-    jel('p', '', 'Which jobs run this model is read from your orchestrator\'s YAML, wherever it lives, '
+    jel('p', '', 'Which jobs run a model is read from your orchestrator\'s YAML, wherever it lives, '
       + 'often in another repository. Name the folder, and say which format it is in.'),
   );
   const add = jel('button', 'btn primary', 'Add a source');
-  add.addEventListener('click', openJobSources);
+  add.addEventListener('click', () => openJobSources({ add: true }));
   box.append(add);
   // Folded, so the one thing to do stays in the middle of the tab.
   const formats = jel('details', 'jobs-formats');
@@ -7509,12 +7510,135 @@ function jobsReadNote(s) {
   return box;
 }
 
+/* The folder picker under a source's path. A page is never told where a file
+   it is handed sits, so the server lists one folder at a time, with what the
+   walk would read there (0070). A click opens a folder or picks a file; Use
+   writes the place the way the server spelled it, from the project when it
+   is near. What it shows goes to `keep`, and comes back as `kept` to draw it
+   again without asking the server. */
+function browseJobSource(box, from, { use, cancel, kept, keep }) {
+  let at = null;
+  let picked = '';
+  let asked = '';
+  let ask = 0; // the last listing asked for: an answer to an earlier one is dropped
+  let climbing = ''; // where ↑ goes, while its listing is on its way
+  let first = null; // the row a double click began on
+  const up = jel('button', 'btn sm', '↑');
+  up.title = 'The folder above';
+  up.setAttribute('aria-label', 'The folder above');
+  up.disabled = true;
+  const where = jel('input', 'grow');
+  where.type = 'text';
+  where.spellcheck = false;
+  where.title = 'A folder, relative to the project or absolute: Enter goes there';
+  const note = jel('p', 'jobsrc-note', '');
+  const list = jel('div', 'jobsrc-entries');
+  const as = jel('span', 'jobsrc-as', '');
+  const useBtn = jel('button', 'btn sm primary', 'Use this folder');
+  const cancelBtn = jel('button', 'btn sm', 'Cancel');
+  const choice = () => (picked && at ? at.entries.find((e) => e.name === picked) : null);
+  const paintChoice = () => {
+    const file = choice();
+    useBtn.textContent = file ? 'Use this file' : 'Use this folder';
+    useBtn.disabled = !at;
+    const written = file ? file.written : at && at.written;
+    as.textContent = !at ? '' : written === '.' ? 'Saved as . (the project)' : 'Saved as ' + written;
+    for (const r of list.children) r.classList.toggle('sel', !!picked && r.dataset.name === picked);
+    if (keep) keep({ at, picked, asked });
+  };
+  const show = (next, path) => {
+    at = next;
+    asked = path;
+    where.value = at.path;
+    where.scrollLeft = where.scrollWidth; // a long path ends with the folder shown
+    up.disabled = !at.up;
+    note.textContent = [
+      at.moved ? `${path} is not a folder this picker lists, so this is the nearest one above it.` : '',
+      at.refused ? `This folder cannot be listed: ${at.refused}.` : '',
+      at.capped ? `Only the first ${at.entries.length} entries are shown.` : '',
+    ].filter(Boolean).join(' ');
+    list.replaceChildren(...at.entries.map(row));
+    if (!at.entries.length && !at.refused) list.append(jel('div', 'jobsrc-none', 'No folder and no YAML file here.'));
+    paintChoice();
+    list.scrollTop = 0;
+    const sel = list.querySelector('.row.sel');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+  };
+  const go = async (path, climb = false) => {
+    const mine = ++ask;
+    climbing = climb ? path : '';
+    let next;
+    let failed = null;
+    try { next = await api.get('/api/jobs/browse?path=' + encodeURIComponent(path)); }
+    catch (e) { failed = e; }
+    // A later listing was asked for, or this picker was closed, meanwhile.
+    if (mine !== ask || !list.isConnected) return;
+    climbing = '';
+    if (failed) { note.textContent = failed.message; return; }
+    picked = next.picked || '';
+    show(next, path);
+  };
+  // Rows as the explorer draws them: a folder by its chevron, a file by its icon.
+  const row = (e) => {
+    const r = jel('div', 'row ' + (e.dir ? 'folder' : 'file'));
+    r.tabIndex = 0;
+    r.dataset.name = e.name;
+    r.title = e.written;
+    const caret = jel('span', 'caret');
+    if (e.dir) caret.innerHTML = CHEVRON;
+    r.append(caret);
+    if (!e.dir) r.append(fileIcon(e.name));
+    r.append(jel('span', 'nm', e.name));
+    const act = (twice) => {
+      if (e.dir) return go(e.written);
+      if (twice) return use(e.written);
+      picked = picked === e.name ? '' : e.name;
+      paintChoice();
+    };
+    // The second click of a double click can land on a row of the folder the
+    // first one opened, so it counts only on the row the first one hit.
+    r.addEventListener('click', (ev) => { if (ev.detail > 1) return; first = r; act(false); });
+    r.addEventListener('dblclick', () => { if (!e.dir && first === r) use(e.written); });
+    r.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      act(!e.dir && picked === e.name);
+    });
+    return r;
+  };
+  // Clicked again before the folder above is listed: one more up from there.
+  up.addEventListener('click', () => {
+    const to = climbing ? climbing + '/..' : at && at.up;
+    if (to) go(to, true);
+  });
+  // Typing a place drops a listing on its way, which would overwrite it.
+  where.addEventListener('input', () => { ask++; climbing = ''; });
+  where.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); go(where.value); } });
+  useBtn.addEventListener('click', () => { const file = choice(); if (at) use(file ? file.written : at.written); });
+  cancelBtn.addEventListener('click', cancel);
+  // Escape leaves the picker, not the form around it.
+  box.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); cancel(); } });
+  const bar = jel('div', 'jobsrc-browse-bar');
+  bar.append(up, where);
+  const foot = jel('div', 'jobsrc-browse-foot');
+  foot.append(as, cancelBtn, useBtn);
+  box.replaceChildren(bar, note, list, foot);
+  if (kept && kept.at) {
+    picked = kept.picked;
+    show(kept.at, kept.asked);
+    return;
+  }
+  paintChoice();
+  go(from || '');
+}
+
 /* The sources, edited in a modal that stays open while a read leaves
    something to correct: saving reads them at once, and what was read is the
    answer to whether the keys are right. A clean read closes it on the
    coverage (jobsSaveCloses), since a form that only repaints the same line
-   looked like a save that did nothing. */
-async function openJobSources() {
+   looked like a save that did nothing. `add` opens it on a new source, its
+   picker open, for the buttons that say so. */
+async function openJobSources({ add = false } = {}) {
   closePopup();
   let summary;
   try { summary = await api.get('/api/jobs?look=true'); }
@@ -7522,6 +7646,11 @@ async function openJobSources() {
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
   const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys) }));
+  // A source being added has its picker open, and what the picker shows is
+  // kept, so that drawing the cards again leaves it as it was without asking
+  // the server again.
+  const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, browsing: true, browsed: null });
+  if (add === true) forms.push(fresh('airflow'));
   let reads = summary.sources;
   const body = jel('div', 'jobsrc');
   const list = jel('div', 'jobsrc-list');
@@ -7551,11 +7680,35 @@ async function openJobSources() {
       kind.addEventListener('change', () => { f.kind = kind.value; paint(); });
       const remove = jel('button', 'btn sm', 'Remove');
       remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; paint(); });
-      top.append(kind,
-        input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; }, 'grow'),
-        input(f.label, 'label', (v) => { f.label = v; }, 'jobsrc-label'),
-        remove);
+      const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; }, 'grow');
+      const browse = jel('button', 'btn sm', 'Browse…');
+      browse.title = 'Pick the folder or the file from a list';
+      let picker = null;
+      const closePicker = () => {
+        f.browsing = false;
+        f.browsed = null;
+        if (picker) picker.remove();
+        picker = null;
+        browse.classList.remove('on');
+        browse.focus();
+      };
+      const openPicker = () => {
+        f.browsing = true;
+        browse.classList.add('on');
+        // A picker of its own each time, so nothing of the last one is left.
+        picker = jel('div', 'jobsrc-browse');
+        top.after(picker);
+        browseJobSource(picker, f.path, {
+          kept: f.browsed,
+          keep: (k) => { f.browsed = k; },
+          use: (w) => { f.path = w; path.value = w; closePicker(); },
+          cancel: closePicker,
+        });
+      };
+      browse.addEventListener('click', () => (f.browsing ? closePicker() : openPicker()));
+      top.append(kind, path, browse, input(f.label, 'label', (v) => { f.label = v; }, 'jobsrc-label'), remove);
       card.append(top);
+      if (f.browsing) openPicker();
       const example = jel('pre', 'jobs-example-text', jobsExample(f.kind, f.keys, defaults));
       if (f.kind === 'airflow') {
         const grid = jel('div', 'jobsrc-keys');
@@ -7578,9 +7731,9 @@ async function openJobSources() {
   };
 
   const addAirflow = jel('button', 'btn sm', '+ Airflow');
-  addAirflow.addEventListener('click', () => { forms.push({ kind: 'airflow', path: '', label: '', keys: {} }); paint(); });
+  addAirflow.addEventListener('click', () => { forms.push(fresh('airflow')); paint(); });
   const addCloud = jel('button', 'btn sm', '+ dbt Cloud');
-  addCloud.addEventListener('click', () => { forms.push({ kind: 'dbt_cloud', path: '', label: '', keys: {} }); paint(); });
+  addCloud.addEventListener('click', () => { forms.push(fresh('dbt_cloud')); paint(); });
   const save = jel('button', 'btn sm primary', 'Save and read');
   save.addEventListener('click', async () => {
     save.disabled = true;
@@ -7635,7 +7788,9 @@ async function openJobSources() {
 
 /* The sections there are, in the order they are worked through, each only
    while it has something to show: collin's report once a run wrote one, the
-   coverage of the jobs once a source is named. */
+   coverage of the jobs once a source is named. Before that the coverage is
+   listed all the same, `empty`, as the place a source is added from (0070),
+   but it neither shows the button nor is opened on for itself. */
 function reportsSections(index) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
@@ -7645,7 +7800,8 @@ function reportsSections(index) {
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
       title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
   ];
-  return all.filter((sec) => !!(index && index[sec.key]));
+  return all.filter((sec) => sec.key === 'jobs' || !!(index && index[sec.key]))
+    .map((sec) => (index && index[sec.key] ? sec : Object.assign(sec, { empty: true })));
 }
 
 /* What is new in the reports since each was last shown, in the sections'
@@ -7783,18 +7939,19 @@ function runEntryText(e) {
 }
 
 /* The section the panel opens on: one with news, then the one read last this
-   session, then the first there is. */
+   session unless it is empty, then the first there is, which is empty only
+   when every section is. */
 function reportsDefaultSection(sections, news, last) {
   const has = (key) => sections.some((sec) => sec.key === key);
   const fresh = (news || []).find((n) => has(n.key));
   if (fresh) return fresh.key;
-  if (last && has(last)) return last;
+  if (last && sections.some((sec) => sec.key === last && !sec.empty)) return last;
   return sections.length ? sections[0].key : '';
 }
 
 /* The button's tooltip: what the reports hold, then what is new in them. */
 function reportsButtonTitle(sections, news, key) {
-  const names = sections.map((sec) => sec.label).join(', ');
+  const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
   return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
     .concat((news || []).map((n) => n.title)).join('\n');
 }
@@ -7840,7 +7997,7 @@ function reportsNow() {
 function paintReportsButton() {
   const btn = $('#reports-btn');
   const { sections, news } = reportsNow();
-  btn.classList.toggle('hidden', !sections.length && !S.reportsOpen);
+  btn.classList.toggle('hidden', !sections.some((sec) => !sec.empty) && !S.reportsOpen);
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
@@ -7854,8 +8011,9 @@ function paintReportsButton() {
 async function openReports(section) {
   await loadReportsIndex();
   const { sections, news } = reportsNow();
+  // The coverage is always listed, empty before any source, so there is
+  // always a section to open on (0070).
   const key = sections.some((sec) => sec.key === section) ? section : reportsDefaultSection(sections, news, S.reportsSection);
-  if (!key) return toast('no report to show yet');
   if (!S.reportsOpen) {
     closeHoverCard();
     closePopup();
@@ -7899,13 +8057,14 @@ function toggleReports() {
 function paintReportsNav() {
   const { sections, news } = reportsNow();
   $('#reports-nav').replaceChildren(...sections.map((sec) => {
-    const row = jel('button', 'reports-navrow');
+    const row = jel('button', 'reports-navrow' + (sec.empty ? ' empty' : ''));
     row.type = 'button';
-    row.title = sec.title;
+    row.title = sec.empty ? 'No source named yet: add the folders your jobs are in' : sec.title;
     if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
     row.append(dot, jel('span', '', sec.label));
+    if (sec.empty) row.append(jel('span', 'rhint', 'add a source'));
     // The rail is narrow: the count alone, the words being on the button.
     const n = news.find((x) => x.key === sec.key);
     if (n) row.append(newsChip(Object.assign({}, n, { text: n.short })));

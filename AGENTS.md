@@ -64,8 +64,10 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   it too, and sends only the active target's name, database and schema (0058).
   The job folders the user names are read as well, their `.yml` and `.yaml`
   files only, and only what was parsed from them leaves, never a `--vars` value
-  (0063). Whether this binary was installed by cargo or built in a
-  clone is told from which files exist beside it, never from inside them (0068).
+  (0063). To pick one, the sources form lists any folder, by the names of its
+  folders and YAML files only (0070). Whether this binary was installed by
+  cargo or built in a clone is told from which files exist beside it, never
+  from inside them (0068).
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -142,12 +144,13 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
 | start collin, change when it runs, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
-| add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md) |
+| add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md), [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
+| list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |

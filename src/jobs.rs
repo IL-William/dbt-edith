@@ -6,11 +6,15 @@
 //! keys a source may rename. Each step's command is read by `src/command.rs`
 //! and resolved by the selection engine (0024, 0032), never by dbt.
 //!
+//! The sources form's picker lists one folder at a time, anywhere the user can
+//! read, by the names of what a walk would enter or open there (0070).
+//!
 //! Invariants: only `.yml` and `.yaml` files are opened, never hidden ones and
-//! never through a symlink. What leaves is what was parsed, never a line of a
-//! file. The same files over the same manifest answer the same way byte for
-//! byte (0055), so every list follows the sorted walk and the document's own
-//! order, and the one map here is only ever looked up.
+//! never through a symlink. What leaves is what was parsed, and the names the
+//! picker lists, never a line of a file. The same files over the same manifest
+//! answer the same way byte for byte (0055), so every list follows the sorted
+//! walk and the document's own order, and the one map here is only ever looked
+//! up.
 
 use crate::command::{self, Invocation, Verb};
 use crate::graph::{Graph, Kind};
@@ -18,7 +22,7 @@ use crate::select::{self, Expr, Indirect, Spec, Tests};
 use crate::settings::JobSource;
 use crate::yaml::{self, Node, Value};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
 
@@ -143,27 +147,37 @@ fn descend(dir: &Path, depth: usize, out: &mut Vec<Stamp>, capped: &mut bool) {
             *capped = true;
             return;
         }
-        let name = e.file_name().to_string_lossy().into_owned();
-        // A `.env` starts with a dot, so it is never opened (0020).
-        if name.starts_with('.') {
-            continue;
-        }
-        // From the entry itself, never through the link: a symlink, or a
-        // junction on Windows, could lead anywhere on the machine.
-        let Ok(kind) = e.file_type() else { continue };
-        if kind.is_symlink() {
-            continue;
-        }
-        let path = e.path();
-        if kind.is_dir() {
-            if !SKIPPED_DIRS.contains(&name.as_str()) {
-                descend(&path, depth + 1, out, capped);
+        match walked(&e, &e.file_name().to_string_lossy()) {
+            Some(true) => descend(&e.path(), depth + 1, out, capped),
+            Some(false) => {
+                if let Ok(m) = e.metadata() {
+                    out.push((e.path(), m.len(), m.modified().ok()));
+                }
             }
-        } else if kind.is_file() && is_yaml(&path) {
-            if let Ok(m) = e.metadata() {
-                out.push((path, m.len(), m.modified().ok()));
-            }
+            None => {}
         }
+    }
+}
+
+/// What the walk makes of one entry of a folder: `Some(true)` for a folder it
+/// enters, `Some(false)` for a file it opens, `None` for anything else. The
+/// sources form's picker lists by the same rule (0070).
+fn walked(e: &std::fs::DirEntry, name: &str) -> Option<bool> {
+    // A `.env` starts with a dot, so it is never opened (0020).
+    if name.starts_with('.') {
+        return None;
+    }
+    // From the entry itself, never through the link: a symlink, or a
+    // junction on Windows, could lead anywhere on the machine.
+    let kind = e.file_type().ok()?;
+    if kind.is_symlink() {
+        None
+    } else if kind.is_dir() {
+        (!SKIPPED_DIRS.contains(&name)).then_some(true)
+    } else if kind.is_file() && is_yaml(Path::new(name)) {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -171,6 +185,163 @@ fn shown_path(base: &Path, file: &Path) -> String {
     let rel = file.strip_prefix(base).ok().filter(|r| !r.as_os_str().is_empty());
     let rel = rel.unwrap_or_else(|| Path::new(file.file_name().unwrap_or_default()));
     rel.to_string_lossy().replace('\\', "/")
+}
+
+/* --------------------------------------------------------------- browse -- */
+
+/// Far more than a folder of jobs holds, and a bound on one listing.
+const MAX_LISTED: usize = 2_000;
+/// How far above the project a place may sit and still be named from it: far
+/// enough for a repository beside the project's, or beside the repository the
+/// project is a folder of.
+const MAX_UPS: usize = 2;
+
+/// One folder as the sources form shows it: the folders a walk would enter
+/// and the files it would open, and nothing else (0070).
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Listing {
+    /// The folder, in full, as the system spells it.
+    pub path: String,
+    /// The folder as a source names it.
+    pub written: String,
+    /// The folder above, as a source names it, absent at a root.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub up: Option<String>,
+    /// The file the path asked for, when it is one of the entries.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub picked: String,
+    /// The path asked for is not a folder the picker reaches, so the nearest
+    /// one above it is listed instead.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub moved: bool,
+    /// Why the system would not list the folder, which is then shown empty
+    /// and still left from.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub refused: String,
+    pub entries: Vec<Entry>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub capped: bool,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Entry {
+    pub name: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub dir: bool,
+    pub written: String,
+}
+
+/// A path with its `.` and `..` worked out from the spelling alone. Nothing
+/// listed is ever a symlink, so a `..` leaves the folder it was taken from.
+fn normal(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+/// How a source names a place: from the project when it sits at most
+/// `MAX_UPS` folders above it, which is short and still right when the
+/// checkouts move together; in full otherwise, as on another drive.
+fn written(root: &Path, at: &Path) -> String {
+    let r: Vec<Component> = root.components().collect();
+    let a: Vec<Component> = at.components().collect();
+    let common = r.iter().zip(&a).take_while(|(x, y)| x == y).count();
+    let ups = r.len() - common;
+    if common == 0 || ups > MAX_UPS {
+        return at.to_string_lossy().into_owned();
+    }
+    let mut parts = vec!["..".to_string(); ups];
+    parts.extend(a[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()));
+    if parts.is_empty() {
+        ".".into()
+    } else {
+        parts.join("/")
+    }
+}
+
+/// The deepest folder on the way to `asked` the picker stands on: never in a
+/// hidden folder past the ones the project itself sits in, which are taken as
+/// they are, and never on a link, which no listing shows. A link further up a
+/// typed path is followed, as a source's own path is (0063): `/tmp` is one on
+/// macOS.
+fn reachable(root: &Path, asked: &Path) -> PathBuf {
+    let common = root.components().zip(asked.components()).take_while(|(x, y)| x == y).count();
+    let mut at: PathBuf = asked.components().take(common).collect();
+    for c in asked.components().skip(common) {
+        if let Component::Normal(name) = c {
+            if name.to_str().is_none_or(|n| n.starts_with('.')) {
+                break;
+            }
+        }
+        at.push(c.as_os_str());
+    }
+    while !std::fs::symlink_metadata(&at).is_ok_and(|m| m.is_dir()) {
+        if !at.pop() {
+            break;
+        }
+    }
+    at
+}
+
+/// The folder a source's path leads to, or the nearest folder above it the
+/// picker reaches, with what the walk would see there: no hidden entry, no
+/// symlink or junction, no file but YAML. Folders first, then by name,
+/// whatever order the system lists them in (0055).
+pub fn browse(root: &Path, path: &str) -> Result<Listing, String> {
+    let path = path.trim();
+    if path.len() > 1024 || path.chars().any(char::is_control) {
+        return Err("a path of at most 1024 characters, with no control characters".into());
+    }
+    let asked = normal(&locate(root, if path.is_empty() { "." } else { path }));
+    let at = reachable(root, &asked);
+    let mut picked = String::new();
+    if asked.parent() == Some(at.as_path()) {
+        if let Some(name) = asked.file_name().and_then(|n| n.to_str()) {
+            if !name.starts_with('.') && is_yaml(&asked) && std::fs::symlink_metadata(&asked).is_ok_and(|m| m.is_file()) {
+                picked = name.to_string();
+            }
+        }
+    }
+    let mut found: Vec<(bool, String)> = Vec::new();
+    let refused = match std::fs::read_dir(&at) {
+        Ok(read) => {
+            for e in read.flatten() {
+                // A name JSON cannot carry is one no source could be saved with.
+                let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+                if let Some(dir) = walked(&e, &name) {
+                    found.push((dir, name));
+                }
+            }
+            String::new()
+        }
+        Err(e) => e.to_string(),
+    };
+    found.sort_by_cached_key(|(dir, name)| (!dir, name.to_lowercase(), name.clone()));
+    let capped = found.len() > MAX_LISTED;
+    if capped {
+        // The file the path named stays listed past the bound, so Use keeps it.
+        let past = found.split_off(MAX_LISTED);
+        found.extend(past.into_iter().filter(|(dir, name)| !dir && !picked.is_empty() && *name == picked));
+    }
+    let entries = found.into_iter().map(|(dir, name)| Entry { written: written(root, &at.join(&name)), dir, name }).collect();
+    Ok(Listing {
+        path: at.to_string_lossy().into_owned(),
+        written: written(root, &at),
+        up: at.parent().map(|p| written(root, p)),
+        moved: at != asked && picked.is_empty(),
+        picked,
+        refused,
+        entries,
+        capped,
+    })
 }
 
 /* --------------------------------------------------------------- model -- */
@@ -1500,6 +1671,100 @@ jobs:
         assert!(!capped);
         assert!(walk(&d.join("missing")).is_err());
         assert_eq!(walk(&d.join("jobs/b.txt")).unwrap_err(), "not a .yml or .yaml file");
+    }
+
+    #[test]
+    fn a_listing_shows_what_the_walk_would_read_and_names_it_as_a_source_would() {
+        // Canonical, as the project root is: the system's temporary folder
+        // sits behind a symlink on macOS.
+        let base = crate::files::plain(dir("browse").canonicalize().unwrap());
+        let project = base.join("repos/shop/dbt");
+        std::fs::create_dir_all(&project).unwrap();
+        let jobs = base.join("repos/airflow");
+        write(&jobs, "dags/b.yml", DAG);
+        write(&jobs, "dags/A.yaml", DAG);
+        write(&jobs, "dags/a.yml", DAG);
+        write(&jobs, "dags/sub/c.yml", DAG);
+        write(&jobs, "dags/.hidden.yml", DAG);
+        write(&jobs, "dags/.env", "SECRET=1\n");
+        write(&jobs, "dags/.git/config", "");
+        write(&jobs, "dags/build.py", "");
+        write(&jobs, "dags/__pycache__/x.yml", DAG);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(base.join("repos"), jobs.join("dags/linked")).unwrap();
+
+        // Paths compared as paths: on Windows a joined one keeps its `/`.
+        let l = browse(&project, "../../airflow/dags").unwrap();
+        assert_eq!(Path::new(&l.path), jobs.join("dags"));
+        assert_eq!((l.written.as_str(), l.up.as_deref()), ("../../airflow/dags", Some("../../airflow")));
+        let names: Vec<(&str, bool, &str)> = l.entries.iter().map(|e| (e.name.as_str(), e.dir, e.written.as_str())).collect();
+        assert_eq!(
+            names,
+            [
+                ("sub", true, "../../airflow/dags/sub"),
+                ("A.yaml", false, "../../airflow/dags/A.yaml"),
+                ("a.yml", false, "../../airflow/dags/a.yml"),
+                ("b.yml", false, "../../airflow/dags/b.yml"),
+            ],
+            "folders first, then by name whatever the case, and never a hidden entry, a symlink or another file"
+        );
+        assert!(!l.moved && l.picked.is_empty() && !l.capped);
+
+        // Within the project, from it; past two folders up, in full.
+        assert_eq!(browse(&project, "").unwrap().written, ".");
+        assert_eq!(Path::new(&browse(&project, "./models/..").unwrap().path), project);
+        let far = browse(&project, "../../..").unwrap();
+        assert_eq!(Path::new(&far.written), base);
+        assert_eq!(far.entries.iter().map(|e| e.written.as_str()).collect::<Vec<_>>(), ["../.."]);
+        let absolute = jobs.join("dags").to_string_lossy().into_owned();
+        assert_eq!(browse(&project, &absolute).unwrap().written, "../../airflow/dags");
+
+        // A file is shown picked in its folder, and a path that leads nowhere,
+        // or through a hidden name, lists the nearest folder above it.
+        let file = browse(&project, "../../airflow/dags/b.yml").unwrap();
+        assert_eq!((file.written.as_str(), file.picked.as_str(), file.moved), ("../../airflow/dags", "b.yml", false));
+        let gone = browse(&project, "../../airflow/dags/gone/deeper").unwrap();
+        assert_eq!((gone.written.as_str(), gone.picked.as_str(), gone.moved), ("../../airflow/dags", "", true));
+        assert!(browse(&project, "../../airflow/dags/.env").unwrap().picked.is_empty());
+        let hidden = browse(&project, "../../airflow/dags/.git").unwrap();
+        assert_eq!((hidden.written.as_str(), hidden.moved), ("../../airflow/dags", true), "never into a hidden folder");
+        #[cfg(unix)]
+        assert_eq!(browse(&project, "../../airflow/dags/linked").unwrap().written, "../../airflow/dags", "never on a symlink");
+        assert!(browse(&project, "a\nb").is_err());
+        assert!(browse(&project, &"x".repeat(1025)).is_err());
+
+        // The folders the project sits in are taken as they are, hidden or not.
+        let tucked = base.join(".home/shop");
+        std::fs::create_dir_all(&tucked).unwrap();
+        let home = browse(&tucked, "").unwrap();
+        assert_eq!((home.written.as_str(), home.moved), (".", false));
+
+        // Past the bound, the file the path names is still listed.
+        let many = jobs.join("many");
+        std::fs::create_dir_all(&many).unwrap();
+        for i in 0..=MAX_LISTED {
+            std::fs::write(many.join(format!("f{i:04}.yml")), "").unwrap();
+        }
+        std::fs::write(many.join("zz.yml"), "").unwrap();
+        let capped = browse(&project, "../../airflow/many/zz.yml").unwrap();
+        assert!(capped.capped && capped.picked == "zz.yml");
+        assert_eq!((capped.entries.len(), capped.entries.last().map(|e| e.name.as_str())), (MAX_LISTED + 1, Some("zz.yml")));
+
+        // A folder the system will not list is shown empty, and left from.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let locked = jobs.join("locked");
+            std::fs::create_dir_all(&locked).unwrap();
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+            // Root lists it all the same.
+            if std::fs::read_dir(&locked).is_err() {
+                let l = browse(&project, "../../airflow/locked").unwrap();
+                assert!(!l.refused.is_empty() && l.entries.is_empty() && !l.moved, "{l:?}");
+                assert_eq!(l.up.as_deref(), Some("../../airflow"));
+            }
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
     }
 
     #[test]
