@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.11.1 - 2026-10-12
+
+- Show a file's new text in its tab when a `git pull`, a checkout or another
+  program rewrites it, without reloading the page, and keep a tab's unsaved
+  edits, asking before a save writes over the change on disk (0067).
+
 ## 1.11.0 - 2026-10-11
 
 - Show the last dbt command's results in Reports, from

@@ -1324,6 +1324,15 @@ editors** panel at the top of the sidebar lists every open file with its own
 close and save buttons, plus save-all and close-all in its header. Closing a
 tab never touches the file on disk.
 
+A tab follows its file when something else rewrites it: a `git pull` in the
+terminal, a checkout, dbt, another editor. With nothing unsaved, it shows the
+new text within a few seconds, or as soon as it is clicked, and the cursor
+stays on its line. With unsaved edits, it keeps them and its name turns amber;
+saving it then asks before writing over what the disk now holds, rather than
+quietly putting back what the pull just changed. A file deleted on disk leaves
+its tab as it was, its name struck through: saving the tab writes the file
+back, after asking, and closing it asks first.
+
 ### Breadcrumbs
 
 The row under the tabs says where you are twice over: the file's path through
@@ -1385,6 +1394,7 @@ JavaScript engine, no install required, from the repository root:
 ```
 JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
 $JSC web/tests/tabs.js        # preview/pinned tab state machine
+$JSC web/tests/disk.js        # the one stretch a tab replaces when its file changed on disk
 $JSC web/tests/explorer.js    # git and unsaved colouring, including folders
 $JSC web/tests/collineage.js  # composite column ids, node subtitles, and the column lineage menu
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks

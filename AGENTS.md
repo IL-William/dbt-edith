@@ -132,6 +132,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a field to a payload, a log line or a route | [0012](docs/decisions/0012-secrets-and-boundaries.md), [0017](docs/decisions/0017-the-profile-is-reachable.md) |
 | change which `profiles.yml` is opened, or when it can be | [0049](docs/decisions/0049-the-profile-is-found-where-dbt-looks.md) |
 | change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md) |
+| change what a tab does when its file changes on disk, or what a save checks first | [0067](docs/decisions/0067-an-open-tab-follows-its-file-on-disk.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
 | add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md), [0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md) |
 | run a program found in the project, or ask a venv what it holds | [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |
