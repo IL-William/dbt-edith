@@ -1147,8 +1147,10 @@ folds and scroll.
 Point dbt-edith at the jobs with **Sources…** in the tab, or **Orchestration**
 in the menu behind the snowflake in the top bar: one or more folders or files,
 absolute or relative to the project, each an Airflow or a dbt Cloud source.
-Saving reads them at once and says what it found, file by file, with the line
-of anything it could not read. They are read again only when something moved:
+Saving reads them at once. When every source found jobs and no file was
+refused, the form closes on what it found: the Jobs tab when it is showing a
+model, Job coverage otherwise. Anything else keeps it open on what went wrong,
+file by file, with the line of anything it could not read. They are read again only when something moved:
 when the manifest is reloaded, or when the Jobs tab or the sources form opens
 and a job file was added, removed or changed since. A click inside the tab reads
 nothing, so a `git pull` in the jobs repository shows the next time the tab is

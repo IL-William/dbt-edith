@@ -115,3 +115,14 @@ check('a key nested inside a task', jobsExample('airflow', { command: 'run.cmd' 
   '    depends_on: [stage_sales]',
 ].join('\n'));
 check('dbt Cloud is its own schema', jobsExample('dbt_cloud', { dag_id: 'x' }, DEFAULTS).split('\n')[1], 'jobs:');
+
+print('\n--- when a save closes the sources form ---');
+var READ = { kind: 'airflow', files: 2, jobs: 2, steps: 5 };
+check('counted in a DAG\'s words', jobsReadCounts(READ), '2 DAGs, 5 tasks');
+check('counted in a dbt Cloud job\'s words', jobsReadCounts({ kind: 'dbt_cloud', jobs: 1, steps: 1 }), '1 job, 1 step');
+check('a clean read closes it', jobsReadClean([READ]), true);
+check('no source leaves it open', jobsReadClean([]), false);
+check('a path that leads nowhere leaves it open', jobsReadClean([READ, { kind: 'airflow', error: 'nothing at this path' }]), false);
+check('a refused file leaves it open',
+      jobsReadClean([Object.assign({}, READ, { refused: [{ file: 'a.yml', line: 3, message: 'a tab in the indent' }] })]), false);
+check('keys that find no job leave it open', jobsReadClean([{ kind: 'airflow', files: 2, jobs: 0, steps: 0, skipped: 2 }]), false);

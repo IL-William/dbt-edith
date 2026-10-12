@@ -7158,6 +7158,23 @@ function jobSourcesBody(forms, defaults) {
   };
 }
 
+/* What one source read, counted in its own words: DAGs and tasks, or jobs
+   and steps. */
+function jobsReadCounts(s) {
+  const word = s.kind === 'airflow' ? ['DAG', 'task'] : ['job', 'step'];
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  return `${plural(s.jobs, word[0])}, ${plural(s.steps, word[1])}`;
+}
+
+/* Whether a save read every source with nothing left to correct: each one
+   found jobs, and none failed or had a file refused. Only then does the form
+   close on its own, since the answer is then in the coverage; otherwise it
+   stays open on what went wrong, which is the answer to whether the keys are
+   right. */
+function jobsReadClean(sources) {
+  return sources.length > 0 && sources.every((s) => !s.error && !(s.refused || []).length && s.jobs > 0);
+}
+
 /* A small mapping as YAML lines, each list item a mapping of its own. */
 function jobsYaml(value, depth) {
   const pad = ' '.repeat(depth);
@@ -7434,10 +7451,8 @@ function renderCoverage(body, cov) {
 /* What one source read, under its form once saved. */
 function jobsReadNote(s) {
   if (s.error) return jel('div', 'jobs-warn', s.error);
-  const word = s.kind === 'airflow' ? ['DAG', 'task'] : ['job', 'step'];
-  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const box = jel('div', 'jobs-read');
-  box.append(jel('div', '', `${plural(s.files, 'file')} read: ${plural(s.jobs, word[0])}, ${plural(s.steps, word[1])}`
+  box.append(jel('div', '', `${s.files} file${s.files === 1 ? '' : 's'} read: ${jobsReadCounts(s)}`
     + (s.skipped ? `; ${s.skipped} without one` : '') + (s.capped ? '; stopped at 5 000 files' : '') + '.'));
   for (const r of s.refused || []) {
     box.append(jel('div', 'jobs-warn', `${r.file}${r.line ? ':' + r.line : ''}: ${r.message}`));
@@ -7445,8 +7460,11 @@ function jobsReadNote(s) {
   return box;
 }
 
-/* The sources, edited in a modal that stays open: saving reads them at once,
-   and what was read is the answer to whether the keys are right. */
+/* The sources, edited in a modal that stays open while a read leaves
+   something to correct: saving reads them at once, and what was read is the
+   answer to whether the keys are right. A clean read closes it on the
+   coverage, since a form that only repaints the same line looked like a save
+   that did nothing. */
 async function openJobSources() {
   closePopup();
   let summary;
@@ -7460,6 +7478,7 @@ async function openJobSources() {
   const list = jel('div', 'jobsrc-list');
   const foot = jel('div', 'jobsrc-foot');
   const saved = jel('p', 'muted', '');
+  let done = '';
 
   const input = (value, placeholder, onInput, cls = '') => {
     const i = jel('input', cls);
@@ -7518,6 +7537,11 @@ async function openJobSources() {
     try {
       const answer = await api.send('/api/jobs/sources', 'PUT', jobSourcesBody(forms, defaults));
       reads = answer.sources;
+      if (jobsReadClean(reads)) {
+        done = `${answer.saved ? 'Saved and read' : 'Read, kept until dbt-edith stops'}: ${reads.map(jobsReadCounts).join('; ')}.`;
+        $('#modal-actions').lastChild.click();
+        return;
+      }
       saved.textContent = answer.saved
         ? 'Saved for this project, outside it. Only YAML files are read, never through a symlink.'
         : 'No config directory is available, so these sources last until dbt-edith stops.';
@@ -7537,6 +7561,16 @@ async function openJobSources() {
     list, foot, saved);
   paint();
   await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true });
+  if (done) {
+    toast(done);
+    // The Jobs tab already answers for the model it shows; anywhere else the
+    // answer is the coverage.
+    if (S.dock === 'jobs' && S.focus && !S.reportsOpen) {
+      loadJobs();
+      return loadReportsIndex();
+    }
+    return openReports('jobs');
+  }
   if (S.dock === 'jobs') loadJobs();
   if (S.reportsOpen && S.reportsSection === 'jobs') showReportSection('jobs');
 }

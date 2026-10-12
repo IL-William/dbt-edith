@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.11.2 - 2026-10-12
+
+- Close the Orchestration form once a save reads every source cleanly, saying
+  what it read and showing Job coverage, or the Jobs tab when it shows a model.
+  It stays open on a source that found no job or a file it refused; saving again
+  used to repaint the same line, and looked like a save that did nothing.
+
 ## 1.11.1 - 2026-10-12
 
 - Show a file's new text in its tab when a `git pull`, a checkout or another
