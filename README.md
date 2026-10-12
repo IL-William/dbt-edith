@@ -743,11 +743,11 @@ table, and the rest as a table, a source included, since the manifest does not
 say what a source is
 ([0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md)).
 
-With Snowflake's features on, **Clone into my schema** sits under the table of
-a model, a seed or a snapshot. It writes the statements that copy the node and
-its direct parents from an environment into your own schema, so you can work
-on it without building everything above it. Nothing is sent to Snowflake: you
-read the statements, copy them and run them yourself.
+With Snowflake's features on, **Clone into my schema** sits beside the Location
+heading of a model, a seed or a snapshot. It writes the statements that copy the
+node and its direct parents from an environment into your own schema, so you can
+work on it without building everything above it. Nothing is sent to Snowflake:
+you read the statements, copy them and run them yourself.
 
 - **From** is one of your `.env` files, each node's relation being the one the
   Location table resolves with it, or *built*, where this manifest's target put
@@ -902,7 +902,7 @@ the canvas. When the canvas is capped
 for room, every model keeps some of its tests: the cap takes one test per model
 a turn.
 
-The **folders** checkbox, beside the eye, draws the same canvas by folder: each
+The **by folder** toggle, beside the eye, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models
 drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
 `30_vault` each read as a block. Their names stay pinned over the top of the

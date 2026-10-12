@@ -260,11 +260,15 @@ kbd {
 /* The tests toggle above the lineage, an eye (testsEye). On, it takes the
    warning colour: data tests can outnumber the models several times over,
    and every one is a box. Off, it is muted but not grey, so it stays found. */
-.eyebtn { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-dim); }
+.eyebtn { display: inline-flex; align-items: center; gap: 4px; color: var(--fg-dim); white-space: nowrap; }
 .eyebtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .eyebtn:hover { color: var(--fg); }
 .eyebtn[aria-pressed=true] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
 .eyebtn[aria-pressed=true]:hover { background: rgba(224, 163, 75, .2); }
+/* The folder bands beside it take the accent instead: they rearrange the
+   canvas rather than weigh it down, and the two can be on at once. */
+.eyebtn.folderbtn[aria-pressed=true] { color: var(--accent); border-color: rgba(77, 163, 255, .55); background: rgba(77, 163, 255, .12); }
+.eyebtn.folderbtn[aria-pressed=true]:hover { background: rgba(77, 163, 255, .2); }
 
 #body { flex: 1; display: flex; min-height: 0; }
 
@@ -282,6 +286,10 @@ kbd {
   padding: 4px 9px; border-radius: 4px 4px 0 0; cursor: pointer; border-bottom: 2px solid transparent;
 }
 .tab:hover { color: var(--fg); }
+/* Tighter than the sidebar's: the lineage tools share this bar, and on a
+   laptop-sized window, with Query history shown and the tests on, every label
+   in it broke onto a second line the 30px bar cannot hold. */
+#dock .tab { padding: 4px 7px; }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .side-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .filter {
@@ -745,7 +753,6 @@ kbd {
   width: 42px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
   border-radius: 4px; padding: 2px 4px; font: 11px var(--mono);
 }
-.tools .check { display: flex; align-items: center; gap: 4px; }
 
 .seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
 .segbtn {
@@ -1116,6 +1123,8 @@ kbd {
   letter-spacing: .9px; margin: 18px 0 8px; font-weight: 600;
 }
 .cat-body h3:first-child { margin-top: 0; }
+.cat-body .sechead { display: flex; align-items: center; gap: 12px; margin: 18px 0 8px; }
+.cat-body .sechead h3 { margin: 0; }
 .cat-desc { margin: 0; color: #c2ccd9; max-width: 90ch; }
 .stats { display: flex; flex-wrap: wrap; gap: 30px; }
 .stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 2px; }
@@ -1387,8 +1396,10 @@ kbd {
   font: 600 10px var(--mono); color: var(--warn); background: rgba(224, 163, 75, .14);
 }
 
-/* Clone into my schema (0058). */
-.loc-foot .clonebtn { margin-left: auto; }
+/* Clone into my schema (0058), tinted with Snowflake's colour so it stands
+   out from the Copy and Snowsight buttons in the table under it. */
+.btn.clonebtn { color: var(--tool); border-color: rgba(41, 181, 232, .55); background: rgba(41, 181, 232, .1); }
+.btn.clonebtn:hover { background: rgba(41, 181, 232, .2); }
 .clonepanel .clonehead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 12px; }
 .clonepanel .clonehead > .k { color: var(--fg-dim); width: 36px; flex: 0 0 auto; }
 .clonepanel .clonehead input[type=text] { width: 36ch; }
