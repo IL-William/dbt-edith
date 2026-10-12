@@ -1535,6 +1535,7 @@ Not there yet:
   warnings, including config paths in `dbt_project.yml` that apply to nothing;
 - a guided tour;
 - screenshots in this README;
+- a Run button on a node's file, with its parents or children;
 - persisting open tabs between sessions;
 - a second column lineage source using dbt Fusion's local index, which needs no
   warehouse privileges.
