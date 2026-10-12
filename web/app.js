@@ -7015,7 +7015,7 @@ function renderCatalog(n) {
     const t = document.createElement('button');
     t.className = 'ctab' + (S.catTab === key ? ' active' : '');
     t.textContent = label;
-    t.addEventListener('click', () => { S.catTab = key; renderCatalog(n); });
+    t.addEventListener('click', () => showCatalogTab(n, key));
     tabs.appendChild(t);
   }
   head.append(title, crumb, tabs);
@@ -7029,6 +7029,13 @@ function renderCatalog(n) {
     filter.focus();
     filter.setSelectionRange(filter.value.length, filter.value.length);
   }
+}
+
+/* A Catalog tab opened on the node it shows, from its button, a count in
+   Preview or Cmd+F alike, so none of them can come to open it differently. */
+function showCatalogTab(n, key) {
+  S.catTab = key;
+  renderCatalog(n);
 }
 
 function h3(label) {
@@ -7046,7 +7053,19 @@ function stat(label, value, onClick) {
   const v = document.createElement('div');
   v.className = 'v' + (onClick ? ' link' : '');
   v.textContent = value;
-  if (onClick) v.addEventListener('click', onClick);
+  if (onClick) {
+    // A div rather than a button, so the number keeps the type of the plain
+    // stats beside it; the role and the keys give a keyboard what a button would.
+    v.tabIndex = 0;
+    v.setAttribute('role', 'button');
+    v.setAttribute('aria-label', `${label}: ${value}`);
+    v.addEventListener('click', onClick);
+    v.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      onClick(e);
+    });
+  }
   s.append(k, v);
   return s;
 }
@@ -9570,7 +9589,7 @@ function catalogPreview(body, n) {
   stats.className = 'stats';
   stats.append(
     stat('Mat. type', n.materialized || n.kind),
-    stat('Columns', String(n.columns.length)),
+    stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
     stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id); showDock('lineage'); }),
     stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id); showDock('lineage'); }),
     stat('Tests', String(n.tests.length), n.tests.length ? () => {
@@ -9792,10 +9811,7 @@ function columnMatches(c, query) {
 function focusColumnFilter() {
   const n = S.node;
   if (!n || !n.columns.length) return false;
-  if (S.catTab !== 'columns') {
-    S.catTab = 'columns';
-    renderCatalog(n);
-  }
+  if (S.catTab !== 'columns') showCatalogTab(n, 'columns');
   const box = $('#col-filter');
   if (!box) return false;
   box.focus();
@@ -9846,7 +9862,7 @@ function catalogColumns(body, n) {
     span.className = 'colhint modeltests';
     span.textContent = `${onModel} guard the model itself`;
     span.title = 'a singular test, or a generic naming no column: no column row can hold it.\nclick to list them in Preview';
-    span.addEventListener('click', () => { S.catTab = 'preview'; renderCatalog(n); });
+    span.addEventListener('click', () => showCatalogTab(n, 'preview'));
     tools.appendChild(span);
   }
   const hint = columnsHint(S.sidecar, n.columns.some((c) => c.up || c.down))

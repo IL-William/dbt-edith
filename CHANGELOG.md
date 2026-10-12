@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.11.3 - 2026-10-12
+
+- Open the Columns tab from the column count in the Catalog's context.
+- Reach the counts in the Catalog's context with Tab, and follow them with
+  Enter or Space as with a click.
+
 ## 1.11.2 - 2026-10-12
 
 - Close the Orchestration form once a save reads every source cleanly, saying
