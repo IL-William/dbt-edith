@@ -520,6 +520,18 @@ pub fn fetch_quiet(root: &Path) -> bool {
     run(root, &["fetch", "--quiet"], NET_ENV, Duration::from_secs(60)).ok
 }
 
+/// The tags a remote holds, as `git ls-remote --tags --refs` lists them, for
+/// the daily look for a newer dbt-edith (0068). Run from `dir`, which only
+/// has to exist: the URL is the remote, so no repository is involved, and git
+/// looks for none above `dir`, whose configuration could rewrite the URL. None
+/// when git could not ask, offline above all, which the caller keeps quiet.
+pub fn ls_remote_tags(dir: &Path, url: &str) -> Option<String> {
+    let ceiling = dir.parent().and_then(Path::to_str).unwrap_or("");
+    let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
+    let r = run(dir, &["ls-remote", "--tags", "--refs", url], &env, Duration::from_secs(30));
+    r.ok.then_some(r.stdout)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -97,6 +97,8 @@ pub struct AppState {
     pub jobs: crate::jobs::Cache,
     /// The last dbt command's results, read again only when the file changes.
     pub run_results: files::Cached<crate::run_results::Raw>,
+    /// Whether a newer dbt-edith is out, looked for once a day (0068).
+    pub update: crate::update::Update,
 }
 
 impl AppState {
@@ -249,6 +251,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
         .route("/api/sidecar", get(sidecar_status))
+        .route("/api/update", get(update_status))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
         .route("/api/dir", get(dir))
@@ -2423,6 +2426,53 @@ async fn sidecar_status(State(st): State<Arc<AppState>>) -> Response {
     Json(SidecarBody { enabled: st.sidecar.enabled(), status: st.sidecar.status() }).into_response()
 }
 
+#[derive(serde::Serialize)]
+struct UpdateBody {
+    current: &'static str,
+    /// The newest release GitHub listed, empty until a look has answered.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    latest: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    newer: bool,
+    /// The day's look is on its way, so the page asks again shortly.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    checking: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    off: bool,
+    /// The release's notes, while it is newer.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    notes: String,
+    /// The command that installs it here, while it is newer and there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    how: Option<crate::update::How>,
+    /// Why there is no command, while it is newer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    why: Option<crate::update::Why>,
+}
+
+async fn update_status(State(st): State<Arc<AppState>>) -> Response {
+    let current = env!("CARGO_PKG_VERSION");
+    // Switched off, nothing was looked for, so nothing is newer.
+    let (latest, checking) = st.update.status();
+    let newer = crate::update::newer(current, &latest);
+    let (how, why) = match &st.update.how {
+        _ if !newer => (None, None),
+        Ok(how) => (Some(how.clone()), None),
+        Err(why) => (None, Some(*why)),
+    };
+    Json(UpdateBody {
+        current,
+        notes: if newer { crate::update::notes_url(&latest) } else { String::new() },
+        how,
+        why,
+        latest,
+        newer,
+        checking,
+        off: st.update.off,
+    })
+    .into_response()
+}
+
 /// A dbt profile is a few kilobytes; anything of this size is not one.
 const MAX_PROFILE_BYTES: u64 = 512 * 1024;
 
@@ -3403,6 +3453,18 @@ pub async fn watch_remote(st: Arc<AppState>) {
     }
 }
 
+/// Background look for a newer dbt-edith: at once, then every hour, each look
+/// asking GitHub only when the day's answer is not already in (0068).
+pub async fn watch_update(st: Arc<AppState>) {
+    if st.update.off {
+        return;
+    }
+    loop {
+        st.update.check().await;
+        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+    }
+}
+
 /// Background poll: reloads whenever dbt rewrites manifest.json or catalog.json,
 /// or something other than a click rewrites the column-lineage cache.
 pub async fn watch_artifacts(st: Arc<AppState>) {
@@ -3569,6 +3631,9 @@ mod tests {
             job_sources: std::sync::Mutex::new(Vec::new()),
             jobs: Default::default(),
             run_results: Default::default(),
+            // Looks only when a test asks it to, and from a file the test
+            // wrote first, so no test reaches GitHub.
+            update: crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere)),
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -3739,6 +3804,39 @@ mod tests {
         assert!(page.contains(r#""to_investigate":1"#), "{page}");
         assert!(page.contains(r#""totals":{"models":2,"parsed":2}"#), "{page}");
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The page hears of a newer dbt-edith from the day's answer, with the
+    /// page of its notes, and of nothing while the answer is this version.
+    #[tokio::test]
+    async fn the_update_route_says_what_the_last_look_found() {
+        let root = temp_project("update");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let current = env!("CARGO_PKG_VERSION");
+
+        let before = body_of(port, get("/api/update", &h)).await;
+        assert!(before.ends_with(&format!(r#"{{"current":"{current}"}}"#)), "{before}");
+
+        let now = crate::update::now_secs();
+        std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"{current}"}}"#)).unwrap();
+        st.update.check().await;
+        let same = body_of(port, get("/api/update", &h)).await;
+        assert!(same.ends_with(&format!(r#"{{"current":"{current}","latest":"{current}"}}"#)), "{same}");
+
+        std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"99.0.0"}}"#)).unwrap();
+        st.update.check().await;
+        let newer = body_of(port, get("/api/update", &h)).await;
+        assert!(
+            newer.ends_with(&format!(
+                r#"{{"current":"{current}","latest":"99.0.0","newer":true,"notes":"https://github.com/IL-William/dbt-edith/releases/tag/v99.0.0","why":"elsewhere"}}"#
+            )),
+            "{newer}"
+        );
+        assert!(status_of(port, keyless(get("/api/update", &h))).await.ends_with("401 Unauthorized"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

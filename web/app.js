@@ -42,6 +42,8 @@ const S = {
   sidecarPoll: 0,             // the timer asking again while the script starts
   collin: null,               // the collin part of /api/meta: installed, stale, and its last run
   collinPoll: 0,              // the timer asking again while a run started by a pick goes on
+  update: null,               // payload of /api/update: the newest dbt-edith known, and how to install it
+  updatePoll: 0,              // the timer asking again while the day's look is on its way
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
   cllActive: '',              // file name of the one the graph holds, '' for none
   cllTool: '',                // fusion | collin | snowflake | '' for another producer or none
@@ -10741,6 +10743,100 @@ function pinBoxFile(n) {
   revealInTree(n.file);
 }
 
+/* What the status bar offers for an /api/update answer (0068): nothing until
+   a later release is known, then a pill naming it, and a menu with its notes
+   and, for a binary built from a clone on this machine, the command that
+   pulls and rebuilds it, or why there is none. Pure, for web/tests/update.js. */
+function updateOffer(u) {
+  if (!u || !u.newer) return null;
+  const how = u.how || null;
+  const lines = [];
+  if (how) {
+    lines.push(how.kind === 'build'
+      ? `It pulls main into ${how.source} and builds it again with cargo build --release, a minute or two.`
+      : `It pulls main into ${how.source} and installs it again with cargo install, a minute or two.`);
+    if (how.renames) {
+      lines.push(`${how.exe} steps aside as ${how.exe}.old first, since Windows will not replace a running .exe, `
+        + 'and comes back if the build fails.');
+    }
+    lines.push(`Then stop dbt-edith and start it again: until then, ${u.current} serves this page.`);
+  } else if (u.why === 'locked') {
+    lines.push('This dbt-edith runs from its clone\'s target/release, which a build cannot replace on Windows '
+      + 'while it runs: stop it, then pull and build it again.');
+  } else if (u.why === 'shell') {
+    lines.push('The update is typed for sh, bash, zsh and PowerShell, and this terminal runs another shell: '
+      + 'pull the clone and install it again by hand, as the README says.');
+  } else if (u.why === 'path') {
+    lines.push('A path in the update holds a character a shell would read inside quotes, so none is typed: '
+      + 'pull the clone and install it again by hand, as the README says.');
+  } else {
+    lines.push('This dbt-edith is neither in cargo\'s bin nor in the target/release of a clone on this machine, '
+      + 'so there is no command to offer: pull and rebuild it where it was built, as the README says.');
+  }
+  return {
+    label: `${u.latest} available`,
+    title: `dbt-edith ${u.latest} is out, and this is ${u.current}`,
+    head: `dbt-edith ${u.latest} · this is ${u.current}`,
+    notes: u.notes || '',
+    command: how ? how.command : '',
+    lines,
+  };
+}
+
+function openUpdateMenu(anchor) {
+  if (closePopup(anchor)) return;
+  const o = updateOffer(S.update);
+  if (!o) return;
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  const menu = el('div', 'envmenu updmenu');
+  menu.setAttribute('role', 'menu');
+  menu.append(el('div', 'menuhead', o.head));
+  if (o.command) {
+    const run = el('button', '');
+    run.type = 'button';
+    run.setAttribute('role', 'menuitem');
+    run.title = o.command;
+    run.append(el('span', 'lbl', 'Update in the terminal'));
+    run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); });
+    menu.append(run);
+  }
+  if (o.notes) {
+    const a = el('a', 'menulink');
+    a.setAttribute('role', 'menuitem');
+    a.href = o.notes;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.append(el('span', 'lbl', 'What changed'), el('span', 'sub', 'GitHub'));
+    // After the click, so the link is still in the page when the browser follows it.
+    a.addEventListener('click', () => setTimeout(closePopup));
+    menu.append(a);
+  }
+  menu.append(document.createElement('hr'));
+  for (const line of o.lines) menu.append(el('div', 'menunote', line));
+  openPopup(anchor, menu);
+}
+
+/* Asked at boot, then every few seconds while the day's look is on its way,
+   then hourly: the answer moves once a day at most. */
+async function refreshUpdate() {
+  clearTimeout(S.updatePoll);
+  try { S.update = await api.get('/api/update'); } catch {
+    // A request lost to sleep or the network: asked again in a minute.
+    S.updatePoll = setTimeout(refreshUpdate, 60 * 1000);
+    return;
+  }
+  const o = updateOffer(S.update);
+  const pill = $('#status-update');
+  pill.classList.toggle('hidden', !o);
+  if (o) {
+    pill.textContent = o.label;
+    pill.title = o.title;
+  }
+  // Switched off, there will be nothing to hear.
+  if (S.update.off) return;
+  S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 5000 : 3600 * 1000);
+}
+
 async function boot() {
   initEditor();
   Lineage.init($('#graph'), {
@@ -10819,6 +10915,8 @@ async function boot() {
   S.version = info.version || '';
   build.textContent = 'v' + (info.version || '?');
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
+  $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  refreshUpdate();
   const v = info.venv || {};
   const venvEl = $('#status-venv');
   if (v.name) {

@@ -104,7 +104,7 @@ pub fn version(bin: &Path) -> Option<String> {
 }
 
 /// `0.2.0 (a142ee5)` to (0, 2, 0).
-fn semver(version: &str) -> Option<(u32, u32, u32)> {
+pub fn semver(version: &str) -> Option<(u32, u32, u32)> {
     let mut parts = version.split_whitespace().next()?.split('.').map(|p| p.parse::<u32>().ok());
     Some((parts.next()??, parts.next()??, parts.next()??))
 }

@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-11.
+belongs here. Last updated 2026-10-12.
 
 ## Shipped
 
@@ -962,6 +962,22 @@ rather than failed, a file turned binary marked and read once, and a CRLF file
 neither reloaded by a new stamp over the same text nor marked edited by a real
 change. Not yet on the VM.
 
+Update offer (1.12.0, 0068): a release was found by looking at GitHub. Once a
+day, in the background, git now lists dbt-edith's tags (`ls-remote`), the
+answer kept in the config directory for every start of that day, and a newer
+release is a pill after the version in the status bar. Its menu links the
+release's notes and, for a binary installed by cargo or built in the
+`target/release/` of a clone still on the machine, types the pull of `main` and
+the rebuild into the terminal; on Windows the running `.exe` steps aside as
+`.exe.old` first and comes back if the build fails, and a build in the clone
+gets no command, since cargo writes it through a file the rename does not
+free. A copy carried from another machine gets the notes, and every binary
+without a command is told why. Driven in headless Chrome on Jaffle Shop
+with a release build: a start with an empty config directory asked GitHub,
+found 1.11.0 and showed nothing; with 1.12.0 kept for the day, the startup
+banner named it, the pill and its menu showed, and the command landed in the
+terminal unrun. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1097,8 +1113,9 @@ on a managed Windows machine.
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then
-`cargo install --path . --locked`, and comparing the stamp with `git describe`
-in the clone is how you check it took.
+`cargo install --path . --locked`, which the status bar offers once a release
+is out (0068), and comparing the stamp with `git describe` in the clone is how
+you check it took.
 
 A locked-down Windows machine can also build its own binary: `cargo install
 --path .` works there without administrator rights, with Rust's GNU toolchain
@@ -1130,6 +1147,10 @@ cross-compile.
   apart, which take 165, 250 and 230 ms on a Mac. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under
   that on a Mac.
+- **The update on Windows (0068).** Whether the running `dbt-edith.exe`
+  renames to `.exe.old` while it runs, under Git Bash and under PowerShell,
+  and whether `cargo install` then puts the new one in place. The PowerShell
+  form has run on no machine yet: the Mac has none.
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.
