@@ -4684,9 +4684,13 @@ b"}"#,
         assert!(!plan.contains("s3cret-in-profile") && !plan.contains("hunter2"), "a secret left the server");
         assert!(!plan.contains(r#""user""#) && !plan.contains("ME\""), "{plan}");
 
-        // The same manifest gives the same bytes on every build (0055).
+        // The same manifest gives the same bytes on every build (0055). The
+        // body, that is: the head's Date moves on when a second turns between
+        // the two requests.
         *st.graph.write().await = build();
-        assert_eq!(body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await, plan);
+        let again = body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
+        let past_head = |r: &str| r.split_once("\r\n\r\n").map(|(_, body)| body.to_owned()).expect("a body");
+        assert_eq!(past_head(&again), past_head(&plan));
 
         for (id, status) in [("model.shop.nope", "404 Not Found"), ("source.shop.crm.orders", "400 Bad Request")] {
             let answer = status_of(port, get(&format!("/api/snowflake/clone?id={id}"), &[("Host", &host)])).await;
