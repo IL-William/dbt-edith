@@ -1119,8 +1119,9 @@ are reached by typing one.
         links that last longer than one.
 11. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
-    node takes. A command opens its selections and runs nothing itself:
-    only a selection does, so looking never starts a run.
+    node takes. A command opens its selections and types nothing itself:
+    only a selection types its command, so looking never touches the
+    terminal.
     - **The commands:**
       - a model takes `run`, `build` and `test`;
       - a seed takes `seed`, `build` and `test`;
@@ -1185,28 +1186,55 @@ are reached by typing one.
       inherited it, which the terminal gets too, then the profile's
       `target:`. It is the same name the clone route sends (0058). The menu
       adds that a shell may have changed it since.
-    - **The line already typed.** The command lands after whatever is on the
-      terminal's line, since `sendToTerminal` clears nothing. That line is
-      cleared first, with the key the shell clears it with, which differs
-      between bash, zsh, PowerShell and cmd. The line still goes to whatever
-      holds the terminal. Under bash, the OSC 6973 printed before each prompt
-      (0069) tells the page when the shell is back at its prompt, so a click
-      while a `dbt` still runs can wait for it or be refused. zsh, fish and
-      PowerShell print nothing, and there dbt-edith cannot tell.
-    - **What a click does, still open.** Running on a click, with Alt-click
-      only typing the command, was the choice. It collides with AGENTS.md's
-      "Never run dbt" and with 0002, where dbt runs where the user runs it.
-      The freshness badge is the only button that presses Enter today, and
-      it runs `dbt parse`, which reaches no warehouse, while
-      `build --select +name+` writes to one. Typing without running, as Run
-      again and Recompile do, keeps the rule. Either way a decision record
-      settles it first. Running on a click also amends that rule.
+    - **What a click does: it types the command, and Enter is the user's
+      (0071).** Picking an entry types the command into the terminal without
+      running it, so "Never run dbt" and 0002 hold as written. The freshness
+      badge stays the only button that presses Enter, because `dbt parse`
+      reaches no warehouse, while `build --select +name+` writes to one.
+    - **`sendToTerminal` changes for every caller.** Run again, Recompile,
+      dbt ls, the selector command, the update offer and collin's install
+      line have the same two problems as this menu, so the fix goes there,
+      not into the menu alone.
+      - **The line already typed.** A command lands after whatever is on the
+        line. It is cleared first only where a sequence is known to clear the
+        whole line in that shell and its edit mode, each checked in a real
+        shell first. In bash, zsh and fish in their default emacs mode, that
+        is Ctrl-E then Ctrl-U, since bash's Ctrl-U alone keeps what follows
+        the cursor. In cmd, and in PowerShell's Windows mode, it is Escape.
+        In PowerShell's Emacs mode, the default off Windows, Escape starts a
+        key chord, so it is not that. A shell set to vi mode reads these keys
+        otherwise, and nothing here can see that setting. Where no sequence
+        is known, nothing is cleared, and the strip below says the command
+        was typed after what was there.
+      - **Saying that nothing has run.** The toast goes after 3.2 s, often
+        while the eyes are on the terminal. A strip above the terminal says it
+        instead. It shortens the terminal rather than covering its last rows,
+        where the typed command sits. The strip:
+        - names the command;
+        - says that nothing has run and that Enter runs it;
+        - names the target a new terminal would use, with the caveat that
+          the shell may have changed it.
+
+        It shows once the command has reached the terminal, never when the
+        send gave up. The next key or paste in the terminal closes it,
+        read from `onKey` and the paste event. `onData` would close it at
+        once, since it also carries the terminal's own replies, such as a
+        focus report or a cursor position. The next send replaces it, and a
+        reconnection removes it.
+      - **Before the click,** the button's tooltip and the menu's foot say
+        that an entry types its command.
+    - **What holds the terminal takes the keys.** A pager or an editor
+      running there reads them as its own commands, Enter or not. That is
+      true of every caller of `sendToTerminal` today, and nothing is built
+      here to wait for the prompt.
     - **Also left.**
       - A name shared by two packages selects both, and a versioned model's
         name selects every version. The command then needs a narrower
         selector, checked against dbt.
       - A disabled node is selected by nothing, so its button is greyed,
-        with the reason.
+        with the reason as its tooltip in place of what a click types. It is
+        greyed through `aria-disabled` rather than `disabled`, which some
+        browsers show no tooltip on.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
