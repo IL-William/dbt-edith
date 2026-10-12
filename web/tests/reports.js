@@ -12,14 +12,17 @@ function check(label, got, want) {
 function keys(sections) { return sections.map(function (s) { return s.key; }); }
 
 print('--- the sections ---');
-check('none before the index is read', keys(reportsSections(null)), []);
-check('none while nothing was written or named', keys(reportsSections({})), []);
-check('collin once a run wrote a report', keys(reportsSections({ collin: { at: 5 } })), ['collin']);
-check('the jobs once a source is named', keys(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs']);
+function empty(sections) { return sections.map(function (s) { return s.key + (s.empty ? ':empty' : ''); }); }
+check('the job coverage alone, empty, before the index is read', empty(reportsSections(null)), ['jobs:empty']);
+check('and while nothing was written or named, as where a source is added', empty(reportsSections({})), ['jobs:empty']);
+check('collin once a run wrote a report', empty(reportsSections({ collin: { at: 5 } })), ['collin', 'jobs:empty']);
+check('the jobs once a source is named', empty(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs']);
 check('in the order they are worked through, whatever the index says',
       keys(reportsSections({ jobs: { sources: 1, at: 3 }, collin: { at: 5 } })), ['collin', 'jobs']);
-check('a key this page does not know is left out', keys(reportsSections({ later: { at: 1 } })), []);
+check('a key this page does not know is left out', keys(reportsSections({ later: { at: 1 } })), ['jobs']);
 check('each in its tool\'s colour', reportsSections({ collin: { at: 5 } })[0].tool, 'collin');
+check('an index read twice is not marked empty by the first', empty(reportsSections({}).concat(reportsSections({ jobs: { sources: 1, at: 3 } }))),
+      ['jobs:empty', 'jobs']);
 
 print('\n--- what is new ---');
 check('nothing from collin, nothing new', reportsNews(null), []);
@@ -35,6 +38,9 @@ check('on news before the last section read', reportsDefaultSection(both, report
 check('not on a section that has gone', reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 } }), [], 'collin'), 'jobs');
 check('news for a section that is not there opens the first', reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 } }), reportsNews(badge), ''), 'jobs');
 check('nowhere when there is nothing', reportsDefaultSection([], reportsNews(badge), 'collin'), '');
+check('not on the empty coverage read last, when another section has something',
+      reportsDefaultSection(reportsSections({ collin: { at: 5 } }), [], 'jobs'), 'collin');
+check('on the empty coverage when it is all there is', reportsDefaultSection(reportsSections({}), [], ''), 'jobs');
 
 print('\n--- the button\'s tooltip ---');
 check('names what the reports hold and the key',
@@ -42,6 +48,8 @@ check('names what the reports hold and the key',
 check('then what is new, a line each',
       reportsButtonTitle(both, reportsNews(badge), 'Ctrl+Alt+R').split('\n')[1], badge.title);
 check('says the key even with nothing to show', reportsButtonTitle([], [], 'Ctrl+Alt+R'), 'Reports on the whole project (Ctrl+Alt+R)');
+check('and leaves out a section with nothing in it yet',
+      reportsButtonTitle(reportsSections({ collin: { at: 5 } }), [], '⌥⌘R'), 'Reports on the whole project: collin\'s report (⌥⌘R)');
 
 print('\n--- the section on screen against its file ---');
 check('nothing shown, nothing stale', reportsStale(null, { collin: { at: 5 } }, 'collin'), false);
@@ -54,7 +62,7 @@ check('another section moving is not this one\'s news',
       reportsStale({ sources: 1, at: 3 }, { collin: { at: 9 }, jobs: { sources: 1, at: 3 } }, 'jobs'), false);
 
 print('\n--- the last run ---');
-check('listed first once dbt wrote a run', keys(reportsSections({ collin: { at: 5 }, run: { at: 9 } })), ['run', 'collin']);
+check('listed first once dbt wrote a run', keys(reportsSections({ collin: { at: 5 }, run: { at: 9 } })), ['run', 'collin', 'jobs']);
 var run = { at: 9, command: 'build', error: 1, fail: 2, warn: 3 };
 check('its errors and failures are news', runBadge(run, 5),
       { text: '1 error, 2 failed', short: '3', title: 'dbt build ended with 1 error and 2 failed tests.' });

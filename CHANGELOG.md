@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.13.0 - 2026-10-12
+
+- Pick a job source from a list of folders rather than type its path: a
+  Browse button beside each path, open already on a source being added, lists
+  a folder's folders and YAML files, anywhere on the machine (0070).
+- List the job coverage in Reports before any source is named, with Add a
+  source in it.
+
 ## 1.12.1 - 2026-10-12
 
 - Name the venv the terminal activated in the status bar, from bash's own

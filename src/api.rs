@@ -278,6 +278,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/git/merge-abort", post(git_merge_abort))
         .route("/api/jobs", get(jobs_summary))
         .route("/api/jobs/sources", put(save_job_sources))
+        .route("/api/jobs/browse", get(browse_job_sources))
         .route("/api/jobs/node", get(jobs_for_node))
         .route("/api/jobs/coverage", get(jobs_coverage))
         .route("/api/jobs/step", get(job_step))
@@ -2299,6 +2300,18 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
     match with_jobs(&st, true, |_, read| crate::jobs::summary(read)).await {
         Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
         Err(e) => e,
+    }
+}
+
+/// One folder for the sources form to pick a source from, anywhere the user
+/// can read: names only, of what the walk would read there (0070). Off the
+/// runtime's threads, since the folder may sit on a network share.
+async fn browse_job_sources(State(st): State<Arc<AppState>>, Query(q): Query<PathQuery>) -> Response {
+    let root = st.root.clone();
+    match tokio::task::spawn_blocking(move || crate::jobs::browse(&root, &q.path)).await {
+        Ok(Ok(listing)) => Json(listing).into_response(),
+        Ok(Err(why)) => err(why),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
@@ -4400,6 +4413,16 @@ mod tests {
         assert!(unlooked.contains(r#""never":[{"id":"model.shop.customers""#), "{unlooked}");
         let looked = body_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await;
         assert!(looked.contains(r#""jobs":2"#), "{looked}");
+
+        // The form's picker lists a folder outside the project by names alone,
+        // never a hidden one's. A temporary folder's path needs no escaping.
+        let listed = body_of(port, get(&format!("/api/jobs/browse?path={path}"), &[("Host", &host)])).await;
+        assert!(listed.starts_with("HTTP/1.1 200") && listed.contains(r#""name":"dags","dir":true"#), "{listed}");
+        assert!(!listed.contains(".env") && !listed.contains("hunter2"), "{listed}");
+        let inside = body_of(port, get(&format!("/api/jobs/browse?path={}", outside.join("dags").display()), &[("Host", &host)])).await;
+        assert!(inside.contains(r#""name":"added.yml""#) && inside.contains(r#""name":"daily.yml""#), "{inside}");
+        assert!(!inside.contains("shop_daily"), "a file's name, never its text: {inside}");
+        assert!(status_of(port, keyless(get("/api/jobs/browse", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
 
         let foreign = with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));

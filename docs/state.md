@@ -994,6 +994,28 @@ activate the other, exit, each shown at the next prompt; started inside a venv,
 the typed activation reported as the terminal's; zsh unchanged. Not yet on the
 VM, where ConPTY carries the sequence.
 
+Picking a job source (1.13.0, 0070): a source's path was typed by hand, and a
+typo was found only by saving. **Browse…** beside each path opens a picker
+under it, already open on a source being added, from the form's buttons or
+from Add a source. `GET /api/jobs/browse` lists one folder, located as a
+source's path is, with what the walk would read there: its folders and its
+YAML files by name, never a hidden entry, a symlink or a junction, folders
+first and at most 2000; a path that leads nowhere, into a hidden folder or
+onto a link lists the nearest folder above it, and a folder the system will
+not list is shown empty with the reason. The picker drops an answer to a
+listing asked for before the last one, and the second click of a double click
+counts only on the row the first one hit, since a folder opened by the first
+can put a file under the pointer. A pick is written from the project within
+two folders above it, in full otherwise. The job coverage is now listed in
+Reports before any source is named, as where one is added: hollow in the rail,
+it neither shows the button nor is opened on while another section has
+something. Driven in headless Chrome on a large real project with its
+orchestration repository beside it: Reports to Add a source, the picker on the
+project, up one folder, three folders down, Escape closing the picker and not
+the form, a path typed into the picker, and Use writing
+`../<repository>/dags/...`. Not yet on the VM, where the drives above `C:\`
+are reached by typing one.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
