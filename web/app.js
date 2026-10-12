@@ -5,11 +5,13 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 
 const S = {
   meta: null,
-  open: new Map(),   // path -> {doc, dirty}
+  open: new Map(),   // path -> {doc, dirty, stamp, disk}
   order: [],
   active: null,
   focus: null,       // unique_id currently in the lineage view
   unsynced: '',      // file whose tab came up with no node in the manifest, for a reload to look again
+  stampsAsked: false, // a look at the open files' stamps is on its way, so another waits its turn
+  stampsAgain: false, // one was asked for meanwhile, and runs once that look is done
   cm: null,
   term: null, ws: null, fit: null,
   preview: null,              // path of the reusable preview tab, VS Code style
@@ -1257,8 +1259,9 @@ function initEditor() {
     lineNumbers: true, lineWrapping: false, indentUnit: 4, tabSize: 4,
     styleActiveLine: false, value: '',
   });
-  S.cm.on('change', () => {
-    if (!S.active) return;
+  S.cm.on('change', (cm, ch) => {
+    // The file itself changing on disk is no edit of the user's (0067).
+    if (!S.active || ch.origin === 'disk') return;
     const f = S.open.get(S.active);
     if (!f || ownsPane(f)) return;
     const pinned = S.preview === S.active;
@@ -1269,17 +1272,17 @@ function initEditor() {
   S.cm.on('cursorActivity', updateStatus);
   S.cm.on('cursorActivity', crumbCursor);
   let rescan = null;
-  S.cm.on('change', () => {
+  S.cm.on('change', (cm, ch) => {
+    // A reload scans its own tab: under a diff tab, S.cm still holds the last
+    // file's Doc, and S.active would name the diff (0067).
+    if (ch.origin === 'disk') return;
     clearTimeout(rescan);
     // The path as well as the Doc, taken now: a tab switched within the delay
     // would otherwise scan this file as that one, and a .yml would lose the
     // links only a properties file gets.
     const doc = S.cm.getDoc(), path = S.active;
     rescan = setTimeout(() => {
-      markRefs(doc, path);
-      markVars(doc);
-      markMacros(doc, path);
-      markProjectDirs(doc, path);
+      markLinks(doc, path);
       refreshOutline();
       renderCrumbs();
     }, 500);
@@ -1747,14 +1750,20 @@ async function openFile(path, { focusLineage = true, preview = false } = {}) {
     S.open.delete(S.preview);
     S.order.splice(slot, 1);
   }
-  S.open.set(path, { doc, dirty: false, truncated: body.truncated });
+  S.open.set(path, { doc, dirty: false, truncated: body.truncated, stamp: body.stamp, disk: '' });
   S.order.splice(slot, 0, path);
   if (preview) S.preview = path;
+  markLinks(doc, path);
+  activate(path, focusLineage);
+}
+
+/* Every kind of link a file's text carries, scanned again whenever the text
+   changes: on opening, after typing, and after a reload from disk. */
+function markLinks(doc, path) {
   markRefs(doc, path);
   markVars(doc);
   markMacros(doc, path);
   markProjectDirs(doc, path);
-  activate(path, focusLineage);
 }
 
 /* A diff tab holds no CodeMirror Doc: it owns a MergeView of HEAD against the
@@ -1944,6 +1953,11 @@ function activate(path, focusLineage = true, keepReports = false) {
   const inProject = projectPath(path);
   markTreeSelection(inProject);
   if (focusLineage && inProject) syncNode(inProject);
+  // A tab clicked after a pull in the terminal is the moment it is looked at,
+  // sooner than the next poll. A file that could not be read is tried again,
+  // as when Excel lets go of a seed.
+  if (f && !f.dirty && f.disk === 'changed') f.diskSeen = '';
+  refreshOpenFiles();
 }
 
 /* The project path a tab points at, which is not its key: a diff is keyed
@@ -1984,9 +1998,16 @@ function settleTabs() {
   renderTabs();
 }
 
+/* Whether closing the tab would lose text: unsaved edits, or a file deleted
+   on disk whose tab holds the last copy of it. */
+function holdsWork(f) {
+  return !!f && (f.dirty || f.disk === 'gone');
+}
+
 function closeFile(path) {
   const f = S.open.get(path);
-  if (f && f.dirty && !confirm(`${path} has unsaved changes. Close anyway?`)) return;
+  if (holdsWork(f) && !confirm(f.dirty ? `${path} has unsaved changes. Close anyway?`
+    : `${path} was deleted on disk, and this tab holds the last copy of it. Close anyway?`)) return;
   dropTab(path);
   settleTabs();
 }
@@ -1995,7 +2016,7 @@ function closeFile(path) {
    than one dialog per tab. */
 function closeMany(keys, what) {
   if (!keys.length) return;
-  const dirty = keys.filter((p) => S.open.get(p) && S.open.get(p).dirty);
+  const dirty = keys.filter((p) => holdsWork(S.open.get(p)));
   if (dirty.length && !confirm(
     `${dirty.length} file${dirty.length > 1 ? 's have' : ' has'} unsaved changes.\n\n`
     + `${dirty.join('\n')}\n\n${what} The files themselves are not touched.`)) return;
@@ -2003,22 +2024,170 @@ function closeMany(keys, what) {
   settleTabs();
 }
 
+/* True once written, false when it failed, and null when the user chose to
+   leave the disk as it is: Save all counts that apart, and Mark resolved does
+   not stage a file that was not written. */
 async function saveFile(path) {
   const f = S.open.get(path);
   if (ownsPane(f)) return true;
-  if (!f || !f.dirty) return true;
+  // A second save while the first is out waits for it, then saves what was
+  // typed since, if anything. Sent at once, it would carry the stamp the first
+  // is replacing, and be refused as a change on disk.
+  if (f && f.saving) { await f.saving; return saveFile(path); }
+  // A struck-through tab is saved too: it writes the deleted file back.
+  if (!f || (!f.dirty && f.disk !== 'gone')) return true;
   if (f.kind === 'profile') return saveProfile(path, f);
+  // The poll leaves a tab alone while it saves: the stamp it would compare is
+  // about to change.
+  f.saving = writeTab(path, f);
+  try { return await f.saving; } finally { f.saving = null; }
+}
+
+async function writeTab(path, f) {
+  const content = f.doc.getValue();
+  // What is typed while the request is out stays unsaved, and the tab edited:
+  // a reload would otherwise take a tab marked clean for one with nothing to
+  // lose.
+  const gen = f.doc.changeGeneration(true);
+  const put = (stamp) => api.send('/api/file', 'PUT', { path, content, stamp });
   try {
-    await api.send('/api/file', 'PUT', { path, content: f.doc.getValue() });
-    f.dirty = false;
-    // Resolved locations and var values are derived from these two, so a cached
-    // payload would keep showing what they used to say.
-    if (base(path).startsWith('.env') || base(path) === 'dbt_project.yml') dropNodeCache();
+    let saved;
+    try { saved = await put(f.stamp); }
+    catch (e) {
+      // The disk moved since the tab read it. Saving would put back, unseen,
+      // whatever a pull just brought, so it asks, and on yes sends the stamp
+      // it showed, empty for a file that was gone: a second change meanwhile
+      // is refused too (0067).
+      if (!e.changed) throw e;
+      if (!confirm(diskMovedQuestion(path, e.stamp))) return null;
+      saved = await put(e.stamp === null ? '' : e.stamp);
+    }
+    f.dirty = !f.doc.isClean(gen);
+    f.stamp = saved.stamp;
+    f.disk = '';
+    f.diskSeen = '';
+    if (feedsPayloads(path)) dropNodeCache();
     return true;
   } catch (e) {
     toast(`save failed for ${base(path)}: ${e.message}`, 'err');
     return false;
   }
+}
+
+/* Resolved locations and var values are derived from these files, so a cached
+   payload would keep showing what they used to say once they change. */
+function feedsPayloads(path) {
+  return base(path).startsWith('.env') || base(path) === 'dbt_project.yml';
+}
+
+function diskMovedQuestion(path, stamp) {
+  const keep = 'Cancel leaves the file as it is, and your edits in the tab, unsaved.';
+  return stamp === null
+    ? `${path} was deleted on disk since it was opened here.\n\nOK writes it back with your version. ${keep}`
+    : `${path} changed on disk since it was opened here, by a pull, a checkout or another program.\n\n`
+      + `OK writes your version over it. ${keep}`;
+}
+
+/* The one stretch of `next` that differs from `cur`, as the offsets of a
+   single replace: what both begin and end with stays where it is, and with it
+   a cursor, the scroll and the marks of the lines nobody changed. */
+function changedSpan(cur, next) {
+  const most = Math.min(cur.length, next.length);
+  let head = 0;
+  while (head < most && cur.charCodeAt(head) === next.charCodeAt(head)) head++;
+  let tail = 0;
+  while (tail < most - head && cur.charCodeAt(cur.length - 1 - tail) === next.charCodeAt(next.length - 1 - tail)) tail++;
+  return { from: head, to: cur.length - tail, text: next.slice(head, next.length - tail) };
+}
+
+/* Follows the files open in tabs when something else rewrites them: a pull,
+   a checkout, dbt or another editor. A tab with no unsaved edit takes the new
+   text in place. One with edits keeps them, and says the disk moved, which its
+   save then asks about rather than writing over it (0067). */
+async function refreshOpenFiles() {
+  // One look at a time, reloads included, or two could read one file and
+  // land out of order. One asked meanwhile, after a pull from the panel
+  // say, runs once this one is done rather than being dropped.
+  if (S.stampsAsked) { S.stampsAgain = true; return; }
+  S.stampsAsked = true;
+  try {
+    do { S.stampsAgain = false; await followDisk(); } while (S.stampsAgain);
+  } finally { S.stampsAsked = false; }
+}
+
+async function followDisk() {
+  const paths = S.order.filter((p) => S.open.get(p).stamp !== undefined);
+  if (!paths.length) return;
+  let stamps;
+  try { stamps = await api.send('/api/file/stamps', 'POST', { paths }); }
+  catch { return; }
+  let repaint = false;
+  for (const path of paths) {
+    const f = S.open.get(path);
+    // Closed or being saved while the answer was on its way.
+    if (!f || f.saving || !(path in stamps)) continue;
+    const now = stamps[path];
+    if (now === f.stamp) {
+      if (f.disk) { f.disk = ''; repaint = true; }
+      continue;
+    }
+    // A deleted file leaves its tab as it was, text and all, since it may
+    // be all that is left of it.
+    if (now === null) {
+      if (f.disk !== 'gone') { f.disk = 'gone'; repaint = true; }
+      continue;
+    }
+    // Already said for this version: a tab with edits keeps them, and a file
+    // that could not be read is not read again every poll.
+    if (f.diskSeen === now) continue;
+    if (f.dirty) {
+      f.disk = 'changed';
+      f.diskSeen = now;
+      repaint = true;
+      toast(`${base(path)} changed on disk: your unsaved edits are kept, and saving asks first`, 'warn');
+      continue;
+    }
+    if (await reloadFromDisk(path, f, now)) repaint = true;
+  }
+  if (repaint) renderTabs();
+}
+
+/* True when the tab needs repainting. `now` is the stamp the poll saw, kept
+   when the file cannot be read, so it is not read again until it changes. */
+async function reloadFromDisk(path, f, now) {
+  const seen = f.stamp;
+  let body;
+  try { body = await api.get('/api/file?path=' + encodeURIComponent(path)); }
+  catch (e) {
+    if (S.open.get(path) !== f || f.stamp !== seen) return false;
+    // Turned binary, or held by another program on Windows: the tab keeps
+    // its text and says the disk moved on without it.
+    f.disk = 'changed';
+    f.diskSeen = now;
+    toast(`${base(path)} changed on disk and cannot be read again here: ${e.message}`, 'warn');
+    return true;
+  }
+  // Edited, saved or closed during the read: the user's text wins, and a save
+  // made and done meanwhile has moved the stamp.
+  if (S.open.get(path) !== f || f.dirty || f.saving || f.stamp !== seen) return false;
+  // CodeMirror hands its text back with \n alone, whatever the file has.
+  const next = body.content.replace(/\r\n?/g, '\n');
+  const cur = f.doc.getValue();
+  if (next !== cur) {
+    const span = changedSpan(cur, next);
+    f.doc.replaceRange(span.text, f.doc.posFromIndex(span.from), f.doc.posFromIndex(span.to), 'disk');
+    // Undo would take the pull back out, and the next save, carrying the
+    // pull's stamp, would write the old text over it without asking.
+    f.doc.clearHistory();
+    markLinks(f.doc, path);
+    if (path === S.active) { refreshOutline(); renderCrumbs(); }
+    if (feedsPayloads(path)) dropNodeCache();
+  }
+  f.stamp = body.stamp;
+  f.truncated = body.truncated;
+  f.disk = '';
+  f.diskSeen = '';
+  return true;
 }
 
 async function save() {
@@ -2034,12 +2203,18 @@ async function save() {
 async function saveAll() {
   const dirty = S.order.filter((p) => S.open.get(p).dirty);
   if (!dirty.length) return toast('nothing to save');
-  let done = 0;
-  for (const path of dirty) if (await saveFile(path)) done++;
+  let done = 0, kept = 0;
+  for (const path of dirty) {
+    const ok = await saveFile(path);
+    if (ok) done++;
+    else if (ok === null) kept++;
+  }
   renderTabs();
   updateStatus();
   refreshGit();
-  toast(`saved ${done} of ${dirty.length} file${dirty.length > 1 ? 's' : ''}`, done === dirty.length ? 'ok' : 'err');
+  // A file left as the disk has it was the user's answer, not a failure.
+  toast(`saved ${done} of ${dirty.length} file${dirty.length > 1 ? 's' : ''}`
+    + (kept ? `, ${kept} left unsaved as you asked` : ''), done + kept === dirty.length ? 'ok' : 'err');
 }
 
 function closeAll() {
@@ -2067,13 +2242,13 @@ function renderTabs() {
     const f = S.open.get(path);
     const t = document.createElement('div');
     t.dataset.key = path;
-    t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '');
+    t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.disk ? ' disk-' + f.disk : '');
     const name = document.createElement('span');
     name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || collinTab(f) ? fileName(f.path) : base(path);
     name.title = f.kind === 'diff' ? f.path + '  (HEAD against the working tree)'
       : f.kind === 'profile' ? f.path + '  (the dbt profile, outside the project)'
       : f.kind === 'compare' ? 'What two collin versions read, from the runs kept in target/collin/'
-      : path;
+      : path + diskNote(f);
     const x = document.createElement('span');
     x.className = 'x';
     if (!f.dirty) x.textContent = '×';
@@ -2091,6 +2266,11 @@ function renderTabs() {
   }
   renderOpenEditors();
   paintTree();
+}
+
+function diskNote(f) {
+  return f.disk === 'gone' ? '  (deleted on disk)'
+    : f.disk === 'changed' ? '  (changed on disk: saving asks before writing over it)' : '';
 }
 
 const SAVE_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" ' +
@@ -3119,6 +3299,8 @@ async function gitPost(path, body) {
     return null;
   }
   await refreshGit();
+  // A pull, a checkout or an abort rewrites files that may be open.
+  refreshOpenFiles();
   return res;
 }
 
@@ -3239,7 +3421,9 @@ function renderGit(info) {
 async function markResolved(path) {
   const doc = S.open.get(path);
   if (doc && doc.dirty && !confirm(`${base(path)} has unsaved changes. Save it before marking resolved?`)) return;
-  if (doc && doc.dirty) await saveFile(path);
+  // Not written, failed or declined, the file still holds what it held: maybe
+  // its markers, which staging would commit.
+  if (doc && doc.dirty && !(await saveFile(path))) return;
   const res = await gitPost('stage', { paths: [path] });
   if (res && !res.ok) showGitFailure('Could not mark resolved', res);
   else toast('marked resolved: ' + base(path), 'ok');
@@ -10580,7 +10764,7 @@ async function boot() {
   // Each round costs the server a git status and a walk of the model folders,
   // for a page nobody sees while its tab is hidden. It waits there instead, and
   // catches up the moment the tab is shown again.
-  const poll = () => { if (!document.hidden) { refreshGit(); refreshFreshness(); } };
+  const poll = () => { if (!document.hidden) { refreshGit(); refreshFreshness(); refreshOpenFiles(); } };
   setInterval(poll, 5000);
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());

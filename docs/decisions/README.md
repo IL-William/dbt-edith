@@ -70,6 +70,7 @@ it is built this way, for whoever changes it next.
 | [0064](0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md) | Project-wide reports open in a panel over the editor and the dock | adding a report, or changing what opens or closes the Reports panel, what its button counts, or when a report's file is read |
 | [0065](0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md) | The last run is read from run_results.json as dbt left it | changing what the Last run section says, what leaves `target/run_results.json`, or when it is read |
 | [0066](0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) | Each report's news is a short chip on the Reports button | giving a report news on the Reports button, changing what a chip says, or letting the index count anything new |
+| [0067](0067-an-open-tab-follows-its-file-on-disk.md) | An open tab follows its file on disk, and a save never writes over a change it did not see | changing what a tab does when its file changes on disk, what `PUT /api/file` checks, or when the page looks at the open files |
 
 ## Keeping these honest
 

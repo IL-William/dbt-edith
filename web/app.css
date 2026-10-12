@@ -460,6 +460,9 @@ kbd {
 .ftab.dirty .x { opacity: .9; }
 .ftab.dirty .x:hover::before { content: "×"; font-size: 14px; }
 .ftab.preview span:first-child { font-style: italic; }
+/* The file moved on disk under a tab that kept its own text (0067). */
+.ftab.disk-changed span:first-child { color: var(--warn); }
+.ftab.disk-gone span:first-child { text-decoration: line-through; }
 
 /* ----------------------------------------------------------- breadcrumbs -- */
 .crumbs {
@@ -1333,6 +1336,7 @@ kbd {
 }
 .toast.err { border-left-color: #ef6b6b; }
 .toast.ok { border-left-color: var(--ok); }
+.toast.warn { border-left-color: var(--warn); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }

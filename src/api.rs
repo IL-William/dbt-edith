@@ -255,6 +255,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/files", get(file_search))
         .route("/api/grep", get(grep))
         .route("/api/file", get(read_file).put(write_file))
+        .route("/api/file/stamps", post(file_stamps))
         .route("/api/resolve", post(resolve))
         .route("/api/macros/resolve", post(resolve_macros))
         .route("/api/project/resolve", post(resolve_project_keys))
@@ -3084,13 +3085,45 @@ async fn read_file(State(st): State<Arc<AppState>>, Query(q): Query<PathQuery>) 
 struct WriteBody {
     path: String,
     content: String,
+    /// The stamp the page read the file at. Without one the file is written
+    /// whatever is on disk, as it always was.
+    #[serde(default)]
+    stamp: Option<String>,
 }
 
 async fn write_file(State(st): State<Arc<AppState>>, Json(body): Json<WriteBody>) -> Response {
-    match files::write_file(&st.root, &body.path, &body.content) {
-        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+    match files::write_file(&st.root, &body.path, &body.content, body.stamp.as_deref()) {
+        Ok(files::Saved::Written(stamp)) => Json(serde_json::json!({"ok": true, "stamp": stamp})).into_response(),
+        // The page asks before writing over it, and sends the stamp it was
+        // shown when the answer is yes, so a second change in between is
+        // caught as well.
+        Ok(files::Saved::Changed(stamp)) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({"error": format!("{} changed on disk since it was read", body.path), "changed": true, "stamp": stamp})),
+        )
+            .into_response(),
         Err(e) => err(e),
     }
+}
+
+#[derive(Deserialize)]
+struct StampsBody {
+    paths: Vec<String>,
+}
+
+/// The stamp of every file open in a tab, polled with the git status, so a
+/// tab learns its file changed without reading it again. A path that is not
+/// a file in the project answers null, whether it is gone or never was.
+async fn file_stamps(State(st): State<Arc<AppState>>, Json(body): Json<StampsBody>) -> Response {
+    let stamps: std::collections::BTreeMap<String, Option<String>> = body
+        .paths
+        .into_iter()
+        .map(|rel| {
+            let stamp = files::resolve(&st.root, &rel).ok().and_then(|path| files::stamp(&path));
+            (rel, stamp)
+        })
+        .collect();
+    Json(stamps).into_response()
 }
 
 /// Working-tree status, cached briefly so that polling from the explorer does
@@ -4085,6 +4118,76 @@ mod tests {
         }
         r.push_str(&format!("Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
         r
+    }
+
+    /// The JSON a test request got back, past the response head.
+    fn json_of(response: &str) -> serde_json::Value {
+        let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
+        serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {response}"))
+    }
+
+    /// A tab follows its file through a pull, and a save from a tab that did
+    /// not see the pull is refused rather than putting the old text back (0067).
+    #[tokio::test]
+    async fn a_save_never_writes_over_a_file_changed_since_it_was_read() {
+        let root = temp_project("stamps");
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        let model = root.join("models/orders.sql");
+        std::fs::write(&model, "select 1\n").unwrap();
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let send = |method: &str, path: &str, body: &str| with_json(method, path, &[("Host", &host), ("Origin", &own)], body);
+
+        let read = json_of(&body_of(port, get("/api/file?path=models/orders.sql", &[("Host", &host)])).await);
+        let first = read["stamp"].as_str().unwrap().to_string();
+        let stamps = |paths: &str| send("POST", "/api/file/stamps", &format!(r#"{{"paths":{paths}}}"#));
+        let all = json_of(&body_of(port, stamps(r#"["models/orders.sql","models/gone.sql","../outside.sql"]"#)).await);
+        assert_eq!(all["models/orders.sql"], first.as_str(), "the stamp the read gave");
+        assert!(all["models/gone.sql"].is_null() && all["../outside.sql"].is_null(), "{all}");
+
+        // A pull rewrites it. The size changes too, so this holds on a
+        // filesystem keeping whole seconds.
+        std::fs::write(&model, "select 1\nunion all\nselect 2\n").unwrap();
+        let pulled = json_of(&body_of(port, stamps(r#"["models/orders.sql"]"#)).await)["models/orders.sql"].as_str().unwrap().to_string();
+        assert_ne!(pulled, first);
+
+        let save = |stamp: &str| send("PUT", "/api/file", &format!(r#"{{"path":"models/orders.sql","content":"select 9\n"{stamp}}}"#));
+        let refused = body_of(port, save(&format!(r#","stamp":"{first}""#))).await;
+        assert!(refused.starts_with("HTTP/1.1 409"), "{refused}");
+        let said = json_of(&refused);
+        assert_eq!((said["changed"].as_bool(), said["stamp"].as_str()), (Some(true), Some(pulled.as_str())), "{said}");
+        assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 1\nunion all\nselect 2\n", "the pull is kept");
+
+        // Yes to writing over it sends the stamp it was shown.
+        let written = json_of(&body_of(port, save(&format!(r#","stamp":"{pulled}""#))).await);
+        assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 9\n");
+        let now = json_of(&body_of(port, stamps(r#"["models/orders.sql"]"#)).await);
+        assert_eq!(written["stamp"], now["models/orders.sql"], "a save answers with the stamp it left");
+
+        // Two saves from the version the first replaced, as from two windows:
+        // the second is refused, whatever came first.
+        let again = body_of(port, save(&format!(r#","stamp":"{pulled}""#))).await;
+        assert!(again.starts_with("HTTP/1.1 409"), "{again}");
+
+        // Gone since: a refusal with no stamp. Yes to writing it back sends an
+        // empty stamp, which writes only while there is still no file.
+        let mine = written["stamp"].as_str().unwrap().to_string();
+        std::fs::remove_file(&model).unwrap();
+        let gone = json_of(&body_of(port, save(&format!(r#","stamp":"{mine}""#))).await);
+        assert!(gone["changed"].as_bool() == Some(true) && gone["stamp"].is_null(), "{gone}");
+        assert!(!model.exists());
+        std::fs::write(&model, "select 'checked out again'\n").unwrap();
+        let back = body_of(port, save(r#","stamp":"""#)).await;
+        assert!(back.starts_with("HTTP/1.1 409"), "a file back in the meantime is not written over: {back}");
+        assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 'checked out again'\n");
+        std::fs::remove_file(&model).unwrap();
+        assert!(status_of(port, save(r#","stamp":"""#)).await.ends_with("200 OK"));
+        assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 9\n");
+        assert!(status_of(port, save("")).await.ends_with("200 OK"), "no stamp writes, as before");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Jobs are read from a folder outside the project that the page names,

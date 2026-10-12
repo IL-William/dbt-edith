@@ -146,11 +146,38 @@ pub struct FileBody {
     pub content: String,
     pub size: u64,
     pub truncated: bool,
+    /// The version of the file this content was read from, for the page to
+    /// tell when the disk has moved on without it (`stamp`).
+    pub stamp: String,
+}
+
+/// What tells one version of a file from the next without reading it: its size
+/// and modification time, to the nanosecond where the filesystem keeps them. A
+/// `git pull`, a checkout or another editor rewriting an open file all move it.
+/// A string, because nanoseconds since the epoch do not fit a JavaScript number.
+/// None when there is no file there.
+pub fn stamp(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    meta.is_file().then(|| stamp_of(&meta))
+}
+
+fn stamp_of(meta: &std::fs::Metadata) -> String {
+    let at = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{at}", meta.len())
 }
 
 pub fn read_file(root: &Path, rel: &str) -> anyhow::Result<FileBody> {
     let path = resolve(root, rel)?;
-    let size = std::fs::metadata(&path)?.len();
+    // Taken before the read, so a write landing in between leaves the stamp
+    // older than the content: the page then reads the file once more, and
+    // finds nothing new, rather than holding a stamp for content it never saw.
+    let meta = std::fs::metadata(&path)?;
+    let size = meta.len();
     let bytes = if size > MAX_READ_BYTES {
         use std::io::Read;
         let mut buf = vec![0u8; MAX_READ_BYTES as usize];
@@ -169,6 +196,7 @@ pub fn read_file(root: &Path, rel: &str) -> anyhow::Result<FileBody> {
         content: String::from_utf8_lossy(&bytes).into_owned(),
         size,
         truncated: size > MAX_READ_BYTES,
+        stamp: stamp_of(&meta),
     })
 }
 
@@ -481,13 +509,44 @@ pub fn search_paths<'a>(paths: &'a [String], query: &str, limit: usize) -> Vec<&
     hits.into_iter().map(|(_, _, p)| p).collect()
 }
 
-pub fn write_file(root: &Path, rel: &str, content: &str) -> anyhow::Result<()> {
+/// What a save found. `Changed` is a file that is no longer the version the
+/// page read, written meanwhile by a pull, a checkout or another program,
+/// with its stamp now, None when it is gone. It is left as it is.
+pub enum Saved {
+    Written(String),
+    Changed(Option<String>),
+}
+
+/// One save at a time, its check and its write together: two saves of one
+/// version, from two windows or a double press, cannot both pass the check.
+/// A pull is another program and takes no lock of ours, so it can still land
+/// in the instant between the two.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// `seen` is the stamp of the version the edit started from. Given, the file
+/// is written only if it is still that version, so a save never puts back what
+/// a pull just changed without the page saying so first. An empty one is a
+/// file that was gone, written only if it still is. None writes whatever is
+/// there.
+pub fn write_file(root: &Path, rel: &str, content: &str, seen: Option<&str>) -> anyhow::Result<Saved> {
+    use std::io::Write;
     let path = resolve(root, rel)?;
+    let _alone = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(seen) = seen {
+        let now = stamp(&path);
+        if now.as_deref().unwrap_or("") != seen {
+            return Ok(Saved::Changed(now));
+        }
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, content)?;
-    Ok(())
+    let mut file = std::fs::File::create(&path)?;
+    file.write_all(content.as_bytes())?;
+    // From the handle, so it is the stamp of what was written here: one read
+    // by path could already be a pull's, landed just after, and the tab would
+    // take it for its own and never hear of the pull.
+    Ok(Saved::Written(stamp_of(&file.metadata()?)))
 }
 
 /// Whether this directory looks like the root of a dbt project. Used only to
@@ -524,6 +583,15 @@ mod tests {
 
     fn index(files: &[(&str, &[u8])]) -> Vec<String> {
         files.iter().map(|(r, _)| (*r).to_string()).collect()
+    }
+
+    #[test]
+    fn a_stamp_belongs_to_a_file_that_is_there() {
+        let dir = grep_dir("stamp", &[("models/a.sql", b"select 1\n")]);
+        assert!(stamp(&dir.join("models/a.sql")).is_some_and(|s| s.starts_with("9-")), "its size first");
+        assert_eq!(stamp(&dir.join("models")), None, "a folder has none");
+        assert_eq!(stamp(&dir.join("models/b.sql")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

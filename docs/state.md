@@ -935,6 +935,33 @@ Shop: the coverage seen, then a collin run, a model added that no job selects
 and a failing test, the button reading "1", "5" and "+1" at 115 px, each chip
 going once its section is shown.
 
+Tabs follow their files (1.11.1, 0067), fixed after it was reported from the
+VM: a model open in a tab kept its old text after a `git pull` in the
+terminal, until the page was reloaded, and saving it would have written that
+text back over the pull. Each read of a file now carries a stamp, its size
+and modification time; `POST /api/file/stamps` gives the open tabs' stamps,
+asked with the git poll, when a tab is shown and after a git action. A tab
+with nothing unsaved takes the new text as one replace of the stretch that
+differs, under the origin `disk`, which the editor's change handler does not
+count as an edit, and clears the undo history, since one Ctrl+Z would
+otherwise take the pull back out for the next save to write. A tab with edits
+keeps them and turns amber, and its save sends the stamp it started from,
+which the server refuses with 409 once the file moved, so the page asks
+first. Saves are checked and written one at a time; a tab's second save waits
+for its first, and what is typed while one is out stays unsaved
+(`changeGeneration`). A review before merging found those last three, and a
+struck-through tab that could be neither saved back nor closed with a
+question. Driven in headless Chrome on a copy of Jaffle Shop with a remote and
+a second clone pushing to it: 44 checks, a pull shown in the tab in front
+within the poll with the cursor kept on its line, one in a tab behind, a tab
+with edits keeping them through a pull and its save asking, a plain save
+asking nothing, a deleted file struck through, written back and asking before
+closing, undo after a reload changing nothing, typing during a slowed save
+kept, a double save asking nothing, Save all saying a declined file was left
+rather than failed, a file turned binary marked and read once, and a CRLF file
+neither reloaded by a new stamp over the same text nor marked edited by a real
+change. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1129,6 +1156,10 @@ cross-compile.
   manifest or the catalog again replaces both, through `load_all`; replacing
   `graph` alone brings the old manifest back on the next switch, which reads
   `base`. A test that swaps in its own graph sets both for the same reason.
+- **A tab's text changes without the user when its file changes on disk**
+  (0067), as a change whose origin is `disk`. A `change` handler that means
+  "the user edited this" checks the origin, as the dirty flag does, or a pull
+  marks every open tab edited.
 - **The page hears of a manifest reload only through the freshness poll.**
   The watcher reloads `manifest.json` server-side whenever dbt rewrites it, and
   nothing is pushed: `refreshFreshness` comparing `manifest_at` with `S.meta` is
