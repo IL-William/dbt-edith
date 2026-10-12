@@ -2,7 +2,8 @@
 //!
 //! Reports the one this process was launched with, and otherwise the ones
 //! sitting in the project, so the answer is never a bare "none" when there is
-//! something obvious to activate.
+//! something obvious to activate. Each one found is described too, so the page
+//! can name whichever the terminal says it activated later (0069).
 
 use std::path::{Path, PathBuf};
 
@@ -10,16 +11,74 @@ use std::path::{Path, PathBuf};
 pub struct VenvInfo {
     /// "activated" when $VIRTUAL_ENV was set, "project" when merely found on disk.
     pub source: String,
-    pub name: String,
-    pub path: String,
-    pub python: String,
-    pub dbt: String,
-    /// Other environments found next to the project, none of them active.
-    pub others: Vec<String>,
+    /// The one reported: the venv this process was started in, else the best
+    /// one found. Empty when there is neither.
+    #[serde(flatten)]
+    pub chosen: Venv,
     /// Environments found in the project that git tracks, so came with the
     /// repository: listed, never run, and never the one reported (0053).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub committed: Vec<String>,
+    /// Every environment found in the project that git does not track, the
+    /// reported one included, best first: what the status bar can name when the
+    /// terminal reports one of them (0069).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub found: Vec<Venv>,
+}
+
+/// One environment, as read from its files.
+#[derive(serde::Serialize, Default, Clone, PartialEq, Debug)]
+pub struct Venv {
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub python: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub dbt: String,
+    /// The `VIRTUAL_ENV` its bash activate script sets, so the spelling the
+    /// terminal reports: `path` comes from the canonical project root, which a
+    /// mapped drive, a `subst` or a symlink spells otherwise (0069).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub activates: String,
+}
+
+impl Venv {
+    /// Read, never run: opening a project must not execute a program it holds
+    /// before anyone has asked for anything (0053).
+    fn read(dir: &Path) -> Venv {
+        Venv {
+            name: dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            path: dir.display().to_string(),
+            python: python_version(dir),
+            dbt: dbt_versions(dir),
+            activates: activates(dir),
+        }
+    }
+}
+
+/// The folder a venv's bash activate script sets `VIRTUAL_ENV` to, when it
+/// writes it out: the path the venv was made at, as venv, virtualenv and uv
+/// all do, inside `cygpath` on Windows. A script that works it out at run
+/// time, as a relocatable venv's does, gives nothing.
+fn activates(venv: &Path) -> String {
+    let script = venv.join(if cfg!(windows) { "Scripts" } else { "bin" }).join("activate");
+    let Ok(text) = std::fs::read_to_string(script) else {
+        return String::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("export ").unwrap_or(line).strip_prefix("VIRTUAL_ENV=")?;
+            let value = match value.strip_prefix("$(cygpath ") {
+                Some(inner) => inner.strip_suffix(')')?.trim_start_matches("-u ").trim(),
+                None => value.trim(),
+            };
+            let value = ['"', '\''].iter().find_map(|q| value.strip_prefix(*q)?.strip_suffix(*q)).unwrap_or(value);
+            // Anything left to expand, or a quote left over, is not a path written out.
+            (!value.is_empty() && !value.contains(['$', '`', '"', '\''])).then(|| value.to_string())
+        })
+        .next()
+        .unwrap_or_default()
 }
 
 fn bin(venv: &Path, exe: &str) -> PathBuf {
@@ -177,17 +236,12 @@ fn detect_with(root: &Path, active: Option<PathBuf>) -> VenvInfo {
         return info;
     };
     info.source = if active.is_some() { "activated".into() } else { "project".into() };
-    info.name = venv.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    info.path = venv.display().to_string();
-    // Read, never run: opening a project must not execute a program it holds
-    // before anyone has asked for anything (0053).
-    info.python = python_version(&venv);
-    info.dbt = dbt_versions(&venv);
-    info.others = found
-        .iter()
-        .filter(|p| **p != venv)
-        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .collect();
+    info.found = found.iter().map(|p| Venv::read(p)).collect();
+    // Read once when it is also one of the project's.
+    info.chosen = match found.iter().position(|p| *p == venv) {
+        Some(i) => info.found[i].clone(),
+        None => Venv::read(&venv),
+    };
     info
 }
 
@@ -250,10 +304,10 @@ mod tests {
             "dbt_core_experimental_parser-2.0.5", "dbt_extractor-0.6.0",
         ]);
         let info = detect_with(&root, None);
-        assert_eq!(info.name, ".venv");
+        assert_eq!(info.chosen.name, ".venv");
         assert_eq!(info.source, "project");
-        assert_eq!(info.python, "3.12.4");
-        assert_eq!(info.dbt, "dbt-core 1.8.7, dbt-snowflake 1.8.3", "dbt-core, then the adapter, and none of its parts");
+        assert_eq!(info.chosen.python, "3.12.4");
+        assert_eq!(info.chosen.dbt, "dbt-core 1.8.7, dbt-snowflake 1.8.3", "dbt-core, then the adapter, and none of its parts");
         assert!(!root.join(".venv-ran").exists(), "opening a project ran a program it holds");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -272,6 +326,64 @@ mod tests {
         assert_eq!(dbt_versions(&old), "dbt 0.18.1, dbt-postgres 0.18.1");
         let none = venv(&root, "plain", "version = 3.12.1\n", &["requests-2.32.3"]);
         assert_eq!(dbt_versions(&none), "");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Whichever venv the terminal reports later, the page can name it with
+    /// its versions, read the same way as the one reported at startup (0069).
+    #[test]
+    fn every_venv_found_is_described_for_the_terminal_to_name() {
+        let root = project("found");
+        venv(&root, "core-env", "version = 3.12.4\n", &["dbt_core-1.8.7", "adapter:dbt_snowflake-1.8.3"]);
+        venv(&root, "fusion-env", "version = 3.12.13\n", &["dbt-2.0.0rc196"]);
+        venv(&root, "bare", "version = 3.11.9\n", &[]);
+        std::fs::remove_file(root.join("bare/bin/dbt")).unwrap();
+        std::fs::remove_file(root.join("bare/Scripts/dbt.exe")).unwrap();
+
+        let info = detect_with(&root, None);
+        let found: Vec<(&str, &str, &str)> =
+            info.found.iter().map(|v| (v.name.as_str(), v.python.as_str(), v.dbt.as_str())).collect();
+        assert_eq!(found, [
+            ("core-env", "3.12.4", "dbt-core 1.8.7, dbt-snowflake 1.8.3"),
+            ("fusion-env", "3.12.13", "dbt-fusion 2.0.0rc196"),
+            ("bare", "3.11.9", ""),
+        ], "in the order the status bar ranks them");
+        assert_eq!(info.chosen, info.found[0], "the best one found, read once");
+        assert_eq!(info.found[1].path, root.join("fusion-env").display().to_string());
+
+        // One started elsewhere is the one reported, and the project's are still all there.
+        let elsewhere = project("found-elsewhere");
+        let started = venv(&elsewhere, "mine", "version = 3.13.0\n", &[]);
+        let info = detect_with(&root, Some(started));
+        assert_eq!((info.source.as_str(), info.chosen.name.as_str(), info.chosen.python.as_str()), ("activated", "mine", "3.13.0"));
+        assert_eq!(info.found.len(), 3);
+        assert!(!root.join("core-env-ran").exists() && !root.join("fusion-env-ran").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    /// The terminal reports the folder the activate script sets, which is the
+    /// one the venv was made at and may be spelled otherwise than the
+    /// canonical project root: read from the script, never by running it.
+    #[test]
+    fn the_folder_an_activate_script_sets_is_read_from_it() {
+        let root = project("activates");
+        let dir = venv(&root, "env", "version = 3.12.4\n", &[]);
+        let script = dir.join(if cfg!(windows) { "Scripts" } else { "bin" }).join("activate");
+        for (label, body, want) in [
+            ("venv, 3.12.13", "case \"$(uname)\" in\n    MINGW*)\n        VIRTUAL_ENV=$(cygpath /h/proj/env)\n        export VIRTUAL_ENV\n        ;;\n    *)\n        export VIRTUAL_ENV=/h/proj/env\n", "/h/proj/env"),
+            ("venv, 3.12 on Windows", "    export VIRTUAL_ENV=$(cygpath \"H:\\proj\\env\")\nelse\n    export VIRTUAL_ENV=\"H:\\proj\\env\"\n", r"H:\proj\env"),
+            ("venv, 3.11", "VIRTUAL_ENV=\"C:\\Users\\me\\proj\\env\"\nexport VIRTUAL_ENV\n", r"C:\Users\me\proj\env"),
+            ("virtualenv and uv", "VIRTUAL_ENV='/Users/John Doe/proj/env'\nif [ \"$OSTYPE\" = msys ]; then\n    VIRTUAL_ENV=$(cygpath -u \"$VIRTUAL_ENV\")\nfi\n", "/Users/John Doe/proj/env"),
+            ("relocatable", "VIRTUAL_ENV=''\"$(dirname -- \"$(dirname -- \"$SCRIPT_PATH\")\")\"''\n", ""),
+            ("quoted by shlex", "export VIRTUAL_ENV='/tmp/it'\"'\"'s/env'\n", ""),
+        ] {
+            std::fs::write(&script, body).unwrap();
+            assert_eq!(activates(&dir), want, "{label}");
+        }
+        std::fs::remove_file(&script).unwrap();
+        assert_eq!(activates(&dir), "", "no script");
+        assert!(!root.join("env-ran").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -304,9 +416,10 @@ mod tests {
 
         let info = detect_with(&root, None);
         assert_eq!(info.committed, ["shipped"]);
-        assert_eq!(info.name, "mine", "first by name, but set aside since git tracks it");
-        assert!(info.others.is_empty(), "{:?}", info.others);
-        let programs = crate::sidecar::interpreters(&root, &info);
+        assert_eq!(info.chosen.name, "mine", "first by name, but set aside since git tracks it");
+        let found: Vec<&str> = info.found.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(found, ["mine"], "nor offered to the terminal's report");
+        let programs = crate::sidecar::interpreters(&info);
         assert!(programs.iter().all(|i| !i.program.starts_with(root.join("shipped"))), "{programs:?}");
         assert!(!root.join("shipped-ran").exists());
 

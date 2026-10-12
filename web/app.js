@@ -14,6 +14,9 @@ const S = {
   stampsAgain: false, // one was asked for meanwhile, and runs once that look is done
   cm: null,
   term: null, ws: null, fit: null,
+  venv: null,                 // /api/meta's venv: the one dbt-edith was started in, and each found
+  termVenv: undefined,        // the terminal's VIRTUAL_ENV at its last prompt, '' for none, undefined unheard (0069)
+  venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
@@ -10047,6 +10050,9 @@ function termClipboard(e, mac, selected) {
   return '';
 }
 
+/* The OSC number pty.rs has bash print its VIRTUAL_ENV under. */
+const VENV_OSC = 6973;
+
 function initTerm() {
   if (S.term) return;
   S.term = new Terminal({
@@ -10058,6 +10064,12 @@ function initTerm() {
   S.term.loadAddon(S.fit);
   S.term.open($('#term'));
   S.fit.fit();
+  // bash says which venv it has before each prompt (0069). Any program can
+  // print the same sequence, which is why it only ever changes words on screen.
+  S.term.parser.registerOscHandler(VENV_OSC, (data) => {
+    if (data.length <= 4096 && !/[\x00-\x1f]/.test(data)) heardVenv(data);
+    return true;
+  });
   connectTerm();
   S.term.onData((d) => S.ws && S.ws.readyState === 1 && S.ws.send(JSON.stringify({ t: 'i', d })));
   S.term.attachCustomKeyEventHandler((e) => {
@@ -10101,9 +10113,17 @@ function connectTerm() {
     if (typeof e.data === 'string') S.term.write(e.data);
     else S.term.write(new Uint8Array(e.data));
   };
-  S.ws.onclose = () => S.term.write(S.keyless
-    ? '\r\n\x1b[90m[no shell: this tab has no key for this server, see the bar at the top]\x1b[0m\r\n'
-    : '\r\n\x1b[90m[disconnected - press Enter to start a new shell]\x1b[0m\r\n');
+  const ws = S.ws;
+  ws.onclose = () => {
+    // A socket already replaced, closing late, says nothing of the shell now.
+    if (S.ws !== ws) return;
+    S.term.write(S.keyless
+      ? '\r\n\x1b[90m[no shell: this tab has no key for this server, see the bar at the top]\x1b[0m\r\n'
+      : '\r\n\x1b[90m[disconnected - press Enter to start a new shell]\x1b[0m\r\n');
+    // No shell any more: back to what the next one would be handed.
+    S.termVenv = undefined;
+    paintVenv();
+  };
 }
 
 // ---------------------------------------------------------------- palette --
@@ -10917,21 +10937,8 @@ async function boot() {
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
   refreshUpdate();
-  const v = info.venv || {};
-  const venvEl = $('#status-venv');
-  if (v.name) {
-    venvEl.textContent = (v.source === 'activated' ? 'venv ' : 'venv (inactive) ') + v.name
-      + (v.python ? ' · py ' + v.python : '');
-    venvEl.title = [v.path, v.dbt && ('dbt: ' + v.dbt),
-      v.source === 'activated' ? 'activated when dbt-edith started'
-        : 'found in the project but not activated; source its activate script in the terminal',
-      v.others.length ? 'also found: ' + v.others.join(', ') : '',
-      committedNote(v)].filter(Boolean).join('\n');
-  } else {
-    venvEl.textContent = 'no venv';
-    venvEl.title = ['no VIRTUAL_ENV when dbt-edith started, and none found in the project', committedNote(v)]
-      .filter(Boolean).join('\n');
-  }
+  S.venv = info.venv || {};
+  paintVenv();
   document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
   $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
   loadEnvs();
@@ -10945,6 +10952,88 @@ async function boot() {
   setInterval(poll, 5000);
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());
+}
+
+/* What bash said at its prompt (0069), said again at every prompt. A folder no
+   venv read is may be one made since startup, so the server reads the project
+   again, once per folder; nothing is sent to it. */
+function heardVenv(data) {
+  if (data === S.termVenv) return;
+  S.termVenv = data;
+  paintVenv();
+  if (!data || venvMatch(S.venv || {}, data) || S.venvAsked === data) return;
+  S.venvAsked = data;
+  api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {});
+}
+
+function paintVenv() {
+  const { text, title } = venvStatus(S.venv || {}, S.termVenv);
+  const el = $('#status-venv');
+  el.textContent = text;
+  el.title = title;
+}
+
+/* One spelling per folder, to tell whether the venv the terminal names is one
+   the server read. On Windows, Git Bash says /c/Users/... where Windows says
+   C:\Users\... or C:/Users/..., and case does not count; elsewhere a path is
+   compared as it is. */
+function venvKey(path, win) {
+  if (!win) return String(path).replace(/\/+$/, '');
+  let p = String(path).replace(/\\/g, '/').replace(/^\/\/\?\//, '').replace(/\/+$/, '');
+  const drive = /^\/(?:cygdrive\/)?([a-zA-Z])(?=\/|$)/.exec(p);
+  if (drive) p = drive[1] + ':' + p.slice(drive[0].length);
+  return p.toLowerCase();
+}
+
+/* The venv the server read that the terminal names, if any: by its folder, or
+   by the folder its activate script sets, which is how bash spells it when the
+   project root is reached through a mapped drive, a subst or a symlink. The
+   server's own paths say whether it runs on Windows. */
+function venvMatch(v, reported) {
+  const known = [v, ...(v.found || [])].filter((e) => e.path);
+  const win = known.some((e) => /^(?:[a-zA-Z]:[\\/]|\\\\)/.test(e.path));
+  const key = venvKey(reported, win);
+  return known.find((e) => [e.path, e.activates].some((p) => p && venvKey(p, win) === key)) || null;
+}
+
+/* What the status bar says about Python. Until the terminal's shell has said
+   anything, that is the venv dbt-edith was started in, else the best one found
+   in the project. bash says at each prompt (0069): `reported` is then its
+   VIRTUAL_ENV, '' for none, and undefined while nothing has been heard. A venv
+   the server did not read, outside the project or tracked by git, is only
+   named: its path never goes to the server. */
+function venvStatus(v, reported) {
+  const found = v.found || [];
+  const py = (e) => (e.python ? ' · py ' + e.python : '');
+  const also = (shown) => {
+    const names = found.filter((e) => !shown || e.path !== shown.path).map((e) => e.name);
+    return names.length ? 'also found: ' + names.join(', ') : '';
+  };
+  const lines = (...parts) => [...parts, committedNote(v)].filter(Boolean).join('\n');
+  if (reported) {
+    const e = venvMatch(v, reported);
+    if (!e) {
+      const name = reported.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+      return { text: 'venv ' + name,
+        title: lines(reported, 'activated in the terminal; not a venv dbt-edith read, so its versions are not shown', also(null)) };
+    }
+    return { text: 'venv ' + e.name + py(e),
+      title: lines(e.path, e.dbt && ('dbt: ' + e.dbt), 'activated in the terminal', also(e)) };
+  }
+  if (!v.name) {
+    return { text: 'no venv', title: lines(reported === ''
+      ? 'none activated in the terminal, and none found in the project'
+      : 'no VIRTUAL_ENV when dbt-edith started, and none found in the project') };
+  }
+  const active = reported === undefined && v.source === 'activated';
+  return {
+    text: (active ? 'venv ' : 'venv (inactive) ') + v.name + py(v),
+    title: lines(v.path, v.dbt && ('dbt: ' + v.dbt),
+      active ? 'activated when dbt-edith started'
+        : reported === '' ? 'not activated in the terminal; source its activate script there'
+          : 'found in the project, not activated when dbt-edith started; source its activate script in the terminal',
+      also(v)),
+  };
 }
 
 /* A venv git tracks came with the repository, so whoever wrote the repository

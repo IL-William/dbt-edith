@@ -203,9 +203,10 @@ pub struct Interpreter {
 /// Where to look for Python, best first: a virtual environment of the project
 /// that has the Snowflake connector, then the one the status bar reports, whose
 /// error says what is missing, then the PATH.
-pub fn interpreters(root: &Path, env: &VenvInfo) -> Vec<Interpreter> {
-    let chosen = (!env.path.is_empty()).then(|| PathBuf::from(&env.path));
-    let envs: Vec<PathBuf> = chosen.iter().cloned().chain(env.others.iter().map(|name| root.join(name))).collect();
+pub fn interpreters(env: &VenvInfo) -> Vec<Interpreter> {
+    let chosen = (!env.chosen.path.is_empty()).then(|| PathBuf::from(&env.chosen.path));
+    let mut envs: Vec<PathBuf> = chosen.iter().cloned().collect();
+    envs.extend(env.found.iter().map(|v| PathBuf::from(&v.path)).filter(|p| Some(p) != chosen.as_ref()));
     let mut dirs: Vec<PathBuf> = envs.iter().filter(|e| venv::has_snowflake_connector(e)).cloned().collect();
     dirs.extend(chosen.filter(|e| !dirs.contains(e)));
 
@@ -361,7 +362,7 @@ impl Sidecar {
             Ok(Err(e)) => return self.fail(String::new(), e, Vec::new()),
             Err(e) => return self.fail(String::new(), e.to_string(), Vec::new()),
         };
-        self.start(&interpreters(root, env), &script, root).await
+        self.start(&interpreters(env), &script, root).await
     }
 
     /// Stops and starts again, on what the last start used. The script reads
@@ -701,6 +702,7 @@ fn explain(log: &[String]) -> Option<String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::venv::Venv;
 
     fn quick() -> Deadlines {
         Deadlines {
@@ -1004,12 +1006,9 @@ done
             std::fs::write(root.join(name).join("bin").join("python"), "").unwrap();
         }
         std::fs::create_dir_all(root.join("sf-env/lib/python3.12/site-packages/snowflake/connector")).unwrap();
-        let env = VenvInfo {
-            path: root.join("plain-env").display().to_string(),
-            others: vec!["sf-env".into(), "other-env".into()],
-            ..Default::default()
-        };
-        let programs: Vec<String> = interpreters(&root, &env).iter().map(|i| i.program.display().to_string()).collect();
+        let found = |name: &str| Venv { name: name.into(), path: root.join(name).display().to_string(), ..Default::default() };
+        let env = VenvInfo { chosen: found("plain-env"), found: vec![found("plain-env"), found("sf-env"), found("other-env")], ..Default::default() };
+        let programs: Vec<String> = interpreters(&env).iter().map(|i| i.program.display().to_string()).collect();
         assert_eq!(
             programs,
             [

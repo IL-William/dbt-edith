@@ -4,7 +4,8 @@
 //! same code drives zsh on macOS and Git Bash on the VM. The shell gets the
 //! environment dbt-edith was started with, and the virtual environment active
 //! then is activated again in it, so that venv is the one the terminal's `dbt`
-//! runs from, whatever the shell's startup files put first.
+//! runs from, whatever the shell's startup files put first. bash then says at
+//! each prompt which venv it has, for the status bar (0069).
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -103,7 +104,44 @@ fn command(shell: &ShellSpec, cwd: &Path) -> portable_pty::CommandBuilder {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("DBT_EDITH", "1");
+    if shell_name(shell) == "bash" {
+        cmd.env("PROMPT_COMMAND", prompt_command(std::env::var("PROMPT_COMMAND").ok().as_deref()));
+    }
     cmd
+}
+
+/// What bash reports its venv with before each prompt (0069), as OSC 6973,
+/// the number `web/app.js` listens on: xterm.js hands it to the page and draws
+/// nothing, and no terminal is known to use it.
+///
+/// A venv is activated by sourcing a script into the shell, so only the shell
+/// knows which one it has, and the environment is the one channel into it that
+/// writes no file and types nothing: bash runs `PROMPT_COMMAND` from it. bash
+/// keeps `$?` for the prompt across it, and `PIPESTATUS` from 4.3 on; the 3.2
+/// macOS ships loses the latter. zsh, fish and PowerShell take their prompt
+/// hooks from their startup files alone.
+///
+/// The hook unexports itself, so a bash started from this one, in another
+/// window or console, does not print it. It ends in ST rather than BEL, so a
+/// console that reads no OSC shows it and does not beep.
+const HOOK: &str = "export -n PROMPT_COMMAND; printf '\\033]6973;%s\\033\\\\' \"${VIRTUAL_ENV-}\"";
+
+/// The `PROMPT_COMMAND` bash is handed: the hook after any it was handed, so
+/// that one still reads the command's `$?`, on a line of its own, since `;`
+/// after one ending in `;` or `&` would not parse. A bash this one started was
+/// handed it already, as was dbt-edith run from its own terminal.
+fn prompt_command(theirs: Option<&str>) -> String {
+    match theirs {
+        Some(theirs) if theirs.contains(HOOK) => theirs.to_string(),
+        Some(theirs) if !theirs.trim().is_empty() => format!("{theirs}\n{HOOK}"),
+        _ => HOOK.to_string(),
+    }
+}
+
+/// The shell's name as the switches here know it: `bash` for
+/// `C:\Program Files\Git\bin\bash.exe`, `zsh` for `/bin/zsh`.
+fn shell_name(shell: &ShellSpec) -> String {
+    Path::new(&shell.program).file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
 /// The line that activates `venv` in `shell`, typed into each new terminal.
@@ -117,8 +155,7 @@ fn command(shell: &ShellSpec, cwd: &Path) -> portable_pty::CommandBuilder {
 /// rather than one dbt-edith picked (0050). A shell the venv has no script for
 /// gets nothing typed.
 fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
-    let name = Path::new(&shell.program).file_stem()?.to_string_lossy().to_ascii_lowercase();
-    let (script, line): (&str, fn(&str) -> String) = match name.as_str() {
+    let (script, line): (&str, fn(&str) -> String) = match shell_name(shell).as_str() {
         "bash" | "zsh" => ("activate", |p| format!("source '{}'", p.replace('\'', r"'\''"))),
         "fish" => ("activate.fish", |p| format!("source '{}'", p.replace('\\', r"\\").replace('\'', r"\'"))),
         "pwsh" | "powershell" => ("Activate.ps1", |p| format!("& '{}'", p.replace('\'', "''"))),
@@ -326,6 +363,76 @@ mod tests {
             expected.keys().chain(got.keys()).filter(|k| expected.get(*k) != got.get(*k)).collect();
         assert!(differ.is_empty(), "not as in this process: {differ:?}");
         assert_eq!(cmd.get_env("PATH"), std::env::var_os("PATH").as_deref());
+    }
+
+    /// bash alone is handed the hook, and nothing else in the environment
+    /// changes for it.
+    #[test]
+    fn bash_is_told_to_report_its_venv_and_no_other_shell_is() {
+        let hook = |program: &str| command(&shell(program), Path::new(".")).get_env("PROMPT_COMMAND").map(|v| v.to_owned());
+        let ours = hook("bash").expect("bash has no hook").to_string_lossy().into_owned();
+        assert!(ours.contains(HOOK), "{ours}");
+        assert_eq!(hook(r"/usr/local/bin/Bash"), hook("bash"), "by its name, wherever it is");
+        for other in ["zsh", "/bin/zsh", "fish", "pwsh", "sh"] {
+            assert_eq!(hook(other), std::env::var_os("PROMPT_COMMAND"), "{other}");
+        }
+    }
+
+    /// After any `PROMPT_COMMAND` bash was handed, so that one reads the
+    /// command's `$?`, and once only.
+    #[test]
+    fn the_hook_goes_after_a_prompt_command_of_its_own() {
+        assert_eq!(prompt_command(None), HOOK);
+        assert_eq!(prompt_command(Some("  ")), HOOK);
+        assert_eq!(prompt_command(Some("history -a;")), format!("history -a;\n{HOOK}"), "a `;` after this one would not parse");
+        let twice = format!("history -a;\n{HOOK}");
+        assert_eq!(prompt_command(Some(&twice)), twice, "handed it already");
+        let appended = format!("{HOOK}; history -a");
+        assert_eq!(prompt_command(Some(&appended)), appended, "a ~/.bashrc added to it");
+    }
+
+    /// On a real terminal: each prompt says which venv the shell has, from the
+    /// first one on, and says so again once a script changes it.
+    #[cfg(unix)]
+    #[test]
+    fn bash_reports_its_venv_at_each_prompt() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-osc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bash = ShellSpec {
+            program: "bash".into(),
+            args: vec!["--norc".into(), "--noprofile".into(), "-i".into()],
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::channel(512);
+        let session = PtySession::start(&bash, &dir, 400, 24, tx, None).unwrap();
+        // HISTFILE unset keeps these lines out of the developer's own history.
+        session.write(b"unset HISTFILE; export VIRTUAL_ENV=/somewhere/env-$((40 + 2))\r".to_vec());
+        session.write(b"unset VIRTUAL_ENV; echo handed-on-$(env | grep -c '^PROMPT_COMMAND=')\r".to_vec());
+
+        let reported = |seen: &str| -> Vec<String> {
+            seen.split("\x1b]6973;").skip(1).filter_map(|s| s.split_once("\x1b\\").map(|(v, _)| v.to_string())).collect()
+        };
+        let mut seen = String::new();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while reported(&seen).len() < 3 && Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(FromPty::Output(bytes)) => seen.push_str(&String::from_utf8_lossy(&bytes)),
+                Ok(FromPty::Exited) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                    std::thread::sleep(Duration::from_millis(20))
+                }
+                Err(_) => break,
+            }
+        }
+        session.kill();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let got = reported(&seen);
+        assert!(got.len() >= 3, "fewer than three prompts reported: {seen:?}");
+        // The first prompt reports whatever this process was started in.
+        assert_eq!(got[0], std::env::var("VIRTUAL_ENV").unwrap_or_default(), "{seen:?}");
+        assert_eq!(got[1..3], ["/somewhere/env-42".to_string(), String::new()], "{seen:?}");
+        assert!(seen.contains("handed-on-0"), "a program started from the shell inherits the hook: {seen:?}");
+        assert!(!seen.contains('\x07'), "a bell: {seen:?}");
     }
 
     /// A venv holding only the activate scripts named, in a folder of its own.
