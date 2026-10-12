@@ -19,8 +19,10 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 - Close the Orchestration form once a save reads every source cleanly, saying
   what it read and showing Job coverage, or the Jobs tab when it shows a model.
-  It stays open on a source that found no job or a file it refused; saving again
-  used to repaint the same line, and looked like a save that did nothing.
+  It stays open on a source that found no job, a file it refused, a walk stopped
+  at a bound, sources it could not save, or edits made while it read; saving
+  again used to repaint the same line, and looked like a save that did nothing.
+  A form closed while it reads says what it read in a toast.
 
 ## 1.11.1 - 2026-10-12
 

@@ -3244,7 +3244,7 @@ async function refreshModels() {
 // --------------------------------------------------------------- git panel --
 /* A modal that resolves to the id of the button pressed, or null if dismissed.
    Used for every action that cannot simply be undone. */
-function modal({ title, body, actions, wide = false }) {
+function modal({ title, body, actions, wide = false, onOpen = null }) {
   return new Promise((resolve) => {
     const box = $('#modal');
     box.querySelector('.modal-box').classList.toggle('wide', wide);
@@ -3276,6 +3276,10 @@ function modal({ title, body, actions, wide = false }) {
     box.onclick = (e) => { if (e.target === box) close(null); };
     document.addEventListener('keydown', esc);
     bar.lastChild && bar.lastChild.focus();
+    // For a body that closes the modal on an answer of its own. This close
+    // is this modal's alone: by the time an answer lands, the box may hold
+    // another one, whose last button a click on the box would confirm.
+    if (onOpen) onOpen(close);
   });
 }
 
@@ -7158,21 +7162,42 @@ function jobSourcesBody(forms, defaults) {
   };
 }
 
+function jobsPlural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
 /* What one source read, counted in its own words: DAGs and tasks, or jobs
    and steps. */
 function jobsReadCounts(s) {
   const word = s.kind === 'airflow' ? ['DAG', 'task'] : ['job', 'step'];
-  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-  return `${plural(s.jobs, word[0])}, ${plural(s.steps, word[1])}`;
+  return `${jobsPlural(s.jobs, word[0])}, ${jobsPlural(s.steps, word[1])}`;
 }
 
 /* Whether a save read every source with nothing left to correct: each one
-   found jobs, and none failed or had a file refused. Only then does the form
-   close on its own, since the answer is then in the coverage; otherwise it
-   stays open on what went wrong, which is the answer to whether the keys are
-   right. */
+   found jobs, none failed, had a file refused or stopped at a bound. */
 function jobsReadClean(sources) {
-  return sources.length > 0 && sources.every((s) => !s.error && !(s.refused || []).length && s.jobs > 0);
+  return sources.length > 0
+    && sources.every((s) => !s.error && !(s.refused || []).length && !s.capped && s.jobs > 0);
+}
+
+/* Whether a save closes the sources form. Only a clean read that was kept
+   does, and only while the form still holds what was sent: the answer is
+   then in the coverage. Anything else stays open on what went wrong, which
+   is the answer to whether the keys are right, or on the edits made while
+   the read ran, which the answer does not describe. */
+function jobsSaveCloses(answer, sent, now) {
+  return !!answer.saved && jobsReadClean(answer.sources || []) && JSON.stringify(sent) === JSON.stringify(now);
+}
+
+/* A save's toast, with its kind, once the form is no longer there to say it. */
+function jobsSaveToast(answer) {
+  const sources = answer.sources || [];
+  if (!sources.length) return [answer.saved ? 'Saved: no job source left.' : 'No job source left, until dbt-edith stops.', 'ok'];
+  if (!jobsReadClean(sources)) {
+    return [`${answer.saved ? 'Saved' : 'Kept until dbt-edith stops'}, but not every source read cleanly: Orchestration says why.`, 'err'];
+  }
+  const read = sources.map(jobsReadCounts).join('; ');
+  return answer.saved ? [`Saved and read: ${read}.`, 'ok'] : [`Read, but kept only until dbt-edith stops: ${read}.`, 'err'];
 }
 
 /* A small mapping as YAML lines, each list item a mapping of its own. */
@@ -7452,7 +7477,7 @@ function renderCoverage(body, cov) {
 function jobsReadNote(s) {
   if (s.error) return jel('div', 'jobs-warn', s.error);
   const box = jel('div', 'jobs-read');
-  box.append(jel('div', '', `${s.files} file${s.files === 1 ? '' : 's'} read: ${jobsReadCounts(s)}`
+  box.append(jel('div', '', `${jobsPlural(s.files, 'file')} read: ${jobsReadCounts(s)}`
     + (s.skipped ? `; ${s.skipped} without one` : '') + (s.capped ? '; stopped at 5 000 files' : '') + '.'));
   for (const r of s.refused || []) {
     box.append(jel('div', 'jobs-warn', `${r.file}${r.line ? ':' + r.line : ''}: ${r.message}`));
@@ -7463,8 +7488,8 @@ function jobsReadNote(s) {
 /* The sources, edited in a modal that stays open while a read leaves
    something to correct: saving reads them at once, and what was read is the
    answer to whether the keys are right. A clean read closes it on the
-   coverage, since a form that only repaints the same line looked like a save
-   that did nothing. */
+   coverage (jobsSaveCloses), since a form that only repaints the same line
+   looked like a save that did nothing. */
 async function openJobSources() {
   closePopup();
   let summary;
@@ -7478,7 +7503,8 @@ async function openJobSources() {
   const list = jel('div', 'jobsrc-list');
   const foot = jel('div', 'jobsrc-foot');
   const saved = jel('p', 'muted', '');
-  let done = '';
+  let closeForm = () => {};
+  let open = true;
 
   const input = (value, placeholder, onInput, cls = '') => {
     const i = jel('input', cls);
@@ -7534,14 +7560,18 @@ async function openJobSources() {
   const save = jel('button', 'btn sm primary', 'Save and read');
   save.addEventListener('click', async () => {
     save.disabled = true;
+    const sent = jobSourcesBody(forms, defaults);
     try {
-      const answer = await api.send('/api/jobs/sources', 'PUT', jobSourcesBody(forms, defaults));
+      const answer = await api.send('/api/jobs/sources', 'PUT', sent);
       reads = answer.sources;
-      if (jobsReadClean(reads)) {
-        done = `${answer.saved ? 'Saved and read' : 'Read, kept until dbt-edith stops'}: ${reads.map(jobsReadCounts).join('; ')}.`;
-        $('#modal-actions').lastChild.click();
-        return;
+      // Closed while it read: a toast is all that is left to say what it did.
+      if (!open) {
+        toast(...jobsSaveToast(answer));
+        if (S.dock === 'jobs') loadJobs();
+        if (S.reportsOpen && S.reportsSection === 'jobs') return showReportSection('jobs');
+        return loadReportsIndex();
       }
+      if (jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults))) return closeForm(answer);
       saved.textContent = answer.saved
         ? 'Saved for this project, outside it. Only YAML files are read, never through a symlink.'
         : 'No config directory is available, so these sources last until dbt-edith stops.';
@@ -7560,18 +7590,17 @@ async function openJobSources() {
       + 'An Airflow key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
     list, foot, saved);
   paint();
-  await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true });
-  if (done) {
-    toast(done);
-    // The Jobs tab already answers for the model it shows; anywhere else the
-    // answer is the coverage.
-    if (S.dock === 'jobs' && S.focus && !S.reportsOpen) {
-      loadJobs();
-      return loadReportsIndex();
-    }
+  const answer = await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true,
+    onOpen: (close) => { closeForm = close; } });
+  open = false;
+  if (S.dock === 'jobs') loadJobs();
+  if (answer) {
+    toast(...jobsSaveToast(answer));
+    // The Jobs tab already answers for the model it shows, and Reports would
+    // roll down over it; anywhere else the answer is the coverage.
+    if (S.dock === 'jobs' && S.focus && !S.reportsOpen) return loadReportsIndex();
     return openReports('jobs');
   }
-  if (S.dock === 'jobs') loadJobs();
   if (S.reportsOpen && S.reportsSection === 'jobs') showReportSection('jobs');
 }
 

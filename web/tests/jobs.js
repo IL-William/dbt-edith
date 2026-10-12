@@ -120,9 +120,28 @@ print('\n--- when a save closes the sources form ---');
 var READ = { kind: 'airflow', files: 2, jobs: 2, steps: 5 };
 check('counted in a DAG\'s words', jobsReadCounts(READ), '2 DAGs, 5 tasks');
 check('counted in a dbt Cloud job\'s words', jobsReadCounts({ kind: 'dbt_cloud', jobs: 1, steps: 1 }), '1 job, 1 step');
-check('a clean read closes it', jobsReadClean([READ]), true);
-check('no source leaves it open', jobsReadClean([]), false);
-check('a path that leads nowhere leaves it open', jobsReadClean([READ, { kind: 'airflow', error: 'nothing at this path' }]), false);
-check('a refused file leaves it open',
+check('a clean read', jobsReadClean([READ]), true);
+check('a file without a DAG beside the DAGs found is still clean', jobsReadClean([Object.assign({}, READ, { files: 3, skipped: 1 })]), true);
+check('no source is not clean', jobsReadClean([]), false);
+check('a source the walk refused is not clean', jobsReadClean([READ, { kind: 'airflow', error: 'not a .yml or .yaml file' }]), false);
+check('a refused file is not clean',
       jobsReadClean([Object.assign({}, READ, { refused: [{ file: 'a.yml', line: 3, message: 'a tab in the indent' }] })]), false);
-check('keys that find no job leave it open', jobsReadClean([{ kind: 'airflow', files: 2, jobs: 0, steps: 0, skipped: 2 }]), false);
+check('a walk stopped at a bound is not clean', jobsReadClean([Object.assign({}, READ, { capped: true })]), false);
+check('keys that find no job are not clean', jobsReadClean([{ kind: 'airflow', files: 2, jobs: 0, steps: 0, skipped: 2 }]), false);
+
+var SENT = { sources: [{ kind: 'airflow', path: '../jobs', label: '', keys: { tasks: 'jobs' } }] };
+var copy = function (v) { return JSON.parse(JSON.stringify(v)); };
+check('a clean read that was kept closes the form', jobsSaveCloses({ saved: true, sources: [READ] }, SENT, copy(SENT)), true);
+check('a read kept only until dbt-edith stops leaves it open', jobsSaveCloses({ saved: false, sources: [READ] }, SENT, copy(SENT)), false);
+check('a read to correct leaves it open', jobsSaveCloses({ saved: true, sources: [Object.assign({}, READ, { capped: true })] }, SENT, copy(SENT)), false);
+var edited = copy(SENT);
+edited.sources.push({ kind: 'dbt_cloud', path: '', label: '', keys: {} });
+check('a form edited while it read stays open', jobsSaveCloses({ saved: true, sources: [READ] }, SENT, edited), false);
+
+check('the toast of a clean save', jobsSaveToast({ saved: true, sources: [READ, { kind: 'dbt_cloud', jobs: 1, steps: 2 }] }).join(' | '),
+      'Saved and read: 2 DAGs, 5 tasks; 1 job, 2 steps. | ok');
+check('the toast of a read not kept', jobsSaveToast({ saved: false, sources: [READ] }).join(' | '),
+      'Read, but kept only until dbt-edith stops: 2 DAGs, 5 tasks. | err');
+check('the toast of a read to correct', jobsSaveToast({ saved: true, sources: [Object.assign({}, READ, { jobs: 0 })] }).join(' | '),
+      'Saved, but not every source read cleanly: Orchestration says why. | err');
+check('the toast with no source left', jobsSaveToast({ saved: true, sources: [] }).join(' | '), 'Saved: no job source left. | ok');
