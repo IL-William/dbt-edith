@@ -3680,7 +3680,7 @@ mod tests {
         let read = async {
             let mut chunk = [0u8; 1024];
             loop {
-                let n = s.read(&mut chunk).await.unwrap_or(0);
+                let n = s.read(&mut chunk).await.unwrap_or_else(|e| panic!("{e} reading the answer to {request}"));
                 if n == 0 {
                     break;
                 }
@@ -3690,19 +3690,28 @@ mod tests {
                 }
             }
         };
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), read).await;
+        tokio::time::timeout(std::time::Duration::from_secs(5), read)
+            .await
+            .unwrap_or_else(|_| panic!("no head within 5 s to {request}"));
         let text = String::from_utf8_lossy(&buf).into_owned();
         // The last chunk usually carries the start of the body with it.
-        text.split("\r\n\r\n").next().unwrap_or("").to_string()
+        split_head(&text).0.to_string()
     }
 
     /// The whole response, head and body, for a route whose answer matters.
-    async fn body_of(port: u16, request: String) -> String {
+    async fn response_of(port: u16, request: String) -> String {
         let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         s.write_all(request.as_bytes()).await.unwrap();
         let mut buf = Vec::new();
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_end(&mut buf)).await;
-        String::from_utf8_lossy(&buf).into_owned()
+        // A read cut off by the timeout or an error is a failure: a partial
+        // answer would pass every check that something is absent from it.
+        let read = tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_end(&mut buf)).await;
+        let text = String::from_utf8_lossy(&buf).into_owned();
+        match read {
+            Ok(Ok(_)) => text,
+            Ok(Err(e)) => panic!("{e} reading the answer to {request}after {text}"),
+            Err(_) => panic!("no whole answer within 5 s to {request}after {text}"),
+        }
     }
 
     fn get(path: &str, headers: &[(&str, &str)]) -> String {
@@ -3763,19 +3772,19 @@ mod tests {
         let walk = status_of(port, post(r#"{"version":"../../bin"}"#)).await;
         assert!(walk.ends_with("404 Not Found"), "a name is matched against the folders found, never joined: {walk}");
 
-        let picked = body_of(port, post(r#"{"version":"0.3.0"}"#)).await;
+        let picked = response_of(port, post(r#"{"version":"0.3.0"}"#)).await;
         assert!(picked.contains(r#""chosen":"0.3.0""#), "{picked}");
         assert!(picked.contains(r#"{"version":"0.3.0","origin":"installed","runs":true}"#), "{picked}");
         assert!(picked.contains(r#""stale":true"#), "a cache 0.2.0 wrote is stale under 0.3.0: {picked}");
         assert_eq!(st.collin_chosen.lock().unwrap().as_deref(), Some("0.3.0"));
         cache("collin 0.3.0");
-        let meta = body_of(port, get("/api/meta", &h)).await;
+        let meta = response_of(port, get("/api/meta", &h)).await;
         assert!(meta.contains(r#""stale":false"#), "{meta}");
 
-        let back = body_of(port, post(r#"{"version":""}"#)).await;
-        assert!(!back.contains(r#""chosen""#), "{back}");
+        let back = response_of(port, post(r#"{"version":""}"#)).await;
+        assert!(back.starts_with("HTTP/1.1 200") && !back.contains(r#""chosen""#), "{back}");
 
-        let command = body_of(port, get("/api/collin/install?version=0.4.0", &h)).await;
+        let command = response_of(port, get("/api/collin/install?version=0.4.0", &h)).await;
         assert!(command.contains("--tag v0.4.0 --root"), "{command}");
         assert!(command.contains("collin-installs/0.4.0"), "{command}");
         let bad = status_of(port, get("/api/collin/install?version=0.4.0%3Brm", &h)).await;
@@ -3799,9 +3808,9 @@ mod tests {
         let (port, _st, server) = serve(&root).await;
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
-        let meta = body_of(port, get("/api/meta", &h)).await;
+        let meta = response_of(port, get("/api/meta", &h)).await;
         assert!(meta.contains(r#""kept":["0.4.0","0.1.0"]"#), "{meta}");
-        let c = body_of(port, get("/api/collin/compare?a=0.1.0&b=0.4.0", &h)).await;
+        let c = response_of(port, get("/api/collin/compare?a=0.1.0&b=0.4.0", &h)).await;
         assert!(c.contains(r#""gained":1,"lost":0"#), "{c}");
         let none = status_of(port, get("/api/collin/compare?a=0.1.0&b=..%2F..%2Fx", &h)).await;
         assert!(none.ends_with("404 Not Found"), "{none}");
@@ -3824,7 +3833,7 @@ mod tests {
         assert!(none.ends_with("404 Not Found"), "{none}");
         let report = r#"{"totals":{"models":2,"parsed":2},"models":[{"unique_id":"model.demo.a","yaml_stale":true}]}"#;
         std::fs::write(target.join(collin_run::REPORT), report).unwrap();
-        let page = body_of(port, get("/api/collineage/report", &h)).await;
+        let page = response_of(port, get("/api/collineage/report", &h)).await;
         assert!(page.contains(r#""findings":[{"kind":"yaml_stale","entries":[{"id":"model.demo.a"}]}]"#), "{page}");
         assert!(page.contains(r#""to_investigate":1"#), "{page}");
         assert!(page.contains(r#""totals":{"models":2,"parsed":2}"#), "{page}");
@@ -3843,23 +3852,26 @@ mod tests {
         let h = [("Host", host.as_str())];
         let current = env!("CARGO_PKG_VERSION");
 
-        let before = body_of(port, get("/api/update", &h)).await;
-        assert!(before.ends_with(&format!(r#"{{"current":"{current}"}}"#)), "{before}");
+        let before = response_of(port, get("/api/update", &h)).await;
+        assert!(before.starts_with("HTTP/1.1 200"), "{before}");
+        assert_eq!(past_head(&before), format!(r#"{{"current":"{current}"}}"#));
 
         let now = crate::update::now_secs();
         std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"{current}"}}"#)).unwrap();
         st.update.check().await;
-        let same = body_of(port, get("/api/update", &h)).await;
-        assert!(same.ends_with(&format!(r#"{{"current":"{current}","latest":"{current}"}}"#)), "{same}");
+        let same = response_of(port, get("/api/update", &h)).await;
+        assert!(same.starts_with("HTTP/1.1 200"), "{same}");
+        assert_eq!(past_head(&same), format!(r#"{{"current":"{current}","latest":"{current}"}}"#));
 
         std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"99.0.0"}}"#)).unwrap();
         st.update.check().await;
-        let newer = body_of(port, get("/api/update", &h)).await;
-        assert!(
-            newer.ends_with(&format!(
+        let newer = response_of(port, get("/api/update", &h)).await;
+        assert!(newer.starts_with("HTTP/1.1 200"), "{newer}");
+        assert_eq!(
+            past_head(&newer),
+            format!(
                 r#"{{"current":"{current}","latest":"99.0.0","newer":true,"notes":"https://github.com/IL-William/dbt-edith/releases/tag/v99.0.0","why":"elsewhere"}}"#
-            )),
-            "{newer}"
+            )
         );
         assert!(status_of(port, keyless(get("/api/update", &h))).await.ends_with("401 Unauthorized"));
         server.abort();
@@ -3878,18 +3890,19 @@ mod tests {
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
 
-        let empty = body_of(port, get("/api/reports", &h)).await;
-        assert!(empty.starts_with("HTTP/1.1 200") && empty.ends_with("\r\n\r\n{}"), "{empty}");
-        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        let empty = response_of(port, get("/api/reports", &h)).await;
+        assert!(empty.starts_with("HTTP/1.1 200"), "{empty}");
+        assert_eq!(past_head(&empty), "{}");
+        let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(r#""reports_at":0"#) && fresh.contains(r#""state":"#), "{fresh}");
 
         std::fs::write(target.join(collin_run::REPORT), r#"{"totals":{"models":1}}"#).unwrap();
         let at = mtime_secs(&target.join(collin_run::REPORT));
-        let index = body_of(port, get("/api/reports", &h)).await;
+        let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(&format!(r#""collin":{{"at":{at}}}"#)), "{index}");
         assert!(!index.contains(r#""jobs""#), "{index}");
         // The badge's answer is cached for a moment, and the stamp is not.
-        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
 
         st.job_sources.lock().unwrap().push(crate::settings::JobSource {
@@ -3898,7 +3911,7 @@ mod tests {
             label: String::new(),
             keys: Default::default(),
         });
-        let index = body_of(port, get("/api/reports", &h)).await;
+        let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(r#""jobs":{"sources":1,"at":0}"#), "{index}");
 
         assert!(status_of(port, keyless(get("/api/reports", &h))).await.ends_with("401 Unauthorized"));
@@ -3927,13 +3940,13 @@ mod tests {
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
 
-        let none = body_of(port, get("/api/reports/run", &h)).await;
+        let none = response_of(port, get("/api/reports/run", &h)).await;
         assert!(none.starts_with("HTTP/1.1 404") && none.contains("no run_results.json"), "{none}");
         let path = target.join(crate::run_results::FILE);
         std::fs::write(&path, r#"{"results": ["#).unwrap();
-        let partial = body_of(port, get("/api/reports/run", &h)).await;
+        let partial = response_of(port, get("/api/reports/run", &h)).await;
         assert!(partial.starts_with("HTTP/1.1 400") && partial.contains("still be writing"), "{partial}");
-        let index = body_of(port, get("/api/reports", &h)).await;
+        let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(r#""run":{"at":"#) && !index.contains(r#""error""#), "listed by its time alone: {index}");
 
         std::fs::write(
@@ -3950,15 +3963,15 @@ mod tests {
         )
         .unwrap();
         let at = mtime_secs(&path);
-        let run = body_of(port, get("/api/reports/run", &h)).await;
+        let run = response_of(port, get("/api/reports/run", &h)).await;
         assert!(run.starts_with("HTTP/1.1 200"), "{run}");
         assert!(run.contains(r#""command":"build","selection":["--select orders"]"#), "{run}");
         assert!(run.contains(r#""file":"models/orders.sql","status":"error""#), "{run}");
         assert!(run.contains(r#""unknown":{"items":["test.shop.gone.x"],"of":1}"#), "{run}");
         assert!(!run.contains("hunter2"), "{run}");
-        let index = body_of(port, get("/api/reports", &h)).await;
+        let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0}}"#)), "{index}");
-        let fresh = body_of(port, get("/api/freshness", &h)).await;
+        let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
 
         assert!(status_of(port, keyless(get("/api/reports/run", &h))).await.ends_with("401 Unauthorized"));
@@ -3976,7 +3989,7 @@ mod tests {
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
 
-        let ok = body_of(port, get("/api/select?q=dim_customers", &h)).await;
+        let ok = response_of(port, get("/api/select?q=dim_customers", &h)).await;
         assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
         assert!(ok.contains(r#""matched":0"#), "{ok}");
         assert!(ok.contains("nothing matches"), "an empty graph matches nothing, and says so");
@@ -3992,7 +4005,7 @@ mod tests {
             ("q=--selector%20a%20b", "selector_alone"),
             ("q=--selector", "missing_selector"),
         ] {
-            let body = body_of(port, get(&format!("/api/select?{query}"), &h)).await;
+            let body = response_of(port, get(&format!("/api/select?{query}"), &h)).await;
             assert!(body.starts_with("HTTP/1.1 400"), "{query}: {body}");
             assert!(body.contains(code), "{query}: {body}");
         }
@@ -4039,13 +4052,13 @@ mod tests {
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
 
-        let list = body_of(port, get("/api/selectors", &h)).await;
+        let list = response_of(port, get("/api/selectors", &h)).await;
         assert!(list.starts_with("HTTP/1.1 200"), "{list}");
         assert!(list.contains(r#"{"name":"checks","description":"Every test."}"#), "{list}");
         assert!(list.contains(r#""name":"ci","unsupported":"#), "listed, with its reason: {list}");
         assert!(list.contains(r#""lost_indirect":true"#), "{list}");
 
-        let on = body_of(port, get("/api/select?q=--selector%20checks&tests=1", &h)).await;
+        let on = response_of(port, get("/api/select?q=--selector%20checks&tests=1", &h)).await;
         assert!(on.starts_with("HTTP/1.1 200"), "{on}");
         assert!(on.contains(r#""selector":"checks""#) && on.contains(r#""description":"Every test.""#), "{on}");
         assert!(on.contains(r#""matched":1"#) && on.contains(r#""names":["not_null_orders_id"]"#), "{on}");
@@ -4053,7 +4066,7 @@ mod tests {
 
         // Off, the answer is the same one test, left off the canvas, and the
         // model it checks is drawn in its place, still as context.
-        let off = body_of(port, get("/api/select?q=--selector%20checks&tests=0", &h)).await;
+        let off = response_of(port, get("/api/select?q=--selector%20checks&tests=0", &h)).await;
         assert!(off.contains(r#""matched":1"#) && off.contains(r#""hidden_tests":1"#), "{off}");
         assert_eq!(off.matches(r#""context":true"#).count(), 1, "{off}");
         assert!(!off.contains("not_null_orders_id\",\"kind"), "no test box: {off}");
@@ -4061,12 +4074,12 @@ mod tests {
         // The manifest lost indirect_selection, but a selector of tests alone
         // cannot change with it, so only the one reaching a model says so.
         assert!(!on.contains("lost_indirect"), "{on}");
-        let orders = body_of(port, get("/api/select?q=--selector%20orders&tests=1", &h)).await;
+        let orders = response_of(port, get("/api/select?q=--selector%20orders&tests=1", &h)).await;
         assert!(orders.contains(r#""lost_indirect":true"#), "{orders}");
 
-        let pasted = body_of(port, get("/api/select?q=dbt%20ls%20--selector%20checks", &h)).await;
+        let pasted = response_of(port, get("/api/select?q=dbt%20ls%20--selector%20checks", &h)).await;
         assert!(pasted.contains(r#""stripped":true"#), "{pasted}");
-        let ci = body_of(port, get("/api/select?q=--selector%20ci", &h)).await;
+        let ci = response_of(port, get("/api/select?q=--selector%20ci", &h)).await;
         assert!(ci.starts_with("HTTP/1.1 400") && ci.contains("unsupported_selector"), "{ci}");
 
         assert!(status_of(port, get("/api/selectors", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
@@ -4099,7 +4112,7 @@ mod tests {
         let own = format!("http://{host}");
         let body = r#"{"file":"models/orders.sql","calls":["cents","dbt.is_incremental","is_incremental","log","cents"]}"#;
 
-        let answer = body_of(port, with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", &own)], body)).await;
+        let answer = response_of(port, with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", &own)], body)).await;
         assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
         assert!(answer.contains(r#""call":"cents""#), "{answer}");
         assert!(answer.contains(r#""file":"macros/cents.sql""#), "{answer}");
@@ -4122,14 +4135,14 @@ mod tests {
         let root = temp_project("venvs");
         let (port, _st, server) = serve(&root).await;
         let host = format!("127.0.0.1:{port}");
-        let before = body_of(port, get("/api/venv", &[("Host", &host)])).await;
-        assert!(!before.contains("made-since"), "{before}");
+        let before = response_of(port, get("/api/venv", &[("Host", &host)])).await;
+        assert!(before.starts_with("HTTP/1.1 200") && !before.contains("made-since"), "{before}");
 
         let bin = root.join("made-since").join(if cfg!(windows) { "Scripts" } else { "bin" });
         std::fs::create_dir_all(&bin).unwrap();
         std::fs::write(root.join("made-since").join("pyvenv.cfg"), "version = 3.12.4\n").unwrap();
         std::fs::write(bin.join("activate"), "export VIRTUAL_ENV=/h/proj/made-since\n").unwrap();
-        let after = body_of(port, get("/api/venv", &[("Host", &host)])).await;
+        let after = response_of(port, get("/api/venv", &[("Host", &host)])).await;
         assert!(after.contains(r#""name":"made-since""#), "{after}");
         assert!(after.contains(r#""python":"3.12.4","activates":"/h/proj/made-since""#), "{after}");
         assert!(status_of(port, keyless(get("/api/venv", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
@@ -4201,7 +4214,7 @@ mod tests {
 
         // Right headers, no key: the project, the .env and the shell stay shut.
         let read = keyless(get("/api/file?path=.env", &[("Host", &host)]));
-        let answer = body_of(port, read).await;
+        let answer = response_of(port, read).await;
         assert!(answer.starts_with("HTTP/1.1 401") && answer.contains(NO_KEY), "{answer}");
         assert!(!answer.contains("hunter2"), "{answer}");
         assert!(status_of(port, keyless(raw("POST", "/api/git/fetch", &[("Host", &host), ("Origin", &own)]))).await.ends_with("401 Unauthorized"));
@@ -4266,10 +4279,31 @@ mod tests {
         r
     }
 
+    /// A response's head and body. A response that never reached the end of
+    /// its head is a failure, not an empty body.
+    fn split_head(response: &str) -> (&str, &str) {
+        response.split_once("\r\n\r\n").unwrap_or_else(|| panic!("no end to the head: {response}"))
+    }
+
+    fn past_head(response: &str) -> &str {
+        split_head(response).1
+    }
+
+    /// A response without its Date header: the one part of the head that
+    /// differs between two answers to the same request, since its value
+    /// moves on every second.
+    fn undated(response: &str) -> String {
+        let (head, body) = split_head(response);
+        let kept: Vec<&str> = head
+            .split("\r\n")
+            .filter(|line| !line.split_once(':').is_some_and(|(name, _)| name.eq_ignore_ascii_case("date")))
+            .collect();
+        format!("{}\r\n\r\n{body}", kept.join("\r\n"))
+    }
+
     /// The JSON a test request got back, past the response head.
     fn json_of(response: &str) -> serde_json::Value {
-        let body = response.split("\r\n\r\n").nth(1).unwrap_or("");
-        serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {response}"))
+        serde_json::from_str(past_head(response)).unwrap_or_else(|e| panic!("{e}: {response}"))
     }
 
     /// A tab follows its file through a pull, and a save from a tab that did
@@ -4285,46 +4319,46 @@ mod tests {
         let own = format!("http://127.0.0.1:{port}");
         let send = |method: &str, path: &str, body: &str| with_json(method, path, &[("Host", &host), ("Origin", &own)], body);
 
-        let read = json_of(&body_of(port, get("/api/file?path=models/orders.sql", &[("Host", &host)])).await);
+        let read = json_of(&response_of(port, get("/api/file?path=models/orders.sql", &[("Host", &host)])).await);
         let first = read["stamp"].as_str().unwrap().to_string();
         let stamps = |paths: &str| send("POST", "/api/file/stamps", &format!(r#"{{"paths":{paths}}}"#));
-        let all = json_of(&body_of(port, stamps(r#"["models/orders.sql","models/gone.sql","../outside.sql"]"#)).await);
+        let all = json_of(&response_of(port, stamps(r#"["models/orders.sql","models/gone.sql","../outside.sql"]"#)).await);
         assert_eq!(all["models/orders.sql"], first.as_str(), "the stamp the read gave");
         assert!(all["models/gone.sql"].is_null() && all["../outside.sql"].is_null(), "{all}");
 
         // A pull rewrites it. The size changes too, so this holds on a
         // filesystem keeping whole seconds.
         std::fs::write(&model, "select 1\nunion all\nselect 2\n").unwrap();
-        let pulled = json_of(&body_of(port, stamps(r#"["models/orders.sql"]"#)).await)["models/orders.sql"].as_str().unwrap().to_string();
+        let pulled = json_of(&response_of(port, stamps(r#"["models/orders.sql"]"#)).await)["models/orders.sql"].as_str().unwrap().to_string();
         assert_ne!(pulled, first);
 
         let save = |stamp: &str| send("PUT", "/api/file", &format!(r#"{{"path":"models/orders.sql","content":"select 9\n"{stamp}}}"#));
-        let refused = body_of(port, save(&format!(r#","stamp":"{first}""#))).await;
+        let refused = response_of(port, save(&format!(r#","stamp":"{first}""#))).await;
         assert!(refused.starts_with("HTTP/1.1 409"), "{refused}");
         let said = json_of(&refused);
         assert_eq!((said["changed"].as_bool(), said["stamp"].as_str()), (Some(true), Some(pulled.as_str())), "{said}");
         assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 1\nunion all\nselect 2\n", "the pull is kept");
 
         // Yes to writing over it sends the stamp it was shown.
-        let written = json_of(&body_of(port, save(&format!(r#","stamp":"{pulled}""#))).await);
+        let written = json_of(&response_of(port, save(&format!(r#","stamp":"{pulled}""#))).await);
         assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 9\n");
-        let now = json_of(&body_of(port, stamps(r#"["models/orders.sql"]"#)).await);
+        let now = json_of(&response_of(port, stamps(r#"["models/orders.sql"]"#)).await);
         assert_eq!(written["stamp"], now["models/orders.sql"], "a save answers with the stamp it left");
 
         // Two saves from the version the first replaced, as from two windows:
         // the second is refused, whatever came first.
-        let again = body_of(port, save(&format!(r#","stamp":"{pulled}""#))).await;
+        let again = response_of(port, save(&format!(r#","stamp":"{pulled}""#))).await;
         assert!(again.starts_with("HTTP/1.1 409"), "{again}");
 
         // Gone since: a refusal with no stamp. Yes to writing it back sends an
         // empty stamp, which writes only while there is still no file.
         let mine = written["stamp"].as_str().unwrap().to_string();
         std::fs::remove_file(&model).unwrap();
-        let gone = json_of(&body_of(port, save(&format!(r#","stamp":"{mine}""#))).await);
+        let gone = json_of(&response_of(port, save(&format!(r#","stamp":"{mine}""#))).await);
         assert!(gone["changed"].as_bool() == Some(true) && gone["stamp"].is_null(), "{gone}");
         assert!(!model.exists());
         std::fs::write(&model, "select 'checked out again'\n").unwrap();
-        let back = body_of(port, save(r#","stamp":"""#)).await;
+        let back = response_of(port, save(r#","stamp":"""#)).await;
         assert!(back.starts_with("HTTP/1.1 409"), "a file back in the meantime is not written over: {back}");
         assert_eq!(std::fs::read_to_string(&model).unwrap(), "select 'checked out again'\n");
         std::fs::remove_file(&model).unwrap();
@@ -4366,7 +4400,7 @@ mod tests {
         let own = format!("http://127.0.0.1:{port}");
         let put = |body: &str| with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", &own)], body);
 
-        let none = body_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        let none = response_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
         assert!(none.starts_with("HTTP/1.1 200") && none.contains(r#""configured":false"#), "{none}");
 
         let keys = serde_json::json!({
@@ -4381,23 +4415,23 @@ mod tests {
             (body("airflow", &outside.join("missing").to_string_lossy(), &keys), "nothing at"),
             (body("airflow", &path, &serde_json::json!({ "dag_id": "../x" })), "dotted key path"),
         ] {
-            let refused = body_of(port, put(&sent)).await;
+            let refused = response_of(port, put(&sent)).await;
             assert!(refused.starts_with("HTTP/1.1 400") && refused.contains(want), "{refused}");
         }
         assert!(st.job_sources.lock().unwrap().is_empty(), "nothing kept from a refusal");
 
-        let saved = body_of(port, put(&body("airflow", &path, &keys))).await;
+        let saved = response_of(port, put(&body("airflow", &path, &keys))).await;
         assert!(saved.starts_with("HTTP/1.1 200"), "{saved}");
         assert!(saved.contains(r#""jobs":1"#) && saved.contains(r#""saved":false"#), "{saved}");
-        let node = body_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        let node = response_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
         assert!(node.contains(r#""name":"shop_daily""#) && node.contains(r#""via":["orders"]"#), "{node}");
         assert!(node.contains(r#""shown":"dbt run --select orders --vars …""#), "{node}");
-        let coverage = body_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
+        let coverage = response_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
         assert!(coverage.contains(r#""never":[{"id":"model.shop.customers""#), "{coverage}");
         // Read once, the coverage is counted in the Reports index, for its news.
-        let index = body_of(port, get("/api/reports", &[("Host", &host)])).await;
+        let index = response_of(port, get("/api/reports", &[("Host", &host)])).await;
         assert!(index.contains(r#""jobs":{"sources":1,"at":0,"never":1,"unscheduled":0}"#), "{index}");
-        let step = body_of(port, get("/api/jobs/step?n=0", &[("Host", &host)])).await;
+        let step = response_of(port, get("/api/jobs/step?n=0", &[("Host", &host)])).await;
         assert!(step.contains(r#""ids":["model.shop.orders"],"names":["orders"]"#), "{step}");
         for answer in [&saved, &node, &coverage, &step] {
             assert!(!answer.contains("hunter2"), "{answer}");
@@ -4409,17 +4443,17 @@ mod tests {
             "dag:\n  id: shop_added\n  when: null\nsteps:\n  - name: all\n    run: dbt run --select customers\n",
         )
         .unwrap();
-        let unlooked = body_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
+        let unlooked = response_of(port, get("/api/jobs/coverage", &[("Host", &host)])).await;
         assert!(unlooked.contains(r#""never":[{"id":"model.shop.customers""#), "{unlooked}");
-        let looked = body_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await;
+        let looked = response_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await;
         assert!(looked.contains(r#""jobs":2"#), "{looked}");
 
         // The form's picker lists a folder outside the project by names alone,
         // never a hidden one's. A temporary folder's path needs no escaping.
-        let listed = body_of(port, get(&format!("/api/jobs/browse?path={path}"), &[("Host", &host)])).await;
+        let listed = response_of(port, get(&format!("/api/jobs/browse?path={path}"), &[("Host", &host)])).await;
         assert!(listed.starts_with("HTTP/1.1 200") && listed.contains(r#""name":"dags","dir":true"#), "{listed}");
         assert!(!listed.contains(".env") && !listed.contains("hunter2"), "{listed}");
-        let inside = body_of(port, get(&format!("/api/jobs/browse?path={}", outside.join("dags").display()), &[("Host", &host)])).await;
+        let inside = response_of(port, get(&format!("/api/jobs/browse?path={}", outside.join("dags").display()), &[("Host", &host)])).await;
         assert!(inside.contains(r#""name":"added.yml""#) && inside.contains(r#""name":"daily.yml""#), "{inside}");
         assert!(!inside.contains("shop_daily"), "a file's name, never its text: {inside}");
         assert!(status_of(port, keyless(get("/api/jobs/browse", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
@@ -4465,7 +4499,7 @@ mod tests {
         // Features on, Snowflake not picked: still nothing runs.
         *st.snowflake_features.lock().unwrap() = Some(true);
         let off = with_json("POST", "/api/collineage/fetch", &[("Host", &host), ("Origin", &own)], fetch);
-        let answer = body_of(port, off).await;
+        let answer = response_of(port, off).await;
         assert!(answer.starts_with("HTTP/1.1 409"), "{answer}");
         assert!(answer.contains(NOT_PICKED), "{answer}");
 
@@ -4559,7 +4593,7 @@ b"}"#,
         let post = |path: &str, body: &str| with_json("POST", path, &[("Host", &host), ("Origin", &own)], body);
         let fetch = r#"{"id":"model.demo.orders","column":"id","relation":"analytics.marts.orders"}"#;
 
-        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
         assert!(meta.contains(r#""features":{"snowflake":false,"snowflake_set":false}"#), "{meta}");
         assert!(meta.contains("column_lineage.collin.json"), "{meta}");
         assert!(!meta.contains("column_lineage.snowflake.json"), "not even listed: {meta}");
@@ -4576,7 +4610,7 @@ b"}"#,
         let clone = get("/api/snowflake/clone?id=model.demo.orders", &[("Host", &host)]);
         assert!(status_of(port, clone).await.ends_with("409 Conflict"));
 
-        let picked = body_of(port, post("/api/collineage/source", r#"{"tool":"collin"}"#)).await;
+        let picked = response_of(port, post("/api/collineage/source", r#"{"tool":"collin"}"#)).await;
         assert!(picked.starts_with("HTTP/1.1 200"), "{picked}");
         assert!(picked.contains(r#""cll_active":"column_lineage.collin.json","cll_tool":"collin""#), "{picked}");
         assert!(status_of(port, post("/api/collineage/source", r#"{"tool":"fusion"}"#)).await.ends_with("404 Not Found"));
@@ -4587,18 +4621,18 @@ b"}"#,
         manifest("snowflake");
         *st.base.write().await = load();
         *st.graph.write().await = load();
-        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
         assert!(meta.contains(r#""features":{"snowflake":true,"snowflake_set":false}"#), "{meta}");
         assert!(meta.contains("column_lineage.snowflake.json"), "{meta}");
         // Picked by its file, a cache is read as it is: no script starts.
-        let picked = body_of(port, post("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#)).await;
+        let picked = response_of(port, post("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#)).await;
         assert!(picked.contains(r#""cll_tool":"snowflake""#), "{picked}");
         assert!(!st.sidecar.enabled());
 
         // Switched off, the user's choice wins over the adapter, the graph no
         // longer holds Snowflake's answer, and the history lets the script go.
         st.sidecar.set_reading(true);
-        let off = body_of(port, post("/api/features", r#"{"snowflake":false}"#)).await;
+        let off = response_of(port, post("/api/features", r#"{"snowflake":false}"#)).await;
         assert!(!st.sidecar.wanted());
         assert!(off.starts_with("HTTP/1.1 200"), "{off}");
         assert!(off.contains(r#""features":{"snowflake":false,"snowflake_set":true}"#), "{off}");
@@ -4666,7 +4700,7 @@ b"}"#,
         *st.graph.write().await = build();
         assert!(st.snowflake_allowed().await, "a Snowflake manifest switches the features on");
 
-        let plan = body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
+        let plan = response_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
         assert!(plan.starts_with("HTTP/1.1 200"), "{plan}");
         let items = &plan[plan.find(r#""items":["#).expect("items")..];
         let at = |needle: &str| items.find(needle).unwrap_or_else(|| panic!("{needle} missing from {plan}"));
@@ -4684,13 +4718,12 @@ b"}"#,
         assert!(!plan.contains("s3cret-in-profile") && !plan.contains("hunter2"), "a secret left the server");
         assert!(!plan.contains(r#""user""#) && !plan.contains("ME\""), "{plan}");
 
-        // The same manifest gives the same bytes on every build (0055). The
-        // body, that is: the head's Date moves on when a second turns between
-        // the two requests.
+        // The same manifest gives the same bytes on every build (0055), head
+        // and body, but for the Date, which moves on when a second turns
+        // between the two requests.
         *st.graph.write().await = build();
-        let again = body_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
-        let past_head = |r: &str| r.split_once("\r\n\r\n").map(|(_, body)| body.to_owned()).expect("a body");
-        assert_eq!(past_head(&again), past_head(&plan));
+        let again = response_of(port, get("/api/snowflake/clone?id=model.shop.d", &[("Host", &host)])).await;
+        assert_eq!(undated(&again), undated(&plan));
 
         for (id, status) in [("model.shop.nope", "404 Not Found"), ("source.shop.crm.orders", "400 Bad Request")] {
             let answer = status_of(port, get(&format!("/api/snowflake/clone?id={id}"), &[("Host", &host)])).await;
@@ -4703,9 +4736,12 @@ b"}"#,
             assert!(status_of(port, post(bad)).await.ends_with("400 Bad Request"), "{bad}");
         }
         // Without a configuration directory it is not kept, and not an error.
-        let kept = body_of(port, post(r#"{"into":"DEV_DB.\"dbt.someone\""}"#)).await;
-        assert!(kept.starts_with("HTTP/1.1 200") && kept.ends_with(r#"{"saved":false}"#), "{kept}");
-        assert!(body_of(port, post(r#"{"into":null}"#)).await.ends_with(r#"{"saved":false}"#));
+        let kept = response_of(port, post(r#"{"into":"DEV_DB.\"dbt.someone\""}"#)).await;
+        assert!(kept.starts_with("HTTP/1.1 200"), "{kept}");
+        assert_eq!(past_head(&kept), r#"{"saved":false}"#);
+        let cleared = response_of(port, post(r#"{"into":null}"#)).await;
+        assert!(cleared.starts_with("HTTP/1.1 200"), "{cleared}");
+        assert_eq!(past_head(&cleared), r#"{"saved":false}"#);
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
@@ -4722,9 +4758,10 @@ b"}"#,
         let root = temp_project("profile");
         let (port, _st, server) = serve(&root).await;
         let host = format!("127.0.0.1:{port}");
-        let none = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        let none = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(none.starts_with("HTTP/1.1 409") && none.contains(NO_PROFILE), "{none}");
-        assert!(!body_of(port, get("/api/meta", &[("Host", &host)])).await.contains(r#""profiles":{"#));
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
+        assert!(meta.starts_with("HTTP/1.1 200") && !meta.contains(r#""profiles":{"#), "{meta}");
         server.abort();
 
         // A home outside the project, on purpose, and a project on no warehouse
@@ -4740,38 +4777,38 @@ b"}"#,
         let put = |body: &str| with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", &own)], body);
 
         // Not there yet: the page says where dbt would look, and nothing creates it.
-        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
         assert!(meta.contains(&format!(r#""profiles":{{"path":"{}","found":false}}"#, profile.display())), "{meta}");
-        let missing = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        let missing = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(missing.starts_with("HTTP/1.1 404") && missing.contains("no profiles.yml at"), "{missing}");
         assert!(status_of(port, put(r#"{"content":"x"}"#)).await.ends_with("404 Not Found"));
         assert!(!profile.exists());
 
         std::fs::write(&profile, "shop:\n  target: dev\n").unwrap();
-        let meta = body_of(port, get("/api/meta", &[("Host", &host)])).await;
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
         assert!(meta.contains(r#""found":true"#), "{meta}");
-        let answer = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(answer.contains("target: dev"), "{answer}");
         assert!(answer.contains(&profile.display().to_string()), "{answer}");
 
         // A password stays on the server, however the profile is edited (0054).
         let secret = "shop:\n  target: dev\n  outputs:\n    dev:\n      user: ME\n      password: hunter2\n";
         std::fs::write(&profile, secret).unwrap();
-        let answer = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(!answer.contains("hunter2"), "{answer}");
         assert!(answer.contains(crate::redact::HIDDEN) && answer.contains(r#""hidden":1"#), "{answer}");
         let edited = format!(r#"{{"content":"shop:\n  target: dev\n  outputs:\n    dev:\n      user: YOU\n      password: {}\n"}}"#, crate::redact::HIDDEN);
         assert!(status_of(port, put(&edited)).await.ends_with("200 OK"));
         assert_eq!(std::fs::read_to_string(&profile).unwrap(), secret.replace("ME", "YOU"));
         let lost = format!(r#"{{"content":"shop:\n  outputs:\n    prod:\n      password: {}\n"}}"#, crate::redact::HIDDEN);
-        let refused = body_of(port, put(&lost)).await;
+        let refused = response_of(port, put(&lost)).await;
         assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("shop.outputs.prod.password"), "{refused}");
         assert_eq!(std::fs::read_to_string(&profile).unwrap(), secret.replace("ME", "YOU"), "nothing written");
         std::fs::write(&profile, "shop:\n  target: dev\n").unwrap();
         // No other page may write it.
         let foreign = with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", "https://evil.example")], r#"{"content":"x"}"#);
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
-        let saved = body_of(port, put(r#"{"content":"shop:\n  target: prod\n"}"#)).await;
+        let saved = response_of(port, put(r#"{"content":"shop:\n  target: prod\n"}"#)).await;
         assert!(saved.contains("\"restarted\":false"), "{saved}");
         assert_eq!(std::fs::read_to_string(&profile).unwrap(), "shop:\n  target: prod\n");
 
@@ -4783,12 +4820,12 @@ b"}"#,
         let sh = [crate::sidecar::Interpreter { program: "/bin/sh".into(), args: Vec::new() }];
         st.sidecar.set_enabled(true);
         assert_eq!(st.sidecar.start(&sh, &script, &home).await.state, "ready");
-        let saved = body_of(port, put(r#"{"content":"shop:\n  target: dev\n"}"#)).await;
+        let saved = response_of(port, put(r#"{"content":"shop:\n  target: dev\n"}"#)).await;
         assert!(saved.contains("\"restarted\":true"), "{saved}");
 
         // A profile in the project wins over the home, as it does for dbt.
         std::fs::write(root.join("profiles.yml"), "local:\n").unwrap();
-        let answer = body_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(answer.contains("local:"), "{answer}");
 
         st.sidecar.stop().await;
