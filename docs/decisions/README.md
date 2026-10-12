@@ -74,6 +74,7 @@ it is built this way, for whoever changes it next.
 | [0068](0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) | A newer dbt-edith is looked for once a day, through git | making dbt-edith reach the network on its own, or changing when it looks for a release or what the update offer types |
 | [0069](0069-the-status-bar-names-the-venv-the-terminal-reports.md) | The status bar names the venv the terminal reports | changing what the status bar says about Python, or handing the terminal's shell anything beyond dbt-edith's own environment |
 | [0070](0070-a-source-is-picked-from-folders-the-server-lists.md) | A source is picked from folders the server lists | listing a folder outside the project, changing what the sources form's picker shows, or listing a report section with nothing to show |
+| [0071](0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md) | A click types a dbt command and leaves Enter to you | passing `run` to `sendToTerminal`, or making any button press Enter in the terminal |
 
 ## Keeping these honest
 

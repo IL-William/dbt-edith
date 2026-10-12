@@ -6958,8 +6958,8 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
 
 /* Types a command into the integrated terminal. It stops at the prompt by
    default, because running it is the user's decision and dbt is theirs to
-   launch (0002). `run` is for the one button whose whole point is the command:
-   the freshness badge, where the user has already chosen by clicking it. */
+   launch (0002). `run` is for the freshness badge alone: its dbt parse reaches
+   no warehouse, and a command that can is never run for the user (0071). */
 function sendToTerminal(cmd, run) {
   // Always on a click, and the terminal is what it asks to see.
   closeReports();
