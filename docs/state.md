@@ -1122,6 +1122,14 @@ are reached by typing one.
     node takes. A command opens its selections and types nothing itself:
     only a selection types its command, so looking never touches the
     terminal.
+    - **Named Run, after the command it proposes.** The menu opens on
+      `run`, with its selections unfolded and the node alone first.
+      `dbt run --select name` is therefore the command proposed, and the
+      others are one pick away. For a seed, a snapshot or a singular test,
+      the first command is the node's own: `seed`, `snapshot` or `test`.
+      A label saying that the button types, such as "Type a dbt command",
+      was weighed and dropped. The name says what is proposed, and the
+      strip from `sendToTerminal` says that nothing has run.
     - **The commands:**
       - a model takes `run`, `build` and `test`;
       - a seed takes `seed`, `build` and `test`;
