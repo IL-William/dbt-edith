@@ -1117,6 +1117,99 @@ are reached by typing one.
         adds to the history for good;
       - a gist, as #16 used for its screenshots, light, but a README needs
         links that last longer than one.
+11. **A Run button on a node's file.** It sits at the end of the breadcrumb
+    bar, after the config button. One click opens a menu of the commands the
+    node takes. A command opens its selections and runs nothing itself:
+    only a selection does, so looking never starts a run.
+    - **The commands:**
+      - a model takes `run`, `build` and `test`;
+      - a seed takes `seed`, `build` and `test`;
+      - a snapshot takes `snapshot`, `build` and `test`;
+      - a singular test takes `test` on itself alone. `+name` would also
+        bring in the tests of every model it reads, through dbt's eager
+        indirect selection.
+
+      `dbt run` selects no seed or snapshot, so it is never offered for one.
+    - **The selections:** the node alone, which is the default, then
+      `name+1`, `name+`, `1+name`, `+name` and `+name+`. An entry that would
+      run the same nodes as one above it is left out. So `seed` keeps only
+      the seed alone, and `snapshot` keeps a wider entry only where it
+      reaches another snapshot, which one snapshot reading another, directly
+      or through models, does.
+    - **Which nodes a file has.** A file can hold several: a snapshot file
+      with two `{% snapshot %}` blocks, or a `.yml` defining snapshots,
+      which dbt recommends since 1.9. The menu then starts with one entry
+      per node. `node_of_file` picks a single node by name, so the menu
+      cannot rely on it. `CONFIGURABLE` leaves `.yml` out today, so a
+      `.yml` gets the button for the snapshots it defines, not for its
+      tests or sources.
+    - **The counts:** each entry says how many nodes the command itself
+      runs, which dbt decides by resource type:
+      - under `run`, the models;
+      - under `seed` and `snapshot`, the seeds or the snapshots;
+      - under `test`, the data tests and the unit tests;
+      - under `build`, all of these together.
+
+      An ephemeral model never runs, and neither does an analysis, a source
+      or an exposure. An entry that runs nothing says so, as an ephemeral
+      model alone does.
+    - **The engine work they need.**
+      - `/api/select` counts by kind only, through `tally`. It cannot leave
+        out an ephemeral model or an analysis, which `dbt ls` lists. So
+        `src/select.rs` takes a filter per command, as dbt's tasks filter by
+        resource type, and the box, the menu and `--select` (0057) then
+        give one answer.
+      - Unit tests are not nodes (`graph.unit_tests`), so no selection
+        reaches them today. `dbt test` and `dbt build` run those of every
+        selected model, which the engine has to count.
+      - One request answers the whole menu, counts only. Six `/api/select`
+        calls would each send a lineage and up to 5000 names for one number.
+        A new field or route is read against 0012 first.
+    - **How the counts are checked.** On a fixture holding what Jaffle Shop
+      lacks, invented (0014):
+      - a snapshot that reads another;
+      - an ephemeral model;
+      - an analysis;
+      - a unit test.
+
+      Each command and selection is compared with what dbt itself ran,
+      which `run_results.json` lists. `dbt ls` cannot check them on its own:
+      it lists ephemeral models, and `--resource-type test` leaves out unit
+      tests, which dbt types `unit_test`.
+    - **When the counts may be wrong.** dbt parses the project again when it
+      runs, so a `ref()` added since the last parse moves them. When the
+      freshness badge says the files are newer than the manifest, the menu
+      says so, as the Last run section does.
+    - **The target.** The menu names the target a new terminal would use,
+      which `profiles.rs` already resolves: `DBT_TARGET` as dbt-edith
+      inherited it, which the terminal gets too, then the profile's
+      `target:`. It is the same name the clone route sends (0058). The menu
+      adds that a shell may have changed it since.
+    - **The line already typed.** The command lands after whatever is on the
+      terminal's line, since `sendToTerminal` clears nothing. That line is
+      cleared first, with the key the shell clears it with, which differs
+      between bash, zsh, PowerShell and cmd. The line still goes to whatever
+      holds the terminal. Under bash, the OSC 6973 printed before each prompt
+      (0069) tells the page when the shell is back at its prompt, so a click
+      while a `dbt` still runs can wait for it or be refused. zsh, fish and
+      PowerShell print nothing, and there dbt-edith cannot tell.
+    - **What a click does, still open.** Running on a click, with Alt-click
+      only typing the command, was the choice. It collides with AGENTS.md's
+      "Never run dbt" and with 0002, where dbt runs where the user runs it.
+      The freshness badge is the only button that presses Enter today, and
+      it runs `dbt parse`, which reaches no warehouse, while
+      `build --select +name+` writes to one. Typing without running, as Run
+      again and Recompile do, keeps the rule. Either way a decision record
+      settles it first. Running on a click also amends that rule.
+    - **Also left.**
+      - A name shared by two packages selects both, and a versioned model's
+        name selects every version. The command then needs a narrower
+        selector, checked against dbt.
+      - A disabled node is selected by nothing, so its button is greyed,
+        with the reason.
+      - The Run tab's "Run again" types `dbt run` for every node but a test.
+        For a seed or a snapshot that runs nothing, so the tab takes this
+        menu's commands too.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
