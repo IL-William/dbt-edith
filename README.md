@@ -353,7 +353,8 @@ The **Catalog** tab mirrors what dbt's own catalog shows: materialization,
 column count, upstream and downstream counts, tags and description under
 Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
-and the catalog to that node, double-click also opens its file.
+and the catalog to that node, double-click also opens its file. The column count
+opens the Columns tab.
 A column's Tests cell names every test guarding it, one chip each: two
 `relationships` on one column are two tests and read as two. Where they would
 not fit, the first few are shown and a `+N` carries the rest, which hover, click
