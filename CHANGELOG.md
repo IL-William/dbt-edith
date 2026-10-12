@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.13.2 - 2026-10-12
+
+- Pan the lineage from a box without opening it: the click the browser fires
+  at the end of the drag no longer selects the box and opens its file in place
+  of the one being read, and a click that trembles a few pixels stays a click,
+  in an exported file too.
+- Stop a pan's release on the canvas from making a double click with the
+  click before or after it, which re-centred the canvas on a box or fitted the
+  view.
+- Keep a wheel zoom, or a fit when the window is resized, in place when it
+  comes in the middle of a pan.
+- Show the grabbing cursor only once a press has become a pan.
+
 ## 1.13.1 - 2026-10-12
 
 - Put Clone into my schema beside the Location heading, in Snowflake's colour,

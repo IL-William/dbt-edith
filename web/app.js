@@ -6480,7 +6480,9 @@ function exportViewer(zoomViewBox) {
   window.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (!drag.moved && Math.abs(dx) + Math.abs(dy) <= 3) return;
+    // The canvas's own slop (`pastSlop` in lineage.js), written out: this
+    // function may name nothing outside itself.
+    if (!drag.moved && Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
     drag.moved = true;
     svg.classList.add('panning');
     show([drag.from[0] - dx / drag.k, drag.from[1] - dy / drag.k, drag.from[2], drag.from[3]]);

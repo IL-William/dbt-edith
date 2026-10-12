@@ -272,7 +272,7 @@ for that reason (0037).
 | double-click a lineage node | re-centre the lineage on it and open its file, pinned |
 | `+N` badge on a node | pull in one more level of parents or children |
 | the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector |
-| wheel / drag | zoom and pan the lineage |
+| wheel / drag | zoom and pan the lineage; a drag that starts on a box pans too, and opens nothing |
 | Export above the graph | save what the canvas shows as one HTML file anyone can open |
 | Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
 

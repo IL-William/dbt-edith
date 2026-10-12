@@ -1198,6 +1198,23 @@ const Lineage = (() => {
     return bits.join('  ·  ');
   }
 
+  /* Whether a press has moved far enough to be a pan rather than a click:
+     Windows' own drag box, 4 px either way, so a click that trembles over a
+     remote desktop stays a click. */
+  function pastSlop(dx, dy) {
+    return Math.abs(dx) > 4 || Math.abs(dy) > 4;
+  }
+
+  /* Whether a double click is the system's count running on from a pan
+     rather than two clicks of the user's: `presses` counts the presses since
+     the last pan ended. The system counts a pan's release as a click, so a
+     click right after it, or a second pan from the same spot, makes a double
+     click that would re-centre a box or fit the view. Two presses since are a
+     double click of their own, however long the system waits between clicks. */
+  function panDouble(presses) {
+    return presses < 2;
+  }
+
   function init(svgEl, h) {
     svg = svgEl; handlers = h || {};
     root = el('g');
@@ -1218,19 +1235,65 @@ const Lineage = (() => {
       apply();
     }, { passive: false });
 
+    // A press becomes a pan past the slop. The box a pan starts on moves
+    // with the pointer and is still under it at the release, and the browser
+    // then clicks it, which would select it and open its file in place of the
+    // one being read. So the left release that ends a pan swallows the click
+    // it brings, on the window in the capture phase, before anything hears it.
+    // That click is dispatched with the release; the next press, or a timer
+    // when the release brings none, takes the listener away again.
+    let presses = Infinity;
+    // A pan stopped by a context menu or another window, its left button not
+    // yet up: the click that release may still bring is the pan's too.
+    let pending = false;
+    const swallow = (e) => e.stopPropagation();
+    const unswallow = () => window.removeEventListener('click', swallow, true);
+    const stopPan = () => {
+      if (drag && drag.moved) { presses = 0; pending = true; }
+      drag = null;
+      svg.classList.remove('panning');
+    };
+    window.addEventListener('mousedown', (e) => {
+      // A press of the user's own: the click it brings is theirs.
+      unswallow();
+      pending = false;
+      if (e.button === 0) presses++;
+    }, true);
     svg.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
-      drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
-      svg.classList.add('panning');
+      drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: false };
     });
     window.addEventListener('mousemove', (e) => {
       if (!drag) return;
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
-      view.x = drag.vx + dx; view.y = drag.vy + dy;
+      if (!drag.moved) {
+        if (!pastSlop(e.clientX - drag.x, e.clientY - drag.y)) return;
+        drag.moved = true;
+        svg.classList.add('panning');
+      }
+      // By the move since the last one, so a wheel zoom, a fit or a redraw in
+      // the middle of a pan stands, where an offset from the press undid it.
+      view.x += e.clientX - drag.lx; view.y += e.clientY - drag.ly;
+      drag.lx = e.clientX; drag.ly = e.clientY;
       apply();
     });
-    window.addEventListener('mouseup', () => { drag = null; svg.classList.remove('panning'); });
+    // Only the left button's release ends a pan: another button's leaves it
+    // going, and its own click to come. In the capture phase, so nothing below
+    // the window can keep the release from it.
+    window.addEventListener('mouseup', (e) => {
+      if (e.button !== 0) return;
+      stopPan();
+      if (!pending) return;
+      pending = false;
+      window.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(unswallow, 0);
+    }, true);
+    // A context menu takes the release, as a Ctrl+click on a Mac or a right
+    // click on Windows may, and so does another window: the canvas would
+    // follow a pointer with no button down. The pan stops there.
+    window.addEventListener('contextmenu', stopPan, true);
+    window.addEventListener('blur', stopPan);
+    // Immediate, so the svg's own listener below, which fits, does not run either.
+    svg.addEventListener('dblclick', (e) => { if (panDouble(presses)) e.stopImmediatePropagation(); }, true);
     // A band covers the background, and a double click on it is still one on
     // the background.
     svg.addEventListener('dblclick', (e) => { if (e.target === svg || e.target.classList.contains('band')) fit(); });

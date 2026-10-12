@@ -1016,6 +1016,38 @@ the form, a path typed into the picker, and Use writing
 `../<repository>/dags/...`. Not yet on the VM, where the drives above `C:\`
 are reached by typing one.
 
+A pan from a box opens nothing (1.13.2), after panning was reported from the
+VM as going wrong with the folder bands on. Dragging the canvas from a box
+ended with the browser's click on that box, since the box follows the
+pointer, and the box's file opened in place of the one being read. A press
+now becomes a pan past 4 px either way (`pastSlop`), Windows' own drag box,
+which the exported viewer uses too, and only then shows the grabbing cursor.
+The pan moves the view by each move since the last, so a wheel zoom, a fit or
+a redraw in the middle of one stands. Only the left release ends it, and it
+puts a one-shot click listener on the window in the capture phase, which
+swallows the click that release brings; the next press, or a timer when the
+release brings none, removes it. A context menu or the window losing focus
+stops a pan, and the click its left release may still bring is swallowed
+too. A double click is dropped while fewer than two presses came since the
+last pan (`panDouble`), since the system counts the pan's release as a click.
+The bands themselves never stopped a pan: a drag from a band, from the gutter
+between two, or with the CPU slowed, moved the canvas as without them. Three
+reviews before merging shaped it: a flag that eats the next click left armed,
+then pointer events with capture that brought a hover card after every pan
+from a box and a pan a right click no longer ended, then a pan ended by any
+button's release and an offset from the press that undid a fit. Driven in
+headless Chrome on Jaffle Shop and on a large real project, with and without
+the bands, 22 checks each: a pan from a box, with a drag lock too, opens
+nothing and brings no hover card; a click, and one that trembles 3 px, still
+opens the box, with no grabbing cursor; a pan from the background moves; a
+release over the editor ends a pan; a right click stops it, a middle click
+leaves it going, and the left release after either opens nothing; a Ctrl+click
+whose release a context menu takes leaves nothing following the pointer; two
+quick pans fit nothing; a click right after a pan re-centres nothing, while a
+double click of its own does; a zoom or a fit during a pan stands. Ten of
+them fail on `main`. Whether that is all that was seen on the VM is not known
+yet.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1418,6 +1450,12 @@ cross-compile.
   (0067), as a change whose origin is `disk`. A `change` handler that means
   "the user edited this" checks the origin, as the dirty flag does, or a pull
   marks every open tab edited.
+- **A pan's click is swallowed on the window, in the capture phase.** Its
+  listener is put there by the left release that ends a pan, so it runs
+  before any other listener, capture-phase ones on the document included, and
+  nothing in the page hears that click. A listener that must see every click,
+  a pan's too, has to be on the window in the capture phase and added before
+  the pan ends (`init` in `web/lineage.js`).
 - **The page hears of a manifest reload only through the freshness poll.**
   The watcher reloads `manifest.json` server-side whenever dbt rewrites it, and
   nothing is pushed: `refreshFreshness` comparing `manifest_at` with `S.meta` is
