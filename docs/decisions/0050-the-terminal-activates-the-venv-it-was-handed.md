@@ -1,6 +1,6 @@
 # 0050. The terminal activates the venv dbt-edith was started in
 
-Date: 2026-10-10 · Status: accepted
+Date: 2026-10-10 · Status: accepted, amended by 0069
 
 **Trigger:** read before changing what the terminal types on its own, or which
 Python environment its shell starts with.
@@ -32,6 +32,10 @@ on macOS.
   echo to go off, up to ten seconds, and types nothing if it never does. A
   Windows console echoes on read, so there the line is queued at once.
   Anything the page sends meanwhile, keys or a `dbt ls`, queues behind it.
+
+*Amended by [0069](0069-the-status-bar-names-the-venv-the-terminal-reports.md):
+bash is also handed a `PROMPT_COMMAND` that reports its venv to the status bar
+before each prompt, which types nothing.*
 
 ## Rejected
 

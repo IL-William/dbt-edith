@@ -978,6 +978,22 @@ found 1.11.0 and showed nothing; with 1.12.0 kept for the day, the startup
 banner named it, the pill and its menu showed, and the command landed in the
 terminal unrun. Not yet on the VM.
 
+The venv the terminal activated (1.12.1, 0069), from a report on the VM: once
+a project's own script had switched Git Bash to its Fusion venv, the prompt
+named that venv and the status bar still said `venv (inactive)` with the
+project's other one, as it had at startup. bash is now handed a
+`PROMPT_COMMAND` that prints its `VIRTUAL_ENV` as OSC 6973 before each prompt,
+and the page names that venv, with the versions `/api/meta` now sends for every
+venv found (`found`), and goes back to the startup answer when the shell exits.
+A venv is matched by its folder or by the one its activate script sets, which
+is how bash spells it behind a mapped drive or a symlink, and a folder matching
+nothing has `GET /api/venv` read the project's venvs again.
+Checked by a real bash on a terminal in the Rust tests, and by headless Chrome
+on a large real project with `/bin/bash` as the shell: activate, deactivate,
+activate the other, exit, each shown at the next prompt; started inside a venv,
+the typed activation reported as the terminal's; zsh unchanged. Not yet on the
+VM, where ConPTY carries the sequence.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1086,6 +1102,11 @@ the store for, and filtering the column lineage by edge kind, which waits on
 seeing how dense a real graph is. Both were listed in the README's "Not there
 yet" and nowhere else for a while, which is how that section came to
 disagree with this one.
+
+Also unranked, since nobody has asked for it: the terminal's venv in the status
+bar under zsh, fish or PowerShell. They take prompt hooks from their startup
+files alone, and 0069 rejected both ways in, a generated `ZDOTDIR` and a typed
+line.
 
 Left over from the layout (0027), also unranked: Fit centred on the focus with
 a zoom floor, now that a neighbourhood can be 21 columns wide; the entry points

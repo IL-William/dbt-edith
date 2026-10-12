@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.12.1 - 2026-10-12
+
+- Name the venv the terminal activated in the status bar, from bash's own
+  `VIRTUAL_ENV` at each prompt, where the bar stayed on the one found at
+  startup (0069).
+
 ## 1.12.0 - 2026-10-12
 
 - Say in the status bar when a newer dbt-edith is out, asked of GitHub through

@@ -1284,6 +1284,16 @@ dbt-edith started and `venv (inactive)` when it was merely found in the project,
 with the Python and dbt versions in the tooltip. When several are present, the
 one that actually contains dbt wins.
 
+With bash in the terminal, Git Bash included, the bar then follows the
+terminal: `source .../activate` or a project's own activation script, and the
+bar names that venv at the next prompt; `deactivate`, and it says `venv
+(inactive)` again. A venv made in the project since dbt-edith started is read
+when the terminal names it. Any other venv, outside the project or tracked by
+git, is named without its versions, unless dbt-edith was started in it. zsh,
+fish and PowerShell do not say which venv they hold, and there the bar stays as
+dbt-edith started
+([0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md)).
+
 Those versions are read from the venv's files, `pyvenv.cfg` and the names of
 its installed packages: opening a project runs nothing it holds. A venv that git
 tracks came with the repository, and its `python` was written by whoever wrote

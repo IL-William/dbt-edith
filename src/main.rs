@@ -248,12 +248,12 @@ async fn main() -> anyhow::Result<()> {
     eprintln!("\n  dbt-edith  {}  ({})", env!("CARGO_PKG_VERSION"), env!("DBT_EDITH_BUILD"));
     eprintln!("  project   {}", root.display());
     eprintln!("  shell     {} {}", shell.program, shell.args.join(" "));
-    if !venv.name.is_empty() {
+    if !venv.chosen.name.is_empty() {
         eprintln!(
             "  venv      {} ({}{})",
-            venv.name,
+            venv.chosen.name,
             if venv.source == "activated" { "activated" } else { "found in project, not activated" },
-            if venv.python.is_empty() { String::new() } else { format!(", python {}", venv.python) },
+            if venv.chosen.python.is_empty() { String::new() } else { format!(", python {}", venv.chosen.python) },
         );
     }
     if live {

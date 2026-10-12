@@ -227,6 +227,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/api/meta", get(meta))
+        .route("/api/venv", get(venvs))
         .route("/api/search", get(search))
         .route("/api/node", get(node))
         .route("/api/envs", get(list_envs).put(save_envs))
@@ -690,6 +691,17 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
 
 async fn meta(State(st): State<Arc<AppState>>) -> Response {
     Json(meta_body(&st).await).into_response()
+}
+
+/// The project's venvs read again, as at startup: for one the terminal reports
+/// that was made since (0069). Nothing is asked of the page, so no path it
+/// sends is ever read; `st.venv`, which the Snowflake script goes by, stays.
+async fn venvs(State(st): State<Arc<AppState>>) -> Response {
+    let root = st.root.clone();
+    match tokio::task::spawn_blocking(move || crate::venv::detect(&root)).await {
+        Ok(info) => Json(info).into_response(),
+        Err(e) => err(e),
+    }
 }
 
 /// Loads `path` as the graph's column lineage, over the manifest already read,
@@ -4085,6 +4097,29 @@ mod tests {
 
         let foreign = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", "https://evil.example")], body);
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A venv made after startup is found when the page asks again, with the
+    /// folder its activate script sets, and the route wants the key.
+    #[tokio::test]
+    async fn the_venvs_are_read_again_when_asked() {
+        let root = temp_project("venvs");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let before = body_of(port, get("/api/venv", &[("Host", &host)])).await;
+        assert!(!before.contains("made-since"), "{before}");
+
+        let bin = root.join("made-since").join(if cfg!(windows) { "Scripts" } else { "bin" });
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(root.join("made-since").join("pyvenv.cfg"), "version = 3.12.4\n").unwrap();
+        std::fs::write(bin.join("activate"), "export VIRTUAL_ENV=/h/proj/made-since\n").unwrap();
+        let after = body_of(port, get("/api/venv", &[("Host", &host)])).await;
+        assert!(after.contains(r#""name":"made-since""#), "{after}");
+        assert!(after.contains(r#""python":"3.12.4","activates":"/h/proj/made-since""#), "{after}");
+        assert!(status_of(port, keyless(get("/api/venv", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

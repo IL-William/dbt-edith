@@ -72,6 +72,7 @@ it is built this way, for whoever changes it next.
 | [0066](0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) | Each report's news is a short chip on the Reports button | giving a report news on the Reports button, changing what a chip says, or letting the index count anything new |
 | [0067](0067-an-open-tab-follows-its-file-on-disk.md) | An open tab follows its file on disk, and a save never writes over a change it did not see | changing what a tab does when its file changes on disk, what `PUT /api/file` checks, or when the page looks at the open files |
 | [0068](0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) | A newer dbt-edith is looked for once a day, through git | making dbt-edith reach the network on its own, or changing when it looks for a release or what the update offer types |
+| [0069](0069-the-status-bar-names-the-venv-the-terminal-reports.md) | The status bar names the venv the terminal reports | changing what the status bar says about Python, or handing the terminal's shell anything beyond dbt-edith's own environment |
 
 ## Keeping these honest
 
