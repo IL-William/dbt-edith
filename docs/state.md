@@ -195,7 +195,7 @@ Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
 YAML, and packages under a custom `packages-install-path`. Not yet opened on
 the VM.
 
-Folder bands: the By folder toggle beside tests gives each
+Folder bands: the by folder toggle beside tests gives each
 folder its own run of columns (0029), at the first level where the drawn models
 and sources stop sharing a path, so a canvas that sits in one folder gets its
 sub-folders. The plan here was to refuse when two folders feed each other. The

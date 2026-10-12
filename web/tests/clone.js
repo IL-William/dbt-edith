@@ -159,5 +159,14 @@ check('an ephemeral focus copies only what it reads', cloneNotes(eph, cloneRows(
 check('a sandbox manifest built into the destination', cloneNotes(plan, built, { file: '', sandbox: 'dev_db.dbt_someone' })
   .indexOf('This manifest was built into the destination: pick an environment to copy from.') >= 0, true);
 
+print('\n--- where the button sits ---');
+// The browser half has no DOM (0013), so the place is read from the source.
+var loc = src.slice(src.indexOf('function catalogLocation'), src.indexOf('function relationCell'));
+check('beside the Location heading', /row\.append\(title, b\)/.test(loc), true);
+check('not in the foot under the table', /foot\.append\(b\)/.test(loc), false);
+check('nor inside the heading, which keeps its own text', /title\.append\(/.test(loc), false);
+check('under the same guard as before',
+  /S\.features && S\.features\.snowflake && \['model', 'seed', 'snapshot'\]\.includes\(n\.kind\) && !n\.disabled/.test(loc), true);
+
 print('\n--- house style ---');
 check('no em or en dash in anything written for the user', /[\u2013\u2014]/.test(block), false);

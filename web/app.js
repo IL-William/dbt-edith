@@ -3691,11 +3691,11 @@ const rerender = () => S.graphMode === 'select'
     ? focusColumn(S.colFocus.id, S.colFocus.column)
     : (S.focus ? focusNode(S.focus) : undefined);
 
-/* How the canvas draws what it is sent, in every mode. The By folder toggle
+/* How the canvas draws what it is sent, in every mode. The by folder toggle
    hands the layout this project's package, which is how it tells the
    project's own folders from an installed package's (0029). */
 function canvasOptions() {
-  return { folders: $('#by-folder').getAttribute('aria-pressed') === 'true' ? ((S.meta && S.meta.project) || '') : null };
+  return { folders: foldersOn() ? ((S.meta && S.meta.project) || '') : null };
 }
 
 // ------------------------------------------------------------- selection --
@@ -5377,6 +5377,10 @@ function testsOn() {
   return $('#with-tests').getAttribute('aria-pressed') === 'true';
 }
 
+function foldersOn() {
+  return $('#by-folder').getAttribute('aria-pressed') === 'true';
+}
+
 function paintTestsToggle(on) {
   const b = $('#with-tests');
   b.setAttribute('aria-pressed', String(on));
@@ -6099,11 +6103,7 @@ function relinkTools() {
     el.addEventListener('change', rerender);
   }
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
-  $('#by-folder').addEventListener('click', (e) => {
-    const b = e.currentTarget;
-    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
-    rerender();
-  });
+  $('#by-folder').addEventListener('click', () => { $('#by-folder').setAttribute('aria-pressed', String(!foldersOn())); rerender(); });
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
   $('#export-btn').addEventListener('click', exportLineage);
   $('#image-btn').addEventListener('click', copyLineageImage);
@@ -9197,7 +9197,9 @@ function catalogLocation(body, n) {
   const title = h3('location');
   // Beside the heading rather than in the relation row, which an ephemeral
   // model lacks: copying what it reads is just what developing one needs
-  // (0058). Under the table it sat out of sight below a long description.
+  // (0058). Under the table, it sat a whole table lower. A sibling of the
+  // heading rather than inside it, so the heading still reads "location"
+  // alone.
   if (S.features && S.features.snowflake && ['model', 'seed', 'snapshot'].includes(n.kind) && !n.disabled) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -9206,10 +9208,13 @@ function catalogLocation(body, n) {
     b.title = `write the statements that copy ${n.name} and its direct parents from an environment into your schema, for you to run`;
     b.append(snowflakeIcon(), document.createTextNode('Clone into my schema'));
     b.addEventListener('click', () => openClonePlan(n));
-    title.classList.add('withbtn');
-    title.append(b);
+    const row = document.createElement('div');
+    row.className = 'sechead';
+    row.append(title, b);
+    body.appendChild(row);
+  } else {
+    body.appendChild(title);
   }
-  body.appendChild(title);
 
   const table = document.createElement('table');
   table.className = 'loc';
