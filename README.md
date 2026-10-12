@@ -1536,6 +1536,7 @@ Not there yet:
 - a guided tour;
 - screenshots in this README;
 - a Run button on a node's file, with its parents or children;
+- a dock bar that keeps to one line on a narrow window;
 - persisting open tabs between sessions;
 - a second column lineage source using dbt Fusion's local index, which needs no
   warehouse privileges.

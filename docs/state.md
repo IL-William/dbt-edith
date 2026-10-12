@@ -1246,6 +1246,71 @@ are reached by typing one.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
+12. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+    tools share one row, 30px high, and nothing in it is set to give way.
+    When they no longer fit, the browser shrinks each item to its narrowest,
+    so every label that can break does ("Query history", "Custom selection",
+    "up", "down", "Copy image") and the row spills over the canvas.
+    - **When it happens:** the room left depends on several things at once:
+      - the window's width, and the sidebar's;
+      - the Query history tab, shown with Snowflake's features on;
+      - the eye's count, which counts the tests the canvas is sent. Past
+        five on a model it draws fewer of them (0035), so the label can be
+        longer than the boxes on screen suggest;
+      - the column chip in Columns mode, which carries a column's name and
+        has no width limit.
+
+      1.13.1 (#28) took two pixels off each side of every dock tab, four per
+      tab, to make room for the by folder toggle. That left a laptop-sized
+      window with a little more room than before, and changed nothing about
+      what happens when the room runs out.
+    - **What any answer needs:** no label ever breaks inside its own item.
+      The two toggles, `.eyebtn`, are `nowrap` already. These are not:
+      - the tabs;
+      - the segmented modes;
+      - the `up` and `down` labels, whose input drops under the word;
+      - the plain `.btn sm` tools, Fit, Export and Copy image;
+      - the column chip.
+    - **Still open: what gives way first.**
+      - The tools that matter least, Export and Copy image first, fold behind
+        a `…` menu at the end of the row once they stop fitting. This is the
+        way VS Code's panels go. It needs the row measured in JavaScript, with
+        a `ResizeObserver` like the terminal's.
+      - The labels give way to their icons alone below some width, through a
+        container query on the row. That is CSS only, but every tool needs an
+        icon first, and the locked-down VM's browser has to support container
+        queries (Chrome and Edge 105 or later).
+      - One tab gives way: Query history, the last and the longest, cut with
+        an ellipsis and its full name in its tooltip. That takes
+        `overflow: hidden`, `white-space: nowrap`, `text-overflow: ellipsis`
+        and `min-width: 0` on that tab, since a flex item does not shrink
+        below its content otherwise. It frees nothing without Snowflake's
+        features, which hide the tab. Cutting every tab the same way was
+        rejected in #28: each would lose a little, rather than one.
+      - The row scrolls sideways, with no scrollbar showing. This is the
+        simplest, but a tool past the edge is a tool nobody finds.
+      - The tools take a second row, and the bar grows to 60px. Nothing is
+        hidden, but the pane under it loses that height, all of it with the
+        dock at its 60px minimum, and the dock jumps when a mode change adds
+        a chip.
+
+      The first, with the column chip capped at a width and its full name in
+      its tooltip, is the likeliest.
+    - **How it is checked:** headless Chrome on Jaffle Shop, with Snowflake's
+      features and the tests on, at several window widths and in each mode.
+      Two measures, since each misses what the other catches:
+      - no item of the row is taller than the row, which catches a label
+        breaking;
+      - the row's `scrollWidth` is no more than its `clientWidth`, and every
+        item's right edge is inside the row, which catches the row running
+        past the dock's edge once nothing breaks. `body` hides its overflow,
+        so a tool pushed past the edge would vanish without a scrollbar.
+
+      #28 added up its items' widths against the row's own, which predicts
+      both but proves neither. Columns mode needs a column lineage, which
+      Jaffle Shop comes without (`/api/collineage` answers 404): run collin on
+      it first, or put a long name in the chip from the page, since its text
+      is all its width depends on.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
