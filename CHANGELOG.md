@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.12.0 - 2026-10-12
+
+- Say in the status bar when a newer dbt-edith is out, asked of GitHub through
+  git once a day, with a link to its notes and, for a binary built from a clone
+  on the machine, the pull and the rebuild typed into the terminal; on Windows
+  the running `.exe` is renamed out of the way first (0068).
+- Add `--no-update-check`, which asks GitHub nothing.
+
 ## 1.11.3 - 2026-10-12
 
 - Open the Columns tab from the column count in the Catalog's context.

@@ -27,6 +27,7 @@ mod select;
 mod selectors;
 mod settings;
 mod sidecar;
+mod update;
 mod venv;
 mod yaml;
 
@@ -71,6 +72,10 @@ struct Args {
     /// Do not open a browser window on startup
     #[arg(long)]
     no_open: bool,
+
+    /// Do not look on GitHub, once a day, for a newer dbt-edith
+    #[arg(long)]
+    no_update_check: bool,
 
     /// Resolve this dbt selection against the manifest, print it and exit, without serving
     #[arg(short = 's', long, value_name = "LINE", allow_hyphen_values = true)]
@@ -190,6 +195,11 @@ async fn main() -> anyhow::Result<()> {
     // gets the cookie the API asks for, and nobody else can (0052).
     let key = api::new_key();
     let url = format!("http://{}/?key={key}", listener.local_addr()?);
+    let config_dir = settings::config_dir(|key| std::env::var_os(key), cfg!(windows));
+    // Switched off, it neither asks GitHub nor looks at where it was built,
+    // and shows nothing, so the reason it gives is never read.
+    let how = if args.no_update_check { Err(update::Why::Elsewhere) } else { update_how(&shell) };
+    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how);
     let state = Arc::new(api::AppState {
         port: listener.local_addr()?.port(),
         root: root.clone(),
@@ -211,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
         collin: collin_run::Runner::new(std::time::Duration::from_secs(600)),
         collin_report: Default::default(),
         collin_version: Default::default(),
-        collin_installs: settings::config_dir(|key| std::env::var_os(key), cfg!(windows)).map(|d| collin_run::installs_dir(&d)),
+        collin_installs: config_dir.as_deref().map(collin_run::installs_dir),
         collin_chosen: std::sync::Mutex::new(saved.collin_version.clone()),
         snowflake_features: std::sync::Mutex::new(saved.snowflake_features),
         cll_lock: tokio::sync::Mutex::new(()),
@@ -222,11 +232,13 @@ async fn main() -> anyhow::Result<()> {
         job_sources: std::sync::Mutex::new(saved.job_sources.clone()),
         jobs: Default::default(),
         run_results: Default::default(),
+        update,
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));
     tokio::spawn(api::watch_remote(state.clone()));
     tokio::spawn(api::watch_files(state.clone()));
+    tokio::spawn(api::watch_update(state.clone()));
     if live {
         // Starting runs no query: the script connects on the first click (0016).
         let st = state.clone();
@@ -247,6 +259,12 @@ async fn main() -> anyhow::Result<()> {
     if live {
         eprintln!("  column lineage from Snowflake, connecting on the first column click");
     }
+    // What the last look found, by this start or another: the look this one
+    // makes is in the background, and the page says what it finds.
+    let kept = if state.update.off { None } else { state.update.kept() };
+    if let Some(seen) = kept.filter(|s| update::newer(env!("CARGO_PKG_VERSION"), &s.latest)) {
+        eprintln!("  update    dbt-edith {} is out, and the version in the status bar offers it", seen.latest);
+    }
     eprintln!("  open      {url}");
     eprintln!("            the key in it is this launch's: a tab opened without it can read nothing\n");
 
@@ -262,6 +280,15 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     state.sidecar.stop().await;
     Ok(())
+}
+
+/// The command that updates this binary, from the clone it was built from
+/// when that clone is still on this machine, or why there is none (0068).
+fn update_how(shell: &pty::ShellSpec) -> Result<update::How, update::Why> {
+    let canonical = |p: &Path| p.canonicalize().ok().map(files::plain).ok_or(update::Why::Elsewhere);
+    let source = canonical(Path::new(env!("CARGO_MANIFEST_DIR")))?;
+    let exe = std::env::current_exe().map_err(|_| update::Why::Elsewhere).and_then(|p| canonical(&p))?;
+    update::how(&source, &exe, update::shell_kind(&shell.program), cfg!(windows))
 }
 
 /// Binds to localhost only, walking forward if the port is already in use.

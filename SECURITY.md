@@ -55,8 +55,10 @@ the editor reads and writes their files.
   skips `.env` files entirely, since a search is a wide read nobody aimed at a
   particular file (0020). A `profiles.yml` kept inside the project is one of its
   files: opened from the tree, it shows as it is, like a `.env`.
-- **No outbound network calls of its own**, apart from the git commands you
-  click. Snowflake column lineage is a separate script, `tools/sf_lineage.py`,
+- **No outbound network calls of its own**, apart from git: the commands you
+  click, the fetch of the project's remote behind the freshness badge, and,
+  once a day, the list of dbt-edith's own release tags on GitHub, which sends
+  nothing about the project and `--no-update-check` turns off (0068). Snowflake column lineage is a separate script, `tools/sf_lineage.py`,
   which dbt-edith starts only while Snowflake is the column lineage tool you
   picked, and which opens a connection only when you click a column. It reads your dbt profile itself, so
   no credential passes through dbt-edith.

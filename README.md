@@ -59,6 +59,14 @@ the `dbt-edith` command.
 After a `git pull`, run the same command again. The binary carries the UI inside
 it and does not update on its own.
 
+Once a day it asks GitHub, through git, which releases there are, and when one
+is newer a pill after the version in the status bar says so. Its menu links the
+release's notes and, for a binary installed or built from a clone on that
+machine, types the pull of `main` and the install into the terminal for you to
+run; restart dbt-edith once it finishes. Otherwise it says why it has no
+command. Nothing about your project is sent, a
+failed look stays silent, and `--no-update-check` turns it off (0068).
+
 ### For a Windows machine
 
 Two routes lead to the same `.exe`: build it elsewhere and copy it over, or build
@@ -149,7 +157,12 @@ The two errors this avoids, word for word, so that searching for them lands here
 - `dlltool.exe: CreateProcess`: `dlltool` ran but could not start `as`.
 
 To update, stop dbt-edith first, because Windows will not replace an `.exe` that
-is running, then `git pull` and `cargo install --path .` again.
+is running, then `git pull` and `cargo install --path .` again. The command the
+status bar offers when a release is out needs no stop: it renames the running
+`dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows allows, and puts it
+back if the build fails. Restart dbt-edith afterwards. A binary run from the
+clone's `target\release` gets no such command: cargo builds it through a file
+the rename does not free, so stop it before building.
 
 ### Run it
 
@@ -1361,6 +1374,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              overrides the shell below
          [--no-open]                     do not open a browser at startup
+         [--no-update-check]             do not ask GitHub, once a day, for a newer release
          [-s, --select "line"]           print what the line selects and exit, without serving
          [--exclude "line"]              what --select leaves out
          [--selector name]               print what a named selector selects and exit
@@ -1473,6 +1487,7 @@ src/project.rs    the vars: block of dbt_project.yml, read by hand
 src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs        working tree status and the git commands the UI can run
+src/update.rs     whether a newer release is out, asked through git once a day, and the command that installs it
 src/settings.rs   per-project settings, kept outside the project
 src/venv.rs       which Python environment is in play
 src/files.rs      filesystem access, confined to the project root

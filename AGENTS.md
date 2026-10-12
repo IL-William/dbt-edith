@@ -64,7 +64,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   it too, and sends only the active target's name, database and schema (0058).
   The job folders the user names are read as well, their `.yml` and `.yaml`
   files only, and only what was parsed from them leaves, never a `--vars` value
-  (0063).
+  (0063). Whether this binary was installed by cargo or built in a
+  clone is told from which files exist beside it, never from inside them (0068).
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -175,6 +176,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
+| make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 
 Every decision, with what was rejected each time, is indexed in
@@ -187,7 +189,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`. `build.rs` stamps
+`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`, `update`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

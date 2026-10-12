@@ -186,6 +186,16 @@ kbd {
 #statusbar > * { white-space: nowrap; flex: 0 0 auto; }
 #statusbar > #status-file { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #statusbar > .grow { flex: 1 1 0; }
+/* A newer dbt-edith (0068): outlined in the accent, quieter than an
+   environment's filled pill, since nothing is wrong with the one running. */
+.updpill {
+  font: 600 10.5px/15px var(--ui); color: var(--accent); background: transparent;
+  border: 1px solid var(--accent-dim); border-radius: 8px; padding: 0 7px; cursor: pointer;
+}
+.updpill:hover { border-color: var(--accent); }
+.updpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.envmenu.updmenu { width: 340px; max-width: calc(100vw - 8px); }
+.updmenu .menunote { padding-left: 8px; max-width: none; }
 .brand { font-weight: 600; letter-spacing: .3px; }
 .brand b { color: var(--accent); font-weight: 600; }
 .sep { width: 1px; height: 18px; background: var(--line); }
