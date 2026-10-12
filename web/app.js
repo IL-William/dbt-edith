@@ -3691,11 +3691,11 @@ const rerender = () => S.graphMode === 'select'
     ? focusColumn(S.colFocus.id, S.colFocus.column)
     : (S.focus ? focusNode(S.focus) : undefined);
 
-/* How the canvas draws what it is sent, in every mode. The folders checkbox
+/* How the canvas draws what it is sent, in every mode. The By folder toggle
    hands the layout this project's package, which is how it tells the
    project's own folders from an installed package's (0029). */
 function canvasOptions() {
-  return { folders: $('#by-folder').checked ? ((S.meta && S.meta.project) || '') : null };
+  return { folders: $('#by-folder').getAttribute('aria-pressed') === 'true' ? ((S.meta && S.meta.project) || '') : null };
 }
 
 // ------------------------------------------------------------- selection --
@@ -6095,10 +6095,15 @@ async function followActive() {
 }
 
 function relinkTools() {
-  for (const el of [$('#up'), $('#down'), $('#by-folder')]) {
+  for (const el of [$('#up'), $('#down')]) {
     el.addEventListener('change', rerender);
   }
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
+  $('#by-folder').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+    rerender();
+  });
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
   $('#export-btn').addEventListener('click', exportLineage);
   $('#image-btn').addEventListener('click', copyLineageImage);
@@ -9189,7 +9194,22 @@ function catalogLocation(body, n) {
   const sandbox = (S.meta && S.meta.sandbox) || '';
   const builtAt = n.location ? `${n.location.built.database}.${n.location.built.schema}`.toLowerCase() : '';
   const inSandbox = !!sandbox && builtAt === sandbox;
-  body.appendChild(h3('location'));
+  const title = h3('location');
+  // Beside the heading rather than in the relation row, which an ephemeral
+  // model lacks: copying what it reads is just what developing one needs
+  // (0058). Under the table it sat out of sight below a long description.
+  if (S.features && S.features.snowflake && ['model', 'seed', 'snapshot'].includes(n.kind) && !n.disabled) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn sm sfopen clonebtn';
+    b.dataset.tool = 'snowflake';
+    b.title = `write the statements that copy ${n.name} and its direct parents from an environment into your schema, for you to run`;
+    b.append(snowflakeIcon(), document.createTextNode('Clone into my schema'));
+    b.addEventListener('click', () => openClonePlan(n));
+    title.classList.add('withbtn');
+    title.append(b);
+  }
+  body.appendChild(title);
 
   const table = document.createElement('table');
   table.className = 'loc';
@@ -9288,18 +9308,6 @@ function catalogLocation(body, n) {
       className: 'moved-note',
       textContent: 'Built outside its configured location: the generate_*_name macros redirect it for this target.',
     }));
-  }
-  // In the foot rather than the relation row, which an ephemeral model lacks:
-  // copying what it reads is just what developing one needs (0058).
-  if (S.features && S.features.snowflake && ['model', 'seed', 'snapshot'].includes(n.kind) && !n.disabled) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'btn sm sfopen clonebtn';
-    b.dataset.tool = 'snowflake';
-    b.title = `write the statements that copy ${n.name} and its direct parents from an environment into your schema, for you to run`;
-    b.append(snowflakeIcon(), document.createTextNode('Clone into my schema'));
-    b.addEventListener('click', () => openClonePlan(n));
-    foot.append(b);
   }
   if (foot.children.length) body.appendChild(foot);
 }

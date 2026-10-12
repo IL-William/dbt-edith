@@ -195,7 +195,7 @@ Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
 YAML, and packages under a custom `packages-install-path`. Not yet opened on
 the VM.
 
-Folder bands: the folders checkbox beside tests gives each
+Folder bands: the By folder toggle beside tests gives each
 folder its own run of columns (0029), at the first level where the drawn models
 and sources stop sharing a path, so a canvas that sits in one folder gets its
 sub-folders. The plan here was to refuse when two folders feed each other. The
@@ -807,8 +807,8 @@ settings: 1 124 of 1 124 agree with `--every-model` under dbt-core 1.11.15
 and 1.12.5, for about 3 s more on check.sh's run. No skill is written here;
 the one on that project still runs `dbt ls`.
 
-Clone into my schema (0058): with Snowflake's features on, a button under a
-model's, a seed's or a snapshot's Location table writes the statements that
+Clone into my schema (0058): with Snowflake's features on, a button beside a
+model's, a seed's or a snapshot's Location heading writes the statements that
 copy it and its direct parents from an environment into the developer's
 schema, which the user copies and runs. It ports an agent skill written for
 the 19 233 node project, from the relations the Catalog already resolves: a new

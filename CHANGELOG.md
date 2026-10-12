@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.13.1 - 2026-10-12
+
+- Put Clone into my schema beside the Location heading, in Snowflake's colour,
+  where a long description no longer pushes it out of sight.
+- Make the lineage's folder bands a By folder toggle beside the tests eye,
+  lit in the accent colour while on, in place of the folders checkbox.
+
 ## 1.13.0 - 2026-10-12
 
 - Pick a job source from a list of folders rather than type its path: a
