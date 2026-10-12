@@ -1246,6 +1246,52 @@ are reached by typing one.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
+12. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+    tools share one row, 30px high, and nothing in it is set to give way.
+    When they no longer fit, the browser shrinks each item to its narrowest,
+    so every label of two words breaks onto a second line ("Query history",
+    "Custom selection", "Copy image", the eye's count) and the row spills over
+    the canvas.
+    - **When it happens:** the room left depends on several things at once:
+      - the window's width, and the sidebar's;
+      - the Query history tab, shown with Snowflake's features on;
+      - the eye's count, which grows with the tests drawn;
+      - the column chip in Columns mode, which carries a column's name and
+        has no width limit.
+
+      1.13.1 (#28) took two pixels of padding off each dock tab to make room
+      for the by folder toggle. That left a laptop-sized window with a little
+      more room than before, and changed nothing about what happens when the
+      room runs out.
+    - **What any answer needs:** no label ever breaks inside its own button.
+      `.eyebtn` and `.btn.sfopen` are `nowrap` already. The tabs, the
+      segmented modes, `up`, `down` and the column chip are not.
+    - **Still open: what gives way first.**
+      - The tools that matter least, Export and Copy image first, fold behind
+        a `…` menu at the end of the row once they stop fitting. This is the
+        way VS Code's panels go. It needs the row measured in JavaScript, with
+        a `ResizeObserver` like the terminal's.
+      - The labels give way to their icons alone below some width, through a
+        container query on the row. That is CSS only, but every tool needs an
+        icon first, and the locked-down VM's browser has to support container
+        queries (Chrome and Edge 105 or later).
+      - One tab gives way, cut with an ellipsis and its full name in its
+        tooltip: Query history, the last and the longest. Cutting every tab,
+        which a plain `text-overflow` on all of them does, was rejected in
+        #28.
+      - The row scrolls sideways, with no scrollbar showing. This is the
+        simplest, but a tool past the edge is a tool nobody finds.
+      - The tools take a second row, and the bar grows to 60px. Nothing is
+        hidden, but the canvas loses that height, and the dock jumps when a
+        mode change adds a chip.
+
+      The first, with the column chip capped at a width and its full name in
+      its tooltip, is the likeliest.
+    - **How it is checked:** headless Chrome on Jaffle Shop, with Snowflake's
+      features and the tests on, at several window widths and in each mode. At
+      each width, no item of the row may be taller than the row. #28 measured
+      the row's room this way, by adding up its items' widths against the
+      row's own.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
