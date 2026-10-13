@@ -1095,6 +1095,47 @@ does. Why the VM lost xterm.js's sequences was not seen: every step from
 xterm.js through ConPTY and the MSYS2 runtime to Git's `inputrc` reads right
 on paper.
 
+A node's jobs by how they start, and in the Catalog (1.15.0). The Jobs tab
+listed a node's jobs in the files' order, so a manual DAG could come before
+the one that runs the model every night, and only the schedule's colour told
+them apart. Its cards, the steps not resolved and the coverage's Jobs read now
+come scheduled first, then what something other than a clock starts (CI, a
+merge, an asset only a manual DAG updates, `@once`), then manual, each class in
+the files' order (`jobsStart`, `jobsByStart`), sorted in the page so the
+server's answer stays the one 0055 settles. The schedule became a pill: green
+and filled, **Scheduled** and the schedule; grey, **Manual**; for the class
+between, its words alone, since it is neither. The coverage's *Manual only*
+became *Only in unscheduled jobs*, which is what it always listed. The
+Catalog's Preview has a Jobs section under Location: one chip per step that
+runs the node, `DAG › task` or `job › step n/m`, green or grey as its job's
+pill and in the tab's order, the schedule and the command in its tooltip. A
+click opens the Jobs tab on that node, which a single click on a box puts in
+the Catalog without moving the focus (`S.jobsFor`, held while the Catalog
+shows that node and cleared by the next `focusNode`); the tab scrolls its own
+body to the card and lights the step, as a jump in the editor does. The step is
+found by its job and its task id, or its place in a dbt Cloud job
+(`jobsStepKey`), since the tab's opening may read a changed file again and give
+its index to another step; the index only tells apart two sources of one label. Dashed chips count
+the steps not resolved and the files refused that could run the node, and open
+the tab on them. A node no job runs says so, and without a source the section
+is not drawn. The Catalog asks `/api/jobs/node` without `look`, and only while
+it is seen, its tab forward and Reports rolled up: one drawn behind either is
+filled in by `showDock` or `closeReports`, so no tab nobody looks at reads the
+job files (0063). Each answer is kept per node (`S.catJobs`), so the Catalog
+drawn again for an env, a sidecar or a profile asks nothing, until a look, a
+save of the sources or a manifest that moved forgets them all
+(`forgetCatalogJobs`), never a switch of column lineage or a collin poll;
+what it shows then stays until the next answer. A review before merging found
+the tab opening on the focus rather than the Catalog's node, a request on every
+redraw, a section that ignored a save of the sources or a refused file, and a
+first read under Reports. Driven in headless Chrome on Jaffle Shop with
+invented jobs: the order, a chip lighting its step, the tab on a box clicked
+once, the unresolved and refused chips, a node no job runs, nothing asked while
+the Catalog is hidden or under Reports or drawn again, and one request after a
+look or a save. On a large real project with its orchestration repository,
+before the review: the order, a chip lighting its step, a node no job runs,
+and nothing asked while the Catalog is hidden. Not yet on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1666,7 +1707,12 @@ cross-compile.
   Jobs tab, the sources form or the Reports panel's job coverage opens; the
   user asked for nothing to be checked while nothing moved, so a click in the
   tab or the panel never looks, and a coverage row brings the Jobs tab forward
-  with `showDock('jobs', { look: false })`.
+  with `showDock('jobs', { look: false })`. The Catalog's Jobs section asks
+  without `look` too, and only while the Catalog is seen (`fillCatalogJobs`,
+  from `catalogPreview`, `showDock` and `closeReports`). It keeps each answer
+  per node, so every request that looks calls `forgetCatalogJobs` too, as do a
+  save of the sources and a new manifest: a new path that reads jobs again
+  has to, or the Catalog keeps the old chips.
 - **A step's `dbt ls` is written by the server** (`Invocation::ls`), so the
   page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
   harness slices `web/app.js` from `function jobsScheduleText` to

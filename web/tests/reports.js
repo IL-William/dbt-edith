@@ -118,7 +118,7 @@ check('the same or fewer is no news', [jobsBadge({ never: 3, unscheduled: 1 }, 4
 var more = jobsBadge({ never: 4, unscheduled: 2 }, 4);
 check('more unscheduled since the last look', [more.text, more.short], ['2 more unscheduled', '+2']);
 check('...said in full in the tooltip', more.title,
-      '2 more models, seeds or snapshots than when you last looked are run by no scheduled job: 4 in no job, 2 manual only.');
+      '2 more models, seeds or snapshots than when you last looked are run by no scheduled job: 4 in no job, 2 only in unscheduled jobs.');
 var three = reportsNews(badge, runBadge(run, 0), more);
 check('three reports with news, in the sections\' order', three.map(function (n) { return n.key; }), ['run', 'collin', 'jobs']);
 check('the coverage\'s in the warning colour', three[2].tone, 'warn');

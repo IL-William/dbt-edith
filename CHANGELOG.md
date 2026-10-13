@@ -15,6 +15,18 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.15.0 - 2026-10-13
+
+- List a node's scheduled jobs first and its manual ones last in the Jobs tab,
+  and say which is which on a pill: green **Scheduled** with the schedule, grey
+  **Manual**. The jobs the coverage read are listed the same way, and its
+  *Manual only* section is now *Only in unscheduled jobs*, since a job CI or a
+  merge starts is not manual.
+- List the steps that run a node in the Catalog's Preview, one chip each, `DAG
+  › task` or `job › step`, coloured as their job's pill; a click opens the
+  Jobs tab on that node, at that step. Steps not resolved and files not read
+  that could run it are counted on a chip of their own.
+
 ## 1.14.1 - 2026-10-13
 
 - Move by word with Ctrl+Left and Ctrl+Right and to the start and end of the
