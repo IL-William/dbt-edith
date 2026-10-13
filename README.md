@@ -243,6 +243,7 @@ sub-graphs around whichever model you are looking at.
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
 | `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, or filter the Catalog's columns |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
+| Give me a tour, at the top of that list | a walk through each part of the page, on a model of your project |
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Cmd/Ctrl + Alt + X`, `Alt + W`, or middle-click a tab | close a tab |
@@ -391,6 +392,21 @@ dbt-core, and
 `catalog.json` is picked up automatically, filling in
 the real warehouse types and listing the columns that exist in the warehouse but
 are not documented (shown in italics).
+
+### The tour
+
+Give me a tour, at the top of the shortcut list, walks through each part of the
+page on a model of your project with parents and children, and one a job runs
+once the Jobs tab has a source, picked the same way every time: the editor and the `dbt_project.yml` button, the lineage, a Custom
+selection and how to share it, the Catalog, column lineage, Jobs, Reports, the
+terminal and Search. Each step rings what it is about and says what it is for,
+and a feature that is off says how to turn it on. It runs nothing and changes
+no setting, and when it ends the page is as you left it. The arrow keys walk it
+and Escape ends it.
+
+It is offered once, the first time a page opens on the machine, by a card
+under the `?` button. The machine remembers it in `tour.json`, in dbt-edith's
+config directory, with the version of dbt-edith that served the page.
 
 ### Is the lineage still true?
 
@@ -1472,6 +1488,7 @@ $JSC web/tests/macros.js      # macro calls, and the names a properties file dec
 $JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
+$JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -1495,6 +1512,15 @@ python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
 /tmp/dbt/bin/python scripts/compare_with_dbt.py                 # every eighth Shopify model's lineage
 /tmp/dbt/bin/python scripts/compare_with_dbt.py --every-model   # all of them, as CI does
 DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executable, Fusion included
+```
+
+The guided tour is walked in headless Chrome on the same Jaffle Shop, every
+step, through the DevTools protocol and the standard library alone. It needs
+dbt to parse the copy, and Chrome; it skips itself without either:
+
+```
+/tmp/dbt/bin/python scripts/walk_tour.py                  # every step, and what the tour leaves behind
+/tmp/dbt/bin/python scripts/walk_tour.py --shots /tmp/t   # and a picture of each
 ```
 
 ## Layout
@@ -1522,6 +1548,7 @@ src/profiles.rs   where dbt looks for profiles.yml, the one file outside the pro
 src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs        working tree status and the git commands the UI can run
 src/update.rs     whether a newer release is out, asked through git once a day, and the command that installs it
+src/tour.rs       the guided tour's model, and whether it was offered on this machine
 src/settings.rs   per-project settings, kept outside the project
 src/venv.rs       which Python environment is in play
 src/files.rs      filesystem access, confined to the project root
@@ -1551,12 +1578,12 @@ Not there yet:
 - CTE names in the breadcrumb bar;
 - a dbt section in Reports, with what the project holds counted and dbt's
   warnings, including config paths in `dbt_project.yml` that apply to nothing;
-- a guided tour;
 - screenshots in this README;
 - a Run button on a node's file, with its parents or children;
 - a dock bar that keeps to one line on a narrow window;
 - the incremental strategy and its unique key, on the lineage and in the
   Catalog, with the key's columns marked;
+- a tour of what is new since the version you had, after an update;
 - persisting open tabs between sessions;
 - a second column lineage source using dbt Fusion's local index, which needs no
   warehouse privileges.

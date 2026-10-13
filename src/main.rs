@@ -27,6 +27,7 @@ mod select;
 mod selectors;
 mod settings;
 mod sidecar;
+mod tour;
 mod update;
 mod venv;
 mod yaml;
@@ -233,6 +234,7 @@ async fn main() -> anyhow::Result<()> {
         jobs: Default::default(),
         run_results: Default::default(),
         update,
+        tour: tour::Offer { path: config_dir.as_deref().map(tour::offered_path) },
     });
 
     tokio::spawn(api::watch_artifacts(state.clone()));

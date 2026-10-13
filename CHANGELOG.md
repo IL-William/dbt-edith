@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.16.0 - 2026-10-13
+
+- Give a tour of the page, from Give me a tour at the top of the shortcut
+  list: each step rings one part of it on a model of the project with parents
+  and children, and says what it is for, from the editor and the
+  `dbt_project.yml` button to the lineage, a Custom selection with Export and
+  Copy image, the Catalog, column lineage, Jobs, Reports, the terminal and
+  Search. A feature that is off says how to turn it on. It runs nothing,
+  changes no setting, and puts the page back as it was when it ends (0074).
+- Offer the tour once per machine, the first time a page opens, in a card
+  under the `?` button, and keep in `tour.json` the version of dbt-edith that
+  served the page, for a tour of what is new since.
+
 ## 1.15.1 - 2026-10-13
 
 - Give each of the dock's tabs a glyph beside its name, and fold the tabs to

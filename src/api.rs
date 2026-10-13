@@ -99,6 +99,8 @@ pub struct AppState {
     pub run_results: files::Cached<crate::run_results::Raw>,
     /// Whether a newer dbt-edith is out, looked for once a day (0068).
     pub update: crate::update::Update,
+    /// Whether the guided tour was offered on this machine (0074).
+    pub tour: crate::tour::Offer,
 }
 
 impl AppState {
@@ -253,6 +255,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collin/compare", get(compare_collin_versions))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/update", get(update_status))
+        .route("/api/tour", get(tour_model))
+        .route("/api/tour/offer", post(claim_tour_offer))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
         .route("/api/dir", get(dir))
@@ -2503,6 +2507,49 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
     .into_response()
 }
 
+#[derive(serde::Serialize)]
+struct TourBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<crate::tour::Pick>,
+}
+
+/// The model the guided tour opens, picked from the graph and, with a job
+/// source, from what the jobs run (0074). Nothing at all without a model, and
+/// the page leaves out the steps that need one.
+async fn tour_model(State(st): State<Arc<AppState>>) -> Response {
+    let sources = st.job_sources.lock().map(|s| !s.is_empty()).unwrap_or(false);
+    let picked = if sources {
+        with_jobs(&st, false, |graph, read| crate::tour::pick(graph, &crate::jobs::run_by_a_step(graph, read))).await
+    } else {
+        let graph = st.graph.read().await.clone();
+        Ok(crate::tour::pick(&graph, &[]))
+    };
+    match picked {
+        Ok(model) => Json(TourBody { model }).into_response(),
+        Err(e) => e,
+    }
+}
+
+#[derive(serde::Serialize)]
+struct OfferBody {
+    offer: bool,
+}
+
+/// Whether this page may offer the tour: yes to the first page to ask on
+/// this machine, and no to every other (0074). The asking records it, and
+/// the version this page came from, so a POST.
+async fn claim_tour_offer(State(st): State<Arc<AppState>>) -> Response {
+    let offer = match st.tour.path.clone() {
+        Some(path) => tokio::task::spawn_blocking(move || {
+            crate::tour::Offer { path: Some(path) }.visit(env!("CARGO_PKG_VERSION"))
+        })
+        .await
+        .unwrap_or(false),
+        None => false,
+    };
+    Json(OfferBody { offer }).into_response()
+}
+
 /// A dbt profile is a few kilobytes; anything of this size is not one.
 const MAX_PROFILE_BYTES: u64 = 512 * 1024;
 
@@ -3673,6 +3720,8 @@ mod tests {
             // Looks only when a test asks it to, and from a file the test
             // wrote first, so no test reaches GitHub.
             update: crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere)),
+            // Inside the test's own project, never the developer's config directory.
+            tour: crate::tour::Offer { path: Some(root.join("config").join("tour.json")) },
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -3888,6 +3937,48 @@ mod tests {
             )
         );
         assert!(status_of(port, keyless(get("/api/update", &h))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The tour opens the model the graph picks, and is offered to the first
+    /// page that asks and to no other, the file saying so holding nothing else.
+    #[tokio::test]
+    async fn the_tour_is_offered_once_and_names_its_model() {
+        let root = temp_project("tour");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let empty = response_of(port, get("/api/tour", &h)).await;
+        assert!(empty.starts_with("HTTP/1.1 200"), "{empty}");
+        assert_eq!(past_head(&empty), "{}", "no manifest, no model");
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "nodes": {
+                "seed.demo.raw": { "name": "raw", "resource_type": "seed", "package_name": "demo", "original_file_path": "seeds/raw.csv" },
+                "model.demo.stg": { "name": "stg", "resource_type": "model", "package_name": "demo", "original_file_path": "models/stg.sql" },
+                "model.demo.mart": { "name": "mart", "resource_type": "model", "package_name": "demo", "original_file_path": "models/mart.sql" },
+            },
+            "parent_map": { "model.demo.stg": ["seed.demo.raw"], "model.demo.mart": ["model.demo.stg"], "seed.demo.raw": [] },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0));
+        let picked = response_of(port, get("/api/tour", &h)).await;
+        assert_eq!(
+            past_head(&picked),
+            r#"{"model":{"id":"model.demo.stg","name":"stg","file":"models/stg.sql","parents":1,"children":1}}"#
+        );
+
+        let offer = [("Host", host.as_str()), ("Origin", own.as_str())];
+        let first = response_of(port, raw("POST", "/api/tour/offer", &offer)).await;
+        assert_eq!(past_head(&first), r#"{"offer":true}"#, "{first}");
+        let again = response_of(port, raw("POST", "/api/tour/offer", &offer)).await;
+        assert_eq!(past_head(&again), r#"{"offer":false}"#, "{again}");
+        let kept = crate::tour::load(&root.join("config").join("tour.json")).unwrap();
+        assert!(kept.offered > 0 && kept.version == env!("CARGO_PKG_VERSION"), "{kept:?}");
+        assert!(status_of(port, keyless(raw("POST", "/api/tour/offer", &offer))).await.ends_with("401 Unauthorized"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
