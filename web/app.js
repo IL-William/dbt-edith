@@ -11142,39 +11142,50 @@ function heardVenv(data) {
 }
 
 function paintVenv() {
-  const { text, title, state } = venvStatus(S.venv || {}, S.termVenv);
-  const offer = venvOffer(S.venv || {}, S.termVenv);
+  const { text, title, state, offer, line } = venvStatus(S.venv || {}, S.termVenv);
   const el = $('#status-venv');
   el.textContent = text;
-  el.title = !offer.length ? title : title + '\n' + (offer.length > 1
-    ? 'click to pick one to activate in the terminal'
-    : 'click to type the line that activates it in the terminal');
+  el.title = !offer.length ? title : title + '\n' + (line
+    ? 'click to type the line that activates it in the terminal'
+    : 'click to pick one to activate in the terminal');
   el.dataset.state = state;
   el.classList.toggle('act', offer.length > 0);
+  // A button only while a click does something: green or grey, it is a status.
+  el.tabIndex = offer.length ? 0 : -1;
+  el.setAttribute('aria-disabled', String(!offer.length));
+  if (offer.length && !line) el.setAttribute('aria-haspopup', 'menu');
+  else el.removeAttribute('aria-haspopup');
 }
 
 /* A click on an inactive venv types the line that activates it, and Enter
-   stays the user's (0071, 0072). The bar names one venv, so with several
-   found they are listed, the named one first. */
+   stays the user's (0071, 0072). The project's venvs are read again first,
+   for one made in the terminal since startup. */
 function openVenvMenu(anchor) {
-  if (closePopup(anchor)) return;
-  const offer = venvOffer(S.venv || {}, S.termVenv);
-  if (offer.length === 1) sendToTerminal(offer[0].activation);
-  if (offer.length < 2) return;
+  if (closePopup(anchor) || !venvStatus(S.venv || {}, S.termVenv).offer.length) return;
+  api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {}).then(() => {
+    const { offer, line } = venvStatus(S.venv || {}, S.termVenv);
+    if (line) return sendToTerminal(line);
+    if (offer.length) openPopup(anchor, venvMenu(offer));
+  });
+}
+
+/* The venvs a click offers when it does not type one at once. None is marked:
+   none is active, and the first is only the one the bar names. */
+function venvMenu(offer) {
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
   const menu = el('div', 'envmenu');
   menu.setAttribute('role', 'menu');
   menu.append(el('div', 'menuhead', 'Activate in the terminal'));
-  offer.forEach((e, i) => {
-    const b = el('button', i ? '' : 'on');
+  for (const e of offer) {
+    const b = el('button', '');
     b.type = 'button';
     b.setAttribute('role', 'menuitem');
     b.title = [e.activation, e.dbt && 'dbt: ' + e.dbt].filter(Boolean).join('\n');
     b.append(el('span', 'lbl', e.name), el('span', 'sub', e.dbt ? e.dbt.split(', ')[0] : e.python ? 'py ' + e.python : ''));
     b.addEventListener('click', () => { closePopup(); sendToTerminal(e.activation); });
     menu.append(b);
-  });
-  openPopup(anchor, menu);
+  }
+  return menu;
 }
 
 /* One spelling per folder, to tell whether the venv the terminal names is one
@@ -11195,9 +11206,20 @@ function venvKey(path, win) {
    server's own paths say whether it runs on Windows. */
 function venvMatch(v, reported) {
   const known = [v, ...(v.found || [])].filter((e) => e.path);
-  const win = known.some((e) => /^(?:[a-zA-Z]:[\\/]|\\\\)/.test(e.path));
-  const key = venvKey(reported, win);
-  return known.find((e) => [e.path, e.activates].some((p) => p && venvKey(p, win) === key)) || null;
+  const key = venvKey(reported, venvWin(v));
+  return known.find((e) => venvKeys(v, e).includes(key)) || null;
+}
+
+/* Whether the server runs on Windows, from its own paths. */
+function venvWin(v) {
+  return [v, ...(v.found || [])].some((e) => e.path && /^(?:[a-zA-Z]:[\\/]|\\\\)/.test(e.path));
+}
+
+/* The spellings `e`, one of the venvs `v` lists, is known by: its folder, and
+   the folder its activate script sets. */
+function venvKeys(v, e) {
+  const win = venvWin(v);
+  return [e.path, e.activates].filter(Boolean).map((p) => venvKey(p, win));
 }
 
 /* What the status bar says about Python. Until the terminal's shell has said
@@ -11206,7 +11228,9 @@ function venvMatch(v, reported) {
    VIRTUAL_ENV, '' for none, and undefined while nothing has been heard. A venv
    the server did not read, outside the project or tracked by git, is only
    named: its path never goes to the server. `state` colours it: 'on' for an
-   active venv, 'off' for one found but not active, 'none' for no venv. */
+   active venv, 'off' for one found but not active, 'none' for no venv.
+   `offer` is what a click offers to type, and `line` the one it types at
+   once, '' when it lists them instead. */
 function venvStatus(v, reported) {
   const found = v.found || [];
   const py = (e) => (e.python ? ' · py ' + e.python : '');
@@ -11219,21 +11243,24 @@ function venvStatus(v, reported) {
     const e = venvMatch(v, reported);
     if (!e) {
       const name = reported.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-      return { text: 'venv ' + name, state: 'on',
+      return { text: 'venv ' + name, state: 'on', offer: [], line: '',
         title: lines(reported, 'activated in the terminal; not a venv dbt-edith read, so its versions are not shown', also(null)) };
     }
-    return { text: 'venv ' + e.name + py(e), state: 'on',
+    return { text: 'venv ' + e.name + py(e), state: 'on', offer: [], line: '',
       title: lines(e.path, e.dbt && ('dbt: ' + e.dbt), 'activated in the terminal', also(e)) };
   }
   if (!v.name) {
-    return { text: 'no venv', state: 'none', title: lines(reported === ''
+    return { text: 'no venv', state: 'none', offer: [], line: '', title: lines(reported === ''
       ? 'none activated in the terminal, and none found in the project'
       : 'no VIRTUAL_ENV when dbt-edith started, and none found in the project') };
   }
   const active = reported === undefined && v.source === 'activated';
+  const offer = active ? [] : venvOffer(v);
   return {
     text: (active ? 'venv ' : 'venv (inactive) ') + v.name + py(v),
     state: active ? 'on' : 'off',
+    // Typed at once only when it is the venv the bar names; any other is picked.
+    offer, line: offer.length === 1 && offer[0] === v ? v.activation : '',
     title: lines(v.path, v.dbt && ('dbt: ' + v.dbt),
       active ? 'activated when dbt-edith started'
         : reported === '' ? 'not activated in the terminal; source its activate script there'
@@ -11242,14 +11269,16 @@ function venvStatus(v, reported) {
   };
 }
 
-/* What a click on the venv offers to type: only while the bar says inactive,
-   the venv it names first, then the others found, each with the line the
-   server made for the terminal's shell (0072). One with no script for that
-   shell has no line and is left out, and a venv git tracks is never found
-   (0053). */
-function venvOffer(v, reported) {
-  if (venvStatus(v, reported).state !== 'off') return [];
-  return [v, ...(v.found || []).filter((e) => e.path !== v.path)].filter((e) => e.path && e.activation);
+/* What a click on an inactive venv offers to type: the venv the bar names
+   first, then the others found, each with the line the server made for the
+   terminal's shell (0072). One with no script for that shell has no line and
+   is left out, and a venv git tracks is never found (0053). The venv
+   dbt-edith was started in can also be among those found, under the
+   project's spelling of its folder, and is offered once. */
+function venvOffer(v) {
+  const named = venvKeys(v, v);
+  const others = (v.found || []).filter((e) => !venvKeys(v, e).some((k) => named.includes(k)));
+  return [v, ...others].filter((e) => e.path && e.activation);
 }
 
 /* A venv git tracks came with the repository, so whoever wrote the repository

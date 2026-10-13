@@ -1048,19 +1048,29 @@ double click of its own does; a zoom or a fit during a pan stands. Ten of
 them fail on `main`. Whether that is all that was seen on the VM is not known
 yet.
 
-The venv in the status bar, coloured and clickable (1.14.0, 0072), asked for
-on the VM, where a `deactivate` left the bar's grey text barely changed. The
-bar is now a tinted pill: green with a full dot when the venv is active, amber
-with an empty one when the venv found is not, grey and outlined with none.
-While it is amber, a click types the line that activates the venv it names and
-leaves Enter to the user (0071); with several venvs found, the click lists them,
-the named one first. The line is made by the server with `pty::activation`, the
-function behind the line a terminal gets at startup (0050), and each venv in
-`/api/meta` and `/api/venv` carries it as `activation`; a venv with no script
-for the terminal's shell carries none and is not offered. Checked in headless
-Chrome on Jaffle Shop with two venvs and `/bin/bash` as the shell: amber at
-startup, the menu, the line typed unrun, green after Enter, amber again after
-`deactivate`. Not yet on the VM, where the line is Git Bash's `C:/` spelling.
+The venv in the status bar, coloured and clickable (1.14.0, 0072), asked for on
+the VM, where a `deactivate` left the bar's grey text barely changed. The bar
+is now a tinted pill: green with a full dot when the venv is active, amber with
+an empty one when the venv found is not, grey and outlined with none. While it
+is amber, a click types the line that activates the venv it names and leaves
+Enter to the user (0071). Only that venv's line is typed at once: with another
+offered too, or none for the named one, the click lists them, the named one
+first, and a venv the server read twice, as `VIRTUAL_ENV` and as the project
+spells its folder, is listed once. The project's venvs are read again on each
+click. The line is made by the server with `pty::activation`, the function
+behind the line a terminal gets at startup (0050), and each venv in `/api/meta`
+and `/api/venv` carries it as `activation`. A venv with no script for the
+terminal's shell carries none and is not offered, nor is one whose path holds a
+control character, which would reach the line editor as a key. The pill is a
+button, reached by Tab only while it offers something. Checked in headless
+Chrome on Jaffle Shop with `/bin/bash` as the shell: amber at startup; two
+venvs, the menu, with nothing marked in it; the line typed unrun, green after
+Enter, amber again after `deactivate`; a folder named with a Ctrl+U and a
+carriage return read with no line and not offered; a venv made after startup in
+the menu on the next click; the named venv without a script, the other listed
+and not typed; one venv, typed at once; Enter on the focused pill opens the
+menu, and Escape gives it the focus back. Not yet on the VM, where the line is
+Git Bash's `C:/` spelling.
 
 ## Deferred, in the order they were chosen
 

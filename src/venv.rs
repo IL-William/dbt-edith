@@ -66,7 +66,7 @@ impl VenvInfo {
     /// Each venv with the line that activates it in `shell`: the one the
     /// terminal types for the venv dbt-edith was started in (0050), so a click
     /// types what startup would have.
-    pub fn with_activation(mut self, shell: &crate::pty::ShellSpec) -> VenvInfo {
+    fn with_activation(mut self, shell: &crate::pty::ShellSpec) -> VenvInfo {
         for v in std::iter::once(&mut self.chosen).chain(self.found.iter_mut()) {
             if !v.path.is_empty() {
                 v.activation = crate::pty::activation(shell, Path::new(&v.path)).unwrap_or_default();
@@ -222,9 +222,10 @@ fn is_venv(p: &Path) -> bool {
 
 /// What the status bar reports, from the disk alone: nothing found here is
 /// started, since `pyvenv.cfg` and the package folders already say which
-/// Python and which dbt a venv holds.
-pub fn detect(root: &Path) -> VenvInfo {
-    detect_with(root, activated())
+/// Python and which dbt a venv holds. Each venv comes with the line that
+/// activates it in the terminal's `shell` (0072).
+pub fn detect(root: &Path, shell: &crate::pty::ShellSpec) -> VenvInfo {
+    detect_with(root, activated()).with_activation(shell)
 }
 
 fn detect_with(root: &Path, active: Option<PathBuf>) -> VenvInfo {

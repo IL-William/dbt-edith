@@ -699,7 +699,7 @@ async fn meta(State(st): State<Arc<AppState>>) -> Response {
 /// sends is ever read; `st.venv`, which the Snowflake script goes by, stays.
 async fn venvs(State(st): State<Arc<AppState>>) -> Response {
     let (root, shell) = (st.root.clone(), st.shell.clone());
-    match tokio::task::spawn_blocking(move || crate::venv::detect(&root).with_activation(&shell)).await {
+    match tokio::task::spawn_blocking(move || crate::venv::detect(&root, &shell)).await {
         Ok(info) => Json(info).into_response(),
         Err(e) => err(e),
     }
@@ -3619,6 +3619,15 @@ mod tests {
     }
 
     async fn serve_with(root: &Path, profiles: crate::profiles::Lookup) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
+        serve_in(root, profiles, ShellSpec { program: "/bin/sh".into(), args: Vec::new() }).await
+    }
+
+    /// With `shell` as the terminal's, for what a route makes for that shell.
+    async fn serve_in(
+        root: &Path,
+        profiles: crate::profiles::Lookup,
+        shell: ShellSpec,
+    ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let manifest = root.join("target").join("manifest.json");
@@ -3641,7 +3650,7 @@ mod tests {
             cll_headers: Default::default(),
             git: tokio::sync::Mutex::new(None),
             fresh: tokio::sync::Mutex::new(None),
-            shell: ShellSpec { program: "/bin/sh".into(), args: Vec::new() },
+            shell,
             sidecar: sidecar::Sidecar::new(false, Default::default()),
             collin: collin_run::Runner::new(std::time::Duration::from_secs(10)),
             collin_report: Default::default(),
@@ -4147,6 +4156,27 @@ mod tests {
         assert!(after.contains(r#""python":"3.12.4","activates":"/h/proj/made-since""#), "{after}");
         assert!(status_of(port, keyless(get("/api/venv", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Each venv comes with the line that activates it in the terminal's shell,
+    /// which a click on the status bar types (0072).
+    #[tokio::test]
+    async fn a_venv_comes_with_the_line_that_activates_it() {
+        let root = temp_project("venv-line");
+        let env = root.join("env");
+        let bin = env.join(if cfg!(windows) { "Scripts" } else { "bin" });
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(env.join("pyvenv.cfg"), "version = 3.12.4\n").unwrap();
+        std::fs::write(bin.join("activate"), "").unwrap();
+        let bash = ShellSpec { program: "bash".into(), args: Vec::new() };
+        let line = crate::pty::activation(&bash, &env).unwrap();
+        let (port, _st, server) = serve_in(&root, crate::profiles::Lookup::default(), bash).await;
+        let host = format!("127.0.0.1:{port}");
+        let answer = response_of(port, get("/api/venv", &[("Host", &host)])).await;
+        let want = format!(r#""activation":{}"#, serde_json::to_string(&line).unwrap());
+        assert_eq!(answer.matches(&want).count(), 2, "the venv reported and the same one found: {answer}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

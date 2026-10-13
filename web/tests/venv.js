@@ -105,24 +105,59 @@ var lines = {
     { name: 'fusion-env', path: 'C:\\p\\fusion-env', activation: "source 'C:/p/fusion-env/Scripts/activate'" },
   ],
 };
-check('the one named first, then the others with a line', venvOffer(lines, undefined).map(function (e) { return e.name; }), ['core-env', 'fusion-env']);
-check('after a deactivate too', venvOffer(lines, '').length, 2);
-check('nothing while one is active', venvOffer(lines, '/c/p/fusion-env'), []);
-check('nor while a venv nobody read is', venvOffer(lines, '/c/Users/me/.venvs/scratch'), []);
-check('nothing without a line for the shell', venvOffer(project, undefined), []);
+function names(st) { return st.offer.map(function (e) { return e.name; }); }
+check('the one named first, then the others with a line', names(venvStatus(lines, undefined)), ['core-env', 'fusion-env']);
+check('listed, since there are two', venvStatus(lines, undefined).line, '');
+check('after a deactivate too', venvStatus(lines, '').offer.length, 2);
+check('nothing while one is active', venvStatus(lines, '/c/p/fusion-env').offer, []);
+check('nor while a venv nobody read is', venvStatus(lines, '/c/Users/me/.venvs/scratch').offer, []);
+check('nothing without a line for the shell', venvStatus(project, undefined).offer, []);
+
+var single = {
+  source: 'project', name: 'env', path: '/w/proj/env', activation: "source '/w/proj/env/bin/activate'",
+  found: [{ name: 'env', path: '/w/proj/env', activation: "source '/w/proj/env/bin/activate'" }],
+};
+check('the only one is typed at once', venvStatus(single, '').line, "source '/w/proj/env/bin/activate'");
+
+// The one the bar names has no script for the shell, another has: a click
+// must not type that other one's line as if it were the one named.
+var scriptless = {
+  source: 'project', name: 'core-env', path: '/w/proj/core-env',
+  found: [
+    { name: 'core-env', path: '/w/proj/core-env' },
+    { name: 'fusion-env', path: '/w/proj/fusion-env', activation: "source '/w/proj/fusion-env/bin/activate'" },
+  ],
+};
+check('another venv is never typed at once', venvStatus(scriptless, undefined).line, '');
+check('it is listed, to be picked', names(venvStatus(scriptless, undefined)), ['fusion-env']);
+
 var mine = {
   source: 'activated', name: 'mine', path: '/home/me/.venvs/mine', activation: "source '/home/me/.venvs/mine/bin/activate'",
   found: [{ name: 'env', path: '/home/me/proj/env', activation: "source '/home/me/proj/env/bin/activate'" }],
 };
-check('nothing while the one it started in is still active', venvOffer(mine, undefined), []);
-check('then that one first once deactivated', venvOffer(mine, '').map(function (e) { return e.activation; }),
+check('nothing while the one it started in is still active', venvStatus(mine, undefined).offer, []);
+check('then that one first once deactivated', venvStatus(mine, '').offer.map(function (e) { return e.activation; }),
   ["source '/home/me/.venvs/mine/bin/activate'", "source '/home/me/proj/env/bin/activate'"]);
+
+// Started in the project's own venv through a mapped drive: the server read it
+// twice, once as VIRTUAL_ENV spells it and once as the project's folder.
+var twice = {
+  source: 'activated', name: 'env', path: 'H:\\proj\\env', activates: 'H:\\proj\\env', activation: "source 'H:/proj/env/Scripts/activate'",
+  found: [{ name: 'env', path: '\\\\server\\home\\proj\\env', activates: 'H:\\proj\\env', activation: "source '//server/home/proj/env/Scripts/activate'" }],
+};
+check('the same venv is offered once', venvStatus(twice, '').offer.length, 1);
+check('and typed at once, as the bar names it', venvStatus(twice, '').line, "source 'H:/proj/env/Scripts/activate'");
+var cased = {
+  source: 'activated', name: 'env', path: 'c:\\p\\env', activation: "source 'c:/p/env/Scripts/activate'",
+  found: [{ name: 'env', path: 'C:\\P\\env', activation: "source 'C:/P/env/Scripts/activate'" }],
+};
+check('in another case on Windows too', venvStatus(cased, '').offer.length, 1);
 
 print('\n--- no venv anywhere ---');
 var none = { committed: ['shipped'] };
 check('none at startup', venvStatus(none, undefined).text, 'no venv');
 check('left uncoloured', venvStatus(none, undefined).state, 'none');
-check('and offers nothing to type', venvOffer(none, ''), []);
+check('and offers nothing to type', venvStatus(none, '').offer, []);
 check('none in the terminal either', venvStatus(none, '').title.split('\n'), [
   'none activated in the terminal, and none found in the project',
   'committed to the repository, so never run by dbt-edith: shipped',
