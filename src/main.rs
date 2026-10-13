@@ -186,8 +186,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let seen = [graph.meta.manifest_mtime, graph.meta.catalog_mtime, graph.meta.cll_mtime];
-    let venv = venv::detect(&root);
     let shell = pty::ShellSpec::detect(args.shell);
+    let venv = venv::detect(&root).with_activation(&shell);
     // Bound before the state exists: the guard in api.rs compares Host and
     // Origin against the port actually taken, which may not be the one asked for.
     let listener = bind(args.port).await?;

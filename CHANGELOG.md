@@ -15,6 +15,15 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.14.0 - 2026-10-13
+
+- Colour the venv in the status bar: green with a full dot once one is
+  active, amber with an empty one when the venv found is not activated, so a
+  `deactivate` in the terminal shows at a glance (0069).
+- Type the line that activates the venv in the terminal on a click on the
+  status bar while it says inactive, and leave Enter to you; with several
+  venvs in the project, the click lists them (0072).
+
 ## 1.13.2 - 2026-10-12
 
 - Pan the lineage from a box without opening it: the click the browser fires

@@ -75,6 +75,7 @@ it is built this way, for whoever changes it next.
 | [0069](0069-the-status-bar-names-the-venv-the-terminal-reports.md) | The status bar names the venv the terminal reports | changing what the status bar says about Python, or handing the terminal's shell anything beyond dbt-edith's own environment |
 | [0070](0070-a-source-is-picked-from-folders-the-server-lists.md) | A source is picked from folders the server lists | listing a folder outside the project, changing what the sources form's picker shows, or listing a report section with nothing to show |
 | [0071](0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md) | A click types a dbt command and leaves Enter to you | passing `run` to `sendToTerminal`, or making any button press Enter in the terminal |
+| [0072](0072-a-click-on-an-inactive-venv-types-its-activate-line.md) | A click on an inactive venv types its activate line | making the status bar type anything in the terminal, or changing where a venv's activate line is made |
 
 ## Keeping these honest
 

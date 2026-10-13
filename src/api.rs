@@ -698,8 +698,8 @@ async fn meta(State(st): State<Arc<AppState>>) -> Response {
 /// that was made since (0069). Nothing is asked of the page, so no path it
 /// sends is ever read; `st.venv`, which the Snowflake script goes by, stays.
 async fn venvs(State(st): State<Arc<AppState>>) -> Response {
-    let root = st.root.clone();
-    match tokio::task::spawn_blocking(move || crate::venv::detect(&root)).await {
+    let (root, shell) = (st.root.clone(), st.shell.clone());
+    match tokio::task::spawn_blocking(move || crate::venv::detect(&root).with_activation(&shell)).await {
         Ok(info) => Json(info).into_response(),
         Err(e) => err(e),
     }

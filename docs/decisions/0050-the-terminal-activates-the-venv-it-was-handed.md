@@ -37,6 +37,10 @@ on macOS.
 bash is also handed a `PROMPT_COMMAND` that reports its venv to the status bar
 before each prompt, which types nothing.*
 
+*Amended by [0072](0072-a-click-on-an-inactive-venv-types-its-activate-line.md):
+a click on an inactive venv in the status bar types the same line for a venv
+found in the project, and leaves Enter to the user.*
+
 ## Rejected
 
 - **Fixing `~/.bashrc` on the machine.** It fixes one machine, and the next

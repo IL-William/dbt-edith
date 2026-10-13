@@ -154,7 +154,7 @@ fn shell_name(shell: &ShellSpec) -> String {
 /// in is activated, so the terminal still gets the environment it was handed
 /// rather than one dbt-edith picked (0050). A shell the venv has no script for
 /// gets nothing typed.
-fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
+pub fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
     let (script, line): (&str, fn(&str) -> String) = match shell_name(shell).as_str() {
         "bash" | "zsh" => ("activate", |p| format!("source '{}'", p.replace('\'', r"'\''"))),
         "fish" => ("activate.fish", |p| format!("source '{}'", p.replace('\\', r"\\").replace('\'', r"\'"))),

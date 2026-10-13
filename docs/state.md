@@ -1048,6 +1048,20 @@ double click of its own does; a zoom or a fit during a pan stands. Ten of
 them fail on `main`. Whether that is all that was seen on the VM is not known
 yet.
 
+The venv in the status bar, coloured and clickable (1.14.0, 0072), asked for
+on the VM, where a `deactivate` left the bar's grey text barely changed. The
+bar is now a tinted pill: green with a full dot when the venv is active, amber
+with an empty one when the venv found is not, grey and outlined with none.
+While it is amber, a click types the line that activates the venv it names and
+leaves Enter to the user (0071); with several venvs found, the click lists them,
+the named one first. The line is made by the server with `pty::activation`, the
+function behind the line a terminal gets at startup (0050), and each venv in
+`/api/meta` and `/api/venv` carries it as `activation`; a venv with no script
+for the terminal's shell carries none and is not offered. Checked in headless
+Chrome on Jaffle Shop with two venvs and `/bin/bash` as the shell: amber at
+startup, the menu, the line typed unrun, green after Enter, amber again after
+`deactivate`. Not yet on the VM, where the line is Git Bash's `C:/` spelling.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the

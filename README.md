@@ -1300,6 +1300,12 @@ fish and PowerShell do not say which venv they hold, and there the bar stays as
 dbt-edith started
 ([0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md)).
 
+The bar is green when the venv is active and amber when it is not. Click it
+while it is amber and the line that activates that venv is typed in the
+terminal, `source .../activate` for bash, waiting for Enter; with several venvs
+in the project, the click lists them to pick one
+([0072](docs/decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md)).
+
 Those versions are read from the venv's files, `pyvenv.cfg` and the names of
 its installed packages: opening a project runs nothing it holds. A venv that git
 tracks came with the repository, and its `python` was written by whoever wrote
