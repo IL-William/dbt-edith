@@ -39,7 +39,7 @@ const S = {
   selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
   colSort: 'az',              // catalog: az | tests | key
-  colReveal: false,           // scroll to colHighlight's row on the next Columns draw
+  colReveal: '',              // the node whose Columns draw scrolls to colHighlight's row
   colFilter: '',              // catalog: what the Columns filter holds, kept from one node to the next
   dock: 'lineage',            // the dock tab on screen
   lastPane: '',               // the pane last clicked or focused, for a Cmd+F with nothing focused
@@ -5960,7 +5960,7 @@ async function openColumn(n, column) {
     if (res.added) {
       applyInfo(await api.get('/api/meta'));
       if (S.node && S.node.id === n.id) {
-        highlightColumn(column);
+        highlightColumn(column, n.id);
         renderCatalog(await nodeDetail({ id: n.id }));
       }
     }
@@ -8426,7 +8426,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
   pushJump();
   if (dock === 'catalog') {
     S.catTab = 'columns';
-    highlightColumn(column || null);
+    highlightColumn(column || null, id);
     showDock('catalog');
   }
   await focusNode(id, { open: true });
@@ -9957,10 +9957,13 @@ function keyColumns(key, columns) {
   return (key || []).map((entry) => ({ entry, column: by.get(columnKey(entry)) || null }));
 }
 
-/* Marks a column for the Columns table to scroll to, once, on its next draw. */
-function highlightColumn(column) {
+/* Marks a column for the Columns table of node `id` to scroll to, once, the
+   next time that node's table is drawn with the Catalog in front. Tied to the
+   node, so a table drawn meanwhile, the one a report's link opens over or one
+   with a column of the same name, neither takes the scroll nor loses its own. */
+function highlightColumn(column, id) {
   S.colHighlight = column;
-  S.colReveal = !!column;
+  S.colReveal = column ? id : '';
 }
 
 /* Strategy, as the box reads it: `append merge` with `merge` struck when the
@@ -9997,7 +10000,7 @@ function keyStat(n) {
     if (column) {
       line.className = 'keylink';
       line.title = `show ${column.name} in the Columns tab`;
-      linkLike(line, () => { highlightColumn(column.name); showCatalogTab(n, 'columns'); });
+      linkLike(line, () => { highlightColumn(column.name, n.id); showCatalogTab(n, 'columns'); });
     } else {
       line.title = /^["`[]?\w+["`\]]?$/.test(entry.trim())
         ? 'no column of this name, neither declared in the YAML nor in catalog.json'
@@ -10379,6 +10382,7 @@ function focusColumnFilter() {
 
 function catalogColumns(body, n) {
   if (!n.columns.length) {
+    if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
     const p = document.createElement('p');
     p.className = 'muted';
     p.textContent = 'No column is declared for this node. Document them in the YAML, or run dbt docs generate so catalog.json lists the warehouse columns.';
@@ -10616,12 +10620,16 @@ function catalogColumns(body, n) {
     }
   });
   apply();
-  // A column just asked for is brought into view, once: a filter hiding it
-  // is cleared, and typing in the filter afterwards is left alone. It waits
-  // for the Catalog to be in front, and for the node that has the row: a
-  // report's link opens the Catalog before its node arrives.
-  if (S.colReveal && S.dock === 'catalog' && focused) {
-    S.colReveal = false;
+  // A column just asked for is brought into view, once, on the node it was
+  // asked on: a filter hiding it is cleared, and typing in the filter
+  // afterwards is left alone. It waits for the Catalog to be in front, and is
+  // spent on that node even when the table has no such row.
+  if (S.colReveal === n.id && S.dock === 'catalog') {
+    S.colReveal = '';
+  } else {
+    focused = null;
+  }
+  if (focused) {
     if (focused.tr.classList.contains('hidden')) {
       filter.value = S.colFilter = '';
       apply();
@@ -11028,7 +11036,7 @@ function showDock(which, { look = true } = {}) {
   if (which === 'jobs') loading = loadJobs({ look });
   if (which === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
   // A column box clicked with the lineage in front asked for its row.
-  if (which === 'catalog' && S.colReveal && S.node && S.catTab === 'columns') renderCatalog(S.node);
+  if (which === 'catalog' && S.node && S.colReveal === S.node.id && S.catTab === 'columns') renderCatalog(S.node);
   // Read when the tab is first opened, never before: that click is what may
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();
@@ -12134,7 +12142,7 @@ async function boot() {
   Lineage.init($('#graph'), {
     onSelect: (n) => {
       const { node: nodeId, column } = splitColId(n.id);
-      highlightColumn(column);
+      highlightColumn(column, nodeId);
       if (column) S.catTab = 'columns';
       nodeDetail({ id: nodeId }).then(renderCatalog).catch(() => {});
       // A column's box opens its model's file too: following a column from
