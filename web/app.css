@@ -255,6 +255,10 @@ kbd {
 }
 .reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { max-width: 80px; opacity: 1; margin-left: 6px; }
 .reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
+/* No report has anything yet: dimmed rather than hidden, so it can be found (0075). */
+/* .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
+.reportsbtn.dim { opacity: .7; }
+.reportsbtn.dim:hover, .reportsbtn.dim:focus-visible { opacity: 1; }
 .reportsbtn .rnews { display: inline-flex; gap: 4px; margin-left: 6px; }
 .reportsbtn .rnews:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { .reportsbtn .rlabel { transition: none; } }

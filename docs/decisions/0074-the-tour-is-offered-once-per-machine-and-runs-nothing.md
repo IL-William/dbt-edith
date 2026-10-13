@@ -1,6 +1,6 @@
 # 0074. The tour is offered once per machine, and runs nothing
 
-Date: 2026-10-13 · Status: accepted
+Date: 2026-10-13 · Status: accepted, amended by 0075
 
 **Trigger:** read before adding a step to the guided tour, making it open,
 click or type anything, or changing when it is offered or what `tour.json`
@@ -34,6 +34,9 @@ anything the user did not ask for.
   in the Jobs tab, the snowflake button for Snowflake's column lineage, what
   makes the Reports button appear. A step that needs a model is left out when
   the manifest has none.
+  *Amended by [0075](0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md):
+  the Reports button is always in view, dimmed until a report has something,
+  and the tour asks to look at no job file.*
 - **It is offered once per machine, not per project**, by the first page to
   ask, and the asking records it: the tool is the same in every project, and an
   offer per project would come back with each. Not now leaves it in the

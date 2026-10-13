@@ -1,6 +1,6 @@
 # 0064. Project-wide reports open in a panel over the editor and the dock
 
-Date: 2026-10-11 · Status: accepted · Amends 0059 and 0063
+Date: 2026-10-11 · Status: accepted, amended by 0070 and 0075 · Amends 0059 and 0063
 
 **Trigger:** read before adding a report, or changing what opens or closes the
 Reports panel, what its button counts, or when a report's file is read.
@@ -29,6 +29,9 @@ next.
   that reads file times and settings alone. A section reads its file when it
   is shown, and the job files are looked at then too, a third moment beside
   the Jobs tab and its form (0063).
+  *Amended by [0075](0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md):
+  but when the guided tour puts back a panel it rolled up, which comes back
+  as it was left, unread.*
 - **collin's report is a section**, and its badge is news on the button, one
   chip per section, under 0059's rule: only for a run finished since the
   section was last shown. The comparison of versions stays a tab: it is

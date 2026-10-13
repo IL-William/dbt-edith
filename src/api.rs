@@ -2511,21 +2511,27 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
 struct TourBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<crate::tour::Pick>,
+    /// How many job sources are named, from the settings: the Jobs step's
+    /// wording, without a request that would read the jobs a second time.
+    #[serde(skip_serializing_if = "is_zero")]
+    sources: usize,
 }
 
 /// The model the guided tour opens, picked from the graph and, with a job
-/// source, from what the jobs run (0074). Nothing at all without a model, and
-/// the page leaves out the steps that need one.
+/// source, from what the jobs run as last read, which reads them once if
+/// nothing has yet, as opening the Jobs tab does, and never looks at them
+/// again (0074). Nothing at all without a model, and the page leaves out the
+/// steps that need one.
 async fn tour_model(State(st): State<Arc<AppState>>) -> Response {
-    let sources = st.job_sources.lock().map(|s| !s.is_empty()).unwrap_or(false);
-    let picked = if sources {
+    let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
+    let picked = if sources > 0 {
         with_jobs(&st, false, |graph, read| crate::tour::pick(graph, &crate::jobs::run_by_a_step(graph, read))).await
     } else {
         let graph = st.graph.read().await.clone();
         Ok(crate::tour::pick(&graph, &[]))
     };
     match picked {
-        Ok(model) => Json(TourBody { model }).into_response(),
+        Ok(model) => Json(TourBody { model, sources }).into_response(),
         Err(e) => e,
     }
 }

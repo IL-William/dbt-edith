@@ -277,7 +277,8 @@ STEPS = [
      "document.querySelector('.cat-tabs .ctab.active')?.textContent.startsWith('Columns')"),
     ("Jobs", "#dock-jobs",
      "!document.querySelector('#dock-jobs').classList.contains('hidden') && !!document.querySelector('#jobs-body .jobs-none')"),
-    ("Reports", "#reports-btn", "!document.querySelector('#reports-btn').classList.contains('hidden')"),
+    ("Reports", "#reports-btn",
+     "(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"),
     ("Terminal", "#dock [data-dock=terminal]", None),
     ("Search", "#palette-btn", None),
     ("Every shortcut, and this tour", "#keys-btn", None),
@@ -291,9 +292,14 @@ STATE = """(() => ({
   select: document.querySelector('#select-input').value,
   catalog: document.querySelector('.cat-title')?.textContent || document.querySelector('#catalog').textContent,
   jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
-  reports: !document.querySelector('#reports-btn').classList.contains('hidden'),
+  reports: document.querySelector('#reports-btn').className,
   panel: document.querySelector('#reports').classList.contains('open'),
 }))()"""
+
+# The requests that look at the job files, so far: the tour makes none, and
+# puts back a Reports panel without reading its section again.
+LOOKS = """(() => performance.getEntriesByType('resource')
+  .filter((e) => /look=true|\\/api\\/jobs\\/coverage/.test(e.name)).length)()"""
 
 # A key the app answers from anywhere, sent where the tour has the focus:
 # whether the tour kept the browser from acting on it too.
@@ -379,11 +385,15 @@ class Walk:
         })()""")
         self.check("  under the ? button", under)
         self.check("  and noted at once", (self.config / "tour.json").exists())
+        self.check("the Reports button in view before any report, dimmed (0075)",
+                   page.js("(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"))
         if self.shots:
             page.shot(self.shots / "00-the-offer.png")
         before = page.js(STATE)
 
         print("--- the walk ---")
+        page.js("performance.setResourceTimingBufferSize(100000)")
+        looks = page.js(LOOKS)
         page.js("[...document.querySelectorAll('.tour-offer button')].find((b) => b.textContent === 'Give me a tour').click()")
         total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
         self.check("every step on a project with a model", total == len(STEPS), f"got {total} of {len(STEPS)}")
@@ -418,7 +428,9 @@ class Walk:
         self.check("  which keeps when it was offered and the version, and nothing else",
                    sorted(kept) == ["offered", "version"] and re.fullmatch(r"\d+\.\d+\.\d+", kept["version"]), f"{kept}")
         self.check("no menu left open", not page.js("!!document.querySelector('.crumbmenu')"))
-        self.check("the hidden Reports button hidden again", after["reports"] == before["reports"], f"{before} then {after}")
+        self.check("the Reports button as it was", after["reports"] == before["reports"], f"{before} then {after}")
+        self.check("no job file looked at through every step, the Jobs step included",
+                   page.js(LOOKS) == looks, f"{looks} requests looking at them before, {page.js(LOOKS)} after")
         self.check("with no tab open before, the model stays open as a place to start",
                    after["active"].startswith(f"{MODEL}.sql") and after["dock"] == before["dock"], f"{after}")
 
@@ -450,6 +462,9 @@ class Walk:
         page.js("document.querySelector('#reports-btn').click()")
         page.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
         in_use = page.js(STATE)
+        page.js("performance.setResourceTimingBufferSize(100000)")
+        page.until("document.querySelector('#reports-view')?.textContent.includes('Job coverage')", "the coverage drawn")
+        looks = page.js(LOOKS)
         page.key("?", "Slash", 191, text="?")
         page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
         page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
@@ -476,6 +491,9 @@ class Walk:
         back = self.settle(in_use)
         self.check("Escape ends it, and the tabs, the canvas, the dock, the Jobs tab's node and the panel are as they were",
                    back == in_use, f"before {in_use}\n        after  {back}")
+        time.sleep(1)
+        self.check("  with no job file looked at, the panel's section put back unread",
+                   page.js(LOOKS) == looks, f"{looks} requests looking at them before, {page.js(LOOKS)} after")
 
         print("--- ended while a step is still setting the page up ---")
         page.js("document.querySelector('#reports-btn').click()")

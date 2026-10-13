@@ -1255,7 +1255,9 @@ collin has written one, and the coverage of your jobs once the Jobs tab has a
 source. The sidebar stays, and anything that shows a file
 or a dock tab rolls the panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
-closes it. The button stays hidden while no section has anything to show.
+closes it. While no section has anything to show, the button is dimmed and its
+tooltip says what will fill it; it opens on the job coverage, where a source is
+added (0075).
 
 What is new since you last looked rides on the button, a chip per report in
 its colour: the last run's errors and failed tests in red, collin's models to

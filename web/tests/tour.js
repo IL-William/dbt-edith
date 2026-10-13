@@ -43,8 +43,9 @@ check('Export, Copy image and Copy are rung together, after the selection they s
 print('\n--- a feature that is off says how to turn it on ---');
 check('no job source: Add a source', /Add a source/.test(step(all, 'jobs').text), true);
 check('  a source: the model\'s jobs', /run `stg_orders`/.test(step(tourSteps(ctx({ jobs: 2 })), 'jobs').text), true);
-check('no report: the button stays hidden until one, and the key opens them meanwhile',
-  /stays hidden until then, and \{⌥⌘R\}/.test(step(all, 'reports').text), true);
+check('no report: the button is dimmed until one, and opens on the coverage meanwhile',
+  [/dimmed until one has something/.test(step(all, 'reports').text), /opens on the coverage, where a source is added, and \{⌥⌘R\}/.test(step(all, 'reports').text)],
+  [true, true]);
 check('  reports: named', step(tourSteps(ctx({ reports: ['Last run', 'Job coverage'] })), 'reports').text
   .indexOf('Reports on the whole project: Last run, Job coverage.') === 0, true);
 check('no column lineage, Snowflake off: where its switch is', /snowflake button in the top bar/.test(step(all, 'columns').text), true);

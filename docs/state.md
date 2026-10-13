@@ -1008,8 +1008,7 @@ counts only on the row the first one hit, since a folder opened by the first
 can put a file under the pointer. A pick is written from the project within
 two folders above it, in full otherwise. The job coverage is now listed in
 Reports before any source is named, as where one is added: hollow in the rail,
-it neither shows the button nor is opened on while another section has
-something. Driven in headless Chrome on a large real project with its
+it is not opened on while another section has something. Driven in headless Chrome on a large real project with its
 orchestration repository beside it: Reports to Add a source, the picker on the
 project, up one folder, three folders down, Escape closing the picker and not
 the form, a path typed into the picker, and Use writing
@@ -1143,32 +1142,44 @@ is for: the model's file, the `dbt_project.yml` button with its menu open, the
 lineage, a Custom selection of `+model+`, Export, Copy image and Copy, the
 Catalog, the column lineage menu, the Jobs tab, the Reports button, the
 Terminal tab, Search and the `?` button. The model is the server's pick
-(`src/tour.rs`): one of the project's own with parents and children, then one
-a job runs when the Jobs tab has a source (`jobs::run_by_a_step`), the most on
-its thinner side up to three, then the neighbourhood closest to eight, then
-by name; `stg_orders` on Jaffle Shop, with the invented jobs or without. A step about a model is left out
-without one, and a feature that is off says how to turn it on: no job source,
-no column lineage tool, Snowflake's features off, a Reports button still
-hidden, which the step shows while it lasts. It runs nothing and writes no
-setting: it points at the Terminal tab without opening it, and at Export
-without pressing it. Ended at any step, it puts back the tabs in their order,
-a preview its own took the place of included, the tab in front, the canvas
-and its mode, the node Jobs, Compiled and Run speak of, the selection box and
-its history, the Catalog, the dock and a Reports panel that was down; a page
-with no tab open keeps the model as a place to start. The steps set the page
-up one at a time, and one passed by a held key or an end stops at its next
-look, so none finishes over the next or after the end; the overlay stays,
-saying so, until the page is back, so nothing done meanwhile is undone by it
-and no second tour starts on a page half restored. The page under it is
-inert, the `dbt_project.yml` menu it opens too, the app's keys wait, the
-browser's answers to them as well, and the arrows, Enter and Escape walk it. `tour.json`
-beside `update.json` keeps when it was offered and the newest version that
-served a page, which the tour of what is new (below) will start from.
-`web/tests/tour.js` checks the steps and their wording per feature, and
-`scripts/walk_tour.py`, in `check.sh`, walks every step in headless Chrome on
-Jaffle Shop: the ring around each target, the page under it, Back, the
-offer once and not after a reload, the terminal never started, no file in the
-config directory but `tour.json`, and a page in use put back after Escape.
+(`src/tour.rs`): one of the project's own with parents and children, then one a
+job runs when the Jobs tab has a source (`jobs::run_by_a_step`), the most on
+its thinner side up to three, then the neighbourhood closest to eight, then by
+name; `stg_orders` on Jaffle Shop, with the invented jobs or without. A step
+about a model is left out without one, and a feature that is off says how to
+turn it on: no job source, no column lineage tool, Snowflake's features off, a
+Reports button dimmed until a report has something. It runs nothing and writes
+no setting, and never asks to look at the job files: its Jobs step shows the
+jobs as last read, read once by the pick if nothing had, and a Reports panel it
+rolled up comes back as it was left, unread. It points at the Terminal tab
+without opening it, and at Export without pressing it. Ended at any step, it
+puts back the tabs in their order, a preview its own took the place of
+included, the tab in front, the canvas and its mode, the node Jobs, Compiled
+and Run speak of, the selection box and its history, the Catalog, the dock and
+a Reports panel that was down; a page with no tab open keeps the model as a
+place to start. The steps set the page up one at a time, and one passed by a
+held key or an end stops at its next look, so none finishes over the next or
+after the end; the overlay stays, saying so, until the page is back, so nothing
+done meanwhile is undone by it and no second tour starts on a page half
+restored. The page under it is inert, the `dbt_project.yml` menu it opens too,
+the app's keys wait, the browser's answers to them as well, and the arrows,
+Enter and Escape walk it. `tour.json` beside `update.json` keeps when it was
+offered and the newest version that served a page, which the tour of what is
+new (below) will start from. `web/tests/tour.js` checks the steps and their
+wording per feature, and `scripts/walk_tour.py`, in `check.sh`, walks every
+step in headless Chrome on Jaffle Shop: the ring around each target, the page
+under it, Back, the offer once and not after a reload, the terminal never
+started, no file in the config directory but `tour.json`, and a page in use put
+back after Escape.
+
+The Reports button is in view from the first paint, dimmed while no section
+has anything, which a first start after a `dbt parse` never has, with no chip,
+its tooltip saying what fills it: the last run, collin's report, the job
+coverage once a source is named (0075). It keeps 3:1 against the bar at 70%
+opacity, which half did not. A click opens the empty coverage, where a source
+is added, as `Mod+Alt+R` did. It was hidden until then (0064, 0070), so nobody
+new to the tool saw that Reports exist. The tour's Reports step points at it
+as it is, and waits for the reports' index, so it says what the button shows.
 
 ## Deferred, in the order they were chosen
 
@@ -2064,7 +2075,10 @@ cross-compile.
   Jobs tab, the sources form or the Reports panel's job coverage opens; the
   user asked for nothing to be checked while nothing moved, so a click in the
   tab or the panel never looks, and a coverage row brings the Jobs tab forward
-  with `showDock('jobs', { look: false })`. The Catalog's Jobs section asks
+  with `showDock('jobs', { look: false })`. The guided tour never looks
+  either: its Jobs step and the dock it puts back pass `look: false`, and a
+  panel it rolled up comes back with `openReports(key, { reread: false })`,
+  unread (0075). The Catalog's Jobs section asks
   without `look` too, and only while the Catalog is seen (`fillCatalogJobs`,
   from `catalogPreview`, `showDock` and `closeReports`). It keeps each answer
   per node, so every request that looks calls `forgetCatalogJobs` too, as do a

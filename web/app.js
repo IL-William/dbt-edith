@@ -7903,7 +7903,7 @@ async function openJobSources({ add = false } = {}) {
    while it has something to show: collin's report once a run wrote one, the
    coverage of the jobs once a source is named. Before that the coverage is
    listed all the same, `empty`, as the place a source is added from (0070),
-   but it neither shows the button nor is opened on for itself. */
+   but it is not opened on for itself, and the button stays dimmed (0075). */
 function reportsSections(index) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
@@ -8062,11 +8062,15 @@ function reportsDefaultSection(sections, news, last) {
   return sections.length ? sections[0].key : '';
 }
 
-/* The button's tooltip: what the reports hold, then what is new in them. */
+/* The button's tooltip: what the reports hold, then what is new in them, or
+   what will fill them while nothing does, since the button is dimmed then
+   rather than hidden (0075). */
 function reportsButtonTitle(sections, news, key) {
   const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
+  const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, collin\'s report another, '
+    + 'and the job coverage once the Jobs tab has a source, which is added here.';
   return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
-    .concat((news || []).map((n) => n.title)).join('\n');
+    .concat(names ? (news || []).map((n) => n.title) : [none]).join('\n');
 }
 
 /* Whether the file behind the section on screen changed after it was read:
@@ -8110,8 +8114,14 @@ function reportsNow() {
 function paintReportsButton() {
   const btn = $('#reports-btn');
   const { sections, news } = reportsNow();
-  // The tour shows it for its step even while it has nothing (0074).
-  btn.classList.toggle('hidden', !sections.some((sec) => !sec.empty) && !S.reportsOpen && !(S.tour && S.tour.revealed));
+  // In view from the first paint, so the panel is found before it has
+  // anything, and dimmed until a section does, with no chip until then:
+  // news of a report the index does not list yet would say the opposite of
+  // its tooltip (0075).
+  const some = sections.some((sec) => !sec.empty);
+  btn.classList.remove('hidden');
+  btn.classList.toggle('dim', !some && !S.reportsOpen);
+  if (!some) news.length = 0;
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
@@ -8122,7 +8132,7 @@ function paintReportsButton() {
 /* Rolls the panel down over the editor and the dock, on the section asked
    for or the one reportsDefaultSection picks. The index is read first, so a
    report written since the last poll is there to pick. */
-async function openReports(section) {
+async function openReports(section, { reread = true } = {}) {
   await loadReportsIndex();
   const { sections, news } = reportsNow();
   // The coverage is always listed, empty before any source, so there is
@@ -8143,6 +8153,13 @@ async function openReports(section) {
     panel.focus({ preventScroll: true });
   }
   paintReportsButton();
+  // Put back by the tour as it was left (0075): the section is still drawn,
+  // so it is not read again, and its Read again says when its file changed.
+  if (!reread && key === S.reportsDrawn) {
+    S.reportsSection = key;
+    paintReportsNav();
+    return;
+  }
   showReportSection(key);
 }
 
@@ -8251,8 +8268,9 @@ function restoreReportPlace(view, place) {
 }
 
 /* Draws one section, read again on every showing so a run since the last
-   one shows, with the folds and the scroll it was left with. Only the latest
-   of two quick clicks is drawn. */
+   one shows, with the folds and the scroll it was left with: every showing
+   but the tour's putting back of a panel it rolled up (0075). Only the
+   latest of two quick clicks is drawn. */
 async function showReportSection(key) {
   const view = $('#reports-view');
   // Kept before anything replaces it, the placeholder included.
@@ -10784,10 +10802,11 @@ function showSide(which) {
 }
 
 /* `look` is off for a tab brought forward by a click in a report that has
-   just looked at the job files itself (0063). The reports are left as they
-   are: a column's lineage brings the canvas forward when its answer lands,
-   seconds later with Snowflake, and must not roll up a panel opened since.
-   What the user asks for rolls them up itself. */
+   just looked at the job files itself (0063), and for the tour's Jobs step
+   and its putting back of the dock, which ask for none (0075). The reports
+   are left as they are: a column's lineage brings the canvas forward when
+   its answer lands, seconds later with Snowflake, and must not roll up a
+   panel opened since. What the user asks for rolls them up itself. */
 function showDock(which, { look = true } = {}) {
   let loading = null;
   S.dock = which;
@@ -10952,9 +10971,9 @@ function tourSteps(c) {
     text: c.reports.length
       ? `Reports on the whole project: ${c.reports.join(', ')}. A chip on the button says what is new in them `
         + `since you last looked, and ${reportsKey} opens them from anywhere.`
-      : 'Reports on the whole project, which this button opens once one has something to show: the last dbt run, '
-        + 'from `run_results.json`, collin\'s findings, and the job coverage once the Jobs tab has a source. '
-        + `It stays hidden until then, and ${reportsKey} opens them meanwhile.` });
+      : 'Reports on the whole project, dimmed until one has something to show: the last dbt run, from '
+        + '`run_results.json`, collin\'s findings, and the job coverage once the Jobs tab has a source. Meanwhile '
+        + `it opens on the coverage, where a source is added, and ${reportsKey} opens it from anywhere.` });
   steps.push({ key: 'terminal', target: '#dock [data-dock=terminal]', title: 'Terminal',
     text: 'A shell in the project folder, where dbt runs: this page never runs it. A button that offers a dbt '
       + 'command, such as dbt ls above the lineage, types it there and leaves Enter to you. '
@@ -11001,7 +11020,7 @@ async function startTour() {
   closePopup();
   closeHoverCard();
   for (const offer of $$('.tour-offer')) offer.remove();
-  const t = { at: -1, ask: 0, revealed: false, chain: Promise.resolve() };
+  const t = { at: -1, ask: 0, chain: Promise.resolve() };
   S.tour = t;
   t.saved = {
     active: S.active, preview: S.preview, order: S.order.slice(), dock: S.dock, mode: S.graphMode,
@@ -11011,9 +11030,11 @@ async function startTour() {
     reports, reportsSection: S.reportsSection, reportsReturn,
   };
   buildTour(t);
-  const [model, jobs] = await Promise.all([
-    api.get('/api/tour').then((r) => r.model || null, () => null),
-    api.get('/api/jobs').then((r) => (r.sources || []).length, () => 0),
+  // The index too, so the Reports step says what the button shows even when
+  // the page asked for it a moment ago and has not heard back.
+  const [{ model, sources: jobs }] = await Promise.all([
+    api.get('/api/tour').then((r) => ({ model: r.model || null, sources: r.sources || 0 }), () => ({ model: null, sources: 0 })),
+    loadReportsIndex(),
   ]);
   if (S.tour !== t || t.ending) return;
   const pick = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
@@ -11123,10 +11144,6 @@ async function tourGo(i) {
   const live = () => S.tour === t && t.ask === ask;
   t.chain = t.chain.then(async () => {
     if (!live()) return;
-    if (t.revealed) {
-      t.revealed = false;
-      paintReportsButton();
-    }
     closeCrumbMenu();
     try { await tourEnter(step.key, t, live); }
     catch (e) { toast('tour: ' + e.message, 'err'); }
@@ -11198,7 +11215,9 @@ async function tourEnter(key, t, live) {
       break;
     case 'jobs':
       await onModel();
-      if (live()) await showDock('jobs');
+      // The jobs as last read, which /api/tour has just read if nothing had:
+      // the tour never asks to look at the job files again (0063, 0075).
+      if (live()) await showDock('jobs', { look: false });
       break;
     case 'config': {
       await onModel();
@@ -11211,13 +11230,6 @@ async function tourEnter(key, t, live) {
       else if (crumbMenu) crumbMenu.el.inert = true;
       break;
     }
-    case 'reports':
-      // Hidden while no report has anything: shown for this step, to point at.
-      if ($('#reports-btn').classList.contains('hidden')) {
-        $('#reports-btn').classList.remove('hidden');
-        t.revealed = true;
-      }
-      break;
   }
 }
 
@@ -11293,8 +11305,6 @@ async function endTour() {
   }
   await t.chain;
   closeCrumbMenu();
-  t.revealed = false;
-  paintReportsButton();
   const s = t.saved;
   const m = t.model;
   if (s.active) {
@@ -11330,14 +11340,14 @@ async function endTour() {
   S.selectHistAt = -1;
   if (S.catTab !== s.catTab && S.node) showCatalogTab(S.node, s.catTab);
   else S.catTab = s.catTab;
-  showDock(s.dock);
+  showDock(s.dock, { look: false });
   S.tour = null;
   window.removeEventListener('keydown', tourKey, true);
   window.removeEventListener('resize', paintTour);
   if (t.root) t.root.remove();
   for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
   if (s.reports) {
-    await openReports(s.reportsSection);
+    await openReports(s.reportsSection, { reread: false });
     // Where Escape in the panel sends the focus back, as before the tour.
     S.reportsReturn = s.reportsReturn;
   } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
