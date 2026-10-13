@@ -14,6 +14,7 @@ mod files;
 mod freshness;
 mod git;
 mod graph;
+mod incremental;
 mod jobs;
 mod ls;
 mod macros;

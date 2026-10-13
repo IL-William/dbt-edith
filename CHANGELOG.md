@@ -15,7 +15,7 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
-## 1.17.0 - 2026-10-13
+## 1.17.0 - 2026-10-14
 
 - Name an incremental model's strategy on its lineage box, in place of the
   word `incremental`, and the adapter's default when none is configured, read

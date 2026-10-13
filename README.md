@@ -1559,7 +1559,8 @@ src/yaml.rs       a subset of YAML, anchors and merges included, read into a tre
 src/clone.rs      which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
 src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
-src/macros.rs     macros from the manifest, which one a call in the editor reaches, and which incremental strategy dbt runs
+src/macros.rs     macros from the manifest, and which one a call in the editor reaches
+src/incremental.rs which incremental strategy dbt runs for a model, read from those macros
 src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
 src/project.rs    the vars: and dispatch: blocks of dbt_project.yml, read by hand

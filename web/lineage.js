@@ -1190,8 +1190,13 @@ const Lineage = (() => {
      the hover card feeds it the second: counting here rather than at each call
      site keeps "[object Object]" out of the line. */
   function subtitle(n) {
-    const p = subtitleParts(n);
-    return [p.struck ? `${p.lead} (not ${p.struck})` : p.lead, p.rest].filter(Boolean).join('  ·  ');
+    return subJoin(subtitleParts(n), (s) => `(not ${s})`);
+  }
+
+  /* The parts joined into one line, the struck word written by `mark`: in
+     words for a string, as it is on the box, in an <s> for HTML. */
+  function subJoin(p, mark) {
+    return [p.struck ? `${p.lead} ${mark(p.struck)}` : p.lead, p.rest].filter(Boolean).join('  ·  ');
   }
 
   /* The second line in three parts, for what can strike a word: the box, the
@@ -1213,7 +1218,7 @@ const Lineage = (() => {
 
   /* The line as it reads on the box, struck word included. */
   function subLine(p) {
-    return [p.struck ? `${p.lead} ${p.struck}` : p.lead, p.rest].filter(Boolean).join('  ·  ');
+    return subJoin(p, (s) => s);
   }
 
   /* Writes the second line into a box's <text>, the struck word in a <tspan>
@@ -1249,21 +1254,21 @@ const Lineage = (() => {
      `append, configured merge with no unique key`, or `Snowflake's default
      merge`. Empty on any box that shows no strategy. */
   function strategySaid(n, adapter) {
-    if (!n.strategy_shown) return '';
+    if (!n.strategy_shown || n.disabled) return '';
     const origin = n.strategy_default ? `${adapterName(adapter)}'s default` : 'configured';
     if (n.strategy_named) return `${n.strategy_shown}, ${origin} ${n.strategy_named} with no unique key`;
     return n.strategy_default ? `${origin} ${n.strategy_shown}` : n.strategy_shown;
   }
 
   /* An adapter as its makers write it, from the manifest's `adapter_type`. */
+  const ADAPTER_NAMES = {
+    snowflake: 'Snowflake', duckdb: 'DuckDB', bigquery: 'BigQuery', postgres: 'Postgres',
+    redshift: 'Redshift', databricks: 'Databricks', spark: 'Spark', sqlserver: 'SQL Server',
+    clickhouse: 'ClickHouse', trino: 'Trino', athena: 'Athena', fabric: 'Fabric',
+  };
   function adapterName(adapter) {
-    const known = {
-      snowflake: 'Snowflake', duckdb: 'DuckDB', bigquery: 'BigQuery', postgres: 'Postgres',
-      redshift: 'Redshift', databricks: 'Databricks', spark: 'Spark', sqlserver: 'SQL Server',
-      clickhouse: 'ClickHouse', trino: 'Trino', athena: 'Athena', fabric: 'Fabric',
-    };
     if (!adapter) return 'the adapter';
-    return known[adapter] || adapter[0].toUpperCase() + adapter.slice(1);
+    return ADAPTER_NAMES[adapter] || adapter[0].toUpperCase() + adapter.slice(1);
   }
 
   /* Whether a press has moved far enough to be a pan rather than a click:
@@ -1870,7 +1875,7 @@ const Lineage = (() => {
   };
 
   return {
-    init, render, fit, select, clear, snapshot, subtitle, subtitleParts, adapterName, nodeColor, matLabel,
+    init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
     testLevel, roleColor, nodeRoles,
   };
 })();

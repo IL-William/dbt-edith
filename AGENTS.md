@@ -200,7 +200,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`, `update`, `tour`. `build.rs` stamps
+`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `incremental`, `venv`, `files`, `pty`, `update`, `tour`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

@@ -11,7 +11,8 @@
 //! search hit comes first, it goes by name instead of by index.
 
 use crate::collin::RawColLineage;
-use crate::macros::{Incremental, Key, Macros};
+use crate::incremental::{Incremental, Key, Shown};
+use crate::macros::Macros;
 use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -163,16 +164,9 @@ pub struct Node {
     /// flattening.
     pub key: Key,
     /// An incremental model's strategy as its box shows it, once
-    /// `resolve_incremental` read what dbt runs: the configured one or the
-    /// adapter's default, or `append` when it inserts every row. Empty when
-    /// the default could not be read, and on every other node.
-    pub strategy_shown: String,
-    /// The strategy dbt was given or picked, when the box shows `append` for it.
-    pub strategy_named: String,
-    /// Set when that strategy is the adapter's default rather than configured.
-    pub strategy_default: bool,
-    /// The macro that turns it into an insert of every row.
-    pub strategy_insert: &'static str,
+    /// `resolve_incremental` read what dbt runs. None when the default could
+    /// not be read, and on every other node, which pays a pointer for it.
+    pub shown: Option<Box<Shown>>,
     pub package: String,
     pub description: String,
     pub tags: Vec<String>,
@@ -337,11 +331,14 @@ impl Node {
     }
 
     pub fn strategy_facts(&self) -> StrategyFacts<'_> {
-        StrategyFacts {
-            strategy_shown: &self.strategy_shown,
-            strategy_named: &self.strategy_named,
-            strategy_default: self.strategy_default,
-            strategy_insert: self.strategy_insert,
+        match &self.shown {
+            Some(s) => StrategyFacts {
+                strategy_shown: &s.shown,
+                strategy_named: &s.named,
+                strategy_default: s.default,
+                strategy_insert: s.insert,
+            },
+            None => StrategyFacts::default(),
         }
     }
 
@@ -469,23 +466,19 @@ impl Graph {
                     _ => raw_node.config.materialized.unwrap_or_default(),
                 },
                 strategy: raw_node.config.incremental_strategy.unwrap_or_default(),
-                key: match &raw_node.config.unique_key {
-                    None | Some(serde_json::Value::Null) => Key::None,
-                    Some(serde_json::Value::String(s)) if s.is_empty() => Key::Falsy,
-                    Some(serde_json::Value::Array(a)) if a.is_empty() => Key::Falsy,
-                    Some(_) => Key::Given,
-                },
+                key: Key::of(raw_node.config.unique_key.as_ref()),
+                // An entry that is no string is kept as its JSON text, so a
+                // nested list still reads as a key rather than as none.
                 unique_key: match raw_node.config.unique_key {
-                    Some(serde_json::Value::String(s)) if !s.is_empty() => vec![s],
+                    Some(v) if Key::of(Some(&v)) != Key::Given => Vec::new(),
+                    Some(serde_json::Value::String(s)) => vec![s],
                     Some(serde_json::Value::Array(a)) => {
-                        a.into_iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
+                        a.into_iter().map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()
                     }
-                    _ => Vec::new(),
+                    Some(other) => vec![other.to_string()],
+                    None => Vec::new(),
                 },
-                strategy_shown: String::new(),
-                strategy_named: String::new(),
-                strategy_default: false,
-                strategy_insert: "",
+                shown: None,
                 package: raw_node.package_name,
                 description: if heavy { raw_node.description } else { String::new() },
                 // Tests keep their tags even though the rest of them stays skeletal:
@@ -698,27 +691,28 @@ impl Graph {
     /// first.
     pub fn resolve_incremental(&mut self, dispatch: &crate::project::DispatchOrder) {
         let inc = Incremental::new(&self.macros, &self.meta.adapter, dispatch);
-        // The default depends on the package alone, and most models share one.
-        let mut defaults: HashMap<String, Option<String>> = HashMap::new();
-        for n in self.nodes.iter_mut().filter(|n| n.is_incremental()) {
-            // `'default'` is what the materialization falls back to anyway.
-            let configured = Some(n.strategy.as_str()).filter(|s| !s.is_empty() && *s != "default");
-            let strategy = match configured {
-                Some(s) => s.to_string(),
-                None => match defaults.entry(n.package.clone()).or_insert_with(|| inc.default_strategy(&n.package)) {
-                    Some(s) => s.clone(),
-                    None => continue,
-                },
+        // The answers depend on the package, the strategy and the key's shape
+        // alone, which most models share.
+        let mut defaults: HashMap<(String, bool), Option<String>> = HashMap::new();
+        let mut inserts: HashMap<(String, String, Key), Option<&'static str>> = HashMap::new();
+        // A disabled model is never run, so nothing is said of how.
+        for n in self.nodes.iter_mut().filter(|n| n.is_incremental() && !n.disabled) {
+            let strategy = match n.strategy.as_str() {
+                "" => defaults.entry((n.package.clone(), false)).or_insert_with(|| inc.default_strategy(&n.package)).clone(),
+                // Configured outright, `'default'` reaches the default macro
+                // whatever the materialization would fall back to.
+                "default" => defaults.entry((n.package.clone(), true)).or_insert_with(|| inc.named_default(&n.package)).clone(),
+                s => Some(s.to_string()),
             };
-            n.strategy_default = configured.is_none();
-            match inc.inserts(&strategy, &n.package, n.key) {
-                Some(by) => {
-                    n.strategy_shown = "append".to_string();
-                    n.strategy_named = strategy;
-                    n.strategy_insert = by;
-                }
-                None => n.strategy_shown = strategy,
-            }
+            let Some(strategy) = strategy else { continue };
+            let by = *inserts
+                .entry((n.package.clone(), strategy.clone(), n.key))
+                .or_insert_with(|| inc.inserts(&strategy, &n.package, n.key));
+            let default = n.strategy.is_empty() || n.strategy == "default";
+            n.shown = Some(Box::new(match by {
+                Some(insert) => Shown { shown: "append".to_string(), named: strategy, default, insert },
+                None => Shown { shown: strategy, named: String::new(), default, insert: "" },
+            }));
         }
     }
 

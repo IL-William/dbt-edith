@@ -60,6 +60,9 @@ check('a line with nothing struck is clipped as before', written({ lead: 'delete
   ['delete+insert  ·  a_long_schema_n…']);
 check('a cut in a separator ends before it', written({ lead: 'append', struck: 'merge', rest: 'jaffle_shop  ·  12 tests' }, 34),
   ['append ', 'struck:merge', '  ·  jaffle_shop…']);
+check('one join for every line: in words, as drawn, in HTML',
+  [subtitle(keyless), subLine(subtitleParts(keyless)), subJoin(subtitleParts(keyless), function (s) { return '<s>' + s + '</s>'; })],
+  ['append (not merge)  ·  marts  ·  2 tests', 'append merge  ·  marts  ·  2 tests', 'append <s>merge</s>  ·  marts  ·  2 tests']);
 check('the export measures the line as it reads', subLine(subtitleParts(keyless)), 'append merge  ·  marts  ·  2 tests');
 
 print('\n--- what a screen reader hears ---');
@@ -92,6 +95,8 @@ check('an append says nothing of a key', facts({ kind: 'model', materialized: 'i
   unique_key: ['id'] }), [{ text: 'append' }]);
 check('a default that could not be read says so', facts({ kind: 'model', materialized: 'incremental' }),
   [{ text: "Snowflake's default strategy, which could not be read from its macros", muted: true }]);
+check('nothing for a disabled model, which dbt never runs', facts(Object.assign({}, keyless, { disabled: true })), []);
+check('nor for a screen reader', strategySaid(Object.assign({}, keyless, { disabled: true }), 'snowflake'), '');
 check('nothing for a view that inherited one', facts({ kind: 'model', materialized: 'view', strategy: 'merge' }), []);
 
 print('\n--- which columns a key names ---');

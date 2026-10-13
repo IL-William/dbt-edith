@@ -1,6 +1,6 @@
 # 0076. An incremental strategy is read from the macros dbt runs
 
-Date: 2026-10-13 · Status: accepted · Amends 0018 and 0028
+Date: 2026-10-14 · Status: accepted · Amends 0018 and 0028
 
 **Trigger:** read before showing what an incremental model does on a run,
 following `adapter.dispatch`, keeping any `macro_sql`, or reading another
@@ -25,12 +25,14 @@ live in macros, which a project or a package can override by name.
   fallback; a default macro whose body is one `return(...)` names the rest.
 - **Anything else names nothing.** A project's materialization, a condition
   in a default macro, two parent adapters, an unreadable `dispatch:` with a
-  package that could come first: the box keeps `incremental`, and the card
-  says the default could not be read.
-- **The insert is claimed only on three known macros**, by package, name and
-  their own test of the key: Snowflake's merge when the key is none, dbt's
-  merge and delete+insert when it is falsy. The box then reads `append` with
-  the strategy struck through.
+  version outside dbt's own packages, the project's included: the box keeps
+  `incremental`, and the card says the default could not be read. A parent
+  adapter is a `dbt_<x>` package, not the project, that defines
+  `<x>__create_table_as`, as every adapter does.
+- **The insert is claimed only on three known macros**, under dbt's own
+  materialization, by package, name and their own test of the key:
+  Snowflake's merge when the key is none, dbt's merge and delete+insert when
+  it is falsy. The box then reads `append` with the strategy struck through.
 - **Only those bodies are kept.** `RawMacro` reads `macro_sql` and drops it
   at once unless it names an incremental strategy macro or the strategy.
 - **The 0018 scanner reads `dispatch:` too**, a sequence of mappings, and

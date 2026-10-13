@@ -525,10 +525,14 @@ fn search_order(value: &str, nested: &[&str]) -> Option<Vec<String>> {
     (!items.is_empty() && items.iter().all(plain)).then_some(items)
 }
 
-/// `dispatch:` in the project's own `dbt_project.yml`, or the default order
-/// when the file cannot be read: without a file, dbt has no project at all.
+/// `dispatch:` in the project's own `dbt_project.yml`. A file too large or
+/// unreadable may hold any order; without a file, dbt has no project at all.
 pub fn dispatch(root: &Path) -> DispatchOrder {
-    project_text(root).map(|t| dispatch_in(&t)).unwrap_or_default()
+    match project_text(root) {
+        Some(text) => dispatch_in(&text),
+        None if root.join("dbt_project.yml").exists() => DispatchOrder::Unreadable,
+        None => DispatchOrder::Default,
+    }
 }
 
 /// The top-level `name:`, as a plain or quoted scalar and nothing else.
@@ -1365,5 +1369,18 @@ mod tests {
         unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: [shop, dbt]\n  - macro_namespace: dbt\n    search_order: [dbt]\n");
         unreadable("dispatch:\n  macro_namespace: dbt\n");
         unreadable("dispatch:\n\t- macro_namespace: dbt\n");
+    }
+
+    #[test]
+    fn a_project_file_too_large_to_read_may_hold_any_order() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-dispatch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(dispatch(&dir), DispatchOrder::Default, "no file, no project");
+        let mut big = "name: shop\n".to_string();
+        big.push_str(&"# padding\n".repeat((MAX_BYTES as usize) / 10 + 1));
+        std::fs::write(dir.join("dbt_project.yml"), big).unwrap();
+        assert_eq!(dispatch(&dir), DispatchOrder::Unreadable);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

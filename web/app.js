@@ -6565,8 +6565,8 @@ function exportDocument(o) {
   const facts = f.warnings.map((w) => `<li class="warn">${e(w)}</li>`)
     .concat(f.lines.map((l) => `<li>${e(l)}</li>`)).join('');
   // The struck strategy keeps its strike in the list, as it does on the picture.
-  const sub = (n) => (n.parts && n.parts.struck
-    ? `${e(n.parts.lead)} <s>${e(n.parts.struck)}</s>${n.parts.rest ? `  ·  ${e(n.parts.rest)}` : ''}`
+  const sub = (n) => (n.parts
+    ? Lineage.subJoin({ lead: e(n.parts.lead), struck: e(n.parts.struck), rest: e(n.parts.rest) }, (s) => `<s>${s}</s>`)
     : e(n.sub));
   const rows = o.nodes.map((n) => `<li data-id="${e(n.id)}"><div class="nm">${e(n.name)}</div>`
     + `<div class="sub">${sub(n)}</div><div class="file">${e(n.file)}</div></li>`).join('');
@@ -7089,16 +7089,9 @@ function stat(label, value, onClick) {
   v.textContent = value;
   if (onClick) {
     // A div rather than a button, so the number keeps the type of the plain
-    // stats beside it; the role and the keys give a keyboard what a button would.
-    v.tabIndex = 0;
-    v.setAttribute('role', 'button');
+    // stats beside it.
     v.setAttribute('aria-label', `${label}: ${value}`);
-    v.addEventListener('click', onClick);
-    v.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      e.preventDefault();
-      onClick(e);
-    });
+    linkLike(v, onClick);
   }
   s.append(k, v);
   return s;
@@ -8498,7 +8491,7 @@ const INSERT_REASONS = {
   default__get_delete_insert_merge_sql: 'so nothing is deleted before the insert',
 };
 function strategyFacts(n, adapter) {
-  if (!n || n.kind !== 'model' || n.materialized !== 'incremental') return [];
+  if (!n || n.kind !== 'model' || n.materialized !== 'incremental' || n.disabled) return [];
   const name = Lineage.adapterName(adapter);
   if (!n.strategy_shown) {
     return [{ text: `${name}'s default strategy, which could not be read from its macros`, muted: true }];
@@ -9939,6 +9932,10 @@ function paintClonePlan(view, st) {
   view.sql.textContent = st.script;
 }
 
+/* dbt's own materializations that use no incremental strategy, and the kinds
+   of node that have none; a snapshot uses a key and its own `strategy`. */
+const UNUSED_BY = ['view', 'table', 'ephemeral', 'seed', 'test', 'snapshot', 'materialized_view'];
+
 /* `a view`, `an ephemeral`. */
 function article(word) {
   return (/^[aeiou]/i.test(word) ? 'an ' : 'a ') + word;
@@ -9986,14 +9983,15 @@ function strategyStat(n) {
    does not stretch the row. Past three, the first two and a link to the rest
    in the Columns tab. Each entry that names a column opens it there. */
 function keyStat(n) {
-  const s = stat('Unique key', n.unique_key.length ? '' : 'none');
+  const key = n.unique_key || [];
+  const s = stat('Unique key', key.length ? '' : 'none');
   const v = s.querySelector('.v');
-  if (!n.unique_key.length) {
+  if (!key.length) {
     v.classList.add('none');
     return s;
   }
   v.classList.add('keys');
-  const entries = keyColumns(n.unique_key, n.columns);
+  const entries = keyColumns(key, n.columns);
   for (const { entry, column } of entries.length > 3 ? entries.slice(0, 2) : entries) {
     const line = Object.assign(document.createElement('div'), { textContent: entry });
     if (column) {
@@ -10010,7 +10008,7 @@ function keyStat(n) {
   if (entries.length > 3) {
     const more = Object.assign(document.createElement('div'), {
       className: 'keymore', textContent: `+${entries.length - 2} more, in Columns`,
-      title: ['unique_key, in order'].concat(n.unique_key).join('\n'),
+      title: ['unique_key, in order'].concat(key).join('\n'),
     });
     linkLike(more, () => { S.colSort = 'key'; showCatalogTab(n, 'columns'); });
     v.append(more);
@@ -10018,8 +10016,9 @@ function keyStat(n) {
   return s;
 }
 
-/* A div that answers a click and the keys a button does, so a key name keeps
-   the type of the stat it sits in. */
+/* A div that answers a click and the keys a button does, the role and the
+   keys giving a keyboard what a button would, so a stat's number or a key
+   name keeps the type of the stat it sits in. */
 function linkLike(node, onClick) {
   node.tabIndex = 0;
   node.setAttribute('role', 'button');
@@ -10043,11 +10042,13 @@ function catalogPreview(body, n) {
   stats.className = 'stats';
   // The strategy and the key where they are used, beside Mat. type; elsewhere
   // they were inherited, and "details" says so.
-  const incremental = n.kind === 'model' && n.materialized === 'incremental';
+  // A disabled model is never run, so nothing is said of how.
+  const incremental = n.kind === 'model' && n.materialized === 'incremental' && !n.disabled;
+  const keyed = incremental || (n.kind === 'snapshot' && !n.disabled);
   stats.append(
     stat('Mat. type', n.materialized || n.kind),
     ...(incremental ? [strategyStat(n)] : []),
-    ...(incremental || n.kind === 'snapshot' ? [keyStat(n)] : []),
+    ...(keyed ? [keyStat(n)] : []),
     stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
     stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id); showDock('lineage'); }),
     stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id); showDock('lineage'); }),
@@ -10086,11 +10087,15 @@ function catalogPreview(body, n) {
     if (dim) dt.className = dd.className = 'muted';
     kv.append(dt, dd);
   };
-  // A folder's config reaches every node under it. What this node does not
-  // use stays said, dimmed, since a selection by it still picks the node.
-  const unused = `, unused by ${article(n.materialized || n.kind)}`;
-  if (!incremental && n.strategy) add('incremental_strategy', n.strategy + unused, true);
-  if (!incremental && n.kind !== 'snapshot' && n.unique_key.length) add('unique_key', n.unique_key.join(', ') + unused, true);
+  // A folder's config reaches every node under it. What a node of dbt's own
+  // materializations does not use stays said, dimmed, since a selection by it
+  // still picks the node; a custom materialization may read either, so its
+  // line says what is set and no more.
+  const key = (n.unique_key || []).join(', ');
+  const mat = n.materialized || n.kind;
+  const unused = UNUSED_BY.includes(mat) && !n.disabled ? `, unused by ${article(mat)}` : '';
+  if (!incremental && n.strategy) add('incremental_strategy', n.strategy + unused, !!unused);
+  if (!keyed && key) add('unique_key', key + unused, !!unused);
   add('model file', n.file);
   add('schema file', n.yml);
   add('unique id', n.id);
@@ -10439,9 +10444,16 @@ function catalogColumns(body, n) {
     tools.appendChild(again);
   }
   // The key's columns, in the key's order, on the two nodes that use a key.
-  const usesKey = (n.kind === 'model' && n.materialized === 'incremental') || n.kind === 'snapshot';
-  const keyed = new Map(usesKey ? keyColumns(n.unique_key, n.columns).filter((k) => k.column)
-    .map((k, i) => [k.column.name, i]) : []);
+  const usesKey = ((n.kind === 'model' && n.materialized === 'incremental') || n.kind === 'snapshot') && !n.disabled;
+  // By its place in the whole key, expressions included; a column named twice
+  // keeps its first place.
+  const keyed = new Map();
+  if (usesKey) {
+    keyColumns(n.unique_key, n.columns).forEach((k, i) => {
+      if (k.column && !keyed.has(k.column.name)) keyed.set(k.column.name, i);
+    });
+  }
+  const keyLength = (n.unique_key || []).length;
   // Kept from node to node like the others; a node without a key has no Key
   // button, and sorts A-Z until the next one that has.
   const sort = S.colSort === 'key' && !keyed.size ? 'az' : S.colSort;
@@ -10501,7 +10513,7 @@ function catalogColumns(body, n) {
     name.append(text);
     if (keyed.has(c.name)) {
       name.append(Object.assign(document.createElement('span'), {
-        className: 'keytag', textContent: 'KEY', title: `in the unique key, column ${keyed.get(c.name) + 1} of ${keyed.size}`,
+        className: 'keytag', textContent: 'KEY', title: `in the unique key, entry ${keyed.get(c.name) + 1} of ${keyLength}`,
       }));
     }
     rows.push({ tr, name: text, c });
@@ -10605,15 +10617,21 @@ function catalogColumns(body, n) {
   });
   apply();
   // A column just asked for is brought into view, once: a filter hiding it
-  // is cleared, and typing in the filter afterwards is left alone.
-  const reveal = S.colReveal;
-  S.colReveal = false;
-  if (reveal && focused) {
+  // is cleared, and typing in the filter afterwards is left alone. It waits
+  // for the Catalog to be in front, and for the node that has the row: a
+  // report's link opens the Catalog before its node arrives.
+  if (S.colReveal && S.dock === 'catalog' && focused) {
+    S.colReveal = false;
     if (focused.tr.classList.contains('hidden')) {
       filter.value = S.colFilter = '';
       apply();
     }
-    requestAnimationFrame(() => focused.tr.scrollIntoView({ block: 'nearest' }));
+    // The row on screen at the next frame: a second draw before it replaces
+    // this table.
+    requestAnimationFrame(() => {
+      const row = $('#catalog .cols tr.c-focus');
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    });
   }
 }
 
@@ -11009,6 +11027,8 @@ function showDock(which, { look = true } = {}) {
   if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
   if (which === 'jobs') loading = loadJobs({ look });
   if (which === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
+  // A column box clicked with the lineage in front asked for its row.
+  if (which === 'catalog' && S.colReveal && S.node && S.catTab === 'columns') renderCatalog(S.node);
   // Read when the tab is first opened, never before: that click is what may
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();

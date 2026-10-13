@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-13.
+belongs here. Last updated 2026-10-14.
 
 ## Shipped
 
@@ -1185,7 +1185,7 @@ Incremental strategy: an incremental model's box names its strategy in place
 of the word `incremental`, the adapter's default when none is configured, and
 `append` with the strategy struck through when the macros dbt runs insert
 every row for want of a unique key. The default and the insert are read from
-the manifest's `macro_sql` in `src/macros.rs`, the way dbt reaches each macro:
+the manifest's `macro_sql` in `src/incremental.rs`, the way dbt reaches each macro:
 by name, through `adapter.dispatch` in the order `dispatch:` gives, and from
 the materialization's fallback (0076). The insert is claimed on three known
 macros only, each by its own test of the key, so DuckDB's, Jaffle Shop's

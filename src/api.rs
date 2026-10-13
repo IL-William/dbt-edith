@@ -1316,6 +1316,12 @@ struct Ref<'a> {
     /// parents too, so its own name is not that node.
     #[serde(skip_serializing_if = "str::is_empty")]
     host: &'a str,
+    /// An incremental parent's strategy: the hover card on a `ref()` paints
+    /// from the parent listed here before `/api/node` answers for it.
+    #[serde(flatten)]
+    incremental: crate::graph::StrategyFacts<'a>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    unique_key: &'a [String],
 }
 
 /// One data test guarding one column. `label` is what the chip says, which is
@@ -1371,6 +1377,7 @@ struct NodeDetail<'a> {
     /// As configured, on every node: what the selector matches, and what the
     /// Catalog says a view inherited and does not use.
     strategy: &'a str,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
     unique_key: &'a [String],
     /// What the box says of an incremental model's strategy, besides.
     #[serde(flatten)]
@@ -1439,6 +1446,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             test_name: &t.test_name,
             column: &t.column,
             host: graph.host_of(t).map(|h| h.name.as_str()).unwrap_or(""),
+            incremental: t.strategy_facts(),
+            unique_key: t.box_key(),
         }
     };
     Json(NodeDetail {
@@ -1526,6 +1535,12 @@ struct Resolved<'a> {
     materialized: &'a str,
     description: &'a str,
     disabled: bool,
+    /// The hover card on a `ref()` paints from this before `/api/node`
+    /// answers, so it carries the strategy line's facts as a lineage box does.
+    #[serde(flatten)]
+    incremental: crate::graph::StrategyFacts<'a>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    unique_key: &'a [String],
 }
 
 /// Maps the names found in `ref()` / `source()` calls onto dbt nodes, so the
@@ -1546,6 +1561,8 @@ async fn resolve(State(st): State<Arc<AppState>>, Json(body): Json<ResolveBody>)
                 materialized: &n.materialized,
                 description: n.description.split('\n').next().unwrap_or(""),
                 disabled: n.disabled,
+                incremental: n.strategy_facts(),
+                unique_key: n.box_key(),
             })
         })
         .collect();
