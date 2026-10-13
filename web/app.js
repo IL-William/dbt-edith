@@ -10988,80 +10988,98 @@ function tourPlace(ring, box, view, gap = 12) {
   return { left, top: Math.max(8, Math.min(bottom - box.height - gap, view.height - box.height - 8)) };
 }
 
-/* Starts the tour, unless one is on screen. What it moves is noted first, so
-   endTour can put it back. */
+/* Starts the tour, unless one is on screen. The overlay goes up at once, so
+   nothing can be done under it while the model is picked, and what the tour
+   will move is noted in the same moment, to be put back when it ends. */
 async function startTour() {
   if (S.tour) return;
   closeShortcuts();
   closePalette();
+  const reports = S.reportsOpen;
   closeReports();
   closePopup();
   closeHoverCard();
-  const t = { at: -1, ask: 0, revealed: false };
+  for (const offer of $$('.tour-offer')) offer.remove();
+  const t = { at: -1, ask: 0, revealed: false, chain: Promise.resolve() };
   S.tour = t;
   t.saved = {
-    active: S.active, preview: S.preview, dock: S.dock, mode: S.graphMode, focus: S.focus, colFocus: S.colFocus,
+    active: S.active, preview: S.preview, order: S.order.slice(), dock: S.dock, mode: S.graphMode,
+    focus: S.focus, colFocus: S.colFocus, jobsFor: S.jobsFor, unsynced: S.unsynced,
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
+    reports, reportsSection: S.reportsSection,
   };
-  let model = null, jobs = 0;
-  try { model = (await api.get('/api/tour')).model || null; } catch { /* the steps without a model still stand */ }
-  try { jobs = ((await api.get('/api/jobs')).sources || []).length; } catch { /* said as none */ }
+  buildTour(t);
+  const [model, jobs] = await Promise.all([
+    api.get('/api/tour').then((r) => r.model || null, () => null),
+    api.get('/api/jobs').then((r) => (r.sources || []).length, () => 0),
+  ]);
   if (S.tour !== t) return;
   const pick = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
   t.model = model;
   t.steps = tourSteps({
     model, mac: IS_MAC, jobs,
     reports: reportsNow().sections.filter((sec) => !sec.empty).map((sec) => sec.label),
-    cll: pick.tone === 'off' ? '' : pick.name,
+    // A tool picked is not yet edges on screen: collin running or failed has none.
+    cll: (S.meta && S.meta.cll_file) || sidecarOn() ? pick.name : '',
     snowflake: !!(S.features && S.features.snowflake),
   });
-  buildTour(t);
   tourGo(0);
 }
 
 /* The overlay: a ring that dims the rest of the page through its shadow, and
-   a card. The page under it takes no click and no key while it is up. */
+   a card, which says the model is being picked until the first step is
+   ready. The page under it takes no click and no key while it is up. */
 function buildTour(t) {
-  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  const root = el('div', 'centre');
+  const root = jel('div', 'centre');
   root.id = 'tour';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-labelledby', 'tour-title');
-  const ring = el('div', 'tour-ring hidden');
-  const card = el('div', 'tour-card');
+  const ring = jel('div', 'tour-ring hidden');
+  const card = jel('div', 'tour-card');
   card.tabIndex = -1;
-  const head = el('div', 'tour-head');
-  const close = el('button', 'icon', '×');
+  const head = jel('div', 'tour-head');
+  const close = jel('button', 'icon', '×');
   close.type = 'button';
   close.title = `End the tour (${keyLabel('Escape', IS_MAC)})`;
   close.addEventListener('click', endTour);
-  head.append(el('span', 'tour-count'), el('div', 'grow'), close);
-  const title = el('h2', '');
+  head.append(jel('span', 'tour-count'), jel('div', 'grow'), close);
+  const title = jel('h2', '', 'A tour of dbt-edith');
   title.id = 'tour-title';
-  const back = el('button', 'btn sm tour-back', 'Back');
+  const back = jel('button', 'btn sm tour-back', 'Back');
   back.type = 'button';
+  back.disabled = true;
   back.addEventListener('click', () => tourStep(-1));
-  const next = el('button', 'btn sm primary tour-next', 'Next');
+  const next = jel('button', 'btn sm primary tour-next', 'Next');
   next.type = 'button';
+  next.disabled = true;
   next.addEventListener('click', () => tourStep(1));
-  const actions = el('div', 'tour-actions');
-  const keys = el('span', 'tour-keys', '← →');
+  const actions = jel('div', 'tour-actions');
+  const keys = jel('span', 'tour-keys', '← →');
   keys.title = 'The arrow keys walk the tour too';
-  actions.append(keys, el('div', 'grow'), back, next);
-  card.append(head, title, el('p', 'tour-text'), actions);
+  actions.append(keys, jel('div', 'grow'), back, next);
+  card.append(head, title, jel('p', 'tour-text', 'Picking a model of this project…'), actions);
   root.append(ring, card);
   document.body.append(root);
   for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = true;
   t.root = root;
+  card.focus();
   window.addEventListener('keydown', tourKey, true);
   window.addEventListener('resize', paintTour);
 }
 
+/* The keys the app answers from anywhere, which wait for the tour to end,
+   with what the browser would do with them meanwhile: Cmd+S would offer to
+   save the page, and F1 open the browser's help. */
+function tourHeld() {
+  return new Set(shortcutSheet().filter((g) => g.title === 'Anywhere' || g.title === 'Find')
+    .flatMap((g) => g.keys.flatMap(([combos]) => combos)).filter((k) => /Mod|Alt|(^|\+)F\d|^\?$/.test(k)));
+}
+
 /* The arrows and Enter walk the tour, Escape ends it, and every other key
-   waits for it to end, the app's shortcuts included. Enter on a button is
-   the button's own. */
+   waits for it to end. Enter on a button is the button's own, and Tab moves
+   between the card's buttons, the rest of the page being inert. */
 function tourKey(e) {
   if (!S.tour) return;
   const onButton = e.target && e.target.tagName === 'BUTTON';
@@ -11069,6 +11087,7 @@ function tourKey(e) {
   else if (e.key === 'ArrowRight' || (e.key === 'Enter' && !onButton)) tourStep(1);
   else if (e.key === 'ArrowLeft') tourStep(-1);
   else {
+    if (tourHeld().has(keyCombo(e, IS_MAC))) e.preventDefault();
     e.stopPropagation();
     return;
   }
@@ -11078,56 +11097,71 @@ function tourKey(e) {
 
 function tourStep(by) {
   const t = S.tour;
-  if (!t) return;
+  if (!t || !t.steps) return;
   const to = t.at + by;
   if (to >= t.steps.length) return endTour();
   if (to >= 0) tourGo(to);
 }
 
-/* Sets the page up for a step, then draws the ring and the card over it. A
-   step clicked past before its page was ready draws nothing. */
+/* Sets the page up for a step, then draws the ring and the card over it.
+   One step sets the page up at a time, and one passed meanwhile, by a key
+   held down or an end, stops at its next look: finishing over the next step,
+   or after the end, it would leave its canvas or its menu behind. */
 async function tourGo(i) {
   const t = S.tour;
-  if (!t) return;
+  if (!t || !t.steps) return;
   t.at = i;
   const ask = ++t.ask;
   const step = t.steps[i];
-  if (t.revealed) {
-    t.revealed = false;
-    paintReportsButton();
-  }
-  closeCrumbMenu();
-  // Kept, so an end pressed meanwhile restores the page after it, not under it.
-  t.entering = tourEnter(step.key, t).catch((e) => toast('tour: ' + e.message, 'err'));
-  await t.entering;
-  // The dock fits its canvas 30 ms after it is shown, and the Reports button
-  // unfolds as it appears: the ring is drawn once its target stops moving.
+  const live = () => S.tour === t && t.ask === ask;
+  t.chain = t.chain.then(async () => {
+    if (!live()) return;
+    if (t.revealed) {
+      t.revealed = false;
+      paintReportsButton();
+    }
+    closeCrumbMenu();
+    try { await tourEnter(step.key, t, live); }
+    catch (e) { toast('tour: ' + e.message, 'err'); }
+  });
+  await t.chain;
+  // The dock fits its canvas 30 ms after it is shown, and a target can still
+  // be moving, or not drawn yet: the ring waits for it to stand still.
   const wait = (ms) => new Promise((done) => setTimeout(done, ms));
   await wait(60);
-  for (let i = 0, was = ''; step.target && i < 12; i++) {
+  for (let n = 0, was = null; step.target && n < 12 && live(); n++) {
     const r = tourTarget(step.target);
-    const now = r ? [r.left, r.top, r.width, r.height].join() : '';
-    if (now === was) break;
+    const now = r ? [r.left, r.top, r.right, r.bottom].join() : null;
+    if (now !== null && now === was) break;
     was = now;
     await wait(50);
   }
-  if (S.tour !== t || ask !== t.ask) return;
+  if (!live()) return;
   paintTour();
   t.root.querySelector('.tour-next').focus();
 }
 
 /* What each step needs on screen. Each sets up all of it, whichever step it
-   is reached from, so Back works as Next does. */
-async function tourEnter(key, t) {
+   is reached from, so Back works as Next does, and stops as soon as `live`
+   says the tour has moved on. */
+async function tourEnter(key, t, live) {
   const m = t.model;
-  const onModel = async () => {
+  // The model's file in front, and with `canvas`, its lineage on the canvas:
+  // a step that draws a selection there has no use for it first.
+  const onModel = async ({ canvas = true } = {}) => {
     if (!m) return;
     if (S.active !== m.file) {
       // A tab already open is brought forward as it is, a preview left one.
       if (S.open.has(m.file)) activate(m.file, false);
       else await openFile(m.file, { preview: true, focusLineage: false });
     }
-    if (S.graphMode !== 'model' || S.focus !== m.id) await focusNode(m.id);
+    if (canvas && live() && (S.graphMode !== 'model' || S.focus !== m.id)) await focusNode(m.id);
+  };
+  const selection = async () => {
+    showDock('lineage');
+    if (S.graphMode === 'select' && $('#select-input').value === `+${m.name}+`) return;
+    $('#select-input').value = `+${m.name}+`;
+    await runSelection();
   };
   switch (key) {
     case 'editor':
@@ -11135,44 +11169,41 @@ async function tourEnter(key, t) {
       break;
     case 'lineage':
       await onModel();
-      showDock('lineage');
+      if (live()) showDock('lineage');
       break;
     case 'select':
-      await onModel();
-      showDock('lineage');
-      $('#select-input').value = `+${m.name}+`;
-      await runSelection();
+    case 'share':
+      await onModel({ canvas: false });
+      if (live()) await selection();
       break;
     case 'catalog':
       await onModel();
+      if (!live()) break;
       if (S.catTab !== 'preview') showCatalogTab(S.node, 'preview');
       showDock('catalog');
       break;
     case 'columns':
       if (!m) break;
       await onModel();
+      if (!live()) break;
       if (S.catTab !== 'columns') showCatalogTab(S.node, 'columns');
       showDock('catalog');
       break;
     case 'jobs':
       await onModel();
-      await showDock('jobs');
+      if (live()) await showDock('jobs');
       break;
     case 'config': {
       await onModel();
-      // Opened, so the step shows the keys themselves; the next step closes it.
-      const button = $('#crumbs .cfg');
-      if (button) await openCrumbMenu(button, { kind: 'config', file: S.active });
+      const button = live() && $('#crumbs .cfg');
+      if (!button) break;
+      // Opened, so the step shows the keys themselves, but not to be used
+      // from the tour: a key picked would open dbt_project.yml under it.
+      await openCrumbMenu(button, { kind: 'config', file: S.active });
+      if (!live()) closeCrumbMenu();
+      else if (crumbMenu) crumbMenu.el.inert = true;
       break;
     }
-    case 'share':
-      await onModel();
-      showDock('lineage');
-      if (S.graphMode !== 'select' || $('#select-input').value !== `+${m.name}+`) {
-        $('#select-input').value = `+${m.name}+`;
-        await runSelection();
-      }
-      break;
     case 'reports':
       // Hidden while no report has anything: shown for this step, to point at.
       if ($('#reports-btn').classList.contains('hidden')) {
@@ -11209,6 +11240,7 @@ function paintTour() {
     else text.append(Object.assign(document.createElement(code !== undefined ? 'code' : 'kbd'), { textContent: code !== undefined ? code : key }));
   }
   root.querySelector('.tour-back').disabled = t.at === 0;
+  root.querySelector('.tour-next').disabled = false;
   root.querySelector('.tour-next').textContent = t.at === t.steps.length - 1 ? 'Done' : 'Next';
   const at = step.target ? tourTarget(step.target) : null;
   const view = { width: window.innerWidth, height: window.innerHeight };
@@ -11229,9 +11261,12 @@ function paintTour() {
   card.style.top = place.top + 'px';
 }
 
-/* Puts back what the tour moved. A page with no tab open keeps the model,
-   in the editor, the lineage and the Catalog, as a place to start from;
-   any other gets its tab, its canvas and its Catalog back. */
+/* Puts back what the tour moved, once every step still setting the page up
+   has stopped. A page with no tab open keeps the model, in the editor, the
+   lineage and the Catalog, as a place to start from. Any other gets back its
+   tabs in their order, a preview the tour's took the place of included, the
+   tab in front, the canvas, the node the dock's tabs speak of, the Catalog,
+   and the Reports panel if it was down. */
 async function endTour() {
   const t = S.tour;
   if (!t) return;
@@ -11239,34 +11274,39 @@ async function endTour() {
   window.removeEventListener('keydown', tourKey, true);
   window.removeEventListener('resize', paintTour);
   if (t.root) t.root.remove();
-  await t.entering;
+  await t.chain;
   closeCrumbMenu();
   for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
   paintReportsButton();
   const s = t.saved;
+  const m = t.model;
   if (s.active) {
-    if (s.active !== S.active) {
-      // The tour's preview took the place of a preview that was in front.
-      if (S.open.has(s.active)) activate(s.active, false);
-      else if (s.active === s.preview) await openFile(s.active, { preview: true, focusLineage: false });
-    }
+    if (m && !s.order.includes(m.file) && S.open.has(m.file) && !S.open.get(m.file).dirty) dropTab(m.file);
+    if (s.preview && !S.open.has(s.preview)) await openFile(s.preview, { preview: true, focusLineage: false });
+    S.order = s.order.filter((p) => S.open.has(p)).concat(S.order.filter((p) => !s.order.includes(p)));
+    if (S.open.has(s.active)) activate(s.active, false);
+    else settleTabs();
     $('#select-input').value = s.select;
     if (s.mode === 'select') await runSelection();
     else if (s.mode === 'column' && s.colFocus) await focusColumn(s.colFocus.id, s.colFocus.column);
     else if (s.focus) {
       if (S.focus !== s.focus || S.graphMode !== 'model') await focusNode(s.focus);
     } else {
-      S.focus = null;
       S.graphMode = 'model';
       paintMode();
       Lineage.clear();
       emptyHint('Select a model to see its lineage.');
       $('#lineage-status').textContent = '';
     }
+    // Whatever the canvas shows, Jobs, Compiled and Run speak of these.
+    Object.assign(S, { focus: s.focus, colFocus: s.colFocus, jobsFor: s.jobsFor, unsynced: s.unsynced });
     if ((S.node && S.node.id) !== (s.node && s.node.id)) {
       S.node = s.node;
       $('#catalog').replaceChildren(...s.catalog);
     }
+  } else if (m && S.graphMode !== 'model') {
+    // An end on a selection leaves the model's lineage, as the editor does.
+    await focusNode(m.id);
   }
   $('#select-input').value = s.select;
   S.selectHistory = s.history;
@@ -11274,7 +11314,8 @@ async function endTour() {
   if (S.catTab !== s.catTab && S.node) showCatalogTab(S.node, s.catTab);
   else S.catTab = s.catTab;
   showDock(s.dock);
-  if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
+  if (s.reports) await openReports(s.reportsSection);
+  else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
 }
 
 /* Once on a machine, the first page to ask offers the tour beside the ?
@@ -11284,14 +11325,24 @@ async function offerTour() {
   let r;
   try { r = await api.send('/api/tour/offer', 'POST', {}); } catch { return; }
   if (!r || !r.offer || S.tour) return;
-  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  const box = el('div', 'tour-offer');
+  const box = jel('div', 'tour-offer');
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', 'A tour of dbt-edith');
-  const go = el('button', 'btn sm primary', 'Give me a tour');
+  const go = jel('button', 'btn sm primary', 'Give me a tour');
   go.type = 'button';
-  const later = el('button', 'btn sm', 'Not now');
+  const later = jel('button', 'btn sm', 'Not now');
   later.type = 'button';
+  // Under the ? button, its arrow on the button's middle, until it goes:
+  // answered, or taken away by a tour started from the shortcut list.
+  const place = () => {
+    if (!box.isConnected) return window.removeEventListener('resize', place);
+    const at = $('#keys-btn').getBoundingClientRect();
+    const width = box.offsetWidth;
+    const left = Math.max(8, Math.min(at.left + at.width / 2 - width + 24, window.innerWidth - width - 8));
+    box.style.left = left + 'px';
+    box.style.top = (at.bottom + 10) + 'px';
+    box.style.setProperty('--arrow-x', (at.left + at.width / 2 - left) + 'px');
+  };
   const close = () => {
     box.remove();
     window.removeEventListener('resize', place);
@@ -11303,24 +11354,15 @@ async function offerTour() {
     e.stopPropagation();
     close();
   });
-  const actions = el('div', 'tour-actions');
-  actions.append(el('div', 'grow'), later, go);
+  const actions = jel('div', 'tour-actions');
+  actions.append(jel('div', 'grow'), later, go);
   box.append(
-    el('b', '', 'New to dbt-edith?'),
-    el('p', '', 'A tour of what it does, on a model of this project. It runs nothing and changes no setting.'),
+    jel('b', '', 'New to dbt-edith?'),
+    jel('p', '', 'A tour of what it does, on a model of this project. It runs nothing and changes no setting.'),
     actions,
-    el('p', 'tour-later', `Not now leaves it in the shortcut list, under ${keyLabel('?', IS_MAC)}.`),
+    jel('p', 'tour-later', `Not now leaves it in the shortcut list, under ${keyLabel('?', IS_MAC)}.`),
   );
   document.body.append(box);
-  // Under the ? button, its arrow on the button's middle.
-  const place = () => {
-    const at = $('#keys-btn').getBoundingClientRect();
-    const width = box.offsetWidth;
-    const left = Math.max(8, Math.min(at.left + at.width / 2 - width + 24, window.innerWidth - width - 8));
-    box.style.left = left + 'px';
-    box.style.top = (at.bottom + 10) + 'px';
-    box.style.setProperty('--arrow-x', (at.left + at.width / 2 - left) + 'px');
-  };
   place();
   window.addEventListener('resize', place);
 }

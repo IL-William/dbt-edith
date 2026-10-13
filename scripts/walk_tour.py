@@ -121,6 +121,16 @@ class Page:
     here: the standard library has no websocket client."""
 
     def __init__(self, work, scale):
+        # Chrome is stopped if anything after its start fails, or every run
+        # that fails here would leave one running.
+        self.chrome = None
+        try:
+            self._start(work, scale)
+        except BaseException:
+            self.close()
+            raise
+
+    def _start(self, work, scale):
         profile = work / "chrome"
         profile.mkdir()
         # Port 0: Chrome picks a free one and writes it down, so two checks
@@ -140,7 +150,6 @@ class Page:
                 break
             except (OSError, ValueError, StopIteration, IndexError):
                 if time.time() > deadline:
-                    self.close()
                     raise RuntimeError("Chrome did not start")
                 time.sleep(0.2)
         hostport, path = url.split("://", 1)[1].split("/", 1)
@@ -229,6 +238,8 @@ class Page:
         path.write_bytes(base64.b64decode(data))
 
     def close(self):
+        if not self.chrome:
+            return
         self.chrome.terminate()
         try:
             self.chrome.wait(timeout=10)
@@ -274,12 +285,23 @@ STEPS = [
 
 STATE = """(() => ({
   active: document.querySelector('#tabbar .ftab.active')?.textContent || '',
+  tabs: [...document.querySelectorAll('#tabbar .ftab')].map((t) => t.textContent + (t.classList.contains('preview') ? ' (preview)' : '')),
   dock: document.querySelector('#dock .tabs .tab.active')?.dataset.dock,
   mode: document.querySelector('#graph-mode .active')?.dataset.mode,
   select: document.querySelector('#select-input').value,
   catalog: document.querySelector('.cat-title')?.textContent || document.querySelector('#catalog').textContent,
+  jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
   reports: !document.querySelector('#reports-btn').classList.contains('hidden'),
+  panel: document.querySelector('#reports').classList.contains('open'),
 }))()"""
+
+# A key the app answers from anywhere, sent where the tour has the focus:
+# whether the tour kept the browser from acting on it too.
+HELD = """((key, code, mod) => {
+  const e = new KeyboardEvent('keydown', { key, code, metaKey: mod, ctrlKey: mod, bubbles: true, cancelable: true });
+  document.querySelector('#tour .tour-next').dispatchEvent(e);
+  return e.defaultPrevented;
+})"""
 
 
 class Walk:
@@ -290,6 +312,14 @@ class Walk:
     def check(self, label, ok, detail=""):
         print(("PASS  " if ok else "FAIL  ") + label + ("" if ok else f"\n        {detail}"))
         self.failed += not ok
+
+    def settle(self, want, timeout=10):
+        """The page's state once it matches `want`, or as it stands after
+        `timeout`: the tour's end reads a tab again and redraws a canvas."""
+        deadline = time.time() + timeout
+        while (got := self.page.js(STATE)) != want and time.time() < deadline:
+            time.sleep(0.1)
+        return got
 
     def step_shown(self, index, total):
         return self.page.until(
@@ -403,9 +433,12 @@ class Walk:
         print("--- from the shortcut list, on a page in use ---")
         page.until("!!document.querySelector('#tree .row[data-path=\"models\"]')", "the tree")
         page.js("document.querySelector('#tree .row[data-path=\"models\"]').click()")
-
         page.until("!!document.querySelector('#tree .row[data-path=\"models/customers.sql\"]')", "the models folder")
-        page.js("document.querySelector('#tree .row[data-path=\"models/customers.sql\"]').click()")
+        # orders.sql as the preview, behind customers.sql pinned in front.
+        page.js("document.querySelector('#tree .row[data-path=\"models/orders.sql\"]').click()")
+        page.until("document.querySelector('#tabbar .ftab.preview')?.textContent.startsWith('orders.sql')", "orders as the preview")
+        page.js("document.querySelector('#tree .row[data-path=\"models/customers.sql\"]')"
+                ".dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
         page.until("document.querySelector('.cat-title')?.textContent.includes('customers')", "customers in the Catalog")
         page.js("document.querySelector('[data-dock=catalog]').click()")
         page.js("document.querySelector('[data-mode=select]').click()")
@@ -413,25 +446,55 @@ class Walk:
         page.js("document.querySelector('#select-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))")
         page.until("document.querySelector('#select-sum').textContent !== ''", "the selection")
         page.js("document.querySelector('[data-dock=jobs]').click()")
+        page.until("document.querySelector('#jobs-head .jobs-about')?.textContent === 'customers'", "the Jobs tab on customers")
+        page.js("document.querySelector('#reports-btn').click()")
+        page.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
+        in_use = page.js(STATE)
+        page.key("?", "Slash", 191, text="?")
+        page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
+        page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
+        total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
+        self.check("it starts from the list, over the Reports panel",
+                   total == len(STEPS) and page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
+        for i in range(5):
+            self.step_shown(i, total)
+            if i == 2:
+                # The dbt_project.yml menu is shown, not used: Tab stays on the card.
+                page.until("!!document.querySelector('.crumbmenu.config')", "the menu")
+                for _ in range(4):
+                    page.key("Tab", "Tab", 9)
+                self.check("Tab stays on the card, the menu it shows being inert",
+                           page.js("!!document.activeElement.closest('#tour') && document.querySelector('.crumbmenu.config').inert"))
+            if i == 3:
+                self.check("the app's keys wait, and the browser does not act on them either",
+                           page.js(HELD + "('s', 'KeyS', true)") and page.js(HELD + "('F1', 'F1', false)")
+                           and page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
+            page.key(*RIGHT)
+        self.step_shown(5, total)
+        page.key(*ESCAPE)
+        page.until("!document.querySelector('#tour')", "Escape to end it")
+        back = self.settle(in_use)
+        self.check("Escape ends it, and the tabs, the canvas, the dock, the Jobs tab's node and the panel are as they were",
+                   back == in_use, f"before {in_use}\n        after  {back}")
+
+        print("--- ended while a step is still setting the page up ---")
+        page.js("document.querySelector('#reports-btn').click()")
+        page.until("!document.querySelector('#reports').classList.contains('open')", "the panel rolled up")
         in_use = page.js(STATE)
         page.js("document.body.focus()")
         page.key("?", "Slash", 191, text="?")
         page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
         page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
-        total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
-        self.check("it starts from the list", total == len(STEPS) and page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
-        for i in range(5):
-            self.step_shown(i, total)
-            page.key(*RIGHT)
-        self.step_shown(5, total)
+        self.step_shown(0, total)
+        page.key(*RIGHT)
+        page.key(*RIGHT)
+        page.key(*RIGHT)
         page.key(*ESCAPE)
         page.until("!document.querySelector('#tour')", "Escape to end it")
-        # The tab is read again and the selection drawn again: give it time.
-        deadline = time.time() + 10
-        while (back := page.js(STATE)) != in_use and time.time() < deadline:
-            time.sleep(0.1)
-        self.check("Escape ends it, and the tab, the canvas, the dock and the box are as they were",
-                   back == in_use, f"before {in_use}\n        after  {back}")
+        time.sleep(2)
+        back = self.settle(in_use)
+        self.check("no menu opens after the end, and the page is as it was",
+                   back == in_use and not page.js("!!document.querySelector('.crumbmenu')"), f"before {in_use}\n        after  {back}")
         self.check("no error in the page", not page.errors, "; ".join(page.errors))
         return self.failed
 

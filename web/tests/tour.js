@@ -61,7 +61,7 @@ check('Escape', /\{Esc\} ends it/.test(step(all, 'welcome').text), true);
 
 print('\n--- every step ---');
 var every = all.concat(tourSteps(ctx({ model: null, jobs: 1, reports: ['Last run'], cll: 'Fusion', snowflake: true, mac: false })));
-check('has a title and a text', every.filter(function (s) { return !s.title || !s.text; }).map(keys), []);
+check('has a title and a text', every.filter(function (s) { return !s.title || !s.text; }).map(function (s) { return s.key; }), []);
 // Keys are set apart from code: ⌘` holds a backtick, which as code would
 // open a span that runs to the end of the text.
 check('closes every brace and backtick it opens, a key holding a backtick included', every.filter(function (s) {

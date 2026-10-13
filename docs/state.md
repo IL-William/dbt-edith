@@ -1151,10 +1151,15 @@ without one, and a feature that is off says how to turn it on: no job source,
 no column lineage tool, Snowflake's features off, a Reports button still
 hidden, which the step shows while it lasts. It runs nothing and writes no
 setting: it points at the Terminal tab without opening it, and at Export
-without pressing it. Ended at any step, it puts back the tab in front, the
-canvas and its mode, the selection box and its history, the Catalog and the
-dock; a page with no tab open keeps the model as a place to start. The page
-under it is inert, and the arrows, Enter and Escape walk it. `tour.json`
+without pressing it. Ended at any step, it puts back the tabs in their order,
+a preview its own took the place of included, the tab in front, the canvas
+and its mode, the node Jobs, Compiled and Run speak of, the selection box and
+its history, the Catalog, the dock and a Reports panel that was down; a page
+with no tab open keeps the model as a place to start. The steps set the page
+up one at a time, and one passed by a held key or an end stops at its next
+look, so none finishes over the next or after the end. The page under it is
+inert, the `dbt_project.yml` menu it opens too, the app's keys wait, the
+browser's answers to them as well, and the arrows, Enter and Escape walk it. `tour.json`
 beside `update.json` keeps when it was offered and the newest version that
 served a page, which the tour of what is new (below) will start from.
 `web/tests/tour.js` checks the steps and their wording per feature, and
