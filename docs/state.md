@@ -1157,7 +1157,9 @@ and its mode, the node Jobs, Compiled and Run speak of, the selection box and
 its history, the Catalog, the dock and a Reports panel that was down; a page
 with no tab open keeps the model as a place to start. The steps set the page
 up one at a time, and one passed by a held key or an end stops at its next
-look, so none finishes over the next or after the end. The page under it is
+look, so none finishes over the next or after the end; the overlay stays,
+saying so, until the page is back, so nothing done meanwhile is undone by it
+and no second tour starts on a page half restored. The page under it is
 inert, the `dbt_project.yml` menu it opens too, the app's keys wait, the
 browser's answers to them as well, and the arrows, Enter and Escape walk it. `tour.json`
 beside `update.json` keeps when it was offered and the newest version that

@@ -490,8 +490,15 @@ class Walk:
         page.key(*RIGHT)
         page.key(*RIGHT)
         page.key(*ESCAPE)
+        self.check("the overlay stays while the page is put back, and says so",
+                   page.js("!document.querySelector('#tour') || "
+                           "document.querySelector('#tour .tour-text').textContent === 'Putting the page back…'"))
+        # A ? meanwhile neither reaches the page nor starts a second tour.
+        page.key("?", "Slash", 191, text="?")
         page.until("!document.querySelector('#tour')", "Escape to end it")
         time.sleep(2)
+        self.check("  and a key typed meanwhile opens nothing",
+                   page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
         back = self.settle(in_use)
         self.check("no menu opens after the end, and the page is as it was",
                    back == in_use and not page.js("!!document.querySelector('.crumbmenu')"), f"before {in_use}\n        after  {back}")

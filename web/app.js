@@ -10996,6 +10996,7 @@ async function startTour() {
   closeShortcuts();
   closePalette();
   const reports = S.reportsOpen;
+  const reportsReturn = S.reportsReturn;
   closeReports();
   closePopup();
   closeHoverCard();
@@ -11007,14 +11008,14 @@ async function startTour() {
     focus: S.focus, colFocus: S.colFocus, jobsFor: S.jobsFor, unsynced: S.unsynced,
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
-    reports, reportsSection: S.reportsSection,
+    reports, reportsSection: S.reportsSection, reportsReturn,
   };
   buildTour(t);
   const [model, jobs] = await Promise.all([
     api.get('/api/tour').then((r) => r.model || null, () => null),
     api.get('/api/jobs').then((r) => (r.sources || []).length, () => 0),
   ]);
-  if (S.tour !== t) return;
+  if (S.tour !== t || t.ending) return;
   const pick = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
   t.model = model;
   t.steps = tourSteps({
@@ -11082,6 +11083,12 @@ function tourHeld() {
    between the card's buttons, the rest of the page being inert. */
 function tourKey(e) {
   if (!S.tour) return;
+  if (S.tour.ending) {
+    // The page is being put back: nothing reaches it, and nothing walks on.
+    if (e.key !== 'Tab') e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   const onButton = e.target && e.target.tagName === 'BUTTON';
   if (e.key === 'Escape') endTour();
   else if (e.key === 'ArrowRight' || (e.key === 'Enter' && !onButton)) tourStep(1);
@@ -11097,7 +11104,7 @@ function tourKey(e) {
 
 function tourStep(by) {
   const t = S.tour;
-  if (!t || !t.steps) return;
+  if (!t || !t.steps || t.ending) return;
   const to = t.at + by;
   if (to >= t.steps.length) return endTour();
   if (to >= 0) tourGo(to);
@@ -11109,7 +11116,7 @@ function tourStep(by) {
    or after the end, it would leave its canvas or its menu behind. */
 async function tourGo(i) {
   const t = S.tour;
-  if (!t || !t.steps) return;
+  if (!t || !t.steps || t.ending) return;
   t.at = i;
   const ask = ++t.ask;
   const step = t.steps[i];
@@ -11228,7 +11235,7 @@ function tourTarget(target) {
 
 function paintTour() {
   const t = S.tour;
-  if (!t || t.at < 0) return;
+  if (!t || t.at < 0 || t.ending) return;
   const step = t.steps[t.at];
   const root = t.root;
   root.querySelector('.tour-count').textContent = `${t.at + 1} of ${t.steps.length}`;
@@ -11269,14 +11276,24 @@ function paintTour() {
    and the Reports panel if it was down. */
 async function endTour() {
   const t = S.tour;
-  if (!t) return;
-  S.tour = null;
-  window.removeEventListener('keydown', tourKey, true);
-  window.removeEventListener('resize', paintTour);
-  if (t.root) t.root.remove();
+  if (!t || t.ending) return;
+  // The overlay stays, inert under it, until the page is back: a click while
+  // it is put back would be undone by it, and a tour started meanwhile would
+  // note a page half restored. Every step still setting the page up stops at
+  // its next look.
+  t.ending = true;
+  t.ask++;
+  if (t.root) {
+    t.root.classList.add('centre');
+    t.root.querySelector('.tour-ring').classList.add('hidden');
+    const card = t.root.querySelector('.tour-card');
+    card.style.left = card.style.top = '';
+    t.root.querySelector('.tour-text').textContent = 'Putting the page back…';
+    for (const b of t.root.querySelectorAll('button')) b.disabled = true;
+  }
   await t.chain;
   closeCrumbMenu();
-  for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
+  t.revealed = false;
   paintReportsButton();
   const s = t.saved;
   const m = t.model;
@@ -11314,8 +11331,16 @@ async function endTour() {
   if (S.catTab !== s.catTab && S.node) showCatalogTab(S.node, s.catTab);
   else S.catTab = s.catTab;
   showDock(s.dock);
-  if (s.reports) await openReports(s.reportsSection);
-  else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
+  S.tour = null;
+  window.removeEventListener('keydown', tourKey, true);
+  window.removeEventListener('resize', paintTour);
+  if (t.root) t.root.remove();
+  for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
+  if (s.reports) {
+    await openReports(s.reportsSection);
+    // Where Escape in the panel sends the focus back, as before the tour.
+    S.reportsReturn = s.reportsReturn;
+  } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
 }
 
 /* Once on a machine, the first page to ask offers the tour beside the ?
