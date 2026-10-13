@@ -11,7 +11,7 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, browser tests, syntax
+./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the tour in Chrome, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
@@ -28,6 +28,9 @@ which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to a Python that has
 them, or `DBT` to a dbt executable. It skips itself without either, and skips
 Shopify without git or the network; CI runs it on every model for two versions
 of dbt-core (0033, 0056).
+The guided tour is walked step by step in headless Chrome on the same Jaffle
+Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
+itself without either; CI does not run it, having no Chrome to drive (0074).
 Updating a vendored library means changing its version in
 `scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
 when they disagree.
@@ -182,6 +185,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
+| add a step to the guided tour, or change when it is offered or what it touches | [0074](docs/decisions/0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 
 Every decision, with what was rejected each time, is indexed in
@@ -194,7 +198,7 @@ in both.
 `src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
 `src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
 concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`, `update`. `build.rs` stamps
+`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `venv`, `files`, `pty`, `update`, `tour`. `build.rs` stamps
 the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
 frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
 piece that talks to a warehouse. The README has the annotated version.

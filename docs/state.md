@@ -1136,6 +1136,33 @@ look or a save. On a large real project with its orchestration repository,
 before the review: the order, a chip lighting its step, a node no job runs,
 and nothing asked while the Catalog is hidden. Not yet on the VM.
 
+A guided tour, Give me a tour at the top of the shortcut list, and offered once
+per machine by a card under the `?` button (0074). Thirteen steps on a project
+with a model, each ringing one part of the page, the rest dimmed, with what it
+is for: the model's file, the `dbt_project.yml` button with its menu open, the
+lineage, a Custom selection of `+model+`, Export, Copy image and Copy, the
+Catalog, the column lineage menu, the Jobs tab, the Reports button, the
+Terminal tab, Search and the `?` button. The model is the server's pick
+(`src/tour.rs`): one of the project's own with parents and children, then one
+a job runs when the Jobs tab has a source (`jobs::run_by_a_step`), the most on
+its thinner side up to three, then the neighbourhood closest to eight, then
+by name; `stg_orders` on Jaffle Shop, with the invented jobs or without. A step about a model is left out
+without one, and a feature that is off says how to turn it on: no job source,
+no column lineage tool, Snowflake's features off, a Reports button still
+hidden, which the step shows while it lasts. It runs nothing and writes no
+setting: it points at the Terminal tab without opening it, and at Export
+without pressing it. Ended at any step, it puts back the tab in front, the
+canvas and its mode, the selection box and its history, the Catalog and the
+dock; a page with no tab open keeps the model as a place to start. The page
+under it is inert, and the arrows, Enter and Escape walk it. `tour.json`
+beside `update.json` keeps when it was offered and the newest version that
+served a page, which the tour of what is new (below) will start from.
+`web/tests/tour.js` checks the steps and their wording per feature, and
+`scripts/walk_tour.py`, in `check.sh`, walks every step in headless Chrome on
+Jaffle Shop: the ring around each target, the page under it, Back, the
+offer once and not after a reload, the terminal never started, no file in the
+config directory but `tour.json`, and a page in use put back after Escape.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1208,23 +1235,7 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-9. **A guided tour.** "Give me a tour", from the shortcut list (`?`), walks
-   through what dbt-edith does:
-   - the lineage and the Custom selection;
-   - the Catalog;
-   - the Jobs tab and Reports;
-   - the terminal and the palette.
-
-   Each step points at the element itself and says what it is for.
-   - **Which model it shows:** it picks a model of the project with parents
-     and children, so it works on any project.
-   - **What it skips:** a step whose feature is off, such as Snowflake, a job
-     source or a report, is skipped or says how to turn the feature on.
-   - **What it never does:** run anything, or change a setting.
-   - **When it appears:** offered once, then never again on its own, which
-     the settings remember.
-   - **How it is checked:** headless Chrome walks every step on Jaffle Shop.
-10. **Screenshots in the README**, taken on dbt's Jaffle Shop with invented
+9. **Screenshots in the README**, taken on dbt's Jaffle Shop with invented
     data only (0014). No name or figure of a client project appears, in the
     images or around them.
     - **Which:** the lineage, a Custom selection, the Catalog, the Jobs tab and
@@ -1237,7 +1248,7 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         adds to the history for good;
       - a gist, as #16 used for its screenshots, light, but a README needs
         links that last longer than one.
-11. **A Run button on a node's file.** It sits at the end of the breadcrumb
+10. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
     only a selection types its command, so looking never touches the
@@ -1366,7 +1377,7 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
-12. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+11. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
@@ -1446,7 +1457,7 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       (`/api/collineage` answers 404): run collin on it first, or put a long
       name in the chip from the page, since its text is all its width depends
       on.
-13. **The incremental strategy and its unique key, on the lineage and in the
+12. **The incremental strategy and its unique key, on the lineage and in the
     Catalog.** An incremental box says `incremental` and nothing of what a
     rerun does: append, delete and insert by key, or merge. The manifest
     carries it as `config.incremental_strategy`; `src/graph.rs` already
@@ -1746,6 +1757,30 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         Its boxes therefore read `delete+insert`, and the card says `no
         unique key` alone. The marked `append` box shows only on
         Snowflake's macros, which the Rust tests cover.
+
+13. **What is new since the version you had.** An update usually skips
+    several releases, and the update pill's What changed (0068) opens one
+    release's notes, on GitHub, which the VM cannot always reach.
+    - **Where it starts from:** `tour.json` keeps the newest version that
+      served a page on the machine, from 1.16.0 on (0074). A page of a later
+      version shows what came since.
+    - **The list:** `CHANGELOG.md` built into the binary with `include_str!`,
+      its sections between the two versions, grouped by version and folded,
+      since a release can carry a dozen lines. Read offline, unlike the pill.
+    - **The tour of it:** each step of the tour carries the version that
+      brought it, and the tour of what is new plays the steps after the
+      version kept. A feature with no step is in the list alone, so a pull
+      request adding something visible adds its step, as it adds its
+      CHANGELOG line.
+    - **Where it is offered:** the card under `?` that offers the tour, once
+      per update, and What's new in the shortcut list at any time.
+    - **The traps:**
+      - a machine that ran nothing since 1.16.0 has no version kept, and gets
+        the first tour instead, which is new to it anyway;
+      - several dbt-edith on one machine: the version kept only rises, so an
+        older one started after a newer one offers nothing;
+      - the first tour's steps predate the field, and stay out of every tour
+        of what is new.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has

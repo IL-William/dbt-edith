@@ -77,6 +77,7 @@ it is built this way, for whoever changes it next.
 | [0071](0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md) | A click types a dbt command and leaves Enter to you | passing `run` to `sendToTerminal`, or making any button press Enter in the terminal |
 | [0072](0072-a-click-on-an-inactive-venv-types-its-activate-line.md) | A click on an inactive venv types its activate line | making the status bar type anything in the terminal, or changing where a venv's activate line is made |
 | [0073](0073-the-terminal-sends-the-line-keys-the-shell-reads-everywhere.md) | The terminal sends the line keys in a form the shell reads anywhere | handling a key that moves or deletes in the terminal's command line |
+| [0074](0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md) | The tour is offered once per machine, and runs nothing | adding a step to the guided tour, making it open, click or type anything, or changing when it is offered or what `tour.json` holds |
 
 ## Keeping these honest
 

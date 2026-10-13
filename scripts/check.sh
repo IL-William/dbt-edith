@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Everything that has to pass before a change is done: Rust tests, the release
 # notes, both audits, the Snowflake script's tests, the selection engine against
-# dbt itself, the browser harnesses, and a syntax check on the frontend the
-# harnesses cannot catch.
+# dbt itself, the guided tour walked in Chrome, the browser harnesses, and a
+# syntax check on the frontend the harnesses cannot catch.
 #
 # JavaScriptCore ships with macOS. Elsewhere, set JSC to a JavaScript shell
 # (jsc, d8, node) or accept that the browser half is skipped.
@@ -96,6 +96,22 @@ else
     0) echo "dbt ok ($(printf '%s\n' "$out" | head -1 | cut -d, -f1): $(printf '%s\n' "$out" | tail -1))" ;;
     2) printf '%s\n' "$out" | tail -1 ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DBT COMPARISON FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
+echo "== the tour in Chrome =="
+# Every step of the guided tour, walked in headless Chrome on a parsed copy of
+# Jaffle Shop (0074). It needs the same dbt as the step above to parse it, and
+# Chrome, and skips itself without either.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+else
+  out=$("$py" scripts/walk_tour.py 2>&1)
+  case $? in
+    0) echo "tour ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
+    2) printf '%s\n' "$out" | tail -1 ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "TOUR FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
 

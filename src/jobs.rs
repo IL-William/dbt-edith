@@ -1202,6 +1202,18 @@ fn step_ref(read: &Read, si: usize, why: String) -> StepRef {
     }
 }
 
+/// Which of the graph's nodes some step runs, builds, tests or checks, by
+/// index: the guided tour shows one of them when there is one (0074).
+pub fn run_by_a_step(graph: &Graph, read: &Read) -> Vec<bool> {
+    let mut ran = vec![false; graph.nodes.len()];
+    for s in read.steps.iter().filter(|s| s.executes()) {
+        for &i in &s.nodes {
+            ran[i as usize] = true;
+        }
+    }
+    ran
+}
+
 pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
     let n = graph.nodes.len();
     let (mut any, mut on) = (vec![false; n], vec![false; n]);
