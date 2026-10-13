@@ -47,7 +47,12 @@ check('names what the reports hold and the key',
       reportsButtonTitle(both, [], '⌥⌘R'), 'Reports on the whole project: collin\'s report, Job coverage (⌥⌘R)');
 check('then what is new, a line each',
       reportsButtonTitle(both, reportsNews(badge), 'Ctrl+Alt+R').split('\n')[1], badge.title);
-check('says the key even with nothing to show', reportsButtonTitle([], [], 'Ctrl+Alt+R'), 'Reports on the whole project (Ctrl+Alt+R)');
+check('says the key even with nothing to show', reportsButtonTitle([], [], 'Ctrl+Alt+R').split('\n')[0], 'Reports on the whole project (Ctrl+Alt+R)');
+// Dimmed rather than hidden, the button has to say what will fill it (0075).
+check('  and then what will fill them',
+      reportsButtonTitle(reportsSections({}), [], '⌥⌘R').split('\n').slice(1),
+      ['Nothing yet: the last dbt run fills one, from target/run_results.json, collin\'s report another, '
+        + 'and the job coverage once the Jobs tab has a source, which is added here.']);
 check('and leaves out a section with nothing in it yet',
       reportsButtonTitle(reportsSections({ collin: { at: 5 } }), [], '⌥⌘R'), 'Reports on the whole project: collin\'s report (⌥⌘R)');
 

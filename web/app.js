@@ -8062,11 +8062,15 @@ function reportsDefaultSection(sections, news, last) {
   return sections.length ? sections[0].key : '';
 }
 
-/* The button's tooltip: what the reports hold, then what is new in them. */
+/* The button's tooltip: what the reports hold, then what is new in them, or
+   what will fill them while nothing does, since the button is dimmed then
+   rather than hidden (0075). */
 function reportsButtonTitle(sections, news, key) {
   const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
+  const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, collin\'s report another, '
+    + 'and the job coverage once the Jobs tab has a source, which is added here.';
   return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
-    .concat((news || []).map((n) => n.title)).join('\n');
+    .concat(names ? (news || []).map((n) => n.title) : [none]).join('\n');
 }
 
 /* Whether the file behind the section on screen changed after it was read:
@@ -8110,8 +8114,10 @@ function reportsNow() {
 function paintReportsButton() {
   const btn = $('#reports-btn');
   const { sections, news } = reportsNow();
-  // The tour shows it for its step even while it has nothing (0074).
-  btn.classList.toggle('hidden', !sections.some((sec) => !sec.empty) && !S.reportsOpen && !(S.tour && S.tour.revealed));
+  // In view from the first paint, so the panel is found before it has
+  // anything, and dimmed until a section does (0075).
+  btn.classList.remove('hidden');
+  btn.classList.toggle('dim', !sections.some((sec) => !sec.empty) && !S.reportsOpen);
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
@@ -10952,9 +10958,9 @@ function tourSteps(c) {
     text: c.reports.length
       ? `Reports on the whole project: ${c.reports.join(', ')}. A chip on the button says what is new in them `
         + `since you last looked, and ${reportsKey} opens them from anywhere.`
-      : 'Reports on the whole project, which this button opens once one has something to show: the last dbt run, '
-        + 'from `run_results.json`, collin\'s findings, and the job coverage once the Jobs tab has a source. '
-        + `It stays hidden until then, and ${reportsKey} opens them meanwhile.` });
+      : 'Reports on the whole project, dimmed until one has something to show: the last dbt run, from '
+        + '`run_results.json`, collin\'s findings, and the job coverage once the Jobs tab has a source. Meanwhile '
+        + `it opens on the coverage, where a source is added, and ${reportsKey} opens it from anywhere.` });
   steps.push({ key: 'terminal', target: '#dock [data-dock=terminal]', title: 'Terminal',
     text: 'A shell in the project folder, where dbt runs: this page never runs it. A button that offers a dbt '
       + 'command, such as dbt ls above the lineage, types it there and leaves Enter to you. '
@@ -11001,7 +11007,7 @@ async function startTour() {
   closePopup();
   closeHoverCard();
   for (const offer of $$('.tour-offer')) offer.remove();
-  const t = { at: -1, ask: 0, revealed: false, chain: Promise.resolve() };
+  const t = { at: -1, ask: 0, chain: Promise.resolve() };
   S.tour = t;
   t.saved = {
     active: S.active, preview: S.preview, order: S.order.slice(), dock: S.dock, mode: S.graphMode,
@@ -11123,10 +11129,6 @@ async function tourGo(i) {
   const live = () => S.tour === t && t.ask === ask;
   t.chain = t.chain.then(async () => {
     if (!live()) return;
-    if (t.revealed) {
-      t.revealed = false;
-      paintReportsButton();
-    }
     closeCrumbMenu();
     try { await tourEnter(step.key, t, live); }
     catch (e) { toast('tour: ' + e.message, 'err'); }
@@ -11211,13 +11213,6 @@ async function tourEnter(key, t, live) {
       else if (crumbMenu) crumbMenu.el.inert = true;
       break;
     }
-    case 'reports':
-      // Hidden while no report has anything: shown for this step, to point at.
-      if ($('#reports-btn').classList.contains('hidden')) {
-        $('#reports-btn').classList.remove('hidden');
-        t.revealed = true;
-      }
-      break;
   }
 }
 
@@ -11293,8 +11288,6 @@ async function endTour() {
   }
   await t.chain;
   closeCrumbMenu();
-  t.revealed = false;
-  paintReportsButton();
   const s = t.saved;
   const m = t.model;
   if (s.active) {

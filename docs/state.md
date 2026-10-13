@@ -1008,8 +1008,7 @@ counts only on the row the first one hit, since a folder opened by the first
 can put a file under the pointer. A pick is written from the project within
 two folders above it, in full otherwise. The job coverage is now listed in
 Reports before any source is named, as where one is added: hollow in the rail,
-it neither shows the button nor is opened on while another section has
-something. Driven in headless Chrome on a large real project with its
+it is not opened on while another section has something. Driven in headless Chrome on a large real project with its
 orchestration repository beside it: Reports to Add a source, the picker on the
 project, up one folder, three folders down, Escape closing the picker and not
 the form, a path typed into the picker, and Use writing
@@ -1148,8 +1147,8 @@ a job runs when the Jobs tab has a source (`jobs::run_by_a_step`), the most on
 its thinner side up to three, then the neighbourhood closest to eight, then
 by name; `stg_orders` on Jaffle Shop, with the invented jobs or without. A step about a model is left out
 without one, and a feature that is off says how to turn it on: no job source,
-no column lineage tool, Snowflake's features off, a Reports button still
-hidden, which the step shows while it lasts. It runs nothing and writes no
+no column lineage tool, Snowflake's features off, a Reports button dimmed
+until a report has something. It runs nothing and writes no
 setting: it points at the Terminal tab without opening it, and at Export
 without pressing it. Ended at any step, it puts back the tabs in their order,
 a preview its own took the place of included, the tab in front, the canvas
@@ -1169,6 +1168,14 @@ served a page, which the tour of what is new (below) will start from.
 Jaffle Shop: the ring around each target, the page under it, Back, the
 offer once and not after a reload, the terminal never started, no file in the
 config directory but `tour.json`, and a page in use put back after Escape.
+
+The Reports button is in view from the first paint, dimmed at half opacity
+while no section has anything, which a first start after a `dbt parse` never
+has, and its tooltip then says what fills it: the last run, collin's report,
+the job coverage once a source is named (0075). A click opens the empty
+coverage, where a source is added, as `Mod+Alt+R` did. It was hidden until
+then (0064, 0070), so nobody new to the tool saw that Reports exist. The
+tour's Reports step points at it as it is.
 
 ## Deferred, in the order they were chosen
 

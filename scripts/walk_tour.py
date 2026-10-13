@@ -379,6 +379,8 @@ class Walk:
         })()""")
         self.check("  under the ? button", under)
         self.check("  and noted at once", (self.config / "tour.json").exists())
+        self.check("the Reports button in view before any report, dimmed (0075)",
+                   page.js("(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"))
         if self.shots:
             page.shot(self.shots / "00-the-offer.png")
         before = page.js(STATE)
@@ -418,7 +420,7 @@ class Walk:
         self.check("  which keeps when it was offered and the version, and nothing else",
                    sorted(kept) == ["offered", "version"] and re.fullmatch(r"\d+\.\d+\.\d+", kept["version"]), f"{kept}")
         self.check("no menu left open", not page.js("!!document.querySelector('.crumbmenu')"))
-        self.check("the hidden Reports button hidden again", after["reports"] == before["reports"], f"{before} then {after}")
+        self.check("the Reports button as it was", after["reports"] == before["reports"], f"{before} then {after}")
         self.check("with no tab open before, the model stays open as a place to start",
                    after["active"].startswith(f"{MODEL}.sql") and after["dock"] == before["dock"], f"{after}")
 
