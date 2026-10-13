@@ -38,7 +38,8 @@ const S = {
   selectHistory: [],          // expressions typed this session, newest first
   selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
-  colSort: 'az',              // catalog: az | tests
+  colSort: 'az',              // catalog: az | tests | key
+  colReveal: false,           // scroll to colHighlight's row on the next Columns draw
   colFilter: '',              // catalog: what the Columns filter holds, kept from one node to the next
   dock: 'lineage',            // the dock tab on screen
   lastPane: '',               // the pane last clicked or focused, for a Cmd+F with nothing focused
@@ -3706,7 +3707,10 @@ const rerender = () => S.graphMode === 'select'
    hands the layout this project's package, which is how it tells the
    project's own folders from an installed package's (0029). */
 function canvasOptions() {
-  return { folders: foldersOn() ? ((S.meta && S.meta.project) || '') : null };
+  return {
+    folders: foldersOn() ? ((S.meta && S.meta.project) || '') : null,
+    adapter: (S.meta && S.meta.adapter) || '',
+  };
 }
 
 // ------------------------------------------------------------- selection --
@@ -5956,7 +5960,7 @@ async function openColumn(n, column) {
     if (res.added) {
       applyInfo(await api.get('/api/meta'));
       if (S.node && S.node.id === n.id) {
-        S.colHighlight = column;
+        highlightColumn(column);
         renderCatalog(await nodeDetail({ id: n.id }));
       }
     }
@@ -6373,6 +6377,7 @@ function exportCanvasCss() {
     '.nd .kindbar.seg { rx: 1.5; }',
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
     '.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }',
+    '.nd .t2 .struck { opacity: .6; text-decoration: line-through; }',
     '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
     '.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }',
     '.band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }',
@@ -6559,8 +6564,12 @@ function exportDocument(o) {
     `<span><i style="background:${e(colour)}"></i>${e(label)}</span>`).join('');
   const facts = f.warnings.map((w) => `<li class="warn">${e(w)}</li>`)
     .concat(f.lines.map((l) => `<li>${e(l)}</li>`)).join('');
+  // The struck strategy keeps its strike in the list, as it does on the picture.
+  const sub = (n) => (n.parts && n.parts.struck
+    ? `${e(n.parts.lead)} <s>${e(n.parts.struck)}</s>${n.parts.rest ? `  ·  ${e(n.parts.rest)}` : ''}`
+    : e(n.sub));
   const rows = o.nodes.map((n) => `<li data-id="${e(n.id)}"><div class="nm">${e(n.name)}</div>`
-    + `<div class="sub">${e(n.sub)}</div><div class="file">${e(n.file)}</div></li>`).join('');
+    + `<div class="sub">${sub(n)}</div><div class="file">${e(n.file)}</div></li>`).join('');
   const undrawn = f.undrawn.length
     ? `<div class="more">Matched, not drawn (${f.undrawn.length})</div>`
       + `<ol class="undrawn">${f.undrawn.map((n) => `<li>${e(n)}</li>`).join('')}</ol>`
@@ -6630,7 +6639,7 @@ function exportLineage() {
   });
   const heading = shortTitle(exportTitle(sub), 60);
   const nodes = sub.nodes
-    .map((n) => ({ id: n.id, name: n.name, sub: Lineage.subtitle(n), file: n.file }))
+    .map((n) => ({ id: n.id, name: n.name, sub: Lineage.subtitle(n), parts: Lineage.subtitleParts(n), file: n.file }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const html = exportDocument({
     heading, facts, nodes, legend: legendEntries(sub), svg: shot.svg, frame: shot.frame,
@@ -8424,7 +8433,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
   pushJump();
   if (dock === 'catalog') {
     S.catTab = 'columns';
-    S.colHighlight = column || null;
+    highlightColumn(column || null);
     showDock('catalog');
   }
   await focusNode(id, { open: true });
@@ -8477,6 +8486,40 @@ function testFacts(n, level) {
   return facts;
 }
 
+/* What an incremental model's strategy does, for its hover card: where it
+   comes from and the key it works on, or, when the macros dbt runs insert
+   every row for want of a key, why, in the warning colour and worded by the
+   macro that inserts. Painted from the box and again from /api/node, which
+   carry the same fields, so the line does not change under the pointer. */
+const KEYED_STRATEGIES = ['merge', 'delete+insert'];
+const INSERT_REASONS = {
+  snowflake__get_merge_sql: 'so Snowflake runs a plain insert into',
+  default__get_merge_sql: 'on FALSE, so every row is inserted',
+  default__get_delete_insert_merge_sql: 'so nothing is deleted before the insert',
+};
+function strategyFacts(n, adapter) {
+  if (!n || n.kind !== 'model' || n.materialized !== 'incremental') return [];
+  const name = Lineage.adapterName(adapter);
+  if (!n.strategy_shown) {
+    return [{ text: `${name}'s default strategy, which could not be read from its macros`, muted: true }];
+  }
+  const origin = n.strategy_default ? `, ${name}'s default` : '';
+  if (n.strategy_insert) {
+    const reason = INSERT_REASONS[n.strategy_insert] || 'so every row is inserted';
+    return [{ text: `append in effect: ${n.strategy_named}${origin}${origin && ','} with no unique key, ${reason}`, warn: true }];
+  }
+  if (!KEYED_STRATEGIES.includes(n.strategy_shown)) return [{ text: n.strategy_shown + origin }];
+  const key = n.unique_key || [];
+  return [{ text: key.length ? `${n.strategy_shown} on ${key.join(', ')}${origin}` : `${n.strategy_shown}${origin}, no unique key` }];
+}
+
+/* A second line for HTML: the parts subtitleParts() gives, the struck word in
+   an <s>. */
+function subNodes(p) {
+  if (!p.struck) return [[p.lead, p.rest].filter(Boolean).join('  ·  ')];
+  return [`${p.lead} `, Object.assign(document.createElement('s'), { textContent: p.struck }), p.rest ? `  ·  ${p.rest}` : ''];
+}
+
 function hoverCardBody(el, { title, tone, sub, crumb }) {
   el.textContent = '';
   const head = document.createElement('div');
@@ -8484,7 +8527,12 @@ function hoverCardBody(el, { title, tone, sub, crumb }) {
   if (tone) head.appendChild(tone);
   head.append(Object.assign(document.createElement('span'), { className: 'hc-name', textContent: title }));
   el.appendChild(head);
-  if (sub) el.append(Object.assign(document.createElement('div'), { className: 'hc-sub', textContent: sub }));
+  // A string, or the nodes subNodes() makes of a box's line.
+  if (sub) {
+    const line = Object.assign(document.createElement('div'), { className: 'hc-sub' });
+    line.append(...[].concat(sub));
+    el.append(line);
+  }
   if (crumb) el.append(Object.assign(document.createElement('div'), { className: 'hc-crumb', textContent: crumb }));
   return el;
 }
@@ -8585,15 +8633,18 @@ function fillNodeCard(el, id, seed) {
     if (!hoverCard || hoverCard.el !== el) return;   // closed, or swapped for another
     const tone = dot(n);
     tone.removeAttribute('title');           // no native tooltip inside the card
-    hoverCardBody(el, { title: n.name || id, tone, sub: Lineage.subtitle(n), crumb: n.file || id });
+    hoverCardBody(el, { title: n.name || id, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file || id });
     if (n.disabled) {
       const off = Object.assign(document.createElement('span'), { className: 'offchip', textContent: 'disabled' });
       el.querySelector('.hc-head').appendChild(off);
     }
     // Painted from the box and again from the detail, which carry the same
     // facts, so the card does not change under the pointer.
-    for (const f of testFacts(n, Lineage.testLevel(n))) {
-      el.append(Object.assign(document.createElement('div'), { className: 'hc-note' + (f.warn ? ' warn' : ''), textContent: f.text }));
+    const facts = testFacts(n, Lineage.testLevel(n)).concat(strategyFacts(n, S.meta && S.meta.adapter));
+    for (const f of facts) {
+      el.append(Object.assign(document.createElement('div'), {
+        className: 'hc-note' + (f.warn ? ' warn' : '') + (f.muted ? ' muted' : ''), textContent: f.text,
+      }));
     }
     if (!full) return;
 
@@ -9888,6 +9939,98 @@ function paintClonePlan(view, st) {
   view.sql.textContent = st.script;
 }
 
+/* `a view`, `an ephemeral`. */
+function article(word) {
+  return (/^[aeiou]/i.test(word) ? 'an ' : 'a ') + word;
+}
+
+/* A column name or a key entry as Snowflake compares them: case aside and
+   quotes off, since it upper-cases what the YAML declares in lower case. */
+function columnKey(name) {
+  const s = String(name || '').trim();
+  const q = s.match(/^"(.*)"$|^`(.*)`$|^\[(.*)\]$/);
+  return (q ? q[1] ?? q[2] ?? q[3] : s).toLowerCase();
+}
+
+/* Each entry of a unique key, in the key's order, with the column it names,
+   or null for an expression or a name no column of the node has: an
+   expression is not parsed, so `order_id || '-' || line_number` marks none. */
+function keyColumns(key, columns) {
+  const by = new Map(columns.map((c) => [columnKey(c.name), c]));
+  return (key || []).map((entry) => ({ entry, column: by.get(columnKey(entry)) || null }));
+}
+
+/* Marks a column for the Columns table to scroll to, once, on its next draw. */
+function highlightColumn(column) {
+  S.colHighlight = column;
+  S.colReveal = !!column;
+}
+
+/* Strategy, as the box reads it: `append merge` with `merge` struck when the
+   macros dbt runs insert every row, and the adapter's default said under it. */
+function strategyStat(n) {
+  const adapter = S.meta && S.meta.adapter;
+  const s = stat('Strategy', n.strategy_shown || 'default');
+  const v = s.querySelector('.v');
+  if (n.strategy_named) v.replaceChildren(...subNodes({ lead: n.strategy_shown, struck: n.strategy_named, rest: '' }));
+  if (!n.strategy_shown) v.classList.add('none');
+  const under = !n.strategy_shown ? 'not read from the macros'
+    : n.strategy_default ? `${Lineage.adapterName(adapter)}'s default` : '';
+  if (under) s.append(Object.assign(document.createElement('div'), { className: 'under', textContent: under }));
+  const fact = strategyFacts(n, adapter)[0];
+  if (fact) s.title = fact.text;
+  return s;
+}
+
+/* Unique key, one entry per line in the key's order, so a key of long names
+   does not stretch the row. Past three, the first two and a link to the rest
+   in the Columns tab. Each entry that names a column opens it there. */
+function keyStat(n) {
+  const s = stat('Unique key', n.unique_key.length ? '' : 'none');
+  const v = s.querySelector('.v');
+  if (!n.unique_key.length) {
+    v.classList.add('none');
+    return s;
+  }
+  v.classList.add('keys');
+  const entries = keyColumns(n.unique_key, n.columns);
+  for (const { entry, column } of entries.length > 3 ? entries.slice(0, 2) : entries) {
+    const line = Object.assign(document.createElement('div'), { textContent: entry });
+    if (column) {
+      line.className = 'keylink';
+      line.title = `show ${column.name} in the Columns tab`;
+      linkLike(line, () => { highlightColumn(column.name); showCatalogTab(n, 'columns'); });
+    } else {
+      line.title = /^["`[]?\w+["`\]]?$/.test(entry.trim())
+        ? 'no column of this name, neither declared in the YAML nor in catalog.json'
+        : 'an expression, not a column: it is not read';
+    }
+    v.append(line);
+  }
+  if (entries.length > 3) {
+    const more = Object.assign(document.createElement('div'), {
+      className: 'keymore', textContent: `+${entries.length - 2} more, in Columns`,
+      title: ['unique_key, in order'].concat(n.unique_key).join('\n'),
+    });
+    linkLike(more, () => { S.colSort = 'key'; showCatalogTab(n, 'columns'); });
+    v.append(more);
+  }
+  return s;
+}
+
+/* A div that answers a click and the keys a button does, so a key name keeps
+   the type of the stat it sits in. */
+function linkLike(node, onClick) {
+  node.tabIndex = 0;
+  node.setAttribute('role', 'button');
+  node.addEventListener('click', onClick);
+  node.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onClick(e);
+  });
+}
+
 function catalogPreview(body, n) {
   const desc = document.createElement('p');
   desc.className = 'cat-desc';
@@ -9898,8 +10041,13 @@ function catalogPreview(body, n) {
   body.appendChild(h3('context'));
   const stats = document.createElement('div');
   stats.className = 'stats';
+  // The strategy and the key where they are used, beside Mat. type; elsewhere
+  // they were inherited, and "details" says so.
+  const incremental = n.kind === 'model' && n.materialized === 'incremental';
   stats.append(
     stat('Mat. type', n.materialized || n.kind),
+    ...(incremental ? [strategyStat(n)] : []),
+    ...(incremental || n.kind === 'snapshot' ? [keyStat(n)] : []),
     stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
     stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id); showDock('lineage'); }),
     stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id); showDock('lineage'); }),
@@ -9931,14 +10079,18 @@ function catalogPreview(body, n) {
 
   const kv = document.createElement('dl');
   kv.className = 'kvline';
-  const add = (k, v) => {
+  const add = (k, v, dim) => {
     if (!v) return;
     const dt = document.createElement('dt'); dt.textContent = k;
     const dd = document.createElement('dd'); dd.textContent = v;
+    if (dim) dt.className = dd.className = 'muted';
     kv.append(dt, dd);
   };
-  add('strategy', n.strategy);
-  add('unique key', n.unique_key);
+  // A folder's config reaches every node under it. What this node does not
+  // use stays said, dimmed, since a selection by it still picks the node.
+  const unused = `, unused by ${article(n.materialized || n.kind)}`;
+  if (!incremental && n.strategy) add('incremental_strategy', n.strategy + unused, true);
+  if (!incremental && n.kind !== 'snapshot' && n.unique_key.length) add('unique_key', n.unique_key.join(', ') + unused, true);
   add('model file', n.file);
   add('schema file', n.yml);
   add('unique id', n.id);
@@ -10286,13 +10438,21 @@ function catalogColumns(body, n) {
     again.addEventListener('click', () => regenerateCollin());
     tools.appendChild(again);
   }
+  // The key's columns, in the key's order, on the two nodes that use a key.
+  const usesKey = (n.kind === 'model' && n.materialized === 'incremental') || n.kind === 'snapshot';
+  const keyed = new Map(usesKey ? keyColumns(n.unique_key, n.columns).filter((k) => k.column)
+    .map((k, i) => [k.column.name, i]) : []);
+  // Kept from node to node like the others; a node without a key has no Key
+  // button, and sorts A-Z until the next one that has.
+  const sort = S.colSort === 'key' && !keyed.size ? 'az' : S.colSort;
   tools.append(Object.assign(document.createElement('div'), { className: 'grow' }));
   tools.appendChild(document.createTextNode('Sort by'));
-  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests']]) {
+  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keyed.size ? [['key', 'Key']] : [])]) {
     const b = document.createElement('button');
     b.className = 'btn sm';
     b.textContent = label;
-    if (S.colSort === key) b.style.borderColor = 'var(--accent)';
+    if (key === 'key') b.title = 'the unique key\'s columns first, in its order, then the rest A-Z';
+    if (sort === key) b.style.borderColor = 'var(--accent)';
     b.addEventListener('click', () => { S.colSort = key; renderCatalog(n); });
     tools.appendChild(b);
   }
@@ -10303,8 +10463,11 @@ function catalogColumns(body, n) {
 
   const cols = [...n.columns];
   // A column with no test has no `tests` at all: the payload skips it empty.
-  if (S.colSort === 'tests') cols.sort((a, b) => (b.tests || []).length - (a.tests || []).length || a.name.localeCompare(b.name));
-  else cols.sort((a, b) => a.name.localeCompare(b.name));
+  if (sort === 'tests') cols.sort((a, b) => (b.tests || []).length - (a.tests || []).length || a.name.localeCompare(b.name));
+  else if (sort === 'key') {
+    const at = (c) => (keyed.has(c.name) ? keyed.get(c.name) : Infinity);
+    cols.sort((a, b) => at(a) - at(b) || a.name.localeCompare(b.name));
+  } else cols.sort((a, b) => a.name.localeCompare(b.name));
 
   // With Snowflake picked, every column can be asked about, not just the cached ones.
   const live = sidecarOn();
@@ -10326,13 +10489,22 @@ function catalogColumns(body, n) {
     return s;
   };
   const rows = [];
+  let focused = null;
   for (const c of cols) {
     const tr = document.createElement('tr');
     if (c.undeclared) tr.className = 'c-undeclared';
     const name = document.createElement('td');
     name.className = 'c-name';
-    name.textContent = c.name;
-    rows.push({ tr, name, c });
+    // The filter rewrites the name to mark what matched; the KEY tag sits
+    // beside it, out of reach of that rewrite.
+    const text = Object.assign(document.createElement('span'), { textContent: c.name });
+    name.append(text);
+    if (keyed.has(c.name)) {
+      name.append(Object.assign(document.createElement('span'), {
+        className: 'keytag', textContent: 'KEY', title: `in the unique key, column ${keyed.get(c.name) + 1} of ${keyed.size}`,
+      }));
+    }
+    rows.push({ tr, name: text, c });
     if (c.undeclared) name.title = 'in the warehouse but not declared in YAML';
     const type = document.createElement('td');
     type.className = 'c-type';
@@ -10385,7 +10557,12 @@ function catalogColumns(body, n) {
       }
       tr.appendChild(lin);
     }
-    if (c.name === S.colHighlight) tr.classList.add('c-focus');
+    // Compared as Snowflake compares names, since a report, a column box or
+    // Snowflake's own lineage may spell it in another case.
+    if (S.colHighlight && columnKey(c.name) === columnKey(S.colHighlight)) {
+      tr.classList.add('c-focus');
+      focused = rows[rows.length - 1];
+    }
     table.appendChild(tr);
   }
   body.appendChild(table);
@@ -10427,6 +10604,17 @@ function catalogColumns(body, n) {
     }
   });
   apply();
+  // A column just asked for is brought into view, once: a filter hiding it
+  // is cleared, and typing in the filter afterwards is left alone.
+  const reveal = S.colReveal;
+  S.colReveal = false;
+  if (reveal && focused) {
+    if (focused.tr.classList.contains('hidden')) {
+      filter.value = S.colFilter = '';
+      apply();
+    }
+    requestAnimationFrame(() => focused.tr.scrollIntoView({ block: 'nearest' }));
+  }
 }
 
 // --------------------------------------------------------------- terminal --
@@ -11926,7 +12114,7 @@ async function boot() {
   Lineage.init($('#graph'), {
     onSelect: (n) => {
       const { node: nodeId, column } = splitColId(n.id);
-      S.colHighlight = column;
+      highlightColumn(column);
       if (column) S.catTab = 'columns';
       nodeDetail({ id: nodeId }).then(renderCatalog).catch(() => {});
       // A column's box opens its model's file too: following a column from

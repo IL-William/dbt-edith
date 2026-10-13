@@ -15,6 +15,23 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.17.0 - 2026-10-13
+
+- Name an incremental model's strategy on its lineage box, in place of the
+  word `incremental`, and the adapter's default when none is configured, read
+  from the macros the manifest carries (0076).
+- Show `append` with the strategy struck through when the macros dbt runs
+  insert every row for want of a unique key, as Snowflake's merge does, and
+  say why in the hover card, which names where the strategy comes from.
+- Add Strategy and Unique key to the Catalog's context for an incremental
+  model, and the key for a snapshot, one column per line, each opening its row
+  in the Columns tab, where the key's columns carry a `KEY` tag and a Key sort.
+- Bring a column asked for from a report, a column box or Snowflake's lineage
+  into view in the Columns tab, clearing a filter that hid it, whatever the case
+  of its name.
+- Select a model keyed on a list with `config.unique_key:` and any of its
+  columns, as `dbt ls` does.
+
 ## 1.16.1 - 2026-10-13
 
 - Keep the Reports button in view before any report has something, dimmed,

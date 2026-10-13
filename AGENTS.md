@@ -152,7 +152,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
-| read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md) |
+| read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
@@ -175,6 +175,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the status bar says about the venv, or what a click on it types | [0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md), [0072](docs/decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md), [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |
 | change the folder bands, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
+| show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
 | change how a selection or the lineage resolves, or touch the Jaffle Shop or Shopify fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md), [0056](docs/decisions/0056-selections-and-the-lineage-are-checked-on-shopify-too.md) |

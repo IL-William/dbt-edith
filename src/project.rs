@@ -1,4 +1,5 @@
-//! `dbt_project.yml`: the `vars:` block, and the project's `name:`.
+//! `dbt_project.yml`: the `vars:` block, the project's `name:`, and the
+//! `dispatch:` order an incremental model's default strategy depends on (0076).
 //!
 //! The manifest holds the merged YAML for everything else, but it does not hold
 //! project vars at all, so this is the one place they can be read (0018). The
@@ -383,6 +384,151 @@ fn push_var(out: &mut ProjectVars, var: ProjectVar) {
         out.vars.remove(prev);
     }
     out.vars.push(var);
+}
+
+/// The order `adapter.dispatch` searches packages in for dbt's own macros,
+/// which decides an incremental model's default strategy (`src/macros.rs`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum DispatchOrder {
+    /// No `dispatch:` entry for the `dbt` namespace: dbt searches the root
+    /// project, then its own packages.
+    #[default]
+    Default,
+    /// The entry's `search_order`, as written.
+    Given(Vec<String>),
+    /// A `dispatch:` block that could not be read, which may or may not
+    /// reorder dbt's own macros.
+    Unreadable,
+}
+
+/// `dispatch:` at indentation 0, a sequence of mappings:
+///
+/// ```yaml
+/// dispatch:
+///   - macro_namespace: dbt
+///     search_order: ['my_project', 'dbt']
+/// ```
+///
+/// `search_order` may also be a block list on the lines below. Any other
+/// shape makes the whole block unreadable rather than half read, since the
+/// entry misread could be the one for `dbt`. An entry for another namespace
+/// is skipped, whatever its order looks like.
+pub fn dispatch_in(text: &str) -> DispatchOrder {
+    use DispatchOrder::{Default, Given, Unreadable};
+    let lines: Vec<&str> = text.lines().collect();
+    let head = lines.iter().position(|l| {
+        indent_of(l) == Some(0) && !skippable(l) && split_key(l).is_some_and(|(k, _)| k == "dispatch")
+    });
+    let Some(head) = head else { return Default };
+    let rest = split_key(lines[head]).map(|(_, r)| r.trim()).unwrap_or("");
+    if !rest.is_empty() && !rest.starts_with('#') {
+        return Unreadable;
+    }
+    // Each line of the block, by its indentation. A sequence may sit at the
+    // key's own indentation, so a `-` at 0 still belongs to it.
+    let mut block: Vec<(usize, &str)> = Vec::new();
+    for line in &lines[head + 1..] {
+        if skippable(line) {
+            continue;
+        }
+        let Some(ind) = indent_of(line) else { return Unreadable };
+        if ind == 0 && !line.starts_with('-') {
+            break;
+        }
+        block.push((ind, line[ind..].trim_end()));
+    }
+
+    let mut dbt: Option<DispatchOrder> = None;
+    let mut i = 0;
+    while i < block.len() {
+        let (dash, text) = block[i];
+        let Some(after) = text.strip_prefix('-') else { return Unreadable };
+        if !(after.is_empty() || after.starts_with(' ')) {
+            return Unreadable;
+        }
+        // The item's keys, each with its value on its own line and the lines
+        // nested under it: the first key may share the dash's line.
+        let mut keys: Vec<(String, &str, Vec<&str>)> = Vec::new();
+        let first = after.trim_start();
+        let mut key_ind = None;
+        if !first.is_empty() {
+            let Some((k, v)) = split_key(first) else { return Unreadable };
+            keys.push((k, v, Vec::new()));
+            key_ind = Some(dash + 1 + after.len() - first.len());
+        }
+        i += 1;
+        while i < block.len() && block[i].0 > dash {
+            let (ind, text) = block[i];
+            let k_ind = *key_ind.get_or_insert(ind);
+            if ind > k_ind || (ind == k_ind && text.starts_with('-')) {
+                let Some(last) = keys.last_mut() else { return Unreadable };
+                last.2.push(text);
+            } else if ind == k_ind {
+                let Some((k, v)) = split_key(text) else { return Unreadable };
+                keys.push((k, v, Vec::new()));
+            } else {
+                return Unreadable;
+            }
+            i += 1;
+        }
+
+        let mut namespace = None;
+        let mut order = None;
+        for (k, v, nested) in &keys {
+            match k.as_str() {
+                "macro_namespace" if nested.is_empty() => {
+                    if let Value::Scalar(s) = parse_value_or_empty(v) {
+                        namespace = Some(s);
+                    }
+                }
+                "search_order" => order = search_order(v, nested),
+                _ => {}
+            }
+        }
+        match namespace.as_deref() {
+            None => return Unreadable,
+            Some("dbt") if dbt.is_some() => return Unreadable,
+            Some("dbt") => dbt = Some(order.map(Given).unwrap_or(Unreadable)),
+            Some(_) => {}
+        }
+    }
+    dbt.unwrap_or(Default)
+}
+
+fn parse_value_or_empty(v: &str) -> Value {
+    if v.trim().is_empty() { Value::Bad("no value") } else { parse_value(v) }
+}
+
+/// A `search_order`, as a flow sequence on its own line or a block one below
+/// it, of plain package names.
+fn search_order(value: &str, nested: &[&str]) -> Option<Vec<String>> {
+    let items = if value.trim().is_empty() {
+        let mut items = Vec::new();
+        for line in nested {
+            let item = line.strip_prefix('-')?.trim();
+            match parse_value_or_empty(item) {
+                Value::Scalar(s) => items.push(s),
+                _ => return None,
+            }
+        }
+        items
+    } else {
+        if !nested.is_empty() {
+            return None;
+        }
+        match parse_value(value) {
+            Value::List(items) => items,
+            _ => return None,
+        }
+    };
+    let plain = |s: &String| !s.is_empty() && !s.contains('{');
+    (!items.is_empty() && items.iter().all(plain)).then_some(items)
+}
+
+/// `dispatch:` in the project's own `dbt_project.yml`, or the default order
+/// when the file cannot be read: without a file, dbt has no project at all.
+pub fn dispatch(root: &Path) -> DispatchOrder {
+    project_text(root).map(|t| dispatch_in(&t)).unwrap_or_default()
 }
 
 /// The top-level `name:`, as a plain or quoted scalar and nothing else.
@@ -1184,5 +1330,40 @@ mod tests {
 
     fn str_chain(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_dispatch_order_for_dbt_is_read_in_either_list_form() {
+        let order = |s: &[&str]| DispatchOrder::Given(s.iter().map(|x| x.to_string()).collect());
+        let flow = "name: shop\ndispatch:\n  - macro_namespace: dbt_utils\n    search_order: ['shop', 'dbt_utils']\n  - macro_namespace: dbt\n    search_order: ['shop', \"dbt\"]  # ours first\nmodels:\n  shop: {}\n";
+        assert_eq!(dispatch_in(flow), order(&["shop", "dbt"]));
+        let block = "dispatch:\n- search_order:\n  - dbt\n  - shop\n  macro_namespace: 'dbt'\n";
+        assert_eq!(dispatch_in(block), order(&["dbt", "shop"]));
+        let under = "dispatch:\n    -   macro_namespace: dbt\n        search_order:\n        - shop\n        - dbt\n";
+        assert_eq!(dispatch_in(under), order(&["shop", "dbt"]));
+    }
+
+    #[test]
+    fn no_entry_for_dbt_leaves_dbt_s_own_order() {
+        assert_eq!(dispatch_in("name: shop\n"), DispatchOrder::Default);
+        assert_eq!(dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: ['shop', 'dbt_utils']\n"), DispatchOrder::Default);
+        // Another namespace's order is not read, so its shape does not matter.
+        assert_eq!(dispatch_in("dispatch:\n  - macro_namespace: dbt_utils\n    search_order: \"{{ var('x') }}\"\n"), DispatchOrder::Default);
+        // Nested under a model folder, it is a folder name, not the block.
+        assert_eq!(dispatch_in("models:\n  dispatch:\n    - macro_namespace: dbt\n"), DispatchOrder::Default);
+    }
+
+    #[test]
+    fn a_dispatch_block_it_cannot_read_says_so() {
+        let unreadable = |text: &str| assert_eq!(dispatch_in(text), DispatchOrder::Unreadable, "{text}");
+        unreadable("dispatch: [{macro_namespace: dbt, search_order: [shop, dbt]}]\n");
+        unreadable("dispatch:\n  - {macro_namespace: dbt, search_order: [shop, dbt]}\n");
+        unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: \"{{ var('order') }}\"\n");
+        unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: [\"{{ project_name }}\", dbt]\n");
+        unreadable("dispatch:\n  - macro_namespace: dbt\n");
+        unreadable("dispatch:\n  - search_order: [shop, dbt]\n");
+        unreadable("dispatch:\n  - macro_namespace: dbt\n    search_order: [shop, dbt]\n  - macro_namespace: dbt\n    search_order: [dbt]\n");
+        unreadable("dispatch:\n  macro_namespace: dbt\n");
+        unreadable("dispatch:\n\t- macro_namespace: dbt\n");
     }
 }

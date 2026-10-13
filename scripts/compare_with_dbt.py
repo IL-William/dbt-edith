@@ -92,7 +92,26 @@ EXPRESSIONS = [
     "+customers --exclude resource_type:seed",
     "orders --exclude tag:recon",
     "customers --exclude customers",
+    # On the two incremental models JAFFLE_INCREMENTAL adds: dbt matches what
+    # is configured, so a model on the adapter's default is not a merge here,
+    # and a key given as a list is matched by membership.
+    "config.materialized:incremental",
+    "config.incremental_strategy:merge",
+    "config.incremental_strategy:delete+insert",
+    "config.unique_key:order_id",
+    "config.unique_key:customer_id+",
 ]
+
+# Added to the copy of Jaffle Shop, never to the fixture, whose screenshots and
+# browser tests would move: one incremental model on the adapter's default and
+# one keyed on a list. Shopify's four configure delete+insert, each on one key.
+JAFFLE_INCREMENTAL = {
+    "models/orders_appended.sql": "{{ config(materialized='incremental') }}\n"
+                                  "select * from {{ ref('orders') }}\n",
+    "models/order_payments.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert',\n"
+                                 "          unique_key=['order_id', 'customer_id']) }}\n"
+                                 "select * from {{ ref('orders') }}\n",
+}
 
 # What Shopify has and Jaffle Shop does not: a package under a root project,
 # sources, ephemeral and incremental models, folders three deep, and disabled
@@ -508,6 +527,8 @@ def main():
         print("== Jaffle Shop")
         jaffle = work / "jaffle" / "project"
         shutil.copytree(JAFFLE, jaffle)
+        for name, sql in JAFFLE_INCREMENTAL.items():
+            (jaffle / name).write_text(sql)
         compared = compare_project(tally, binary, jaffle, jaffle.parent, EXPRESSIONS, every_model, jobs=True)
         # Fewer than this means the fixture or the listing broke, not that all is well.
         if compared < len(EXPRESSIONS) + 10:

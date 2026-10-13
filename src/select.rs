@@ -429,7 +429,8 @@ fn config_value<'a>(node: &'a Node, key: ConfigKey) -> &'a str {
         ConfigKey::Database => &node.database,
         ConfigKey::Alias => &node.alias,
         ConfigKey::Strategy => &node.strategy,
-        ConfigKey::UniqueKey => &node.unique_key,
+        // Matched entry by entry in `matches`.
+        ConfigKey::UniqueKey => "",
     }
 }
 
@@ -445,6 +446,9 @@ fn matches(term: &Term, node: &Node) -> bool {
         Method::Tag => node.tags.iter().any(|t| glob(v, t)),
         Method::Package => glob(v, &node.package),
         Method::ResourceType => kind_by_name(v) == Some(node.kind),
+        // dbt tests a list config for membership: `config.unique_key:order_id`
+        // selects a model keyed on `[order_id, line_number]`.
+        Method::Config(ConfigKey::UniqueKey) => node.unique_key.iter().any(|k| glob(v, k)),
         Method::Config(key) => glob(v, config_value(node, key)),
         Method::Source => {
             if node.kind != Kind::Source {
@@ -1220,7 +1224,10 @@ mod tests {
                     "name": "fct_orders", "resource_type": "model", "package_name": "shop",
                     "original_file_path": "models/marts/fct_orders.sql",
                     "fqn": ["shop", "marts", "fct_orders"],
-                    "config": { "materialized": "incremental", "incremental_strategy": "merge" },
+                    "config": {
+                        "materialized": "incremental", "incremental_strategy": "merge",
+                        "unique_key": ["order_id", "line_number"],
+                    },
                 },
                 "model.other.helper": {
                     "name": "helper", "resource_type": "model", "package_name": "other",
@@ -1237,6 +1244,7 @@ mod tests {
                     "name": "orders_snap", "resource_type": "snapshot", "package_name": "shop",
                     "original_file_path": "snapshots/orders_snap.sql",
                     "fqn": ["shop", "orders_snap"],
+                    "config": { "unique_key": "order_id" },
                 },
                 "test.shop.not_null_dim_customers_id": {
                     "name": "not_null_dim_customers_id", "resource_type": "test",
@@ -1517,6 +1525,10 @@ mod tests {
         assert_eq!(pick("resource_type:snapshot"), ["orders_snap"]);
         assert_eq!(pick("config.materialized:incremental"), ["fct_orders"]);
         assert_eq!(pick("config.incremental_strategy:merge"), ["fct_orders"]);
+        // dbt tests a list for membership, and a string for equality.
+        assert_eq!(pick("config.unique_key:order_id"), ["fct_orders", "orders_snap"]);
+        assert_eq!(pick("config.unique_key:line_number"), ["fct_orders"]);
+        assert!(pick("config.unique_key:order").is_empty());
         assert_eq!(pick("exposure:weekly_report"), ["weekly_report"]);
         assert_eq!(pick("source:crm"), ["crm.customers"]);
         assert_eq!(pick("source:crm.customers"), ["crm.customers"]);

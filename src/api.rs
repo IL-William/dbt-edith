@@ -166,6 +166,7 @@ pub fn load_manifest(project: &Path, manifest_path: &Path) -> anyhow::Result<Gra
             graph.macros.set_root(name);
         }
     }
+    graph.resolve_incremental(&crate::project::dispatch(project));
     graph.selectors.check_against(project);
     graph.meta.load_ms = started.elapsed().as_millis();
     Ok(graph)
@@ -1367,8 +1368,13 @@ struct NodeDetail<'a> {
     database: &'a str,
     relation: &'a str,
     materialized: &'a str,
+    /// As configured, on every node: what the selector matches, and what the
+    /// Catalog says a view inherited and does not use.
     strategy: &'a str,
-    unique_key: &'a str,
+    unique_key: &'a [String],
+    /// What the box says of an incremental model's strategy, besides.
+    #[serde(flatten)]
+    incremental: crate::graph::StrategyFacts<'a>,
     package: &'a str,
     description: &'a str,
     tags: &'a [String],
@@ -1447,6 +1453,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         materialized: &n.materialized,
         strategy: &n.strategy,
         unique_key: &n.unique_key,
+        incremental: n.strategy_facts(),
         package: &n.package,
         description: &n.description,
         tags: &n.tags,
