@@ -1481,10 +1481,8 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
           `default__`.
       - **What the macro found says.** A body that is one
         `return(get_incremental_<name>_sql(...))` names `<name>`:
-        Snowflake's merge, DuckDB's delete+insert, dbt-core's append. One
-        condition on `arg_dict["unique_key"]` with such a return on each
-        side, the form Postgres's takes, names one per model, by whether
-        the model has a key. Any other body leaves it unnamed.
+        Snowflake's merge, DuckDB's delete+insert, dbt-core's append. Any
+        other body leaves it unnamed, a condition included.
       - **Parent adapters.** The manifest does not say which adapter
         another inherits from, but it carries the parent's macros: under
         Redshift, `dbt_postgres`'s. A package `dbt_<x>` that defines
@@ -1492,17 +1490,20 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         With two or more, their order is unknown, and the default stays
         unnamed.
       - **Where it is read.** `src/macros.rs`, beside 0028's resolution,
-        which leaves `adapter.dispatch` aside, so a decision record goes
-        with it. `RawMacro` leaves `macro_sql` out on purpose, since the
-        body is the bulk of the entry. Only the bodies of the few names
-        above are kept, read while the manifest is parsed or in a second
-        pass over its `macros`, so no other body stays in memory.
-        `dispatch:` lives in `dbt_project.yml`, which the manifest does not
-        carry, and nothing reads it today. The scanner of 0018 in
-        `src/project.rs` learns one more block: a list of `macro_namespace`
-        and `search_order` mappings, flow lists included. If it cannot
-        read the block, and a package other than the root project and
-        dbt's own defines one of the names, the default stays unnamed.
+        which leaves `adapter.dispatch` aside. A decision record goes with
+        it, amending 0028 and 0018, since the scanner of 0018 reads one
+        block, `vars:`, and no sequence of anything but plain items.
+        - `RawMacro` leaves `macro_sql` out on purpose, since the body is
+          the bulk of the entry. Only the bodies of the few names above are
+          kept, read while the manifest is parsed or in a second pass over
+          its `macros`, so no other body stays in memory.
+        - `dispatch:` lives in `dbt_project.yml`, which the manifest does
+          not carry, and nothing reads it today. The scanner in
+          `src/project.rs` learns a second block, a sequence of mappings:
+          `macro_namespace`, and `search_order` as a flow or a block list.
+          If it cannot read the block, and a package other than the root
+          project and dbt's own defines one of the names, the default
+          stays unnamed.
     - **A strategy on anything but an incremental model is not used.** A
       folder's `+incremental_strategy` in `dbt_project.yml` reaches every
       model under it, views and tables included, and the Catalog shows it
@@ -1517,17 +1518,21 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       everything the card's line says, or the line changes under the
       pointer. `LineageNode` gains these fields, each skipped when empty, so
       a view or a table pays nothing:
-      - `strategy`, what the box shows: the strategy, or `append` for one
-        that inserts;
+      - `strategy_shown`, what the box shows: the strategy, or `append` for
+        one that inserts;
       - `strategy_named`, the strategy dbt was given or picked, when it
-        differs from `strategy`;
+        differs from `strategy_shown`;
       - `strategy_default`, set when that strategy is the adapter's default
         rather than configured;
       - `strategy_insert`, which known macro below turns it into an insert,
         for the card's wording;
       - `unique_key`, as a list.
 
-      `/api/node` sends the same fields.
+      What is configured keeps its own fields, on every node: the node's
+      `strategy` and `unique_key`, which the selector reads, and the same
+      two in `/api/node`, which the dimmed "details" line of a view needs.
+      `/api/node` sends the box's fields besides, not in their place, and
+      its `unique_key` becomes the list.
     - **The key stays a list.** `src/graph.rs` joins a list into
       `order_id, line_number`, and `config.unique_key:` matches that string.
       `dbt ls` tests membership instead: `config.unique_key:order_id`
@@ -1704,7 +1709,10 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
     - **Not in it, unless asked:**
       - a snapshot's `strategy` (timestamp or check), the same question for
         a snapshot, which the same card line would carry;
-      - a microbatch model's `batch_size` and `event_time`.
+      - a microbatch model's `batch_size` and `event_time`;
+      - a default chosen by a condition on the key, the form Postgres's
+        `get_incremental_default_sql` takes, delete+insert with a key and
+        append without: left unnamed, and nameable model by model later.
     - **How it is checked:**
       - **Rust tests on the default:**
         - the materialization: `'default'`, a name, a name one call deep,
@@ -1712,8 +1720,8 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         - the dispatch: a root project override by name, an adapter's own
           macro, a parent's, `default__` alone, two parents left unnamed,
           and a `dispatch:` order, read and unreadable;
-        - the bodies: one return, the condition on the key, and any other
-          left unnamed.
+        - the bodies: one return, and any other, a condition on the key
+          included, left unnamed.
       - **Rust tests on the insert:** each known macro with a key, with
         none, and with `[]` and `''`; and a project's own
         `snowflake__get_merge_sql` or `get_merge_sql`, which makes no claim.
