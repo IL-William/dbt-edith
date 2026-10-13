@@ -1388,15 +1388,23 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       before the tabs could fold, and break from 1240px now. The glyphs made
       the labelled tabs wider, so the tabs fold from 1590px: in a window the
       size of a laptop's screen, they show their glyphs alone.
-    - **Why the tabs fold that way.** It is measured with a `ResizeObserver`
-      on the row and on the tools, rather than set at a width through a
-      container query, because the room moves with everything listed above,
-      and any width would be wrong for some of it. It is measured with the
-      tools shown whichever tab is open, and the open tab folds with the
-      others, so a click on a tab never moves the tabs under the pointer. A
-      first attempt kept the open tab's label: a click then shifted every tab
-      after it. Cutting Query history alone with an ellipsis, the other
-      answer for the tabs, frees nothing without Snowflake's features.
+    - **Why the tabs fold that way.** It is measured, rather than set at a
+      width through a container query, because the room moves with
+      everything listed above, and any width would be wrong for some of it.
+      A `ResizeObserver` watches the row's width, and a `MutationObserver`
+      watches what the tools hold. The tools change while another tab is
+      open, when they are hidden, and a hidden element reports no resize.
+      An observer on the tools' size also looped, since folding the tabs
+      resizes the tools. The tools are measured shown whichever tab is open,
+      the open tab folds with the others, and a tab change never measures,
+      so a click on a tab never moves the tabs under the pointer. A first
+      attempt kept the open tab's label: a click then shifted every tab
+      after it. Only the tools are asked whether they broke: a tab cannot,
+      and under a large minimum font a tab taller than the row kept the
+      labels folded at any width. A measure costs a few hundredths of a
+      millisecond on Jaffle Shop. Cutting Query history alone with an
+      ellipsis, the other answer for the tabs, frees nothing without
+      Snowflake's features.
     - **What any answer for the tools needs:** no label ever breaks inside
       its own item. The two toggles, `.eyebtn`, and the tabs are `nowrap`
       already. These are not:
@@ -1431,8 +1439,8 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         past the dock's edge once nothing breaks. `body` hides its overflow,
         so a tool pushed past the edge would vanish without a scrollbar.
 
-      `foldDockTabs` decides on the first measure and the `scrollWidth` half
-      of the second. #28 added up its items' widths against the row's own,
+      `foldDockTabs` decides on the first measure, for the tools only, and
+      the `scrollWidth` half of the second. #28 added up its items' widths against the row's own,
       which predicts both but proves neither. Columns mode needs a column
       lineage, which Jaffle Shop comes without (`/api/collineage` answers
       404): run collin on it first, or put a long name in the chip from the

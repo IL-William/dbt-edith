@@ -309,14 +309,22 @@ kbd {
 /* Tighter than the sidebar's: the lineage tools share this bar, and on a
    laptop-sized window, with Query history shown and the tests on, every label
    in it broke onto a second line the 30px bar cannot hold. */
-#dock .tab { padding: 4px 7px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+#dock .tab { position: relative; padding: 4px 7px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 #dock .tab svg {
   width: 13px; height: 13px; flex: 0 0 auto;
   fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
 }
-/* foldDockTabs(): out of sight but still the button's name for a screen reader. */
+/* foldDockTabs(): out of sight but still the button's name for a screen reader.
+   Reached by the keyboard, a folded tab shows its name under it, over the
+   pane, since a tooltip never shows on focus. It does not open in the row, as
+   the Reports button's label does: that would push the tabs after it, and on
+   a hover it would move them under the pointer. */
 #dock .tabs.folded .tab > span {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+#dock .tabs.folded .tab:focus-visible > span {
+  top: calc(100% + 3px); left: 0; width: auto; height: auto; overflow: visible; clip-path: none; z-index: 20;
+  padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-3); color: var(--fg);
 }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 .side-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }

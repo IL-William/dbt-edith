@@ -5766,7 +5766,6 @@ function openHistoryRoles(anchor) {
 function paintHistoryTab() {
   const on = !!(S.features && S.features.snowflake);
   $('#history-tab').classList.toggle('hidden', !on);
-  foldDockTabs();
   if (on) return;
   S.history = null;
   S.historyRole = null;
@@ -10745,11 +10744,28 @@ async function openAt(path, line) {
 function wireTabs() {
   $$('[data-side]').forEach((b) => b.addEventListener('click', () => showSide(b.dataset.side)));
   $$('[data-dock]').forEach((b) => b.addEventListener('click', () => showDock(b.dataset.dock)));
-  // The tools as well as the row: the eye's count, the column chip or a mode
-  // change grow them inside a row whose own width has not moved.
-  const fold = new ResizeObserver(() => foldDockTabs());
-  fold.observe($('#dock > .tabs'));
-  fold.observe($('#lineage-tools'));
+  // Each tab's name and description, read once: foldDockTabs() writes the
+  // tooltip from them.
+  $$('#dock > .tabs .tab').forEach((t) => {
+    t.dataset.name = t.querySelector('span').textContent;
+    t.dataset.about = t.title;
+  });
+  // The row's width moves with the window, the sidebar and the dock. Only the
+  // row is observed for size: the fold never changes it, so the observer
+  // never loops on its own change.
+  new ResizeObserver(() => foldDockTabs()).observe($('#dock > .tabs'));
+  // What the tools hold moves too, the eye's count, the column chip, a mode,
+  // and it changes while another tab is open, when the tools are hidden and a
+  // hidden element reports no resize. So it is watched as markup. A change of
+  // the tools' own class is left out: showDock hides and shows them, which
+  // moves nothing the fold measures, and foldDockTabs shows them for its
+  // measure, which would call it again.
+  const tools = $('#lineage-tools');
+  const watch = new MutationObserver((records) => {
+    if (records.some((r) => r.target !== tools || r.type !== 'attributes')) foldDockTabs();
+  });
+  watch.observe(tools, { subtree: true, childList: true, characterData: true, attributes: true });
+  watch.observe($('#history-tab'), { attributes: true, attributeFilter: ['class'] });
 }
 
 /* Pulled out of wireTabs because a link into the file tree has to bring the
@@ -10789,7 +10805,6 @@ function showDock(which, { look = true } = {}) {
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
   if (which === 'terminal') { initTerm(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);
-  foldDockTabs();
 }
 
 /* The dock's tabs share their row with the lineage's tools, and the glyphs
@@ -10799,24 +10814,29 @@ function showDock(which, { look = true } = {}) {
    set at a width, because the room moves with the sidebar, Query history, the
    eye's count and the column chip. It is measured with the tools shown, and
    the open tab folds with the others, so that a click on a tab never moves
-   the tabs under the pointer. Past that, the tools still break: docs/state.md
-   has the rest. */
+   the tabs under the pointer: wireTabs() calls it when the row or the tools
+   change, and never on a tab change. Only the tools are asked whether they
+   broke, since a tab cannot, and a tab taller than the row, under a large
+   minimum font, would keep the labels folded at any width. Past that, the
+   tools still break: docs/state.md has the rest. */
 function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
+  const was = row.classList.contains('folded');
   row.classList.remove('folded');
   tools.classList.remove('hidden');
   const h = row.getBoundingClientRect().height;
   const fits = row.scrollWidth <= row.clientWidth
-    && $$('#dock > .tabs .tab, #lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
+    && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
   tools.classList.toggle('hidden', away);
   row.classList.toggle('folded', !fits);
+  if (was === !fits) return;
   $$('#dock > .tabs .tab').forEach((t) => {
-    if (t.dataset.about === undefined) t.dataset.about = t.title;
-    const name = t.querySelector('span').textContent;
-    const about = t.dataset.about;
-    t.title = fits ? about : about ? `${name}: ${about}` : name;
+    const { name, about } = t.dataset;
+    if (!fits) t.title = about ? `${name}: ${about}` : name;
+    else if (about) t.title = about;
+    else t.removeAttribute('title');
   });
 }
 
