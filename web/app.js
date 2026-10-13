@@ -8128,7 +8128,7 @@ function paintReportsButton() {
 /* Rolls the panel down over the editor and the dock, on the section asked
    for or the one reportsDefaultSection picks. The index is read first, so a
    report written since the last poll is there to pick. */
-async function openReports(section) {
+async function openReports(section, { reread = true } = {}) {
   await loadReportsIndex();
   const { sections, news } = reportsNow();
   // The coverage is always listed, empty before any source, so there is
@@ -8149,6 +8149,14 @@ async function openReports(section) {
     panel.focus({ preventScroll: true });
   }
   paintReportsButton();
+  // Put back by the tour as it was left (0074): the section is still drawn,
+  // so it is not read again, and its Read again says when its file changed.
+  if (!reread && key === S.reportsDrawn) {
+    S.reportsSection = key;
+    paintReportsNav();
+    paintReportStale();
+    return;
+  }
   showReportSection(key);
 }
 
@@ -11200,7 +11208,8 @@ async function tourEnter(key, t, live) {
       break;
     case 'jobs':
       await onModel();
-      if (live()) await showDock('jobs');
+      // The jobs as last read: the tour looks at no job file (0063).
+      if (live()) await showDock('jobs', { look: false });
       break;
     case 'config': {
       await onModel();
@@ -11323,14 +11332,14 @@ async function endTour() {
   S.selectHistAt = -1;
   if (S.catTab !== s.catTab && S.node) showCatalogTab(S.node, s.catTab);
   else S.catTab = s.catTab;
-  showDock(s.dock);
+  showDock(s.dock, { look: false });
   S.tour = null;
   window.removeEventListener('keydown', tourKey, true);
   window.removeEventListener('resize', paintTour);
   if (t.root) t.root.remove();
   for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
   if (s.reports) {
-    await openReports(s.reportsSection);
+    await openReports(s.reportsSection, { reread: false });
     // Where Escape in the panel sends the focus back, as before the tour.
     S.reportsReturn = s.reportsReturn;
   } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();

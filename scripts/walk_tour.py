@@ -295,6 +295,11 @@ STATE = """(() => ({
   panel: document.querySelector('#reports').classList.contains('open'),
 }))()"""
 
+# The requests that look at the job files, so far: the tour makes none, and
+# puts back a Reports panel without reading its section again.
+LOOKS = """(() => performance.getEntriesByType('resource')
+  .filter((e) => /look=true|\\/api\\/jobs\\/coverage/.test(e.name)).length)()"""
+
 # A key the app answers from anywhere, sent where the tour has the focus:
 # whether the tour kept the browser from acting on it too.
 HELD = """((key, code, mod) => {
@@ -452,6 +457,9 @@ class Walk:
         page.js("document.querySelector('#reports-btn').click()")
         page.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
         in_use = page.js(STATE)
+        page.js("performance.setResourceTimingBufferSize(100000)")
+        page.until("document.querySelector('#reports-view')?.textContent.includes('Job coverage')", "the coverage drawn")
+        looks = page.js(LOOKS)
         page.key("?", "Slash", 191, text="?")
         page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
         page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
@@ -478,6 +486,9 @@ class Walk:
         back = self.settle(in_use)
         self.check("Escape ends it, and the tabs, the canvas, the dock, the Jobs tab's node and the panel are as they were",
                    back == in_use, f"before {in_use}\n        after  {back}")
+        time.sleep(1)
+        self.check("  with no job file looked at, the panel's section put back unread",
+                   page.js(LOOKS) == looks, f"{looks} requests looking at them before, {page.js(LOOKS)} after")
 
         print("--- ended while a step is still setting the page up ---")
         page.js("document.querySelector('#reports-btn').click()")

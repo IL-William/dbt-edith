@@ -20,6 +20,10 @@ newest dated heading has to be the version `Cargo.toml` names.
 - Keep the Reports button in view before any report has something, dimmed,
   its tooltip saying what will fill it: it was hidden until the first dbt
   run, collin report or job source, so a first start never showed it (0075).
+- Look at no job file during the tour: its Jobs step shows the jobs as last
+  read, and a Reports panel it rolled up comes back as it was left rather
+  than read again, which looked at every job file and dropped the Catalog's
+  jobs.
 
 ## 1.16.0 - 2026-10-13
 
