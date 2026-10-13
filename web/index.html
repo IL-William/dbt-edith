@@ -141,16 +141,19 @@
     <div class="gutter gutter-h" id="gutter-dock"></div>
 
     <section id="dock">
+      <!-- Each tab's glyph is drawn here, like the explorer's: no vendor icon set
+           is bundled. The label sits in a span of its own so that foldDockTabs()
+           can hide it and leave the glyph when the bar runs out of room. -->
       <div class="tabs">
-        <button class="tab active" data-dock="lineage">Lineage</button>
-        <button class="tab" data-dock="terminal">Terminal</button>
-        <button class="tab" data-dock="catalog">Catalog</button>
+        <button class="tab active" data-dock="lineage"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.25" y="5.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="1.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="9.75" width="4.5" height="4.5" rx="1"/><path d="M5.75 8C8 8 8 4 10.25 4M5.75 8C8 8 8 12 10.25 12"/></svg><span>Lineage</span></button>
+        <button class="tab" data-dock="terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>Terminal</span></button>
+        <button class="tab" data-dock="catalog"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M1.75 6.25h12.5M1.75 9.75h12.5M6 6.25v7"/></svg><span>Catalog</span></button>
         <button class="tab" data-dock="jobs"
-                title="Which of the orchestrator's jobs run this node, read from their YAML">Jobs</button>
-        <button class="tab" data-dock="compiled" title="The model's SQL with the Jinja gone, from target/compiled/">Compiled</button>
-        <button class="tab" data-dock="run" title="The statement dbt executed to materialise it, from target/run/">Run</button>
+                title="Which of the orchestrator's jobs run this node, read from their YAML"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="3" width="12.5" height="11" rx="1.5"/><path d="M1.75 6.5h12.5M5 1.5v3M11 1.5v3"/></svg><span>Jobs</span></button>
+        <button class="tab" data-dock="compiled" title="The model's SQL with the Jinja gone, from target/compiled/"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.25 4L1.5 8l3.75 4M10.75 4l3.75 4-3.75 4"/></svg><span>Compiled</span></button>
+        <button class="tab" data-dock="run" title="The statement dbt executed to materialise it, from target/run/"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.75v10.5L13.25 8z"/></svg><span>Run</span></button>
         <button class="tab hidden" data-dock="history" id="history-tab"
-                title="Your own queries in Snowflake over the last 7 days, read when the tab opens">Query history</button>
+                title="Your own queries in Snowflake over the last 7 days, read when the tab opens"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.45 9.5A5.75 5.75 0 1 0 3.3 4.7"/><path d="M3.3 1.95V4.7h2.75M8 5v3.25l2.25 1.5"/></svg><span>Query history</span></button>
         <div class="grow"></div>
         <div id="lineage-tools" class="tools">
           <span id="graph-mode" class="seg">

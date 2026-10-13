@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.15.1 - 2026-10-13
+
+- Give each of the dock's tabs a glyph beside its name, and fold the tabs to
+  their glyphs alone, each named by its tooltip, once the bar cannot hold
+  every label beside the lineage's tools.
+
 ## 1.15.0 - 2026-10-13
 
 - List a node's scheduled jobs first and its manual ones last in the Jobs tab,

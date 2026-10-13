@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-12.
+belongs here. Last updated 2026-10-13.
 
 ## Shipped
 
@@ -1367,10 +1367,13 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
 12. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
-    tools share one row, 30px high, and nothing in it is set to give way.
-    When they no longer fit, the browser shrinks each item to its narrowest,
-    so every label that can break does ("Query history", "Custom selection",
-    "up", "down", "Copy image") and the row spills over the canvas.
+    tools share one row, 30px high. The tabs give way first: each carries a
+    glyph beside its name, and once the row cannot hold every label on one
+    line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
+    Past that, nothing in the tools is set to give way: the browser shrinks
+    each one to its narrowest, so every label that can break does ("Custom
+    selection", "up", "down", "Copy image") and the row spills over the
+    canvas.
     - **When it happens:** the room left depends on several things at once:
       - the window's width, and the sidebar's;
       - the Query history tab, shown with Snowflake's features on;
@@ -1380,33 +1383,43 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       - the column chip in Columns mode, which carries a column's name and
         has no width limit.
 
-      1.13.1 (#28) took two pixels off each side of every dock tab, four per
-      tab, to make room for the by folder toggle. That left a laptop-sized
-      window with a little more room than before, and changed nothing about
-      what happens when the room runs out.
-    - **What any answer needs:** no label ever breaks inside its own item.
-      The two toggles, `.eyebtn`, are `nowrap` already. These are not:
-      - the tabs;
+      On Jaffle Shop, with Snowflake's features and the tests on and the
+      sidebar at its default width, the tools broke from a 1470px window
+      before the tabs could fold, and break from 1240px now. The glyphs made
+      the labelled tabs wider, so the tabs fold from 1590px: in a window the
+      size of a laptop's screen, they show their glyphs alone.
+    - **Why the tabs fold that way.** It is measured, rather than set at a
+      width through a container query, because the room moves with
+      everything listed above, and any width would be wrong for some of it.
+      A `ResizeObserver` watches the row's width, and a `MutationObserver`
+      watches what the tools hold. The tools change while another tab is
+      open, when they are hidden, and a hidden element reports no resize.
+      An observer on the tools' size also looped, since folding the tabs
+      resizes the tools. The tools are measured shown whichever tab is open,
+      the open tab folds with the others, and a tab change never measures,
+      so a click on a tab never moves the tabs under the pointer. A first
+      attempt kept the open tab's label: a click then shifted every tab
+      after it. Only the tools are asked whether they broke: a tab cannot,
+      and under a large minimum font a tab taller than the row kept the
+      labels folded at any width. A measure costs a few hundredths of a
+      millisecond on Jaffle Shop. Cutting Query history alone with an
+      ellipsis, the other answer for the tabs, frees nothing without
+      Snowflake's features.
+    - **What any answer for the tools needs:** no label ever breaks inside
+      its own item. The two toggles, `.eyebtn`, and the tabs are `nowrap`
+      already. These are not:
       - the segmented modes;
       - the `up` and `down` labels, whose input drops under the word;
       - the plain `.btn sm` tools, Fit, Export and Copy image;
       - the column chip.
-    - **Still open: what gives way first.**
+    - **Still open: what gives way after the tabs.**
       - The tools that matter least, Export and Copy image first, fold behind
         a `…` menu at the end of the row once they stop fitting. This is the
-        way VS Code's panels go. It needs the row measured in JavaScript, with
-        a `ResizeObserver` like the terminal's.
-      - The labels give way to their icons alone below some width, through a
-        container query on the row. That is CSS only, but every tool needs an
-        icon first, and the locked-down VM's browser has to support container
-        queries (Chrome and Edge 105 or later).
-      - One tab gives way: Query history, the last and the longest, cut with
-        an ellipsis and its full name in its tooltip. That takes
-        `overflow: hidden`, `white-space: nowrap`, `text-overflow: ellipsis`
-        and `min-width: 0` on that tab, since a flex item does not shrink
-        below its content otherwise. It frees nothing without Snowflake's
-        features, which hide the tab. Cutting every tab the same way was
-        rejected in #28: each would lose a little, rather than one.
+        way VS Code's panels go. `foldDockTabs` already measures the row, and
+        would go on to this once the tabs are folded.
+      - The tools give way to their icons alone, as the tabs do. Every tool
+        needs an icon first, and the segmented modes and the `up` and `down`
+        inputs have no obvious one.
       - The row scrolls sideways, with no scrollbar showing. This is the
         simplest, but a tool past the edge is a tool nobody finds.
       - The tools take a second row, and the bar grows to 60px. Nothing is
@@ -1426,11 +1439,13 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         past the dock's edge once nothing breaks. `body` hides its overflow,
         so a tool pushed past the edge would vanish without a scrollbar.
 
-      #28 added up its items' widths against the row's own, which predicts
-      both but proves neither. Columns mode needs a column lineage, which
-      Jaffle Shop comes without (`/api/collineage` answers 404): run collin on
-      it first, or put a long name in the chip from the page, since its text
-      is all its width depends on.
+      `foldDockTabs` decides on the first measure, for the tools only, and
+      the `scrollWidth` half of the second. #28 added up its items' widths
+      against the row's own, which predicts both but proves neither. Columns
+      mode needs a column lineage, which Jaffle Shop comes without
+      (`/api/collineage` answers 404): run collin on it first, or put a long
+      name in the chip from the page, since its text is all its width depends
+      on.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
