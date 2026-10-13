@@ -16,6 +16,8 @@ const S = {
   term: null, ws: null, fit: null,
   venv: null,                 // /api/meta's venv: the one dbt-edith was started in, and each found
   termVenv: undefined,        // the terminal's VIRTUAL_ENV at its last prompt, '' for none, undefined unheard (0069)
+  shellName: '',              // /api/meta's name for the terminal's shell, bash or zsh, '' until it answers (0073)
+  termPrompt: undefined,      // true at bash's prompt, false once Enter hands its line on, undefined unheard (0073)
   venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
@@ -200,6 +202,9 @@ const dot = (n) => {
    the user agent, so a key the shortcut list names as ⌘ is one CodeMirror
    binds to Cmd, and never a Ctrl it is waiting for instead. */
 const IS_MAC = CodeMirror.keyMap.default === CodeMirror.keyMap.macDefault;
+/* 'mac', 'windows' or 'other', for the keys that differ between the three:
+   the terminal's line keys and the rows of the shortcut list naming them. */
+const KEYS_OS = IS_MAC ? 'mac' : /^Win/.test(navigator.platform || '') ? 'windows' : 'other';
 
 // ---------------------------------------------------------------- editor --
 /* Jinja in a model, one token at a time, from an opening delimiter to its close.
@@ -6969,7 +6974,9 @@ function sendToTerminal(cmd, run) {
   let tries = 0;
   const attempt = () => {
     if (S.ws && S.ws.readyState === 1) {
-      S.ws.send(JSON.stringify({ t: 'i', d: run ? cmd + '\r' : cmd }));
+      const d = run ? cmd + '\r' : cmd;
+      S.termPrompt = promptAfter(S.termPrompt, d);
+      S.ws.send(JSON.stringify({ t: 'i', d }));
       S.term && S.term.focus();
       toast(run ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
     } else if (tries++ < 40) setTimeout(attempt, 100);
@@ -10224,6 +10231,55 @@ function termClipboard(e, mac, selected) {
   return '';
 }
 
+/* What a line key sends the shell in place of what xterm.js sends, or ''.
+   `at` says where it lands: `os` as KEYS_OS, `shell` as /api/meta names it,
+   `prompt` as S.termPrompt, `screen`, xterm.js's buffer type, and
+   `appCursor`, whether a program asked for application cursor keys.
+   On a Mac, xterm.js drops every key held with Cmd, so Cmd+Left and Cmd+Right
+   did nothing, and Cmd+Backspace deleted one character. They get the bytes VS
+   Code's terminal sends: Ctrl+A, Ctrl+E and Ctrl+U, start of line, end of line,
+   and the line deleted back to its start (all of it, in zsh). Option+Left and
+   Option+Right already move by word, as ESC b and ESC f; Option+Delete, the
+   forward one, gets ESC d, where xterm.js sends a sequence zsh leaves unbound.
+   On the Windows VM, Ctrl+Left, Ctrl+Right and Home did nothing in Git Bash.
+   xterm.js sends them as CSI sequences, which ConPTY turns into keys and back
+   into sequences for bash, whose readline looks them up in Git's inputrc.
+   To bash they now go as keys readline binds by itself: Ctrl+A and Ctrl+E for
+   Home and End, ESC b and ESC f for Ctrl+Left and Ctrl+Right, and VS Code's
+   Ctrl+W and ESC d for Ctrl+Backspace and Ctrl+Delete. The ESC ones still
+   cross ConPTY as escape sequences, read there as Alt with a letter.
+   A program reading the keys itself gets xterm.js's: one on the alternate
+   screen, and anything bash started, a pager less -X keeps on the normal
+   screen, PowerShell typed at its prompt, or a prompt of its own. On Windows,
+   when bash never reported its prompt, application cursor keys stand in for
+   that, as less asks for them and Git Bash's prompt does not. Not on a Mac,
+   where oh-my-zsh asks for them at every prompt, and where a pager reading
+   Ctrl+E as a line down is little worse than Cmd doing nothing, as in VS
+   Code. PowerShell as the shell, and Linux, keep xterm.js's keys (0073). */
+function termLineKey(e, at) {
+  if (e.type !== 'keydown' || e.shiftKey || e.isComposing) return '';
+  if (at.screen !== 'normal' || at.prompt === false) return '';
+  if (at.os === 'mac') {
+    if (e.ctrlKey) return '';
+    if (e.metaKey && !e.altKey) return { ArrowLeft: '\x01', ArrowRight: '\x05', Backspace: '\x15' }[e.key] || '';
+    if (e.altKey && !e.metaKey && e.key === 'Delete') return '\x1bd';
+    return '';
+  }
+  // Ctrl with Alt is AltGr, a character on the layouts that have one (0044).
+  if (at.os !== 'windows' || at.shell !== 'bash' || e.altKey || e.metaKey) return '';
+  if (at.prompt === undefined && at.appCursor) return '';
+  if (e.ctrlKey) return { ArrowLeft: '\x1bb', ArrowRight: '\x1bf', Backspace: '\x17', Delete: '\x1bd' }[e.key] || '';
+  return { Home: '\x01', End: '\x05' }[e.key] || '';
+}
+
+/* Whether bash is still at its prompt after `d` is typed: Enter hands the line
+   to a command, which reads the keys itself until the next prompt's OSC says
+   bash has them back. A bracketed paste keeps its newlines in the line. */
+function promptAfter(prompt, d) {
+  if (prompt !== true || d.startsWith('\x1b[200~')) return prompt;
+  return /[\r\n]/.test(d) ? false : prompt;
+}
+
 /* The OSC number pty.rs has bash print its VIRTUAL_ENV under. */
 const VENV_OSC = 6973;
 
@@ -10241,11 +10297,16 @@ function initTerm() {
   // bash says which venv it has before each prompt (0069). Any program can
   // print the same sequence, which is why it only ever changes words on screen.
   S.term.parser.registerOscHandler(VENV_OSC, (data) => {
+    // Sent before each of bash's prompts, so bash reads its line again (0073).
+    S.termPrompt = true;
     if (data.length <= 4096 && !/[\x00-\x1f]/.test(data)) heardVenv(data);
     return true;
   });
   connectTerm();
-  S.term.onData((d) => S.ws && S.ws.readyState === 1 && S.ws.send(JSON.stringify({ t: 'i', d })));
+  S.term.onData((d) => {
+    S.termPrompt = promptAfter(S.termPrompt, d);
+    if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ t: 'i', d }));
+  });
   S.term.attachCustomKeyEventHandler((e) => {
     const act = termClipboard(e, IS_MAC, S.term.hasSelection());
     // A paste is the browser's to do: refused by xterm.js, the key fires a
@@ -10255,6 +10316,17 @@ function initTerm() {
     if (act === 'copy') {
       e.preventDefault();
       copyTermSelection();
+      return false;
+    }
+    const sent = termLineKey(e, {
+      os: KEYS_OS, shell: S.shellName, prompt: S.termPrompt, screen: S.term.buffer.active.type,
+      appCursor: S.term.modes.applicationCursorKeysMode,
+    });
+    if (sent) {
+      e.preventDefault();
+      // Fires onData, which sends it, and not onKey: no key of these is Enter,
+      // the one onKey listens for.
+      S.term.input(sent);
       return false;
     }
     return true;
@@ -10296,6 +10368,7 @@ function connectTerm() {
       : '\r\n\x1b[90m[disconnected - press Enter to start a new shell]\x1b[0m\r\n');
     // No shell any more: back to what the next one would be handed.
     S.termVenv = undefined;
+    S.termPrompt = undefined;
     paintVenv();
   };
 }
@@ -10574,7 +10647,10 @@ function keyCombo(e, mac) {
 function keyLabel(combo, mac) {
   const parts = combo.split('+');
   const key = parts.pop();
-  const k = { ArrowUp: '↑', ArrowDown: '↓', Escape: 'Esc', Enter: mac ? '↩' : 'Enter' }[key] || key;
+  const k = {
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Enter: mac ? '↩' : 'Enter',
+    Backspace: mac ? '⌫' : 'Backspace', Delete: mac ? '⌦' : 'Delete',
+  }[key] || key;
   if (!mac) return parts.map((m) => (m === 'Mod' ? 'Ctrl' : m)).concat(k).join('+');
   const glyphs = [['Ctrl', '⌃'], ['Alt', '⌥'], ['Shift', '⇧'], ['Mod', '⌘']];
   const mods = glyphs.filter(([m]) => parts.includes(m)).map(([, g]) => g).join('');
@@ -10585,8 +10661,9 @@ function keyLabel(combo, mac) {
 /* Every shortcut there is, for the list ? opens: each row is the keys, any of
    which does it, and what it does. The keys wireKeys answers to are checked
    against this by web/tests/keys.js, so none is bound without appearing here;
-   the rest are answered by CodeMirror or by one box, and are listed by hand. */
-function shortcutSheet() {
+   the rest are answered by CodeMirror or by one box, and are listed by hand.
+   `os` is KEYS_OS: the terminal's line keys differ on each (0073). */
+function shortcutSheet(os) {
   return [
     { title: 'Anywhere', keys: [
       [['Mod+K'], 'Search models, sources and every file'],
@@ -10638,11 +10715,30 @@ function shortcutSheet() {
     { title: 'Terminal', keys: [
       [['Mod+C'], 'Copy the selection; Ctrl+C with nothing selected interrupts'],
       [['Mod+V'], 'Paste'],
+      ...termLineRows(os),
     ] },
     { title: 'Catalog', keys: [
       [['Enter', 'Space'], 'On a +N chip: every test on that column'],
     ] },
   ];
+}
+
+/* The terminal's line keys, as termLineKey answers them, for the shortcut
+   list: on a Mac in any shell, on Windows in Git Bash, and none elsewhere,
+   where the shell reads xterm.js's own. */
+function termLineRows(os) {
+  if (os === 'mac') return [
+    [['Alt+ArrowLeft', 'Alt+ArrowRight'], 'A word back and forward'],
+    [['Mod+ArrowLeft', 'Mod+ArrowRight'], 'Start and end of the command'],
+    [['Mod+Backspace'], 'Delete the command back to its start, all of it in zsh'],
+    [['Alt+Backspace', 'Alt+Delete'], 'Delete the word before and after'],
+  ];
+  if (os === 'windows') return [
+    [['Mod+ArrowLeft', 'Mod+ArrowRight'], 'A word back and forward, in Git Bash'],
+    [['Home', 'End'], 'Start and end of the command, in Git Bash'],
+    [['Mod+Backspace', 'Mod+Delete'], 'Delete the word before and after, in Git Bash'],
+  ];
+  return [];
 }
 
 /* Whether a key pressed here is text: a box, the editor, the terminal. `?` is
@@ -10695,7 +10791,7 @@ function buildShortcuts() {
     Object.assign(document.createElement('div'), { className: 'grow' }), close);
   const grid = document.createElement('div');
   grid.className = 'keys-grid';
-  for (const group of shortcutSheet()) {
+  for (const group of shortcutSheet(KEYS_OS)) {
     const sec = document.createElement('section');
     sec.append(h3(group.title));
     for (const [combos, what] of group.keys) {
@@ -11103,6 +11199,7 @@ async function boot() {
   const info = await api.get('/api/meta');
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
+  S.shellName = info.shell_name || '';
   // Which build drew this page. A release binary embeds web/ (0005), so this is
   // what tells a stale binary from a frontend change that really did nothing.
   const build = $('#status-build');
