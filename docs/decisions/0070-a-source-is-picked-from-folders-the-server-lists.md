@@ -1,6 +1,6 @@
 # 0070. A source is picked from folders the server lists
 
-Date: 2026-10-12 · Status: accepted · Amends 0063 and 0064
+Date: 2026-10-12 · Status: accepted, amended by 0075 · Amends 0063 and 0064
 
 **Trigger:** read before listing a folder outside the project, changing what
 the sources form's picker shows or how it writes a path, or listing a report
@@ -38,6 +38,8 @@ where the coverage is read.
 - **The coverage is listed in Reports before any source is named**, as where
   one is added, amending 0064's rule for it alone. Empty, it neither shows the
   button nor is opened on while another section has something.
+  *Amended by [0075](0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md):
+  the button is shown all the same, dimmed.*
 
 ## Rejected
 

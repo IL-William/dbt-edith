@@ -7903,7 +7903,7 @@ async function openJobSources({ add = false } = {}) {
    while it has something to show: collin's report once a run wrote one, the
    coverage of the jobs once a source is named. Before that the coverage is
    listed all the same, `empty`, as the place a source is added from (0070),
-   but it neither shows the button nor is opened on for itself. */
+   but it is not opened on for itself, and the button stays dimmed (0075). */
 function reportsSections(index) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
@@ -8115,9 +8115,13 @@ function paintReportsButton() {
   const btn = $('#reports-btn');
   const { sections, news } = reportsNow();
   // In view from the first paint, so the panel is found before it has
-  // anything, and dimmed until a section does (0075).
+  // anything, and dimmed until a section does, with no chip until then:
+  // news of a report the index does not list yet would say the opposite of
+  // its tooltip (0075).
+  const some = sections.some((sec) => !sec.empty);
   btn.classList.remove('hidden');
-  btn.classList.toggle('dim', !sections.some((sec) => !sec.empty) && !S.reportsOpen);
+  btn.classList.toggle('dim', !some && !S.reportsOpen);
+  if (!some) news.length = 0;
   btn.classList.toggle('on', S.reportsOpen);
   btn.setAttribute('aria-expanded', String(S.reportsOpen));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
@@ -8149,12 +8153,11 @@ async function openReports(section, { reread = true } = {}) {
     panel.focus({ preventScroll: true });
   }
   paintReportsButton();
-  // Put back by the tour as it was left (0074): the section is still drawn,
+  // Put back by the tour as it was left (0075): the section is still drawn,
   // so it is not read again, and its Read again says when its file changed.
   if (!reread && key === S.reportsDrawn) {
     S.reportsSection = key;
     paintReportsNav();
-    paintReportStale();
     return;
   }
   showReportSection(key);
@@ -8265,8 +8268,9 @@ function restoreReportPlace(view, place) {
 }
 
 /* Draws one section, read again on every showing so a run since the last
-   one shows, with the folds and the scroll it was left with. Only the latest
-   of two quick clicks is drawn. */
+   one shows, with the folds and the scroll it was left with: every showing
+   but the tour's putting back of a panel it rolled up (0075). Only the
+   latest of two quick clicks is drawn. */
 async function showReportSection(key) {
   const view = $('#reports-view');
   // Kept before anything replaces it, the placeholder included.
@@ -10798,10 +10802,11 @@ function showSide(which) {
 }
 
 /* `look` is off for a tab brought forward by a click in a report that has
-   just looked at the job files itself (0063). The reports are left as they
-   are: a column's lineage brings the canvas forward when its answer lands,
-   seconds later with Snowflake, and must not roll up a panel opened since.
-   What the user asks for rolls them up itself. */
+   just looked at the job files itself (0063), and for the tour's Jobs step
+   and its putting back of the dock, which ask for none (0075). The reports
+   are left as they are: a column's lineage brings the canvas forward when
+   its answer lands, seconds later with Snowflake, and must not roll up a
+   panel opened since. What the user asks for rolls them up itself. */
 function showDock(which, { look = true } = {}) {
   let loading = null;
   S.dock = which;
@@ -11025,9 +11030,11 @@ async function startTour() {
     reports, reportsSection: S.reportsSection, reportsReturn,
   };
   buildTour(t);
-  const [model, jobs] = await Promise.all([
-    api.get('/api/tour').then((r) => r.model || null, () => null),
-    api.get('/api/jobs').then((r) => (r.sources || []).length, () => 0),
+  // The index too, so the Reports step says what the button shows even when
+  // the page asked for it a moment ago and has not heard back.
+  const [{ model, sources: jobs }] = await Promise.all([
+    api.get('/api/tour').then((r) => ({ model: r.model || null, sources: r.sources || 0 }), () => ({ model: null, sources: 0 })),
+    loadReportsIndex(),
   ]);
   if (S.tour !== t || t.ending) return;
   const pick = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
@@ -11208,7 +11215,8 @@ async function tourEnter(key, t, live) {
       break;
     case 'jobs':
       await onModel();
-      // The jobs as last read: the tour looks at no job file (0063).
+      // The jobs as last read, which /api/tour has just read if nothing had:
+      // the tour never asks to look at the job files again (0063, 0075).
       if (live()) await showDock('jobs', { look: false });
       break;
     case 'config': {

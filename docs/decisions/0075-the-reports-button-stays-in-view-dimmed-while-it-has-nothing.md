@@ -1,6 +1,6 @@
 # 0075. The Reports button stays in view, dimmed while it has nothing
 
-Date: 2026-10-13 · Status: accepted · Amends 0064 and 0070
+Date: 2026-10-13 · Status: accepted · Amends 0064, 0070 and 0074
 
 **Trigger:** read before hiding the Reports button, or changing what it shows
 or says while no report has anything.
@@ -27,6 +27,15 @@ guided tour (0074) had to show the button for its own step.
 - **A click opens the panel on the empty coverage**, as `Mod+Alt+R` already
   did, which is where a source is added (0070). The sections listed, and
   which one the panel opens on, are 0064's and 0070's as before.
+- **The guided tour never asks to look at the job files** (0063). Its Jobs
+  step and the dock it puts back show the jobs as last read; the server reads
+  them once if nothing has yet, as opening the Jobs tab does, to pick a
+  model a job runs (0074). A Reports panel the tour rolled up comes back as
+  it was left, its section still drawn and not read again, the one showing
+  that does not read its file (amending 0064); its Read again says when the
+  file changed meanwhile. Reading the coverage again looked at every job
+  file and dropped the jobs the Catalog had read, on an orchestration
+  repository that can be large.
 
 ## Rejected
 

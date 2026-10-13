@@ -277,7 +277,8 @@ STEPS = [
      "document.querySelector('.cat-tabs .ctab.active')?.textContent.startsWith('Columns')"),
     ("Jobs", "#dock-jobs",
      "!document.querySelector('#dock-jobs').classList.contains('hidden') && !!document.querySelector('#jobs-body .jobs-none')"),
-    ("Reports", "#reports-btn", "!document.querySelector('#reports-btn').classList.contains('hidden')"),
+    ("Reports", "#reports-btn",
+     "(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"),
     ("Terminal", "#dock [data-dock=terminal]", None),
     ("Search", "#palette-btn", None),
     ("Every shortcut, and this tour", "#keys-btn", None),
@@ -291,7 +292,7 @@ STATE = """(() => ({
   select: document.querySelector('#select-input').value,
   catalog: document.querySelector('.cat-title')?.textContent || document.querySelector('#catalog').textContent,
   jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
-  reports: !document.querySelector('#reports-btn').classList.contains('hidden'),
+  reports: document.querySelector('#reports-btn').className,
   panel: document.querySelector('#reports').classList.contains('open'),
 }))()"""
 
@@ -391,6 +392,8 @@ class Walk:
         before = page.js(STATE)
 
         print("--- the walk ---")
+        page.js("performance.setResourceTimingBufferSize(100000)")
+        looks = page.js(LOOKS)
         page.js("[...document.querySelectorAll('.tour-offer button')].find((b) => b.textContent === 'Give me a tour').click()")
         total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
         self.check("every step on a project with a model", total == len(STEPS), f"got {total} of {len(STEPS)}")
@@ -426,6 +429,8 @@ class Walk:
                    sorted(kept) == ["offered", "version"] and re.fullmatch(r"\d+\.\d+\.\d+", kept["version"]), f"{kept}")
         self.check("no menu left open", not page.js("!!document.querySelector('.crumbmenu')"))
         self.check("the Reports button as it was", after["reports"] == before["reports"], f"{before} then {after}")
+        self.check("no job file looked at through every step, the Jobs step included",
+                   page.js(LOOKS) == looks, f"{looks} requests looking at them before, {page.js(LOOKS)} after")
         self.check("with no tab open before, the model stays open as a place to start",
                    after["active"].startswith(f"{MODEL}.sql") and after["dock"] == before["dock"], f"{after}")
 
