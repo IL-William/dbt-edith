@@ -11113,7 +11113,9 @@ async function boot() {
   refreshUpdate();
   S.venv = info.venv || {};
   paintVenv();
-  $('#status-venv').addEventListener('click', (e) => openVenvMenu(e.currentTarget));
+  // The second click of a double click would type the line twice, or close the
+  // menu the first one opened.
+  $('#status-venv').addEventListener('click', (e) => { if (e.detail < 2) openVenvMenu(e.currentTarget); });
   document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
   $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
   loadEnvs();

@@ -4174,9 +4174,13 @@ mod tests {
         let line = crate::pty::activation(&bash, &env).unwrap();
         let (port, _st, server) = serve_in(&root, crate::profiles::Lookup::default(), bash).await;
         let host = format!("127.0.0.1:{port}");
-        let answer = response_of(port, get("/api/venv", &[("Host", &host)])).await;
-        let want = format!(r#""activation":{}"#, serde_json::to_string(&line).unwrap());
-        assert_eq!(answer.matches(&want).count(), 2, "the venv reported and the same one found: {answer}");
+        let answer = json_of(&response_of(port, get("/api/venv", &[("Host", &host)])).await);
+        assert_eq!(answer["found"][0]["activation"], line.as_str(), "{answer}");
+        // The one reported is this one too, unless the tests run inside another
+        // venv, which is then the one reported, with its own line.
+        if crate::venv::activated().is_none() {
+            assert_eq!(answer["activation"], line.as_str(), "{answer}");
+        }
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
