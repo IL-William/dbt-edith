@@ -24,13 +24,55 @@ check('after a job no file defines',
 check('several at once', jobsScheduleText({ kind: 'dbt_cloud', cron: '0 * * * *', ci: true, merge: true }), '0 * * * * · CI · on merge');
 check('a schedule only the vars file knows',
       jobsScheduleText({ kind: 'dbt_cloud', note: 'a schedule only the vars file knows' }), 'a schedule only the vars file knows');
+check('on a clock', jobsStart({ cron: '0 5 * * *', scheduled: true }), 'scheduled');
+check('after a scheduled job', jobsStart({ after: 'Daily build', scheduled: true }), 'scheduled');
+check('started by nothing', jobsStart({ scheduled: false }), 'manual');
+check('CI, which no clock starts', jobsStart({ ci: true, scheduled: false }), 'other');
+check('on an asset only a manual DAG updates', jobsStart({ assets: ['a'], scheduled: false }), 'other');
+check('@once', jobsStart({ note: 'runs once, at its start date', scheduled: false }), 'other');
+var mixed = [
+  { job: { name: 'by_hand', scheduled: false } }, { job: { name: 'ci', ci: true, scheduled: false } },
+  { job: { name: 'daily', cron: '@daily', scheduled: true } }, { job: { name: 'jaffle_reports', scheduled: false } },
+  { job: { name: 'after', after: 'daily', scheduled: true } },
+];
+check('scheduled first, manual last, each in the order sent',
+      jobsByStart(mixed).map(function (g) { return g.job.name; }).join(' '), 'daily after ci by_hand jaffle_reports');
+check('the order sent is left alone', mixed[0].job.name, 'by_hand');
+check('no groups', jobsByStart(undefined).length, 0);
+check('jobs listed bare, as the coverage reads them',
+      jobsByStart([{ name: 'm', scheduled: false }, { name: 's', cron: '@daily', scheduled: true }], function (j) { return j; })
+        .map(function (j) { return j.name; }).join(' '), 's m');
 
 print('\n--- how a job and a step are named ---');
 check('a DAG', jobsJobLabel({ kind: 'airflow', name: 'shop_daily' }), 'DAG shop_daily');
 check('a dbt Cloud job with its identifier', jobsJobLabel({ kind: 'dbt_cloud', name: 'Daily build', ident: 'daily' }), 'Job Daily build [[daily]]');
 check('a task', jobsStepLabel({ kind: 'airflow' }, { name: 'marts', n: 2 }), 'task marts');
 check('a task with no id', jobsStepLabel({ kind: 'airflow' }, { name: '', n: 2 }), 'task 2');
+check('a task on a chip', jobsChipText({ kind: 'airflow', name: 'shop_daily' }, { name: 'marts', n: 2 }), 'shop_daily › marts');
+check('a task with no id on a chip', jobsChipText({ kind: 'airflow', name: 'shop_daily' }, { name: '', n: 2 }), 'shop_daily › task 2');
+check('a dbt Cloud step on a chip', jobsChipText({ kind: 'dbt_cloud', name: 'Daily build', steps: 3 }, { n: 2 }), 'Daily build › step 2/3');
+check('chips, scheduled jobs first and each job\'s steps in order',
+      jobsChips([
+        { job: { kind: 'airflow', name: 'jaffle_reports', scheduled: false }, steps: [{ name: 'all', n: 1 }] },
+        { job: { kind: 'airflow', name: 'daily', cron: '@daily', scheduled: true }, steps: [{ name: 'stage', n: 1 }, { name: 'marts', n: 2 }] },
+      ]).map(function (c) { return c.text; }).join(' | '),
+      'daily › stage | daily › marts | jaffle_reports › all');
 check('a dbt Cloud step by its place', jobsStepLabel({ kind: 'dbt_cloud', steps: 3 }, { n: 2 }), 'step 2/3');
+check('steps not resolved, counted over their jobs',
+      jobsMaybeCount([{ steps: [{ n: 1 }, { n: 2 }] }, { steps: [{ n: 4 }] }]), 3);
+check('none not resolved', jobsMaybeCount(undefined), 0);
+var shopDaily = { source: 'airflow', file: 'shop_daily.yml', kind: 'airflow', name: 'shop_daily', ident: 'shop_daily' };
+check('a task keeps its key when a task is added before it',
+      jobsStepKey(shopDaily, { name: 'marts', n: 2, index: 7 }), jobsStepKey(shopDaily, { name: 'marts', n: 3, index: 8 }));
+check('two tasks of a DAG, two keys',
+      jobsStepKey(shopDaily, { name: 'marts', n: 2 }) !== jobsStepKey(shopDaily, { name: 'stage', n: 1 }), true);
+var nightly = { source: 'cloud', file: 'jobs.yml', kind: 'dbt_cloud', name: 'Daily build', ident: 'daily' };
+check('a dbt Cloud step by its place in its job',
+      jobsStepKey(nightly, { n: 2 }) !== jobsStepKey(nightly, { n: 1 }), true);
+check('two dbt Cloud jobs of one name in one file, by their identifier',
+      jobsStepKey(nightly, { n: 1 }) !== jobsStepKey(Object.assign({}, nightly, { ident: 'daily_2' }), { n: 1 }), true);
+check('the same file name in two sources',
+      jobsStepKey(nightly, { n: 1 }) !== jobsStepKey(Object.assign({}, nightly, { source: 'cloud_eu' }), { n: 1 }), true);
 check('the step dbt Cloud adds', jobsStepLabel({ kind: 'dbt_cloud', steps: 3 }, { n: 1, implicit: true }),
       'step 1/3, from run_generate_sources');
 
@@ -67,7 +109,7 @@ check('a row with no folder at all', shape(jobsCoverageGroups([{ folder: '', nam
 check('the server\'s order holds within a group', shape(jobsCoverageGroups([
   { folder: 'models/a/p', name: 'z' }, { folder: 'models/a/q', name: 'b' }])), 'models/a:z@p,b@q');
 check('the line over the lists', jobsCoverageLine({ total: 10, never: [1, 2], unscheduled: [3] }),
-      '7 of 10 models, seeds and snapshots run in a scheduled job; 1 manual only, 2 in no job.');
+      '7 of 10 models, seeds and snapshots run in a scheduled job; 1 only in unscheduled jobs, 2 in no job.');
 check('all covered', jobsCoverageLine({ total: 2, never: [], unscheduled: [] }), '2 of 2 models, seeds and snapshots run in a scheduled job.');
 
 print('\n--- what the form sends ---');

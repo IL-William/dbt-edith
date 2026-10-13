@@ -368,6 +368,12 @@ Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file. The column count
 opens the Columns tab.
+Once a [job source](#jobs) is named, Preview also lists the steps that run the
+node, one chip each, `DAG › task` or `job › step`, green when the job is
+scheduled and grey when it is not, in the Jobs tab's order. A click on one
+opens the Jobs tab on that node at that step, even when it is a box clicked
+once in the lineage rather than the node in focus. A dashed chip counts the
+steps not resolved, or the files not read, that could run it too.
 A column's Tests cell names every test guarding it, one chip each: two
 `relationships` on one column are two tests and read as two. Where they would
 not fit, the first few are shown and a `+N` carries the rest, which hover, click
@@ -1125,13 +1131,18 @@ or checks the node is listed: a `dbt compile` selects every model and runs
 none, so its job would sit under each of them.
 
 ```
-AIRFLOW  DAG shop_daily   0 5 * * *                      orchestration · sales/shop_daily.yml:2
+AIRFLOW  DAG shop_daily   (SCHEDULED 0 5 * * *)          orchestration · sales/shop_daily.yml:2
   task marts    dbt run -s +tag:daily --exclude tag:wip    [dbt ls]
                 via +tag:daily · after stage · awaited by shop_reports › wait_daily
-DBT CLOUD  Job Daily build [[daily]]   0 */2 * * *       cloud · jobs.yml:14
+DBT CLOUD  Job Daily build [[daily]]   (SCHEDULED 0 */2 * * *)   cloud · jobs.yml:14
   step 3/3      dbt build --select +orders                 [dbt ls]
                 via +orders
 ```
+
+The jobs that run on their own come first, with a green **Scheduled** pill
+that gives the schedule, and the ones nothing starts come last, with a grey
+**Manual** one. A CI or merge job, which something starts but no clock, sits
+between the two, its pill saying what starts it.
 
 **via** names the terms of the selection that reached the node, so a staging
 model listed under a marts task says why. **dbt ls** types into the terminal the
@@ -1145,7 +1156,8 @@ might take a value or not.
 **Job coverage**, a section of [Reports](#reports) that **Coverage in Reports**
 in the tab opens, turns the question round: which of the
 project's own models, seeds and snapshots no scheduled job runs, which run only
-in jobs nothing schedules (*Manual only*), which steps select nothing, and which
+in jobs nothing schedules (*Only in unscheduled jobs*: manual, CI, a merge),
+which steps select nothing, and which
 jobs were read.
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed

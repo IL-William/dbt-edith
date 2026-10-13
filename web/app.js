@@ -83,6 +83,10 @@ const S = {
   reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
   runSeen: undefined,         // the last run's file time when its section was last shown, for the news
   jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
+  jobsReveal: null,           // { id, key, index } the step a Catalog chip asked the Jobs tab to show, { id, maybe } for the unresolved
+  jobsFor: null,              // the node a Catalog chip opened the Jobs tab on, when not the focus, while the Catalog shows it
+  catJobs: new Map(),         // per node, the jobs answer its Catalog section drew, until the jobs may have changed
+  catJobsGen: 0,              // counts those changes, so an answer asked for before one is dropped
 };
 
 // ------------------------------------------------------------------ util --
@@ -3633,6 +3637,7 @@ function resolveBlock(cm, b, side) {
 async function focusNode(id, { open = false } = {}) {
   closeHoverCard();
   S.focus = id;
+  S.jobsFor = null;
   S.unsynced = '';
   S.graphMode = 'model';
   S.colFocus = null;
@@ -7097,6 +7102,11 @@ function stat(label, value, onClick) {
 /* How a job starts, in a few words. Manual is what is left when nothing
    starts it: no clock, no asset, no other job, no webhook. */
 function jobsScheduleText(job) {
+  const parts = jobsStartedBy(job);
+  return parts.length ? parts.join(' · ') : 'manual';
+}
+
+function jobsStartedBy(job) {
   const parts = [];
   if (job.cron) parts.push(job.cron);
   if (job.assets && job.assets.length) parts.push('on ' + job.assets.join(', '));
@@ -7104,7 +7114,38 @@ function jobsScheduleText(job) {
   if (job.ci) parts.push('CI');
   if (job.merge) parts.push('on merge');
   if (job.note) parts.push(job.note);
-  return parts.length ? parts.join(' · ') : 'manual';
+  return parts;
+}
+
+/* Scheduled runs on its own, manual is started by nothing at all, and
+   between the two sits what something starts that never leads back to a
+   clock: CI, a merge, an asset only a manual DAG updates, `@once`. */
+function jobsStart(job) {
+  if (job.scheduled) return 'scheduled';
+  return jobsStartedBy(job).length ? 'other' : 'manual';
+}
+
+/* The jobs that run on their own first and the manual ones last, each class
+   in the order the server sent, which is the files' own (0055). `job` finds
+   the job in an item: a node's groups hold one each. */
+function jobsByStart(items, job = (g) => g.job) {
+  const rank = { scheduled: 0, other: 1, manual: 2 };
+  return (items || []).map((item) => ({ item, rank: rank[jobsStart(job(item))] }))
+    .sort((a, b) => a.rank - b.rank).map((d) => d.item);
+}
+
+/* How many steps not resolved could act on the node, for the tab's summary
+   and the Catalog's chip alike. */
+function jobsMaybeCount(maybe) {
+  return (maybe || []).reduce((a, g) => a + g.steps.length, 0);
+}
+
+/* A step by its job and its own name, or its place in a dbt Cloud job: what
+   a Catalog chip asks the Jobs tab to show. Not the step's index alone, which
+   a read after a job file changed gives to another step; the index still tells
+   apart two sources of one label holding the same file. */
+function jobsStepKey(job, step) {
+  return [job.source, job.file, job.ident || job.name, step.name || step.n].join('\n');
 }
 
 /* A DAG by its id, a dbt Cloud job by its name and the identifier
@@ -7118,6 +7159,19 @@ function jobsJobLabel(job) {
 function jobsStepLabel(job, step) {
   if (job.kind === 'airflow') return 'task ' + (step.name || step.n);
   return `step ${step.n}/${job.steps}` + (step.implicit ? ', from run_generate_sources' : '');
+}
+
+/* A step on a Catalog chip: its job and itself, without the DAG and the
+   task the Jobs tab writes in front, which the section's title says. */
+function jobsChipText(job, step) {
+  const own = job.kind === 'airflow' ? (step.name || 'task ' + step.n) : `step ${step.n}/${job.steps}`;
+  return `${job.name} › ${own}`;
+}
+
+/* One chip per step that runs the node, scheduled jobs first, as the Jobs
+   tab lists them, and each job's steps in their order. */
+function jobsChips(groups) {
+  return jobsByStart(groups).flatMap((g) => g.steps.map((step) => ({ job: g.job, step, text: jobsChipText(g.job, step) })));
 }
 
 /* The lines that tie a job to others. */
@@ -7178,7 +7232,7 @@ function jobsCoverageLine(cov) {
   const covered = cov.total - cov.never.length - cov.unscheduled.length;
   const of = `${covered} of ${cov.total} models, seeds and snapshots run in a scheduled job`;
   const rest = [];
-  if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} manual only`);
+  if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} only in unscheduled jobs`);
   if (cov.never.length) rest.push(`${cov.never.length} in no job`);
   return of + (rest.length ? '; ' + rest.join(', ') : '') + '.';
 }
@@ -7308,14 +7362,24 @@ function jobsExample(kind, keys, defaults) {
   return '# one file per DAG\n' + jobsYaml(doc, 0).join('\n');
 }
 
+/* The node the Jobs tab is about: the focus, or the one a Catalog chip
+   opened it on, which a single click on a box puts in the Catalog without
+   moving the focus, for as long as the Catalog still shows it. */
+const jobsNode = () => (S.jobsFor && S.node && S.node.id === S.jobsFor ? S.jobsFor : S.focus);
+
 /* `look` asks the server to look at the job files first, and read them again
    if one moved: done when the tab is opened, never on a click inside it. Only
-   the first request of a run carries it. */
+   the first request of a run carries it. A Catalog chip's step is taken here,
+   so a run that ends early leaves none behind for a later one to light. */
 async function loadJobs({ look = false } = {}) {
   const run = ++S.jobsRun;
   const body = $('#jobs-body');
+  const reveal = S.jobsReveal;
+  S.jobsReveal = null;
+  // What the Catalog drew came from the read this may replace.
+  if (look) forgetCatalogJobs();
   paintJobsHead();
-  const id = S.focus;
+  const id = jobsNode();
   const ask = (url) => {
     const asked = look ? url + (url.includes('?') ? '&' : '?') + 'look=true' : url;
     look = false;
@@ -7338,17 +7402,28 @@ async function loadJobs({ look = false } = {}) {
   let view;
   try { view = await ask('/api/jobs/node?id=' + encodeURIComponent(id)); }
   catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
-  if (run === S.jobsRun) renderJobs(body, view, id);
+  if (run === S.jobsRun) renderJobs(body, view, id, reveal);
 }
 
 const jel = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+
+/* How a job starts, as a pill that says scheduled or manual in a word, so the
+   two can be told apart at a glance down a list of cards. */
+function jobsWhen(job) {
+  const start = jobsStart(job);
+  const pill = jel('span', 'jobwhen');
+  pill.dataset.start = start;
+  if (start !== 'other') pill.append(jel('b', '', start === 'scheduled' ? 'Scheduled' : 'Manual'));
+  if (start !== 'manual') pill.append(jel('span', '', jobsScheduleText(job)));
+  return pill;
+}
 
 /* The head of the tab: the node it is about, the coverage of every model,
    which lives in Reports (0064), and the sources. */
 function paintJobsHead() {
   const head = $('#jobs-head');
   const bar = jel('div', 'jobs-bar');
-  const about = jel('span', 'jobs-about', (S.focus || '').split('.').pop());
+  const about = jel('span', 'jobs-about', (jobsNode() || '').split('.').pop());
   bar.append(about, jel('div', 'grow'));
   if (S.reports && S.reports.jobs) {
     const coverage = jel('button', 'btn sm', 'Coverage in Reports');
@@ -7397,7 +7472,7 @@ function jobsCard(group, { reason = false } = {}) {
   head.append(
     jel('span', 'jobkind', job.kind === 'airflow' ? 'Airflow' : 'dbt Cloud'),
     jel('b', 'jobname', jobsJobLabel(job)),
-    jel('span', 'jobwhen' + (job.scheduled ? '' : ' off'), jobsScheduleText(job)),
+    jobsWhen(job),
     jel('span', 'grow'),
   );
   const where = jel('button', 'jobfile', `${job.source} · ${job.file}:${job.line}`);
@@ -7408,6 +7483,8 @@ function jobsCard(group, { reason = false } = {}) {
   for (const row of jobsJobLinks(job)) card.append(jel('div', 'joblink', row));
   for (const step of group.steps) {
     const line = jel('div', 'jobstep');
+    line.dataset.key = jobsStepKey(job, step);
+    line.dataset.step = step.index;
     line.append(jel('span', 'steplbl', jobsStepLabel(job, step)));
     line.append(jel('code', 'stepcmd', step.shown));
     if (step.ls) {
@@ -7423,7 +7500,7 @@ function jobsCard(group, { reason = false } = {}) {
   return card;
 }
 
-function renderJobs(body, view, id) {
+function renderJobs(body, view, id, reveal) {
   if (!view.configured) return jobsNoSource(body);
   const out = [];
   if (view.refused) {
@@ -7432,15 +7509,34 @@ function renderJobs(body, view, id) {
   if (!view.groups.length) {
     out.push(jel('div', 'compiled-empty', `No step of the jobs read acts on ${id.split('.').pop()}.`));
   }
-  for (const g of view.groups) out.push(jobsCard(g));
+  for (const g of jobsByStart(view.groups)) out.push(jobsCard(g));
   if (view.maybe && view.maybe.length) {
-    const n = view.maybe.reduce((a, g) => a + g.steps.length, 0);
+    const n = jobsMaybeCount(view.maybe);
     const more = jel('details', 'jobs-maybe');
     more.append(jel('summary', '', `Not resolved, and could act on it (${n})`));
-    for (const g of view.maybe) more.append(jobsCard(g, { reason: true }));
+    for (const g of jobsByStart(view.maybe)) more.append(jobsCard(g, { reason: true }));
     out.push(more);
   }
   body.replaceChildren(...out);
+  revealJobStep(body, id, reveal);
+}
+
+/* The step a Catalog chip was clicked for, scrolled to and lit once, or the
+   steps not resolved, unfolded, and only on the node it was asked for: a
+   step runs under every node it selects. By its key, and by its index among
+   steps of one key, which only two sources of one label give. Within the
+   tab's own scroll alone: scrollIntoView would also move the page's hidden
+   overflows. */
+function revealJobStep(body, id, want) {
+  if (!want || want.id !== id) return;
+  const maybe = want.maybe && body.querySelector(':scope > .jobs-maybe');
+  if (maybe) maybe.open = true;
+  const lines = [...body.querySelectorAll(':scope > .jobcard .jobstep')].filter((l) => l.dataset.key === want.key);
+  const line = maybe || lines.find((l) => l.dataset.step === String(want.index)) || lines[0];
+  if (!line) return;
+  const at = maybe || line.closest('.jobcard');
+  body.scrollTop += at.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+  if (!maybe) line.classList.add('jobs-hit');
 }
 
 /* One section of the coverage view, folders inside, open when short. */
@@ -7493,7 +7589,7 @@ function renderCoverage(body, cov) {
   const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
   const short = (n) => n <= 50;
   out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
-  out.push(jobsSection('Manual only', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
+  out.push(jobsSection('Only in unscheduled jobs', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
     'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
   if (cov.ephemeral.length) {
     out.push(jobsSection('Ephemeral, so never run on their own', jobsCoverageGroups(cov.ephemeral), cov.ephemeral.length, false));
@@ -7502,9 +7598,9 @@ function renderCoverage(body, cov) {
   out.push(jobsStepList('Steps not resolved', cov.unresolved));
   const jobs = jel('details', 'jobs-sec');
   jobs.append(jel('summary', '', `Jobs read (${cov.jobs.length})`));
-  for (const j of cov.jobs) {
+  for (const j of jobsByStart(cov.jobs, (j) => j)) {
     const row = jel('div', 'jobs-ref');
-    row.append(jel('b', '', jobsJobLabel(j)), jel('span', 'jobwhen' + (j.scheduled ? '' : ' off'), jobsScheduleText(j)),
+    row.append(jel('b', '', jobsJobLabel(j)), jobsWhen(j),
       jel('span', 'jobfile', `${j.source} · ${j.file}:${j.line}`));
     jobs.append(row);
   }
@@ -7657,6 +7753,7 @@ async function openJobSources({ add = false } = {}) {
   let summary;
   try { summary = await api.get('/api/jobs?look=true'); }
   catch (e) { return toast('jobs: ' + e.message, 'err'); }
+  forgetCatalogJobs();
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
   const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys) }));
@@ -7755,6 +7852,7 @@ async function openJobSources({ add = false } = {}) {
     try {
       const answer = await api.send('/api/jobs/sources', 'PUT', sent);
       reads = answer.sources;
+      forgetCatalogJobs();
       // Closed while it read: a toast is all that is left to say what it did.
       if (!open) {
         toast(...jobsSaveToast(answer));
@@ -7789,7 +7887,7 @@ async function openJobSources({ add = false } = {}) {
     toast(...jobsSaveToast(answer));
     // The Jobs tab already answers for the model it shows, and Reports would
     // roll down over it; anywhere else the answer is the coverage.
-    if (S.dock === 'jobs' && S.focus && !S.reportsOpen) return loadReportsIndex();
+    if (S.dock === 'jobs' && jobsNode() && !S.reportsOpen) return loadReportsIndex();
     return openReports('jobs');
   }
   if (S.reportsOpen && S.reportsSection === 'jobs') showReportSection('jobs');
@@ -7847,7 +7945,7 @@ function jobsBadge(jobs, seen) {
   const n = now - seen;
   return { text: `${n} more unscheduled`, short: `+${n}`,
     title: `${n} more model${n > 1 ? 's' : ''}, seed${n > 1 ? 's' : ''} or snapshot${n > 1 ? 's' : ''} than when you last looked `
-      + `${n > 1 ? 'are' : 'is'} run by no scheduled job: ${jobs.never} in no job, ${jobs.unscheduled || 0} manual only.` };
+      + `${n > 1 ? 'are' : 'is'} run by no scheduled job: ${jobs.never} in no job, ${jobs.unscheduled || 0} only in unscheduled jobs.` };
 }
 
 /* What the last run leaves on the button until its section is shown: its
@@ -8061,6 +8159,8 @@ function closeReports({ restore = false } = {}) {
   if (panel.contains(document.activeElement)) document.activeElement.blur();
   if (restore && back && back.focus && document.body.contains(back) && !panel.contains(back)) back.focus();
   paintReportsButton();
+  // The Catalog it covered is seen again, and asks for its jobs if it has not.
+  if (S.dock === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
 }
 
 function toggleReports() {
@@ -8286,6 +8386,7 @@ async function jobsCoverageSection(again) {
   let cov;
   try { cov = await api.get('/api/jobs/coverage?look=true'); }
   catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
+  forgetCatalogJobs();
   const body = jel('div', 'jobs-body');
   renderCoverage(body, cov);
   return [head, body];
@@ -8295,6 +8396,10 @@ async function jobsCoverageSection(again) {
    the most about it. The panel rolls up first: the file is what was asked
    for, and focusNode opens none for a node without one (0064). */
 async function openFromReport(id, { dock = '', column = '' } = {}) {
+  // The Catalog is about to draw this node: the one it holds asks for no jobs
+  // as the panel rolls up or the tab comes forward.
+  const stale = $('#catalog .cat-jobs');
+  if (stale) stale.dataset.asked = '1';
   closeReports();
   pushJump();
   if (dock === 'catalog') {
@@ -9789,6 +9894,7 @@ function catalogPreview(body, n) {
   totals.textContent = `${n.upstream_total} models upstream in total, ${n.downstream_total} downstream (whole graph).`;
   body.append(stats, totals);
   catalogLocation(body, n);
+  catalogJobs(body, n);
 
   if (n.tags.length) {
     body.appendChild(h3('tags'));
@@ -9854,6 +9960,95 @@ function catalogPreview(body, n) {
   // and reads as a stranger on the one that did not declare it.
   refs('tests on the model', guards.model, (r) => r.test_name || r.name);
   refs('tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+}
+
+/* The steps that run the node, one chip each, a click away from their card
+   in the Jobs tab. The jobs are asked for only once the Catalog is seen, as
+   the tab asks once it is opened (0063): one drawn behind another tab, or
+   under Reports, is filled in by showDock or closeReports. An answer is kept
+   per node, so drawing the Catalog again asks nothing until the jobs may have
+   changed (forgetCatalogJobs). Nothing shows until a source is named. */
+function catalogJobs(body, n) {
+  const box = jel('div', 'cat-jobs');
+  box.dataset.node = n.id;
+  body.appendChild(box);
+  fillCatalogJobs(box);
+}
+
+const catalogSeen = () => S.dock === 'catalog' && !S.reportsOpen;
+
+async function fillCatalogJobs(box) {
+  if (!box || box.dataset.asked) return;
+  const id = box.dataset.node;
+  const known = S.catJobs.get(id);
+  if (known) {
+    box.dataset.asked = '1';
+    return paintCatalogJobs(box, known);
+  }
+  if (!catalogSeen()) return;
+  box.dataset.asked = '1';
+  const gen = S.catJobsGen;
+  let view;
+  // What went wrong is the Jobs tab's to say, with the sources at hand; the
+  // next time the Catalog is seen asks again.
+  try { view = await api.get('/api/jobs/node?id=' + encodeURIComponent(id)); }
+  catch { if (gen === S.catJobsGen) delete box.dataset.asked; return; }
+  if (gen !== S.catJobsGen) return;
+  S.catJobs.set(id, view);
+  if (box.isConnected) paintCatalogJobs(box, view);
+}
+
+/* The jobs may have changed: the sources were saved, a look at their files
+   may have read them again, or a new manifest moved what each step selects.
+   What the Catalog shows stays until its next answer replaces it. */
+function forgetCatalogJobs() {
+  S.catJobs.clear();
+  S.catJobsGen++;
+  const box = $('#catalog .cat-jobs');
+  if (!box) return;
+  delete box.dataset.asked;
+  fillCatalogJobs(box);
+}
+
+function paintCatalogJobs(box, view) {
+  if (!view.configured) return box.replaceChildren();
+  const id = box.dataset.node;
+  const list = jel('div', 'links');
+  const chip = (cls, text, title, reveal) => {
+    const b = jel('button', cls, text);
+    b.type = 'button';
+    b.title = title;
+    b.addEventListener('click', () => showJobsFor(id, reveal));
+    list.append(b);
+    return b;
+  };
+  const chips = jobsChips(view.groups);
+  for (const c of chips) {
+    chip('jobchip', c.text,
+      `${jobsJobLabel(c.job)}: ${c.job.scheduled ? 'scheduled, ' : ''}${jobsScheduleText(c.job)}\n${c.step.shown}\nclick: show it in the Jobs tab`,
+      { key: jobsStepKey(c.job, c.step), index: c.step.index }).dataset.start = jobsStart(c.job);
+  }
+  const maybe = jobsMaybeCount(view.maybe);
+  if (maybe) {
+    chip('jobchip more', `${maybe} not resolved`,
+      `${jobsPlural(maybe, 'step')} the tool could not resolve, which could act on it\nclick: show them in the Jobs tab`,
+      { maybe: true });
+  }
+  // A refused file may run the node too, which the tab says above its cards.
+  if (view.refused) {
+    chip('jobchip more', `${jobsPlural(view.refused, 'file')} not read`,
+      `${jobsPlural(view.refused, 'file')} could not be read and may hold more\nclick: open the Jobs tab, whose Sources… says which`, null);
+  }
+  if (!chips.length) list.prepend(jel('span', 'muted', 'No job read runs it.'));
+  box.replaceChildren(h3('jobs'), list);
+}
+
+/* The Jobs tab on a node, which may not be the focus, at the step a chip
+   names. */
+function showJobsFor(id, reveal) {
+  S.jobsFor = id === S.focus ? null : id;
+  S.jobsReveal = reveal ? Object.assign({ id }, reveal) : null;
+  showDock('jobs');
 }
 
 /* Which tests a Tests cell shows, and what the +N stands for. Pure, so the cap
@@ -10581,6 +10776,7 @@ function showDock(which, { look = true } = {}) {
   $('#dock-jobs').classList.toggle('hidden', which !== 'jobs');
   if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
   if (which === 'jobs') loadJobs({ look });
+  if (which === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
   // Read when the tab is first opened, never before: that click is what may
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();
@@ -10980,6 +11176,9 @@ function applyMeta(meta) {
   // when a cached /api/node payload stops being true. Here rather than at each
   // call site: forgetting one is how a stale count survives a column fetch.
   dropNodeCache();
+  // What a step selects follows the manifest alone: a switch of column lineage,
+  // a feature or a collin poll brings the same one again.
+  const moved = !S.meta || S.meta.manifest_mtime !== meta.manifest_mtime;
   S.meta = meta;
   $('#project').textContent = meta.project || '(no manifest)';
   $('#tree-title').textContent = meta.project || 'Project';
@@ -10998,6 +11197,7 @@ function applyMeta(meta) {
   paintSourceButton();
   // And which nodes each job's selection reaches.
   if (S.dock === 'jobs') loadJobs();
+  if (moved) forgetCatalogJobs();
   // And the coverage the reports would show, which the index stamps with it.
   loadReportsIndex();
 }
