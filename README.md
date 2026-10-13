@@ -1555,6 +1555,8 @@ Not there yet:
 - screenshots in this README;
 - a Run button on a node's file, with its parents or children;
 - a dock bar that keeps to one line on a narrow window;
+- the incremental strategy and its unique key, on the lineage and in the
+  Catalog, with the key's columns marked;
 - persisting open tabs between sessions;
 - a second column lineage source using dbt Fusion's local index, which needs no
   warehouse privileges.

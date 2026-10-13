@@ -1446,6 +1446,186 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
       (`/api/collineage` answers 404): run collin on it first, or put a long
       name in the chip from the page, since its text is all its width depends
       on.
+13. **The incremental strategy and its unique key, on the lineage and in the
+    Catalog.** An incremental box says
+    `incremental` and nothing of what a rerun does: append, delete and insert
+    by key, or merge. The manifest carries it as
+    `config.incremental_strategy`; `src/graph.rs` already reads it into
+    `strategy`, the Catalog shows it under "details", and
+    `config.incremental_strategy:` selects by it. The canvas and its hover
+    card never see it.
+    - **Most incremental models set none.** dbt then calls
+      `get_incremental_default_sql`, dispatched on the adapter: Snowflake's
+      returns merge, dbt-core's own `default__` returns append. On a large
+      real project most incremental models rely on it, so showing only what
+      is configured leaves the question open where it is asked most, and a
+      bare "default" answers nothing.
+    - **The manifest holds the default too.** `metadata.adapter_type` names
+      the adapter, and every macro dbt could dispatch to is listed with its
+      `macro_sql`. `src/macros.rs` resolves `get_incremental_default_sql` the
+      way `adapter.dispatch` does, beside 0028's resolution:
+      - the packages in the order `dispatch:` in `dbt_project.yml` gives the
+        `dbt` namespace, else the root project, then dbt's own packages;
+      - in each, `<adapter>__` before `default__`.
+
+      When the macro found is one `return(get_incremental_<name>_sql(...))`,
+      the default is `<name>`. Any other body, a condition or a call to
+      something else, leaves it unnamed, and the card says the adapter's
+      default could not be read. A table of defaults per adapter was weighed
+      and dropped: it is wrong as soon as a project or a package overrides
+      the macro, and it goes stale as adapters change, where the manifest is
+      right for the build that wrote it. The manifest does not say which
+      adapter another inherits from (Redshift from Postgres), so only the
+      adapter's own prefix and `default__` are looked for.
+    - **A strategy on anything but an incremental model means nothing.** A
+      folder's `+incremental_strategy` in `dbt_project.yml` reaches every
+      model under it, views and tables included, and the Catalog shows it on
+      them today as if it applied. It is shown for an incremental model only,
+      the Catalog included.
+    - **The payload:** `LineageNode` gains `strategy`, the configured one or
+      the resolved default, and `strategy_default` when it is the latter, both
+      skipped when empty, so a view or a table pays nothing. `/api/node`
+      sends the same pair. The hover card paints from the box first and then
+      from `/api/node` (`fillNodeCard`), so both must carry the same facts or
+      the card changes under the pointer.
+    - **The selector keeps dbt's meaning.** `config.incremental_strategy:merge`
+      matches what is configured, not the resolved default, because `dbt ls`
+      does and 0033 checks the two agree. A model on the default is not
+      selected by it although the card names merge, which is why the card
+      says where the strategy comes from.
+    - **Without a unique key, Snowflake inserts.** `snowflake__get_merge_sql`
+      writes a plain `insert into` when `unique_key` is none, since Snowflake
+      refuses a merge on a constant false, and dbt-core's
+      `default__get_delete_insert_merge_sql`, which Snowflake's wraps, deletes
+      nothing without a key. A merge or a delete+insert without a key is then
+      an append in all but name, and on a large real project that is what
+      most incremental models are: the default merge, with no key. A box
+      saying `merge` there would say the opposite of what runs. Like the
+      default, this is read from the manifest, not assumed of the adapter:
+      the macro `get_merge_sql` or `get_delete_insert_merge_sql` dispatches
+      to, resolved as above, has to be one known to insert without a key:
+      - Snowflake's `snowflake__get_merge_sql` and
+        `snowflake__get_delete_insert_merge_sql`;
+      - dbt-core's `default__get_merge_sql`, a merge on `FALSE` that matches
+        nothing and inserts every row, and
+        `default__get_delete_insert_merge_sql`.
+
+      A project's or a package's own version, or another adapter's, makes no
+      claim, and the card says `no unique key` alone. The claim rests on
+      those bodies as the manifests dbt writes today carry them.
+    - **The hover card:** a line under the subtitle, in the style of the
+      tests' facts:
+      - `merge on order_id`, `delete+insert on order_id`, `append`;
+      - `merge on order_id, Snowflake's default` when none is configured;
+      - `append in effect: merge, Snowflake's default, with no unique key,
+        so Snowflake runs a plain insert into`, in the warning colour, when
+        the macros above are the ones reached; `merge, no unique key` when
+        they are not.
+    - **The box:** the strategy in place of the word `incremental` on its
+      second line, `merge · schema · 3 tests`. A merge or a delete+insert that
+      inserts reads `append`, then what was configured, struck through:
+      `append merge · schema · 2 tests`, `merge` struck, chosen by the user
+      from four mock-ups. It reads without a hover, and an append configured
+      as such stays a plain `append`. The orange bar and the legend already
+      say incremental. The struck word makes the line longer, so on a large
+      real project more lines are cut than today, the test count first, then
+      the schema. The strategy and the struck word come first and are never
+      cut. `subtitle` returns the struck word apart, since `clip` cuts a string
+      and the canvas draws it as a `tspan` of its own, and the box's
+      `aria-label` says it in words. Weighed and dropped:
+      - the strategy after the word, `incremental merge · schema · 3 tests`:
+        the line is cut from the end at 34 characters, and on a large real
+        project most incremental lines would be, the test count first;
+      - `insert only` or `merge, no key` in place of the strategy: the first
+        names no strategy dbt has, the second cuts most lines and leaves the
+        reader to know what a merge without a key does;
+      - the card alone, where "which of these only insert?", asked of a
+        whole layer, takes a hover per box;
+      - for the `append` that inserts, a dotted underline in the warning
+        colour, the usual sign that a hover explains a word, which keeps the
+        line's length but says nothing without the hover;
+      - a tag above the box's top right corner, `MERGE · NO KEY`, the way a
+        column box carries its role: the most visible, but on a layer where
+        most models are in this case, most boxes carry one;
+      - the word in the warning colour, which says that something differs
+        but not what.
+    - **The Catalog.** The strategy and the unique key are there today, at
+      the foot of the Preview tab under "details", below the Location
+      block, where they go unseen: the user asked for the key, not knowing
+      it was shown. They move up to the "context" block, said once, and
+      leave "details". The Columns tab marks each column the key names, so
+      the key reads where the columns are.
+      - **The key is a list, and the payload flattens it.** `src/graph.rs`
+        joins a list into `order_id, line_number`, which the selector
+        matches. It cannot be split back, since a key can be an expression
+        holding a comma, so `/api/node` also sends the list as the manifest
+        holds it.
+      - **A column is marked when a key entry is its name**, ignoring case
+        and quotes, since Snowflake upper-cases what the YAML declares in
+        lower case. An expression such as `order_id || '-' || line_number`
+        marks no column and is shown as written: it is not parsed.
+      - **Shown for an incremental model or a snapshot only**, the two that
+        use a key; a table or a view inherits one from a folder's config
+        and it means nothing there, as for the strategy.
+      - **The filter rewrites the name cell.** Typing in the Columns tab's
+        filter sets the cell's text again to draw its `<mark>`, which would
+        wipe a mark inside it: the key's mark sits outside the text it
+        rewrites.
+    - **Where they go, chosen by the user from mock-ups.** In "context",
+      two stats beside Mat. type, Strategy and Unique key, at the same size.
+      Strategy reads as on the box, `append merge` with `merge` struck for
+      a merge that inserts, and Unique key reads `none`, dimmed, for an
+      incremental model without one.
+      - **A key of several columns** takes one line per column, in the
+        key's order, so the row does not stretch sideways, since a key of
+        long column names is common. Up to three are all
+        shown; past three, the first two and `+N more, in Columns`, whose
+        tooltip lists them all and whose click opens the Columns tab sorted
+        key first. The other stats stay aligned at the top.
+      - **The Columns tab** puts a `KEY` tag after each key column's name,
+        outlined in the incremental orange, in the family of the canvas's
+        role tags. Beside A-Z and Tests, a Key sort puts the key's columns
+        first, in the key's order, then the rest A-Z; it is offered only
+        when the node has a key.
+      - **Each key name in the stat is a link to its row**, as the user
+        asked: a click opens the Columns tab on that column, scrolled into
+        view and marked with `S.colHighlight`, which colours the row
+        (`c-focus`). Three things stand in the way today:
+        - nothing scrolls to that row: a report's column link only colours
+          it, so the scroll is new, and the report's link gains it too;
+        - the filter is kept from one node to the next, and may hide the
+          row: the click clears it when it would;
+        - `S.colHighlight` is compared with the column's name exactly,
+          while the key may differ in case: the click passes the column's
+          own name, found as the `KEY` tags find it.
+
+        A key entry that names no column of the node, an expression or a
+        column neither declared nor in `catalog.json`, stays plain text,
+        its tooltip saying why.
+
+      Weighed and dropped: a line under the stats, `merge on order_id,
+      line_number`, which left the numbers alone but buried the key in a
+      sentence; the key's count alone, `5 columns`, compact but naming no
+      column even for one or two; a key icon before the name, perhaps too
+      quiet at twelve pixels; a `unique_key` chip in the Tests cell, which
+      mixes a config with the tests beside the `unique` test's chip.
+    - **Not in it, unless asked:** a snapshot's `strategy` (timestamp or
+      check), the same question for a snapshot, which the same card line
+      would carry; and a microbatch model's `batch_size` and `event_time`.
+    - **How it is checked:** Rust tests on the dispatch, with a root project
+      override, an adapter's own macro, `default__` alone, a body with a
+      condition left unnamed, and a `dispatch:` order; and on the insert,
+      with each known macro with and without a key, and a project's own
+      `snowflake__get_merge_sql` making no claim. `compare_with_dbt.py`
+      gains `config.incremental_strategy:` selections over Shopify's
+      incremental models. A model on the default has to be among them, to
+      show it is not selected, as `dbt ls` does: if none of Shopify's is,
+      Jaffle Shop gets one. A browser harness on `subtitle`. Headless Chrome
+      shots on a scratch copy of Jaffle Shop with models made incremental,
+      with a strategy, without one, and without a key, the fixture itself
+      left as it is. Jaffle Shop is parsed with DuckDB, so its marked `append`
+      box shows only if DuckDB's macros are among the known ones; the Rust
+      tests cover Snowflake's either way.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
