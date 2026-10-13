@@ -27,6 +27,10 @@ only the shell knows which one it has.
 - **Before the first prompt and after the shell exits**, the bar says what it
   said at startup. **zsh, fish and PowerShell say nothing**, and it stays so.
 
+*Amended by [0072](0072-a-click-on-an-inactive-venv-types-its-activate-line.md):
+while the bar says inactive, a click on it types the line that activates the
+venv it names, or lists the venvs found to pick one.*
+
 ## Rejected
 
 - **Reading the shell's environment from outside.** macOS shows the one a

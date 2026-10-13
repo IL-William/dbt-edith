@@ -40,6 +40,11 @@ pub struct Venv {
     /// mapped drive, a `subst` or a symlink spells otherwise (0069).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub activates: String,
+    /// The line that activates it in the terminal's shell, which the status bar
+    /// types when clicked and leaves Enter to the user (0072). Empty when that
+    /// shell has no script in it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub activation: String,
 }
 
 impl Venv {
@@ -52,7 +57,22 @@ impl Venv {
             python: python_version(dir),
             dbt: dbt_versions(dir),
             activates: activates(dir),
+            activation: String::new(),
         }
+    }
+}
+
+impl VenvInfo {
+    /// Each venv with the line that activates it in `shell`: the one the
+    /// terminal types for the venv dbt-edith was started in (0050), so a click
+    /// types what startup would have.
+    fn with_activation(mut self, shell: &crate::pty::ShellSpec) -> VenvInfo {
+        for v in std::iter::once(&mut self.chosen).chain(self.found.iter_mut()) {
+            if !v.path.is_empty() {
+                v.activation = crate::pty::activation(shell, Path::new(&v.path)).unwrap_or_default();
+            }
+        }
+        self
     }
 }
 
@@ -202,9 +222,10 @@ fn is_venv(p: &Path) -> bool {
 
 /// What the status bar reports, from the disk alone: nothing found here is
 /// started, since `pyvenv.cfg` and the package folders already say which
-/// Python and which dbt a venv holds.
-pub fn detect(root: &Path) -> VenvInfo {
-    detect_with(root, activated())
+/// Python and which dbt a venv holds. Each venv comes with the line that
+/// activates it in the terminal's `shell` (0072).
+pub fn detect(root: &Path, shell: &crate::pty::ShellSpec) -> VenvInfo {
+    detect_with(root, activated()).with_activation(shell)
 }
 
 fn detect_with(root: &Path, active: Option<PathBuf>) -> VenvInfo {
@@ -309,6 +330,32 @@ mod tests {
         assert_eq!(info.chosen.python, "3.12.4");
         assert_eq!(info.chosen.dbt, "dbt-core 1.8.7, dbt-snowflake 1.8.3", "dbt-core, then the adapter, and none of its parts");
         assert!(!root.join(".venv-ran").exists(), "opening a project ran a program it holds");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The status bar types what startup types (0072): the line for the
+    /// terminal's shell, on every venv with a script for it, and none on one
+    /// without or for a shell with no way to source one.
+    #[test]
+    fn each_venv_carries_the_line_that_activates_it() {
+        let root = project("activation");
+        let scripted = venv(&root, "core-env", "version = 3.12.4\n", &[]);
+        venv(&root, "bare", "version = 3.12.4\n", &[]);
+        for folder in ["bin", "Scripts"] {
+            std::fs::write(scripted.join(folder).join("activate"), "").unwrap();
+        }
+        let shell = |program: &str| crate::pty::ShellSpec { program: program.into(), args: Vec::new() };
+        let line = crate::pty::activation(&shell("bash"), &scripted).unwrap();
+        let info = detect_with(&root, None).with_activation(&shell("bash"));
+        let lines: Vec<(&str, &str)> = info.found.iter().map(|v| (v.name.as_str(), v.activation.as_str())).collect();
+        assert_eq!(lines, [("bare", ""), ("core-env", line.as_str())]);
+        assert_eq!(info.chosen.activation, "", "the one reported is the first found, and has no script");
+
+        let started = detect_with(&root, Some(scripted.clone())).with_activation(&shell("bash"));
+        assert_eq!(started.chosen.activation, line, "the one dbt-edith was started in, once deactivated");
+        let sh = detect_with(&root, None).with_activation(&shell("sh"));
+        assert!(sh.found.iter().all(|v| v.activation.is_empty()));
+        assert!(!root.join("core-env-ran").exists() && !root.join("bare-ran").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 

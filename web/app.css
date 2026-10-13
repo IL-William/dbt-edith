@@ -194,6 +194,26 @@ kbd {
 }
 .updpill:hover { border-color: var(--accent); }
 .updpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The venv (0069): green with a full dot once one is active, amber with an
+   empty one when one was found but is not, since a dbt typed in the terminal
+   then runs whatever python comes first on the PATH. Tinted rather than
+   filled, so the environment's pill beside it stays the loudest thing here. */
+.venvpill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font: 500 10.5px/15px var(--ui); color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--line); border-radius: 8px; padding: 0 7px; cursor: default;
+}
+.venvpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.venvpill:empty { display: none; }
+.venvpill::before {
+  content: ''; width: 7px; height: 7px; box-sizing: border-box;
+  border: 1.5px solid currentColor; border-radius: 50%;
+}
+.venvpill[data-state=on] { color: var(--ok); border-color: rgba(78, 199, 141, .55); background: rgba(78, 199, 141, .12); }
+.venvpill[data-state=on]::before { background: currentColor; }
+.venvpill[data-state=off] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
+.venvpill.act { cursor: pointer; }
+.venvpill.act:hover { background: rgba(224, 163, 75, .2); }
 .envmenu.updmenu { width: 340px; max-width: calc(100vw - 8px); }
 .updmenu .menunote { padding-left: 8px; max-width: none; }
 .brand { font-weight: 600; letter-spacing: .3px; }
