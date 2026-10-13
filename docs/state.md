@@ -1440,11 +1440,12 @@ and nothing asked while the Catalog is hidden. Not yet on the VM.
         so a tool pushed past the edge would vanish without a scrollbar.
 
       `foldDockTabs` decides on the first measure, for the tools only, and
-      the `scrollWidth` half of the second. #28 added up its items' widths against the row's own,
-      which predicts both but proves neither. Columns mode needs a column
-      lineage, which Jaffle Shop comes without (`/api/collineage` answers
-      404): run collin on it first, or put a long name in the chip from the
-      page, since its text is all its width depends on.
+      the `scrollWidth` half of the second. #28 added up its items' widths
+      against the row's own, which predicts both but proves neither. Columns
+      mode needs a column lineage, which Jaffle Shop comes without
+      (`/api/collineage` answers 404): run collin on it first, or put a long
+      name in the chip from the page, since its text is all its width depends
+      on.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
