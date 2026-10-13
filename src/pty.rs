@@ -140,7 +140,7 @@ fn prompt_command(theirs: Option<&str>) -> String {
 
 /// The shell's name as the switches here know it: `bash` for
 /// `C:\Program Files\Git\bin\bash.exe`, `zsh` for `/bin/zsh`.
-fn shell_name(shell: &ShellSpec) -> String {
+pub fn shell_name(shell: &ShellSpec) -> String {
     Path::new(&shell.program).file_stem().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
 }
 

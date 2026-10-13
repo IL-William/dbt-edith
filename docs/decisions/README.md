@@ -76,6 +76,7 @@ it is built this way, for whoever changes it next.
 | [0070](0070-a-source-is-picked-from-folders-the-server-lists.md) | A source is picked from folders the server lists | listing a folder outside the project, changing what the sources form's picker shows, or listing a report section with nothing to show |
 | [0071](0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md) | A click types a dbt command and leaves Enter to you | passing `run` to `sendToTerminal`, or making any button press Enter in the terminal |
 | [0072](0072-a-click-on-an-inactive-venv-types-its-activate-line.md) | A click on an inactive venv types its activate line | making the status bar type anything in the terminal, or changing where a venv's activate line is made |
+| [0073](0073-the-terminal-sends-the-line-keys-the-shell-reads-everywhere.md) | The terminal sends the line keys in a form the shell reads anywhere | handling a key that moves or deletes in the terminal's command line |
 
 ## Keeping these honest
 

@@ -1,6 +1,6 @@
 # 0044. The terminal copies and pastes the way Windows Terminal does
 
-Date: 2026-10-06 · Status: accepted
+Date: 2026-10-06 · Status: accepted, amended by 0073
 
 **Trigger:** read before handling a key inside the terminal, or changing what
 Ctrl + C does there.

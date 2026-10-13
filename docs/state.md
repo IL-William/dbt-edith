@@ -1072,6 +1072,29 @@ and not typed; one venv, typed at once; Enter on the focused pill opens the
 menu, and Escape gives it the focus back. Not yet on the VM, where the line is
 Git Bash's `C:/` spelling.
 
+The terminal's line keys (1.14.1), after Ctrl+Left, Ctrl+Right and Home were
+reported from the VM as doing nothing in Git Bash, where VS Code's terminal
+moves by word and to the start of the command (0073). To Git Bash on
+Windows, `termLineKey` sends the keys readline binds by itself in emacs mode:
+Ctrl+A and Ctrl+E for Home and End, ESC b and ESC f for Ctrl+Left and
+Ctrl+Right, Ctrl+W and ESC d for Ctrl+Backspace and Ctrl+Delete. On a Mac,
+in any shell, Cmd+Left, Cmd+Right and Cmd+Backspace send VS Code's Ctrl+A,
+Ctrl+E and Ctrl+U, where xterm.js sent nothing, and Option+Delete sends ESC d.
+Only the shell's own line gets them: bash's prompt hook (0069) sets
+`S.termPrompt`, Enter clears it (`promptAfter`), and on Windows, when bash
+never said, a program asking for application cursor keys counts as one
+reading the keys. Not on a Mac, where oh-my-zsh asks for them at every
+prompt. The shortcut list names the keys of the platform it is read on.
+Driven in headless Chrome posing as Windows, with bash as the shell: at the
+prompt each key sent its bytes and bash moved or deleted as meant; in
+`less -X`, still on the normal screen, and in `cat`, the keys stayed
+xterm.js's; back at the prompt they were bash's again. With a zsh and its
+user's own startup files on a Mac, Cmd+Left reaches the start of the line, as
+under a zsh asking for application cursor keys at its prompt, as oh-my-zsh
+does. Why the VM lost xterm.js's sequences was not seen: every step from
+xterm.js through ConPTY and the MSYS2 runtime to Git's `inputrc` reads right
+on paper.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1444,6 +1467,11 @@ cross-compile.
   renames to `.exe.old` while it runs, under Git Bash and under PowerShell,
   and whether `cargo install` then puts the new one in place. The PowerShell
   form has run on no machine yet: the Mac has none.
+- **The terminal's line keys on the VM (0073).** Whether Ctrl+Left, Ctrl+Right,
+  Home and End now move in Git Bash there; whether they stay xterm.js's in
+  `git log` and in PowerShell typed at the prompt, which says whether bash's
+  prompt OSC crosses ConPTY; and, for the cause, what `cat -v` there prints
+  for them from a build before 1.14.1.
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.

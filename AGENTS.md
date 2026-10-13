@@ -165,7 +165,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md) |
 | group, label or colour the tests under a model, or add a field a test carries in a payload | [0040](docs/decisions/0040-tests-hang-grouped-by-generic.md) |
 | change where opening a data test lands, or find a line in a properties file | [0041](docs/decisions/0041-a-test-opens-at-its-line.md) |
-| handle a key inside the terminal, or change what Ctrl + C does there | [0044](docs/decisions/0044-the-terminal-copies-like-windows-terminal.md) |
+| handle a key inside the terminal, or change what Ctrl + C does there | [0044](docs/decisions/0044-the-terminal-copies-like-windows-terminal.md), [0073](docs/decisions/0073-the-terminal-sends-the-line-keys-the-shell-reads-everywhere.md) |
 | make the terminal type anything on its own, or change the environment its shell starts with | [0050](docs/decisions/0050-the-terminal-activates-the-venv-it-was-handed.md), [0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md) |
 | make a button type a command in the terminal, or press Enter there | [0071](docs/decisions/0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md), [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) |
 | change what the status bar says about the venv, or what a click on it types | [0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md), [0072](docs/decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md), [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |

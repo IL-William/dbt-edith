@@ -15,6 +15,17 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.14.1 - 2026-10-13
+
+- Move by word with Ctrl+Left and Ctrl+Right and to the start and end of the
+  command with Home and End in the terminal's Git Bash on Windows, and delete
+  a word with Ctrl+Backspace and Ctrl+Delete, sending keys readline binds
+  whatever its configuration, at bash's prompt only (0073).
+- Move to the start and end of the line with Cmd+Left and Cmd+Right in the
+  terminal on a Mac, delete the line with Cmd+Backspace, and the next word with
+  Option+Delete, sending the shell what VS Code's terminal sends (0073).
+- List the terminal's line keys of the platform in the shortcut list.
+
 ## 1.14.0 - 2026-10-13
 
 - Colour the venv in the status bar: green with a full dot once one is

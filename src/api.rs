@@ -499,6 +499,10 @@ fn err(e: impl std::fmt::Display) -> Response {
 struct MetaBody {
     root: String,
     shell: String,
+    /// `bash`, `zsh`, `powershell`: on Windows, the page sends Git Bash the line
+    /// keys readline reads whatever its `inputrc` says (0073).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    shell_name: String,
     /// The package version, and which build it is. A release binary embeds
     /// `web/` (0005), so the page saying which build drew it is the quickest
     /// answer to "my frontend fix did nothing".
@@ -676,6 +680,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
     MetaBody {
         root: st.root.display().to_string(),
         shell: format!("{} {}", st.shell.program, st.shell.args.join(" ")).trim().to_string(),
+        shell_name: crate::pty::shell_name(&st.shell),
         version: env!("CARGO_PKG_VERSION"),
         build: env!("DBT_EDITH_BUILD"),
         venv: st.venv.clone(),

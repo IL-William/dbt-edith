@@ -61,6 +61,8 @@ check('Escape', [keyLabel('Escape', true), keyLabel('Escape', false)], ['Esc', '
 check('a mouse action after a glyph', keyLabel('Alt+click', true), '⌥ click');
 check('a mouse action elsewhere', keyLabel('Alt+click', false), 'Alt+click');
 check('a bare symbol', [keyLabel('?', true), keyLabel('?', false)], ['?', '?']);
+check('the terminal\'s line keys on a Mac', [keyLabel('Mod+ArrowLeft', true), keyLabel('Mod+Backspace', true), keyLabel('Alt+Delete', true)], ['⌘←', '⌘⌫', '⌥⌦']);
+check('  and on Windows', [keyLabel('Mod+ArrowRight', false), keyLabel('Mod+Backspace', false), keyLabel('Home', false)], ['Ctrl+→', 'Ctrl+Backspace', 'Home']);
 
 print('\n--- the list and the keys ---');
 var sheet = shortcutSheet();
@@ -83,6 +85,23 @@ Object.keys(listed).forEach(function (k) {
 check('every row says what it does', sheet.every(function (g) {
   return g.title && g.keys.length && g.keys.every(function (row) { return row[0].length && row[1]; });
 }), true);
+// The terminal's line keys differ on each platform, and the list says which
+// apply where it is read (0073).
+function termRows(os) {
+  var t = shortcutSheet(os).filter(function (g) { return g.title === 'Terminal'; })[0];
+  return t.keys.map(function (row) { return row[0].join(' '); });
+}
+check('a Mac lists Cmd+Left for the start of the command', termRows('mac').indexOf('Mod+ArrowLeft Mod+ArrowRight') >= 0, true);
+check('Windows lists Home and End, for Git Bash', termRows('windows').indexOf('Home End') >= 0, true);
+check('Windows has no row deleting the command back to its start, which is the Mac\'s', termRows('windows').indexOf('Mod+Backspace') < 0 && termRows('mac').indexOf('Mod+Backspace') >= 0, true);
+check('elsewhere the shell reads xterm.js\'s, and nothing is added', termRows('other').length, 2);
+['mac', 'windows'].forEach(function (os) {
+  shortcutSheet(os).forEach(function (g) { g.keys.forEach(function (row) { row[0].forEach(function (k) {
+    var mods = k.split('+').slice(0, -1);
+    check('modifiers in keyCombo\'s order on ' + os + ': ' + k,
+      mods.every(function (x, i) { return x in order && (i === 0 || order[mods[i - 1]] < order[x]); }), true);
+  }); }); });
+});
 
 print('\n--- isTyping ---');
 check('a text box', isTyping({ tagName: 'INPUT', type: 'text' }), true);
