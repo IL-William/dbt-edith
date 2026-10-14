@@ -586,14 +586,19 @@ fn airflow_schedule(node: Option<&Node>) -> Schedule {
             s => Schedule { cron: s.to_string(), own: Start::Yes, ..Default::default() },
         },
         Some(Value::Seq(items)) => {
+            // An empty entry, `- ` or `~`, names nothing to wait on.
+            let items: Vec<&Node> = items.iter().filter(|n| !n.is_null()).collect();
             let assets: Vec<String> = items.iter().filter_map(|n| n.str().map(str::to_string)).collect();
             // An asset written as a mapping, as dag-factory writes one with
             // its `uri`, is waited on all the same: the DAG may start or not,
-            // whatever the named ones say.
+            // whatever the named ones say. An empty list names nothing this
+            // tool can tell a start by.
             let note = if items.is_empty() {
                 "an empty list of assets, which this tool does not read"
-            } else if assets.len() < items.len() {
+            } else if items.iter().any(|n| matches!(n.value, Value::Map(_))) {
                 "an asset written as a mapping, which this tool does not read"
+            } else if assets.len() < items.len() {
+                "an asset written as a list, which this tool does not read"
             } else {
                 ""
             };
@@ -1769,6 +1774,10 @@ tasks:
         // A feeder on such an asset passes on what it knows.
         write(&d, "relay.yml", "dag_id: relay\nschedule: [{ uri: \"s3://bucket/raw\" }]\ntasks:\n  - task_id: copy\n    outlets: [relayed]\n");
         write(&d, "on_relayed.yml", &one_dag("on_relayed", "[relayed]", "orders"));
+        // An empty entry names nothing; a list in the list is no name either.
+        write(&d, "on_blank.yml", &one_dag("on_blank", "[raw_ready, ~]", "stg_orders"));
+        write(&d, "on_nested.yml", &one_dag("on_nested", "[raw_ready, [raw_ready]]", "stg_orders"));
+        write(&d, "on_blanks.yml", &one_dag("on_blanks", "[~]", "stg_orders"));
         // Jinja's statements are as unknown as its expressions.
         write(&d, "statement.yml", &one_dag("statement", "\"{% if prod %}0 5 * * *{% endif %}\"", "orders"));
         let g = graph();
@@ -1780,6 +1789,12 @@ tasks:
         assert_eq!((mixed.start, mixed.note.as_str()), (Start::Unread, "an asset written as a mapping, which this tool does not read"));
         assert_eq!(start_of(&read, "on_mixed_by_hand"), Start::No, "typed_in never comes on its own");
         assert_eq!(start_of(&read, "on_nothing"), Start::Unread);
+        let blank = read.jobs.iter().find(|j| j.name == "on_blank").unwrap();
+        assert_eq!((blank.start, blank.note.as_str()), (Start::Yes, ""));
+        let nested = read.jobs.iter().find(|j| j.name == "on_nested").unwrap();
+        assert_eq!((nested.start, nested.note.as_str()), (Start::Unread, "an asset written as a list, which this tool does not read"));
+        let blanks = read.jobs.iter().find(|j| j.name == "on_blanks").unwrap();
+        assert_eq!((blanks.start, blanks.note.as_str()), (Start::Unread, "an empty list of assets, which this tool does not read"));
         assert_eq!(start_of(&read, "on_relayed"), Start::Unread);
         assert_eq!(start_of(&read, "statement"), Start::Unread);
         let cloud = dir("cloud-statement");

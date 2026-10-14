@@ -1238,8 +1238,8 @@ scheduled, its cron read or not. A DAG file with no dbt task, which left
 nothing, now leaves a `Feeder`, its schedule and its outlets, so a DAG on what
 an ingestion DAG loads is scheduled with it; a task with no command in a dbt
 DAG counts as well. A schedule or a trigger in Jinja, a schedule or an asset
-written as a mapping, an asset no file read updates, or a job no file defines
-is not read: an amber **Not read** pill, ranked after the scheduled jobs, the
+written as a mapping, an empty list of assets, an asset no file read updates,
+or a job no file defines is not read: an amber **Not read** pill, ranked after the scheduled jobs, the
 Catalog's chip in amber, and the coverage's own list, *Only in jobs whose
 schedule is not read*, which the news leaves out. The Rust tests cover each
 case, the coverage's three lists, and the same answers from files read in the
