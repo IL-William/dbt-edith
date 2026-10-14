@@ -3656,8 +3656,15 @@ function resolveBlock(cm, b, side) {
 }
 
 // ---------------------------------------------------------------- lineage --
-async function focusNode(id, { open = false } = {}) {
+/* The depth is how far a walk on the canvas has looked around: a box
+   double-clicked keeps it, as a +N badge raises it. A model reached any other
+   way, from the palette, a tab, a link or the Catalog, is a fresh start, and
+   leaving the depth of the last one drew a graph nobody asked for. */
+async function focusNode(id, { open = false, keepDepth = false } = {}) {
   closeHoverCard();
+  if (id !== S.focus && !keepDepth) {
+    for (const el of [$('#up'), $('#down')]) el.value = el.defaultValue;
+  }
   S.focus = id;
   S.jobsFor = null;
   S.unsynced = '';
@@ -11290,6 +11297,7 @@ async function startTour() {
     active: S.active, preview: S.preview, order: S.order.slice(), dock: S.dock, mode: S.graphMode,
     focus: S.focus, colFocus: S.colFocus, jobsFor: S.jobsFor, unsynced: S.unsynced,
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
+    up: $('#up').value, down: $('#down').value,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
     reports, reportsSection: S.reportsSection, reportsReturn,
   };
@@ -11579,10 +11587,14 @@ async function endTour() {
     if (S.open.has(s.active)) activate(s.active, false);
     else settleTabs();
     $('#select-input').value = s.select;
+    // The tour's model started from the default depth: the one left had its own.
+    const depth = $('#up').value !== s.up || $('#down').value !== s.down;
+    $('#up').value = s.up;
+    $('#down').value = s.down;
     if (s.mode === 'select') await runSelection();
     else if (s.mode === 'column' && s.colFocus) await focusColumn(s.colFocus.id, s.colFocus.column);
     else if (s.focus) {
-      if (S.focus !== s.focus || S.graphMode !== 'model') await focusNode(s.focus);
+      if (S.focus !== s.focus || S.graphMode !== 'model' || depth) await focusNode(s.focus, { keepDepth: true });
     } else {
       S.graphMode = 'model';
       paintMode();
@@ -12389,7 +12401,7 @@ async function boot() {
         }
         return focusColumn(nodeId, column);
       }
-      focusNode(nodeId);
+      focusNode(nodeId, { keepDepth: true });
       if (n.kind === 'test' && n.test_name) return openTest(n, { pin: true });
       pinBoxFile(n);
     },

@@ -19,8 +19,8 @@ cannot see:
   - Back sets a step up as Next does;
   - it runs nothing: the terminal never starts, and no setting is written,
     the configuration directory holding the offer's file and nothing else;
-  - ended part way from a page in use, it puts the tab, the canvas, the dock
-    and the selection box back as they were;
+  - ended part way from a page in use, it puts the tab, the canvas, the dock,
+    the selection box and the depth boxes back as they were;
   - it starts from the shortcut list too.
 
 dbt runs in this process, through `dbtRunner`, so it needs dbt-core and
@@ -297,6 +297,7 @@ STATE = """(() => ({
   dock: document.querySelector('#dock .tabs .tab.active')?.dataset.dock,
   mode: document.querySelector('#graph-mode .active')?.dataset.mode,
   select: document.querySelector('#select-input').value,
+  depth: document.querySelector('#up').value + ' up, ' + document.querySelector('#down').value + ' down',
   catalog: document.querySelector('.cat-title')?.textContent || document.querySelector('#catalog').textContent,
   jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
   reports: document.querySelector('#reports-btn').className,
@@ -490,6 +491,10 @@ class Walk:
         page.js("document.querySelector('#tree .row[data-path=\"models/customers.sql\"]')"
                 ".dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")
         page.until("document.querySelector('.cat-title')?.textContent.includes('customers')", "customers in the Catalog")
+        # A depth of its own, which the tour's model, opened from the editor,
+        # starts without.
+        page.js("for (const [id, v] of [['up', '3'], ['down', '2']]) {"
+                " const el = document.querySelector('#' + id); el.value = v; el.dispatchEvent(new Event('change')); }")
         page.js("document.querySelector('[data-dock=catalog]').click()")
         page.js("document.querySelector('[data-mode=select]').click()")
         page.js("document.querySelector('#select-input').value = 'tag:staging'")

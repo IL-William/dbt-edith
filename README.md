@@ -295,6 +295,11 @@ which dbt-edith reloads on its own within seconds. A macro file says nothing:
 it has no node however fresh the manifest, and the lineage stays on the model
 you were reading.
 
+The up and down boxes start at 1 and keep what you set while you walk the
+canvas, double-clicking a box or pulling in a level with a `+N` badge. A model
+reached any other way, from `Cmd/Ctrl + K`, a tab, a link in the editor or the
+Catalog, brings both back to 1.
+
 The lineage graph itself comes entirely from `manifest.json` (`parent_map`).
 No `.sql` file is ever parsed to build it: dbt already did that work.
 
