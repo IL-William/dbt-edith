@@ -249,6 +249,7 @@ sub-graphs around whichever model you are looking at.
 | the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
 | `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, or filter the Catalog's columns |
+| the copy glyph beside the name in the Catalog | that name on the clipboard |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
 | Give me a tour, at the top of that list | a walk through each part of the page, on a model of your project |
 | `Cmd/Ctrl + S` | save the current file |

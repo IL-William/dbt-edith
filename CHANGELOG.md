@@ -15,6 +15,10 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.20.0 - 2026-10-14
+
+- Copy a node's name from the Catalog in one click, with the glyph beside it.
+
 ## 1.19.0 - 2026-10-14
 
 - Count a dbt Cloud job as scheduled when its schedule trigger is on, even
