@@ -2449,6 +2449,9 @@ struct ColLineageQuery {
     down: u32,
     #[serde(default)]
     max: Option<usize>,
+    /// Roles the walk downstream stops at, comma-separated: `window,aggregate`.
+    #[serde(default)]
+    cut: String,
 }
 
 /// Column-level lineage around one column. Columns fan out harder than models,
@@ -2469,6 +2472,7 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
         q.up.min(20),
         q.down.min(20),
         q.max.unwrap_or(200).min(2000),
+        &q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>(),
     );
     Json(sub).into_response()
 }
@@ -3980,6 +3984,45 @@ mod tests {
         assert!(c.contains(r#""gained":1,"lost":0"#), "{c}");
         let none = status_of(port, get("/api/collin/compare?a=0.1.0&b=..%2F..%2Fx", &h)).await;
         assert!(none.ends_with("404 Not Found"), "{none}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `cut` reaches the walk through the route, and names what it stopped at;
+    /// without it the answer is the one it always was.
+    #[tokio::test]
+    async fn the_column_route_stops_where_cut_says() {
+        let root = temp_project("col-cut");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                                "columns": { "x": { "name": "x" } } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.demo.stg": model("stg"), "model.demo.orders": model("orders"), "model.demo.mart": model("mart"),
+        } }))
+        .unwrap();
+        let mut g = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| crate::collin::RawColEdge {
+            from: format!("model.demo.{from}"),
+            from_col: "x".into(),
+            to: format!("model.demo.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let edges = vec![link("stg", "orders", "window"), link("orders", "mart", "rename")];
+        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges, ..Default::default() }, 1);
+        *st.graph.write().await = Arc::new(g);
+
+        let whole = response_of(port, get("/api/collineage?id=model.demo.stg&column=x&up=0&down=3", &h)).await;
+        assert!(whole.contains(r#""name":"x","kind":"model""#) && whole.contains(r#""sub":"mart""#), "{whole}");
+        assert!(!whole.contains("stopped_at"), "{whole}");
+        let cut = response_of(port, get("/api/collineage?id=model.demo.stg&column=x&up=0&down=3&cut=window,nonsense", &h)).await;
+        assert!(cut.contains(r#""sub":"orders""#) && !cut.contains(r#""sub":"mart""#), "{cut}");
+        assert!(cut.contains(r#""stopped_at":["window"]"#), "{cut}");
+
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -838,7 +838,14 @@ impl Graph {
     }
 
     /// Column-level BFS, the exact mirror of `lineage()` one level down.
-    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize) -> Lineage<'_> {
+    ///
+    /// `cut` names roles the walk downstream stops at: an edge of one of them
+    /// is drawn, with the column it reaches, but nothing past that column is,
+    /// unless it is also reached some other way. What leaves it counts in its
+    /// `hidden_down`, so the +N badge says something goes on. Upstream is left
+    /// whole: the question is "how is this column used, up to its window", not
+    /// where it came from.
+    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[&str]) -> Lineage<'_> {
         // The handler already refuses this case; the guard keeps the borrow of
         // `cll` tied to `self` so the returned Lineage can reference its kinds.
         let Some(cll) = self.cll.as_ref() else {
@@ -850,12 +857,29 @@ impl Graph {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 edge_kinds: Vec::new(),
+                stopped_at: Vec::new(),
             };
         };
+        let cut: Vec<u8> = (0..cll.kinds.len().min(256))
+            .filter(|&k| cut.contains(&cll.kinds[k].as_str()))
+            .map(|k| k as u8)
+            .collect();
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
+        // Reached downstream only through a cut edge: drawn, not walked from.
+        let mut stopped: HashSet<ColRef> = HashSet::new();
+        // The level each column below the focus was walked from: a stop's own
+        // depth stays its distance, but the walk on from it counts from here.
+        let mut walked: HashMap<ColRef, i32> = HashMap::new();
         let mut truncated = false;
         depth.insert(focus, 0);
+        walked.insert(focus, 0);
 
+        // Level by level, so a cap drops the farthest columns first, stops
+        // included. Downstream a level's walk does not follow a cut edge;
+        // then each cut edge leaving the level above brings the column it
+        // reaches as a stop. A walk reaching a stop later, within the depth,
+        // walks on from it: it is not only past the cut. Without a cut this
+        // is the walk it always was.
         for (limit, upstream) in [(up, true), (down, false)] {
             let mut frontier = vec![focus];
             for step in 1..=limit as i32 {
@@ -864,16 +888,45 @@ impl Graph {
                     let neighbours: Vec<ColRef> = if upstream {
                         cll.incoming(cur).map(|e| e.from).collect()
                     } else {
-                        cll.outgoing(cur).iter().map(|e| e.to).collect()
+                        cll.outgoing(cur).iter().filter(|e| !cut.contains(&e.kind)).map(|e| e.to).collect()
                     };
                     for nb in neighbours {
+                        // A stop reached around the cut takes no room, so the
+                        // cap cannot keep it a stop. Its depth stays the
+                        // shorter one, through the cut.
+                        if stopped.remove(&nb) {
+                            walked.insert(nb, step);
+                            next.push(nb);
+                            continue;
+                        }
+                        // On to the next neighbour rather than out: a stop among
+                        // them is still taken back. Nothing more is added, so
+                        // without a cut the answer is the one it always was.
                         if depth.len() >= max_nodes {
                             truncated = true;
-                            break;
+                            continue;
                         }
                         if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
                             v.insert(if upstream { -step } else { step });
+                            if !upstream {
+                                walked.insert(nb, step);
+                            }
                             next.push(nb);
+                        }
+                    }
+                }
+                if !upstream && !cut.is_empty() && !truncated {
+                    'stop: for &cur in &frontier {
+                        for e in cll.outgoing(cur).iter().filter(|e| cut.contains(&e.kind)) {
+                            if depth.contains_key(&e.to) {
+                                continue;
+                            }
+                            if depth.len() >= max_nodes {
+                                truncated = true;
+                                break 'stop;
+                            }
+                            depth.insert(e.to, step);
+                            stopped.insert(e.to);
                         }
                     }
                 }
@@ -887,10 +940,17 @@ impl Graph {
         let mut members: Vec<ColRef> = depth.keys().copied().collect();
         members.sort_unstable();
         let pos: HashMap<ColRef, usize> = members.iter().enumerate().map(|(p, &c)| (c, p)).collect();
+        // Nothing leaves a column the walk stopped at, even to a column drawn
+        // for another reason: that edge is past the cut, and both ends count it
+        // in their badges.
+        let drawn = |e: &ColEdge| pos.contains_key(&e.from) && pos.contains_key(&e.to) && !stopped.contains(&e.from);
 
         let mut pairs: Vec<([usize; 2], u8)> = Vec::new();
         for (p, &c) in members.iter().enumerate() {
             for e in cll.outgoing(c) {
+                if !drawn(e) {
+                    continue;
+                }
                 if let Some(&q) = pos.get(&e.to) {
                     pairs.push(([p, q], e.kind));
                 }
@@ -899,6 +959,21 @@ impl Graph {
         pairs.sort_unstable();
         pairs.dedup_by(|a, b| a.0 == b.0);
         let edges: Vec<[usize; 2]> = pairs.iter().map(|(e, _)| *e).collect();
+        // The roles of the edges that left a stop where it is, not every role
+        // ticked: a status line naming a role the graph never met would lie.
+        let mut stopped_at: Vec<&str> = Vec::new();
+        for &c in &stopped {
+            // Drawn, and from a column the walk left within its depth: an edge
+            // the stop came from, not one from another stop or from upstream.
+            let left = |e: &&ColEdge| walked.get(&e.from).is_some_and(|&l| l < down as i32);
+            for e in cll.incoming(c).filter(|e| cut.contains(&e.kind) && drawn(e)).filter(left) {
+                let role = cll.kinds.get(e.kind as usize).map(String::as_str).unwrap_or("");
+                if !stopped_at.contains(&role) {
+                    stopped_at.push(role);
+                }
+            }
+        }
+        stopped_at.sort_unstable();
         let edge_kinds: Vec<&str> = pairs
             .iter()
             .map(|(_, k)| cll.kinds.get(*k as usize).map(String::as_str).unwrap_or(""))
@@ -910,6 +985,7 @@ impl Graph {
             truncated,
             mode: "column",
             edge_kinds,
+            stopped_at,
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
@@ -944,8 +1020,8 @@ impl Graph {
                         tests: column.tests.len(),
                         parents: up_n,
                         children: down_n,
-                        hidden_up: cll.incoming(c).filter(|e| !pos.contains_key(&e.from)).count(),
-                        hidden_down: cll.outgoing(c).iter().filter(|e| !pos.contains_key(&e.to)).count(),
+                        hidden_up: cll.incoming(c).filter(|e| !drawn(e)).count(),
+                        hidden_down: cll.outgoing(c).iter().filter(|e| !drawn(e)).count(),
                     }
                 })
                 .collect(),
@@ -1177,6 +1253,7 @@ impl Graph {
             mode: "model",
             focus_column: "",
             edge_kinds: Vec::new(),
+            stopped_at: Vec::new(),
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1366,6 +1443,7 @@ impl Graph {
             mode: "select",
             focus_column: "",
             edge_kinds: Vec::new(),
+            stopped_at: Vec::new(),
             nodes: members
                 .iter()
                 .enumerate()
@@ -1419,6 +1497,10 @@ pub struct Lineage<'a> {
     /// destructure `edges` as a pair and ignore this entirely.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub edge_kinds: Vec<&'a str>,
+    /// Column mode: the roles the walk stopped at downstream, as the cache
+    /// names them, so an export can say why a column ends there (0083).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stopped_at: Vec<&'a str>,
 }
 
 #[derive(serde::Serialize)]
@@ -1605,6 +1687,267 @@ mod tests {
         assert_eq!(twice.cll.as_ref().unwrap().degree(ColRef { node: dim(&twice), col: slot }), (1, 0));
         let columns = |g: &Graph| g.nodes[dim(g) as usize].columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         assert_eq!(columns(&twice), columns(&once));
+    }
+
+    // stg.x feeds int.x, which feeds fct.x through a window and wide.x through
+    // a rename, and wide.x feeds fct.x again: fct.x is reached past the cut
+    // and around it. Then fct.x feeds rpt.x.
+    #[test]
+    fn a_cut_role_ends_the_walk_downstream_at_the_column_it_reaches() {
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "columns": { "x": { "name": "x" } } })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.shop.stg": model("stg"), "model.shop.int": model("int"), "model.shop.fct": model("fct"),
+            "model.shop.wide": model("wide"), "model.shop.rpt": model("rpt"),
+        } }))
+        .unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let only_window = vec![link("stg", "int", "window"), link("int", "fct", "window"), link("fct", "rpt", "rename")];
+        g.merge_col_lineage(cache(only_window), 1);
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let names = |l: &Lineage| {
+            let mut v = l.nodes.iter().map(|n| n.sub.clone()).collect::<Vec<_>>();
+            v.sort();
+            v
+        };
+        let hidden = |l: &Lineage, name: &str| l.nodes.iter().find(|n| n.sub == name).unwrap().hidden_down;
+
+        let whole = g.column_lineage(at(&g, "int"), 3, 3, 100, &[]);
+        assert_eq!(whole.nodes.len(), 4, "{:?}", names(&whole));
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"]);
+        assert_eq!(names(&cut), ["fct", "int", "stg"], "the window stays drawn, rpt past it goes");
+        assert_eq!(cut.edge_kinds, ["window", "window"]);
+        assert_eq!((hidden(&cut, "int"), hidden(&cut, "fct")), (0, 1), "the badge is on the column past the window");
+        let unknown = g.column_lineage(at(&g, "int"), 3, 3, 100, &["no_such_role"]);
+        assert_eq!(unknown.nodes.len(), 4);
+
+        // fct.x is reached through the window and around it, through wide.x:
+        // the walk goes on from it.
+        let around = vec![
+            link("stg", "int", "transform"),
+            link("int", "fct", "window"),
+            link("int", "wide", "rename"),
+            link("wide", "fct", "transform"),
+            link("fct", "rpt", "rename"),
+        ];
+        g.merge_col_lineage(cache(around), 2);
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"]);
+        assert_eq!(names(&cut), ["fct", "int", "rpt", "stg", "wide"]);
+        assert!(cut.edge_kinds.contains(&"window"));
+        assert_eq!(hidden(&cut, "fct"), 0);
+    }
+
+    // The review's two cases. An edge leaving a stopped column for a column
+    // drawn for another reason is not drawn, and both its ends count it. A
+    // column reached around the cut only past the depth asked stays stopped,
+    // and is walked on from once the depth reaches it.
+    #[test]
+    fn a_stop_counts_what_it_hides_and_gives_way_to_the_depth() {
+        let names = ["f", "a", "b", "c", "s", "x"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let node = |l: &Lineage<'_>, name: &str| {
+            let n = l.nodes.iter().find(|n| n.sub == name).unwrap();
+            (n.hidden_up, n.hidden_down)
+        };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<String> = l.nodes.iter().map(|n| n.sub.clone()).collect();
+            v.sort();
+            v
+        };
+
+        g.merge_col_lineage(cache(vec![link("f", "a", "window"), link("f", "b", "rename"), link("a", "b", "rename")]), 1);
+        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&l), ["a", "b", "f"]);
+        assert_eq!(l.edges.len(), 2, "a to b is past the window");
+        assert_eq!((node(&l, "a"), node(&l, "b")), ((0, 1), (1, 0)), "both ends of it count it");
+        assert_eq!(l.stopped_at, ["window"]);
+        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[]).stopped_at.is_empty());
+
+        let around = vec![
+            link("f", "s", "window"),
+            link("f", "b", "rename"),
+            link("b", "c", "rename"),
+            link("c", "s", "rename"),
+            link("s", "x", "rename"),
+        ];
+        g.merge_col_lineage(cache(around), 2);
+        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"]);
+        assert_eq!(drawn(&two), ["b", "c", "f", "s"], "within two levels s is reached only past the window");
+        assert_eq!(node(&two, "s").1, 1);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&three), ["b", "c", "f", "s"], "at three, s is reached around it, on the last level");
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        assert_eq!(drawn(&four), ["b", "c", "f", "s", "x"]);
+        // The same depths with nothing stopped, for contrast: x comes at two.
+        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[])), ["b", "c", "f", "s", "x"]);
+    }
+
+    // The second review's probes: under a cap the stop next to the focus
+    // outlives a column two levels further, and a stop's depth is its distance
+    // whichever column the walk met first.
+    #[test]
+    fn stops_are_added_level_by_level() {
+        let names = ["f", "w", "a1", "a2", "a3", "m01", "m05", "m06", "m07", "m09"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<(String, i32)> = l.nodes.iter().map(|n| (n.sub.clone(), n.depth)).collect();
+            v.sort();
+            v
+        };
+        let d = |name: &str, depth: i32| (name.to_string(), depth);
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "w", "window"),
+                link("f", "a1", "rename"),
+                link("a1", "a2", "rename"),
+                link("a2", "a3", "rename"),
+                link("m05", "m09", "rename"),
+                link("m09", "m07", "window"),
+                link("m05", "m06", "rename"),
+                link("m06", "m01", "rename"),
+                link("m01", "m07", "window"),
+                link("m07", "a3", "aggregate"),
+            ]),
+            1,
+        );
+        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"]);
+        assert!(capped.truncated);
+        assert_eq!(drawn(&capped), [d("a1", 1), d("a2", 2), d("f", 0), d("w", 1)]);
+        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"]);
+        assert_eq!(drawn(&far), [d("m01", 2), d("m05", 0), d("m06", 1), d("m07", 2), d("m09", 1)]);
+        assert_eq!(far.stopped_at, ["window"], "aggregate is ticked, but nothing stopped at one");
+    }
+
+    // The third review's cases: a cut edge between two stops is hidden and
+    // names nothing; a stop reached around the cut under a cap that holds
+    // every column is walked on from as without the cap; a column reached
+    // around a stop keeps its distance as its depth, and the walk on from it
+    // counts from the level that reached it.
+    #[test]
+    fn a_stop_names_only_what_stopped_it_and_the_cap_keeps_none() {
+        let names = ["f", "s1", "s2", "s", "a", "b", "p", "t"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<(String, i32)> = l.nodes.iter().map(|n| (n.sub.clone(), n.depth)).collect();
+            v.sort();
+            v
+        };
+        let d = |name: &str, depth: i32| (name.to_string(), depth);
+
+        g.merge_col_lineage(
+            cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]),
+            1,
+        );
+        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"]);
+        assert_eq!(two.stopped_at, ["window"], "the aggregate between the two stops is not drawn");
+        assert_eq!(two.edge_kinds, ["window", "window"]);
+
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "s", "window"),
+                link("f", "a", "rename"),
+                link("a", "s", "rename"),
+                link("s", "a", "filter"),
+            ]),
+            2,
+        );
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        assert!(!roomy.truncated && roomy.stopped_at.is_empty());
+        assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
+
+        // The same, the stop met after a neighbour the cap turns away: the
+        // walk goes on to it rather than out.
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "a", "rename"),
+                link("f", "s", "window"),
+                link("a", "f", "rename"),
+                link("a", "s", "rename"),
+                link("s", "a", "filter"),
+            ]),
+            4,
+        );
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        assert!(roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
+        assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "after a neighbour turned away");
+
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "p", "window"),
+                link("f", "a", "rename"),
+                link("a", "b", "rename"),
+                link("b", "p", "rename"),
+                link("p", "t", "rename"),
+            ]),
+            3,
+        );
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&three), [d("a", 1), d("b", 2), d("f", 0), d("p", 1)]);
+        assert!(three.stopped_at.is_empty(), "p is reached around the window: not a stop");
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        assert_eq!(drawn(&four), [d("a", 1), d("b", 2), d("f", 0), d("p", 1), d("t", 4)]);
     }
 
     /// A diamond and, apart from it, a pair that touches nothing: enough to

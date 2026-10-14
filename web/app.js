@@ -33,6 +33,7 @@ const S = {
   catTab: 'preview',          // catalog: preview | columns
   graphMode: 'model',         // lineage canvas: model | column | select
   colFocus: null,             // {id, column} when the canvas shows columns
+  colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
   selectHistory: [],          // expressions typed this session, newest first
@@ -59,6 +60,7 @@ const S = {
   features: null,             // { snowflake, snowflake_set }: which feature families are on
   profiles: null,             // { path, found }: where dbt looks for its profile, null with nowhere to look
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
+  colDraw: 0,                 // bumped per column request and on leaving column mode: only the last answer is drawn
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
   history: null,              // the query history on screen: rows, more, session, targets, busy, error
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
@@ -3804,6 +3806,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.unsynced = '';
   S.graphMode = 'model';
   S.colFocus = null;
+  S.colDraw++;                                // a column answer still on its way is not drawn over this
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
   const tests = testsOn() ? 1 : 0;
@@ -3840,9 +3843,12 @@ async function focusColumn(id, column) {
   S.colFocus = { id, column };
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
+  const ask = ++S.colDraw;
   try {
     const sub = await api.get(
-      `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`);
+      `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`
+      + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : ''));
+    if (ask !== S.colDraw) return;            // a later tick or click already asked
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
@@ -3850,6 +3856,7 @@ async function focusColumn(id, column) {
     paintTestsCount(sub);
     showDock('lineage');
   } catch (e) {
+    if (ask !== S.colDraw) return;
     toast('column lineage: ' + e.message, 'err');
     S.graphMode = 'model';
     S.colFocus = null;
@@ -3885,6 +3892,7 @@ async function runSelection() {
   closeHoverCard();
   S.graphMode = 'select';
   S.colFocus = null;
+  S.colDraw++;                                // a column answer still on its way is not drawn over this
   paintMode();
   const expr = $('#select-input').value.trim();
   const ask = ++S.selectAsk;
@@ -4044,7 +4052,9 @@ function selectStatus(sub) {
    `drawn` is what Lineage.render() said the folder bands added, if any. */
 function canvasStatus(sub, drawn) {
   if (sub.mode === 'select') return selectStatus(sub) + foldersStatus(drawn);
-  const tail = `${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
+  // A stopped column's +N reads as the depth's limit otherwise (0083).
+  const stopped = (sub.stopped_at || []).length ? ` · stopped downstream at ${sub.stopped_at.join(', ')}` : '';
+  const tail = `${sub.edges.length} edges${stopped}${sub.truncated ? ' · truncated' : ''}`;
   return (sub.mode === 'column'
     ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
@@ -6253,15 +6263,128 @@ function legendEntries(sub) {
 }
 
 function paintLegend(sub) {
-  const host = $('#lineage-legend');
+  const host = $('#lineage-legend'), entries = legendEntries(sub);
   host.textContent = '';
-  legendEntries(sub).forEach(([label, colour]) => {
+  // A pick the new graph has nothing of would fade the whole canvas.
+  if (!entries.some(([label]) => label === Lineage.picked())) Lineage.pick(null);
+  const mark = () => {
+    host.classList.toggle('picking', !!Lineage.picked());
+    [...host.children].forEach((chip) => {
+      const on = chip.dataset.label === Lineage.picked();
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-pressed', String(on));
+      chip.title = on ? 'Show everything again' : `Highlight ${chip.dataset.label}, fade the rest`;
+    });
+  };
+  entries.forEach(([label, colour]) => {
     const chip = document.createElement('span');
+    chip.dataset.label = label;
+    chip.setAttribute('role', 'button');
+    chip.tabIndex = 0;
     const sq = document.createElement('i');
     sq.style.background = colour;
     chip.append(sq, document.createTextNode(label));
+    const toggle = () => { Lineage.pick(Lineage.picked() === label ? null : label); mark(); };
+    chip.addEventListener('click', toggle);
+    chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
     host.appendChild(chip);
   });
+  mark();
+}
+
+/* Where the column walk stops downstream (0083): an edge of a role ticked
+   here is drawn with the column it reaches, and nothing past that column.
+   Beside the depth boxes rather than in the legend, being a depth of a kind:
+   it changes what the server walks, where a legend click only repaints. */
+function paintStopAt() {
+  const b = $('#stop-at');
+  b.classList.toggle('hidden', S.graphMode !== 'column');
+  const on = [...S.colCut].sort();
+  // Short, the bar being full in column mode: one role by name, more counted.
+  b.querySelector('span').textContent = !on.length ? '' : on.length === 1 ? on[0] : `${on.length} roles`;
+  b.classList.toggle('on', on.length > 0);
+  b.title = on.length
+    ? `Downstream, the walk ends at the column each ${on.join(' or ')} edge reaches`
+    : 'Pick roles the walk downstream stops at: their edges stay, what comes after them goes';
+}
+
+let stopAtMenu = null;
+function closeStopAt({ refocus = false } = {}) {
+  if (!stopAtMenu) return;
+  const { el, anchor, off } = stopAtMenu;
+  stopAtMenu = null;
+  off();
+  el.remove();
+  if (refocus && anchor.isConnected) anchor.focus();
+}
+
+function openStopAt(anchor) {
+  if (stopAtMenu) return closeStopAt();
+  // The roles the cache has, busiest first, and any ticked that it lost.
+  const kinds = ((S.meta && S.meta.cll_kinds) || []).filter((k) => k.kind && k.kind !== 'unknown');
+  const roles = kinds.map((k) => [k.kind, k.edges]);
+  for (const r of S.colCut) if (!roles.some(([k]) => k === r)) roles.push([r, 0]);
+  const el = document.createElement('div');
+  el.className = 'envmenu stopmenu';
+  el.setAttribute('role', 'menu');
+  el.setAttribute('aria-label', 'Roles the column walk stops at');
+  el.append(Object.assign(document.createElement('div'), { className: 'menuhead', textContent: 'Stop downstream after' }));
+  if (!roles.length) el.append(Object.assign(document.createElement('div'), { className: 'menunote', textContent: 'The column lineage names no roles.' }));
+  roles.forEach(([role, edges]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemcheckbox');
+    const paint = () => {
+      const on = S.colCut.has(role);
+      b.setAttribute('aria-checked', String(on));
+      b.querySelector('.check').textContent = on ? '✓' : '';
+    };
+    const sq = document.createElement('i');
+    sq.className = 'rolesq';
+    sq.style.background = Lineage.roleColor(role);
+    b.append(Object.assign(document.createElement('span'), { className: 'check' }), sq,
+      Object.assign(document.createElement('span'), { className: 'lbl', textContent: role }),
+      Object.assign(document.createElement('span'), { className: 'sub', textContent: edges ? `${edges} edge${edges === 1 ? '' : 's'}` : '' }));
+    // Stays open: several roles can be ticked in a row.
+    b.addEventListener('click', () => {
+      if (S.colCut.has(role)) S.colCut.delete(role); else S.colCut.add(role);
+      paint();
+      paintStopAt();
+      rerender();
+    });
+    paint();
+    el.appendChild(b);
+  });
+  document.body.appendChild(el);
+  const place = placeFloating(anchor.getBoundingClientRect(), el.getBoundingClientRect(),
+    { width: window.innerWidth, height: window.innerHeight }, 4);
+  el.style.top = `${place.top}px`;
+  el.style.left = `${place.left}px`;
+  const onKey = (e) => {
+    if (e.key === 'Tab') return closeStopAt();
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (e.key !== 'Escape' && !step) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') return closeStopAt({ refocus: true });
+    const items = [...el.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    if (items.length) items[(at + step + items.length) % items.length].focus();
+  };
+  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closeStopAt(); };
+  const onResize = () => closeStopAt();
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('mousedown', onDown, true);
+  window.addEventListener('resize', onResize);
+  stopAtMenu = {
+    el, anchor, off: () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('resize', onResize);
+    },
+  };
+  const first = el.querySelector('button');
+  if (first) first.focus();
 }
 
 function paintMode() {
@@ -6280,6 +6403,7 @@ function paintMode() {
   // The depth boxes have nothing to say about a selection: the + in the
   // expression carries it, and two places to set one would contradict.
   $('#up').disabled = $('#down').disabled = selecting;
+  paintStopAt();
   const chip = $('#col-chip');
   chip.classList.toggle('hidden', !S.colFocus);
   if (S.colFocus) {
@@ -6396,6 +6520,7 @@ function relinkTools() {
     sendToTerminal(lsCommand(sub.select, sub.exclude || ''));
   });
   $('#select-named').addEventListener('click', (e) => openSelectorMenu(e.currentTarget));
+  $('#stop-at').addEventListener('click', (e) => openStopAt(e.currentTarget));
 }
 
 // ---------------------------------------------------------------- export --
