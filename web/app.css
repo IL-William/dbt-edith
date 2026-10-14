@@ -895,6 +895,14 @@ kbd {
 .nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }
 .nd .t2 .struck { opacity: .6; text-decoration: line-through; }
 .nd .more { fill: var(--fg-dim); font-size: 9px; }
+/* What find on the canvas matched (0081): amber, as a match in the editor is,
+   and the one the view was brought to thicker and filled. Under #graph, which
+   outranks the focus and the selection while the bar is open, and keeps these
+   out of an exported file's rules (exportCanvasCss): snapshot() strips both
+   classes, since a match says nothing to whoever reads the file. */
+#graph .nd.hit rect.box { stroke: var(--warn); stroke-width: 1.5; }
+#graph .nd.hitcur rect.box { stroke: var(--warn); stroke-width: 3; fill: #2e2716; }
+#graph .nd.ctx.hit { opacity: .85; }
 /* A folder band, when the canvas is drawn by folder: the columns one folder's
    nodes sit in, under the edges and the boxes (0029). Its name is written in
    an exported file only; the canvas pins it over the window instead. */
@@ -946,11 +954,16 @@ kbd {
 
 /* The selector bar floats over the canvas, the way the legend and the status
    bubble do. The dock is short, and a row that pushed the graph down would
-   cost more room than it is worth. */
-.select-bar {
+   cost more room than it is worth. The find bar floats under it, at the
+   right, and the folder names under both (headTop). Between the bars a press
+   reaches the canvas, so a pan can start there. */
+.lineage-top {
   position: absolute; top: 6px; left: 10px; right: 10px; z-index: 2;
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px; pointer-events: none;
 }
+.lineage-top > * { pointer-events: auto; }
+.select-bar { display: flex; flex-direction: column; gap: 4px; }
+.lineage-top .findbar { position: static; align-self: flex-end; }
 .select-row { display: flex; align-items: center; gap: 6px; }
 #select-input {
   flex: 1; min-width: 0; background: #12161dee; color: var(--fg);

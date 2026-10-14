@@ -248,7 +248,7 @@ sub-graphs around whichever model you are looking at.
 | click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
 | the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
 | `Cmd/Ctrl + K` | search models, sources and every file in the project |
-| `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, or filter the Catalog's columns |
+| `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, a node on the lineage, or filter the Catalog's columns |
 | the copy glyph beside the name in the Catalog | that name on the clipboard |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
 | Give me a tour, at the top of that list | a walk through each part of the page, on a model of your project |
@@ -548,11 +548,22 @@ which keeps the columns whose name contains what you type, in any case. The
 filter stays as you move to another node, so one column can be followed through
 the lineage a model at a time. `Escape` empties it.
 
-Anywhere else, the lineage or the terminal, `Cmd/Ctrl + F` is the browser's own
-find. `?` outside a text box, `F1` from anywhere, or the `?` button in the top
-bar lists every shortcut, with the keys of the machine you are on. `Cmd + H`
-would have been the obvious key, and cannot be: macOS hides the browser on it
-before the page ever sees it.
+Over the lineage, `Cmd/Ctrl + F` finds a node on the canvas by its name and
+brings it to the middle, zoomed in to its drawn size when the graph was fitted
+smaller. It looks through every source, model and seed drawn, and every test
+once the tests box is on, a test folded under `+N more tests` or a closed
+group's row included, which it opens. A source is found by its table alone too,
+and a test by its generic or its column. A name typed whole comes first, then
+the names it starts, then those it is in; `Enter` and `Shift + Enter` step
+through the rest, left to right a column at a time and down each, a model's
+tests after it. Every match is outlined in amber, and `Escape` closes the bar
+with the view left where it is. Only what the canvas draws is searched:
+`Cmd/Ctrl + K` searches the whole project.
+
+In the terminal, `Cmd/Ctrl + F` is the browser's own find. `?` outside a text
+box, `F1` from anywhere, or the `?` button in the top bar lists every shortcut,
+with the keys of the machine you are on. `Cmd + H` would have been the obvious
+key, and cannot be: macOS hides the browser on it before the page ever sees it.
 
 ### Explorer
 
@@ -1548,6 +1559,7 @@ $JSC web/tests/layout.js      # where each box sits, and how a long edge gets th
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
 $JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
+$JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the order, a folded test
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go

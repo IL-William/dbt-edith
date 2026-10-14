@@ -1262,6 +1262,25 @@ one of each. Left out unless asked: a job not read only through its chain,
 behind a feeder whose clock is templated for instance, names no link that is
 not read, its pill saying `on copied` under the general tooltip.
 
+Find on the lineage: `Cmd/Ctrl + F` over the canvas opens a find bar of its
+own, under the selector bar when that is open, and brings the box it lands on
+to the middle, zoomed in to its drawn size when the graph was fitted smaller
+(0081). It searches what the canvas was sent, a test folded under a chip or a
+closed group's row included, which it opens, two turns at most. A name typed
+whole comes before the names it starts and those it is in, then reading order,
+left to right a column at a time and down each, a model's tests after it,
+which `Enter`, `Shift + Enter`, `Cmd/Ctrl + G` and `F3` step through. That order
+is the one the tests are drawn in once opened, so a step that opens a group
+skips none of them. 0030 had left the lineage to the browser's find, which
+read names clipped to their box and never moved the view. The canvas CSS for
+the paint is under `#graph`, out of `exportCanvasCss`, and `snapshot()` strips
+its classes. `web/tests/graphfind.js` checks the pure half; driven in headless
+Chrome on Jaffle Shop with invented tests added, so that some fold under a chip
+and a closed group: model mode, tests off and on, Custom selection drawn by
+folder, Escape, Cmd+F again, Cmd+G from the canvas, and the Catalog's filter
+still answering there. Column mode only by the harness, Jaffle Shop having no
+column lineage. Not yet opened on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1785,7 +1804,9 @@ cross-compile.
   `web/tests/keys.js` slices from `function keyCombo` to
   `function toggleShortcuts`, and reads the `case '...'` labels of `wireKeys`
   as text, up to the `boot` banner: a global key bound any other way escapes
-  the check that it is in the shortcut list.
+  the check that it is in the shortcut list. `web/tests/graphfind.js` slices
+  `web/lineage.js` from `function findNames` to `function pastSlop`, where
+  `pan.js` starts, as well as the layout's own slice.
 - **`exportViewer` runs in the exported file, not in the app.** It is written
   into the page as its own source text, so a name from `web/app.js` inside it
   passes every check here and fails only in a downloaded file.

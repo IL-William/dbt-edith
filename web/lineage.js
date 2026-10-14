@@ -730,6 +730,20 @@ const Lineage = (() => {
     // test in a closed group, whose row the edges into it reach instead.
     hosts.hidden.forEach((v) => { boxes[v] = null; });
     hosts.into.forEach((r, v) => { boxes[v] = null; });
+    // What stands for each test not drawn, the key that opens it, and its
+    // place among the others there, which is the order it is drawn in once
+    // opened: find reaches a folded test through them (0081).
+    const under = new Map(), chipOf = new Map(chips.map((c) => [c.id, c])), count = new Map();
+    const stand = (v, key, box) => {
+      const i = count.get(key) || 0;
+      count.set(key, i + 1);
+      under.set(v, { key, box, i });
+    };
+    hosts.hidden.forEach((v) => {
+      const id = d.nodes[cut.keep[hosts.host[v]]].id;
+      if (chipOf.has(id)) stand(v, id, chipOf.get(id));
+    });
+    hosts.into.forEach((r, v) => { if (heads.has(r)) stand(v, r.key, heads.get(r)); });
     // Of the edges from one parent into the tests of one closed group, the
     // one into the first of them in the group's order, whatever order the
     // server listed the edges in.
@@ -776,6 +790,7 @@ const Lineage = (() => {
     if (L.bands) { out.bands = L.bands; out.against = L.against; }
     if (chips.length) { out.chips = chips; out.folded = hosts.hidden.size; }
     if (groups.length) out.groups = groups;
+    if (under.size) out.under = under;
     return out;
   }
 
@@ -1236,6 +1251,10 @@ const Lineage = (() => {
   // the options the last render() had, to draw again after a chip's click.
   const unfolded = new Set();
   let lastOpts = {};
+  // Find on the canvas, null while its bar is closed: the query, the node the
+  // view was last brought to, and the node reading starts from when the query
+  // changes. And what stands for each folded test, from the layout (0081).
+  let finding = null, under = new Map();
   // Module scope, not init's: render() reads it to keep a hover card from
   // opening under a pointer that is in the middle of a pan.
   let drag = null;
@@ -1332,6 +1351,83 @@ const Lineage = (() => {
   function adapterName(adapter) {
     if (!adapter) return 'the adapter';
     return ADAPTER_NAMES[adapter] || adapter[0].toUpperCase() + adapter.slice(1);
+  }
+
+  /* The names a box is found by (0081): its own; for a source, its table
+     without the source's name too; for a test, its generic and its column,
+     since dbt shortens a long test name with a hash and its row says those;
+     in column mode, the model the column belongs to, which its second line
+     names. */
+  function findNames(n, columnMode) {
+    const name = String(n.name || ''), out = [name];
+    if (columnMode) {
+      if (n.sub) out.push(String(n.sub).split('  ·  ')[0]);
+      return out;
+    }
+    if (n.kind === 'source' && name.includes('.')) out.push(name.slice(name.indexOf('.') + 1));
+    if (n.kind === 'test') {
+      if (n.test_name) out.push(String(n.test_name));
+      if (n.column) out.push(String(n.column));
+    }
+    return out;
+  }
+
+  /* How well a query names a box, in any case: 0 when it is one of its names
+     whole, 1 when one starts with it, 2 when one holds it, and -1 for none. */
+  function findQuality(names, query) {
+    const q = String(query).toLowerCase();
+    if (!q) return -1;
+    let best = -1;
+    for (const s of names) {
+      const t = s.toLowerCase(), at = t.indexOf(q);
+      if (at < 0) continue;
+      const k = t.length === q.length ? 0 : at === 0 ? 1 : 2;
+      if (best < 0 || k < best) best = k;
+    }
+    return best;
+  }
+
+  /* Every node in reading order: column by column from the left, down each
+     one, so a model's tests follow it. `at[v]` is where node v is drawn, or
+     the row or chip it is folded under with `i` its place among the tests
+     there, which keeps their order once they are opened; null where neither.
+     `step` is a column's width, gap included: a test is drawn a little to the
+     right of its model, in the same column. */
+  function findOrder(at, step) {
+    const col = (b) => Math.floor((b.x + 1) / step);
+    return at.map((_, v) => v).sort((a, c) => {
+      const A = at[a], C = at[c];
+      if (!A || !C) return (A ? 0 : 1) - (C ? 0 : 1) || a - c;
+      return col(A) - col(C) || A.y - C.y || (A.i || 0) - (C.i || 0) || a - c;
+    });
+  }
+
+  /* The node typing lands on: of the best named, the first in reading order
+     from `from`, the place in `order` the last step landed on, or from the
+     top when none has; -1 when nothing matches. So a query that names a box
+     whole finds it before every box that only holds the query, and typing
+     on after a step stays on that box while it still matches as well. */
+  function findPick(order, quality, from) {
+    let best = -1;
+    for (const v of order) if (quality[v] >= 0 && (best < 0 || quality[v] < best)) best = quality[v];
+    if (best < 0) return -1;
+    const n = order.length, start = from >= 0 ? from : 0;
+    for (let k = 0; k < n; k++) {
+      const v = order[(start + k) % n];
+      if (quality[v] === best) return v;
+    }
+    return -1;
+  }
+
+  /* The first match from place `start` in `order`, going `dir`, round the
+     canvas either way; -1 when nothing matches. */
+  function findNext(order, quality, start, dir) {
+    const n = order.length;
+    for (let k = 0; k < n; k++) {
+      const v = order[(((start + dir * k) % n) + n) % n];
+      if (quality[v] >= 0) return v;
+    }
+    return -1;
   }
 
   /* Whether a press has moved far enough to be a pan rather than a click:
@@ -1510,6 +1606,7 @@ const Lineage = (() => {
     const L = layout(d, opts.folders, opts.levels);
     place = L.boxes;
     groups = L.groups || [];
+    under = L.under || new Map();
     bands = L.bands || [];
     const top = bands.filter((b) => !b.level).length;
     drawn = L.bands || L.folded
@@ -1620,7 +1717,14 @@ const Lineage = (() => {
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
         + (said ? `${said}, ` : '') + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
-      g.addEventListener('click', (e) => { e.stopPropagation(); select(n.id); handlers.onSelect && handlers.onSelect(n); });
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // A click is where the next step and the next query read from, as the
+        // cursor is in the editor's find, and a match clicked is the current one.
+        if (finding) { finding.from = finding.cur = n.id; refind(); }
+        select(n.id);
+        handlers.onSelect && handlers.onSelect(n);
+      });
       g.addEventListener('dblclick', (e) => { e.stopPropagation(); handlers.onOpen && handlers.onOpen(n); });
       // enter/leave, not over/out: the group has four children, and crossing
       // between them would fire over/out as if the box had been left.
@@ -1684,6 +1788,7 @@ const Lineage = (() => {
 
     if (!opts.keepView) fit(); else apply();
     select(selected);
+    if (finding) refind();
     return drawn;
   }
 
@@ -1797,6 +1902,116 @@ const Lineage = (() => {
     apply();
   }
 
+  // ------------------------------------------------------------- find --
+  /* Cmd+F over the canvas (0081). The browser's own find saw the names as
+     drawn, clipped, and never moved the view to the one it found. This one
+     searches the nodes the canvas was sent, a test folded under a chip or a
+     group's row included, and brings the one it lands on to the middle. */
+
+  const indexOf = (id) => (id == null || !data ? -1 : data.nodes.findIndex((n) => n.id === id));
+
+  /* Every node in reading order, how well each matched, and the matches. */
+  function matches() {
+    if (!data || !finding || !finding.q) return { order: [], quality: [], hits: [] };
+    const columnMode = data.mode === 'column';
+    const at = data.nodes.map((_, v) => {
+      if (place[v]) return place[v];
+      const u = under.get(v);
+      return u ? { x: u.box.x, y: u.box.y, i: u.i } : null;
+    });
+    const order = findOrder(at, W + HGAP);
+    const quality = data.nodes.map((n) => findQuality(findNames(n, columnMode), finding.q));
+    return { order, quality, hits: order.filter((v) => quality[v] >= 0) };
+  }
+
+  /* Paints every match, and the current one brighter, and tells the page. A
+     test folded away is painted on the row or the chip it is under. */
+  function paintFound(F) {
+    const cur = indexOf(finding.cur), keys = new Set(), ids = new Set();
+    F.hits.forEach((v) => {
+      if (place[v]) ids.add(data.nodes[v].id);
+      else if (under.has(v)) keys.add(under.get(v).key);
+    });
+    const curId = cur >= 0 && place[cur] ? data.nodes[cur].id : null;
+    const curKey = cur >= 0 && !place[cur] && under.has(cur) ? under.get(cur).key : null;
+    root.querySelectorAll('.nd').forEach((g) => {
+      const key = g.dataset.key;
+      g.classList.toggle('hit', key ? keys.has(key) : ids.has(g.dataset.id));
+      g.classList.toggle('hitcur', key ? key === curKey : g.dataset.id === curId);
+    });
+    handlers.onFound && handlers.onFound({ hits: F.hits.map((v) => data.nodes[v].id), at: F.hits.indexOf(cur) });
+  }
+
+  /* Counts and paints again where the canvas was drawn again, or a box was
+     clicked: the view stays, and the current match too while it is one. */
+  function refind() {
+    const F = matches(), cur = indexOf(finding.cur);
+    if (cur < 0 || !(F.quality[cur] >= 0)) finding.cur = null;
+    paintFound(F);
+  }
+
+  /* Node v in the middle of what the bars over the canvas leave of it, and
+     at least at the size it is drawn at, where a fitted graph can be too
+     small to read the name that was looked for. */
+  function centre(v) {
+    const b = place[v], r = svg.getBoundingClientRect();
+    if (!b || !r.width || !r.height) return;
+    const top = Math.min(handlers.headTop ? handlers.headTop() : 0, r.height / 2);
+    view.k = Math.max(view.k, 1);
+    view.x = r.width / 2 - (b.x + b.w / 2) * view.k;
+    view.y = top + (r.height - top) / 2 - (b.y + b.h / 2) * view.k;
+    apply();
+  }
+
+  /* Makes node v the current match and brings it to the middle, opening the
+     chip or the group's row it is folded under first, as a click on it would,
+     which can take two: a chip opens onto a closed group. */
+  function go(v) {
+    finding.cur = data.nodes[v].id;
+    for (let k = 0; k < 2 && !place[v] && under.has(v); k++) {
+      const key = under.get(v).key;
+      if (unfolded.has(key)) unfolded.delete(key); else unfolded.add(key);
+      render(data, Object.assign({}, lastOpts, { keepView: true }));
+      handlers.onRefold && handlers.onRefold(data, drawn);
+    }
+    centre(v);
+    refind();
+  }
+
+  /* The bar's query. With `land`, which typing asks for, the view goes to the
+     best match from where reading starts; without, which opening the bar
+     asks for, the matches are painted and nothing moves. */
+  function find(q, land) {
+    if (!finding) finding = { q: '', cur: null, from: null };
+    finding.q = String(q || '');
+    if (!land) return refind();
+    const F = matches();
+    const v = findPick(F.order, F.quality, F.order.indexOf(indexOf(finding.from)));
+    if (v < 0) {
+      finding.cur = null;
+      return paintFound(F);
+    }
+    go(v);
+  }
+
+  /* Enter and Shift+Enter: the next match in reading order, or the one
+     before, from the current one, or from the box last clicked; the next
+     query reads from there too. */
+  function findStep(dir) {
+    if (!finding) return;
+    const F = matches(), at = (id) => F.order.indexOf(indexOf(id));
+    const cur = at(finding.cur), from = at(finding.from);
+    const v = findNext(F.order, F.quality, (cur >= 0 ? cur : from >= 0 ? from : dir > 0 ? -1 : 0) + dir, dir);
+    if (v < 0) return paintFound(F);
+    finding.from = data.nodes[v].id;
+    go(v);
+  }
+
+  function findEnd() {
+    finding = null;
+    root.querySelectorAll('.hit, .hitcur').forEach((g) => g.classList.remove('hit', 'hitcur'));
+  }
+
   /* The canvas as one standalone SVG, for a file read where neither this page
      nor its stylesheet exists: a ticket attachment, a PDF, an image (0026).
 
@@ -1816,6 +2031,8 @@ const Lineage = (() => {
     g.removeAttribute('transform');
     g.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
     g.querySelectorAll('.hi').forEach((x) => x.classList.remove('hi'));
+    // Nor what find is painting, which says nothing to a reader of the file.
+    g.querySelectorAll('.hit, .hitcur').forEach((x) => x.classList.remove('hit', 'hitcur'));
 
     // Measured on the canvas itself, inside a box so the same rules apply: a
     // detached clone has no layout to measure. A clip counts characters, so
@@ -1943,12 +2160,13 @@ const Lineage = (() => {
   const clear = () => {
     root && (root.textContent = '');
     heads && (heads.textContent = '');
-    data = null; bbox = null; bands = []; drawn = null;
+    data = null; bbox = null; bands = []; drawn = null; under = new Map();
     handlers.onHoverClose && handlers.onHoverClose();
+    if (finding) refind();
   };
 
   return {
     init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles,
+    testLevel, roleColor, nodeRoles, find, findStep, findEnd, placeHeads,
   };
 })();
