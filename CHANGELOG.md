@@ -15,6 +15,20 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.3 - 2026-10-14
+
+- Offer the tour on the first page with a model to show, not the first page
+  at all: a project opened before `dbt parse` spent the offer on a tour with
+  half its steps left out, and the offer now comes once the parse lands (0078).
+- Say in the tour's welcome whether there is no `manifest.json` yet or a
+  manifest with no model, ringing the `?` button the tour is taken again from,
+  and name the package of a model taken from one when the project has none of
+  its own.
+- Point the tour at the manifest's freshness badge right after its welcome:
+  everything the page shows is read from `manifest.json`, so it is as true as
+  the last `dbt parse`, and the step says what the badge's age and colours
+  mean and that a click on it types `dbt parse`.
+
 ## 1.18.2 - 2026-10-14
 
 - Show a toast above the dialog it answers, so copying the clone statements
