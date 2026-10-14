@@ -881,6 +881,18 @@ kbd {
   padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+/* The entries take a click, the strip around them still does not: a pan
+   started beside them has to reach the canvas. */
+.legend span { pointer-events: auto; cursor: pointer; border-radius: 3px; }
+.legend span:hover, .legend span.on { color: var(--fg); }
+.legend span.on { text-decoration: underline; text-underline-offset: 2px; }
+.legend.picking span:not(.on) { opacity: .5; }
+.legend span:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+/* A legend entry picked: what it names stays as drawn and the rest fades,
+   still readable on hover. Not copied into an exported file, which never
+   carries a pick. */
+#graph g.picking .nd:not(.kept), #graph g.picking .edge:not(.kept) { opacity: .2; transition: opacity .12s; }
+#graph g.picking .nd:not(.kept):hover { opacity: .6; }
 
 /* Amber like a selector's warning: the canvas is still right about the model
    it draws, only not about the file in front. Above the folder names, and

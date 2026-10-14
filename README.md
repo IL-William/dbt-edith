@@ -867,6 +867,14 @@ exists in the warehouse. The legend in the corner lists only the
 materializations actually on screen. The same colours are used for the dots in
 the sidebar and the catalog, so a model looks the same everywhere.
 
+**Click an entry of the legend** to keep what it names lit and fade the rest:
+`incremental` leaves the incremental models and the edges between them. In
+column mode the legend names what happened to each column instead, and
+`transform` leaves the transform edges and the two columns each one joins;
+`raw` and `mixed` leave the columns wearing that badge. Click it again to see
+everything. The pick stays while you move around the graph, as long as the
+legend still lists it, and an exported graph is drawn without it.
+
 An incremental model's box names its strategy in place of the word
 `incremental`: `merge · marts · 3 tests`. One that configures none shows the
 adapter's default, read from the macros the manifest carries, the project's
@@ -1503,6 +1511,7 @@ $JSC web/tests/strategy.js    # an incremental model's strategy on its box and c
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
+$JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
 $JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys

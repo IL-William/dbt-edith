@@ -6017,15 +6017,33 @@ function legendEntries(sub) {
 }
 
 function paintLegend(sub) {
-  const host = $('#lineage-legend');
+  const host = $('#lineage-legend'), entries = legendEntries(sub);
   host.textContent = '';
-  legendEntries(sub).forEach(([label, colour]) => {
+  // A pick the new graph has nothing of would fade the whole canvas.
+  if (!entries.some(([label]) => label === Lineage.picked())) Lineage.pick(null);
+  const mark = () => {
+    host.classList.toggle('picking', !!Lineage.picked());
+    [...host.children].forEach((chip) => {
+      const on = chip.dataset.label === Lineage.picked();
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-pressed', String(on));
+      chip.title = on ? 'Show everything again' : `Highlight ${chip.dataset.label}, fade the rest`;
+    });
+  };
+  entries.forEach(([label, colour]) => {
     const chip = document.createElement('span');
+    chip.dataset.label = label;
+    chip.setAttribute('role', 'button');
+    chip.tabIndex = 0;
     const sq = document.createElement('i');
     sq.style.background = colour;
     chip.append(sq, document.createTextNode(label));
+    const toggle = () => { Lineage.pick(Lineage.picked() === label ? null : label); mark(); };
+    chip.addEventListener('click', toggle);
+    chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
     host.appendChild(chip);
   });
+  mark();
 }
 
 function paintMode() {

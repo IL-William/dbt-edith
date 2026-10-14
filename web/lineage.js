@@ -123,6 +123,31 @@ const Lineage = (() => {
     return (n.materialized || 'unknown').toLowerCase();
   }
 
+  /* What stays lit once a legend entry is picked, as indexes into `d.nodes`
+     and `d.edges`. The mode is told the way the legend tells it, by whether
+     the edges carry roles, so every entry the legend lists lights something.
+
+     A role lights its edges and the two columns each one joins: an edge left
+     running between two faded boxes would say nothing of where it goes. A
+     badge lights its columns, which is all `raw` and `mixed` ever are. A
+     materialization lights its boxes, and an edge only between two of them,
+     since a line into a faded box would draw the eye to it. */
+  function legendKeeps(d, label) {
+    const nodes = new Set(), edges = new Set();
+    const kinds = d.edge_kinds || [];
+    if (kinds.length) {
+      nodeRoles(d).forEach((role, i) => { if (role === label) nodes.add(i); });
+      (d.edges || []).forEach(([a, b], i) => {
+        if (kinds[i] !== label) return;
+        edges.add(i); nodes.add(a); nodes.add(b);
+      });
+    } else {
+      d.nodes.forEach((n, i) => { if (matLabel(n) === label) nodes.add(i); });
+      (d.edges || []).forEach(([a, b], i) => { if (nodes.has(a) && nodes.has(b)) edges.add(i); });
+    }
+    return { nodes, edges };
+  }
+
   /* The area an exported picture shows: the layout's box plus room for what is
      drawn outside the boxes, a +N badge reaching 27 beside one and a role tag
      14 above one. A page gets at least a screenful at natural size, because it
@@ -1176,6 +1201,9 @@ const Lineage = (() => {
   // Module scope, not init's: render() reads it to keep a hover card from
   // opening under a pointer that is in the middle of a pan.
   let drag = null;
+  // The legend entry picked, kept across redraws while the legend still lists
+  // it, and what render() drew, by index, for paintPick() to light or fade.
+  let picked = null, nodeEls = [], edgeEls = [], groupEls = [];
 
   const el = (name, attrs = {}) => {
     const n = document.createElementNS(NS, name);
@@ -1444,6 +1472,7 @@ const Lineage = (() => {
     bands = L.bands || [];
     drawn = L.bands || L.folded ? { folders: bands.length, against: L.against || 0, folded: L.folded || 0 } : null;
     root.textContent = '';
+    nodeEls = []; edgeEls = []; groupEls = [];
 
     const bandLayer = el('g', { class: 'bands' }), edgeLayer = el('g'), nodeLayer = el('g');
     root.appendChild(bandLayer); root.appendChild(edgeLayer); root.appendChild(nodeLayer);
@@ -1485,6 +1514,7 @@ const Lineage = (() => {
         path.style.setProperty('--edge-col', roleColor(kind));
       }
       edgeLayer.appendChild(path);
+      edgeEls[i] = path;
     });
     // A group's row hangs from its host like a test does, so selecting the
     // host lights its stem too.
@@ -1555,6 +1585,7 @@ const Lineage = (() => {
       g.addEventListener('mouseenter', () => { if (!drag) handlers.onHover && handlers.onHover(n, g); });
       g.addEventListener('mouseleave', () => handlers.onHoverOut && handlers.onHoverOut());
       nodeLayer.appendChild(g);
+      nodeEls[i] = g;
     });
 
     // A chip or a group's row turns what `key` names, draws again where the
@@ -1595,6 +1626,7 @@ const Lineage = (() => {
       if (c.warn) g.appendChild(warnMark(c.w, c.h, c.warn));
       turn(g, c.key);
       nodeLayer.appendChild(g);
+      groupEls.push([c, g]);
     });
 
     // A chip under a model with more rows than show: it opens them, or
@@ -1612,6 +1644,7 @@ const Lineage = (() => {
 
     if (!opts.keepView) fit(); else apply();
     select(selected);
+    paintPick();
     return drawn;
   }
 
@@ -1710,6 +1743,23 @@ const Lineage = (() => {
     });
   }
 
+  /* A legend entry picked, or null for none: what it names stays lit and the
+     rest fades, which the stylesheet does from `picking` and `kept`. */
+  function pick(label) {
+    picked = label || null;
+    paintPick();
+  }
+
+  function paintPick() {
+    if (!root) return;
+    const keep = picked && data ? legendKeeps(data, picked) : null;
+    root.classList.toggle('picking', !!keep);
+    nodeEls.forEach((g, i) => g.classList.toggle('kept', !!keep && keep.nodes.has(i)));
+    edgeEls.forEach((p, i) => p.classList.toggle('kept', !!keep && keep.edges.has(i)));
+    // A row standing for folded tests is lit for any one of them it holds.
+    groupEls.forEach(([c, g]) => g.classList.toggle('kept', !!keep && c.members.some((v) => keep.nodes.has(v))));
+  }
+
   function fit() {
     if (!bbox || !data || !data.nodes.length) return;
     const r = svg.getBoundingClientRect();
@@ -1732,7 +1782,9 @@ const Lineage = (() => {
      is written out whole, smaller if it has to be, since a PDF has no hover
      card to spell a name and Ctrl+F has to find it. The accessible name becomes
      a <title>, the one tooltip a file can carry. The passing selection goes and
-     the focus stays: the focus is what model mode is about.
+     the focus stays: the focus is what model mode is about. A legend entry
+     picked goes too: a file's legend could not say what had been faded, and
+     a reader would take the faded boxes for something the graph says.
 
      `css` and `tight` are for the image path. Inlined into a page, a <style>
      inside the SVG would style the whole page, so the page brings its own. */
@@ -1744,6 +1796,8 @@ const Lineage = (() => {
     g.removeAttribute('transform');
     g.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
     g.querySelectorAll('.hi').forEach((x) => x.classList.remove('hi'));
+    g.classList.remove('picking');
+    g.querySelectorAll('.kept').forEach((x) => x.classList.remove('kept'));
 
     // Measured on the canvas itself, inside a box so the same rules apply: a
     // detached clone has no layout to measure. A clip counts characters, so
@@ -1871,11 +1925,13 @@ const Lineage = (() => {
     root && (root.textContent = '');
     heads && (heads.textContent = '');
     data = null; bbox = null; bands = []; drawn = null;
+    nodeEls = []; edgeEls = []; groupEls = [];
+    root && root.classList.remove('picking');
     handlers.onHoverClose && handlers.onHoverClose();
   };
 
   return {
     init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles,
+    testLevel, roleColor, nodeRoles, legendKeeps, pick, picked: () => picked,
   };
 })();

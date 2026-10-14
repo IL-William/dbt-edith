@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.0 - 2026-10-14
+
+- Keep what a legend entry names lit on the lineage, a materialization or what
+  happened to a column, by clicking it, and fade the rest until it is clicked
+  again.
+
 ## 1.17.0 - 2026-10-14
 
 - Name an incremental model's strategy on its lineage box, in place of the
