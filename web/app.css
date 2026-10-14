@@ -1469,6 +1469,11 @@ kbd {
 /* ------------------------------------------------------------- shortcuts -- */
 .keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
 .keysbtn:hover { color: var(--fg); }
+#github-btn { display: inline-flex; align-items: center; justify-content: center; }
+.ghmenu .ghglyph { display: inline-flex; color: var(--fg-dim); }
+.ghmenu a.menulink:hover .ghglyph, .ghmenu a.menulink:focus .ghglyph { color: var(--fg); }
+/* Under the labels, past the 14px glyph and its gap. */
+.ghmenu .menunote { padding-left: 30px; }
 /* Where Snowflake's features are found, so it keeps their colour on or off,
    and a ring of it, where the grey gear it replaced was easy to miss. */
 #settings-btn {

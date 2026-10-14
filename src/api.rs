@@ -515,6 +515,10 @@ struct MetaBody {
     /// answer to "my frontend fix did nothing".
     version: &'static str,
     build: &'static str,
+    /// Where the GitHub button in the top bar sends an issue or a star, and
+    /// the system an issue opened from it names: the one this binary runs on.
+    repo: &'static str,
+    os: &'static str,
     venv: VenvInfo,
     meta: crate::graph::Meta,
     /// Every cache found beside the manifest that may be offered, so the UI can
@@ -690,6 +694,8 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         shell_name: crate::pty::shell_name(&st.shell),
         version: env!("CARGO_PKG_VERSION"),
         build: env!("DBT_EDITH_BUILD"),
+        repo: crate::update::REPO,
+        os: std::env::consts::OS,
         venv: st.venv.clone(),
         cll_tool,
         meta: graph.meta.clone(),
@@ -4064,6 +4070,20 @@ mod tests {
         assert!(cut.contains(r#""sub":"orders""#) && !cut.contains(r#""sub":"mart""#), "{cut}");
         assert!(cut.contains(r#""stopped_at":["window"]"#), "{cut}");
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The page is told the repository and the system, which an issue opened
+    /// from the top bar starts with.
+    #[tokio::test]
+    async fn meta_names_the_repository_and_the_system() {
+        let root = temp_project("repo-os");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let meta = response_of(port, get("/api/meta", &[("Host", host.as_str())])).await;
+        assert!(meta.contains(r#""repo":"https://github.com/IL-William/dbt-edith""#), "{meta}");
+        assert!(meta.contains(&format!(r#""os":"{}""#, std::env::consts::OS)), "{meta}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
