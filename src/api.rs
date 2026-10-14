@@ -268,6 +268,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/file/stamps", post(file_stamps))
         .route("/api/resolve", post(resolve))
         .route("/api/macros/resolve", post(resolve_macros))
+        .route("/api/macros/search", get(search_macros))
         .route("/api/project/resolve", post(resolve_project_keys))
         .route("/api/git", get(git_status))
         .route("/api/freshness", get(freshness_status))
@@ -1582,7 +1583,8 @@ struct MacroCallsBody {
 
 #[derive(serde::Serialize)]
 struct MacroLink {
-    /// The call as the editor sent it, which is how it finds its marks again.
+    /// The call as the editor sent it, which is how it finds its marks again;
+    /// for a search, as the project writes it, `package.name` for a package's.
     call: String,
     id: String,
     name: String,
@@ -1632,6 +1634,45 @@ async fn resolve_macros(State(st): State<Arc<AppState>>, Json(b): Json<MacroCall
     .await;
     match found {
         Ok(links) => Json(links).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct MacroSearchQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// The macros named like the query, for the palette. Only one whose file is in
+/// the project comes back, as only one can be opened; the browser finds its
+/// `{% macro %}` line once the file is open, as it does for a link.
+async fn search_macros(State(st): State<Arc<AppState>>, Query(q): Query<MacroSearchQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let root = st.root.clone();
+    let limit = q.limit.unwrap_or(40).min(500);
+    // A stat or two per macro until `limit` are found.
+    let found = tokio::task::spawn_blocking(move || {
+        let macros = &graph.macros;
+        macros
+            .find(&root, &q.q, limit)
+            .into_iter()
+            .map(|(m, file)| MacroLink {
+                call: if m.package == macros.root() { m.name.clone() } else { format!("{}.{}", m.package, m.name) },
+                id: m.id.clone(),
+                name: m.name.clone(),
+                package: m.package.clone(),
+                file,
+                description: m.description.clone(),
+                args: m.args.clone(),
+            })
+            .collect::<Vec<_>>()
+    })
+    .await;
+    match found {
+        Ok(hits) => Json(hits).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -4402,6 +4443,45 @@ mod tests {
 
         let foreign = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", "https://evil.example")], body);
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A search names a package's macro as a call reaches it, and leaves out
+    /// one whose file is not in the project, dbt's own among them.
+    #[tokio::test]
+    async fn a_macro_is_searched_by_name_among_the_files_in_the_project() {
+        let root = temp_project("macro-search");
+        for f in ["macros/cents.sql", "dbt_packages/dbt_utils/macros/sql/star.sql"] {
+            std::fs::create_dir_all(root.join(f).parent().unwrap()).unwrap();
+            std::fs::write(root.join(f), "{% macro x() %}{% endmacro %}\n").unwrap();
+        }
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "macros": {
+                "macro.demo.cents": { "name": "cents", "package_name": "demo", "original_file_path": "macros/cents.sql" },
+                "macro.dbt_utils.star": { "name": "star", "package_name": "dbt_utils", "original_file_path": "macros/sql/star.sql" },
+                "macro.dbt.is_incremental": {
+                    "name": "is_incremental", "package_name": "dbt",
+                    "original_file_path": "macros/materializations/models/incremental/is_incremental.sql",
+                },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+
+        let answer = response_of(port, get("/api/macros/search?q=s", &[("Host", &host)])).await;
+        assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+        let body = past_head(&answer);
+        let hits: Vec<serde_json::Value> = serde_json::from_str(body).unwrap();
+        let calls: Vec<&str> = hits.iter().map(|h| h["call"].as_str().unwrap()).collect();
+        assert_eq!(calls, vec!["dbt_utils.star", "cents"], "{answer}");
+        assert_eq!(hits[0]["file"], "dbt_packages/dbt_utils/macros/sql/star.sql");
+        let empty = response_of(port, get("/api/macros/search?q=", &[("Host", &host)])).await;
+        assert!(empty.ends_with("[]"), "{empty}");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

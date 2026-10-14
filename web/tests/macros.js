@@ -102,6 +102,23 @@ check('a name that is only called is not defined here', macroDefLine(FILE, 'amou
 check('the first macro of a file', macroDefLine(FILE, 'cents_rounded'), { line: 1, ch: 9 });
 check('a {# inside a string above it does not hide the definition',
   macroDefLine("{% set re = '{#' %}\n{% macro audit() %}{% endmacro %}{# note #}", 'audit'), { line: 1, ch: 9 });
+var TESTS = [
+  '{% test is_even(model, column_name) %}select 1{% endtest %}',     // 0
+  '{%- test is_positive (model, column_name) -%}select 1{% endtest %}', // 1
+  '{% macro test_legacy(model) %}select 1{% endmacro %}',            // 2
+].join('\n');
+check('a generic test is the macro test_<name>', macroDefLine(TESTS, 'test_is_positive'), { line: 1, ch: 9 });
+check('one written as a macro still is', macroDefLine(TESTS, 'test_legacy'), { line: 2, ch: 9 });
+check('a test is not found by its bare name', macroDefLine(TESTS, 'is_even'), null);
+var MATS = [
+  '{% materialization lake, default %}{% endmaterialization %}',                                    // 0
+  "{%- materialization lake, adapter='snowflake' -%}{% endmaterialization %}",                     // 1
+  '{% materialization pond, supported_languages=["sql"], adapter="duckdb" %}{% endmaterialization %}', // 2
+].join('\n');
+check('a materialization without an adapter is _default', macroDefLine(MATS, 'materialization_lake_default'), { line: 0, ch: 19 });
+check('one for an adapter carries its name', macroDefLine(MATS, 'materialization_lake_snowflake'), { line: 1, ch: 20 });
+check('wherever the adapter sits', macroDefLine(MATS, 'materialization_pond_duckdb'), { line: 2, ch: 19 });
+check('an adapter it is not written for', macroDefLine(MATS, 'materialization_pond_default'), null);
 
 print('\n--- definesMacros: a .sql file that will never be a node ---');
 check('a macro file', definesMacros(FILE), true);
