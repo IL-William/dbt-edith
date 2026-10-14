@@ -12,7 +12,7 @@ Editor with clickable `ref()`, `source()`, macro calls and the folder keys of
 lineage graph in model and column modes, column lineage from the tool picked in
 the top bar, Snowflake's fetched when a column is clicked (0016, 0031),
 terminal, file explorer with git and
-unsaved colouring, search across nodes, file names and file contents, Catalog with columns and
+unsaved colouring, search across nodes, macros, file names and file contents, Catalog with columns and
 locations, the compiled and run SQL under target/ with freshness, git panel (status, branch switch, stage,
 commit, push, pull, conflicts, side-by-side diff), Python environment in the
 status bar, and environment-aware location resolution with a `.env` selector.
@@ -194,6 +194,11 @@ hooks and the query comment, linked, `env_var` left to its card.
 Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
 YAML, and packages under a custom `packages-install-path`. Not yet opened on
 the VM.
+
+`Cmd/Ctrl + K` finds a macro by its name, a package's as `package.name`, and
+opens it on its definition, a generic test's and a materialization's included
+(0084). Only the macros placed in the project are listed, ranked by how the
+name matches before whose it is. Not yet opened on the VM.
 
 Folder bands: the by folder toggle beside tests gives each
 folder its own run of columns (0029), at the first level where the drawn models

@@ -841,10 +841,23 @@ function scanMacroCalls(text, yaml = false) {
 
 /* Where `{% macro name(` sits, as a line and a column, so a link lands on the
    definition rather than at the top of a file that may hold twenty. Comments
-   are masked first: a commented-out copy is not the macro dbt reads. */
+   are masked first: a commented-out copy is not the macro dbt reads. A generic
+   test and a materialization are macros too, which dbt names from their own
+   blocks: `{% test x(` is `test_x`, and `{% materialization x, adapter='y' %}`
+   is `materialization_x_y`, `_default` without an adapter. */
 function macroDefLine(text, name) {
-  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = new RegExp('(\\{%[-+]?\\s*macro\\s+)' + esc + '\\s*\\(').exec(maskJinjaComments(text));
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const masked = maskJinjaComments(text);
+  let m = new RegExp('(\\{%[-+]?\\s*macro\\s+)' + esc(name) + '\\s*\\(').exec(masked);
+  if (!m && name.startsWith('test_')) {
+    m = new RegExp('(\\{%[-+]?\\s*test\\s+)' + esc(name.slice(5)) + '\\s*\\(').exec(masked);
+  }
+  if (!m && name.startsWith('materialization_')) {
+    const adapterOf = (args) => (/\badapter\s*=\s*['"](\w+)['"]/.exec(args) || [])[1] || 'default';
+    for (const hit of masked.matchAll(/(\{%[-+]?\s*materialization\s+)(\w+)([^%]*)/g)) {
+      if (`materialization_${hit[2]}_${adapterOf(hit[3])}` === name) { m = hit; break; }
+    }
+  }
   if (!m) return null;
   const at = m.index + m[1].length;
   const before = text.slice(0, at);
@@ -3175,6 +3188,17 @@ const BRACES = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stro
   '<path d="M9.6 2.5c1.6 0 1.4 2.5 1.4 3.7S12.4 8 12.4 8 11 8.6 11 9.8s.2 3.7-1.4 3.7"/></svg>';
 const TABLE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" ' +
   'stroke-linejoin="round"><rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.2"/><path d="M2.3 6.6h11.4M6.4 6.6v6.1"/></svg>';
+const MACRO_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" ' +
+  'stroke-linecap="round"><path d="M11 2.6c-1.7-.5-2.9.2-3.2 2L6.4 11.4c-.3 1.8-1.5 2.5-3.2 2"/><path d="M5 6.5h5.5"/></svg>';
+
+/* A macro in the palette, beside the files: not a file, so not a file's icon. */
+function macroIcon() {
+  const span = document.createElement('span');
+  span.className = 'ficon macro';
+  span.title = 'macro';
+  span.innerHTML = MACRO_ICON;
+  return span;
+}
 
 function fileIcon(name) {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
@@ -11197,7 +11221,7 @@ function connectTerm() {
 }
 
 // ---------------------------------------------------------------- palette --
-let palIndex = 0, palHits = [];
+let palIndex = 0, palHits = [], palAsked = 0;
 function openPalette() {
   closeCrumbMenu();
   $('#palette').classList.remove('hidden');
@@ -11207,28 +11231,42 @@ function openPalette() {
 }
 function closePalette() { $('#palette').classList.add('hidden'); }
 
-/* Nodes first, then the files that are not already represented by one: a model
-   would otherwise appear twice, once as a node and once as its own .sql. */
-function mergeHits(nodes, paths) {
+/* Nodes first, then macros, then the files that are not already represented by
+   one: a model would otherwise appear twice, once as a node and once as its own
+   .sql, and so would a macro in the file named after it, a generic test's
+   `test_` aside. A file named otherwise stays when a macro in it matched, as it
+   holds more than that macro. */
+function mergeHits(nodes, macros, paths) {
   const taken = new Set();
   for (const n of nodes) {
     if (n.file) taken.add(n.file);
   }
+  for (const m of macros) {
+    const stem = base(m.file).replace(/\.[^.]*$/, '');
+    if (m.name === stem || m.name === 'test_' + stem) taken.add(m.file);
+  }
   return [
     ...nodes.map((n) => ({ kind: 'node', node: n, label: n.name, sub: n.file })),
+    ...macros.map((m) => ({ kind: 'macro', macro: m, label: m.call, sub: m.file })),
     ...paths.filter((p) => !taken.has(p)).map((p) => ({ kind: 'file', path: p, label: base(p), sub: p })),
   ];
 }
 
-/* One box for everything: dbt nodes from the manifest, and every file in the
-   project. A generic test definition or a dotfile is not a node, and used to be
-   unfindable. */
+/* One box for everything: dbt nodes from the manifest, the macros by name, and
+   every file in the project. A generic test definition or a dotfile is not a
+   node, and used to be unfindable. Macros wait for a query: the empty box lists
+   nodes and files, as before. */
 async function runPalette(q) {
-  const [nodes, paths] = await Promise.all([
+  const asked = ++palAsked;
+  const [nodes, macros, paths] = await Promise.all([
     api.get(`/api/search?q=${encodeURIComponent(q)}&kind=model,source,seed,snapshot,exposure&limit=40`).catch(() => []),
+    q.trim() ? api.get(`/api/macros/search?q=${encodeURIComponent(q)}&limit=40`).catch(() => []) : [],
     api.get(`/api/files?q=${encodeURIComponent(q)}&limit=40`).catch(() => []),
   ]);
-  palHits = mergeHits(nodes, paths);
+  // An older query answered last would list what is no longer typed: the
+  // empty box's own listing, when the first letters beat it, or a shorter word.
+  if (asked !== palAsked) return;
+  palHits = mergeHits(nodes, macros, paths);
   palIndex = 0;
 
   const box = $('#palette-results');
@@ -11236,7 +11274,7 @@ async function runPalette(q) {
   if (!palHits.length) {
     box.append(Object.assign(document.createElement('div'), {
       className: 'git-empty',
-      textContent: q.trim() ? `Nothing matches "${q.trim()}".` : 'Type to search models, sources and every file in the project.',
+      textContent: q.trim() ? `Nothing matches "${q.trim()}".` : 'Type to search models, sources, macros and every file in the project.',
     }));
     return;
   }
@@ -11249,7 +11287,7 @@ async function runPalette(q) {
     const p2 = document.createElement('span');
     p2.className = 'p2';
     p2.textContent = h.sub;
-    r.append(h.kind === 'node' ? dot(h.node) : fileIcon(h.path), p1, p2);
+    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path), p1, p2);
     r.addEventListener('click', () => choosePalette(i));
     box.appendChild(r);
   });
@@ -11270,6 +11308,8 @@ function choosePalette(i) {
   closePalette();
   // A node without a file opens nothing, so activate() would not close them.
   closeReports();
+  // It records its own place to come back to.
+  if (h.kind === 'macro') { openMacro(h.macro); return; }
   pushJump();
   if (h.kind === 'file') {
     openFile(h.path, { preview: true });
@@ -11612,7 +11652,7 @@ function tourSteps(c) {
       + 'command, such as dbt ls above the lineage, types it there and leaves Enter to you. '
       + `${key('Mod+`')} brings it forward from anywhere.` });
   steps.push({ key: 'search', target: '#palette-btn', title: 'Search',
-    text: `Every model, source and file of the project by its name, from ${key('Mod+K')} anywhere. The Search tab `
+    text: `Every model, source, macro and file of the project by its name, from ${key('Mod+K')} anywhere. The Search tab `
       + 'in the sidebar looks inside the files instead.' });
   steps.push({ key: 'end', target: '#keys-btn', title: 'Every shortcut, and this tour',
     text: `${key('?')} or ${key('F1')} lists every shortcut, and Give me a tour at the top of that list starts this `
@@ -12111,7 +12151,7 @@ function keyLabel(combo, mac) {
 function shortcutSheet(os) {
   return [
     { title: 'Anywhere', keys: [
-      [['Mod+K'], 'Search models, sources and every file'],
+      [['Mod+K'], 'Search models, sources, macros and every file'],
       [['Mod+S'], 'Save the file'],
       [['Mod+Alt+S'], 'Save every modified file'],
       [['Mod+Alt+X', 'Alt+W'], 'Close the tab'],
@@ -12802,7 +12842,7 @@ async function boot() {
   // The markup says ⌘K, which on the Windows machine this is built for is Ctrl+K.
   const palKey = keyLabel('Mod+K', IS_MAC);
   $$('.k-palette').forEach((k) => { k.textContent = palKey; });
-  $('#palette-btn').title = `Search models and files (${palKey})`;
+  $('#palette-btn').title = `Search models, macros and files (${palKey})`;
   $('#grep-input').addEventListener('input', runGrep);
   renderTabs();
   paintMode();

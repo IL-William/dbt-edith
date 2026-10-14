@@ -1,6 +1,6 @@
 # 0028. A macro call resolves by name, the way dbt resolves it
 
-Date: 2026-09-23 · Status: accepted, amended by 0076
+Date: 2026-09-23 · Status: accepted, amended by 0076 and 0084
 
 **Trigger:** read before linking anything to a macro, or changing which macro a
 call in the editor reaches.

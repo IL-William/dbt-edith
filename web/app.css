@@ -404,6 +404,7 @@ kbd {
 .ficon.json { color: #4ec78d; }
 .ficon.csv { color: #56b98b; }
 .ficon.other { color: #6d7a8c; }
+.ficon.macro { color: #dcdcaa; }
 
 /* Explorer status colours: green for buffers not yet written to disk, amber for
    files that are saved but still absent from a commit. */

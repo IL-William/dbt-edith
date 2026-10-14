@@ -86,6 +86,7 @@ it is built this way, for whoever changes it next.
 | [0080](0080-a-band-may-be-cut-by-its-sub-folders.md) | A band may be cut by its sub-folders, a level at a time | changing how deep the folder bands go, the order of the sub-folders inside a band, or how one is drawn inside another |
 | [0081](0081-find-on-the-lineage-centres-the-box-it-finds.md) | Find on the lineage centres the box it finds | changing what `Cmd/Ctrl + F` does over the lineage, what a box is found by, or where finding one moves the view |
 | [0083](0083-a-role-stops-the-column-walk-downstream-on-the-server.md) | A role stops the column walk downstream, on the server | hiding part of a column graph by role, or making the column walk skip an edge |
+| [0084](0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) | A macro is searched by its name, and opens on its line | changing what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands |
 
 ## Keeping these honest
 

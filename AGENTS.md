@@ -186,6 +186,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the status bar says about the venv, or what a click on it types | [0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md), [0072](docs/decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md), [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |
 | change the folder bands, how deep they go, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md), [0080](docs/decisions/0080-a-band-may-be-cut-by-its-sub-folders.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
+| change what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands | [0084](docs/decisions/0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |

@@ -163,6 +163,65 @@ impl Macros {
     pub(crate) fn has(&self, package: &str, name: &str) -> bool {
         self.get(package, name).is_some()
     }
+
+    /// Every macro whose name holds `query`, best first: the name itself, then
+    /// a name that starts with it, then one that holds it, the project's before
+    /// a package's at each step and shorter names first. Ranked by step before
+    /// package, unlike the file search, so `star` finds `dbt_utils.star` above
+    /// a project macro that merely contains the word. A query with a dot is
+    /// matched against `package.name`, the way a call names a package's macro.
+    pub fn search(&self, query: &str) -> Vec<&Macro> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Vec::new();
+        }
+        let mut hits: Vec<(u8, bool, usize, &Macro)> = Vec::new();
+        for m in &self.list {
+            let key = if q.contains('.') { format!("{}.{}", m.package, m.name) } else { m.name.clone() }.to_lowercase();
+            let step = if key == q {
+                0
+            } else if key.starts_with(&q) {
+                1
+            } else if key.contains(&q) {
+                2
+            } else {
+                continue;
+            };
+            hits.push((step, m.package != self.root, m.name.len(), m));
+        }
+        // The pair closes every tie, so the order is the same on every start (0055).
+        hits.sort_unstable_by(|a, b| {
+            (a.0, a.1, a.2, &a.3.name, &a.3.package).cmp(&(b.0, b.1, b.2, &b.3.name, &b.3.package))
+        });
+        hits.into_iter().map(|h| h.3).collect()
+    }
+
+    /// The first `limit` macros `search` finds that are written inside the
+    /// project, each with its file, since nothing else can be opened. A
+    /// package with no folder where `dbt deps` puts one is passed over whole:
+    /// dbt's own few hundred macros then cost two stats, not two each.
+    pub fn find(&self, project: &Path, query: &str, limit: usize) -> Vec<(&Macro, String)> {
+        let mut installed: HashMap<&str, bool> = HashMap::new();
+        let mut found = Vec::new();
+        for m in self.search(query) {
+            if found.len() >= limit {
+                break;
+            }
+            if m.package != self.root
+                && !*installed.entry(&m.package).or_insert_with(|| {
+                    PACKAGE_DIRS.iter().any(|dir| {
+                        crate::files::resolve(project, &format!("{dir}/{}", m.package)).is_ok_and(|p| p.is_dir())
+                    })
+                })
+            {
+                continue;
+            }
+            if let Some(file) = self.place(project, m) {
+                found.push((m, file));
+            }
+        }
+        found
+    }
 }
 
 #[cfg(test)]
@@ -266,6 +325,48 @@ mod tests {
         assert_eq!(place("dbt.is_incremental"), None);
         // A file the manifest remembers and the disk no longer has.
         assert_eq!(place("cents"), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn names(found: Vec<&Macro>) -> Vec<String> {
+        found.iter().map(|m| format!("{}.{}", m.package, m.name)).collect()
+    }
+
+    #[test]
+    fn a_search_ranks_the_name_before_the_package() {
+        let m = macros();
+        // The project's `hub` first, then the package's of the same name.
+        assert_eq!(names(m.search("HUB ")), vec!["shop.hub", "automate_dv.hub"]);
+        // A package's name that starts with the query above the project's that
+        // only holds it, and the project's first among those that hold it.
+        assert_eq!(names(m.search("s")), vec!["dbt_utils.star", "shop.cents", "dbt.is_incremental"]);
+        // A dot reads the package too, as a call is written.
+        assert_eq!(names(m.search("automate_dv.h")), vec!["automate_dv.hub"]);
+        assert_eq!(names(m.search("dv.")), vec!["automate_dv.hub", "automate_dv.prefix"]);
+        // The file a macro is in is not its name.
+        assert!(m.search("vault").is_empty());
+        assert!(m.search("  ").is_empty());
+    }
+
+    #[test]
+    fn a_search_finds_only_the_macros_written_in_the_project() {
+        let m = macros();
+        let dir = project(
+            "find",
+            &["macros/vault/hub.sql", "macros/money.sql", "dbt_packages/automate_dv/macros/internal/prefix.sql"],
+        );
+        let found = |q: &str, limit: usize| -> Vec<(String, String)> {
+            m.find(&dir, q, limit).into_iter().map(|(m, file)| (m.name.clone(), file)).collect()
+        };
+        // automate_dv is installed without its `hub.sql`, and dbt's own macros
+        // are never in the project.
+        assert_eq!(found("hub", 10), vec![("hub".to_string(), "macros/vault/hub.sql".to_string())]);
+        assert_eq!(found("e", 10), vec![
+            ("cents".to_string(), "macros/money.sql".to_string()),
+            ("prefix".to_string(), "dbt_packages/automate_dv/macros/internal/prefix.sql".to_string()),
+        ]);
+        // The limit counts what was found, not what was looked at.
+        assert_eq!(found("e", 1).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

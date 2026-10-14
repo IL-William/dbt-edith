@@ -247,7 +247,7 @@ sub-graphs around whichever model you are looking at.
 | click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
 | click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
 | the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
-| `Cmd/Ctrl + K` | search models, sources and every file in the project |
+| `Cmd/Ctrl + K` | search models, sources, macros and every file in the project |
 | `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, a node on the lineage, or filter the Catalog's columns |
 | the copy glyph beside the name in the Catalog | that name on the clipboard |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
@@ -496,10 +496,17 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ### Search
 
-`Cmd/Ctrl + K` searches two things at once: dbt nodes from the manifest, and a
-flat index of every file in the project. That second half matters more than it
-sounds: a generic test definition, a macro, a script or a dotfile is not a dbt
-node, and a manifest-only search can never find one.
+`Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
+macros it lists, and a flat index of every file in the project. That last half
+matters more than it sounds: a script or a dotfile is not a dbt node, and a
+manifest-only search can never find one.
+
+A macro is found by its name, a package's as `package.name`, and opens on the
+line that defines it, so one of twenty in a `utils.sql` is one search away. Only
+a macro whose file is in the project is listed, so dbt's own are not. A file
+named after a macro gives way to the macro, as a model's `.sql` does to the
+model. A generic test or a materialization is a macro too, under the name dbt
+gives it: `test_<name>`, `materialization_<name>_<adapter>`.
 
 The index is a directory walk, redone every 20 seconds, so a new file or a
 branch switch shows up without any invalidation logic. `target`, `logs`, `.git`
