@@ -1194,10 +1194,10 @@ step in headless Chrome on Jaffle Shop: no offer before `dbt parse` and the
 short tour saying there is no manifest, the ring around each target, the page
 under it, Back, the offer once the parse lands, at the end of a tour on screen
 when it lands, and not after a reload, the terminal never started, no file in
-the config directory but `tour.json`, and a page in use put back after Escape. A welcome without a model says whether there
-is no manifest or a manifest with none, ringing the `?` button the tour is taken
-again from, and one on a package's model, the project having none of its own,
-names the package.
+the config directory but `tour.json`, and a page in use put back after Escape.
+A welcome without a model says whether there is no manifest or a manifest with
+none, ringing the `?` button the tour is taken again from, and one on a
+package's model, the project having none of its own, names the package.
 
 The Reports button is in view from the first paint, dimmed while no section
 has anything, which a first start after a `dbt parse` never has, with no chip,
