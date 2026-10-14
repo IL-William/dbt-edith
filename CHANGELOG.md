@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.21.0 - 2026-10-14
+
+- Cut each folder band by its sub-folders, up to four levels down, from a
+  levels box that opens under the by folder toggle when you pause on it: each
+  sub-folder takes a run of columns inside its folder's, drawn as a rectangle
+  within it in a hue per level, its name on a row of its own (0080).
+
 ## 1.20.0 - 2026-10-14
 
 - Copy a node's name from the Catalog in one click, with the glyph beside it.

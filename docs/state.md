@@ -218,6 +218,20 @@ read; a name gives way under 40 px of room, which on a tall graph is most bands
 until you zoom in. Driven in headless Chrome on that project, in model and
 selection mode, with the export and the image; column mode only by the harness,
 the project's column cache holding two edges. Not yet opened on the VM.
+
+Sub-folder bands (0080): the levels box, opened under the by folder toggle by
+the pointer or the keyboard and closed a moment after they leave, cuts each
+band by its sub-folders, up to four levels down, each one a run of columns
+inside its folder's, drawn as a rectangle within it in a hue per level, its name
+on a row of its own. Asked for a layer split into sub-folders, which a
+canvas across the layers drew as one block. Sub-folders
+take 0029's order among themselves, inside a band that never moves for them,
+and the models filed beside them get a run of their own, placed by their edges.
+At one level the canvas draws as before. Driven in headless Chrome on a large
+real project, in selection mode at one to three levels, with the export, and
+the box's opening and closing by pointer, click and arrow key; column mode only
+by the harness. Not yet opened on the VM.
+
 Find, the column filter and the shortcut list (0030):
 `Cmd/Ctrl + F` used to open the browser's find, which sees only the thirty or so
 lines CodeMirror keeps in the page, so a match below the screen was never found.

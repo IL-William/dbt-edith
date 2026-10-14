@@ -323,6 +323,16 @@ kbd {
    canvas rather than weigh it down, and the two can be on at once. */
 .eyebtn.folderbtn[aria-pressed=true] { color: var(--accent); border-color: rgba(77, 163, 255, .55); background: rgba(77, 163, 255, .12); }
 .eyebtn.folderbtn[aria-pressed=true]:hover { background: rgba(77, 163, 255, .2); }
+/* The levels box, under the toggle and over the canvas, so opening it moves
+   no button and folds no dock tab; wireFolderLevels() says when (0080). */
+.foldertool { position: relative; display: inline-flex; }
+#folder-levels-box {
+  display: none; position: absolute; top: calc(100% + 3px); left: 0; z-index: 20;
+  align-items: center; gap: 6px; white-space: nowrap; padding: 4px 8px;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .35);
+}
+#folder-levels-box.open { display: flex; }
 
 #body { flex: 1; display: flex; min-height: 0; }
 
@@ -889,6 +899,11 @@ kbd {
    nodes sit in, under the edges and the boxes (0029). Its name is written in
    an exported file only; the canvas pins it over the window instead. */
 .band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }
+/* A sub-folder inside its band, a hue per level, all dark enough to leave the
+   boxes the lightest thing there (0080). The export copies these. */
+.band.l1 { fill: #18263d; stroke: #2d4466; }
+.band.l2 { fill: #142b2c; stroke: #2a5553; }
+.band.l3 { fill: #251e38; stroke: #43375f; }
 .band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }
 /* Those pinned names. Every pointer goes through them, so a drag that starts
    on one still pans the canvas. */
@@ -898,6 +913,11 @@ kbd {
   font: 600 11px var(--ui); color: var(--fg); background: #1d2430e6;
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px;
 }
+/* A sub-folder's name, on the row below, edged in its band's hue. */
+.folder-head.l1, .folder-head.l2, .folder-head.l3 { font-weight: 500; color: var(--fg-dim); }
+.folder-head.l1 { background: #18263de6; border-color: #3a5885; }
+.folder-head.l2 { background: #142b2ce6; border-color: #36706b; }
+.folder-head.l3 { background: #251e38e6; border-color: #57487f; }
 .graph-status {
   position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono);
   color: var(--fg-dim); background: #12161dcc; padding: 2px 8px; border-radius: 4px;

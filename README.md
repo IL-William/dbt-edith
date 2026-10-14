@@ -973,6 +973,18 @@ before it ends: a way of reading the graph, not a better layout of it
 ([0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md)). An exported
 file and a copied image keep the bands, with each name written at the top.
 
+While the toggle is on, pausing on it opens a **levels** box under it, which
+stays open while you type in it and closes a moment after you leave. It cuts
+each band by its sub-folders: at 2, a `marts` holding `core` and `finance`
+draws each of them as a rectangle inside its band, in the hue of its level, with
+their names on a second row; 3 and 4 go one and two levels further. Sub-folders
+keep the order folders have, numbers first and then edges, inside their band,
+which never moves for them. The models filed in a folder beside its
+sub-folders get columns of their own there, with no rectangle round them. A
+level is the same depth on every band, so a folder holding a single sub-folder
+still draws it, and each level costs columns
+([0080](docs/decisions/0080-a-band-may-be-cut-by-its-sub-folders.md)).
+
 ### Custom selection
 
 The **Custom selection** button above the graph swaps the canvas from one model's

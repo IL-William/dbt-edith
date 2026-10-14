@@ -83,6 +83,7 @@ it is built this way, for whoever changes it next.
 | [0077](0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md) | A start no file says is neither scheduled nor unscheduled | changing which jobs count as scheduled, what a DAG file with no dbt task leaves behind, or what the coverage calls unscheduled |
 | [0078](0078-the-tour-is-offered-once-there-is-a-model-to-show.md) | The tour is offered once there is a model to show | changing when the tour is offered, what a page with no model is told, or when `tour.json` is first written |
 | [0079](0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md) | An update is looked for hourly through the Paris night, and on demand | changing when dbt-edith looks for a newer release, what Edith's menu shows, or what a look that got no answer says |
+| [0080](0080-a-band-may-be-cut-by-its-sub-folders.md) | A band may be cut by its sub-folders, a level at a time | changing how deep the folder bands go, the order of the sub-folders inside a band, or how one is drawn inside another |
 
 ## Keeping these honest
 

@@ -314,6 +314,196 @@ group('the line under the canvas', function () {
     '12 nodes · 15 edges · 7 tests folded');
 });
 
+group('sub-folders, a level or more below the bands (0080)', function () {
+  var nested = graph([
+    ['orders', 'models/shop/10_raw/raw.yml', 'source'],
+    ['stg_orders', 'models/shop/20_clean/21_orders/stg_orders.sql'],
+    ['stg_payments', 'models/shop/20_clean/22_payments/stg_payments.sql'],
+    ['int_order_payments', 'models/shop/20_clean/int_order_payments.sql'],
+    ['customers', 'models/shop/30_marts/core/customers.sql'],
+    ['revenue', 'models/shop/30_marts/finance/revenue.sql'],
+    ['fct_orders', 'models/shop/40_serve/fct_orders.sql'],
+  ], [['orders', 'stg_orders'], ['stg_orders', 'int_order_payments'], ['stg_payments', 'int_order_payments'],
+    ['int_order_payments', 'customers'], ['customers', 'revenue'], ['revenue', 'fct_orders']]);
+  var at = function (d, levels) {
+    var n = d.nodes.length, R = dagRank(d.nodes);
+    return dagFolders(d.nodes, d.edges, 'shop', dagLayers(n, d.edges, R).layer, levels);
+  };
+  var levelsOf = function (F) { return F.folders.map(function (f) { return f.level + ':' + f.name; }); };
+
+  check('one level is the bands as they were', JSON.stringify(at(nested, 1).bands), JSON.stringify(folders(nested).bands));
+  check('and so is a level the box cannot hold', JSON.stringify(at(nested, 0).band), JSON.stringify(folders(nested).band));
+
+  var F = at(nested, 2);
+  check('two levels: a run of columns for each sub-folder, inside its folder',
+    names(F), ['10_raw', '21_orders', '22_payments', '20_clean', 'core', 'finance', '40_serve']);
+  check('every folder drawn, the bands first, then their sub-folders',
+    levelsOf(F), ['0:10_raw', '0:20_clean', '0:30_marts', '0:40_serve', '1:21_orders', '1:22_payments', '1:core', '1:finance']);
+  check('a band covers the runs of all it holds', [F.folders[1].from, F.folders[1].to, F.folders[1].size], [1, 3, 3]);
+  check('a model filed beside the sub-folders is a run of its own, with no sub-folder drawn round it',
+    filed(nested, F).int_order_payments, '20_clean');
+  check('placed by its edges, the folders it reads coming first, not by its folder\'s number', names(F).indexOf('20_clean'), 3);
+  check('a folder with no sub-folder stays one run', filed(nested, F).fct_orders, '40_serve');
+  check('three levels where the paths stop at two: the same', names(at(nested, 3)), names(F));
+
+  var numbered = graph([
+    ['stg_a', 'models/shop/20_clean/22_late/stg_a.sql'],
+    ['stg_b', 'models/shop/20_clean/21_early/stg_b.sql'],
+    ['orders', 'models/shop/30_marts/orders.sql'],
+  ], [['stg_a', 'stg_b'], ['stg_b', 'orders']]);
+  var N = at(numbered, 2), NL = dagLayout(numbered, MODEL, 'shop', undefined, 2);
+  check('numbered sub-folders keep their numbers\' order inside their folder', names(N), ['21_early', '22_late', '30_marts']);
+  check('and an edge against it is counted and dashed like one between bands', [NL.against, NL.back], [1, [1, 0]]);
+
+  var pkg = graph([
+    ['stg_orders', 'models/staging/orders/stg_orders.sql'],
+    ['fct_orders', 'models/marts/fct_orders.sql'],
+    ['stg_runs', 'models/staging/runs/stg_runs.sql', 'model', 'audit_kit'],
+  ], [['stg_orders', 'fct_orders'], ['stg_runs', 'fct_orders']]);
+  var P = at(pkg, 3);
+  check('another package stays one band, its paths being its own', filed(pkg, P).stg_runs, 'audit_kit');
+  ok('with no sub-folder', P.folders.filter(function (f) { return f.package && f.level; }).length === 0);
+  check('while this project\'s folders are cut', filed(pkg, P).stg_orders, 'orders');
+
+  var tested = graph([
+    ['stg_orders', 'models/shop/20_clean/orders/stg_orders.sql'],
+    ['customers', 'models/shop/30_marts/core/customers.sql'],
+    ['relationships_customers_id', 'models/shop/20_clean/schema.yml', 'test'],
+  ], [['stg_orders', 'customers'], ['stg_orders', 'relationships_customers_id'], ['customers', 'relationships_customers_id']]);
+  check('a test still goes with the later of the models it tests, in its sub-folder', filed(tested, at(tested, 2)).relationships_customers_id, 'core');
+
+  var shuffled = { mode: nested.mode, nodes: nested.nodes.slice().reverse(),
+    edges: nested.edges.map(function (e) { return [6 - e[0], 6 - e[1]]; }).reverse() };
+  check('the same sub-folders in the same order, whatever order the server lists them in', names(at(shuffled, 2)), names(F));
+
+  [generatedLayers(150, 1), nested, numbered].forEach(function (d, k) {
+    var R = dagRank(d.nodes), G = at(d, 3), lay = dagLayers(d.nodes.length, d.edges, R, G.band), apart = true;
+    for (var u = 0; u < d.nodes.length; u++) {
+      for (var v = 0; v < d.nodes.length; v++) if (G.band[u] < G.band[v] && !(lay.layer[u] < lay.layer[v])) apart = false;
+    }
+    ok('graph ' + (k + 1) + ': every node of a run sits left of every node of a later one', apart);
+  });
+
+  var L = dagLayout(nested, MODEL, 'shop', undefined, 2), plainL = dagLayout(nested, MODEL, 'shop');
+  var top = L.bands.filter(function (b) { return !b.level; }), sub = L.bands.filter(function (b) { return b.level; });
+  check('drawn: the bands, then the sub-folders', L.bands.map(function (b) { return b.name; }),
+    ['10_raw', '20_clean', '30_marts', '40_serve', '21_orders', '22_payments', 'core', 'finance']);
+  ok('each sub-folder inside its band, with the band showing round it', sub.every(function (b) {
+    var p = top.filter(function (t) { return t.from <= b.from && b.to <= t.to; })[0];
+    return p && p.x0 < b.x0 && b.x1 < p.x1;
+  }));
+  ok('and between two of them', sub.every(function (b, i) { return !i || b.x0 > sub[i - 1].x1; }));
+  ok('each covers its boxes', nested.nodes.every(function (x, i) {
+    var lf = F.band[i], box = L.boxes[i];
+    return L.bands.every(function (b) { return b.from > lf || b.to < lf || (b.x0 < box.x && b.x1 > box.x + box.w); });
+  }));
+  var minY = Math.min.apply(null, L.boxes.map(function (b) { return b.y; }));
+  ok('and the frame keeps a row above the boxes for each level of names', L.bbox.y0 <= minY - 40);
+  check('a band keeps its fields without sub-folders', Object.keys(plainL.bands[0]).sort(),
+    ['from', 'key', 'level', 'name', 'package', 'size', 'to', 'x0', 'x1']);
+  ok('the same picture twice', JSON.stringify(L) === JSON.stringify(dagLayout(nested, MODEL, 'shop', undefined, 2)));
+
+  var big = generatedLayers(400, 11);
+  big.nodes.forEach(function (x, i) { x.file = x.file.replace(/\/m_/, '/' + (i % 3 ? 'a' : 'b') + '/' + (i % 2) + '/m_'); });
+  var t = Infinity;
+  for (var r = 0; r < 3; r++) { var s0 = Date.now(); dagLayout(big, MODEL, 'shop', undefined, 3); t = Math.min(t, Date.now() - s0); }
+  ok('400 models in five folders cut twice, well under 100 ms (' + t + ' ms here)', t < 100);
+
+  var line = { mode: 'model', nodes: new Array(12), edges: new Array(15), truncated: false };
+  check('the line under the canvas counts the sub-folders', canvasStatus(line, { folders: 4, sub: 4, against: 1 }),
+    '12 nodes · 15 edges · 4 folders · 4 sub-folders · 1 edge against their order');
+  check('and says nothing of them on one level', canvasStatus(line, { folders: 4, sub: 0, against: 0 }), '12 nodes · 15 edges · 4 folders');
+
+  var box = { value: '' }, $ = function () { return box; };
+  eval(app.slice(app.indexOf('function folderLevels'), app.indexOf('function paintTestsToggle')));
+  check('the box is read as a whole number from 1 to 4', ['2', '9', '0', '', 'x', '2.6'].map(function (v) { box.value = v; return folderLevels(); }),
+    [2, 4, 1, 1, 1, 3]);
+});
+
+group('the levels box opens on the pointer and closes a moment after (0080)', function () {
+  // Just enough of a page: elements that keep listeners and classes, a focus,
+  // and timers that run when the test says how much time has passed.
+  var pressed = false, now = 0, timers = [], seq = 0;
+  function node() {
+    var e = { on: {}, cls: {}, visible: false };
+    e.addEventListener = function (t, f) { (e.on[t] = e.on[t] || []).push(f); };
+    e.fire = function (t) { (e.on[t] || []).forEach(function (f) { f({}); }); };
+    e.matches = function (sel) { return sel === ':focus-visible' && e.visible && document.activeElement === e; };
+    e.classList = {
+      toggle: function (c, on) { e.cls[c] = on === undefined ? !e.cls[c] : !!on; },
+      remove: function (c) { e.cls[c] = false; },
+    };
+    return e;
+  }
+  var page = { '#folder-tool': node(), '#by-folder': node(), '#folder-levels': node(), '#folder-levels-box': node() };
+  var $ = function (q) { return page[q]; }, document = { activeElement: null };
+  var foldersOn = function () { return pressed; };
+  var setTimeout = function (f, ms) { timers.push({ f: f, at: now + ms, id: ++seq }); return seq; };
+  var clearTimeout = function (id) { timers = timers.filter(function (t) { return t.id !== id; }); };
+  function wait(ms) {
+    now += ms;
+    timers.filter(function (t) { return t.at <= now; }).forEach(function (t) { clearTimeout(t.id); t.f(); });
+  }
+  eval(app.slice(app.indexOf('function levelsHeld'), app.indexOf('function paintTestsToggle')));
+  var tool = page['#folder-tool'], toggle = page['#by-folder'], input = page['#folder-levels'], box = page['#folder-levels-box'];
+  var open = function () { return !!box.cls.open; };
+  function focus(e, keyboard) {
+    var from = document.activeElement;
+    if (from) from.fire('focusout');
+    if (from && from !== tool) tool.fire('focusout');
+    if (e) e.visible = !!keyboard;
+    document.activeElement = e;
+    if (e) tool.fire('focusin');
+  }
+  wireFolderLevels(2500);
+
+  tool.fire('mouseenter');
+  check('with the toggle off, the pointer opens nothing: there are no bands to cut', open(), false);
+  tool.fire('mouseleave');
+
+  pressed = true;
+  tool.fire('mouseenter');
+  check('with it on, the pointer on the toggle opens it', open(), true);
+  wait(10000);
+  check('and it stays while the pointer does', open(), true);
+  tool.fire('mouseleave'); wait(2400);
+  check('left, it stays a moment, time to reach it', open(), true);
+  wait(100);
+  check('then closes', open(), false);
+
+  tool.fire('mouseenter'); tool.fire('mouseleave'); wait(2000); tool.fire('mouseenter'); wait(1000);
+  check('back on it before then, it stays', open(), true);
+  tool.fire('mouseleave'); wait(2500);
+  check('and closes a moment after the second leave, not the first', open(), false);
+
+  tool.fire('mouseenter'); focus(input); tool.fire('mouseleave'); wait(60000);
+  check('clicked into, it stays open with the pointer gone', open(), true);
+  focus(null); wait(2400);
+  check('out of the box, it stays a moment', open(), true);
+  wait(100);
+  check('then closes', open(), false);
+
+  tool.fire('mouseenter'); focus(toggle, false); tool.fire('mouseleave'); wait(2500);
+  check('the focus a click leaves on the toggle keeps nothing open', open(), false);
+
+  focus(null); focus(toggle, true);
+  check('the keyboard on the toggle opens it', open(), true);
+  wait(60000);
+  check('and keeps it open', open(), true);
+  focus(input, true); wait(60000);
+  check('on into the box too', open(), true);
+  focus(null); wait(2500);
+  check('and it closes a moment after the keyboard leaves', open(), false);
+
+  tool.fire('mouseenter');
+  pressed = false; toggle.fire('click');
+  check('turning the bands off closes it at once', open(), false);
+  pressed = true; toggle.fire('click');
+  check('turning them on under the pointer opens it', open(), true);
+  check('held: on, and the pointer or the keyboard in it', [levelsHeld(true, true, false), levelsHeld(true, false, true),
+    levelsHeld(true, false, false), levelsHeld(false, true, true)], [true, true, false, false]);
+});
+
 group('the page asks for it', function () {
   var html = read('web/index.html');
   ok('a toggle beside the tests eye, off at first', /id="with-tests"[\s\S]{0,500}id="by-folder"[^>]*type="button" aria-pressed="false"/.test(html));
@@ -321,6 +511,16 @@ group('the page asks for it', function () {
     /\$\('#by-folder'\)\.addEventListener\('click', \(\) => \{ \$\('#by-folder'\)\.setAttribute\('aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\)/.test(app));
   ok('and is read from its pressed state', /function foldersOn\(\) \{\s*return \$\('#by-folder'\)\.getAttribute\('aria-pressed'\) === 'true';/.test(app));
   ok('which is what the canvas is handed', /folders: foldersOn\(\) \?/.test(app));
+  ok('a levels box right after it, from 1 to 4, at 1 first',
+    /<span>by folder<\/span><\/button>\n\s*<!--[^\n]*-->\n\s*<label id="folder-levels-box"[^>]*>levels <input id="folder-levels" type="number" min="1" max="4" value="1"><\/label>/.test(html));
+  var css = read('web/app.css');
+  ok('in a pop-over under the toggle, shut until opened', /#folder-levels-box \{\s*display: none; position: absolute; top: calc\(100% \+ 3px\)/.test(css)
+    && /#folder-levels-box\.open \{ display: flex; \}/.test(css) && /<span id="folder-tool" class="foldertool">\s*<button id="by-folder"/.test(html));
+  ok('wired once the toggle has its own listener', /aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\);\s*wireFolderLevels\(\);/.test(app));
+  ok('which redraws on a change, like the depth boxes', /for \(const el of \[\$\('#up'\), \$\('#down'\), \$\('#folder-levels'\)\]\) \{\s*el\.addEventListener\('change', rerender\);/.test(app));
+  ok('and is handed to the canvas', /levels: folderLevels\(\),/.test(app) && /layout\(d, opts\.folders, opts\.levels\)/.test(lin));
+  ok('each level of sub-folder has its hue, on the canvas and in an exported file',
+    [1, 2, 3].every(function (l) { return css.indexOf('.band.l' + l + ' {') >= 0 && app.indexOf("'.band.l" + l + ' {') >= 0; }));
   ok('and so does the eye, on a click', /\$\('#with-tests'\)\.addEventListener\('click', \(\) => \{ paintTestsToggle\(!testsOn\(\)\); rerender\(\); \}\)/.test(app));
   ok('every mode hands the canvas the same options', (app.match(/Lineage\.render\(sub, canvasOptions\(\)\)/g) || []).length === 3);
   ok('an exported file names the folders in its header', /canvasStatus\(sub, ctx\.folders\)/.test(app) && /folders: shot\.folders/.test(app));
