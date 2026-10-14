@@ -2188,8 +2188,7 @@ async function reloadFromDisk(path, f, now) {
   // Edited, saved or closed during the read: the user's text wins, and a save
   // made and done meanwhile has moved the stamp.
   if (S.open.get(path) !== f || f.dirty || f.saving || f.stamp !== seen) return false;
-  // CodeMirror hands its text back with \n alone, whatever the file has.
-  const next = body.content.replace(/\r\n?/g, '\n');
+  const next = editorText(body.content);
   const cur = f.doc.getValue();
   if (next !== cur) {
     const span = changedSpan(cur, next);
@@ -2526,6 +2525,15 @@ function unquote(s) {
   return (q === '"' || q === "'") && s.length > 1 && s[s.length - 1] === q ? s.slice(1, -1) : s;
 }
 
+/* A file's text as CodeMirror hands it back: \n alone, whatever the file has.
+   What is read from the disk goes through this before it is scanned or set
+   beside a tab's text. In a CRLF file a `key:` ending its line is followed by
+   a \r, which yamlKey takes for no key at all, so every folder written that
+   way vanished and its configs piled onto the level above. */
+function editorText(text) {
+  return text.replace(/\r\n?/g, '\n');
+}
+
 /* Every node owns the lines up to the next node that is not below it. Filled in
    one pass so a cursor line resolves by containment rather than by guessing. */
 function closeRanges(nodes, lastLine) {
@@ -2780,16 +2788,25 @@ async function configMenu(file) {
     toast(e.message, 'err');
     return null;
   }
+  return configMenuFor(raw, file, roots);
+}
+
+/* configMenu once dbt_project.yml and the roots are read, apart so a test
+   reaches it. The text comes from the tab when one is open and from the disk
+   otherwise, in the endings the file was saved with, so it is read as the tab
+   would hold it either way: a level's line is CodeMirror's line. */
+function configMenuFor(raw, file, roots) {
   const project = { label: 'dbt_project.yml', pick: () => openProjectAt(0, 0) };
   if (raw.length > OUTLINE_MAX) return { notes: ['dbt_project.yml is too large to scan.'], rows: [project] };
-  const at = fileFqn(file, roots, projectNameIn(raw));
+  const text = editorText(raw);
+  const at = fileFqn(file, roots, projectNameIn(text));
   if (!at) {
     return {
       notes: ['Not a model, seed, snapshot, analysis or test under the paths dbt_project.yml sets.'],
       rows: [project],
     };
   }
-  const levels = configLevels(projectPathKeys(raw), at);
+  const levels = configLevels(projectPathKeys(text), at);
   if (!levels.length) return { notes: ['No key of dbt_project.yml reaches this file.'], rows: [project] };
   return {
     notes: ['Where dbt_project.yml configures this file. A config() in it, or in its properties YAML, wins.'],

@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.1 - 2026-10-14
+
+- List every key of `dbt_project.yml` reaching a file in the breadcrumb's
+  config menu when `dbt_project.yml` has Windows line endings and is not open
+  in a tab: each folder key ending its line was dropped, and its configs shown
+  on the level above.
+
 ## 1.18.0 - 2026-10-14
 
 - Look for a newer dbt-edith every hour from midnight to 09:00 Paris time,
