@@ -1274,8 +1274,8 @@ which `Enter`, `Shift + Enter`, `Cmd/Ctrl + G` and `F3` step through. That order
 is the one the tests are drawn in once opened, so a step that opens a group
 skips none of them. It is kept, with the names, until the canvas is drawn
 again. `Escape` closes the bar from the canvas too, and the focus goes back to
-what had it; the note over a canvas not of the file in front sits between the
-selector bar and the find bar. 0030 had left the lineage to the browser's
+what had it; in model mode, the find bar comes under the note over a canvas
+not of the file in front. 0030 had left the lineage to the browser's
 find, which read names clipped to their box and never moved the view. The
 canvas CSS for the paint is under `#graph`, out of `exportCanvasCss`, and
 `snapshot()` strips its classes. `web/tests/graphfind.js` checks the pure half

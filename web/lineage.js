@@ -1252,8 +1252,10 @@ const Lineage = (() => {
   const unfolded = new Set();
   let lastOpts = {};
   // Find on the canvas, null while its bar is closed: the query, the node the
-  // view was last brought to, and the node reading starts from when the query
-  // changes. And what stands for each folded test, from the layout, and the
+  // view was last brought to, the node reading starts from when the query
+  // changes, and `peek` while that node is a test typing left folded, which
+  // the next step forward opens. And what stands for each folded test, from
+  // the layout, and the
   // reading order and the names each node is found by, which only a drawing
   // changes, kept until the next one, with the last query's matches (0081).
   let finding = null, under = new Map(), findBase = null;
@@ -1435,10 +1437,10 @@ const Lineage = (() => {
   /* The place in reading order a step reads from, for findNext: past the
      current match, else past the box last clicked, else from either end.
      `cur` and `from` are places in that order, -1 for none. A forward step
-     from a current match typing left folded away starts on it instead, so
-     that it opens that match rather than pass it by. */
-  function findStart(cur, from, dir, folded) {
-    if (folded && dir > 0 && cur >= 0) return cur;
+     from a current match typing left folded away, `peek`, starts on it
+     instead, so that it opens that match rather than pass it by. */
+  function findStart(cur, from, dir, peek) {
+    if (peek && dir > 0 && cur >= 0) return cur;
     return (cur >= 0 ? cur : from >= 0 ? from : dir > 0 ? -1 : 0) + dir;
   }
 
@@ -1748,7 +1750,7 @@ const Lineage = (() => {
         e.stopPropagation();
         // A click is where the next step and the next query read from, as the
         // cursor is in the editor's find, and a match clicked is the current one.
-        if (finding) { finding.from = finding.cur = n.id; refind(); }
+        if (finding) { finding.from = finding.cur = n.id; finding.peek = false; refind(); }
         select(n.id);
         handlers.onSelect && handlers.onSelect(n);
       });
@@ -1766,6 +1768,8 @@ const Lineage = (() => {
     const turn = (g, key) => {
       const toggle = (e) => {
         e.stopPropagation();
+        // Opened or closed by hand: the next step goes on to the next match.
+        if (finding) finding.peek = false;
         if (unfolded.has(key)) unfolded.delete(key); else unfolded.add(key);
         const got = render(data, Object.assign({}, lastOpts, { keepView: true }));
         handlers.onRefold && handlers.onRefold(data, got);
@@ -1983,6 +1987,7 @@ const Lineage = (() => {
   function refind() {
     const F = matches(), cur = indexOf(finding.cur);
     if (cur < 0 || !(F.quality[cur] >= 0)) finding.cur = null;
+    if (finding.cur == null) finding.peek = false;
     paintFound(F);
   }
 
@@ -2007,6 +2012,7 @@ const Lineage = (() => {
      draws the canvas again, nor opens what the next one passes by. */
   function go(v, open) {
     finding.cur = data.nodes[v].id;
+    finding.peek = !open && under.has(v);
     if (open && under.has(v)) {
       findUnfold(v, unfolded, under, () => {
         render(data, Object.assign({}, lastOpts, { keepView: true }));
@@ -2022,13 +2028,14 @@ const Lineage = (() => {
      best match from where reading starts; without, which opening the bar
      asks for, the matches are painted and nothing moves. */
   function find(q, land) {
-    if (!finding) finding = { q: '', cur: null, from: null };
+    if (!finding) finding = { q: '', cur: null, from: null, peek: false };
     finding.q = String(q || '');
     if (!land) return refind();
     const F = matches();
     const v = findPick(F.order, F.quality, F.order.indexOf(indexOf(finding.from)));
     if (v < 0) {
       finding.cur = null;
+      finding.peek = false;
       return paintFound(F);
     }
     go(v, false);
@@ -2037,13 +2044,14 @@ const Lineage = (() => {
   /* Enter and Shift+Enter, Cmd+G and F3: the next match in reading order, or
      the one before, from the current one, or from the box last clicked; the
      next query reads from there too. The first step forward from a match
-     typing left folded opens it. */
+     typing left folded opens it; one folded again by hand since is passed
+     by, as any other match is. */
   function findStep(dir) {
     if (!finding) return;
     const F = matches(), at = (id) => F.order.indexOf(indexOf(id));
     const cur = at(finding.cur), from = at(finding.from);
-    const folded = cur >= 0 && under.has(F.order[cur]);
-    const v = findNext(F.order, F.quality, findStart(cur, from, dir, folded), dir);
+    const peek = finding.peek && cur >= 0 && under.has(F.order[cur]);
+    const v = findNext(F.order, F.quality, findStart(cur, from, dir, peek), dir);
     if (v < 0) return paintFound(F);
     finding.from = data.nodes[v].id;
     go(v, true);

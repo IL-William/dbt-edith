@@ -220,7 +220,7 @@ eval(app.slice(app.indexOf('function findInPane'), app.indexOf('const base = (pa
 
 function fakeEl(tag) {
   var e = { tagName: String(tag).toUpperCase(), className: '', value: '', title: '', textContent: '', placeholder: '',
-    parent: null, kids: [], on: {}, attrs: {}, offsetParent: {} };
+    parent: null, kids: [], on: {}, attrs: {}, rects: [{}] };
   e.classList = {
     has: function (c) { return (' ' + e.className + ' ').indexOf(' ' + c + ' ') >= 0; },
     contains: function (c) { return this.has(c); },
@@ -235,14 +235,23 @@ function fakeEl(tag) {
   e.focus = function () { document.activeElement = e; };
   e.blur = function () { if (document.activeElement === e) document.activeElement = document.body; };
   e.select = function () {};
+  e.getClientRects = function () { return e.rects; };
+  Object.defineProperty(e, 'isConnected', { get: function () { return document.body.contains(e); } });
   return e;
 }
 var document = { createElement: fakeEl };
 document.body = fakeEl('body');
 document.activeElement = document.body;
-var top = fakeEl('div'), selectInput = fakeEl('input');
-document.body.append(top, selectInput);
-function $(sel) { return sel === '#lineage-top' ? top : null; }
+var top = fakeEl('div'), selectInput = fakeEl('input'), modalBox = fakeEl('div');
+modalBox.className = 'hidden';
+document.body.append(top, selectInput, modalBox);
+function $(sel) { return { '#lineage-top': top, '#modal': modalBox }[sel] || null; }
+// A chip on the canvas: SVG, so no offsetParent, ever.
+var chip = fakeEl('g');
+document.body.append(chip);
+function isTyping(el) { return !!el && el.tagName === 'INPUT'; }
+var paneOfTarget = {};
+function paneOf(el) { return el === document.body ? '' : paneOfTarget[el.tagName] || 'other'; }
 var IS_MAC = true;
 function keyLabel(k) { return k; }
 function keyCombo(e) { return e.combo; }
@@ -341,10 +350,20 @@ group('where the focus goes back', function () {
   check('opened from the canvas, nothing has it after', document.activeElement === document.body, true);
   selectInput.focus();
   openGraphFind();
-  selectInput.offsetParent = null;
+  selectInput.rects = [];
   key('Escape');
   check('what had it hidden since: nothing has it', document.activeElement === document.body, true);
-  selectInput.offsetParent = {};
+  selectInput.rects = [{}];
+  chip.focus();
+  openGraphFind();
+  key('Escape');
+  check('a chip on the canvas, which is SVG, gets it back too', document.activeElement === chip, true);
+  chip.focus();
+  openGraphFind();
+  chip.parent.kids.splice(chip.parent.kids.indexOf(chip), 1);
+  chip.parent = null;
+  key('Escape');
+  check('  unless a redraw took the chip away: nothing has it', document.activeElement === document.body, true);
   selectInput.focus();
   openGraphFind();
   document.activeElement = document.body;
@@ -356,4 +375,31 @@ group('where the focus goes back', function () {
   openGraphFind();
   key('Escape');
   check('Cmd+F again from inside the bar keeps the first place to go back to', document.activeElement === selectInput, true);
+});
+
+group('which Escape from outside the bar closes it', function () {
+  paneOfTarget = { SVG: 'lineage', DIV: 'catalog', INPUT: 'lineage' };
+  S.lastPane = 'lineage';
+  var esc = function (target, prevented) { return { target: target, defaultPrevented: !!prevented }; };
+  var canvas = fakeEl('svg');
+  openGraphFind();
+  check('from the canvas after a click on a box', escapesGraphFind(esc(canvas)), true);
+  check('from the page itself, the lineage the pane last used', escapesGraphFind(esc(document.body)), true);
+  check('not once something has taken it', escapesGraphFind(esc(canvas, true)), false);
+  check('not from a text box, the selector\'s say', escapesGraphFind(esc(selectInput)), false);
+  check('not from another pane', escapesGraphFind(esc(fakeEl('div'))), false);
+  S.lastPane = 'catalog';
+  check('not from the page when another pane was the last used', escapesGraphFind(esc(document.body)), false);
+  S.lastPane = 'lineage';
+  modalBox.className = '';
+  check('not with a dialog open over the page', escapesGraphFind(esc(document.body)), false);
+  modalBox.className = 'hidden';
+  S.reportsOpen = true;
+  check('not under the reports', escapesGraphFind(esc(canvas)), false);
+  S.reportsOpen = false;
+  S.dock = 'terminal';
+  check('not with the lineage off screen', escapesGraphFind(esc(canvas)), false);
+  S.dock = 'lineage';
+  closeGraphFind();
+  check('not with the bar closed', escapesGraphFind(esc(canvas)), false);
 });

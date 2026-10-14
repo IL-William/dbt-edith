@@ -1844,8 +1844,20 @@ function closeGraphFind() {
   if (!inBar) return;
   const back = st.back;
   st.back = null;
-  if (back && document.body.contains(back) && back.offsetParent) back.focus();
+  // Still on screen: a chip on the canvas is SVG, which has no offsetParent.
+  if (back && back.isConnected && back.getClientRects().length) back.focus();
   else document.activeElement.blur();
+}
+
+/* Whether an Escape nothing else has taken closes the lineage's find bar:
+   from the canvas, where a click on a box leaves the focus, with the
+   lineage on screen and no dialog over it. In the bar, its own keys have
+   closed it already. */
+function escapesGraphFind(e) {
+  const st = S.graphFind;
+  if (!st || !st.open || e.defaultPrevented || S.reportsOpen || S.dock !== 'lineage') return false;
+  if (isTyping(e.target) || !$('#modal').classList.contains('hidden')) return false;
+  return (paneOf(e.target) || S.lastPane) === 'lineage';
 }
 
 const base = (path) => path.split('/').pop();
@@ -3410,7 +3422,8 @@ function modal({ title, body, actions, wide = false, onOpen = null }) {
     host.append(body);
     const bar = $('#modal-actions');
     bar.textContent = '';
-    const esc = (e) => { if (e.key === 'Escape') close(null); };
+    // Taken here: nothing under the dialog closes on the same Escape.
+    const esc = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
     let done = false;
     // Every way out removes the Escape listener. It used to be removed only on
     // Escape, so each button close left one behind.
@@ -6325,6 +6338,8 @@ function noteLineage(text) {
   const el = $('#lineage-note');
   el.textContent = text;
   el.classList.toggle('hidden', !text);
+  // With find open, its bar moves under the note, and the folder names too.
+  Lineage.placeHeads();
 }
 
 /* The tab in front came up with no node, most often because it is newer than
@@ -12201,10 +12216,7 @@ function wireKeys() {
         return;
     }
     if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) closePalette();
-    // The lineage's find bar from the canvas, where a click on a box leaves
-    // the focus; from inside the bar, its own keys have closed it already.
-    else if (e.key === 'Escape' && !e.defaultPrevented && S.graphFind && S.graphFind.open && !S.reportsOpen
-      && !isTyping(e.target) && (paneOf(e.target) || S.lastPane) === 'lineage') {
+    else if (e.key === 'Escape' && escapesGraphFind(e)) {
       e.preventDefault();
       closeGraphFind();
     }

@@ -38,8 +38,8 @@ all, so it could not be found.
   graph can be too small to read the name looked for. A test folded away is
   brought there as the chip or the row it is under, painted as the current
   match. A step opens it, as a click on that chip or row would, two turns at
-  most: the first step forward from it opens it rather than pass it by.
-  Typing never does, so a keystroke never draws the canvas again, and what
+  most: the first step forward from it opens it rather than pass it by,
+  unless it was opened or closed by hand since. Typing never does, so a keystroke never draws the canvas again, and what
   the first letters of a query land on stays folded once the query moves on.
 - **Every match is outlined in amber, the current one filled**, as in the
   editor. An exported file or image carries none of it.
