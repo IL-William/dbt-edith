@@ -16,20 +16,27 @@ them.
 
 ## Decision
 
-- **The walk downstream stops at the column an edge of a cut role reaches.**
+- **The walk downstream does not follow an edge of a cut role, and then
+  adds the column each one reaches, within the depth, as a stop.**
   The edge and that column are drawn: without them the graph would not say
   how the column is used, only that it stops somewhere. Nothing that leaves
   that column is drawn, even to a column drawn for another reason. The
   server takes `cut=window,aggregate` on `/api/collineage`, so the depth
   spent is spent on what stays: hiding past the cut in the page would draw
   fewer levels than asked.
-- **A column reached around the cut as well is walked on from**, as if
-  the cut edge were not there: it is not only past the window.
+- **A column the walk reaches around the cut as well, within the depth
+  asked, is walked on from**, as if the cut edge were not there: it is not
+  only past the window. One reached around it only further down stays a
+  stop until the depth reaches it, as any column waits for the depth.
 - **Upstream is left whole.** Above the focus every edge leads to the
   column; a cut there would hide where it came from, which is another
   question.
-- **What leaves a stopped column counts in its `hidden_down`**, so the +N
-  badge says something goes on past it.
+- **An edge leaving a stopped column counts at both ends**, in its
+  `hidden_down` and, when it reaches a column drawn for another reason,
+  in that column's `hidden_up`: neither badge then claims less than there
+  is. The answer names the roles it stopped at (`stopped_at`), and the
+  status line, which an export copies, says "stopped downstream at
+  window", so a stopped column's +N is not read as the depth's limit.
 - **The roles are ticked in a stop at menu beside the depth boxes, not in
   the legend.** A legend click highlights, which only repaints; stopping
   changes what the server walks, as up and down do. Both on one legend
@@ -47,4 +54,6 @@ them.
 Clicking the +N badge of a stopped column deepens the walk, which stops at
 the same role: unticking it in stop at is the way back. Leaving the cut
 edge out as well was tried first: the graph then said the column stopped
-somewhere, not how it was used.
+somewhere, not how it was used. A copied image carries the canvas alone,
+no legend and no status line, as before: it does not say where the walk
+stopped, where an exported page does.

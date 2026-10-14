@@ -60,6 +60,7 @@ const S = {
   features: null,             // { snowflake, snowflake_set }: which feature families are on
   profiles: null,             // { path, found }: where dbt looks for its profile, null with nowhere to look
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
+  colDraw: 0,                 // bumped per column request, so ticks in a row draw only the last answer
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
   history: null,              // the query history on screen: rows, more, session, targets, busy, error
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
@@ -3841,10 +3842,12 @@ async function focusColumn(id, column) {
   S.colFocus = { id, column };
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
+  const ask = ++S.colDraw;
   try {
     const sub = await api.get(
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`
       + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : ''));
+    if (ask !== S.colDraw) return;            // a later tick or click already asked
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
@@ -3852,6 +3855,7 @@ async function focusColumn(id, column) {
     paintTestsCount(sub);
     showDock('lineage');
   } catch (e) {
+    if (ask !== S.colDraw) return;
     toast('column lineage: ' + e.message, 'err');
     S.graphMode = 'model';
     S.colFocus = null;
@@ -4046,7 +4050,9 @@ function selectStatus(sub) {
    `drawn` is what Lineage.render() said the folder bands added, if any. */
 function canvasStatus(sub, drawn) {
   if (sub.mode === 'select') return selectStatus(sub) + foldersStatus(drawn);
-  const tail = `${sub.edges.length} edges${sub.truncated ? ' · truncated' : ''}`;
+  // A stopped column's +N reads as the depth's limit otherwise (0083).
+  const stopped = (sub.stopped_at || []).length ? ` · stopped downstream at ${sub.stopped_at.join(', ')}` : '';
+  const tail = `${sub.edges.length} edges${stopped}${sub.truncated ? ' · truncated' : ''}`;
   return (sub.mode === 'column'
     ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);

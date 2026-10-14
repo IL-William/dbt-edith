@@ -104,3 +104,14 @@ ok('stop at sits beside the depth boxes, shown in column mode only',
   && /\$\('#stop-at'\)[\s\S]{0,60}toggle\('hidden', S\.graphMode !== 'column'\)/.test(src));
 ok('a role ticked redraws, and the menu stays open for the next',
   /S\.colCut\.delete\(role\); else S\.colCut\.add\(role\);[\s\S]{0,80}rerender\(\)/.test(src));
+// The status line, which an export copies, says where the walk stopped: a
+// stopped column's +N would read as the depth's limit otherwise.
+eval(src.slice(src.indexOf('function canvasStatus'), src.indexOf('function selectWarnings')));
+check('the status line names the roles stopped at',
+  canvasStatus({ mode: 'column', focus_column: 'order_date', nodes: [{}, {}], edges: [[0, 1]], stopped_at: ['window'] }, null),
+  'order_date · 2 columns · 1 edges · stopped downstream at window');
+check('and says nothing when nothing stopped',
+  canvasStatus({ mode: 'column', focus_column: 'order_date', nodes: [{}, {}], edges: [[0, 1]] }, null),
+  'order_date · 2 columns · 1 edges');
+ok('ticks in a row draw only the last answer',
+  /const ask = \+\+S\.colDraw;[\s\S]{0,400}if \(ask !== S\.colDraw\) return;/.test(src));

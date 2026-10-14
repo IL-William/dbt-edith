@@ -857,6 +857,7 @@ impl Graph {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 edge_kinds: Vec::new(),
+                stopped_at: Vec::new(),
             };
         };
         let cut: Vec<u8> = (0..cll.kinds.len().min(256))
@@ -864,41 +865,29 @@ impl Graph {
             .map(|k| k as u8)
             .collect();
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
-        // Reached downstream only through a cut edge: drawn, not walked from.
-        let mut stopped: HashSet<ColRef> = HashSet::new();
         let mut truncated = false;
         depth.insert(focus, 0);
 
+        // Downstream the walk does not follow a cut edge: a column it reaches,
+        // within its depth, only through one is stopped below.
         for (limit, upstream) in [(up, true), (down, false)] {
             let mut frontier = vec![focus];
             for step in 1..=limit as i32 {
                 let mut next = Vec::new();
                 for &cur in &frontier {
-                    let neighbours: Vec<(ColRef, bool)> = if upstream {
-                        cll.incoming(cur).map(|e| (e.from, false)).collect()
+                    let neighbours: Vec<ColRef> = if upstream {
+                        cll.incoming(cur).map(|e| e.from).collect()
                     } else {
-                        cll.outgoing(cur).iter().map(|e| (e.to, cut.contains(&e.kind))).collect()
+                        cll.outgoing(cur).iter().filter(|e| !cut.contains(&e.kind)).map(|e| e.to).collect()
                     };
-                    for (nb, at_cut) in neighbours {
+                    for nb in neighbours {
                         if depth.len() >= max_nodes {
                             truncated = true;
                             break;
                         }
-                        match depth.entry(nb) {
-                            std::collections::hash_map::Entry::Vacant(v) => {
-                                v.insert(if upstream { -step } else { step });
-                                if at_cut {
-                                    stopped.insert(nb);
-                                } else {
-                                    next.push(nb);
-                                }
-                            }
-                            // Stopped at a cut, then reached around it: walked on.
-                            std::collections::hash_map::Entry::Occupied(_) => {
-                                if !at_cut && stopped.remove(&nb) {
-                                    next.push(nb);
-                                }
-                            }
+                        if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
+                            v.insert(if upstream { -step } else { step });
+                            next.push(nb);
                         }
                     }
                 }
@@ -909,12 +898,37 @@ impl Graph {
             }
         }
 
+        // Then each cut edge leaving the focus or a column below it, within
+        // the depth, brings the column it reaches, drawn but not walked from.
+        let mut stopped: HashSet<ColRef> = HashSet::new();
+        if !cut.is_empty() {
+            let mut walked: Vec<(ColRef, i32)> = depth.iter().filter(|(_, &d)| d >= 0).map(|(&c, &d)| (c, d)).collect();
+            walked.sort_unstable();
+            'stop: for (c, d) in walked {
+                if d >= down as i32 {
+                    continue;
+                }
+                for e in cll.outgoing(c).iter().filter(|e| cut.contains(&e.kind)) {
+                    if depth.contains_key(&e.to) {
+                        continue;
+                    }
+                    if depth.len() >= max_nodes {
+                        truncated = true;
+                        break 'stop;
+                    }
+                    depth.insert(e.to, d + 1);
+                    stopped.insert(e.to);
+                }
+            }
+        }
+
         let mut members: Vec<ColRef> = depth.keys().copied().collect();
         members.sort_unstable();
         let pos: HashMap<ColRef, usize> = members.iter().enumerate().map(|(p, &c)| (c, p)).collect();
         // Nothing leaves a column the walk stopped at, even to a column drawn
-        // for another reason: that edge is past the cut.
-        let drawn = |e: &ColEdge| pos.contains_key(&e.to) && !stopped.contains(&e.from);
+        // for another reason: that edge is past the cut, and both ends count it
+        // in their badges.
+        let drawn = |e: &ColEdge| pos.contains_key(&e.from) && pos.contains_key(&e.to) && !stopped.contains(&e.from);
 
         let mut pairs: Vec<([usize; 2], u8)> = Vec::new();
         for (p, &c) in members.iter().enumerate() {
@@ -941,6 +955,7 @@ impl Graph {
             truncated,
             mode: "column",
             edge_kinds,
+            stopped_at: cut.iter().map(|&k| cll.kinds[k as usize].as_str()).collect(),
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
@@ -975,7 +990,7 @@ impl Graph {
                         tests: column.tests.len(),
                         parents: up_n,
                         children: down_n,
-                        hidden_up: cll.incoming(c).filter(|e| !pos.contains_key(&e.from)).count(),
+                        hidden_up: cll.incoming(c).filter(|e| !drawn(e)).count(),
                         hidden_down: cll.outgoing(c).iter().filter(|e| !drawn(e)).count(),
                     }
                 })
@@ -1208,6 +1223,7 @@ impl Graph {
             mode: "model",
             focus_column: "",
             edge_kinds: Vec::new(),
+            stopped_at: Vec::new(),
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1397,6 +1413,7 @@ impl Graph {
             mode: "select",
             focus_column: "",
             edge_kinds: Vec::new(),
+            stopped_at: Vec::new(),
             nodes: members
                 .iter()
                 .enumerate()
@@ -1450,6 +1467,10 @@ pub struct Lineage<'a> {
     /// destructure `edges` as a pair and ignore this entirely.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub edge_kinds: Vec<&'a str>,
+    /// Column mode: the roles the walk stopped at downstream, as the cache
+    /// names them, so an export can say why a column ends there (0083).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stopped_at: Vec<&'a str>,
 }
 
 #[derive(serde::Serialize)]
@@ -1693,6 +1714,68 @@ mod tests {
         assert_eq!(names(&cut), ["fct", "int", "rpt", "stg", "wide"]);
         assert!(cut.edge_kinds.contains(&"window"));
         assert_eq!(hidden(&cut, "fct"), 0);
+    }
+
+    // The review's two cases. An edge leaving a stopped column for a column
+    // drawn for another reason is not drawn, and both its ends count it. A
+    // column reached around the cut only past the depth asked stays stopped,
+    // and is walked on from once the depth reaches it.
+    #[test]
+    fn a_stop_counts_what_it_hides_and_gives_way_to_the_depth() {
+        let names = ["f", "a", "b", "c", "s", "x"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let node = |l: &Lineage<'_>, name: &str| {
+            let n = l.nodes.iter().find(|n| n.sub == name).unwrap();
+            (n.hidden_up, n.hidden_down)
+        };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<String> = l.nodes.iter().map(|n| n.sub.clone()).collect();
+            v.sort();
+            v
+        };
+
+        g.merge_col_lineage(cache(vec![link("f", "a", "window"), link("f", "b", "rename"), link("a", "b", "rename")]), 1);
+        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&l), ["a", "b", "f"]);
+        assert_eq!(l.edges.len(), 2, "a to b is past the window");
+        assert_eq!((node(&l, "a"), node(&l, "b")), ((0, 1), (1, 0)), "both ends of it count it");
+        assert_eq!(l.stopped_at, ["window"]);
+        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[]).stopped_at.is_empty());
+
+        let around = vec![
+            link("f", "s", "window"),
+            link("f", "b", "rename"),
+            link("b", "c", "rename"),
+            link("c", "s", "rename"),
+            link("s", "x", "rename"),
+        ];
+        g.merge_col_lineage(cache(around), 2);
+        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"]);
+        assert_eq!(drawn(&two), ["b", "c", "f", "s"], "within two levels s is reached only past the window");
+        assert_eq!(node(&two, "s").1, 1);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&three), ["b", "c", "f", "s"], "at three, s is reached around it, on the last level");
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        assert_eq!(drawn(&four), ["b", "c", "f", "s", "x"]);
+        // The same depths with nothing stopped, for contrast: x comes at two.
+        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[])), ["b", "c", "f", "s", "x"]);
     }
 
     /// A diamond and, apart from it, a pair that touches nothing: enough to

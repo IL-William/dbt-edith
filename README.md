@@ -909,8 +909,9 @@ lineage holds: tick `window` and each window edge below the focused column is
 still drawn, with the column it reaches, so you see how the column is used,
 but nothing past that column is, unless it is also reached some other way.
 Several roles can be ticked. Upstream is left whole. A column the walk
-stopped at wears the +N badge for what goes on. The button names what it
-stops at, and keeps it while you refocus on other columns, until the page is
+stopped at wears the +N badge for what goes on, and the status line, copied
+into an export, says where the walk stopped. The button names what it stops
+at, and keeps it while you refocus on other columns, until the page is
 reloaded.
 
 An incremental model's box names its strategy in place of the word
