@@ -298,7 +298,8 @@ you were reading.
 The up and down boxes start at 1 and keep what you set while you walk the
 canvas, double-clicking a box or pulling in a level with a `+N` badge. A model
 reached any other way, from `Cmd/Ctrl + K`, a tab, a link in the editor or the
-Catalog, brings both back to 1.
+Catalog, brings both back to 1. Going back to the link you followed, and forward
+again, brings back the depth each place was left with.
 
 The lineage graph itself comes entirely from `manifest.json` (`parent_map`).
 No `.sql` file is ever parsed to build it: dbt already did that work.
@@ -1555,6 +1556,13 @@ dbt to parse the copy, and Chrome; it skips itself without either:
 ```
 /tmp/dbt/bin/python scripts/walk_tour.py                  # every step, and what the tour leaves behind
 /tmp/dbt/bin/python scripts/walk_tour.py --shots /tmp/t   # and a picture of each
+```
+
+The lineage's up and down boxes are driven the same way: what keeps the depth
+on the canvas, what starts it again at 1, and what Back and Forward bring back:
+
+```
+/tmp/dbt/bin/python scripts/walk_depth.py
 ```
 
 ## Layout

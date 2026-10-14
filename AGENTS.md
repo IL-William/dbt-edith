@@ -11,7 +11,7 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the tour in Chrome, browser tests, syntax
+./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the tour and the depth boxes in Chrome, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
@@ -31,6 +31,7 @@ of dbt-core (0033, 0056).
 The guided tour is walked step by step in headless Chrome on the same Jaffle
 Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
+`scripts/walk_depth.py` drives the lineage's depth boxes there the same way.
 Updating a vendored library means changing its version in
 `scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
 when they disagree.

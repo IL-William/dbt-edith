@@ -20,7 +20,8 @@ cannot see:
   - it runs nothing: the terminal never starts, and no setting is written,
     the configuration directory holding the offer's file and nothing else;
   - ended part way from a page in use, it puts the tab, the canvas, the dock,
-    the selection box and the depth boxes back as they were;
+    the selection box and the depth boxes back as they were, and a model's
+    lineage at the depth it was drawn at, the tour's own drawn at 1 and 1;
   - it starts from the shortcut list too.
 
 dbt runs in this process, through `dbtRunner`, so it needs dbt-core and
@@ -304,6 +305,11 @@ STATE = """(() => ({
   panel: document.querySelector('#reports').classList.contains('open'),
 }))()"""
 
+# The model and the depth of the last lineage drawn, as the page asked for it.
+LINEAGE = """(() => { const l = performance.getEntriesByType('resource').map((e) => e.name)
+  .filter((n) => n.includes('/api/lineage?')).pop(); if (!l) return ''; const u = new URL(l);
+  return u.searchParams.get('id') + ' ' + u.searchParams.get('up') + '/' + u.searchParams.get('down'); })()"""
+
 # The requests that look at the job files, so far: the tour makes none, and
 # puts back a Reports panel without reading its section again.
 LOOKS = """(() => performance.getEntriesByType('resource')
@@ -563,6 +569,32 @@ class Walk:
         back = self.settle(in_use)
         self.check("no menu opens after the end, and the page is as it was",
                    back == in_use and not page.js("!!document.querySelector('.crumbmenu')"), f"before {in_use}\n        after  {back}")
+
+        print("--- ended on a model's lineage ---")
+        # Back on customers, at the 3 up and 2 down it was given above.
+        page.js("document.querySelector('[data-mode=model]').click()")
+        page.until(f"({LINEAGE}) === 'model.jaffle_shop.customers 3/2'", "customers at 3 up and 2 down")
+        in_use = page.js(STATE)
+        page.js("document.body.focus()")
+        page.key("?", "Slash", 191, text="?")
+        page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
+        page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
+        self.step_shown(0, total)
+        page.key(*RIGHT)
+        self.step_shown(1, total)
+        try:
+            page.until(f"({LINEAGE}) === 'model.jaffle_shop.{MODEL} 1/1'", "the tour's model", timeout=10)
+        except AssertionError:
+            pass
+        self.check(f"the tour draws {MODEL} at 1 up and 1 down",
+                   page.js(LINEAGE) == f"model.jaffle_shop.{MODEL} 1/1", page.js(LINEAGE))
+        page.key(*ESCAPE)
+        page.until("!document.querySelector('#tour')", "Escape to end it")
+        back = self.settle(in_use)
+        time.sleep(0.5)
+        self.check("its end draws customers again at 3 up and 2 down",
+                   back == in_use and page.js(LINEAGE) == "model.jaffle_shop.customers 3/2",
+                   f"before {in_use}\n        after  {back}, {page.js(LINEAGE)}")
         self.check("no error in the page", not page.errors, "; ".join(page.errors))
         return self.failed
 
