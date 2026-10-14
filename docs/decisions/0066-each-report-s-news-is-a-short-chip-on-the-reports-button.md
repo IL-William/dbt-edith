@@ -1,6 +1,6 @@
 # 0066. Each report's news is a short chip on the Reports button
 
-Date: 2026-10-11 · Status: accepted · Amends 0064
+Date: 2026-10-11 · Status: accepted, amended by 0077 · Amends 0064
 
 **Trigger:** read before giving a report news on the Reports button, changing
 what a chip says, or letting the index count anything new.
@@ -29,6 +29,9 @@ With three reports, chips of words made the button long.
   files to do it (0063). A new manifest reads them again, as the Jobs tab
   would; until a first read, the coverage has no news, which needs a look to
   be measured from anyway.
+
+*Amended by [0077](0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md):
+a model run only in jobs whose schedule is not read is no news.*
 
 ## Rejected
 

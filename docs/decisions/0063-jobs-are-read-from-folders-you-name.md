@@ -1,6 +1,6 @@
 # 0063. Jobs are read from folders you name, outside the project
 
-Date: 2026-10-11 · Status: accepted · Amends 0017 and 0018
+Date: 2026-10-11 · Status: accepted, amended by 0077 · Amends 0017 and 0018
 
 **Trigger:** read before changing which job files are read, what leaves them,
 or how a job's dbt command is resolved.
@@ -36,6 +36,10 @@ the profile, and 0014 forbids building the reader around one client's layout.
   the verb's resource types and tests in the universe. A flag this tool does
   not know, a `state:` method, or a template makes the step unresolved, with
   the reason, rather than guessed.
+
+*Amended by [0077](0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md):
+a file with no dbt task leaves the schedule and the outlets of its DAG, to
+tell what starts the DAGs on those assets, and nothing else.*
 
 ## Rejected
 
