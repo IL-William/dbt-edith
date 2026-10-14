@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.25.0 - 2026-10-14
+
+- Raise an issue or a request, or give dbt-edith a star, from the GitHub mark
+  in the top bar; the issue opens with the version, the build and the system
+  already in it.
+
 ## 1.24.1 - 2026-10-14
 
 - Say in `dbt-edith --help` what `--no-update-check` turns off: the hourly

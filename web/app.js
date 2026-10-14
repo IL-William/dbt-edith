@@ -12825,6 +12825,51 @@ async function refreshUpdate() {
   S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 2000 : 600 * 1000);
 }
 
+/* Where the GitHub menu's two rows go. An issue starts with the version, the
+   build and the system, which a report needs and its writer seldom has to
+   hand, and which they can still edit before sending. A star cannot be given
+   from a link, so that row opens the repository, at its Star button. Pure, for
+   web/tests/github.js. */
+function githubLinks(repo, version, build, os) {
+  const system = { macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os] || os || 'an unknown system';
+  const body = `<!-- What happened, or what would you like? -->\n\n\n\n`
+    + `dbt-edith ${version || '?'}${build ? ` (${build})` : ''} on ${system}`;
+  return { issue: `${repo}/issues/new?body=${encodeURIComponent(body)}`, star: repo };
+}
+
+/* The GitHub mark in the top bar: anyone using the tool can say what went
+   wrong or what is missing, or star it, without looking for the repository. */
+function openGithubMenu(anchor) {
+  if (closePopup(anchor)) return;
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  const links = githubLinks(S.repo, S.version, S.build, S.os);
+  const menu = el('div', 'envmenu ghmenu');
+  menu.setAttribute('role', 'menu');
+  menu.append(el('div', 'menuhead', 'dbt-edith on GitHub'));
+  const row = (href, glyph, label, title) => {
+    const a = el('a', 'menulink');
+    a.setAttribute('role', 'menuitem');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = title;
+    const icon = el('span', 'ghglyph');
+    icon.innerHTML = glyph;
+    a.append(icon, el('span', 'lbl', label));
+    // After the click, so the link is still in the page when the browser follows it.
+    a.addEventListener('click', () => setTimeout(closePopup));
+    menu.append(a);
+  };
+  const svg = (inner) => `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" `
+    + `stroke-width="1.4" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+  row(links.issue, svg('<circle cx="8" cy="8" r="6.25"/><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none"/>'),
+    'Raise an issue or a request', 'A new issue on GitHub, your version already in it');
+  row(links.star, svg('<path d="M8 1.95L9.62 6.33L14.28 6.51L10.62 9.4L11.88 13.89L8 11.3L4.12 13.89L5.38 9.4L1.72 6.51L6.38 6.33Z"/>'),
+    'Give dbt-edith a star', 'The repository on GitHub, whose Star button is at the top right');
+  menu.append(el('div', 'menunote', 'Both open GitHub in a new tab; an issue or a star needs a GitHub account.'));
+  openPopup(anchor, menu);
+}
+
 async function boot() {
   initEditor();
   Lineage.init($('#graph'), {
@@ -12908,10 +12953,13 @@ async function boot() {
   const build = $('#status-build');
   S.version = info.version || '';
   S.build = info.build || '';
+  S.repo = info.repo || '';
+  S.os = info.os || '';
   build.textContent = 'v' + (info.version || '?');
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
   $('#brand').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  $('#github-btn').addEventListener('click', (e) => openGithubMenu(e.currentTarget));
   paintUpdate();
   refreshUpdate();
   S.venv = info.venv || {};
