@@ -3750,6 +3750,7 @@ const rerender = () => S.graphMode === 'select'
 function canvasOptions() {
   return {
     folders: foldersOn() ? ((S.meta && S.meta.project) || '') : null,
+    levels: folderLevels(),
     adapter: (S.meta && S.meta.adapter) || '',
   };
 }
@@ -3929,15 +3930,17 @@ function canvasStatus(sub, drawn) {
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
 }
 
-/* How many folders the canvas is drawn in, and how many edges run from a
+/* How many folders the canvas is drawn in, and the sub-folders inside them
+   when more than one level is asked for (0080), and how many edges run from a
    later folder to an earlier one, which the canvas dashes: without the count,
    a dashed edge in model mode would look like a loop dbt does not allow. */
 function foldersStatus(drawn) {
   if (!drawn) return '';
-  const n = drawn.folders, back = drawn.against, folded = drawn.folded || 0;
+  const n = drawn.folders, sub = drawn.sub || 0, back = drawn.against, folded = drawn.folded || 0;
   // Folded tests are in the answer and off the canvas, under a chip that says
   // how many (0035): the line counts them too, so nothing reads as missing.
   return (n ? ` · ${n} folder${n === 1 ? '' : 's'}`
+    + (sub ? ` · ${sub} sub-folder${sub === 1 ? '' : 's'}` : '')
     + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '') : '')
     + (folded ? ` · ${folded} test${folded === 1 ? '' : 's'} folded` : '');
 }
@@ -5472,6 +5475,43 @@ function foldersOn() {
   return $('#by-folder').getAttribute('aria-pressed') === 'true';
 }
 
+/* The levels box, held to what it offers: a typed 9 or a cleared box draws
+   as its nearest bound rather than as nothing. */
+function folderLevels() {
+  const v = Math.round(+$('#folder-levels').value);
+  return Number.isFinite(v) ? Math.min(4, Math.max(1, v)) : 1;
+}
+
+/* Whether the levels box stays open: only beside a pressed toggle, since
+   without the bands it sets nothing, and only while the pointer is on the
+   toggle or the box, or the keyboard is in them. */
+function levelsHeld(pressed, over, typing) {
+  return pressed && (over || typing);
+}
+
+/* The levels box opens under the by folder toggle when the pointer reaches
+   either, and when the keyboard reaches the toggle, a pointer being not
+   everyone's way in. Left, it stays `linger` ms, time to reach it from the
+   toggle and read it, then closes, unless it is being typed in: then it
+   closes as long after the typing ends. A click on the toggle focuses it
+   too, and that focus keeps nothing open, only the keyboard's (0080). */
+function wireFolderLevels(linger = 2500) {
+  const tool = $('#folder-tool'), toggle = $('#by-folder'), input = $('#folder-levels'), box = $('#folder-levels-box');
+  let over = false, timer = null;
+  const typing = () => document.activeElement === input || toggle.matches(':focus-visible');
+  const open = () => { clearTimeout(timer); box.classList.toggle('open', foldersOn()); };
+  const close = () => { if (!levelsHeld(foldersOn(), over, typing())) box.classList.remove('open'); };
+  const later = () => { clearTimeout(timer); timer = setTimeout(close, linger); };
+  tool.addEventListener('mouseenter', () => { over = true; open(); });
+  tool.addEventListener('mouseleave', () => { over = false; later(); });
+  tool.addEventListener('focusin', () => { if (typing()) open(); });
+  tool.addEventListener('focusout', later);
+  // A 9 typed draws 4: the box says so rather than keep the 9.
+  input.addEventListener('change', () => { input.value = String(folderLevels()); });
+  // After the toggle's own listener, so this reads the state it turned to.
+  toggle.addEventListener('click', () => (foldersOn() ? open() : box.classList.remove('open')));
+}
+
 function paintTestsToggle(on) {
   const b = $('#with-tests');
   b.setAttribute('aria-pressed', String(on));
@@ -6191,11 +6231,12 @@ async function followActive() {
 }
 
 function relinkTools() {
-  for (const el of [$('#up'), $('#down')]) {
+  for (const el of [$('#up'), $('#down'), $('#folder-levels')]) {
     el.addEventListener('change', rerender);
   }
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
   $('#by-folder').addEventListener('click', () => { $('#by-folder').setAttribute('aria-pressed', String(!foldersOn())); rerender(); });
+  wireFolderLevels();
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
   $('#export-btn').addEventListener('click', exportLineage);
   $('#image-btn').addEventListener('click', copyLineageImage);
@@ -6457,7 +6498,11 @@ function exportCanvasCss() {
     '.nd .t2 .struck { opacity: .6; text-decoration: line-through; }',
     '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
     '.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }',
+    '.band.l1 { fill: #18263d; stroke: #2d4466; }',
+    '.band.l2 { fill: #142b2c; stroke: #2a5553; }',
+    '.band.l3 { fill: #251e38; stroke: #43375f; }',
     '.band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }',
+    '.band-name.l1, .band-name.l2, .band-name.l3 { font-size: 12px; font-weight: 500; }',
     '.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }',
     '.rolebadge rect { stroke-width: 1; }',
   ].join('\n');
