@@ -10,7 +10,8 @@ cannot see:
   - started before dbt has written a manifest, the tour is not offered and
     nothing is noted, the shortcut list's tour saying there is no manifest
     and ringing the ? button it is taken again from;
-    the offer comes once dbt parse writes one (0078);
+    the offer comes once dbt parse writes one, at the end of a tour on
+    screen when it lands (0078);
   - the tour is offered once, beside the ? button, and not after a reload;
   - every step rings the element it is about, with its card on screen, and
     the page under it shows what the step says: the model's file, its
@@ -402,15 +403,19 @@ class Walk:
         self.check("  ringing the ? button it is taken again from", rung)
         if self.shots:
             page.shot(self.shots / "00-no-manifest.png")
+        # dbt parse lands with the tour still up. The watcher reads the
+        # manifest, and the page hears of it at its next poll.
+        parse()
+        page.until("document.querySelectorAll('#counts .chip').length > 0", "the manifest", 30)
+        time.sleep(1)
+        self.check("a manifest landing during the tour offers nothing under it, and notes nothing",
+                   not page.js("!!document.querySelector('.tour-offer')") and not (self.config / "tour.json").exists())
         page.key(*ESCAPE)
         page.until("!document.querySelector('#tour')", "Escape to end it")
-        parse()
-        # The watcher reads the manifest, and the page hears of it at its next poll.
-        page.until("document.querySelectorAll('#counts .chip').length > 0", "the manifest", 30)
 
         print("--- the offer ---")
         offer = page.until("document.querySelector('.tour-offer')?.textContent", "the offer")
-        self.check("offered once dbt parse writes a manifest", "New to dbt-edith?" in offer, offer)
+        self.check("offered once the tour ends, dbt parse having written a manifest", "New to dbt-edith?" in offer, offer)
         under = page.js("""(() => {
           const o = document.querySelector('.tour-offer').getBoundingClientRect();
           const k = document.querySelector('#keys-btn').getBoundingClientRect();

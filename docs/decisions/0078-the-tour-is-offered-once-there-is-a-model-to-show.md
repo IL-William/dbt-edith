@@ -25,9 +25,12 @@ pick took from a package, the project having none of its own.
 - **A page with no model is told the offer is held, and nothing is written.**
   It asks again each time a manifest lands, from the watcher's reload or
   Reload manifest, so a `dbt parse` typed after opening the page brings the
-  offer without a restart. The first page with a model claims it as before,
-  by creating `tour.json`, so two tabs or two processes still cannot both be
-  told yes.
+  offer without a restart. Not while a tour is on screen: the server notes
+  the offer as it answers, and a card under the overlay would spend it unseen,
+  so the tour's end asks instead. The first page with a model claims it as
+  before, by creating `tour.json`, so two tabs or two processes still cannot
+  both be told yes, and once it exists the server no longer looks for a
+  model.
 - **The version is kept from the offer on**, not from the first page served
   (amending 0074). A machine that only ever served pages with no model was
   never offered the tour, and the first one with a model offers all of it,

@@ -2630,10 +2630,11 @@ struct OfferBody {
 /// this machine with a model to show, and no to every other (0074, 0078).
 /// The asking records it, and the version this page came from, so a POST.
 async fn claim_tour_offer(State(st): State<Arc<AppState>>) -> Response {
-    let model = crate::tour::pick(&st.graph.read().await.clone(), &[]).is_some();
+    let graph = st.graph.read().await.clone();
     let answer = match st.tour.path.clone() {
         Some(path) => tokio::task::spawn_blocking(move || {
-            crate::tour::Offer { path: Some(path) }.visit(env!("CARGO_PKG_VERSION"), model)
+            crate::tour::Offer { path: Some(path) }
+                .visit(env!("CARGO_PKG_VERSION"), || crate::tour::pick(&graph, &[]).is_some())
         })
         .await
         .unwrap_or(crate::tour::Answer::No),

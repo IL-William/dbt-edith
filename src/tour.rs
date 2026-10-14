@@ -10,7 +10,8 @@
 //!     out, and only once (0078). `tour.json` in the config directory
 //!     says when it was made and the newest dbt-edith a page came from, and
 //!     holds nothing else. That version is what a tour of what is new since
-//!     will start from, so it is kept from the first release with a tour on.
+//!     will start from, so it is kept from the offer on, by every release
+//!     with a tour.
 //!     Without a config directory nothing can remember either, so the tour is
 //!     never offered on its own there, and stays one click away in the
 //!     shortcut list.
@@ -77,7 +78,8 @@ pub fn pick(graph: &Graph, ran: &[bool]) -> Option<Pick> {
             })
     };
     let (n, parents, children, _) = rank(true).or_else(|| rank(false))?;
-    let package = (n.package != graph.meta.project).then(|| n.package.clone());
+    // A manifest naming no project has no own package to tell a package from.
+    let package = (!graph.meta.project.is_empty() && n.package != graph.meta.project).then(|| n.package.clone());
     Some(Pick { id: n.id.clone(), name: n.name.clone(), file: n.on_disk().to_string(), parents, children, package })
 }
 
@@ -120,23 +122,26 @@ impl Offer {
     /// until the offer is made, so the version is kept from that first offer
     /// on: a machine that was never offered the tour gets all of it, not what
     /// is new since. Later pages raise the version kept, never lower it, so an
-    /// older binary started after a newer one changes nothing.
-    pub fn visit(&self, version: &str, model: bool) -> Answer {
+    /// older binary started after a newer one changes nothing. `model` is
+    /// asked only while no offer was made: once it was, a pass over the graph
+    /// at every page would answer nothing.
+    pub fn visit(&self, version: &str, model: impl FnOnce() -> bool) -> Answer {
         let Some(path) = &self.path else { return Answer::No };
-        if !model && !path.exists() {
-            return Answer::Held;
-        }
-        if let Some(dir) = path.parent() {
-            if std::fs::create_dir_all(dir).is_err() {
-                return Answer::No;
-            }
-        }
         let body = |kept: &Kept| format!("{:#}\n", serde_json::json!(kept));
         let first = Kept { offered: crate::update::now_secs(), version: version.to_string() };
-        if model {
+        if !path.exists() {
+            if !model() {
+                return Answer::Held;
+            }
+            if let Some(dir) = path.parent() {
+                if std::fs::create_dir_all(dir).is_err() {
+                    return Answer::No;
+                }
+            }
             if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
                 return if file.write_all(body(&first).as_bytes()).is_ok() { Answer::Offer } else { Answer::No };
             }
+            // Another page made it meanwhile.
         }
         // A file that is not its shape is written again in its shape.
         let loaded = load(path);
@@ -262,6 +267,8 @@ mod tests {
         let p = pick(&only_packages, &[]).unwrap();
         assert_eq!((p.name.as_str(), p.package.as_deref()), ("b", Some("pkg")), "a package's names its package");
         assert_eq!(pick(&graph("shop", &[("raw", "seed", "shop", &[])]), &[]), None);
+        let unnamed = graph("", &[("a", "model", "shop", &[]), ("b", "model", "shop", &["a"])]);
+        assert_eq!(pick(&unnamed, &[]).unwrap().package, None, "a manifest naming no project names no package");
     }
 
     #[test]
@@ -270,17 +277,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let path = offered_path(&dir.join("config"));
         let offer = Offer { path: Some(path.clone()) };
-        assert_eq!(offer.visit("1.16.0", false), Answer::Held, "a start with no model to show holds it");
+        assert_eq!(offer.visit("1.16.0", || false), Answer::Held, "a start with no model to show holds it");
         assert!(!dir.exists(), "writing nothing, not even the directory");
-        assert_eq!(offer.visit("1.16.0", true), Answer::Offer, "the first start with one offers it, creating the directory");
-        assert_eq!(offer.visit("1.16.0", true), Answer::No, "and no later one");
-        assert_eq!(offer.visit("1.16.0", false), Answer::No, "nor one without a model, which holds nothing now");
-        assert_eq!(Offer { path: Some(path.clone()) }.visit("1.16.0", true), Answer::No, "nor another process");
+        assert_eq!(offer.visit("1.16.0", || true), Answer::Offer, "the first start with one offers it, creating the directory");
+        assert_eq!(offer.visit("1.16.0", || true), Answer::No, "and no later one");
+        assert_eq!(offer.visit("1.16.0", || panic!("looked for a model")), Answer::No, "nor looks for a model again");
+        assert_eq!(offer.visit("1.16.0", || false), Answer::No, "nor one without a model, which holds nothing now");
+        assert_eq!(Offer { path: Some(path.clone()) }.visit("1.16.0", || true), Answer::No, "nor another process");
         let kept: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let keys: Vec<&String> = kept.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["offered", "version"], "nothing else is kept");
-        assert_eq!(Offer { path: None }.visit("1.16.0", true), Answer::No);
-        assert_eq!(Offer { path: None }.visit("1.16.0", false), Answer::No, "nor held where nothing can remember it");
+        assert_eq!(Offer { path: None }.visit("1.16.0", || true), Answer::No);
+        assert_eq!(Offer { path: None }.visit("1.16.0", || false), Answer::No, "nor held where nothing can remember it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -290,16 +298,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let path = offered_path(&dir);
         let offer = Offer { path: Some(path.clone()) };
-        assert_eq!(offer.visit("1.16.0", true), Answer::Offer);
+        assert_eq!(offer.visit("1.16.0", || true), Answer::Offer);
         let offered = load(&path).unwrap().offered;
-        assert_eq!(offer.visit("1.18.2", true), Answer::No);
+        assert_eq!(offer.visit("1.18.2", || true), Answer::No);
         assert_eq!(load(&path), Some(Kept { offered, version: "1.18.2".into() }), "an update raises it");
-        assert_eq!(offer.visit("1.18.3", false), Answer::No);
+        assert_eq!(offer.visit("1.18.3", || false), Answer::No);
         assert_eq!(load(&path).unwrap().version, "1.18.3", "on a page with no model too, once the offer was made");
-        assert_eq!(offer.visit("1.17.0", true), Answer::No);
+        assert_eq!(offer.visit("1.17.0", || true), Answer::No);
         assert_eq!(load(&path).unwrap().version, "1.18.3", "an older binary started since does not lower it");
         std::fs::write(&path, "not json").unwrap();
-        assert_eq!(offer.visit("1.18.3", true), Answer::No, "a file it cannot read was still an offer made");
+        assert_eq!(offer.visit("1.18.3", || true), Answer::No, "a file it cannot read was still an offer made");
         assert_eq!(load(&path).map(|k| k.version), Some("1.18.3".into()), "and is written again in its shape");
         let _ = std::fs::remove_dir_all(&dir);
     }

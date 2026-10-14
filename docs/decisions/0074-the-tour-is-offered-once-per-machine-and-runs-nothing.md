@@ -48,6 +48,9 @@ anything the user did not ask for.
   else. The version is for a tour of what is new since the last one seen,
   planned in `docs/state.md`: it has to be kept from the first release that
   has a tour, or the first update after it has nothing to start from.
+  *Amended by [0078](0078-the-tour-is-offered-once-there-is-a-model-to-show.md):
+  kept from the offer on, a page with no model to show writing nothing before
+  it.*
 - **The page under the tour takes no click and no key while it is up**, and
   the app's own shortcuts wait for it to end. The arrows, Enter and Escape
   walk it.

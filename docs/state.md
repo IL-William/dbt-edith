@@ -1192,9 +1192,9 @@ new (below) will start from. `web/tests/tour.js` checks the steps and their
 wording per feature, and `scripts/walk_tour.py`, in `check.sh`, walks every
 step in headless Chrome on Jaffle Shop: no offer before `dbt parse` and the
 short tour saying there is no manifest, the ring around each target, the page
-under it, Back, the offer once the parse lands and not after a reload, the
-terminal never started, no file in the config directory but `tour.json`, and a
-page in use put back after Escape. A welcome without a model says whether there
+under it, Back, the offer once the parse lands, at the end of a tour on screen
+when it lands, and not after a reload, the terminal never started, no file in
+the config directory but `tour.json`, and a page in use put back after Escape. A welcome without a model says whether there
 is no manifest or a manifest with none, ringing the `?` button the tour is taken
 again from, and one on a package's model, the project having none of its own,
 names the package.

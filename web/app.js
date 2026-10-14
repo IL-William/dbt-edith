@@ -11616,18 +11616,31 @@ async function endTour() {
     // Where Escape in the panel sends the focus back, as before the tour.
     S.reportsReturn = s.reportsReturn;
   } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
+  // A manifest that landed during the tour was not asked about (0078).
+  if (S.tourOfferHeld && !S.tour) offerTour();
 }
 
 /* Once on a machine, the first page to ask with a model to show offers the
    tour beside the ? button, which is where it stays (0074). Nothing opens: it
    waits for an answer, and the server has already noted that it was made.
    Without a model the server notes nothing and the offer is held, to be asked
-   for again when a manifest lands (0078). */
+   for again when a manifest lands (0078). Never while a tour is on screen:
+   the server notes the offer as it answers, and a card nobody can see would
+   spend it, so the tour's end asks instead. */
 async function offerTour() {
+  if (S.tour) {
+    S.tourOfferHeld = true;
+    return;
+  }
+  const was = S.tourOfferHeld;
   S.tourOfferHeld = false;
   const at = S.meta && S.meta.manifest_mtime;
   let r;
-  try { r = await api.send('/api/tour/offer', 'POST', {}); } catch { return; }
+  try { r = await api.send('/api/tour/offer', 'POST', {}); } catch {
+    // Not asked, so still to ask at the next manifest.
+    S.tourOfferHeld = was;
+    return;
+  }
   if (r && r.held) {
     S.tourOfferHeld = true;
     // A manifest that landed while the server answered was not asked about.
