@@ -15,6 +15,11 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.2 - 2026-10-14
+
+- Show a toast above the dialog it answers, so copying the clone statements
+  says it was done.
+
 ## 1.18.1 - 2026-10-14
 
 - List every key of `dbt_project.yml` reaching a file in the breadcrumb's
