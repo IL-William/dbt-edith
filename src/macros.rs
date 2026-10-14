@@ -10,6 +10,9 @@
 //! searches one either, and dbt's own macros come last in dbt's order but have
 //! no file here, so they need no place in this one.
 //!
+//! Each macro keeps its body only when it bears on an incremental strategy,
+//! which `src/incremental.rs` reads; nothing here looks at one.
+//!
 //! The invariant: a macro is linked only to a file that exists inside the
 //! project. The manifest gives a package macro's path relative to the package,
 //! so it is looked for where `dbt deps` puts packages, and a macro of dbt's own,
@@ -35,6 +38,9 @@ pub struct Macro {
     pub description: String,
     /// The arguments the YAML documents, which is all the manifest knows.
     pub args: Vec<String>,
+    /// `macro_sql`, kept only for a macro that bears on an incremental
+    /// strategy (`crate::manifest`), empty for every other.
+    pub body: String,
 }
 
 #[derive(Clone, Default)]
@@ -74,6 +80,7 @@ impl Macros {
                     .filter_map(|a| a.name)
                     .filter(|a| !a.is_empty())
                     .collect(),
+                body: m.macro_sql.unwrap_or_default(),
             });
         }
         Macros { list, by_package, root: root.to_string() }
@@ -99,7 +106,7 @@ impl Macros {
         &self.root
     }
 
-    fn get(&self, package: &str, name: &str) -> Option<&Macro> {
+    pub(crate) fn get(&self, package: &str, name: &str) -> Option<&Macro> {
         let &i = self.by_package.get(package)?.get(name)?;
         Some(&self.list[i as usize])
     }
@@ -141,6 +148,20 @@ impl Macros {
         candidates
             .into_iter()
             .find(|rel| crate::files::resolve(project, rel).is_ok_and(|p| p.is_file()))
+    }
+
+    /// Every macro of that name, whatever its package.
+    pub(crate) fn named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Macro> + 'a {
+        self.by_package.values().filter_map(move |names| names.get(name)).map(|&i| &self.list[i as usize])
+    }
+
+    /// Every package that defines a macro, in no particular order.
+    pub(crate) fn packages(&self) -> impl Iterator<Item = &str> {
+        self.by_package.keys().map(String::as_str)
+    }
+
+    pub(crate) fn has(&self, package: &str, name: &str) -> bool {
+        self.get(package, name).is_some()
     }
 }
 
@@ -260,6 +281,7 @@ mod tests {
             path: "../elsewhere/x.sql".into(),
             description: String::new(),
             args: Vec::new(),
+            body: String::new(),
         };
         assert!(base.join("shop").join(&outside.path).is_file());
         assert_eq!(macros().place(&base.join("shop"), &outside), None);

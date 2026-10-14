@@ -1,6 +1,6 @@
 # 0028. A macro call resolves by name, the way dbt resolves it
 
-Date: 2026-09-23 · Status: accepted
+Date: 2026-09-23 · Status: accepted, amended by 0076
 
 **Trigger:** read before linking anything to a macro, or changing which macro a
 call in the editor reaches.
@@ -50,3 +50,8 @@ to a scanner `log()`, a Jinja builtin and a typo look alike. Inside a package
 macro a bare call resolves as if that package were the caller, which dbt only
 decides at run time. Not followed: `adapter.dispatch` targets, generic tests
 named in YAML (`- dbt_utils.accepted_range:`), and materializations.
+
+*Amended by [0076](0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md):
+an incremental model's strategy follows `adapter.dispatch` and the
+materialization, the way dbt does, and reads the bodies of the few macros
+involved. Calls in the editor still stop at the dispatcher.*

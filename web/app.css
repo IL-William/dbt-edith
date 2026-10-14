@@ -178,6 +178,7 @@ kbd {
 }
 .hc-note { margin-top: 6px; font-size: 11px; line-height: 1.45; white-space: pre-line; }
 .hc-note.warn { color: var(--warn); }
+.hc-sub s { opacity: .6; }
 #status-branch { cursor: pointer; }
 #status-branch:hover { color: var(--accent); }
 #statusbar { height: 24px; border-bottom: none; border-top: 1px solid var(--line); font-size: 11px; gap: 14px; }
@@ -853,6 +854,7 @@ kbd {
 .nd .kindbar.seg { rx: 1.5; }
 .nd .t1 { fill: var(--fg); font-size: 11.5px; }
 .nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }
+.nd .t2 .struck { opacity: .6; text-decoration: line-through; }
 .nd .more { fill: var(--fg-dim); font-size: 9px; }
 /* A folder band, when the canvas is drawn by folder: the columns one folder's
    nodes sit in, under the edges and the boxes (0029). Its name is written in
@@ -1188,6 +1190,18 @@ kbd {
 .stat .v.link { cursor: pointer; }
 .stat .v.link:hover, .stat .v.link:focus-visible { color: var(--accent); }
 .stat .v.link:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+/* The strategy and the key: the other stats stay at the top beside a key of
+   several lines. */
+.stats { align-items: flex-start; }
+.stat .v.none { color: var(--fg-dim); font-weight: 400; }
+.stat .v s { color: var(--fg-dim); font-weight: 400; }
+.stat .under { margin-top: 1px; font-size: 11px; color: var(--fg-dim); }
+.stat .v.keys { font: 600 12.5px/1.5 var(--mono); }
+.stat .keylink { cursor: pointer; text-decoration: underline dotted #5a6779; text-underline-offset: 3px; }
+.stat .keylink:hover, .stat .keylink:focus-visible { color: var(--accent); text-decoration-color: var(--accent); }
+.stat .keymore { font: 400 11.5px var(--ui); color: var(--accent); cursor: pointer; }
+.stat .keymore:hover { text-decoration: underline; }
+.stat .keylink:focus-visible, .stat .keymore:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .loc { border-collapse: collapse; font-size: 11.5px; width: 100%; }
 .loc th {
   text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
@@ -1261,6 +1275,8 @@ kbd {
 .cols tr.c-linked .c-name { cursor: text; user-select: text; }
 .cols tr.c-linked:hover .c-lin { color: var(--accent); }
 .cols tr.c-focus td { background: var(--accent-dim); }
+/* In the incremental orange, outlined like the canvas's role tags. */
+.cols .keytag { display: inline-block; margin-left: 7px; padding: 0 4px; font: 9.5px var(--mono); letter-spacing: .4px; color: #e0a34b; border: 1px solid #e0a34b; border-radius: 3px; vertical-align: 1px; user-select: none; }
 .cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
 .cols .c-lin b { color: var(--accent); font-weight: 600; }
 /* The count of tests this table cannot show. Underlined rather than coloured:

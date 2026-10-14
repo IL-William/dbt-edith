@@ -369,6 +369,13 @@ Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file. The column count
 opens the Columns tab.
+An incremental model adds Strategy and Unique key beside the materialization,
+the strategy as its box reads it, and a snapshot its Unique key. The key takes
+one column per line, three at most, then `+N more, in Columns`, and each name
+opens the Columns tab on its row. There, each key column carries a `KEY` tag,
+and a Key sort puts them first in the key's order. A view or a table that a
+folder's config gave a strategy or a key lists it, dimmed, under details: it
+does not use it, but `config.incremental_strategy:` still selects it.
 Once a [job source](#jobs) is named, Preview also lists the steps that run the
 node, one chip each, `DAG › task` or `job › step`, green when the job is
 scheduled and grey when it is not, in the Jobs tab's order. A click on one
@@ -859,6 +866,15 @@ blending in. Ephemeral models are dashed, like disabled ones: nothing of them
 exists in the warehouse. The legend in the corner lists only the
 materializations actually on screen. The same colours are used for the dots in
 the sidebar and the catalog, so a model looks the same everywhere.
+
+An incremental model's box names its strategy in place of the word
+`incremental`: `merge · marts · 3 tests`. One that configures none shows the
+adapter's default, read from the macros the manifest carries, the project's
+and its packages' overrides included, and keeps `incremental` when they do not
+say. Where those macros insert every row for want of a unique key, the box
+reads `append` with the strategy struck through: on Snowflake, a merge with no
+key is a plain `insert into`. The hover card says where the strategy comes
+from and why an append is one (0076).
 
 Each box sits to the right of all its parents on screen, so every edge runs
 left to right and a model always comes after what it reads. A model read by more
@@ -1483,6 +1499,7 @@ $JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outl
 $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
+$JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, and the columns its key names
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
@@ -1543,9 +1560,10 @@ src/clone.rs      which nodes a clone into your schema copies: the model, its di
 src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs     macros from the manifest, and which one a call in the editor reaches
+src/incremental.rs which incremental strategy dbt runs for a model, read from those macros
 src/freshness.rs  whether manifest.json still matches the files dbt would parse
 src/envs.rs       .env parsing and location resolution per environment
-src/project.rs    the vars: block of dbt_project.yml, read by hand
+src/project.rs    the vars: and dispatch: blocks of dbt_project.yml, read by hand
 src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs        working tree status and the git commands the UI can run
@@ -1583,8 +1601,6 @@ Not there yet:
 - screenshots in this README;
 - a Run button on a node's file, with its parents or children;
 - a dock bar that keeps to one line on a narrow window;
-- the incremental strategy and its unique key, on the lineage and in the
-  Catalog, with the key's columns marked;
 - a tour of what is new since the version you had, after an update;
 - persisting open tabs between sessions;
 - a second column lineage source using dbt Fusion's local index, which needs no

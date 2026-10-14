@@ -1,6 +1,6 @@
 # 0018. The `vars:` block is read by a scanner, not a YAML parser
 
-Date: 2026-09-18 · Status: accepted, amended by 0063
+Date: 2026-09-18 · Status: accepted, amended by 0063 and 0076
 
 **Trigger:** read before reading a `.yml` file from the server, or before
 reaching for a YAML parser.
@@ -45,3 +45,8 @@ file, only a line number, so no value can escape through an error path.
 *Amended by [0063](0063-jobs-are-read-from-folders-you-name.md): job files,
 whose anchors and `<<` merges a line scanner cannot follow, are read into a
 tree by `src/yaml.rs`. The `vars:` block keeps its scanner.*
+
+*Amended by [0076](0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md):
+the scanner reads `dispatch:` too, a sequence of mappings, for the order
+dbt's own macros are searched in. A shape it does not know makes the whole
+block unreadable.*

@@ -1190,12 +1190,85 @@ const Lineage = (() => {
      the hover card feeds it the second: counting here rather than at each call
      site keeps "[object Object]" out of the line. */
   function subtitle(n) {
-    if (n.sub) return n.sub;
-    const bits = [n.disabled ? 'disabled' : n.kind === 'source' ? 'source' : (n.materialized || n.kind)];
+    return subJoin(subtitleParts(n), (s) => `(not ${s})`);
+  }
+
+  /* The parts joined into one line, the struck word written by `mark`: in
+     words for a string, as it is on the box, in an <s> for HTML. */
+  function subJoin(p, mark) {
+    return [p.struck ? `${p.lead} ${mark(p.struck)}` : p.lead, p.rest].filter(Boolean).join('  ·  ');
+  }
+
+  /* The second line in three parts, for what can strike a word: the box, the
+     export's picture and list, the hover card. `lead` is the materialization,
+     or an incremental model's strategy in its place; `struck` is the strategy
+     dbt was given or picked when the box shows `append` for it, since without
+     a unique key it inserts every row; `rest` is the schema and the test
+     count. subtitle() writes the struck word out in words for the rest. */
+  function subtitleParts(n) {
+    if (n.sub) return { lead: n.sub, struck: '', rest: '' };
+    const lead = n.disabled ? 'disabled' : n.kind === 'source' ? 'source'
+      : (n.strategy_shown || n.materialized || n.kind);
+    const bits = [];
     if (n.schema) bits.push(n.schema);
     const tests = Array.isArray(n.tests) ? n.tests.length : n.tests;
     if (tests) bits.push(`${tests} test${tests > 1 ? 's' : ''}`);
-    return bits.join('  ·  ');
+    return { lead, struck: (!n.disabled && n.strategy_named) || '', rest: bits.join('  ·  ') };
+  }
+
+  /* The line as it reads on the box, struck word included. */
+  function subLine(p) {
+    return subJoin(p, (s) => s);
+  }
+
+  /* Writes the second line into a box's <text>, the struck word in a <tspan>
+     of its own, which a clip or a textContent would flatten. `max` cuts the
+     line from its end, the test count first and then the schema, never the
+     strategy or the struck word; 0 writes it whole, as the export does.
+     `make` creates the tspans, so a harness can hand in its own. */
+  function writeSub(t, p, max, make) {
+    // A cut that falls in a separator ends before it, not on a lone dot.
+    const cut = (s, room) => s.slice(0, room - 1).replace(/[\s·]+$/, '') + '…';
+    const line = subLine(p);
+    if (!p.struck) {
+      t.textContent = max && line.length > max ? cut(line, max) : line;
+      return;
+    }
+    const head = `${p.lead} `;
+    let rest = p.rest ? `  ·  ${p.rest}` : '';
+    const room = max ? max - head.length - p.struck.length : Infinity;
+    if (rest.length > room) rest = room > 6 ? cut(rest, room) : '';
+    t.textContent = head;
+    const struck = make('tspan');
+    struck.setAttribute('class', 'struck');
+    struck.textContent = p.struck;
+    t.appendChild(struck);
+    if (rest) {
+      const after = make('tspan');
+      after.textContent = rest;
+      t.appendChild(after);
+    }
+  }
+
+  /* What a box's strategy says to a screen reader, which hears no strike:
+     `append, configured merge with no unique key`, or `Snowflake's default
+     merge`. Empty on any box that shows no strategy. */
+  function strategySaid(n, adapter) {
+    if (!n.strategy_shown || n.disabled) return '';
+    const origin = n.strategy_default ? `${adapterName(adapter)}'s default` : 'configured';
+    if (n.strategy_named) return `${n.strategy_shown}, ${origin} ${n.strategy_named} with no unique key`;
+    return n.strategy_default ? `${origin} ${n.strategy_shown}` : n.strategy_shown;
+  }
+
+  /* An adapter as its makers write it, from the manifest's `adapter_type`. */
+  const ADAPTER_NAMES = {
+    snowflake: 'Snowflake', duckdb: 'DuckDB', bigquery: 'BigQuery', postgres: 'Postgres',
+    redshift: 'Redshift', databricks: 'Databricks', spark: 'Spark', sqlserver: 'SQL Server',
+    clickhouse: 'ClickHouse', trino: 'Trino', athena: 'Athena', fabric: 'Fabric',
+  };
+  function adapterName(adapter) {
+    if (!adapter) return 'the adapter';
+    return ADAPTER_NAMES[adapter] || adapter[0].toUpperCase() + adapter.slice(1);
   }
 
   /* Whether a press has moved far enough to be a pan rather than a click:
@@ -1455,7 +1528,7 @@ const Lineage = (() => {
 
       if (!b.rider) {
         const t2 = el('text', { class: 't2', x: 12, y: 35 });
-        t2.textContent = clip(subtitle(n), columnMode ? 30 : 34);
+        writeSub(t2, subtitleParts(n), columnMode ? 30 : 34, el);
         g.appendChild(t2);
       }
 
@@ -1471,8 +1544,9 @@ const Lineage = (() => {
       // group still needs an accessible name, and role="img" is what gets one
       // exposed on a bare <g>.
       g.setAttribute('role', 'img');
+      const said = strategySaid(n, opts.adapter);
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
-        + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
+        + (said ? `${said}, ` : '') + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => { e.stopPropagation(); select(n.id); handlers.onSelect && handlers.onSelect(n); });
       g.addEventListener('dblclick', (e) => { e.stopPropagation(); handlers.onOpen && handlers.onOpen(n); });
@@ -1695,14 +1769,14 @@ const Lineage = (() => {
     // spills out of its box. Past the floor the pin squeezes it.
     // A row's line starts further in past a second bar, and stops short of a
     // warn mark, so its room is its own.
-    const spell = (t, full) => {
+    const spell = (t, full, write) => {
       if (!t || !full || t.textContent === full) return;
       const cls = t.getAttribute('class'), nd = t.parentNode, small = nd.classList.contains('rider');
       const mark = nd.querySelector('.warnmark'), count = mark && mark.querySelector('.warncount');
       const room = (+nd.querySelector('rect.box').getAttribute('width') || W) - 8 - (+t.getAttribute('x') || 12)
         - (mark ? warnRoom(count ? count.textContent : 0) : 0);
       const natural = measure(cls, full, 0, small);
-      t.textContent = full;
+      if (write) write(); else t.textContent = full;
       if (!natural.wide) return;
       const shrink = Math.min(1, Math.max(0.6, room / natural.wide));
       let wide = natural.wide;
@@ -1745,7 +1819,9 @@ const Lineage = (() => {
       const t1 = nd.querySelector('.t1');
       spell(t1, t1 && t1.dataset.full ? t1.dataset.full : n.name);
       if (t1) t1.removeAttribute('data-full');
-      spell(nd.querySelector('.t2'), subtitle(n));
+      // Written in its parts, so the picture keeps the strike.
+      const t2 = nd.querySelector('.t2'), parts = subtitleParts(n);
+      spell(t2, subLine(parts), () => writeSub(t2, parts, 0, el));
       nd.querySelectorAll('.more-badge').forEach((b) => {
         const up = b.dataset.dir === 'up';
         b.removeAttribute('style');
@@ -1798,5 +1874,8 @@ const Lineage = (() => {
     handlers.onHoverClose && handlers.onHoverClose();
   };
 
-  return { init, render, fit, select, clear, snapshot, subtitle, nodeColor, matLabel, testLevel, roleColor, nodeRoles };
+  return {
+    init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
+    testLevel, roleColor, nodeRoles,
+  };
 })();

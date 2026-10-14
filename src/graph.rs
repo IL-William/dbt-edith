@@ -11,6 +11,7 @@
 //! search hit comes first, it goes by name instead of by index.
 
 use crate::collin::RawColLineage;
+use crate::incremental::{Incremental, Key, Shown};
 use crate::macros::Macros;
 use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
@@ -152,8 +153,20 @@ pub struct Node {
     /// parse time, before the generate_*_name macros. Not "the" environment.
     pub parsed: Place,
     pub materialized: String,
+    /// `incremental_strategy` as configured, which the selector matches as
+    /// `dbt ls` does (0033), on every node it reaches.
     pub strategy: String,
-    pub unique_key: String,
+    /// `unique_key` as configured, one entry per column or expression. A list
+    /// stays a list: an entry can hold a comma, so a joined string could not
+    /// be split back, and the selector tests membership as dbt does.
+    pub unique_key: Vec<String>,
+    /// What the merge macros test the key for, from its shape before any
+    /// flattening.
+    pub key: Key,
+    /// An incremental model's strategy as its box shows it, once
+    /// `resolve_incremental` read what dbt runs. None when the default could
+    /// not be read, and on every other node, which pays a pointer for it.
+    pub shown: Option<Box<Shown>>,
     pub package: String,
     pub description: String,
     pub tags: Vec<String>,
@@ -310,6 +323,29 @@ impl Node {
     pub fn on_disk(&self) -> &str {
         if self.place.is_empty() { &self.file } else { &self.place }
     }
+
+    /// An incremental model: the one node a strategy applies to. A folder's
+    /// `+incremental_strategy` reaches its views too, unused.
+    pub fn is_incremental(&self) -> bool {
+        self.kind == Kind::Model && self.materialized == "incremental"
+    }
+
+    pub fn strategy_facts(&self) -> StrategyFacts<'_> {
+        match &self.shown {
+            Some(s) => StrategyFacts {
+                strategy_shown: &s.shown,
+                strategy_named: &s.named,
+                strategy_default: s.default,
+                strategy_insert: s.insert,
+            },
+            None => StrategyFacts::default(),
+        }
+    }
+
+    /// The key a box's hover card names: an incremental model's only.
+    pub fn box_key(&self) -> &[String] {
+        if self.is_incremental() { &self.unique_key } else { &[] }
+    }
 }
 
 impl Graph {
@@ -430,15 +466,19 @@ impl Graph {
                     _ => raw_node.config.materialized.unwrap_or_default(),
                 },
                 strategy: raw_node.config.incremental_strategy.unwrap_or_default(),
+                key: Key::of(raw_node.config.unique_key.as_ref()),
+                // An entry that is no string is kept as its JSON text, so a
+                // nested list still reads as a key rather than as none.
                 unique_key: match raw_node.config.unique_key {
-                    Some(serde_json::Value::String(s)) => s,
-                    Some(serde_json::Value::Array(a)) => a
-                        .iter()
-                        .filter_map(|v| v.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    _ => String::new(),
+                    Some(v) if Key::of(Some(&v)) != Key::Given => Vec::new(),
+                    Some(serde_json::Value::String(s)) => vec![s],
+                    Some(serde_json::Value::Array(a)) => {
+                        a.into_iter().map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).collect()
+                    }
+                    Some(other) => vec![other.to_string()],
+                    None => Vec::new(),
                 },
+                shown: None,
                 package: raw_node.package_name,
                 description: if heavy { raw_node.description } else { String::new() },
                 // Tests keep their tags even though the rest of them stays skeletal:
@@ -642,6 +682,37 @@ impl Graph {
             catalog_mtime: 0,
             cll: None,
             unit_tests,
+        }
+    }
+
+    /// Reads what dbt runs for each incremental model (`macros::Incremental`):
+    /// the strategy its box shows, and whether that inserts every row. Run
+    /// once the root project is named, since a bare name reaches its macros
+    /// first.
+    pub fn resolve_incremental(&mut self, dispatch: &crate::project::DispatchOrder) {
+        let inc = Incremental::new(&self.macros, &self.meta.adapter, dispatch);
+        // The answers depend on the package, the strategy and the key's shape
+        // alone, which most models share.
+        let mut defaults: HashMap<(String, bool), Option<String>> = HashMap::new();
+        let mut inserts: HashMap<(String, String, Key), Option<&'static str>> = HashMap::new();
+        // A disabled model is never run, so nothing is said of how.
+        for n in self.nodes.iter_mut().filter(|n| n.is_incremental() && !n.disabled) {
+            let strategy = match n.strategy.as_str() {
+                "" => defaults.entry((n.package.clone(), false)).or_insert_with(|| inc.default_strategy(&n.package)).clone(),
+                // Configured outright, `'default'` reaches the default macro
+                // whatever the materialization would fall back to.
+                "default" => defaults.entry((n.package.clone(), true)).or_insert_with(|| inc.named_default(&n.package)).clone(),
+                s => Some(s.to_string()),
+            };
+            let Some(strategy) = strategy else { continue };
+            let by = *inserts
+                .entry((n.package.clone(), strategy.clone(), n.key))
+                .or_insert_with(|| inc.inserts(&strategy, &n.package, n.key));
+            let default = n.strategy.is_empty() || n.strategy == "default";
+            n.shown = Some(Box::new(match by {
+                Some(insert) => Shown { shown: "append".to_string(), named: strategy, default, insert },
+                None => Shown { shown: strategy, named: String::new(), default, insert: "" },
+            }));
         }
     }
 
@@ -868,6 +939,8 @@ impl Graph {
                         host: "",
                         depth: depth[&c],
                         sub,
+                        incremental: StrategyFacts::default(),
+                        unique_key: &[],
                         tests: column.tests.len(),
                         parents: up_n,
                         children: down_n,
@@ -1124,6 +1197,8 @@ impl Graph {
                         namespace: &n.namespace,
                         warn: n.warn,
                         host: self.host_name(n),
+                        incremental: n.strategy_facts(),
+                        unique_key: n.box_key(),
                         depth: depth[&i],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -1312,6 +1387,8 @@ impl Graph {
                         namespace: &n.namespace,
                         warn: n.warn,
                         host: self.host_name(n),
+                        incremental: n.strategy_facts(),
+                        unique_key: n.box_key(),
                         depth: depth[p],
                         tests: n.tests.len(),
                         parents: n.parents.len(),
@@ -1382,11 +1459,33 @@ pub struct LineageNode<'a> {
     /// Column mode only: the second line of the node box.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sub: String,
+    /// An incremental model only: everything its hover card's strategy line
+    /// says, since the card paints from the box before `/api/node` answers
+    /// and would otherwise change under the pointer.
+    #[serde(flatten)]
+    pub incremental: StrategyFacts<'a>,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    pub unique_key: &'a [String],
     pub tests: usize,
     pub parents: usize,
     pub children: usize,
     pub hidden_up: usize,
     pub hidden_down: usize,
+}
+
+/// What an incremental model's box and hover card say of its strategy
+/// (`Node::strategy_facts`), each field skipped when empty, so a view or a
+/// table pays nothing.
+#[derive(serde::Serialize, Default)]
+pub struct StrategyFacts<'a> {
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub strategy_shown: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub strategy_named: &'a str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub strategy_default: bool,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub strategy_insert: &'a str,
 }
 
 #[cfg(test)]

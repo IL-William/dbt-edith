@@ -185,10 +185,11 @@ pub struct RawDependsOn {
     pub nodes: Vec<String>,
 }
 
-/// A macro, without `macro_sql`: the body is the bulk of the entry, and serde
-/// skips what is not declared. Every field is an Option where a node has plain
-/// strings, because a null in a section this program never read before must
-/// not cost the whole manifest, lineage included.
+/// A macro, with `macro_sql` only for the few that say which incremental
+/// strategy dbt runs: the body is the bulk of the entry. Every field is an
+/// Option where a node has plain strings, because a null in a section this
+/// program never read before must not cost the whole manifest, lineage
+/// included.
 #[derive(serde::Deserialize, Default)]
 pub struct RawMacro {
     #[serde(default)]
@@ -204,6 +205,28 @@ pub struct RawMacro {
     /// Only the ones documented in YAML: dbt never reads a macro's signature.
     #[serde(default)]
     pub arguments: Option<Vec<RawMacroArg>>,
+    #[serde(default, deserialize_with = "strategy_body")]
+    pub macro_sql: Option<String>,
+}
+
+/// What a body mentions when it can bear on an incremental model's strategy
+/// (`src/macros.rs`): the materialization, the strategy macros and the merge
+/// macros they call, by their own names, and whatever reads the configured
+/// strategy, for a materialization that reads it one call deep.
+const STRATEGY_WORDS: &[&str] = &[
+    "materialization incremental",
+    "get_incremental_",
+    "get_merge_sql",
+    "get_delete_insert_merge_sql",
+    "incremental_strategy",
+];
+
+/// A body kept only when it may say something about the strategy. Each one is
+/// read whole all the same, but dropped at once, so no more than one other
+/// body is held at a time.
+fn strategy_body<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let body: Option<String> = serde::Deserialize::deserialize(d)?;
+    Ok(body.filter(|b| STRATEGY_WORDS.iter().any(|w| b.contains(w))))
 }
 
 #[derive(serde::Deserialize, Default)]
