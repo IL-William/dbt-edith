@@ -24,11 +24,14 @@ every macro with its package and its path (0028).
   (0028), against the project's real path worked out once per query. A package
   with no folder under `dbt_packages/` or `dbt_modules/` is passed over whole
   after one look for that folder, so dbt's own few hundred macros, and an
-  adapter's, cost that look and not one per macro. The others are tried at most
-  four times as many as the box can list: a manifest older than a move of
-  `macros/` names files that are gone, and one letter would look for them all.
+  adapter's, cost that look and not one per macro. The others are looked for
+  until four times as many as the box can list were not found: a manifest
+  older than a move of `macros/` names files that are gone, and one letter
+  would look for them all. The list it cuts says nothing of the cut.
 - **Answers are shown in the order their queries were asked**, and Enter waits
-  for the last one, since three requests a query make a late answer likelier.
+  for the last one, since three requests a query make a late answer likelier,
+  unless the arrows picked a row of the list shown. An Enter still waiting
+  does nothing once the box has been closed or opened again.
 - **A row reads as the project calls it**: bare for the project's,
   `package.name` for a package's. Macros come after the nodes and before the
   files, and only once something is typed.

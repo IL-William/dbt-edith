@@ -27,7 +27,7 @@ use std::path::Path;
 /// dbt has used since 1.0, then the one before it.
 pub(crate) const PACKAGE_DIRS: &[&str] = &["dbt_packages", "dbt_modules"];
 
-/// How many macros a search may try to place for each one it can list.
+/// How many macros a search may fail to place for each one it can list.
 const TRIES_PER_HIT: usize = 4;
 
 #[derive(Clone, Debug)]
@@ -209,16 +209,16 @@ impl Macros {
     /// package with no folder where `dbt deps` puts one is passed over whole,
     /// after one look for that folder: dbt's own few hundred macros, and an
     /// adapter's, then cost that look and not one per macro. The rest are
-    /// placed at most `TRIES_PER_HIT` times `limit`: a manifest older than a
-    /// move of `macros/` names files that are gone, and a query of one letter
-    /// would otherwise look for every one of them on each key.
+    /// looked for until `TRIES_PER_HIT` times `limit` of them were not found: a
+    /// manifest older than a move of `macros/` names files that are gone, and
+    /// a query of one letter would otherwise look for every one on each key.
     pub fn find(&self, project: &Path, query: &str, limit: usize) -> Vec<(&Macro, String)> {
         let Ok(canon) = project.canonicalize() else { return Vec::new() };
         let mut installed: HashMap<&str, bool> = HashMap::new();
-        let mut tries = limit.saturating_mul(TRIES_PER_HIT);
+        let mut misses = limit.saturating_mul(TRIES_PER_HIT);
         let mut found = Vec::new();
         for m in self.search(query) {
-            if found.len() >= limit || tries == 0 {
+            if found.len() >= limit || misses == 0 {
                 break;
             }
             if m.package != self.root
@@ -231,9 +231,9 @@ impl Macros {
             {
                 continue;
             }
-            tries -= 1;
-            if let Some(file) = self.place_under(project, &canon, m) {
-                found.push((m, file));
+            match self.place_under(project, &canon, m) {
+                Some(file) => found.push((m, file)),
+                None => misses -= 1,
             }
         }
         found
@@ -405,9 +405,9 @@ mod tests {
         .unwrap();
         let m = crate::graph::Graph::build(raw, Path::new("manifest.json"), 0, 0).macros;
         let dir = project("gone", &["macros/fx_7.sql"]);
-        // One to list, so four tries: the seventh is never looked for.
+        // One to list, so four misses: the seventh is never looked for.
         assert!(m.find(&dir, "fx", 1).is_empty());
-        // Two to list, eight tries, which reach it.
+        // Two to list, eight misses allowed, which reach it.
         let found: Vec<&str> = m.find(&dir, "fx", 2).into_iter().map(|(m, _)| m.name.as_str()).collect();
         assert_eq!(found, vec!["fx_7"]);
         let _ = std::fs::remove_dir_all(&dir);

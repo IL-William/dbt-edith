@@ -11222,14 +11222,21 @@ function connectTerm() {
 
 // ---------------------------------------------------------------- palette --
 let palIndex = 0, palHits = [];
+/* Bumped each time the box opens or closes, so an Enter still waiting for its
+   answer acts only in the box it was pressed in. */
+let palOpened = 0;
+/* Set by an arrow key, cleared when rows are drawn or a key is typed: the row
+   it moved to was picked from what is shown, not from a list still coming. */
+let palMoved = false;
 function openPalette() {
+  palOpened++;
   closeCrumbMenu();
   $('#palette').classList.remove('hidden');
   const input = $('#palette-input');
   input.value = ''; input.focus();
   runPalette('');
 }
-function closePalette() { $('#palette').classList.add('hidden'); }
+function closePalette() { palOpened++; $('#palette').classList.add('hidden'); }
 
 /* Answers shown in the order their queries were asked, whatever order they come
    back in: typing outruns the server, and an answer to fewer letters, or the
@@ -11286,17 +11293,21 @@ async function fetchPalette(q) {
 }
 
 const palAnswers = lastAsked(fetchPalette, showPalette);
-function runPalette(q) { return palAnswers.ask(q); }
+function runPalette(q) { palMoved = false; return palAnswers.ask(q); }
 
-/* Enter right after a key picks from what that key lists. */
+/* Enter right after a key picks from what that key lists, in the box it was
+   pressed in. A row the arrows moved to is opened at once. */
 async function enterPalette() {
+  if (palMoved) return choosePalette();
+  const opened = palOpened;
   await palAnswers.settled();
-  if (!$('#palette').classList.contains('hidden')) choosePalette();
+  if (opened === palOpened) choosePalette();
 }
 
 function showPalette(hits, q) {
   palHits = hits;
   palIndex = 0;
+  palMoved = false;
 
   const box = $('#palette-results');
   box.textContent = '';
@@ -11325,6 +11336,7 @@ function showPalette(hits, q) {
 function movePalette(delta) {
   const rows = $$('#palette-results .pres');
   if (!rows.length) return;
+  palMoved = true;
   rows[palIndex].classList.remove('on');
   palIndex = (palIndex + delta + rows.length) % rows.length;
   rows[palIndex].classList.add('on');

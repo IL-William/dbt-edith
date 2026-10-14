@@ -116,6 +116,50 @@ q = q.then(function () {
   did = [];
   choosePalette(5);
   later('no row there, nothing done', function () { return did.length === 0; });
+});
+
+// Enter: in the box it was pressed in, on the row the arrows picked.
+eval(src.slice(src.indexOf('async function enterPalette'), src.indexOf('function showPalette')));
+eval(src.slice(src.indexOf('function movePalette'), src.indexOf('function choosePalette')));
+var palOpened = 0, palMoved = false, picked = [];
+function row() { return { classList: { add: function () {}, remove: function () {} }, scrollIntoView: function () {} }; }
+var rows = [row(), row(), row()];
+function $$() { return rows; }
+var palAnswers = lastAsked(fakeFetch, function () { palIndex = 0; palMoved = false; });
+asyncWant += 4;
+q = q.then(function () {
+  // Assigned here, not declared: a declaration would be hoisted and replaced
+  // by the real one evaluated above, and the checks of the real one run first.
+  choosePalette = function () { picked.push(palIndex); };
+  // Typed, Enter while it loads, Esc, opened again: the answer opens nothing.
+  palOpened++; palAnswers.ask('foo');
+  var entered = enterPalette();
+  palOpened++;                      // Esc
+  palOpened++; palAnswers.ask('');  // Cmd+K again
+  pending.foo('foo-rows');
+  pending['']('empty-rows');
+  return entered;
+}).then(function () {
+  later('an Enter left waiting does nothing in a box opened since', function () { return picked.length === 0; });
+  // Rows of fewer letters shown, the next key's still coming, two arrows down.
+  palMoved = false; palIndex = 0;
+  palAnswers.ask('stg_ord');
+  movePalette(1); movePalette(1);
+  var entered = enterPalette();
+  later('a row the arrows moved to is opened at once', function () { return picked.join() === '2'; });
+  pending.stg_ord('stg_ord-rows');
+  return entered;
+}).then(function () {
+  later('and once only', function () { return picked.join() === '2'; });
+  picked = [];
+  // Typed, no arrow: Enter waits for that answer and takes its first row.
+  palIndex = 2;
+  palAnswers.ask('stg_orders');
+  var entered = enterPalette();
+  pending.stg_orders('stg_orders-rows');
+  return entered;
+}).then(function () {
+  later('Enter after a key takes the first row of what it lists', function () { return picked.join() === '0'; });
 }).then(function () {
   check('every asynchronous check ran', asyncChecks === asyncWant);
 }, function (e) { print('FAIL  ' + e); });
