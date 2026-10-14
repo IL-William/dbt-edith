@@ -1195,6 +1195,7 @@ kbd {
 .cat-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
 .cat-title .dot { width: 9px; height: 9px; }
 .cat-title .btn { margin-left: auto; font-weight: 400; }
+.cat-title .cat-copy { margin-left: -3px; flex: 0 0 auto; }
 .crumb { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 10px; word-break: break-all; }
 .crumb b { color: var(--fg); font-weight: 400; }
 .cat-tabs { display: flex; gap: 18px; }
