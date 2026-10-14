@@ -14,5 +14,6 @@ Added for dbt-edith (0033), and nothing else changed:
 - the `raw` tag on the seeds and the `staging` tag on the staging models, in
   `dbt_project.yml`.
 
-It is read by `scripts/compare_with_dbt.py` only, from a temporary copy, and is
-never part of the binary.
+It is read by the scripts under `scripts/` only, each from a temporary copy:
+`compare_with_dbt.py`, `walk_tour.py` and `take_shots.py`. It is never part of
+the binary.

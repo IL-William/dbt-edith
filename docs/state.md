@@ -1292,6 +1292,15 @@ moved into invented sub-folders, Escape, Cmd+F again, Cmd+G from the canvas,
 and the Catalog's filter still answering there. Column mode only by the
 harness, Jaffle Shop having no column lineage. Not yet opened on the VM.
 
+Pictures in the README: the editor with a hover card, the lineage of the
+whole project by folder, the Catalog's columns, one column's lineage from
+collin, the Jobs tab and collin's report, all on Jaffle Shop with invented
+jobs. `scripts/take_shots.py` builds the copy on duckdb, commits it, names the
+job sources and takes them through headless Chrome with walk_tour.py's
+client, into `docs/shots/`, committed with the README so a tag shows its own
+interface (0082). It is not in `check.sh`, since it writes into the
+repository: retake them when a change alters what one shows.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1364,20 +1373,7 @@ harness, Jaffle Shop having no column lineage. Not yet opened on the VM.
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-9. **Screenshots in the README**, taken on dbt's Jaffle Shop with invented
-    data only (0014). No name or figure of a client project appears, in the
-    images or around them.
-    - **Which:** the lineage, a Custom selection, the Catalog, the Jobs tab and
-      its coverage in Reports, and collin's report.
-    - **How they are taken:** a script retakes them through headless Chrome
-      over CDP, with the standard library only, as the checks are driven. They
-      can then follow the interface at each release that changes it.
-    - **Where they live, still open:**
-      - committed under `docs/`, versioned with the README, but every retake
-        adds to the history for good;
-      - a gist, as #16 used for its screenshots, light, but a README needs
-        links that last longer than one.
-10. **A Run button on a node's file.** It sits at the end of the breadcrumb
+9. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
     only a selection types its command, so looking never touches the
@@ -1506,7 +1502,7 @@ harness, Jaffle Shop having no column lineage. Not yet opened on the VM.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
-11. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+10. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
@@ -1586,7 +1582,7 @@ harness, Jaffle Shop having no column lineage. Not yet opened on the VM.
       (`/api/collineage` answers 404): run collin on it first, or put a long
       name in the chip from the page, since its text is all its width depends
       on.
-12. **What is new since the version you had.** An update usually skips
+11. **What is new since the version you had.** An update usually skips
     several releases, and the update pill's What changed (0068) opens one
     release's notes, on GitHub, which the VM cannot always reach.
     - **Where it starts from:** `tour.json` keeps the newest version that
@@ -1655,8 +1651,8 @@ you check it took.
 A locked-down Windows machine can also build its own binary: `cargo install
 --path .` works there without administrator rights, with Rust's GNU toolchain
 and a mingw-w64 installed through winget, once the assembler that `raw-dylib`
-linking needs is on `PATH`. The README gives both that route and the
-cross-compile.
+linking needs is on `PATH`. [docs/windows.md](windows.md) gives both that
+route and the cross-compile.
 
 ## Waiting on a human
 
