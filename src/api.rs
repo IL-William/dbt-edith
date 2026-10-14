@@ -3628,8 +3628,9 @@ pub async fn watch_update(st: Arc<AppState>) {
         // Woken when the answer kept stops standing, on the hour from
         // midnight to 09:00 in Paris and at midnight past it, or an hour after
         // a look that got no answer, and at least hourly whatever the clock does.
-        // Each process a little after, by its own spread, so that dbt-edith on
-        // the machine asks GitHub once and the others read its answer.
+        // Each process up to two minutes later, by its own spread, so that
+        // dbt-edith on the machine asks GitHub once and the others read its
+        // answer.
         let now = crate::update::now_secs();
         let wait = st.update.next_look(now).saturating_sub(now).clamp(1, 3600) + st.update.spread();
         tokio::time::sleep(std::time::Duration::from_secs(wait)).await;

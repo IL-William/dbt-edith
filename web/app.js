@@ -12169,10 +12169,11 @@ function paintUpdateMenu(menu) {
   const u = S.update || { current: S.version };
   const o = updateOffer(u);
   // Drawn anew under the focus, at a click and every two seconds of a look:
-  // it goes back to the row it was on, or to the button when it was there.
+  // it goes back to the same row, found by its link since an answer can add
+  // rows above it, or to the button, without scrolling the menu to it.
   const rows = () => [...menu.querySelectorAll('[role=menuitem]')];
   const had = menu.contains(document.activeElement) ? document.activeElement : null;
-  const row = had && !had.classList.contains('updcheck') ? rows().indexOf(had) : -1;
+  const same = (r) => (had.getAttribute('href') ? r.getAttribute('href') === had.getAttribute('href') : r.className === had.className);
   menu.replaceChildren(el('div', 'menuhead', o ? o.head : `dbt-edith ${S.version || '?'}`));
   if (S.build) menu.append(el('div', 'menunote', S.build));
   if (o) {
@@ -12234,8 +12235,8 @@ function paintUpdateMenu(menu) {
     foot.append(look);
   }
   menu.append(foot);
-  const back = had && (rows()[row] || menu.querySelector('.updcheck') || rows().pop());
-  if (back) back.focus();
+  const back = had && (rows().find(same) || menu.querySelector('.updcheck') || rows().pop());
+  if (back) back.focus({ preventScroll: true });
 }
 
 /* The menu's button. The server answers once GitHub has, so the menu says it

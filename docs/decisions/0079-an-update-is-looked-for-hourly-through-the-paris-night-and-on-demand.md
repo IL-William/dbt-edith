@@ -40,10 +40,7 @@ as up to date, as never asked, and as GitHub out of reach.
 - **The button's look runs on a task of its own**, so a page closed or
   reloaded while git waits leaves it to end and keep its answer, and a look
   dropped on its way, whoever asked, says it is no longer on its way: a flag
-  left set would refuse every later look and show `Looking…` for good. git
-  stopped at its deadline is not waited for further, though a helper it
-  started, holding its output on a proxy that never answers, lives on for
-  minutes.
+  left set would refuse every later look and show `Looking…` for good.
 - **A look that got no answer is tried again an hour later**, in its process,
   and is kept nowhere, as before.
 - **Edith, at the top left, opens a menu**: the version and build stamp of the
@@ -109,3 +106,10 @@ button's; two dbt-edith that draw nearly the same delay can both ask at a
 turn. A release published during the Paris day is seen at the next
 midnight, or at once from the button. A machine whose clock is wrong turns at
 the wrong moment, as anything it dates does.
+
+On a proxy that takes the connection and never answers, a look lasts about
+five minutes, `Looking…` all along: git is stopped at thirty seconds, but
+git-remote-https, which it started, holds its output until curl gives up on
+connecting, and is waited for. Not waiting for it would leave one behind per
+look, fetch and push for as long as the proxy stalls, and git has no setting
+for that wait: `http.lowSpeedTime` was tried, and does not cover it.
