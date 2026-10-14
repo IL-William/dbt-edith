@@ -16,8 +16,10 @@ them.
 
 ## Decision
 
-- **The walk downstream does not follow an edge of a cut role, and then
-  adds the column each one reaches, within the depth, as a stop.**
+- **Level by level, the walk downstream does not follow an edge of a cut
+  role, and then adds the column each one leaving the level above
+  reaches as a stop.** A cap thus drops the farthest columns first, stops
+  included, and a stop's depth is its distance from the focus.
   The edge and that column are drawn: without them the graph would not say
   how the column is used, only that it stops somewhere. Nothing that leaves
   that column is drawn, even to a column drawn for another reason. The
@@ -34,7 +36,9 @@ them.
 - **An edge leaving a stopped column counts at both ends**, in its
   `hidden_down` and, when it reaches a column drawn for another reason,
   in that column's `hidden_up`: neither badge then claims less than there
-  is. The answer names the roles it stopped at (`stopped_at`), and the
+  is. The answer names the roles it stopped at (`stopped_at`), only those of
+  an edge that left a stop where it is, never a role ticked that the graph
+  did not meet, and the
   status line, which an export copies, says "stopped downstream at
   window", so a stopped column's +N is not read as the depth's limit.
 - **The roles are ticked in a stop at menu beside the depth boxes, not in

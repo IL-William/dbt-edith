@@ -115,3 +115,5 @@ check('and says nothing when nothing stopped',
   'order_date · 2 columns · 1 edges');
 ok('ticks in a row draw only the last answer',
   /const ask = \+\+S\.colDraw;[\s\S]{0,400}if \(ask !== S\.colDraw\) return;/.test(src));
+ok('leaving column mode drops a column answer still on its way',
+  /async function focusNode[\s\S]{0,300}S\.colDraw\+\+/.test(src) && /async function runSelection\(\) \{[\s\S]{0,200}S\.colDraw\+\+/.test(src));

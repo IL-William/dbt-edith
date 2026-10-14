@@ -865,11 +865,17 @@ impl Graph {
             .map(|k| k as u8)
             .collect();
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
+        // Reached downstream only through a cut edge: drawn, not walked from.
+        let mut stopped: HashSet<ColRef> = HashSet::new();
         let mut truncated = false;
         depth.insert(focus, 0);
 
-        // Downstream the walk does not follow a cut edge: a column it reaches,
-        // within its depth, only through one is stopped below.
+        // Level by level, so a cap drops the farthest columns first, stops
+        // included. Downstream a level's walk does not follow a cut edge;
+        // then each cut edge leaving the level above brings the column it
+        // reaches as a stop. A walk reaching a stop later, within the depth,
+        // walks on from it: it is not only past the cut. Without a cut this
+        // is the walk it always was.
         for (limit, upstream) in [(up, true), (down, false)] {
             let mut frontier = vec![focus];
             for step in 1..=limit as i32 {
@@ -885,9 +891,32 @@ impl Graph {
                             truncated = true;
                             break;
                         }
-                        if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
-                            v.insert(if upstream { -step } else { step });
-                            next.push(nb);
+                        match depth.entry(nb) {
+                            std::collections::hash_map::Entry::Vacant(v) => {
+                                v.insert(if upstream { -step } else { step });
+                                next.push(nb);
+                            }
+                            // Its depth stays the shorter one, through the cut.
+                            std::collections::hash_map::Entry::Occupied(_) => {
+                                if stopped.remove(&nb) {
+                                    next.push(nb);
+                                }
+                            }
+                        }
+                    }
+                }
+                if !upstream && !cut.is_empty() && !truncated {
+                    'stop: for &cur in &frontier {
+                        for e in cll.outgoing(cur).iter().filter(|e| cut.contains(&e.kind)) {
+                            if depth.contains_key(&e.to) {
+                                continue;
+                            }
+                            if depth.len() >= max_nodes {
+                                truncated = true;
+                                break 'stop;
+                            }
+                            depth.insert(e.to, step);
+                            stopped.insert(e.to);
                         }
                     }
                 }
@@ -895,30 +924,6 @@ impl Graph {
                     break;
                 }
                 frontier = next;
-            }
-        }
-
-        // Then each cut edge leaving the focus or a column below it, within
-        // the depth, brings the column it reaches, drawn but not walked from.
-        let mut stopped: HashSet<ColRef> = HashSet::new();
-        if !cut.is_empty() {
-            let mut walked: Vec<(ColRef, i32)> = depth.iter().filter(|(_, &d)| d >= 0).map(|(&c, &d)| (c, d)).collect();
-            walked.sort_unstable();
-            'stop: for (c, d) in walked {
-                if d >= down as i32 {
-                    continue;
-                }
-                for e in cll.outgoing(c).iter().filter(|e| cut.contains(&e.kind)) {
-                    if depth.contains_key(&e.to) {
-                        continue;
-                    }
-                    if depth.len() >= max_nodes {
-                        truncated = true;
-                        break 'stop;
-                    }
-                    depth.insert(e.to, d + 1);
-                    stopped.insert(e.to);
-                }
             }
         }
 
@@ -944,6 +949,18 @@ impl Graph {
         pairs.sort_unstable();
         pairs.dedup_by(|a, b| a.0 == b.0);
         let edges: Vec<[usize; 2]> = pairs.iter().map(|(e, _)| *e).collect();
+        // The roles of the edges that left a stop where it is, not every role
+        // ticked: a status line naming a role the graph never met would lie.
+        let mut stopped_at: Vec<&str> = Vec::new();
+        for &c in &stopped {
+            for e in cll.incoming(c).filter(|e| cut.contains(&e.kind) && pos.contains_key(&e.from)) {
+                let role = cll.kinds.get(e.kind as usize).map(String::as_str).unwrap_or("");
+                if !stopped_at.contains(&role) {
+                    stopped_at.push(role);
+                }
+            }
+        }
+        stopped_at.sort_unstable();
         let edge_kinds: Vec<&str> = pairs
             .iter()
             .map(|(_, k)| cll.kinds.get(*k as usize).map(String::as_str).unwrap_or(""))
@@ -955,7 +972,7 @@ impl Graph {
             truncated,
             mode: "column",
             edge_kinds,
-            stopped_at: cut.iter().map(|&k| cll.kinds[k as usize].as_str()).collect(),
+            stopped_at,
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
@@ -1776,6 +1793,59 @@ mod tests {
         assert_eq!(drawn(&four), ["b", "c", "f", "s", "x"]);
         // The same depths with nothing stopped, for contrast: x comes at two.
         assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[])), ["b", "c", "f", "s", "x"]);
+    }
+
+    // The second review's probes: under a cap the stop next to the focus
+    // outlives a column two levels further, and a stop's depth is its distance
+    // whichever column the walk met first.
+    #[test]
+    fn stops_are_added_level_by_level() {
+        let names = ["f", "w", "a1", "a2", "a3", "m01", "m05", "m06", "m07", "m09"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<(String, i32)> = l.nodes.iter().map(|n| (n.sub.clone(), n.depth)).collect();
+            v.sort();
+            v
+        };
+        let d = |name: &str, depth: i32| (name.to_string(), depth);
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "w", "window"),
+                link("f", "a1", "rename"),
+                link("a1", "a2", "rename"),
+                link("a2", "a3", "rename"),
+                link("m05", "m09", "rename"),
+                link("m09", "m07", "window"),
+                link("m05", "m06", "rename"),
+                link("m06", "m01", "rename"),
+                link("m01", "m07", "window"),
+                link("m07", "a3", "aggregate"),
+            ]),
+            1,
+        );
+        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"]);
+        assert!(capped.truncated);
+        assert_eq!(drawn(&capped), [d("a1", 1), d("a2", 2), d("f", 0), d("w", 1)]);
+        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"]);
+        assert_eq!(drawn(&far), [d("m01", 2), d("m05", 0), d("m06", 1), d("m07", 2), d("m09", 1)]);
+        assert_eq!(far.stopped_at, ["window"], "aggregate is ticked, but nothing stopped at one");
     }
 
     /// A diamond and, apart from it, a pair that touches nothing: enough to

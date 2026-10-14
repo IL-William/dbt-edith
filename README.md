@@ -907,7 +907,8 @@ legend still lists it, and an exported graph is drawn without it.
 In column mode, **stop at** beside the depth boxes lists the roles the column
 lineage holds: tick `window` and each window edge below the focused column is
 still drawn, with the column it reaches, so you see how the column is used,
-but nothing past that column is, unless it is also reached some other way.
+but nothing past that column is, unless the walk also reaches it some other
+way within the depth asked.
 Several roles can be ticked. Upstream is left whole. A column the walk
 stopped at wears the +N badge for what goes on, and the status line, copied
 into an export, says where the walk stopped. The button names what it stops

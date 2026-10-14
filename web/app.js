@@ -60,7 +60,7 @@ const S = {
   features: null,             // { snowflake, snowflake_set }: which feature families are on
   profiles: null,             // { path, found }: where dbt looks for its profile, null with nowhere to look
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
-  colDraw: 0,                 // bumped per column request, so ticks in a row draw only the last answer
+  colDraw: 0,                 // bumped per column request and on leaving column mode: only the last answer is drawn
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
   history: null,              // the query history on screen: rows, more, session, targets, busy, error
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
@@ -3806,6 +3806,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.unsynced = '';
   S.graphMode = 'model';
   S.colFocus = null;
+  S.colDraw++;                                // a column answer still on its way is not drawn over this
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
   const tests = testsOn() ? 1 : 0;
@@ -3891,6 +3892,7 @@ async function runSelection() {
   closeHoverCard();
   S.graphMode = 'select';
   S.colFocus = null;
+  S.colDraw++;                                // a column answer still on its way is not drawn over this
   paintMode();
   const expr = $('#select-input').value.trim();
   const ask = ++S.selectAsk;
