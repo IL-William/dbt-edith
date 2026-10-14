@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.24.1 - 2026-10-14
+
+- Say in `dbt-edith --help` what `--no-update-check` turns off: the hourly
+  looks for a newer release from midnight to 09:00 Paris time, and the Check
+  for updates button in Edith's menu, where it still said once a day (0079).
+
 ## 1.24.0 - 2026-10-14
 
 - Find a macro by its name with `Cmd/Ctrl + K`, a package's as `package.name`,
