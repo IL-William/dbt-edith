@@ -943,11 +943,11 @@ kbd {
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 
 /* Amber like a selector's warning: the canvas is still right about the model
-   it draws, only not about the file in front. Above the folder names, and
-   never in the way of a drag. */
-.lineage-note {
-  position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 2;
-  max-width: calc(100% - 20px); box-sizing: border-box; pointer-events: none;
+   it draws, only not about the file in front. In the middle of the bars over
+   the canvas (.lineage-top), so the find bar comes under it rather than under
+   its text. Above the folder names, and never in the way of a drag. */
+.lineage-top > .lineage-note {
+  align-self: center; max-width: 100%; box-sizing: border-box; pointer-events: none;
   font: 11px var(--mono); color: var(--warn); background: #12161dee;
   border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
 }
@@ -955,8 +955,9 @@ kbd {
 /* The selector bar floats over the canvas, the way the legend and the status
    bubble do. The dock is short, and a row that pushed the graph down would
    cost more room than it is worth. The find bar floats under it, at the
-   right, and the folder names under both (headTop). Between the bars a press
-   reaches the canvas, so a pan can start there. */
+   right, and the folder names under both (headTop), the note on a canvas
+   that is not of the file in front sitting between them. Between the bars a
+   press reaches the canvas, so a pan can start there. */
 .lineage-top {
   position: absolute; top: 6px; left: 10px; right: 10px; z-index: 2;
   display: flex; flex-direction: column; gap: 4px; pointer-events: none;

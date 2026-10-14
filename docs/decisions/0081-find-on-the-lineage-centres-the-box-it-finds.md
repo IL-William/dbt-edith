@@ -18,7 +18,9 @@ all, so it could not be found.
 
 - **`Cmd/Ctrl + F` over the lineage opens a find bar of its own**, the editor
   bar's shape without its three toggles, under the selector bar when that one
-  is open. The folder names move down under both.
+  is open, and under the note a canvas not of the file in front carries. The
+  folder names move down under both bars. `Escape` closes it from the canvas
+  too, and gives the focus back to what had it.
 - **It searches what the canvas was sent**: every source, model, seed and, with
   the tests box on, test, a folded one included. A box is found by its name,
   and also by a source's table alone, a test's generic and column, since dbt
@@ -33,8 +35,12 @@ all, so it could not be found.
   editor's find.
 - **The box landed on is brought to the middle** of what the bars leave of the
   canvas, zoomed to its drawn size if the view was smaller, since a fitted
-  graph can be too small to read the name looked for. A folded test is opened
-  first, as a click on its chip or row would: two turns at most.
+  graph can be too small to read the name looked for. A test folded away is
+  brought there as the chip or the row it is under, painted as the current
+  match. A step opens it, as a click on that chip or row would, two turns at
+  most: the first step forward from it opens it rather than pass it by.
+  Typing never does, so a keystroke never draws the canvas again, and what
+  the first letters of a query land on stays folded once the query moves on.
 - **Every match is outlined in amber, the current one filled**, as in the
   editor. An exported file or image carries none of it.
 
@@ -50,9 +56,16 @@ all, so it could not be found.
   reader can predict.
 - **Panning without zooming**: on a fitted graph the box found is a few pixels
   of amber with no readable name.
+- **Opening a folded test as typing lands on it**: every keystroke that
+  landed on one drew the whole canvas again, and `o` on the way to `orders`
+  opened a chip that stayed open after `Escape`.
+- **Folding back what a step opened**, on the next step or on `Escape`: a
+  step opens it as a click would, to be read, and a click's opening stays.
 
 ## Consequences
 
 `Lineage` holds the search, since only it knows where each box is drawn and
-what a folded test stands under; `app.js` holds the bar. `web/tests/graphfind.js`
-slices `web/lineage.js` from `function findNames` to `function pastSlop`.
+what a folded test stands under; `app.js` holds the bar. The reading order and
+the names each node is found by are kept from one drawing to the next.
+`web/tests/graphfind.js` slices `web/lineage.js` from `function findNames` to
+`function pastSlop`, and the bar's part of `web/app.js`.

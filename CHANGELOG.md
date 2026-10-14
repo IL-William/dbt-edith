@@ -18,8 +18,8 @@ newest dated heading has to be the version `Cargo.toml` names.
 ## 1.22.0 - 2026-10-14
 
 - Find a node on the lineage with `Cmd/Ctrl + F`, by its name, and bring it to
-  the middle of the canvas, opening the chip or the group a test is folded
-  under, with `Enter` stepping through the other matches (0081).
+  the middle of the canvas, with `Enter` stepping through the other matches and
+  opening the chip or the group a test is folded under (0081).
 
 ## 1.21.0 - 2026-10-14
 

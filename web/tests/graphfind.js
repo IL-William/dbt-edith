@@ -1,6 +1,8 @@
 // Find on the lineage canvas (0081): which names a box is found by, how well a
-// query names it, the order Enter steps in, the box typing lands on, and the
-// row or chip a folded test is found under, opened in at most two turns.
+// query names it, the order Enter steps in, where a step reads from, the box
+// typing lands on, and the row or chip a folded test is found under, opened
+// in at most two turns. Then the page's half: which pane Cmd+F and Cmd+G
+// reach, the bar's keys, its count, and where the focus goes back.
 // Run from the repository root: jsc web/tests/graphfind.js
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
@@ -96,19 +98,34 @@ group('what a folded test is found under', function () {
   check('a canvas with nothing folded has no map at all', dagLayout(canvas(), MODEL, null, new Set(['model.shop.orders',
     groupKey('model.shop.orders', 'column', '', 'not_null'), groupKey('model.shop.orders', 'column', '', 'unique')])).under, undefined);
 
-  // What go() does: turn the key a test stands under, lay out again, twice at most.
-  var open = new Set(), turns = 0;
+  // What a step does through findUnfold, with dagLayout for the redraw.
+  var turns = 0, left = [];
   folded.forEach(function (v) {
-    var o = new Set(open), K = dagLayout(d, MODEL, null, o), k = 0;
-    for (; k < 2 && !K.boxes[v] && K.under && K.under.has(v); k++) {
-      var key = K.under.get(v).key;
-      if (o.has(key)) o.delete(key); else o.add(key);
-      K = dagLayout(d, MODEL, null, o);
-    }
-    if (K.boxes[v]) turns = Math.max(turns, k);
-    else turns = Infinity;
+    var o = new Set(), K = L, k = 0;
+    var under = findUnfold(v, o, L.under, function () { k++; K = dagLayout(d, MODEL, null, o); return K.under || new Map(); });
+    if (K.boxes[v] && !under.has(v)) turns = Math.max(turns, k);
+    else left.push(d.nodes[v].name);
   });
-  check('every folded test is drawn after two turns at most, a chip onto a closed group', turns, 2);
+  check('every folded test is drawn after two turns at most, a chip onto a closed group', [turns, left], [2, []]);
+  var o = new Set(), calls = 0;
+  findUnfold(d.at.orders, o, L.under, function () { calls++; return L.under; });
+  check('a box already drawn opens nothing', [calls, o.size], [0, 0]);
+  o = new Set();
+  findUnfold(d.at.unique_orders_t, o, L.under, function () { return dagLayout(d, MODEL, null, o).under || new Map(); });
+  check('the keys turned are the ones two clicks would turn: the chip, then the closed group under it',
+    Array.from(o), ['model.shop.orders', groupKey('model.shop.orders', 'column', '', 'unique')]);
+  o = new Set();
+  findUnfold(d.at.not_null_orders_a, o, L.under, function () { return dagLayout(d, MODEL, null, o).under || new Map(); });
+  check('  and one for a closed group outside the chip', Array.from(o), [groupKey('model.shop.orders', 'column', '', 'not_null')]);
+});
+
+group('where a step reads from', function () {
+  check('nothing current or clicked: from the top forward', findStart(-1, -1, 1, false), 0);
+  check('  and from the bottom backward', findStart(-1, -1, -1, false), -1);
+  check('past the current match, either way', [findStart(3, 5, 1, false), findStart(3, 5, -1, false)], [4, 2]);
+  check('past the box last clicked when none is current', [findStart(-1, 5, 1, false), findStart(-1, 5, -1, false)], [6, 4]);
+  check('a current match typing left folded: forward starts on it, to open it', findStart(3, -1, 1, true), 3);
+  check('  backward goes past it, as from any other', findStart(3, -1, -1, true), 2);
 });
 
 group('the order Enter steps in', function () {
@@ -191,4 +208,152 @@ group('a keystroke on a crowded canvas', function () {
   check('every folded test can be reached', d.nodes.every(function (_, v) { return L.boxes[v] || L.under.has(v); }), true);
   check('model_14 and its tests, model_140 to 149 and theirs', hits.length, 11 * 21);
   check('3150 nodes ordered and matched in under 50 ms a keystroke (' + ms.toFixed(1) + ' ms here)', ms < 50, true);
+});
+
+// The page's half (web/app.js): which pane a key reaches, the bar's own keys,
+// what it says, and where the focus goes back. A few stand-in elements do for
+// the DOM, and a recorder for Lineage.
+var app = read('web/app.js');
+eval(app.slice(app.indexOf('function findLabel'), app.indexOf('function findOverlay')));
+eval(app.slice(app.indexOf('function findButton'), app.indexOf('/* One editor\'s bar')));
+eval(app.slice(app.indexOf('function findInPane'), app.indexOf('const base = (path)')));
+
+function fakeEl(tag) {
+  var e = { tagName: String(tag).toUpperCase(), className: '', value: '', title: '', textContent: '', placeholder: '',
+    parent: null, kids: [], on: {}, attrs: {}, offsetParent: {} };
+  e.classList = {
+    has: function (c) { return (' ' + e.className + ' ').indexOf(' ' + c + ' ') >= 0; },
+    contains: function (c) { return this.has(c); },
+    add: function (c) { if (!this.has(c)) e.className = (e.className + ' ' + c).trim(); },
+    remove: function (c) { e.className = e.className.split(' ').filter(function (x) { return x && x !== c; }).join(' '); },
+    toggle: function (c, on) { if (on === undefined ? !this.has(c) : on) this.add(c); else this.remove(c); },
+  };
+  e.setAttribute = function (k, v) { e.attrs[k] = String(v); };
+  e.append = function () { for (var i = 0; i < arguments.length; i++) { arguments[i].parent = e; e.kids.push(arguments[i]); } };
+  e.addEventListener = function (t, fn) { e.on[t] = fn; };
+  e.contains = function (x) { for (; x; x = x.parent) if (x === e) return true; return false; };
+  e.focus = function () { document.activeElement = e; };
+  e.blur = function () { if (document.activeElement === e) document.activeElement = document.body; };
+  e.select = function () {};
+  return e;
+}
+var document = { createElement: fakeEl };
+document.body = fakeEl('body');
+document.activeElement = document.body;
+var top = fakeEl('div'), selectInput = fakeEl('input');
+document.body.append(top, selectInput);
+function $(sel) { return sel === '#lineage-top' ? top : null; }
+var IS_MAC = true;
+function keyLabel(k) { return k; }
+function keyCombo(e) { return e.combo; }
+var called = [];
+var Lineage = {
+  find: function (q, land) { called.push('find ' + JSON.stringify(q) + ' ' + land); },
+  findStep: function (dir) { called.push('step ' + dir); },
+  findEnd: function () { called.push('end'); },
+  placeHeads: function () { called.push('heads'); },
+};
+var S = { dock: 'lineage', reportsOpen: false, graphMode: 'model', graphFind: null };
+function focusColumnFilter() { called.push('column filter'); return true; }
+function activeEditor() { return null; }
+function openFind() { called.push('editor find'); }
+function key(combo, target) {
+  var e = { combo: combo, target: target || S.graphFind.input, prevented: false, preventDefault: function () { this.prevented = true; } };
+  S.graphFind.bar.on.keydown(e);
+  return e.prevented;
+}
+function take() { var c = called; called = []; return c; }
+
+group('which pane Cmd+F and Cmd+G reach', function () {
+  check('Cmd+F over the lineage opens its bar, paints the last query and moves nothing',
+    [findInPane('lineage'), S.graphFind.open, S.graphFind.bar.classList.has('hidden'), take()],
+    [true, true, false, ['heads', 'find "" false']]);
+  check('  the box has the focus, in the bar on the canvas', [document.activeElement === S.graphFind.input, top.contains(S.graphFind.bar)], [true, true]);
+  check('again with the bar open: the box again, nothing painted twice', [findInPane('lineage'), take()], [true, []]);
+  closeGraphFind(); take();
+  check('the Catalog keeps its column filter', [findInPane('catalog'), take()], [true, ['column filter']]);
+  check('the terminal keeps the browser\'s find', [findInPane('terminal'), take()], [false, []]);
+  S.dock = 'catalog';
+  check('the lineage remembered but not on screen: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
+  S.dock = 'lineage'; S.reportsOpen = true;
+  check('the reports over everything: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
+  S.reportsOpen = false;
+
+  S.graphFind.input.value = '';
+  check('Cmd+G from the canvas with no query yet: the browser\'s', [stepGraphFind('lineage', 1), take()], [false, []]);
+  S.graphFind.input.value = 'stg_';
+  check('with one: the bar opens on it and steps', [stepGraphFind('lineage', 1), S.graphFind.open, take()], [true, true, ['heads', 'find "stg_" false', 'step 1']]);
+  check('  Shift+Cmd+G back, the bar already open', [stepGraphFind('lineage', -1), take()], [true, ['step -1']]);
+  check('not from another pane', [stepGraphFind('editor', 1), stepGraphFind('catalog', 1), take()], [false, false, []]);
+  S.dock = 'terminal';
+  check('nor with the lineage off screen', stepGraphFind('lineage', 1), false);
+  S.dock = 'lineage';
+});
+
+group('the bar\'s own keys', function () {
+  take();
+  check('Enter and Shift+Enter in the box step', [key('Enter'), key('Shift+Enter'), take()], [true, true, ['step 1', 'step -1']]);
+  check('Cmd+G, F3 and their Shift forms too', [key('Mod+G'), key('F3'), key('Mod+Shift+G'), key('Shift+F3'), take()],
+    [true, true, true, true, ['step 1', 'step 1', 'step -1', 'step -1']]);
+  var close = S.graphFind.bar.kids[S.graphFind.bar.kids.length - 1];
+  check('Enter on a button is the button\'s', [key('Enter', close), take()], [false, []]);
+  check('a letter is the box\'s', [key('A'), take()], [false, []]);
+  S.graphFind.input.value = 'orders';
+  S.graphFind.input.on.input();
+  check('typing lands, the query as typed', take(), ['find "orders" true']);
+  check('Escape closes, the paint and the folder names with it', [key('Escape'), S.graphFind.open, take()], [true, false, ['end', 'heads']]);
+  check('  and closing twice does nothing', [closeGraphFind(), take()], [undefined, []]);
+});
+
+group('what the bar says', function () {
+  openGraphFind(); take();
+  S.graphFind.input.value = 'stg_';
+  paintGraphFind({ hits: ['a', 'b', 'c'], at: 1 });
+  check('where the current match is in reading order', [S.graphFind.count.textContent, S.graphFind.count.classList.has('none')], ['2 of 3', false]);
+  paintGraphFind({ hits: ['a', 'b'], at: -1 });
+  check('the matches alone before any lands', S.graphFind.count.textContent, '2 results');
+  S.graphFind.input.value = 'nowhere';
+  paintGraphFind({ hits: [], at: -1 });
+  check('none, marked so it reads in red', [S.graphFind.count.textContent, S.graphFind.count.classList.has('none')], ['No results', true]);
+  S.graphFind.input.value = '';
+  paintGraphFind({ hits: [], at: -1 });
+  check('nothing typed says nothing', [S.graphFind.count.textContent, S.graphFind.count.classList.has('none')], ['', false]);
+  check('a node in model mode', S.graphFind.input.placeholder, 'Find a node');
+  S.graphMode = 'column';
+  paintGraphFind({ hits: [], at: -1 });
+  check('a column in column mode', [S.graphFind.input.placeholder, S.graphFind.input.attrs['aria-label']], ['Find a column', 'Find a column on the canvas']);
+  S.graphMode = 'model';
+  closeGraphFind();
+  S.graphFind.open = false;
+  paintGraphFind({ hits: ['a'], at: 0 });
+  check('closed, it says nothing new', S.graphFind.count.textContent, '');
+});
+
+group('where the focus goes back', function () {
+  selectInput.focus();
+  openGraphFind();
+  check('opened from the selector\'s box, the bar takes the focus', document.activeElement === S.graphFind.input, true);
+  key('Escape');
+  check('  and Escape gives it back', document.activeElement === selectInput, true);
+  document.activeElement = document.body;
+  openGraphFind();
+  key('Escape');
+  check('opened from the canvas, nothing has it after', document.activeElement === document.body, true);
+  selectInput.focus();
+  openGraphFind();
+  selectInput.offsetParent = null;
+  key('Escape');
+  check('what had it hidden since: nothing has it', document.activeElement === document.body, true);
+  selectInput.offsetParent = {};
+  selectInput.focus();
+  openGraphFind();
+  document.activeElement = document.body;
+  closeGraphFind();
+  check('closed with the focus out of the bar, it stays where it is', document.activeElement === document.body, true);
+  selectInput.focus();
+  openGraphFind();
+  S.graphFind.input.focus();
+  openGraphFind();
+  key('Escape');
+  check('Cmd+F again from inside the bar keeps the first place to go back to', document.activeElement === selectInput, true);
 });

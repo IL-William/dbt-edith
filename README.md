@@ -552,13 +552,13 @@ Over the lineage, `Cmd/Ctrl + F` finds a node on the canvas by its name and
 brings it to the middle, zoomed in to its drawn size when the graph was fitted
 smaller. It looks through every source, model and seed drawn, and every test
 once the tests box is on, a test folded under `+N more tests` or a closed
-group's row included, which it opens. A source is found by its table alone too,
-and a test by its generic or its column. A name typed whole comes first, then
-the names it starts, then those it is in; `Enter` and `Shift + Enter` step
-through the rest, left to right a column at a time and down each, a model's
-tests after it. Every match is outlined in amber, and `Escape` closes the bar
-with the view left where it is. Only what the canvas draws is searched:
-`Cmd/Ctrl + K` searches the whole project.
+group's row included: the view goes to that chip or row, and `Enter` opens it.
+A source is found by its table alone too, and a test by its generic or its
+column. A name typed whole comes first, then the names it starts, then those it
+is in; `Enter` and `Shift + Enter` step through the rest, left to right a column
+at a time and down each, a model's tests after it. Every match is outlined in
+amber, and `Escape` closes the bar with the view left where it is. Only what the
+canvas draws is searched: `Cmd/Ctrl + K` searches the whole project.
 
 In the terminal, `Cmd/Ctrl + F` is the browser's own find. `?` outside a text
 box, `F1` from anywhere, or the `?` button in the top bar lists every shortcut,

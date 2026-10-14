@@ -1253,8 +1253,10 @@ const Lineage = (() => {
   let lastOpts = {};
   // Find on the canvas, null while its bar is closed: the query, the node the
   // view was last brought to, and the node reading starts from when the query
-  // changes. And what stands for each folded test, from the layout (0081).
-  let finding = null, under = new Map();
+  // changes. And what stands for each folded test, from the layout, and the
+  // reading order and the names each node is found by, which only a drawing
+  // changes, kept until the next one, with the last query's matches (0081).
+  let finding = null, under = new Map(), findBase = null;
   // Module scope, not init's: render() reads it to keep a hover card from
   // opening under a pointer that is in the middle of a pan.
   let drag = null;
@@ -1428,6 +1430,30 @@ const Lineage = (() => {
       if (quality[v] >= 0) return v;
     }
     return -1;
+  }
+
+  /* The place in reading order a step reads from, for findNext: past the
+     current match, else past the box last clicked, else from either end.
+     `cur` and `from` are places in that order, -1 for none. A forward step
+     from a current match typing left folded away starts on it instead, so
+     that it opens that match rather than pass it by. */
+  function findStart(cur, from, dir, folded) {
+    if (folded && dir > 0 && cur >= 0) return cur;
+    return (cur >= 0 ? cur : from >= 0 ? from : dir > 0 ? -1 : 0) + dir;
+  }
+
+  /* Opens what keeps test v from being drawn, as a click on its chip or its
+     group's row would: the key it stands under turns in `unfolded`, and the
+     canvas is drawn again by `redraw`, which returns what stands for each
+     test still not drawn. Two turns at most, a chip opening onto a closed
+     group. Returns that last map, without v once it is drawn. */
+  function findUnfold(v, unfolded, under, redraw) {
+    for (let k = 0; k < 2 && under && under.has(v); k++) {
+      const key = under.get(v).key;
+      if (unfolded.has(key)) unfolded.delete(key); else unfolded.add(key);
+      under = redraw();
+    }
+    return under;
   }
 
   /* Whether a press has moved far enough to be a pan rather than a click:
@@ -1607,6 +1633,7 @@ const Lineage = (() => {
     place = L.boxes;
     groups = L.groups || [];
     under = L.under || new Map();
+    findBase = null;
     bands = L.bands || [];
     const top = bands.filter((b) => !b.level).length;
     drawn = L.bands || L.folded
@@ -1910,18 +1937,27 @@ const Lineage = (() => {
 
   const indexOf = (id) => (id == null || !data ? -1 : data.nodes.findIndex((n) => n.id === id));
 
-  /* Every node in reading order, how well each matched, and the matches. */
+  /* Every node in reading order, how well each matched, and the matches. The
+     order and the names wait for the next drawing, the matches for the next
+     query: a keystroke reads them twice, to land and then to paint. */
   function matches() {
     if (!data || !finding || !finding.q) return { order: [], quality: [], hits: [] };
-    const columnMode = data.mode === 'column';
-    const at = data.nodes.map((_, v) => {
-      if (place[v]) return place[v];
-      const u = under.get(v);
-      return u ? { x: u.box.x, y: u.box.y, i: u.i } : null;
-    });
-    const order = findOrder(at, W + HGAP);
-    const quality = data.nodes.map((n) => findQuality(findNames(n, columnMode), finding.q));
-    return { order, quality, hits: order.filter((v) => quality[v] >= 0) };
+    if (!findBase) {
+      const columnMode = data.mode === 'column';
+      const at = data.nodes.map((_, v) => {
+        if (place[v]) return place[v];
+        const u = under.get(v);
+        return u ? { x: u.box.x, y: u.box.y, i: u.i } : null;
+      });
+      findBase = { order: findOrder(at, W + HGAP), names: data.nodes.map((n) => findNames(n, columnMode)), q: null };
+    }
+    const B = findBase;
+    if (B.q !== finding.q) {
+      B.q = finding.q;
+      B.quality = B.names.map((names) => findQuality(names, B.q));
+      B.hits = B.order.filter((v) => B.quality[v] >= 0);
+    }
+    return { order: B.order, quality: B.quality, hits: B.hits };
   }
 
   /* Paints every match, and the current one brighter, and tells the page. A
@@ -1950,11 +1986,12 @@ const Lineage = (() => {
     paintFound(F);
   }
 
-  /* Node v in the middle of what the bars over the canvas leave of it, and
-     at least at the size it is drawn at, where a fitted graph can be too
-     small to read the name that was looked for. */
-  function centre(v) {
-    const b = place[v], r = svg.getBoundingClientRect();
+  /* Box b, where a node is drawn or the chip or row a test is folded under,
+     in the middle of what the bars over the canvas leave of it, and at least
+     at the size it is drawn at, where a fitted graph can be too small to read
+     the name that was looked for. */
+  function centre(b) {
+    const r = svg.getBoundingClientRect();
     if (!b || !r.width || !r.height) return;
     const top = Math.min(handlers.headTop ? handlers.headTop() : 0, r.height / 2);
     view.k = Math.max(view.k, 1);
@@ -1963,18 +2000,21 @@ const Lineage = (() => {
     apply();
   }
 
-  /* Makes node v the current match and brings it to the middle, opening the
-     chip or the group's row it is folded under first, as a click on it would,
-     which can take two: a chip opens onto a closed group. */
-  function go(v) {
+  /* Makes node v the current match and brings it to the middle. A test
+     folded away is opened first with `open`, which only a step asks for, as
+     a click on its chip or its group's row would. Typing leaves it folded
+     and brings that chip or row to the middle instead, so a keystroke never
+     draws the canvas again, nor opens what the next one passes by. */
+  function go(v, open) {
     finding.cur = data.nodes[v].id;
-    for (let k = 0; k < 2 && !place[v] && under.has(v); k++) {
-      const key = under.get(v).key;
-      if (unfolded.has(key)) unfolded.delete(key); else unfolded.add(key);
-      render(data, Object.assign({}, lastOpts, { keepView: true }));
-      handlers.onRefold && handlers.onRefold(data, drawn);
+    if (open && under.has(v)) {
+      findUnfold(v, unfolded, under, () => {
+        render(data, Object.assign({}, lastOpts, { keepView: true }));
+        handlers.onRefold && handlers.onRefold(data, drawn);
+        return under;
+      });
     }
-    centre(v);
+    centre(place[v] || (under.has(v) ? under.get(v).box : null));
     refind();
   }
 
@@ -1991,20 +2031,22 @@ const Lineage = (() => {
       finding.cur = null;
       return paintFound(F);
     }
-    go(v);
+    go(v, false);
   }
 
-  /* Enter and Shift+Enter: the next match in reading order, or the one
-     before, from the current one, or from the box last clicked; the next
-     query reads from there too. */
+  /* Enter and Shift+Enter, Cmd+G and F3: the next match in reading order, or
+     the one before, from the current one, or from the box last clicked; the
+     next query reads from there too. The first step forward from a match
+     typing left folded opens it. */
   function findStep(dir) {
     if (!finding) return;
     const F = matches(), at = (id) => F.order.indexOf(indexOf(id));
     const cur = at(finding.cur), from = at(finding.from);
-    const v = findNext(F.order, F.quality, (cur >= 0 ? cur : from >= 0 ? from : dir > 0 ? -1 : 0) + dir, dir);
+    const folded = cur >= 0 && under.has(F.order[cur]);
+    const v = findNext(F.order, F.quality, findStart(cur, from, dir, folded), dir);
     if (v < 0) return paintFound(F);
     finding.from = data.nodes[v].id;
-    go(v);
+    go(v, true);
   }
 
   function findEnd() {
@@ -2160,7 +2202,7 @@ const Lineage = (() => {
   const clear = () => {
     root && (root.textContent = '');
     heads && (heads.textContent = '');
-    data = null; bbox = null; bands = []; drawn = null; under = new Map();
+    data = null; bbox = null; bands = []; drawn = null; under = new Map(); findBase = null;
     handlers.onHoverClose && handlers.onHoverClose();
     if (finding) refind();
   };

@@ -185,7 +185,8 @@
       </div>
       <div id="dock-lineage" class="dock-pane">
         <!-- What floats over the top of the canvas, one under the other: the
-             selector bar, then the find bar, which app.js adds on Cmd+F. -->
+             selector bar, the note on a canvas that is not of the file in
+             front, then the find bar, which app.js adds on Cmd+F. -->
         <div id="lineage-top" class="lineage-top">
           <div id="select-bar" class="select-bar hidden">
             <div class="select-row">
@@ -201,9 +202,9 @@
             </div>
             <div id="select-warn" class="sel-warn hidden"></div>
           </div>
+          <div id="lineage-note" class="lineage-note hidden" role="status"></div>
         </div>
         <div id="lineage-empty" class="empty"><p>Select a model to see its lineage.</p></div>
-        <div id="lineage-note" class="lineage-note hidden" role="status"></div>
         <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
         <div id="lineage-legend" class="legend"></div>
         <div id="lineage-status" class="graph-status"></div>

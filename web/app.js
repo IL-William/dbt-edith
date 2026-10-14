@@ -1780,7 +1780,7 @@ function graphFindBar() {
     e.preventDefault();
   });
   $('#lineage-top').append(bar);
-  S.graphFind = { bar, input, count, open: false };
+  S.graphFind = { bar, input, count, open: false, back: null };
   return S.graphFind;
 }
 
@@ -1795,10 +1795,13 @@ function showGraphFind(st) {
 }
 
 /* Cmd+F over the lineage. False where the canvas is not on screen, and the
-   browser's own find opens instead. */
+   browser's own find opens instead. What had the focus gets it back when the
+   bar closes: the selector's box, say, or nothing from the canvas. */
 function openGraphFind() {
   if (S.dock !== 'lineage') return false;
   const st = graphFindBar();
+  const was = document.activeElement;
+  if (!st.bar.contains(was)) st.back = was && was !== document.body ? was : null;
   showGraphFind(st);
   st.input.focus();
   st.input.select();
@@ -1828,15 +1831,21 @@ function paintGraphFind(r) {
   st.count.classList.toggle('none', !!q && !r.hits.length);
 }
 
-/* The view stays on the last match, and the query in the box for next time. */
+/* The view stays on the last match, and the query in the box for next time.
+   The focus goes back where it was before the bar took it. */
 function closeGraphFind() {
   const st = S.graphFind;
   if (!st || !st.open) return;
+  const inBar = st.bar.contains(document.activeElement);
   st.open = false;
   st.bar.classList.add('hidden');
   Lineage.findEnd();
   Lineage.placeHeads();
-  if (st.bar.contains(document.activeElement)) document.activeElement.blur();
+  if (!inBar) return;
+  const back = st.back;
+  st.back = null;
+  if (back && document.body.contains(back) && back.offsetParent) back.focus();
+  else document.activeElement.blur();
 }
 
 const base = (path) => path.split('/').pop();
@@ -12192,6 +12201,13 @@ function wireKeys() {
         return;
     }
     if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) closePalette();
+    // The lineage's find bar from the canvas, where a click on a box leaves
+    // the focus; from inside the bar, its own keys have closed it already.
+    else if (e.key === 'Escape' && !e.defaultPrevented && S.graphFind && S.graphFind.open && !S.reportsOpen
+      && !isTyping(e.target) && (paneOf(e.target) || S.lastPane) === 'lineage') {
+      e.preventDefault();
+      closeGraphFind();
+    }
   });
   // What Cmd+F searches when nothing has the focus: the pane last used, never a
   // dialog or the top bar.
@@ -12636,10 +12652,13 @@ async function boot() {
     },
     // Where the folder names can sit, and the middle a found box is brought
     // to: below the bars floating over the top of the canvas, the selector's
-    // in that mode and find's while it is open.
+    // in that mode and find's while it is open. Not below the note alone,
+    // which the names have always run under.
     headTop: () => {
       const top = $('#lineage-top');
-      return top.offsetHeight ? top.offsetTop + top.offsetHeight : 0;
+      const bars = [$('#select-bar'), S.graphFind && S.graphFind.bar]
+        .filter((b) => b && !b.classList.contains('hidden'));
+      return bars.length ? top.offsetTop + Math.max(...bars.map((b) => b.offsetTop + b.offsetHeight)) : 0;
     },
   });
   wireTabs(); wireKeys(); wireSplitters(); relinkTools();
