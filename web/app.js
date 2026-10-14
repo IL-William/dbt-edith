@@ -3860,6 +3860,34 @@ async function copyText(text, label) {
   } catch { toast('clipboard unavailable', 'err'); return false; }
 }
 
+const COPY_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>' +
+  '<path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
+const COPIED_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>';
+
+/* A copy button with no word on it, which answers with a check for a moment.
+   The latest click decides the glyph: an earlier click's check, or the timer
+   that takes it back, would otherwise stand beside a later refusal. */
+function copyGlyph(text, title) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon';
+  b.title = title;
+  b.setAttribute('aria-label', 'Copy ' + text);
+  b.innerHTML = COPY_SVG;
+  let clicks = 0, back = 0;
+  b.addEventListener('click', async () => {
+    const mine = ++clicks;
+    clearTimeout(back);
+    b.innerHTML = COPY_SVG;
+    if (!(await copyText(text)) || mine !== clicks) return;
+    b.innerHTML = COPIED_SVG;
+    back = setTimeout(() => { b.innerHTML = COPY_SVG; }, 1200);
+  });
+  return b;
+}
+
 /* What the selection is made of, by kind, biggest first. Counted by the server
    over everything that matched, so a capped canvas still reports the whole set. */
 function selectKindCounts(counts) {
@@ -7050,12 +7078,6 @@ function sendToTerminal(cmd, run) {
 }
 
 // ---------------------------------------------------------------- catalog --
-const COPY_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" ' +
-  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/>' +
-  '<path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>';
-const COPIED_SVG = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" ' +
-  'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>';
-
 function renderCatalog(n) {
   S.node = n;
   const host = $('#catalog');
@@ -7071,17 +7093,8 @@ function renderCatalog(n) {
   const title = document.createElement('div');
   title.className = 'cat-title';
   // The name is what gets pasted next, into a --select, a ref() or a query.
-  const copy = document.createElement('button');
-  copy.type = 'button';
-  copy.className = 'icon cat-copy';
-  copy.title = 'Copy the name';
-  copy.setAttribute('aria-label', 'Copy ' + n.name);
-  copy.innerHTML = COPY_SVG;
-  copy.addEventListener('click', async () => {
-    if (!(await copyText(n.name))) return;
-    copy.innerHTML = COPIED_SVG;
-    setTimeout(() => { copy.innerHTML = COPY_SVG; }, 1200);
-  });
+  const copy = copyGlyph(n.name, 'Copy the name');
+  copy.classList.add('cat-copy');
   title.append(dot(n), document.createTextNode(n.name), copy);
   if (n.disabled) {
     const off = document.createElement('span');
