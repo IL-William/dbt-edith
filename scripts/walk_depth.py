@@ -12,7 +12,8 @@ makes for the lineage:
     editor or a name in the Catalog's lists, is drawn at 1 and 1 again;
   - the Catalog's Upstream models and Downstream models set the box they name
     and leave the other, on a box clicked on the canvas too;
-  - Back and Forward bring back the depth each place was left with;
+  - Back and Forward to another tab bring back the depth it was left with,
+    whether the canvas moves or stays on the same model;
   - the same model drawn again, from Custom selection and back, keeps it.
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
@@ -125,6 +126,13 @@ class Walk:
         self.drawn("stg_payments from a ref() in customers.sql, at 1 and 1", "stg_payments", "1/1")
         self.nav("Back")
         self.drawn("Back to customers, at 3 and 3", "customers", "3/3")
+        # A file with no node leaves the canvas on customers, at a depth
+        # changed there: Back to customers.sql draws it at the one it left.
+        self.palette("dbt_project.yml")
+        page.until("document.querySelector('#tabbar .ftab.active')?.textContent.startsWith('dbt_project.yml')", "dbt_project.yml")
+        self.depth(1, 1)
+        self.nav("Back")
+        self.drawn("Back to customers.sql, the canvas still on customers, at the 3 and 3 left there", "customers", "3/3")
         page.js("document.querySelector('[data-dock=catalog]').click()")
         catalog_link = "[...document.querySelectorAll('#catalog .links .link')].find((a) => a.textContent.includes('stg_orders'))"
         page.until(f"!!{catalog_link}", "the Catalog's upstream list")

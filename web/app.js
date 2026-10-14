@@ -2445,9 +2445,14 @@ function jump(from, to) {
   if (S.active !== at.key) {
     // The lineage follows the tab as it does a click on it, but a return is
     // not a model picked anew: it comes back at the depth it was left with.
+    // The boxes take it at once, so a second jump before this one has drawn
+    // records it, and a canvas the tab does not move is drawn again at it.
     activate(at.key, false);
+    const deeper = !!at.depth && ($('#up').value !== at.depth[0] || $('#down').value !== at.depth[1]);
+    if (at.depth) [$('#up').value, $('#down').value] = at.depth;
     const inProject = projectPath(at.key);
-    if (inProject) syncNode(inProject, { depth: at.depth });
+    const moved = inProject ? syncNode(inProject, { keepDepth: true }) : Promise.resolve(false);
+    moved.then((did) => { if (!did && deeper) rerender(); });
   }
   if (at.line !== undefined) gotoPos(at.line, at.ch);
   renderCrumbs();
@@ -6102,9 +6107,9 @@ function paintMode() {
 }
 
 /* Returns whether it moved the lineage, which is what tells a reload that
-   the file it was waiting on has turned up. `depth`, an [up, down] pair, is
-   the one to draw the node at if it moves, rather than the default. */
-async function syncNode(path, { depth = null } = {}) {
+   the file it was waiting on has turned up. `keepDepth` draws the node it
+   moves to at the depth the boxes hold, rather than the default. */
+async function syncNode(path, { keepDepth = false } = {}) {
   noteLineage('');
   // A properties file declares many nodes, and the server answers for one of
   // them. When the lineage already shows another, most likely because it was
@@ -6119,8 +6124,7 @@ async function syncNode(path, { depth = null } = {}) {
   try {
     const detail = await nodeDetail({ file: path });
     if (detail.id === S.focus) return false;
-    if (depth) [$('#up').value, $('#down').value] = depth;
-    focusNode(detail.id, { keepDepth: !!depth });
+    focusNode(detail.id, { keepDepth });
     return true;
   } catch {
     // Not a dbt node, or not one yet: the lineage stays as it is, and says

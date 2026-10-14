@@ -591,7 +591,10 @@ class Walk:
         page.key(*ESCAPE)
         page.until("!document.querySelector('#tour')", "Escape to end it")
         back = self.settle(in_use)
-        time.sleep(0.5)
+        try:
+            page.until(f"({LINEAGE}) === 'model.jaffle_shop.customers 3/2'", "customers again", timeout=10)
+        except AssertionError:
+            pass
         self.check("its end draws customers again at 3 up and 2 down",
                    back == in_use and page.js(LINEAGE) == "model.jaffle_shop.customers 3/2",
                    f"before {in_use}\n        after  {back}, {page.js(LINEAGE)}")
