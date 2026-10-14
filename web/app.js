@@ -12829,11 +12829,17 @@ async function refreshUpdate() {
    build and the system, which a report needs and its writer seldom has to
    hand, and which they can still edit before sending. A star cannot be given
    from a link, so that row opens the repository, at its Star button. Pure, for
-   web/tests/github.js. */
+   web/tests/github.js.
+   The build goes in only in the shape a build of this repository gives it.
+   build.rs asks git, which looks up from the source: a copy of it built inside
+   another repository, or a tag of the user's own, would name that instead,
+   and an issue is public. Anything else keeps only its date. */
 function githubLinks(repo, version, build, os) {
   const system = { macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os] || os || 'an unknown system';
+  const stamp = /^((v\d+\.\d+\.\d+(-\d+-g[0-9a-f]+)?|[0-9a-f]{7,40})(-dirty)?, )?built \d{4}-\d{2}-\d{2}$/.test(build || '')
+    ? build : ((build || '').match(/built \d{4}-\d{2}-\d{2}$/) || [''])[0];
   const body = `<!-- What happened, or what would you like? -->\n\n\n\n`
-    + `dbt-edith ${version || '?'}${build ? ` (${build})` : ''} on ${system}`;
+    + `dbt-edith ${version || '?'}${stamp ? ` (${stamp})` : ''} on ${system}`;
   return { issue: `${repo}/issues/new?body=${encodeURIComponent(body)}`, star: repo };
 }
 
