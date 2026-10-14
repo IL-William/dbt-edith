@@ -305,10 +305,12 @@ pub struct Status {
 }
 
 /// The next turn, or an hour after a look that got no answer while no answer
-/// stands. Now, when one is due.
+/// stands. Now, when one is due. A minute from now while a look is on its
+/// way, whose answer decides.
 fn next_look(k: &Known, now: u64) -> u64 {
     let checked = k.seen.as_ref().map(|s| s.checked);
     match &k.failed {
+        _ if k.checking => now + 60,
         _ if !stale(checked, now) => next_turn(now),
         Some((t, _)) if *t <= now => (t + HOUR as u64).max(now),
         _ => now,
@@ -338,11 +340,32 @@ pub struct Update {
     /// The command that installs a newer one here, or why there is none.
     pub how: Result<How, Why>,
     known: Mutex<Known>,
+    spread: u64,
+}
+
+/// Seconds from 0 to 119, different from one process to the next: the
+/// standard library's hasher is seeded at random for each.
+fn spread() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new().build_hasher().finish() % 120
+}
+
+/// Puts `checking` back when a look is dropped on its way: a request the
+/// browser gave up on drops its future, and the flag would stay set for the
+/// life of the process, every later look refused and the menu looking forever.
+struct OnItsWay<'a>(Option<&'a Mutex<Known>>);
+
+impl Drop for OnItsWay<'_> {
+    fn drop(&mut self) {
+        if let Some(Ok(mut k)) = self.0.map(Mutex::lock) {
+            k.checking = false;
+        }
+    }
 }
 
 impl Update {
     pub fn new(off: bool, file: Option<PathBuf>, how: Result<How, Why>) -> Update {
-        Update { off, current: env!("CARGO_PKG_VERSION").to_string(), file, how, known: Mutex::default() }
+        Update { off, current: env!("CARGO_PKG_VERSION").to_string(), file, how, known: Mutex::default(), spread: spread() }
     }
 
     /// The same, as if `version` were running.
@@ -370,6 +393,14 @@ impl Update {
     /// When the next look is due, for the loop that makes it.
     pub fn next_look(&self, now: u64) -> u64 {
         self.known.lock().map(|k| next_look(&k, now)).unwrap_or(now + HOUR as u64)
+    }
+
+    /// How long this process waits past a turn before it looks: up to two
+    /// minutes, drawn once. Every dbt-edith on the machine wakes at the same
+    /// turn, and the one that asks first keeps its answer in the file, which
+    /// the others read rather than ask GitHub again.
+    pub fn spread(&self) -> u64 {
+        self.spread
     }
 
     /// The answer kept by any dbt-edith on the machine, as the banner prints
@@ -420,6 +451,7 @@ impl Update {
         if !asked {
             return;
         }
+        let mut on_its_way = OnItsWay(Some(&self.known));
         let listed = tokio::task::spawn_blocking(ask).await.unwrap_or_else(|_| Err("the look stopped".to_string()));
         let answer = match listed {
             Ok(releases) if !releases.is_empty() => {
@@ -444,6 +476,7 @@ impl Update {
                 let _ = tokio::task::spawn_blocking(move || save(&path, &kept)).await;
             }
         }
+        on_its_way.0 = None;
         if let Ok(mut k) = self.known.lock() {
             match answer {
                 Ok(seen) => {
@@ -840,6 +873,30 @@ mod tests {
         fresh.look(OCT_14_2200Z, false, ask, never).await;
         let status = fresh.status(OCT_14_2200Z);
         assert_eq!((status.latest.as_str(), status.failed, status.next), ("1.12.0", OCT_14_2200Z, OCT_14_2200Z + H));
+    }
+
+    #[tokio::test]
+    async fn a_look_dropped_on_its_way_lets_the_next_one_ask() {
+        let u = Update::new(false, None, Err(Why::Elsewhere));
+        // git still waiting on a proxy when the page that asked is closed.
+        let slow = || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            Ok(vec!["1.12.0".to_string()])
+        };
+        let dropped = tokio::time::timeout(std::time::Duration::from_millis(20), u.look(OCT_14_0659Z, true, slow, never)).await;
+        assert!(dropped.is_err());
+        assert!(!u.status(OCT_14_0659Z).checking);
+        let (calls, ask) = asker(Some("1.12.0"));
+        u.look(OCT_14_0659Z, true, ask, never).await;
+        assert_eq!(asked(&calls), 1);
+        assert_eq!(u.status(OCT_14_0659Z).latest, "1.12.0");
+    }
+
+    #[test]
+    fn while_a_look_is_on_its_way_the_loop_waits_a_minute_and_each_process_its_spread() {
+        let looking = Known { checking: true, ..Known::default() };
+        assert_eq!(next_look(&looking, OCT_14_0659Z), OCT_14_0659Z + 60);
+        assert!((0..20).all(|_| Update::new(false, None, Err(Why::Elsewhere)).spread() < 120));
     }
 
     #[test]

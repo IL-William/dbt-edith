@@ -25,7 +25,10 @@ as up to date, as never asked, and as GitHub out of reach.
   for every dbt-edith on the machine, as before. dbt-edith is released from
   Paris, overnight there, so a dbt-edith left running through those hours sees
   a release within the hour, and from 09:00 everything the night brought is
-  out. A dbt-edith left running wakes at each turn and asks.
+  out. A dbt-edith left running wakes at each turn and asks, up to two
+  minutes after it, by a delay each process draws once: every dbt-edith on
+  the machine wakes at the same turn, and the first to ask keeps its answer in
+  the file, which the others read rather than ask again.
 - **The first start of anyone's day asks**, wherever the machine is: no two
   turns are more than fifteen hours apart, so every night crosses one.
 - **Paris time is worked out here**: the EU's rule, summer time from the last
@@ -34,6 +37,13 @@ as up to date, as never asked, and as GitHub out of reach.
   by the server, so the turns are the same instants on every machine. The
   night the clocks go back, the first 02:00 is the turn; the night they go
   forward, the skipped 02:00 is the moment summer time starts.
+- **The button's look runs on a task of its own**, so a page closed or
+  reloaded while git waits leaves it to end and keep its answer, and a look
+  dropped on its way, whoever asked, says it is no longer on its way: a flag
+  left set would refuse every later look and show `Looking…` for good. git
+  stopped at its deadline is not waited for further, though a helper it
+  started, holding its output on a proxy that never answers, lives on for
+  minutes.
 - **A look that got no answer is tried again an hour later**, in its process,
   and is kept nowhere, as before.
 - **Edith, at the top left, opens a menu**: the version and build stamp of the
@@ -46,7 +56,8 @@ as up to date, as never asked, and as GitHub out of reach.
 - **The menu lists every release since the running one**, newest first, one
   row each: its version, and the title of the pull request that released it,
   on one line, linking to that release's notes. Twenty at most; the older
-  ones are counted, and a last row links every release. A pull request is a
+  ones are counted, and a last row links every release. On a window shorter
+  than the menu, it scrolls, its button within reach. A pull request is a
   release (0045): it is squashed into one commit whose subject is its title,
   and the release workflow tags that commit, while one that changes nothing
   anyone would notice bumps nothing and carries no tag. So the tagged commits
@@ -93,7 +104,8 @@ as up to date, as never asked, and as GitHub out of reach.
 
 ## Consequences
 
-At most ten looks a day for a machine, besides retries after a failure and the
-button's. A release published during the Paris day is seen at the next
+Ten looks a day for a machine, besides retries after a failure and the
+button's; two dbt-edith that draw nearly the same delay can both ask at a
+turn. A release published during the Paris day is seen at the next
 midnight, or at once from the button. A machine whose clock is wrong turns at
 the wrong moment, as anything it dates does.

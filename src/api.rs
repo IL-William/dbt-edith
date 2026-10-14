@@ -2581,7 +2581,10 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
 /// route answers once it has (0079). Switched off, or with a look already on
 /// its way, it answers at once with what is known.
 async fn check_update_now(State(st): State<Arc<AppState>>) -> Response {
-    st.update.check_now().await;
+    // On a task of its own: a page closed or reloaded while git waits drops
+    // this request, and the look still ends and keeps its answer.
+    let looking = st.clone();
+    let _ = tokio::spawn(async move { looking.update.check_now().await }).await;
     update_status(State(st)).await
 }
 
@@ -3625,8 +3628,10 @@ pub async fn watch_update(st: Arc<AppState>) {
         // Woken when the answer kept stops standing, on the hour from
         // midnight to 09:00 in Paris and at midnight past it, or an hour after
         // a look that got no answer, and at least hourly whatever the clock does.
+        // Each process a little after, by its own spread, so that dbt-edith on
+        // the machine asks GitHub once and the others read its answer.
         let now = crate::update::now_secs();
-        let wait = st.update.next_look(now).saturating_sub(now).clamp(1, 3600);
+        let wait = st.update.next_look(now).saturating_sub(now).clamp(1, 3600) + st.update.spread();
         tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
     }
 }

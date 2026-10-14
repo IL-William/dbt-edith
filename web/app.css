@@ -215,7 +215,9 @@ kbd {
 .venvpill[data-state=off] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
 .venvpill.act { cursor: pointer; }
 .venvpill.act:hover { background: rgba(224, 163, 75, .2); }
-.envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); }
+/* A build twenty releases behind lists them all: on a short window the menu
+   scrolls rather than run past it, its button out of reach. */
+.envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; }
 .updmenu .menunote { padding-left: 8px; max-width: none; }
 .updmenu .updfoot { display: flex; align-items: center; gap: 10px; padding: 2px 4px 4px 0; }
 /* One release per row: its version in a column of its own, its title on one

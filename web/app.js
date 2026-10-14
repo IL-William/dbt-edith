@@ -5295,14 +5295,20 @@ async function redrawLineage() {
    gone, however it went. */
 let popup = null;
 
-function openPopup(anchor, el, closed) {
-  closePopup();
-  document.body.appendChild(el);
+/* Below the anchor when the menu fits there, above it otherwise, and inside
+   the window either way. Again when a menu drawn anew has grown. */
+function placePopup(anchor, el) {
   const at = anchor.getBoundingClientRect();
   const box = el.getBoundingClientRect();
   const below = at.bottom + 4 + box.height <= window.innerHeight;
   el.style.top = `${below ? at.bottom + 4 : Math.max(4, at.top - 4 - box.height)}px`;
   el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
+}
+
+function openPopup(anchor, el, closed) {
+  closePopup();
+  document.body.appendChild(el);
+  placePopup(anchor, el);
   const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"]), a[href]')];
   const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopup(); };
   const onKey = (e) => {
@@ -12162,6 +12168,11 @@ function paintUpdateMenu(menu) {
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
   const u = S.update || { current: S.version };
   const o = updateOffer(u);
+  // Drawn anew under the focus, at a click and every two seconds of a look:
+  // it goes back to the row it was on, or to the button when it was there.
+  const rows = () => [...menu.querySelectorAll('[role=menuitem]')];
+  const had = menu.contains(document.activeElement) ? document.activeElement : null;
+  const row = had && !had.classList.contains('updcheck') ? rows().indexOf(had) : -1;
   menu.replaceChildren(el('div', 'menuhead', o ? o.head : `dbt-edith ${S.version || '?'}`));
   if (S.build) menu.append(el('div', 'menunote', S.build));
   if (o) {
@@ -12216,12 +12227,15 @@ function paintUpdateMenu(menu) {
     const look = el('button', 'btn updcheck', u.checking ? 'Looking…' : 'Check for updates');
     look.type = 'button';
     look.setAttribute('role', 'menuitem');
-    // Not `disabled`, which would drop the focus the arrow keys left on it.
+    // Not `disabled`, which takes no focus: the focus goes back to it once
+    // the menu is drawn anew.
     if (u.checking) look.setAttribute('aria-disabled', 'true');
     look.addEventListener('click', () => { if (!u.checking) checkForUpdate(); });
     foot.append(look);
   }
   menu.append(foot);
+  const back = had && (rows()[row] || menu.querySelector('.updcheck') || rows().pop());
+  if (back) back.focus();
 }
 
 /* The menu's button. The server answers once GitHub has, so the menu says it
@@ -12254,7 +12268,10 @@ function paintUpdate() {
   brand.classList.toggle('newer', !!o);
   brand.title = o ? `${o.title}\nClick for what changed and how to update.`
     : `dbt-edith ${S.version || '?'}${S.build ? '\n' + S.build : ''}\nClick to check for updates.`;
-  if (S.updateMenu && S.updateMenu.isConnected) paintUpdateMenu(S.updateMenu);
+  if (S.updateMenu && S.updateMenu.isConnected) {
+    paintUpdateMenu(S.updateMenu);
+    if (popup && popup.el === S.updateMenu) placePopup(popup.anchor, S.updateMenu);
+  }
 }
 
 /* Asked at boot, then every few seconds while a look is on its way, then

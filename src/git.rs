@@ -114,18 +114,21 @@ pub fn run(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) 
         }
     };
 
-    let stdout = String::from_utf8_lossy(&out_thread.join().unwrap_or_default()).into_owned();
-    let stderr = String::from_utf8_lossy(&err_thread.join().unwrap_or_default()).into_owned();
-    match status {
-        Some(s) => GitRun { ok: s.success(), code: s.code().unwrap_or(-1), stdout, stderr, blocking: Vec::new() },
-        None => GitRun {
+    let Some(status) = status else {
+        // Not waited for: a helper git started, git-remote-https waiting on a
+        // proxy that never answers, outlives git and holds both pipes open
+        // until its own timeout, minutes later. The readers end with it.
+        return GitRun {
             ok: false,
             code: -1,
-            stdout,
+            stdout: String::new(),
             stderr: format!("git took longer than {}s and was stopped", timeout.as_secs()),
             blocking: Vec::new(),
-        },
-    }
+        };
+    };
+    let stdout = String::from_utf8_lossy(&out_thread.join().unwrap_or_default()).into_owned();
+    let stderr = String::from_utf8_lossy(&err_thread.join().unwrap_or_default()).into_owned();
+    GitRun { ok: status.success(), code: status.code().unwrap_or(-1), stdout, stderr, blocking: Vec::new() }
 }
 
 fn read(root: &Path, args: &[&str]) -> Option<String> {
@@ -798,6 +801,21 @@ mod tests {
         assert_eq!(porcelain_v2("! ignored.log"), None);
         assert_eq!(porcelain_v2("# branch.head main"), None);
         assert_eq!(porcelain_v2(""), None);
+    }
+
+    /// A command stopped at its deadline returns then, though a process git
+    /// started still holds the pipes: here a shell alias, as git-remote-https
+    /// is on a proxy that never answers.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_command_returns_at_its_deadline() {
+        let dir = scratch("stopped");
+        repo(&dir);
+        let t = Instant::now();
+        let r = run(&dir, &["-c", "alias.nap=!sleep 20", "nap"], &[], Duration::from_millis(300));
+        assert!(!r.ok && r.stderr.contains("was stopped"), "{}", r.stderr);
+        assert!(t.elapsed() < Duration::from_secs(10), "{:?}", t.elapsed());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The nap that replaced a fixed 30 ms one, which every call paid however
