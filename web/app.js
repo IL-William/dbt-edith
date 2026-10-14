@@ -43,6 +43,7 @@ const S = {
   colFilter: '',              // catalog: what the Columns filter holds, kept from one node to the next
   dock: 'lineage',            // the dock tab on screen
   lastPane: '',               // the pane last clicked or focused, for a Cmd+F with nothing focused
+  graphFind: null,            // the lineage's find bar, once Cmd+F has reached the canvas (0081)
   keysReturn: null,           // where focus goes back to when the shortcut list closes
   sidecar: null,              // payload of /api/sidecar: whether Snowflake is picked, and its script
   sidecarPoll: 0,             // the timer asking again while the script starts
@@ -1472,6 +1473,17 @@ function findOverlay(re, whole) {
 const findPrefs = { query: '', caseSensitive: false, wholeWord: false, regex: false };
 const FIND_CAP = 10000;
 
+// One of a find bar's buttons: previous, next, close.
+function findButton(label, title, run) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon';
+  b.textContent = label;
+  b.title = title;
+  b.addEventListener('click', run);
+  return b;
+}
+
 /* One editor's bar, built the first time Cmd+F reaches that editor. It lives
    inside CodeMirror's own wrapper, where CodeMirror's dialogs go, so it moves
    with the editor: the Compiled one is detached and put back between nodes. */
@@ -1514,19 +1526,10 @@ function findBar(cm) {
   const count = document.createElement('span');
   count.className = 'find-count';
   count.setAttribute('aria-live', 'polite');
-  const button = (label, title, run) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'icon';
-    b.textContent = label;
-    b.title = title;
-    b.addEventListener('click', run);
-    return b;
-  };
   bar.append(input, ...st.opts.map(([, b]) => b), count,
-    button('↑', `Previous match (${keyLabel('Shift+Enter', IS_MAC)})`, () => stepFind(cm, -1)),
-    button('↓', `Next match (${keyLabel('Enter', IS_MAC)})`, () => stepFind(cm, 1)),
-    button('×', `Close (${keyLabel('Escape', IS_MAC)})`, () => closeFind(cm)));
+    findButton('↑', `Previous match (${keyLabel('Shift+Enter', IS_MAC)})`, () => stepFind(cm, -1)),
+    findButton('↓', `Next match (${keyLabel('Enter', IS_MAC)})`, () => stepFind(cm, 1)),
+    findButton('×', `Close (${keyLabel('Escape', IS_MAC)})`, () => closeFind(cm)));
   Object.assign(st, { bar, input, count });
 
   input.addEventListener('input', () => {
@@ -1722,12 +1725,13 @@ function paneOf(el) {
 }
 
 /* Cmd+F wherever CodeMirror has not answered it already. False where there is
-   nothing of ours to search, and the browser's own find opens instead: over the
-   lineage it finds a box by its name. */
+   nothing of ours to search, the terminal, and the browser's own find opens
+   instead. */
 function findInPane(pane) {
   // The reports cover every pane: the browser's own find searches them.
   if (S.reportsOpen) return false;
   if (pane === 'catalog') return focusColumnFilter();
+  if (pane === 'lineage') return openGraphFind();
   if (pane === 'compiled' || pane === 'run') {
     const cm = S.artifactCm[pane];
     if (!cm || !document.body.contains(cm.getWrapperElement())) return false;
@@ -1739,6 +1743,121 @@ function findInPane(pane) {
   if (!cm) return false;
   openFind(cm);
   return true;
+}
+
+/* The lineage's find bar (0081), built the first time Cmd+F reaches the
+   canvas. The search is Lineage's, which knows where each box is drawn; the
+   bar only holds the query and says what came of it. The query is its own
+   rather than the editors' (findPrefs): a box is looked for by a name, where
+   the editors' last query is as often a piece of SQL. */
+function graphFindBar() {
+  if (S.graphFind) return S.graphFind;
+  const bar = document.createElement('div');
+  bar.className = 'findbar hidden';
+  bar.setAttribute('role', 'search');
+  const input = document.createElement('input');
+  input.className = 'find-q';
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+  input.title = `A box on the canvas, by its name. ${keyLabel('Mod+K', IS_MAC)} searches the whole project.`;
+  const count = document.createElement('span');
+  count.className = 'find-count';
+  count.setAttribute('aria-live', 'polite');
+  bar.append(input, count,
+    findButton('↑', `Previous match (${keyLabel('Shift+Enter', IS_MAC)})`, () => Lineage.findStep(-1)),
+    findButton('↓', `Next match (${keyLabel('Enter', IS_MAC)})`, () => Lineage.findStep(1)),
+    findButton('×', `Close (${keyLabel('Escape', IS_MAC)})`, closeGraphFind));
+  input.addEventListener('input', () => Lineage.find(input.value, true));
+  bar.addEventListener('keydown', (e) => {
+    const k = keyCombo(e, IS_MAC);
+    // Enter steps from the box only: on one of the buttons it presses it.
+    const dir = { 'Mod+G': 1, F3: 1, 'Mod+Shift+G': -1, 'Shift+F3': -1 }[k]
+      || (e.target === input && { Enter: 1, 'Shift+Enter': -1 }[k]);
+    if (dir) Lineage.findStep(dir);
+    else if (k === 'Escape') closeGraphFind();
+    else if (k === 'Mod+F') { input.focus(); input.select(); }
+    else return;
+    e.preventDefault();
+  });
+  $('#lineage-top').append(bar);
+  S.graphFind = { bar, input, count, open: false, back: null };
+  return S.graphFind;
+}
+
+/* Opening paints the last query's matches and leaves the view where it is,
+   as an editor's bar does; the folder names move down under the bar. */
+function showGraphFind(st) {
+  if (st.open) return;
+  st.open = true;
+  st.bar.classList.remove('hidden');
+  Lineage.placeHeads();
+  Lineage.find(st.input.value, false);
+}
+
+/* Cmd+F over the lineage. False where the canvas is not on screen, and the
+   browser's own find opens instead. What had the focus gets it back when the
+   bar closes: the selector's box, say, or nothing from the canvas. */
+function openGraphFind() {
+  if (S.dock !== 'lineage') return false;
+  const st = graphFindBar();
+  const was = document.activeElement;
+  if (!st.bar.contains(was)) st.back = was && was !== document.body ? was : null;
+  showGraphFind(st);
+  st.input.focus();
+  st.input.select();
+  return true;
+}
+
+/* Cmd+G and F3 from the canvas itself, where a click leaves the focus. With
+   the bar closed they open it on its last query, as in an editor; with no
+   query yet they are the browser's. */
+function stepGraphFind(pane, dir) {
+  const st = S.graphFind;
+  if (pane !== 'lineage' || S.dock !== 'lineage' || S.reportsOpen || !st || !st.input.value) return false;
+  showGraphFind(st);
+  Lineage.findStep(dir);
+  return true;
+}
+
+/* What Lineage found, beside the box, in the words an editor's count uses.
+   Called on every redraw while the bar is open, so it follows the canvas. */
+function paintGraphFind(r) {
+  const st = S.graphFind;
+  if (!st || !st.open) return;
+  const q = st.input.value, column = S.graphMode === 'column';
+  st.input.placeholder = column ? 'Find a column' : 'Find a node';
+  st.input.setAttribute('aria-label', column ? 'Find a column on the canvas' : 'Find a node on the canvas');
+  st.count.textContent = findLabel(q, { hits: r.hits, capped: false }, r.at, '', false);
+  st.count.classList.toggle('none', !!q && !r.hits.length);
+}
+
+/* The view stays on the last match, and the query in the box for next time.
+   The focus goes back where it was before the bar took it. */
+function closeGraphFind() {
+  const st = S.graphFind;
+  if (!st || !st.open) return;
+  const inBar = st.bar.contains(document.activeElement);
+  st.open = false;
+  st.bar.classList.add('hidden');
+  Lineage.findEnd();
+  Lineage.placeHeads();
+  if (!inBar) return;
+  const back = st.back;
+  st.back = null;
+  // Still on screen: a chip on the canvas is SVG, which has no offsetParent.
+  if (back && back.isConnected && back.getClientRects().length) back.focus();
+  else document.activeElement.blur();
+}
+
+/* Whether an Escape nothing else has taken closes the lineage's find bar:
+   from the canvas, where a click on a box leaves the focus, with the
+   lineage on screen and no dialog over it. In the bar, its own keys have
+   closed it already. */
+function escapesGraphFind(e) {
+  const st = S.graphFind;
+  if (!st || !st.open || e.defaultPrevented || S.reportsOpen || S.dock !== 'lineage') return false;
+  if (isTyping(e.target) || !$('#modal').classList.contains('hidden')) return false;
+  return (paneOf(e.target) || S.lastPane) === 'lineage';
 }
 
 const base = (path) => path.split('/').pop();
@@ -3303,7 +3422,8 @@ function modal({ title, body, actions, wide = false, onOpen = null }) {
     host.append(body);
     const bar = $('#modal-actions');
     bar.textContent = '';
-    const esc = (e) => { if (e.key === 'Escape') close(null); };
+    // Taken here: nothing under the dialog closes on the same Escape.
+    const esc = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
     let done = false;
     // Every way out removes the Escape listener. It used to be removed only on
     // Escape, so each button close left one behind.
@@ -6218,6 +6338,8 @@ function noteLineage(text) {
   const el = $('#lineage-note');
   el.textContent = text;
   el.classList.toggle('hidden', !text);
+  // With find open, its bar moves under the note, and the folder names too.
+  Lineage.placeHeads();
 }
 
 /* The tab in front came up with no node, most often because it is newer than
@@ -11318,7 +11440,8 @@ function tourSteps(c) {
     steps.push({ key: 'lineage', target: '#dock-lineage', title: 'Lineage',
       text: `\`${m.name}\` and its neighbours, as many levels up and down as the two boxes say, read from \`manifest.json\`: `
         + 'nothing here runs dbt. Click a box to read its file, double-click to centre the lineage on it, and a `+N` '
-        + 'badge pulls in one more level. Opening a model\'s file moves the lineage onto it.' });
+        + 'badge pulls in one more level. Opening a model\'s file moves the lineage onto it. '
+        + `${key('Mod+F')} over the canvas finds a box by its name and brings it to the middle.` });
     steps.push({ key: 'select', target: '#select-bar', title: 'Custom selection',
       text: 'Any set of nodes, written the way dbt reads a selection: names, `tag:`, `path:`, `+` and `@`, or a named '
         + `selector from \`selectors.yml\`. This one, \`+${m.name}+\`, is everything it is built from and everything `
@@ -11881,8 +12004,9 @@ function shortcutSheet(os) {
     { title: 'Find', keys: [
       [['Mod+F'], 'In a file, or in Compiled or Run: find in that text'],
       [['Mod+F'], 'In the Catalog: filter the columns by name'],
+      [['Mod+F'], 'On the lineage: find a node by its name, and centre the view on it'],
       [['Enter', 'Shift+Enter'], 'Next and previous match, from the find box'],
-      [['Mod+G', 'Mod+Shift+G'], 'Next and previous match, from the text too'],
+      [['Mod+G', 'Mod+Shift+G'], 'Next and previous match, from the text or the canvas too'],
       [['F3', 'Shift+F3'], 'The same, as in VS Code'],
       [['Escape'], 'Close the find bar, or empty the column filter'],
     ] },
@@ -12071,6 +12195,14 @@ function wireKeys() {
       case 'Mod+F':
         if (!e.defaultPrevented && findInPane(paneOf(e.target) || S.lastPane)) e.preventDefault();
         return;
+      // From the lineage canvas, which holds no focus of its own: an editor
+      // and both find bars have answered these already.
+      case 'Mod+G': case 'F3':
+        if (!e.defaultPrevented && stepGraphFind(paneOf(e.target) || S.lastPane, 1)) e.preventDefault();
+        return;
+      case 'Mod+Shift+G': case 'Shift+F3':
+        if (!e.defaultPrevented && stepGraphFind(paneOf(e.target) || S.lastPane, -1)) e.preventDefault();
+        return;
       // Not from the terminal, where F1 belongs to whatever runs in it.
       case 'F1':
         if (e.target.closest && e.target.closest('#term')) return;
@@ -12084,6 +12216,10 @@ function wireKeys() {
         return;
     }
     if (e.key === 'Escape' && !$('#palette').classList.contains('hidden')) closePalette();
+    else if (e.key === 'Escape' && escapesGraphFind(e)) {
+      e.preventDefault();
+      closeGraphFind();
+    }
   });
   // What Cmd+F searches when nothing has the focus: the pane last used, never a
   // dialog or the top bar.
@@ -12504,6 +12640,7 @@ async function boot() {
     onHoverClose: closeHoverCard,
     // A fold chip redrew the canvas in place: only the line under it changes.
     onRefold: (d, drawn) => { $('#lineage-status').textContent = canvasStatus(d, drawn); },
+    onFound: paintGraphFind,
     onOpen: (n) => {
       const { node: nodeId, column } = splitColId(n.id);
       if (column) {
@@ -12525,11 +12662,15 @@ async function boot() {
       input.value = Math.min(20, +input.value + 1);
       rerender();
     },
-    // Where the folder names can sit: below the selector bar, which floats
-    // over the top of the canvas in that mode.
+    // Where the folder names can sit, and the middle a found box is brought
+    // to: below the bars floating over the top of the canvas, the selector's
+    // in that mode and find's while it is open. Not below the note alone,
+    // which the names have always run under.
     headTop: () => {
-      const bar = $('#select-bar');
-      return bar.classList.contains('hidden') ? 0 : bar.offsetTop + bar.offsetHeight;
+      const top = $('#lineage-top');
+      const bars = [$('#select-bar'), S.graphFind && S.graphFind.bar]
+        .filter((b) => b && !b.classList.contains('hidden'));
+      return bars.length ? top.offsetTop + Math.max(...bars.map((b) => b.offsetTop + b.offsetHeight)) : 0;
     },
   });
   wireTabs(); wireKeys(); wireSplitters(); relinkTools();

@@ -1,6 +1,6 @@
 # 0030. Find is the app's own, and the shortcut list opens on ?
 
-Date: 2026-09-28 · Status: accepted, amended by 0037
+Date: 2026-09-28 · Status: accepted, amended by 0037 and 0081
 
 **Trigger:** read before adding a keyboard shortcut, or changing what
 `Cmd/Ctrl + F` does anywhere.

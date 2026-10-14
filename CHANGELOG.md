@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.22.0 - 2026-10-14
+
+- Find a node on the lineage with `Cmd/Ctrl + F`, by its name, and bring it to
+  the middle of the canvas, with `Enter` stepping through the other matches and
+  opening the chip or the group a test is folded under (0081).
+
 ## 1.21.0 - 2026-10-14
 
 - Cut each folder band by its sub-folders, up to four levels down, from a
