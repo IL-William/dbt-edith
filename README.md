@@ -1192,8 +1192,9 @@ The jobs that run on their own come first, with a green **Scheduled** pill
 that gives the schedule, and the ones nothing starts come last, with a grey
 **Manual** one. Next after the scheduled ones come the jobs that may run on
 their own, on something no file read says, with an amber **Not read** pill
-that says what: a schedule in `{{ }}` or written as a mapping, an asset no
-file read updates, a dbt Cloud job started by one no file defines. A CI or
+that says what: a schedule in `{{ }}` or `{% %}` or written as a mapping, an
+asset written as a mapping or one no file read updates, a dbt Cloud job
+started by one no file defines. A CI or
 merge job, which something starts but no clock, sits before the manual ones,
 its pill saying what starts it.
 

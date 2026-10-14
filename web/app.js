@@ -7470,7 +7470,7 @@ const jel = (tag, className, textContent = '') => Object.assign(document.createE
 /* How a job starts, as a pill that says scheduled, not read or manual in a
    word, so they can be told apart at a glance down a list of cards. */
 const JOBS_WORD = { scheduled: 'Scheduled', unread: 'Not read', manual: 'Manual' };
-const JOBS_UNREAD_WHY = 'May start on its own, on what no file read says: a templated schedule or one written as a mapping, '
+const JOBS_UNREAD_WHY = 'May start on its own, on what no file read says: a templated schedule, a schedule or an asset written as a mapping, '
   + 'an asset no file read updates, a job no file read defines. Counted neither as scheduled nor as unscheduled';
 
 function jobsWhen(job) {

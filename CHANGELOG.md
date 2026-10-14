@@ -23,9 +23,10 @@ newest dated heading has to be the version `Cargo.toml` names.
   dbt task updates it, an ingestion DAG for instance, or a task with no command
   in a dbt DAG.
 - Tell a job whose schedule is not read from one nothing schedules: an amber
-  **Not read** pill for a schedule in `{{ }}` or written as a mapping, an asset
-  no file read updates or a job no file defines, ranked after the scheduled
-  jobs, and its models listed apart in the job coverage, out of its news.
+  **Not read** pill for a schedule in Jinja or written as a mapping, an asset
+  written as a mapping or one no file read updates, or a job no file defines,
+  ranked after the scheduled jobs, and its models listed apart in the job
+  coverage, out of its news.
 
 ## 1.18.4 - 2026-10-14
 

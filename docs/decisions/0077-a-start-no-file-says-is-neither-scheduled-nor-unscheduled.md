@@ -12,8 +12,9 @@ one, and every other job as one nothing starts (0063). Three kinds were
 counted wrong. A dbt Cloud job whose schedule trigger is on, its cron left
 to the vars file, is on a clock. A DAG on an asset only an ingestion DAG
 updates runs on that DAG's clock, but a file with no dbt task left nothing,
-its outlets included. And a schedule in `{{ }}` or written as a mapping, an
-asset no file read updates, or a job no file defines may start one or not.
+its outlets included. And a schedule in Jinja or written as a mapping, an
+asset written as a mapping or one no file read updates, or a job no file
+defines may start one or not.
 The coverage listed all three as *Only in unscheduled jobs*, and its news
 counted them.
 
@@ -21,10 +22,11 @@ counted them.
 
 - **Three answers, not two**: scheduled, not, and not read. A chain takes the
   best of what pulls it. A DAG waits on all its assets, so it takes the worst
-  of them, and an asset no file read updates is not read. Cycles still never
-  start.
+  of them. An asset no file read updates is not read, and so is one written
+  as a mapping, as dag-factory writes one by its `uri`, or an empty list.
+  Cycles still never start.
 - **dbt Cloud's schedule trigger is the clock.** On, the job is scheduled
-  whatever its cron says; templated, it is not read.
+  whatever its cron says; templated, in `{{ }}` or `{% %}`, it is not read.
 - **A DAG file with no dbt task leaves its schedule and its outlets**, once it
   has a DAG id and an outlet, and nothing else: it is no job, is listed
   nowhere and is never refused. A task with no command in a dbt DAG updates

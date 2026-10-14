@@ -1237,13 +1237,16 @@ worst of its assets. A dbt Cloud job whose schedule trigger is on is
 scheduled, its cron read or not. A DAG file with no dbt task, which left
 nothing, now leaves a `Feeder`, its schedule and its outlets, so a DAG on what
 an ingestion DAG loads is scheduled with it; a task with no command in a dbt
-DAG counts as well. A schedule in `{{ }}` or written as a mapping, an asset no
-file read updates, a job no file defines, or a trigger in `{{ }}` is not
-read: an amber **Not read** pill, ranked after the scheduled jobs, the
+DAG counts as well. A schedule or a trigger in Jinja, a schedule or an asset
+written as a mapping, an asset no file read updates, or a job no file defines
+is not read: an amber **Not read** pill, ranked after the scheduled jobs, the
 Catalog's chip in amber, and the coverage's own list, *Only in jobs whose
 schedule is not read*, which the news leaves out. The Rust tests cover each
-case and the coverage's three lists; driven in headless Chrome on Jaffle Shop
-with invented jobs, one of each.
+case, the coverage's three lists, and the same answers from files read in the
+reverse order; driven in headless Chrome on Jaffle Shop with invented jobs,
+one of each. Left out unless asked: a job not read only through its chain,
+behind a feeder whose clock is templated for instance, names no link that is
+not read, its pill saying `on copied` under the general tooltip.
 
 ## Deferred, in the order they were chosen
 
