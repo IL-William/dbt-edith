@@ -80,6 +80,7 @@ it is built this way, for whoever changes it next.
 | [0074](0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md) | The tour is offered once per machine, and runs nothing | adding a step to the guided tour, making it open, click or type anything, or changing when it is offered or what `tour.json` holds |
 | [0075](0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md) | The Reports button stays in view, dimmed while it has nothing | hiding the Reports button, or changing what it shows or says while no report has anything |
 | [0076](0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) | An incremental strategy is read from the macros dbt runs | showing what an incremental model does on a run, following `adapter.dispatch`, keeping any `macro_sql`, or reading another block of `dbt_project.yml` |
+| [0078](0078-the-tour-is-offered-once-there-is-a-model-to-show.md) | The tour is offered once there is a model to show | changing when the tour is offered, what a page with no model is told, or when `tour.json` is first written |
 | [0079](0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md) | An update is looked for hourly through the Paris night, and on demand | changing when dbt-edith looks for a newer release, what Edith's menu shows, or what a look that got no answer says |
 
 ## Keeping these honest

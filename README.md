@@ -411,16 +411,19 @@ are not documented (shown in italics).
 
 Give me a tour, at the top of the shortcut list, walks through each part of the
 page on a model of your project with parents and children, and one a job runs
-once the Jobs tab has a source, picked the same way every time: the editor and the `dbt_project.yml` button, the lineage, a Custom
-selection and how to share it, the Catalog, column lineage, Jobs, Reports, the
-terminal and Search. Each step rings what it is about and says what it is for,
+once the Jobs tab has a source, picked the same way every time: the
+`manifest.json` everything is read from and how fresh it is, the editor and the
+`dbt_project.yml` button, the lineage, a Custom selection and how to share it,
+the Catalog, column lineage, Jobs, Reports, the terminal and Search. Each step rings what it is about and says what it is for,
 and a feature that is off says how to turn it on. It runs nothing and changes
 no setting, and when it ends the page is as you left it. The arrow keys walk it
 and Escape ends it.
 
-It is offered once, the first time a page opens on the machine, by a card
-under the `?` button. The machine remembers it in `tour.json`, in dbt-edith's
-config directory, with the version of dbt-edith that served the page.
+It is offered once, the first time a page opens on the machine with a model
+to show, by a card under the `?` button: on a project with no `manifest.json`
+yet, it comes once `dbt parse` writes one. The machine remembers it in
+`tour.json`, in dbt-edith's config directory, with the version of dbt-edith
+that served the page.
 
 ### Is the lineage still true?
 

@@ -5,10 +5,13 @@
 //!   - the model is picked from the graph alone, by its counts and then its
 //!     name, so the same manifest gives the same model on every start (0055).
 //!   - the offer is made once per machine, not per project: the tour shows the
-//!     tool, which is the same everywhere. `tour.json` in the config directory
+//!     tool, which is the same everywhere. It waits for a page with a model to
+//!     show, since one without would offer the tour with half its steps left
+//!     out, and only once (0078). `tour.json` in the config directory
 //!     says when it was made and the newest dbt-edith a page came from, and
 //!     holds nothing else. That version is what a tour of what is new since
-//!     will start from, so it is kept from the first release with a tour on.
+//!     will start from, so it is kept from the offer on, by every release
+//!     with a tour.
 //!     Without a config directory nothing can remember either, so the tour is
 //!     never offered on its own there, and stays one click away in the
 //!     shortcut list.
@@ -31,6 +34,9 @@ pub struct Pick {
     pub file: String,
     pub parents: usize,
     pub children: usize,
+    /// The package it comes from, when the project has no model of its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 /// A model of the project with parents and children, so that the lineage,
@@ -72,7 +78,9 @@ pub fn pick(graph: &Graph, ran: &[bool]) -> Option<Pick> {
             })
     };
     let (n, parents, children, _) = rank(true).or_else(|| rank(false))?;
-    Some(Pick { id: n.id.clone(), name: n.name.clone(), file: n.on_disk().to_string(), parents, children })
+    // A manifest naming no project has no own package to tell a package from.
+    let package = (!graph.meta.project.is_empty() && n.package != graph.meta.project).then(|| n.package.clone());
+    Some(Pick { id: n.id.clone(), name: n.name.clone(), file: n.on_disk().to_string(), parents, children, package })
 }
 
 /// What `tour.json` holds.
@@ -86,6 +94,18 @@ pub struct Kept {
     pub version: String,
 }
 
+/// What a page that asks is told.
+#[derive(Debug, PartialEq)]
+pub enum Answer {
+    /// Offer the tour: the first page on this machine with a model to show.
+    Offer,
+    /// Not yet: nothing has been offered here, and this manifest has no model.
+    /// The page asks again when a manifest lands.
+    Held,
+    /// Offered already, or there is nowhere to remember it.
+    No,
+}
+
 /// Whether the tour was offered on this machine, and the claim to offer it.
 pub struct Offer {
     /// `tour.json`, or None without a config directory.
@@ -93,24 +113,35 @@ pub struct Offer {
 }
 
 impl Offer {
-    /// A page of `version` was served: true for the first on this machine,
-    /// which is the one that offers the tour, and false for every later one,
-    /// whatever tab or process asks. The file is created rather than written
-    /// over, so two tabs opened at once cannot both be told yes. A file that
-    /// cannot be written says no: an offer nothing remembers would come back
-    /// at every start. Later pages raise the version kept, never lower it, so
-    /// an older binary started after a newer one changes nothing.
-    pub fn visit(&self, version: &str) -> bool {
-        let Some(path) = &self.path else { return false };
-        if let Some(dir) = path.parent() {
-            if std::fs::create_dir_all(dir).is_err() {
-                return false;
-            }
-        }
+    /// A page of `version` was served, on a manifest with a model to show or
+    /// not: the first page with one on this machine offers the tour, and every
+    /// later one is told no, whatever tab or process asks. The file is created
+    /// rather than written over, so two tabs opened at once cannot both be told
+    /// yes. A file that cannot be written says no: an offer nothing remembers
+    /// would come back at every start. A page with no model writes nothing
+    /// until the offer is made, so the version is kept from that first offer
+    /// on: a machine that was never offered the tour gets all of it, not what
+    /// is new since. Later pages raise the version kept, never lower it, so an
+    /// older binary started after a newer one changes nothing. `model` is
+    /// asked only while no offer was made: once it was, a pass over the graph
+    /// at every page would answer nothing.
+    pub fn visit(&self, version: &str, model: impl FnOnce() -> bool) -> Answer {
+        let Some(path) = &self.path else { return Answer::No };
         let body = |kept: &Kept| format!("{:#}\n", serde_json::json!(kept));
         let first = Kept { offered: crate::update::now_secs(), version: version.to_string() };
-        if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
-            return file.write_all(body(&first).as_bytes()).is_ok();
+        if !path.exists() {
+            if !model() {
+                return Answer::Held;
+            }
+            if let Some(dir) = path.parent() {
+                if std::fs::create_dir_all(dir).is_err() {
+                    return Answer::No;
+                }
+            }
+            if let Ok(mut file) = std::fs::OpenOptions::new().write(true).create_new(true).open(path) {
+                return if file.write_all(body(&first).as_bytes()).is_ok() { Answer::Offer } else { Answer::No };
+            }
+            // Another page made it meanwhile.
         }
         // A file that is not its shape is written again in its shape.
         let loaded = load(path);
@@ -120,7 +151,7 @@ impl Offer {
             kept.version = version.to_string();
             let _ = crate::settings::write_atomic(path, body(&kept).as_bytes());
         }
-        false
+        Answer::No
     }
 }
 
@@ -231,9 +262,13 @@ mod tests {
             ],
         );
         assert_eq!(pick(&g, &[]).unwrap().name, "mine");
+        assert_eq!(pick(&g, &[]).unwrap().package, None, "the project's own says no package");
         let only_packages = graph("shop", &[("a", "model", "pkg", &[]), ("b", "model", "pkg", &["a"]), ("c", "model", "pkg", &["b"])]);
-        assert_eq!(pick(&only_packages, &[]).unwrap().name, "b");
+        let p = pick(&only_packages, &[]).unwrap();
+        assert_eq!((p.name.as_str(), p.package.as_deref()), ("b", Some("pkg")), "a package's names its package");
         assert_eq!(pick(&graph("shop", &[("raw", "seed", "shop", &[])]), &[]), None);
+        let unnamed = graph("", &[("a", "model", "shop", &[]), ("b", "model", "shop", &["a"])]);
+        assert_eq!(pick(&unnamed, &[]).unwrap().package, None, "a manifest naming no project names no package");
     }
 
     #[test]
@@ -242,13 +277,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let path = offered_path(&dir.join("config"));
         let offer = Offer { path: Some(path.clone()) };
-        assert!(offer.visit("1.16.0"), "the first start offers it, creating the directory");
-        assert!(!offer.visit("1.16.0"), "and no later one");
-        assert!(!Offer { path: Some(path.clone()) }.visit("1.16.0"), "nor another process");
+        assert_eq!(offer.visit("1.16.0", || false), Answer::Held, "a start with no model to show holds it");
+        assert!(!dir.exists(), "writing nothing, not even the directory");
+        assert_eq!(offer.visit("1.16.0", || true), Answer::Offer, "the first start with one offers it, creating the directory");
+        assert_eq!(offer.visit("1.16.0", || true), Answer::No, "and no later one");
+        assert_eq!(offer.visit("1.16.0", || panic!("looked for a model")), Answer::No, "nor looks for a model again");
+        assert_eq!(offer.visit("1.16.0", || false), Answer::No, "nor one without a model, which holds nothing now");
+        assert_eq!(Offer { path: Some(path.clone()) }.visit("1.16.0", || true), Answer::No, "nor another process");
         let kept: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let keys: Vec<&String> = kept.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["offered", "version"], "nothing else is kept");
-        assert!(!Offer { path: None }.visit("1.16.0"));
+        assert_eq!(Offer { path: None }.visit("1.16.0", || true), Answer::No);
+        assert_eq!(Offer { path: None }.visit("1.16.0", || false), Answer::No, "nor held where nothing can remember it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -258,15 +298,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let path = offered_path(&dir);
         let offer = Offer { path: Some(path.clone()) };
-        assert!(offer.visit("1.16.0"));
+        assert_eq!(offer.visit("1.16.0", || true), Answer::Offer);
         let offered = load(&path).unwrap().offered;
-        assert!(!offer.visit("1.18.2"));
+        assert_eq!(offer.visit("1.18.2", || true), Answer::No);
         assert_eq!(load(&path), Some(Kept { offered, version: "1.18.2".into() }), "an update raises it");
-        assert!(!offer.visit("1.17.0"));
-        assert_eq!(load(&path).unwrap().version, "1.18.2", "an older binary started since does not lower it");
+        assert_eq!(offer.visit("1.18.3", || false), Answer::No);
+        assert_eq!(load(&path).unwrap().version, "1.18.3", "on a page with no model too, once the offer was made");
+        assert_eq!(offer.visit("1.17.0", || true), Answer::No);
+        assert_eq!(load(&path).unwrap().version, "1.18.3", "an older binary started since does not lower it");
         std::fs::write(&path, "not json").unwrap();
-        assert!(!offer.visit("1.18.2"), "a file it cannot read was still an offer made");
-        assert_eq!(load(&path).map(|k| k.version), Some("1.18.2".into()), "and is written again in its shape");
+        assert_eq!(offer.visit("1.18.3", || true), Answer::No, "a file it cannot read was still an offer made");
+        assert_eq!(load(&path).map(|k| k.version), Some("1.18.3".into()), "and is written again in its shape");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

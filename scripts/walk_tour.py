@@ -7,6 +7,11 @@ through the DevTools protocol over a websocket written here, so nothing is
 installed but Chrome. It checks what the harness in web/tests/tour.js
 cannot see:
 
+  - started before dbt has written a manifest, the tour is not offered and
+    nothing is noted, the shortcut list's tour saying there is no manifest
+    and ringing the ? button it is taken again from;
+    the offer comes once dbt parse writes one, at the end of a tour on
+    screen when it lands (0078);
   - the tour is offered once, beside the ? button, and not after a reload;
   - every step rings the element it is about, with its card on screen, and
     the page under it shows what the step says: the model's file, its
@@ -254,6 +259,8 @@ ESCAPE = ("Escape", "Escape", 27)
 # What each step rings, by its title, and what the page under it must show.
 STEPS = [
     ("A tour of dbt-edith", None, None),
+    ("manifest.json, and how fresh it is", "#fresh-badge",
+     "document.querySelector('#fresh-badge .lbl')?.textContent.startsWith('manifest ')"),
     (f"{MODEL}, in the editor", "#editor-pane",
      f"document.querySelector('#tabbar .ftab.active')?.textContent.includes('{MODEL}.sql')"),
     ("Where dbt_project.yml configures it", ["#crumbs .cfg", ".crumbmenu.config"],
@@ -370,14 +377,45 @@ class Walk:
             self.page.call("Input.dispatchMouseEvent", type="mouseMoved", x=1, y=899)
             self.page.shot(self.shots / f"{index + 1:02d}-{re.sub(r'[^a-z]+', '-', title.lower()).strip('-')}.png")
 
-    def run(self, url):
+    def run(self, url, parse):
         page = self.page
         page.call("Page.navigate", url=url)
-        page.until("document.querySelectorAll('#counts .chip').length > 0", "the page to load", 30)
+        page.until("document.querySelectorAll('#tree .row').length > 0", "the page to load", 30)
+
+        print("--- before a manifest ---")
+        time.sleep(1.5)
+        self.check("not offered with no model to show", not page.js("!!document.querySelector('.tour-offer')"))
+        self.check("  and nothing noted", not (self.config / "tour.json").exists())
+        page.key("?", "Slash", 191, text="?")
+        page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
+        page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
+        total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
+        welcome = page.until("document.querySelector('#tour .tour-text')?.textContent", "the welcome")
+        self.check("the shortcut list's tour leaves out the steps about a model, and says there is no manifest",
+                   total == 7 and welcome.startswith("There is no manifest.json to read yet"), f"{total} steps: {welcome}")
+        time.sleep(0.35)
+        rung = page.js("""(() => {
+          const g = document.querySelector('#tour .tour-ring');
+          if (g.classList.contains('hidden')) return false;
+          const r = g.getBoundingClientRect(), k = document.querySelector('#keys-btn').getBoundingClientRect();
+          return r.left <= k.left && r.top <= k.top && r.right >= k.right && r.bottom >= k.bottom && r.width < k.width + 20;
+        })()""")
+        self.check("  ringing the ? button it is taken again from", rung)
+        if self.shots:
+            page.shot(self.shots / "00-no-manifest.png")
+        # dbt parse lands with the tour still up. The watcher reads the
+        # manifest, and the page hears of it at its next poll.
+        parse()
+        page.until("document.querySelectorAll('#counts .chip').length > 0", "the manifest", 30)
+        time.sleep(1)
+        self.check("a manifest landing during the tour offers nothing under it, and notes nothing",
+                   not page.js("!!document.querySelector('.tour-offer')") and not (self.config / "tour.json").exists())
+        page.key(*ESCAPE)
+        page.until("!document.querySelector('#tour')", "Escape to end it")
 
         print("--- the offer ---")
         offer = page.until("document.querySelector('.tour-offer')?.textContent", "the offer")
-        self.check("offered on the first start", "New to dbt-edith?" in offer, offer)
+        self.check("offered once the tour ends, dbt parse having written a manifest", "New to dbt-edith?" in offer, offer)
         under = page.js("""(() => {
           const o = document.querySelector('.tour-offer').getBoundingClientRect();
           const k = document.querySelector('#keys-btn').getBoundingClientRect();
@@ -401,13 +439,13 @@ class Walk:
                    page.js("['#topbar', '#body', '#statusbar'].every((s) => document.querySelector(s).inert)"))
         for i in range(total):
             self.look(i, total)
-            if i == 6:
+            if i == 7:
                 # Back from the Catalog draws the selection again, and Next
                 # leaves it for the model's lineage once more.
                 page.key(*LEFT)
-                self.look(5, total)
-                page.key(*RIGHT)
                 self.look(6, total)
+                page.key(*RIGHT)
+                self.look(7, total)
             if i < total - 1:
                 if i % 2:
                     page.key(*RIGHT)
@@ -471,21 +509,21 @@ class Walk:
         total = int(page.until("document.querySelector('#tour .tour-count')?.textContent.split(' of ')[1]", "the tour"))
         self.check("it starts from the list, over the Reports panel",
                    total == len(STEPS) and page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
-        for i in range(5):
+        for i in range(6):
             self.step_shown(i, total)
-            if i == 2:
+            if i == 3:
                 # The dbt_project.yml menu is shown, not used: Tab stays on the card.
                 page.until("!!document.querySelector('.crumbmenu.config')", "the menu")
                 for _ in range(4):
                     page.key("Tab", "Tab", 9)
                 self.check("Tab stays on the card, the menu it shows being inert",
                            page.js("!!document.activeElement.closest('#tour') && document.querySelector('.crumbmenu.config').inert"))
-            if i == 3:
+            if i == 4:
                 self.check("the app's keys wait, and the browser does not act on them either",
                            page.js(HELD + "('s', 'KeyS', true)") and page.js(HELD + "('F1', 'F1', false)")
                            and page.js("document.querySelector('#shortcuts').classList.contains('hidden')"))
             page.key(*RIGHT)
-        self.step_shown(5, total)
+        self.step_shown(6, total)
         page.key(*ESCAPE)
         page.until("!document.querySelector('#tour')", "Escape to end it")
         back = self.settle(in_use)
@@ -540,13 +578,12 @@ def main():
         # Named as the project is, so the tree's root reads jaffle_shop.
         project = work / "jaffle_shop"
         shutil.copytree(JAFFLE, project)
-        parse(project)
         (work / "home").mkdir()
         edith = Edith(binary, project, work)
         page = None
         try:
             page = Page(work, 2 if shots else 1)
-            failed = Walk(page, work / "config", shots).run(edith.url)
+            failed = Walk(page, work / "config", shots).run(edith.url, lambda: parse(project))
         finally:
             if page:
                 page.close()

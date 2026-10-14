@@ -15,7 +15,7 @@ function keys(steps) { return steps.map(function (s) { return s.key; }); }
 function step(steps, key) { return steps.filter(function (s) { return s.key === key; })[0]; }
 
 var model = { id: 'model.jaffle_shop.stg_orders', name: 'stg_orders', file: 'models/staging/stg_orders.sql', parents: 1, children: 2 };
-var bare = { model: model, mac: true, jobs: 0, reports: [], cll: '', snowflake: false };
+var bare = { model: model, manifest: true, mac: true, jobs: 0, reports: [], cll: '', snowflake: false };
 function ctx(over) {
   var c = {};
   for (var k in bare) c[k] = bare[k];
@@ -26,14 +26,30 @@ function ctx(over) {
 print('--- which steps ---');
 var all = tourSteps(bare);
 check('with a model, every part of the page in the order of the plan', keys(all),
-  ['welcome', 'editor', 'config', 'lineage', 'select', 'share', 'catalog', 'columns', 'jobs', 'reports', 'terminal', 'search', 'end']);
+  ['welcome', 'manifest', 'editor', 'config', 'lineage', 'select', 'share', 'catalog', 'columns', 'jobs', 'reports', 'terminal', 'search', 'end']);
 check('without one, the steps about a model are left out',
-  keys(tourSteps(ctx({ model: null }))), ['welcome', 'columns', 'reports', 'terminal', 'search', 'end']);
-check('  and the welcome says why, and what to run', /dbt parse/.test(step(tourSteps(ctx({ model: null })), 'welcome').text), true);
+  keys(tourSteps(ctx({ model: null }))), ['welcome', 'manifest', 'columns', 'reports', 'terminal', 'search', 'end']);
+check('  and the welcome says why, and what to run', /^This manifest has no model to show.*dbt parse/.test(step(tourSteps(ctx({ model: null })), 'welcome').text), true);
+check('  ringing the ? button it sends them back to, which it names with its key',
+  [step(tourSteps(ctx({ model: null })), 'welcome').target, /behind this button or \{\?\}: Give me a tour heads it/.test(step(tourSteps(ctx({ model: null })), 'welcome').text)],
+  ['#keys-btn', true]);
+check('  or that there is no manifest at all',
+  /^There is no `manifest.json` to read yet.*dbt parse/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'welcome').text), true);
 check('the welcome names the model and counts its neighbours',
   step(all, 'welcome').text.indexOf('`stg_orders`, a model of this project with 1 parent and 2 children') >= 0, true);
+check('  or the package it comes from, when the project has no model of its own',
+  step(tourSteps(ctx({ model: { id: 'model.pkg.b', name: 'b', file: 'dbt_packages/pkg/models/b.sql', parents: 1, children: 1, package: 'pkg' } })), 'welcome')
+    .text.indexOf('This project has no model of its own, so it opens `b`, a model of the package `pkg` with 1 parent and 1 child') === 0, true);
 check('  in the singular for one child',
   step(tourSteps(ctx({ model: { id: 'x', name: 'x', file: 'x.sql', parents: 3, children: 1 } })), 'welcome').text.indexOf('3 parents and 1 child') >= 0, true);
+check('the manifest step, right after the welcome, rings the freshness badge and says everything comes from it',
+  [step(all, 'manifest').target, /^Everything here is read from `manifest.json`/.test(step(all, 'manifest').text)], ['#fresh-badge', true]);
+check('  what its dot says, and that a click types dbt parse',
+  [/green, none has; amber, your own saved edits; red, a pull/.test(step(all, 'manifest').text),
+    /A click types `dbt parse` in the terminal, leaving Enter to you/.test(step(all, 'manifest').text)], [true, true]);
+check('  and with no manifest, that there is none yet, and no colours to read',
+  [/There is none yet, so this says no manifest\. A click types `dbt parse`/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text),
+    /green/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text)], [true, false]);
 check('the selection drawn is the one the step names', step(all, 'select').text.indexOf('`+stg_orders+`') >= 0, true);
 check('the dbt_project.yml button rings its menu too, which the step opens',
   step(all, 'config').target, ['#crumbs .cfg', '.crumbmenu.config']);
@@ -61,7 +77,9 @@ check('elsewhere', /\{Ctrl\+K\} anywhere/.test(step(tourSteps(ctx({ mac: false }
 check('Escape', /\{Esc\} ends it/.test(step(all, 'welcome').text), true);
 
 print('\n--- every step ---');
-var every = all.concat(tourSteps(ctx({ model: null, jobs: 1, reports: ['Last run'], cll: 'Fusion', snowflake: true, mac: false })));
+var every = all.concat(tourSteps(ctx({ model: null, jobs: 1, reports: ['Last run'], cll: 'Fusion', snowflake: true, mac: false })),
+  tourSteps(ctx({ model: null, manifest: false })),
+  tourSteps(ctx({ model: { id: 'model.pkg.b', name: 'b', file: 'b.sql', parents: 1, children: 1, package: 'pkg' } })));
 check('has a title and a text', every.filter(function (s) { return !s.title || !s.text; }).map(function (s) { return s.key; }), []);
 // Keys are set apart from code: ⌘` holds a backtick, which as code would
 // open a span that runs to the end of the text.
@@ -73,9 +91,9 @@ check('  the terminal\'s key among them', /\{⌘`\} brings it forward/.test(step
 check('writes no em dash', every.filter(function (s) { return /—/.test(s.title + s.text); }).map(function (s) { return s.key; }), []);
 // A renamed id in the page would leave its step pointing at nothing, which
 // draws a centred card and says nothing is wrong.
-check('points at ids the page has, at least one per step, or at nothing for the welcome',
-  all.filter(function (s) {
-    if (s.key === 'welcome') return s.target !== '';
+check('points at ids the page has, at least one per step, or at nothing for the welcome with a model',
+  all.concat(tourSteps(ctx({ model: null }))).filter(function (s) {
+    if (s.key === 'welcome' && s.target === '') return s.text.indexOf('It opens') !== 0;
     var ids = [].concat(s.target).map(function (sel) { return (/#([\w-]+)/.exec(sel) || [])[1]; }).filter(Boolean);
     return !ids.length || ids.some(function (id) { return page.indexOf('id="' + id + '"') < 0; });
   }).map(function (s) { return s.key; }), []);

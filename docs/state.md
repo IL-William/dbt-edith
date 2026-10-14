@@ -1154,9 +1154,14 @@ before the review: the order, a chip lighting its step, a node no job runs,
 and nothing asked while the Catalog is hidden. Not yet on the VM.
 
 A guided tour, Give me a tour at the top of the shortcut list, and offered once
-per machine by a card under the `?` button (0074). Thirteen steps on a project
-with a model, each ringing one part of the page, the rest dimmed, with what it
-is for: the model's file, the `dbt_project.yml` button with its menu open, the
+per machine by a card under the `?` button (0074), by the first page with a
+model to show: a page with none writes nothing and asks again when a manifest
+lands, so a `dbt parse` after opening brings the offer (0078). Fourteen steps
+on a project with a model, each ringing one part of the page, the rest dimmed,
+with what it is for: the freshness badge, right after the welcome, saying that
+everything is read from `manifest.json` and as true as the last `dbt parse`,
+what its age and its dot's colours mean, and that a click types `dbt parse`;
+the model's file, the `dbt_project.yml` button with its menu open, the
 lineage, a Custom selection of `+model+`, Export, Copy image and Copy, the
 Catalog, the column lineage menu, the Jobs tab, the Reports button, the
 Terminal tab, Search and the `?` button. The model is the server's pick
@@ -1185,10 +1190,14 @@ Enter and Escape walk it. `tour.json` beside `update.json` keeps when it was
 offered and the newest version that served a page, which the tour of what is
 new (below) will start from. `web/tests/tour.js` checks the steps and their
 wording per feature, and `scripts/walk_tour.py`, in `check.sh`, walks every
-step in headless Chrome on Jaffle Shop: the ring around each target, the page
-under it, Back, the offer once and not after a reload, the terminal never
-started, no file in the config directory but `tour.json`, and a page in use put
-back after Escape.
+step in headless Chrome on Jaffle Shop: no offer before `dbt parse` and the
+short tour saying there is no manifest, the ring around each target, the page
+under it, Back, the offer once the parse lands, at the end of a tour on screen
+when it lands, and not after a reload, the terminal never started, no file in
+the config directory but `tour.json`, and a page in use put back after Escape.
+A welcome without a model says whether there is no manifest or a manifest with
+none, ringing the `?` button the tour is taken again from, and one on a
+package's model, the project having none of its own, names the package.
 
 The Reports button is in view from the first paint, dimmed while no section
 has anything, which a first start after a `dbt parse` never has, with no chip,

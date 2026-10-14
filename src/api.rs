@@ -2620,21 +2620,28 @@ async fn tour_model(State(st): State<Arc<AppState>>) -> Response {
 #[derive(serde::Serialize)]
 struct OfferBody {
     offer: bool,
+    /// Not offered yet for want of a model: the page asks again when a
+    /// manifest lands.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    held: bool,
 }
 
 /// Whether this page may offer the tour: yes to the first page to ask on
-/// this machine, and no to every other (0074). The asking records it, and
-/// the version this page came from, so a POST.
+/// this machine with a model to show, and no to every other (0074, 0078).
+/// The asking records it, and the version this page came from, so a POST.
 async fn claim_tour_offer(State(st): State<Arc<AppState>>) -> Response {
-    let offer = match st.tour.path.clone() {
+    let graph = st.graph.read().await.clone();
+    let answer = match st.tour.path.clone() {
         Some(path) => tokio::task::spawn_blocking(move || {
-            crate::tour::Offer { path: Some(path) }.visit(env!("CARGO_PKG_VERSION"))
+            crate::tour::Offer { path: Some(path) }
+                .visit(env!("CARGO_PKG_VERSION"), || crate::tour::pick(&graph, &[]).is_some())
         })
         .await
-        .unwrap_or(false),
-        None => false,
+        .unwrap_or(crate::tour::Answer::No),
+        None => crate::tour::Answer::No,
     };
-    Json(OfferBody { offer }).into_response()
+    Json(OfferBody { offer: answer == crate::tour::Answer::Offer, held: answer == crate::tour::Answer::Held })
+        .into_response()
 }
 
 /// A dbt profile is a few kilobytes; anything of this size is not one.
@@ -4061,7 +4068,8 @@ mod tests {
     }
 
     /// The tour opens the model the graph picks, and is offered to the first
-    /// page that asks and to no other, the file saying so holding nothing else.
+    /// page that asks with a model to show and to no other, the file saying so
+    /// holding nothing else.
     #[tokio::test]
     async fn the_tour_is_offered_once_and_names_its_model() {
         let root = temp_project("tour");
@@ -4073,6 +4081,10 @@ mod tests {
         let empty = response_of(port, get("/api/tour", &h)).await;
         assert!(empty.starts_with("HTTP/1.1 200"), "{empty}");
         assert_eq!(past_head(&empty), "{}", "no manifest, no model");
+        let offer = [("Host", host.as_str()), ("Origin", own.as_str())];
+        let held = response_of(port, raw("POST", "/api/tour/offer", &offer)).await;
+        assert_eq!(past_head(&held), r#"{"offer":false,"held":true}"#, "{held}");
+        assert!(!root.join("config").join("tour.json").exists(), "nothing noted before a model");
         let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
             "metadata": { "project_name": "demo" },
             "nodes": {
@@ -4090,7 +4102,6 @@ mod tests {
             r#"{"model":{"id":"model.demo.stg","name":"stg","file":"models/stg.sql","parents":1,"children":1}}"#
         );
 
-        let offer = [("Host", host.as_str()), ("Origin", own.as_str())];
         let first = response_of(port, raw("POST", "/api/tour/offer", &offer)).await;
         assert_eq!(past_head(&first), r#"{"offer":true}"#, "{first}");
         let again = response_of(port, raw("POST", "/api/tour/offer", &offer)).await;

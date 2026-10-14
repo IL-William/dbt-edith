@@ -91,6 +91,7 @@ const S = {
   catJobs: new Map(),         // per node, the jobs answer its Catalog section drew, until the jobs may have changed
   catJobsGen: 0,              // counts those changes, so an answer asked for before one is dropped
   tour: null,                 // the guided tour on screen: its steps, the one shown, and the page as it was (0074)
+  tourOfferHeld: false,       // the offer waits for a manifest with a model, and is asked for again when one lands (0078)
 };
 
 // ------------------------------------------------------------------ util --
@@ -11145,7 +11146,8 @@ function wireSplitters() {
    web/tests/tour.js slices. */
 
 /* The steps, from what the page knows when the tour starts: `model` from
-   /api/tour, `jobs` how many job sources there are, `reports` the labels of
+   /api/tour, `manifest` whether one was read, `jobs` how many job sources
+   there are, `reports` the labels of
    the reports with something to show, `cll` the column lineage tool on
    screen, '' for none, and `snowflake` whether its features are on. A step
    about a model is left out without one; a step about a feature that is off
@@ -11156,13 +11158,34 @@ function tourSteps(c) {
   const key = (combo) => '{' + keyLabel(combo, c.mac) + '}';
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const steps = [];
-  steps.push({ key: 'welcome', target: '', title: 'A tour of dbt-edith',
+  const leftOut = 'so the editor, the lineage, the Catalog and the Jobs tab are left out.';
+  // Without a model the welcome rings the ? button, where the tour is taken
+  // again: a list nobody has opened is no place to send anyone by name.
+  const again = `then take the tour again from the shortcut list, behind this button or ${key('?')}: Give me a tour `
+    + `heads it. ${key('Escape')} ends it.`;
+  steps.push({ key: 'welcome', target: m ? '' : '#keys-btn', title: 'A tour of dbt-edith',
     text: m
-      ? `It opens \`${m.name}\`, a model of this project with ${plural(m.parents, 'parent', 'parents')} and `
-        + `${plural(m.children, 'child', 'children')}, and points at what each part of the page does with it. `
-        + `It runs nothing and changes no setting, and ${key('Escape')} ends it at any step.`
-      : 'This manifest has no model to show, so the editor, the lineage, the Catalog and the Jobs tab are left out. '
-        + `Run \`dbt parse\` in the terminal, then take the tour again from the shortcut list. ${key('Escape')} ends it.` });
+      ? (m.package ? 'This project has no model of its own, so it opens' : 'It opens')
+        + ` \`${m.name}\`, a model of ${m.package ? `the package \`${m.package}\`` : 'this project'} with `
+        + `${plural(m.parents, 'parent', 'parents')} and ${plural(m.children, 'child', 'children')}, and points at `
+        + `what each part of the page does with it. It runs nothing and changes no setting, and ${key('Escape')} ends `
+        + 'it at any step.'
+      : c.manifest
+        ? `This manifest has no model to show, ${leftOut} Once the project has one, run \`dbt parse\` in the `
+          + `terminal, ${again}`
+        : `There is no \`manifest.json\` to read yet, ${leftOut} Run \`dbt parse\` in the terminal, which writes `
+          + `one, ${again}` });
+  // Right after the welcome: every step after it is only as true as this file.
+  const read = 'Everything here is read from `manifest.json`, which only dbt writes: the lineage, the Catalog, every '
+    + 'selection, what each job runs.';
+  const parse = 'A click types `dbt parse` in the terminal, leaving Enter to you, and the page reads the new '
+    + 'manifest on its own.';
+  steps.push({ key: 'manifest', target: '#fresh-badge', title: 'manifest.json, and how fresh it is',
+    text: c.manifest
+      ? `${read} So the page is as true as the last \`dbt parse\`. This says how old the manifest is, and its dot `
+        + 'whether a file dbt reads changed since: green, none has; amber, your own saved edits; red, a pull, a '
+        + `checkout or a merge. Hovering it says which files. ${parse}`
+      : `${read} There is none yet, so this says no manifest. ${parse}` });
   if (m) {
     steps.push({ key: 'editor', target: '#editor-pane', title: `${m.name}, in the editor`,
       text: 'Every `ref()`, `source()` and macro call is a link to the file behind it, and hovering one says what it is. '
@@ -11282,6 +11305,7 @@ async function startTour() {
   t.model = model;
   t.steps = tourSteps({
     model, mac: IS_MAC, jobs,
+    manifest: !!(S.meta && S.meta.manifest_mtime),
     reports: reportsNow().sections.filter((sec) => !sec.empty).map((sec) => sec.label),
     // A tool picked is not yet edges on screen: collin running or failed has none.
     cll: (S.meta && S.meta.cll_file) || sidecarOn() ? pick.name : '',
@@ -11592,14 +11616,37 @@ async function endTour() {
     // Where Escape in the panel sends the focus back, as before the tour.
     S.reportsReturn = s.reportsReturn;
   } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
+  // A manifest that landed during the tour was not asked about (0078).
+  if (S.tourOfferHeld && !S.tour) offerTour();
 }
 
-/* Once on a machine, the first page to ask offers the tour beside the ?
-   button, which is where it stays (0074). Nothing opens: it waits for an
-   answer, and the server has already noted that it was made. */
+/* Once on a machine, the first page to ask with a model to show offers the
+   tour beside the ? button, which is where it stays (0074). Nothing opens: it
+   waits for an answer, and the server has already noted that it was made.
+   Without a model the server notes nothing and the offer is held, to be asked
+   for again when a manifest lands (0078). Never while a tour is on screen:
+   the server notes the offer as it answers, and a card nobody can see would
+   spend it, so the tour's end asks instead. */
 async function offerTour() {
+  if (S.tour) {
+    S.tourOfferHeld = true;
+    return;
+  }
+  const was = S.tourOfferHeld;
+  S.tourOfferHeld = false;
+  const at = S.meta && S.meta.manifest_mtime;
   let r;
-  try { r = await api.send('/api/tour/offer', 'POST', {}); } catch { return; }
+  try { r = await api.send('/api/tour/offer', 'POST', {}); } catch {
+    // Not asked, so still to ask at the next manifest.
+    S.tourOfferHeld = was;
+    return;
+  }
+  if (r && r.held) {
+    S.tourOfferHeld = true;
+    // A manifest that landed while the server answered was not asked about.
+    if (S.meta && S.meta.manifest_mtime !== at) offerTour();
+    return;
+  }
   if (!r || !r.offer || S.tour) return;
   const box = jel('div', 'tour-offer');
   box.setAttribute('role', 'dialog');
@@ -11634,7 +11681,7 @@ async function offerTour() {
   actions.append(jel('div', 'grow'), later, go);
   box.append(
     jel('b', '', 'New to dbt-edith?'),
-    jel('p', '', 'A tour of what it does, on a model of this project. It runs nothing and changes no setting.'),
+    jel('p', '', 'A tour of what it does, on this project. It runs nothing and changes no setting.'),
     actions,
     jel('p', 'tour-later', `Not now leaves it in the shortcut list, under ${keyLabel('?', IS_MAC)}.`),
   );
@@ -12035,6 +12082,8 @@ function applyMeta(meta) {
   if (moved) forgetCatalogJobs();
   // And the coverage the reports would show, which the index stamps with it.
   loadReportsIndex();
+  // A first manifest may have a model to show the tour on (0078).
+  if (moved && S.tourOfferHeld) offerTour();
 }
 
 /* A whole /api/meta answer: the graph's facts, then where its column lineage

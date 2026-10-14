@@ -1,6 +1,6 @@
 # 0074. The tour is offered once per machine, and runs nothing
 
-Date: 2026-10-13 · Status: accepted, amended by 0075
+Date: 2026-10-13 · Status: accepted, amended by 0075 and 0078
 
 **Trigger:** read before adding a step to the guided tour, making it open,
 click or type anything, or changing when it is offered or what `tour.json`
@@ -41,11 +41,16 @@ anything the user did not ask for.
   ask, and the asking records it: the tool is the same in every project, and an
   offer per project would come back with each. Not now leaves it in the
   shortcut list, where it always is.
+  *Amended by [0078](0078-the-tour-is-offered-once-there-is-a-model-to-show.md):
+  the first page with a model to show, a page without one writing nothing.*
 - **`tour.json`, in the config directory beside `update.json`, holds when the
   offer was made and the newest version that served a page here**, nothing
   else. The version is for a tour of what is new since the last one seen,
   planned in `docs/state.md`: it has to be kept from the first release that
   has a tour, or the first update after it has nothing to start from.
+  *Amended by [0078](0078-the-tour-is-offered-once-there-is-a-model-to-show.md):
+  kept from the offer on, a page with no model to show writing nothing before
+  it.*
 - **The page under the tour takes no click and no key while it is up**, and
   the app's own shortcuts wait for it to end. The arrows, Enter and Escape
   walk it.
