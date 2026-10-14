@@ -867,8 +867,12 @@ impl Graph {
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
         // Reached downstream only through a cut edge: drawn, not walked from.
         let mut stopped: HashSet<ColRef> = HashSet::new();
+        // The level each column below the focus was walked from: a stop's own
+        // depth stays its distance, but the walk on from it counts from here.
+        let mut walked: HashMap<ColRef, i32> = HashMap::new();
         let mut truncated = false;
         depth.insert(focus, 0);
+        walked.insert(focus, 0);
 
         // Level by level, so a cap drops the farthest columns first, stops
         // included. Downstream a level's walk does not follow a cut edge;
@@ -887,21 +891,24 @@ impl Graph {
                         cll.outgoing(cur).iter().filter(|e| !cut.contains(&e.kind)).map(|e| e.to).collect()
                     };
                     for nb in neighbours {
+                        // A stop reached around the cut takes no room, so the
+                        // cap cannot keep it a stop. Its depth stays the
+                        // shorter one, through the cut.
+                        if stopped.remove(&nb) {
+                            walked.insert(nb, step);
+                            next.push(nb);
+                            continue;
+                        }
                         if depth.len() >= max_nodes {
                             truncated = true;
                             break;
                         }
-                        match depth.entry(nb) {
-                            std::collections::hash_map::Entry::Vacant(v) => {
-                                v.insert(if upstream { -step } else { step });
-                                next.push(nb);
+                        if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
+                            v.insert(if upstream { -step } else { step });
+                            if !upstream {
+                                walked.insert(nb, step);
                             }
-                            // Its depth stays the shorter one, through the cut.
-                            std::collections::hash_map::Entry::Occupied(_) => {
-                                if stopped.remove(&nb) {
-                                    next.push(nb);
-                                }
-                            }
+                            next.push(nb);
                         }
                     }
                 }
@@ -953,7 +960,10 @@ impl Graph {
         // ticked: a status line naming a role the graph never met would lie.
         let mut stopped_at: Vec<&str> = Vec::new();
         for &c in &stopped {
-            for e in cll.incoming(c).filter(|e| cut.contains(&e.kind) && pos.contains_key(&e.from)) {
+            // Drawn, and from a column the walk left within its depth: an edge
+            // the stop came from, not one from another stop or from upstream.
+            let left = |e: &&ColEdge| walked.get(&e.from).is_some_and(|&l| l < down as i32);
+            for e in cll.incoming(c).filter(|e| cut.contains(&e.kind) && drawn(e)).filter(left) {
                 let role = cll.kinds.get(e.kind as usize).map(String::as_str).unwrap_or("");
                 if !stopped_at.contains(&role) {
                     stopped_at.push(role);
@@ -1846,6 +1856,78 @@ mod tests {
         let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"]);
         assert_eq!(drawn(&far), [d("m01", 2), d("m05", 0), d("m06", 1), d("m07", 2), d("m09", 1)]);
         assert_eq!(far.stopped_at, ["window"], "aggregate is ticked, but nothing stopped at one");
+    }
+
+    // The third review's cases: a cut edge between two stops is hidden and
+    // names nothing; a stop reached around the cut under a cap that holds
+    // every column is walked on from as without the cap; a column reached
+    // around a stop keeps its distance as its depth, and the walk on from it
+    // counts from the level that reached it.
+    #[test]
+    fn a_stop_names_only_what_stopped_it_and_the_cap_keeps_none() {
+        let names = ["f", "s1", "s2", "s", "a", "b", "p", "t"];
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop",
+                                            "columns": { "x": { "name": "x" } } });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let link = |from: &str, to: &str, kind: &str| RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: "x".into(),
+            to: format!("model.shop.{to}"),
+            to_col: "x".into(),
+            kind: kind.into(),
+        };
+        let at = |g: &Graph, name: &str| ColRef { node: g.index[&format!("model.shop.{name}")], col: 0 };
+        let drawn = |l: &Lineage<'_>| {
+            let mut v: Vec<(String, i32)> = l.nodes.iter().map(|n| (n.sub.clone(), n.depth)).collect();
+            v.sort();
+            v
+        };
+        let d = |name: &str, depth: i32| (name.to_string(), depth);
+
+        g.merge_col_lineage(
+            cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]),
+            1,
+        );
+        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"]);
+        assert_eq!(two.stopped_at, ["window"], "the aggregate between the two stops is not drawn");
+        assert_eq!(two.edge_kinds, ["window", "window"]);
+
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "s", "window"),
+                link("f", "a", "rename"),
+                link("a", "s", "rename"),
+                link("s", "a", "filter"),
+            ]),
+            2,
+        );
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        assert!(!roomy.truncated && roomy.stopped_at.is_empty());
+        assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
+
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "p", "window"),
+                link("f", "a", "rename"),
+                link("a", "b", "rename"),
+                link("b", "p", "rename"),
+                link("p", "t", "rename"),
+            ]),
+            3,
+        );
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        assert_eq!(drawn(&three), [d("a", 1), d("b", 2), d("f", 0), d("p", 1)]);
+        assert!(three.stopped_at.is_empty(), "p is reached around the window: not a stop");
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        assert_eq!(drawn(&four), [d("a", 1), d("b", 2), d("f", 0), d("p", 1), d("t", 4)]);
     }
 
     /// A diamond and, apart from it, a pair that touches nothing: enough to

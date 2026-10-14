@@ -30,6 +30,9 @@ them.
   asked, is walked on from**, as if the cut edge were not there: it is not
   only past the window. One reached around it only further down stays a
   stop until the depth reaches it, as any column waits for the depth.
+  Such a column is drawn at its distance, through the cut edge, while
+  the walk on from it counts from the level that reached it around the
+  cut: what follows it waits for that depth, not for its own plus one.
 - **Upstream is left whole.** Above the focus every edge leads to the
   column; a cut there would hide where it came from, which is another
   question.
