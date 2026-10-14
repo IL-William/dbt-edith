@@ -579,9 +579,11 @@ class Walk:
         page.key("?", "Slash", 191, text="?")
         page.until("!document.querySelector('#shortcuts')?.classList.contains('hidden')", "the shortcut list")
         page.js("[...document.querySelectorAll('#shortcuts button')].find((b) => b.textContent === 'Give me a tour').click()")
-        self.step_shown(0, total)
-        page.key(*RIGHT)
-        self.step_shown(1, total)
+        # On to the step opening its model, after the welcome and the badge.
+        for i in range(2):
+            self.step_shown(i, total)
+            page.key(*RIGHT)
+        self.step_shown(2, total)
         try:
             page.until(f"({LINEAGE}) === 'model.jaffle_shop.{MODEL} 1/1'", "the tour's model", timeout=10)
         except AssertionError:
