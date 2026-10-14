@@ -33,14 +33,16 @@ all, so it could not be found.
   `Cmd/Ctrl + G` and `F3` from the canvas itself. A step or a click on a box is
   where the next step and the next query read from, as the cursor is in an
   editor's find.
-- **The box landed on is brought to the middle** of what the bars leave of the
-  canvas, zoomed to its drawn size if the view was smaller, since a fitted
-  graph can be too small to read the name looked for. A test folded away is
-  brought there as the chip or the row it is under, painted as the current
-  match. A step opens it, as a click on that chip or row would, two turns at
-  most: the first step forward from it opens it rather than pass it by,
-  unless it was opened or closed by hand since. Typing never does, so a keystroke never draws the canvas again, and what
-  the first letters of a query land on stays folded once the query moves on.
+- **The box landed on is brought to the middle** of what the bars, and the
+  rows of folder names under them (0080), leave of the canvas, zoomed to its
+  drawn size if the view was smaller, since a fitted graph can be too small to
+  read the name looked for. A test folded away is brought there as the chip or
+  the row it is under, painted as the current match. A step opens it, as a
+  click on that chip or row would, two turns at most: the first step forward
+  from it opens it rather than pass it by, unless it was opened or closed by
+  hand since. Typing never does, so a keystroke never draws the canvas again,
+  and what the first letters of a query land on stays folded once the query
+  moves on.
 - **Every match is outlined in amber, the current one filled**, as in the
   editor. An exported file or image carries none of it.
 

@@ -1575,6 +1575,9 @@ const Lineage = (() => {
   // How far apart two rows of band names sit, on the canvas and in a file.
   const HEAD_ROW = 20;
 
+  // Where the band names pinned over the window end, a row per level.
+  const namesBottom = () => headTop() + HEAD_ROW * (1 + Math.max(...bands.map((b) => b.level)));
+
   /* The band names, pinned to the top of the window over their bands the way
      a table's header is: a graph fitted to the window is drawn too small to
      read a name at its own scale, and one zoomed into has scrolled its top
@@ -1924,7 +1927,7 @@ const Lineage = (() => {
     const pad = 30;
     // The band names are pinned over the top of the window, a row per level,
     // so the graph is fitted below them rather than under them.
-    const top = bands.length ? headTop() + HEAD_ROW * (1 + Math.max(...bands.map((b) => b.level))) : 0;
+    const top = bands.length ? namesBottom() : 0;
     const k = Math.min(1.1, Math.max(0.08,
       Math.min((r.width - pad * 2) / (bbox.x1 - bbox.x0 || 1), (r.height - top - pad * 2) / (bbox.y1 - bbox.y0 || 1))));
     view.k = k;
@@ -1992,13 +1995,14 @@ const Lineage = (() => {
   }
 
   /* Box b, where a node is drawn or the chip or row a test is folded under,
-     in the middle of what the bars over the canvas leave of it, and at least
-     at the size it is drawn at, where a fitted graph can be too small to read
-     the name that was looked for. */
+     in the middle of what the bars over the canvas and the band names under
+     them leave of it, and at least at the size it is drawn at, where a fitted
+     graph can be too small to read the name that was looked for. */
   function centre(b) {
     const r = svg.getBoundingClientRect();
     if (!b || !r.width || !r.height) return;
-    const top = Math.min(handlers.headTop ? handlers.headTop() : 0, r.height / 2);
+    const bars = bands.length ? namesBottom() : (handlers.headTop ? handlers.headTop() : 0);
+    const top = Math.min(bars, r.height / 2);
     view.k = Math.max(view.k, 1);
     view.x = r.width / 2 - (b.x + b.w / 2) * view.k;
     view.y = top + (r.height - top) / 2 - (b.y + b.h / 2) * view.k;
