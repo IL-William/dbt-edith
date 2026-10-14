@@ -149,7 +149,7 @@ kbd {
   margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid rgba(224, 163, 75, .45); border-radius: 4px;
   background: rgba(224, 163, 75, .08); color: var(--warn); font-size: 11px; line-height: 1.45;
 }
-/* z-index 64: above the ambient chrome and the palette (50) and the toasts (60),
+/* z-index 64: above the ambient chrome and the palette (50),
    below the env and crumb menus (65) and the modal (70). A card that opens by
    accident must never cover a surface that was opened on purpose. */
 .hovercard {
@@ -1510,7 +1510,10 @@ kbd {
 }
 
 /* ----------------------------------------------------------------- toast -- */
-#toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+/* Above everything, the modal and the shortcut list included: a toast is often
+   the answer to a button inside one, and under its backdrop it reads as nothing
+   happened. It takes no clicks, so it never stands in the way of one. */
+#toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 80; pointer-events: none; display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .toast {
   background: var(--bg-3); border: 1px solid var(--line); border-left: 3px solid var(--accent);
   padding: 7px 14px; border-radius: 5px; font-size: 12px; box-shadow: 0 6px 20px #0006;
