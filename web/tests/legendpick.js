@@ -80,7 +80,7 @@ function labels(entries) { return entries.map(function (e) { return e[0]; }); }
 
 print('\n--- wiring ---');
 ok('a redraw paints the pick again, after the selection',
-  /select\(selected\);\s*paintPick\(\);\s*return drawn;/.test(lin));
+  /select\(selected\);\s*(if \(finding\) refind\(\);\s*)?paintPick\(\);\s*return drawn;/.test(lin));
 ok('an exported picture drops the pick', /g\.classList\.remove\('picking'\)/.test(lin)
   && /querySelectorAll\('\.kept'\)\.forEach\(\(x\) => x\.classList\.remove\('kept'\)\)/.test(lin));
 ok('a pick the new legend no longer lists is dropped',
