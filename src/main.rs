@@ -75,7 +75,7 @@ struct Args {
     #[arg(long)]
     no_open: bool,
 
-    /// Do not look on GitHub, once a day, for a newer dbt-edith
+    /// Never look on GitHub for a newer dbt-edith: no hourly look from midnight to 09:00 Paris time, and no Check for updates in Edith's menu
     #[arg(long)]
     no_update_check: bool,
 
