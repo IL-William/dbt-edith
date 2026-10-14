@@ -5,6 +5,9 @@
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function yamlIndent'), src.indexOf('/* ATX headings')));
 eval(src.slice(src.indexOf('const DECLARING_LISTS'), src.indexOf('async function markRefs')));
+// One eval, since a const declared in one is gone outside it.
+eval(src.slice(src.indexOf('const OUTLINE_MAX'), src.indexOf('function refreshOutline'))
+  + src.slice(src.indexOf('function configMenuFor'), src.indexOf('/* dbt_project.yml at a key')));
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -264,3 +267,47 @@ check('a block with no readable path', note(['shop'], []), 'models has no readab
 check('the levels reaching a model in a folder named contract',
   reaching('name: shop\nmodels:\n  shop:\n    contract:\n      +tags: [c]\n', 'models/contract/orders.sql'),
   ['models', 'models: shop', 'models: shop > contract']);
+
+print('\n--- a dbt_project.yml saved with CRLF endings ---');
+// Read closed, the file comes from the disk as saved, and a key ending its line
+// is followed by a \r. Every such folder used to vanish, and its configs, a
+// block's lines and the flags below piled onto the levels above.
+var NESTED = [
+  'name: shop',
+  'models:',
+  '  +materialized: view',
+  '  +post-hook:',
+  '    - >',
+  "      grant select on {{ this }} to role reporter",
+  '  shop: # the project',
+  '    +persist_docs:',
+  '      relation: true',
+  '    marts:',
+  '      +schema: marts',
+  '      finance:',
+  '        +materialized: table',
+  'flags:',
+  '  send_anonymous_usage_stats: false',
+  '',
+].join('\n');
+var CRLF = NESTED.replace(/\n/g, '\r\n');
+// The menu itself, rows and all, as configMenu builds it once the file is read.
+// A row's pick opens dbt_project.yml at its key, which is where it is caught.
+var picked = null;
+function openProjectAt(line, ch) { picked = [line, ch]; }
+function menuRows(text, file) {
+  return configMenuFor(text, file, ROOTS).rows.map(function (r) {
+    picked = null;
+    r.pick();
+    return [r.label, r.depth, r.sets, picked];
+  });
+}
+check('the menu of a model, as the open tab reads it', menuRows(NESTED, 'models/marts/finance/orders.sql'), [
+  ['models', 0, '+materialized: view · +post-hook', [1, 0]],
+  ['shop', 1, '+persist_docs', [6, 2]],
+  ['marts', 2, '+schema: marts', [9, 4]],
+  ['finance', 3, '+materialized: table', [11, 6]],
+]);
+check('the same read from the disk, each level opening on its own line', menuRows(CRLF, 'models/marts/finance/orders.sql'),
+  menuRows(NESTED, 'models/marts/finance/orders.sql'));
+check('a lone \\r ends a line too, as CodeMirror reads it', editorText('a:\r  b: 1\r\n'), 'a:\n  b: 1\n');
