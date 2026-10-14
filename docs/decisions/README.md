@@ -85,6 +85,7 @@ it is built this way, for whoever changes it next.
 | [0079](0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md) | An update is looked for hourly through the Paris night, and on demand | changing when dbt-edith looks for a newer release, what Edith's menu shows, or what a look that got no answer says |
 | [0080](0080-a-band-may-be-cut-by-its-sub-folders.md) | A band may be cut by its sub-folders, a level at a time | changing how deep the folder bands go, the order of the sub-folders inside a band, or how one is drawn inside another |
 | [0081](0081-find-on-the-lineage-centres-the-box-it-finds.md) | Find on the lineage centres the box it finds | changing what `Cmd/Ctrl + F` does over the lineage, what a box is found by, or where finding one moves the view |
+| [0083](0083-a-role-stops-the-column-walk-downstream-on-the-server.md) | A role stops the column walk downstream, on the server | hiding part of a column graph by role, or making the column walk skip an edge |
 
 ## Keeping these honest
 

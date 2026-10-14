@@ -187,6 +187,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the folder bands, how deep they go, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md), [0080](docs/decisions/0080-a-band-may-be-cut-by-its-sub-folders.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
+| hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | change what find on the lineage matches, the order it steps in, or where it moves the view | [0081](docs/decisions/0081-find-on-the-lineage-centres-the-box-it-finds.md), [0035](docs/decisions/0035-tests-fold-past-five.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |

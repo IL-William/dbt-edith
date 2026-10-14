@@ -2449,6 +2449,9 @@ struct ColLineageQuery {
     down: u32,
     #[serde(default)]
     max: Option<usize>,
+    /// Roles the walk downstream stops at, comma-separated: `window,aggregate`.
+    #[serde(default)]
+    cut: String,
 }
 
 /// Column-level lineage around one column. Columns fan out harder than models,
@@ -2469,6 +2472,7 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
         q.up.min(20),
         q.down.min(20),
         q.max.unwrap_or(200).min(2000),
+        &q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>(),
     );
     Json(sub).into_response()
 }

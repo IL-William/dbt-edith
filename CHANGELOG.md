@@ -15,6 +15,15 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.23.0 - 2026-10-14
+
+- Keep what a legend entry names lit on the lineage, a materialization or what
+  happened to a column, by clicking it, and fade the rest until it is clicked
+  again.
+- Stop the column lineage downstream at the roles ticked in **stop at**,
+  beside the depth boxes, `window` say: each window edge is still drawn with
+  the column it reaches, and nothing past that column (0083).
+
 ## 1.22.0 - 2026-10-14
 
 - Find a node on the lineage with `Cmd/Ctrl + F`, by its name, and bring it to
