@@ -333,6 +333,25 @@ group('sub-folders, a level or more below the bands (0080)', function () {
 
   check('one level is the bands as they were', JSON.stringify(at(nested, 1).bands), JSON.stringify(folders(nested).bands));
   check('and so is a level the box cannot hold', JSON.stringify(at(nested, 0).band), JSON.stringify(folders(nested).band));
+  // Written down from main before 0080, so that one level is held to what
+  // main drew, not only to this code's own answer with no level given.
+  var M = dagLayout(nested, MODEL, 'shop', undefined, 1);
+  check('one level draws what main drew: the folders, each box where it stood, the bands\' edges', {
+    band: Array.from(at(nested, 1).band), boxes: M.boxes.map(function (b) { return [b.x, b.y]; }),
+    drawn: M.bands.map(function (b) { return [b.name, b.x0, b.x1]; }),
+  }, {
+    band: [0, 1, 1, 1, 2, 2, 3], boxes: [[0, -24], [280, -24], [280, 38], [560, 7], [840, 7], [1120, 7], [1400, 7]],
+    drawn: [['10_raw', -30, 230], ['20_clean', 250, 790], ['30_marts', 810, 1350], ['40_serve', 1370, 1630]],
+  });
+  var fnv = function (str) {
+    var h = 2166136261;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return h;
+  };
+  var G1 = dagLayout(generatedLayers(150, 1), MODEL, 'shop', undefined, 1);
+  check('and on 150 generated models in five folders, the picture main drew, by its digest',
+    fnv(G1.boxes.map(function (b) { return b.x + ':' + b.y; }).join(' ') + '|'
+      + G1.bands.map(function (b) { return b.name + ':' + b.x0 + ':' + b.x1; }).join(' ')), 1222070158);
 
   var F = at(nested, 2);
   check('two levels: a run of columns for each sub-folder, inside its folder',
@@ -393,6 +412,26 @@ group('sub-folders, a level or more below the bands (0080)', function () {
     return p && p.x0 < b.x0 && b.x1 < p.x1;
   }));
   ok('and between two of them', sub.every(function (b, i) { return !i || b.x0 > sub[i - 1].x1; }));
+
+  var heads = dagHeads(L.bands), by = {};
+  L.bands.forEach(function (b, i) { by[b.level + ':' + b.name] = { b: b, h: heads[i] }; });
+  check('each name on the row of its level', heads.map(function (h) { return h.row; }), L.bands.map(function (b) { return b.level; }));
+  ok('a folder\'s name may run on over the gutter, up to the next folder\'s', by['0:20_clean'].h.x1 === by['0:30_marts'].b.x0);
+  ok('a sub-folder\'s up to a sub-folder right beside it in the same folder', by['1:21_orders'].h.x1 === by['1:22_payments'].b.x0);
+  ok('but never over the models filed beside the sub-folders', by['1:22_payments'].h.x1 === by['1:22_payments'].b.x1);
+  ok('nor past the last of them', by['1:finance'].h.x1 === by['1:finance'].b.x1);
+  var apart = graph([
+    ['stg_orders', 'models/shop/20_clean/21_orders/stg_orders.sql'],
+    ['customers', 'models/shop/30_marts/core/customers.sql'],
+    ['revenue', 'models/shop/30_marts/finance/revenue.sql'],
+  ], [['stg_orders', 'customers'], ['customers', 'revenue']]);
+  var AL = dagLayout(apart, MODEL, 'shop', undefined, 2), AH = dagHeads(AL.bands);
+  var ix = AL.bands.map(function (b) { return b.level + ':' + b.name; });
+  var i21 = ix.indexOf('1:21_orders'), icore = ix.indexOf('1:core');
+  ok('nor into the next folder\'s first sub-folder, even with no column between them',
+    AL.bands[i21].to + 1 === AL.bands[icore].from && AH[i21].x1 === AL.bands[i21].x1 && AH[icore].x1 === AL.bands[icore + 1].x0);
+  var lift = function (Lx) { return Math.min.apply(null, Lx.boxes.map(function (b) { return b.y; })) - Lx.bbox.y0; };
+  check('a row of names kept above the graph for each level drawn', [lift(L) - lift(plainL), lift(dagLayout(nested, MODEL, 'shop', undefined, 3)) - lift(L)], [20, 0]);
   ok('each covers its boxes', nested.nodes.every(function (x, i) {
     var lf = F.band[i], box = L.boxes[i];
     return L.bands.every(function (b) { return b.from > lf || b.to < lf || (b.x0 < box.x && b.x1 > box.x + box.w); });
@@ -444,7 +483,7 @@ group('the levels box opens on the pointer and closes a moment after (0080)', fu
     now += ms;
     timers.filter(function (t) { return t.at <= now; }).forEach(function (t) { clearTimeout(t.id); t.f(); });
   }
-  eval(app.slice(app.indexOf('function levelsHeld'), app.indexOf('function paintTestsToggle')));
+  eval(app.slice(app.indexOf('function folderLevels'), app.indexOf('function paintTestsToggle')));
   var tool = page['#folder-tool'], toggle = page['#by-folder'], input = page['#folder-levels'], box = page['#folder-levels-box'];
   var open = function () { return !!box.cls.open; };
   function focus(e, keyboard) {
@@ -502,6 +541,10 @@ group('the levels box opens on the pointer and closes a moment after (0080)', fu
   check('turning them on under the pointer opens it', open(), true);
   check('held: on, and the pointer or the keyboard in it', [levelsHeld(true, true, false), levelsHeld(true, false, true),
     levelsHeld(true, false, false), levelsHeld(false, true, true)], [true, true, false, false]);
+  input.value = '9'; input.fire('change');
+  check('a 9 typed reads 4 once changed, the most it draws', input.value, '4');
+  input.value = ''; input.fire('change');
+  check('and an emptied box 1', input.value, '1');
 });
 
 group('the page asks for it', function () {
@@ -517,6 +560,9 @@ group('the page asks for it', function () {
   ok('in a pop-over under the toggle, shut until opened', /#folder-levels-box \{\s*display: none; position: absolute; top: calc\(100% \+ 3px\)/.test(css)
     && /#folder-levels-box\.open \{ display: flex; \}/.test(css) && /<span id="folder-tool" class="foldertool">\s*<button id="by-folder"/.test(html));
   ok('wired once the toggle has its own listener', /aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\);\s*wireFolderLevels\(\);/.test(app));
+  ok('an export measures a name in the class it writes it in, sized alike on the page',
+    /const cls = b\.level \? `band-name l\$\{b\.level\}` : 'band-name';\s*const t = el\('text', \{ class: cls,[\s\S]{0,200}measure\(cls, b\.name\)/.test(lin)
+    && /^\.band-name\.l1, \.band-name\.l2, \.band-name\.l3 \{ font-size: 12px; font-weight: 500; \}$/m.test(css));
   ok('which redraws on a change, like the depth boxes', /for \(const el of \[\$\('#up'\), \$\('#down'\), \$\('#folder-levels'\)\]\) \{\s*el\.addEventListener\('change', rerender\);/.test(app));
   ok('and is handed to the canvas', /levels: folderLevels\(\),/.test(app) && /layout\(d, opts\.folders, opts\.levels\)/.test(lin));
   ok('each level of sub-folder has its hue, on the canvas and in an exported file',

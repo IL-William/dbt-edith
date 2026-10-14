@@ -38,9 +38,12 @@ ends (`wireFolderLevels` in `web/app.js`):
 - a sub-folder is drawn as a rectangle inside its folder's, in a hue per
   level, its margin a tenth of the gap between columns narrower each level
   down, so the folder shows round it and between two of them. The names go on
-  a row per level, pinned over the top of the window as 0029's are, and an
-  export writes each row in. The line under the canvas counts the
-  sub-folders.
+  a row per level, pinned over the top of the window as 0029's are. A
+  sub-folder's name runs on past its rectangle only up to a sub-folder right
+  beside it in the same folder (`dagHeads`), never over the models filed
+  beside the sub-folders or into the next folder, whose columns are not its
+  own. An export writes each row in, measured in the size it is drawn in.
+  The line under the canvas counts the sub-folders.
 
 On the harness, 400 models in five folders, each cut twice, lay out in about
 12 ms.

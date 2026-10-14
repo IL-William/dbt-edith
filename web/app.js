@@ -5506,6 +5506,8 @@ function wireFolderLevels(linger = 2500) {
   tool.addEventListener('mouseleave', () => { over = false; later(); });
   tool.addEventListener('focusin', () => { if (typing()) open(); });
   tool.addEventListener('focusout', later);
+  // A 9 typed draws 4: the box says so rather than keep the 9.
+  input.addEventListener('change', () => { input.value = String(folderLevels()); });
   // After the toggle's own listener, so this reads the state it turned to.
   toggle.addEventListener('click', () => (foldersOn() ? open() : box.classList.remove('open')));
 }

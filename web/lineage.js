@@ -805,6 +805,21 @@ const Lineage = (() => {
     L.bbox.y0 -= 20 * rows;
   }
 
+  /* Where each band's name goes, in the graph's units: on the row of its
+     level, from its band's left edge up to where the next name on that row
+     starts. A folder's name runs on over the gutter to the next band (0029).
+     A sub-folder's runs on only to a sub-folder right beside it in the same
+     folder, never over the models filed beside the sub-folders or into the
+     next folder, whose columns are not its own (0080). */
+  function dagHeads(bands) {
+    const up = (k) => String(k).slice(0, String(k).lastIndexOf('/'));
+    return bands.map((b, i) => {
+      const n = bands[i + 1];
+      const next = n && n.level === b.level && (!b.level || (n.from === b.to + 1 && up(n.key) === up(b.key)));
+      return { row: b.level, x0: b.x0, x1: next ? n.x0 : b.x1 };
+    });
+  }
+
   /* How far apart two neighbours in a column sit, centre to centre. Two boxes
      keep VGAP between them; two lanes only need telling apart, so they sit
      closer. A lane beside a box keeps clear of the role tag column mode draws
@@ -1446,11 +1461,11 @@ const Lineage = (() => {
   function placeHeads() {
     if (!heads || !bands.length) return;
     const r = svg.getBoundingClientRect(), p = heads.getBoundingClientRect();
-    const first = headTop();
+    const first = headTop(), spans = dagHeads(bands);
     bands.forEach((b, i) => {
-      const s = heads.children[i], next = bands[i + 1] && bands[i + 1].level === b.level ? bands[i + 1] : null;
-      const top = first + b.level * HEAD_ROW;
-      const x0 = view.x + b.x0 * view.k, x1 = next ? view.x + next.x0 * view.k : view.x + b.x1 * view.k;
+      const s = heads.children[i], h = spans[i];
+      const top = first + h.row * HEAD_ROW;
+      const x0 = view.x + h.x0 * view.k, x1 = view.x + h.x1 * view.k;
       const left = Math.max(x0, 0) + 4, room = Math.min(x1, r.width) - left - 4;
       s.style.display = room < 40 ? 'none' : '';
       s.style.left = `${r.left - p.left + left}px`;
@@ -1896,9 +1911,10 @@ const Lineage = (() => {
       r.setAttribute('height', frame.h);
     });
     bands.forEach((b) => {
-      const t = el('text', { class: b.level ? `band-name l${b.level}` : 'band-name', x: b.x0 + 10, y: frame.y + 22 + b.level * HEAD_ROW });
+      const cls = b.level ? `band-name l${b.level}` : 'band-name';
+      const t = el('text', { class: cls, x: b.x0 + 10, y: frame.y + 22 + b.level * HEAD_ROW });
       t.textContent = b.name;
-      const room = b.x1 - b.x0 - 20, wide = measure('band-name', b.name).wide;
+      const room = b.x1 - b.x0 - 20, wide = measure(cls, b.name).wide;
       if (wide > room) {
         t.setAttribute('textLength', room.toFixed(1));
         t.setAttribute('lengthAdjust', 'spacingAndGlyphs');

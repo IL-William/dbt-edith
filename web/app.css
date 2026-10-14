@@ -905,6 +905,9 @@ kbd {
 .band.l2 { fill: #142b2c; stroke: #2a5553; }
 .band.l3 { fill: #251e38; stroke: #43375f; }
 .band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }
+/* A sub-folder's, smaller. The canvas pins HTML names instead, so these only
+   size the names an export writes, measured here first. */
+.band-name.l1, .band-name.l2, .band-name.l3 { font-size: 12px; font-weight: 500; }
 /* Those pinned names. Every pointer goes through them, so a drag that starts
    on one still pans the canvas. */
 .folder-heads { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
