@@ -11221,7 +11221,7 @@ function connectTerm() {
 }
 
 // ---------------------------------------------------------------- palette --
-let palIndex = 0, palHits = [], palAsked = 0;
+let palIndex = 0, palHits = [];
 function openPalette() {
   closeCrumbMenu();
   $('#palette').classList.remove('hidden');
@@ -11230,6 +11230,26 @@ function openPalette() {
   runPalette('');
 }
 function closePalette() { $('#palette').classList.add('hidden'); }
+
+/* Answers shown in the order their queries were asked, whatever order they come
+   back in: typing outruns the server, and an answer to fewer letters, or the
+   empty box's own listing, can come back after the one to what is typed.
+   `settled` waits for the last query asked, so Enter pressed right after a key
+   picks from what that key lists rather than from the rows still shown. */
+function lastAsked(fetch, show) {
+  let asked = 0, last = Promise.resolve();
+  return {
+    ask(q) {
+      const mine = ++asked;
+      last = fetch(q).then((answer) => { if (mine === asked) show(answer, q); });
+      return last;
+    },
+    async settled() {
+      let seen;
+      do { seen = last; await seen; } while (seen !== last);
+    },
+  };
+}
 
 /* Nodes first, then macros, then the files that are not already represented by
    one: a model would otherwise appear twice, once as a node and once as its own
@@ -11256,17 +11276,26 @@ function mergeHits(nodes, macros, paths) {
    every file in the project. A generic test definition or a dotfile is not a
    node, and used to be unfindable. Macros wait for a query: the empty box lists
    nodes and files, as before. */
-async function runPalette(q) {
-  const asked = ++palAsked;
+async function fetchPalette(q) {
   const [nodes, macros, paths] = await Promise.all([
     api.get(`/api/search?q=${encodeURIComponent(q)}&kind=model,source,seed,snapshot,exposure&limit=40`).catch(() => []),
     q.trim() ? api.get(`/api/macros/search?q=${encodeURIComponent(q)}&limit=40`).catch(() => []) : [],
     api.get(`/api/files?q=${encodeURIComponent(q)}&limit=40`).catch(() => []),
   ]);
-  // An older query answered last would list what is no longer typed: the
-  // empty box's own listing, when the first letters beat it, or a shorter word.
-  if (asked !== palAsked) return;
-  palHits = mergeHits(nodes, macros, paths);
+  return mergeHits(nodes, macros, paths);
+}
+
+const palAnswers = lastAsked(fetchPalette, showPalette);
+function runPalette(q) { return palAnswers.ask(q); }
+
+/* Enter right after a key picks from what that key lists. */
+async function enterPalette() {
+  await palAnswers.settled();
+  if (!$('#palette').classList.contains('hidden')) choosePalette();
+}
+
+function showPalette(hits, q) {
+  palHits = hits;
   palIndex = 0;
 
   const box = $('#palette-results');
@@ -12399,7 +12428,7 @@ function wireKeys() {
   $('#palette-input').addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); movePalette(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); movePalette(-1); }
-    else if (e.key === 'Enter') { e.preventDefault(); choosePalette(); }
+    else if (e.key === 'Enter') { e.preventDefault(); enterPalette(); }
   });
   $('#palette').addEventListener('click', (e) => { if (e.target.id === 'palette') closePalette(); });
   $('#palette-btn').addEventListener('click', openPalette);

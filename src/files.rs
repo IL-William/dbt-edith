@@ -79,6 +79,12 @@ pub fn resolve(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
     confined(root, &root.canonicalize()?, out)
 }
 
+/// `resolve` against a root the caller canonicalized once, for a lookup that
+/// tries many paths in one request.
+pub(crate) fn resolve_under(root: &Path, canon_root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
+    confined(root, canon_root, joined(root, rel)?)
+}
+
 /// `rel` under `root`, refused when its spelling alone leaves it.
 fn joined(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
     let mut out = root.to_path_buf();

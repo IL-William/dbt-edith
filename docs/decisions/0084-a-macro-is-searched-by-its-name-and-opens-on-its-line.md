@@ -21,8 +21,14 @@ every macro with its package and its path (0028).
   before a package's, then the shorter name. So `star` finds `dbt_utils.star`
   above a project macro that merely contains the word.
 - **Only a macro whose file is in the project is listed**, placed as a link is
-  (0028). A package with no folder under `dbt_packages/` or `dbt_modules/` is
-  passed over whole, so dbt's own few hundred macros cost two stats a query.
+  (0028), against the project's real path worked out once per query. A package
+  with no folder under `dbt_packages/` or `dbt_modules/` is passed over whole
+  after one look for that folder, so dbt's own few hundred macros, and an
+  adapter's, cost that look and not one per macro. The others are tried at most
+  four times as many as the box can list: a manifest older than a move of
+  `macros/` names files that are gone, and one letter would look for them all.
+- **Answers are shown in the order their queries were asked**, and Enter waits
+  for the last one, since three requests a query make a late answer likelier.
 - **A row reads as the project calls it**: bare for the project's,
   `package.name` for a package's. Macros come after the nodes and before the
   files, and only once something is typed.

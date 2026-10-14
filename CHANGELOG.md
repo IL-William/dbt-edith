@@ -19,8 +19,8 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 - Find a macro by its name with `Cmd/Ctrl + K`, a package's as `package.name`,
   and open it on the line that defines it, in a file holding several (0084).
-- Keep the search box on what is typed, when an answer to fewer letters comes
-  back last.
+- Keep the search box on what is typed when an answer to fewer letters comes
+  back last, and pick from what was typed on an Enter pressed right after it.
 
 ## 1.23.0 - 2026-10-14
 

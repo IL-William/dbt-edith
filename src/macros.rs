@@ -27,6 +27,9 @@ use std::path::Path;
 /// dbt has used since 1.0, then the one before it.
 pub(crate) const PACKAGE_DIRS: &[&str] = &["dbt_packages", "dbt_modules"];
 
+/// How many macros a search may try to place for each one it can list.
+const TRIES_PER_HIT: usize = 4;
+
 #[derive(Clone, Debug)]
 pub struct Macro {
     pub id: String,
@@ -135,6 +138,11 @@ impl Macros {
     /// a macro of dbt's own, a package not installed, or a file the manifest
     /// remembers and a later commit moved.
     pub fn place(&self, project: &Path, m: &Macro) -> Option<String> {
+        self.place_under(project, &project.canonicalize().ok()?, m)
+    }
+
+    /// `place`, with the project canonicalized once by a caller placing many.
+    fn place_under(&self, project: &Path, canon: &Path, m: &Macro) -> Option<String> {
         if m.path.is_empty() {
             return None;
         }
@@ -147,7 +155,7 @@ impl Macros {
         // package symlinked in from elsewhere, is refused like any other path.
         candidates
             .into_iter()
-            .find(|rel| crate::files::resolve(project, rel).is_ok_and(|p| p.is_file()))
+            .find(|rel| crate::files::resolve_under(project, canon, rel).is_ok_and(|p| p.is_file()))
     }
 
     /// Every macro of that name, whatever its package.
@@ -198,25 +206,33 @@ impl Macros {
 
     /// The first `limit` macros `search` finds that are written inside the
     /// project, each with its file, since nothing else can be opened. A
-    /// package with no folder where `dbt deps` puts one is passed over whole:
-    /// dbt's own few hundred macros then cost two stats, not two each.
+    /// package with no folder where `dbt deps` puts one is passed over whole,
+    /// after one look for that folder: dbt's own few hundred macros, and an
+    /// adapter's, then cost that look and not one per macro. The rest are
+    /// placed at most `TRIES_PER_HIT` times `limit`: a manifest older than a
+    /// move of `macros/` names files that are gone, and a query of one letter
+    /// would otherwise look for every one of them on each key.
     pub fn find(&self, project: &Path, query: &str, limit: usize) -> Vec<(&Macro, String)> {
+        let Ok(canon) = project.canonicalize() else { return Vec::new() };
         let mut installed: HashMap<&str, bool> = HashMap::new();
+        let mut tries = limit.saturating_mul(TRIES_PER_HIT);
         let mut found = Vec::new();
         for m in self.search(query) {
-            if found.len() >= limit {
+            if found.len() >= limit || tries == 0 {
                 break;
             }
             if m.package != self.root
                 && !*installed.entry(&m.package).or_insert_with(|| {
                     PACKAGE_DIRS.iter().any(|dir| {
-                        crate::files::resolve(project, &format!("{dir}/{}", m.package)).is_ok_and(|p| p.is_dir())
+                        crate::files::resolve_under(project, &canon, &format!("{dir}/{}", m.package))
+                            .is_ok_and(|p| p.is_dir())
                     })
                 })
             {
                 continue;
             }
-            if let Some(file) = self.place(project, m) {
+            tries -= 1;
+            if let Some(file) = self.place_under(project, &canon, m) {
                 found.push((m, file));
             }
         }
@@ -367,6 +383,33 @@ mod tests {
         ]);
         // The limit counts what was found, not what was looked at.
         assert_eq!(found("e", 1).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_search_gives_up_on_a_manifest_whose_files_are_gone() {
+        // Six macros the manifest places in files a later commit removed, and a
+        // seventh, last in the ranking, whose file is still there.
+        let entries: serde_json::Map<String, serde_json::Value> = (1..=7)
+            .map(|i| {
+                let name = format!("fx_{i}");
+                let path = format!("macros/{name}.sql");
+                let body = serde_json::json!({ "name": name, "package_name": "shop", "original_file_path": path });
+                (format!("macro.shop.{name}"), body)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "shop" },
+            "macros": entries,
+        }))
+        .unwrap();
+        let m = crate::graph::Graph::build(raw, Path::new("manifest.json"), 0, 0).macros;
+        let dir = project("gone", &["macros/fx_7.sql"]);
+        // One to list, so four tries: the seventh is never looked for.
+        assert!(m.find(&dir, "fx", 1).is_empty());
+        // Two to list, eight tries, which reach it.
+        let found: Vec<&str> = m.find(&dir, "fx", 2).into_iter().map(|(m, _)| m.name.as_str()).collect();
+        assert_eq!(found, vec!["fx_7"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
