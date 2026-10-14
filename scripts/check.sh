@@ -116,6 +116,21 @@ else
 fi
 
 echo
+echo "== the depth boxes in Chrome =="
+# What keeps the lineage's depth and what starts it again, driven the same way
+# on the same Jaffle Shop, and skipped the same way.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+else
+  out=$("$py" scripts/walk_depth.py 2>&1)
+  case $? in
+    0) echo "depth ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
+    2) printf '%s\n' "$out" | tail -1 ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DEPTH FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
 echo "== browser tests =="
 if [ ! -x "$JSC" ] && ! command -v "$JSC" > /dev/null 2>&1; then
   echo "SKIPPED: no JavaScript shell at $JSC. Set JSC to one to run these."

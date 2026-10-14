@@ -2392,7 +2392,9 @@ function here() {
   if (!f) return null;
   // A diff and the profile have no cursor worth keeping, only the tab.
   const at = ownsPane(f) || !S.cm ? null : S.cm.getCursor();
-  return at ? { key: S.active, line: at.line, ch: at.ch } : { key: S.active };
+  // And the lineage's depth, which going back puts back (jump).
+  const depth = [$('#up').value, $('#down').value];
+  return at ? { key: S.active, line: at.line, ch: at.ch, depth } : { key: S.active, depth };
 }
 
 /* Called before a jump, never after: afterwards the place left is gone. `pin`
@@ -2440,7 +2442,18 @@ function jump(from, to) {
   if (!at) return renderCrumbs();
   const back = here();
   if (back) S[to].push(back);
-  if (S.active !== at.key) activate(at.key);
+  if (S.active !== at.key) {
+    // The lineage follows the tab as it does a click on it, but a return is
+    // not a model picked anew: it comes back at the depth it was left with.
+    // The boxes take it at once, so a second jump before this one has drawn
+    // records it, and a canvas the tab does not move is drawn again at it.
+    activate(at.key, false);
+    const deeper = !!at.depth && ($('#up').value !== at.depth[0] || $('#down').value !== at.depth[1]);
+    if (at.depth) [$('#up').value, $('#down').value] = at.depth;
+    const inProject = projectPath(at.key);
+    const moved = inProject ? syncNode(inProject, { keepDepth: true }) : Promise.resolve(false);
+    moved.then((did) => { if (!did && deeper) rerender(); });
+  }
   if (at.line !== undefined) gotoPos(at.line, at.ch);
   renderCrumbs();
 }
@@ -3656,8 +3669,16 @@ function resolveBlock(cm, b, side) {
 }
 
 // ---------------------------------------------------------------- lineage --
-async function focusNode(id, { open = false } = {}) {
+/* The depth is how far a walk on the canvas has looked around: a box
+   double-clicked keeps it, as a +N badge raises it. A model reached any other
+   way, from the palette, a tab, a link or the Catalog's lists, is a fresh
+   start, and leaving the depth of the last one drew a graph nobody asked for.
+   Back and Forward are returns, and bring back the depth they left (jump). */
+async function focusNode(id, { open = false, keepDepth = false } = {}) {
   closeHoverCard();
+  if (id !== S.focus && !keepDepth) {
+    for (const el of [$('#up'), $('#down')]) el.value = el.defaultValue;
+  }
   S.focus = id;
   S.jobsFor = null;
   S.unsynced = '';
@@ -6086,8 +6107,9 @@ function paintMode() {
 }
 
 /* Returns whether it moved the lineage, which is what tells a reload that
-   the file it was waiting on has turned up. */
-async function syncNode(path) {
+   the file it was waiting on has turned up. `keepDepth` draws the node it
+   moves to at the depth the boxes hold, rather than the default. */
+async function syncNode(path, { keepDepth = false } = {}) {
   noteLineage('');
   // A properties file declares many nodes, and the server answers for one of
   // them. When the lineage already shows another, most likely because it was
@@ -6102,7 +6124,7 @@ async function syncNode(path) {
   try {
     const detail = await nodeDetail({ file: path });
     if (detail.id === S.focus) return false;
-    focusNode(detail.id);
+    focusNode(detail.id, { keepDepth });
     return true;
   } catch {
     // Not a dbt node, or not one yet: the lineage stays as it is, and says
@@ -10079,8 +10101,10 @@ function catalogPreview(body, n) {
     ...(incremental ? [strategyStat(n)] : []),
     ...(keyed ? [keyStat(n)] : []),
     stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
-    stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id); showDock('lineage'); }),
-    stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id); showDock('lineage'); }),
+    // Each sets the box it names and leaves the other: the Catalog shows
+    // another node than the canvas's only when a box was clicked on it.
+    stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
+    stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
     stat('Tests', String(n.tests.length), n.tests.length ? () => {
       const h = [...body.querySelectorAll('h3')].find((e) => e.textContent.startsWith('tests on'));
       if (h) h.scrollIntoView({ block: 'start' });
@@ -11290,6 +11314,7 @@ async function startTour() {
     active: S.active, preview: S.preview, order: S.order.slice(), dock: S.dock, mode: S.graphMode,
     focus: S.focus, colFocus: S.colFocus, jobsFor: S.jobsFor, unsynced: S.unsynced,
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
+    up: $('#up').value, down: $('#down').value,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
     reports, reportsSection: S.reportsSection, reportsReturn,
   };
@@ -11579,10 +11604,14 @@ async function endTour() {
     if (S.open.has(s.active)) activate(s.active, false);
     else settleTabs();
     $('#select-input').value = s.select;
+    // A tour that moved to a model of its own drew it at the default depth.
+    const depth = $('#up').value !== s.up || $('#down').value !== s.down;
+    $('#up').value = s.up;
+    $('#down').value = s.down;
     if (s.mode === 'select') await runSelection();
     else if (s.mode === 'column' && s.colFocus) await focusColumn(s.colFocus.id, s.colFocus.column);
     else if (s.focus) {
-      if (S.focus !== s.focus || S.graphMode !== 'model') await focusNode(s.focus);
+      if (S.focus !== s.focus || S.graphMode !== 'model' || depth) await focusNode(s.focus, { keepDepth: true });
     } else {
       S.graphMode = 'model';
       paintMode();
@@ -12389,7 +12418,7 @@ async function boot() {
         }
         return focusColumn(nodeId, column);
       }
-      focusNode(nodeId);
+      focusNode(nodeId, { keepDepth: true });
       if (n.kind === 'test' && n.test_name) return openTest(n, { pin: true });
       pinBoxFile(n);
     },

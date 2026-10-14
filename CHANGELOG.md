@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.4 - 2026-10-14
+
+- Start the lineage at one level up and one down, and go back to that whenever
+  the model changes other than from the canvas, from `Cmd/Ctrl + K`, a tab, a
+  link or the Catalog, rather than keeping the depth set for the last one;
+  going back and forward to another tab brings back the depth it was left with.
+
 ## 1.18.3 - 2026-10-14
 
 - Offer the tour on the first page with a model to show, not the first page

@@ -165,8 +165,8 @@
                     title="Any set of nodes you describe, drawn together: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
-          <label>up <input id="up" type="number" min="0" max="20" value="2"></label>
-          <label>down <input id="down" type="number" min="0" max="20" value="2"></label>
+          <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
+          <label title="Levels of children drawn. Back to 1 when the model changes other than from the canvas">down <input id="down" type="number" min="0" max="20" value="1"></label>
           <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
           <button id="with-tests" class="btn sm eyebtn" type="button" aria-pressed="false"
                   aria-label="Data tests on the canvas"></button>
