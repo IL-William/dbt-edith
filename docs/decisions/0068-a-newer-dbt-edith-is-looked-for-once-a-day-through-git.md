@@ -1,6 +1,6 @@
 # 0068. A newer dbt-edith is looked for once a day, through git
 
-Date: 2026-10-12 · Status: accepted
+Date: 2026-10-12 · Status: accepted, amended by 0079
 
 **Trigger:** read before making dbt-edith reach the network on its own, or
 changing when it looks for a release or what the update offer types.

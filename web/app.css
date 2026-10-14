@@ -215,10 +215,39 @@ kbd {
 .venvpill[data-state=off] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
 .venvpill.act { cursor: pointer; }
 .venvpill.act:hover { background: rgba(224, 163, 75, .2); }
-.envmenu.updmenu { width: 340px; max-width: calc(100vw - 8px); }
+/* A build twenty releases behind lists them all: on a short window the menu
+   scrolls rather than run past it, its button out of reach. */
+.envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; }
 .updmenu .menunote { padding-left: 8px; max-width: none; }
-.brand { font-weight: 600; letter-spacing: .3px; }
+.updmenu .updfoot { display: flex; align-items: center; gap: 10px; padding: 2px 4px 4px 0; }
+/* One release per row: its version in a column of its own, its title on one
+   line, cut short, the whole of it in the row's tooltip. */
+.updmenu a.relrow { padding-top: 3px; padding-bottom: 3px; }
+.relrow .ver { flex: 0 0 46px; font: 10.5px var(--mono); color: var(--fg-dim); }
+.relrow .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.updfoot .menunote { flex: 1; padding-bottom: 0; }
+/* A button among the menu's rows, drawn as the app's other buttons are. */
+.envmenu button.updcheck {
+  display: inline-block; flex: 0 0 auto; width: auto; padding: 4px 9px; white-space: nowrap;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
+}
+.envmenu button.updcheck:hover, .envmenu button.updcheck:focus-visible { background: #26303e; border-color: #3a475a; }
+.envmenu button.updcheck:focus:not(:focus-visible) { background: var(--bg-3); }
+.envmenu button.updcheck[aria-disabled=true]:hover { background: var(--bg-3); border-color: var(--line); }
+.brand {
+  position: relative; padding: 2px 4px; margin: -2px -4px; background: none; border: 0; border-radius: 4px;
+  font: 600 13px/1.45 var(--ui); letter-spacing: .3px; cursor: pointer;
+}
+.brand:hover { background: var(--bg-3); }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .brand b { color: var(--accent); font-weight: 600; }
+/* A newer release is out: a dot on the name, the pill in the status bar saying
+   which. In the pill's accent, not the warning colour: nothing is wrong with the
+   one running. */
+.brand.newer::after {
+  content: ''; position: absolute; top: 1px; right: -3px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+}
 .sep { width: 1px; height: 18px; background: var(--line); }
 .chips { display: flex; gap: 6px; }
 .chip {

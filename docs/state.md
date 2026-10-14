@@ -978,6 +978,24 @@ found 1.11.0 and showed nothing; with 1.12.0 kept for the day, the startup
 banner named it, the pill and its menu showed, and the command landed in the
 terminal unrun. Not yet on the VM.
 
+Update looks through the Paris night (1.18.0, 0079), from a report on the VM: a
+start showed no update with several out, an older answer still standing under
+0068's 24 hours. An answer now stands until the next turn, every hour on the
+hour from midnight to 09:00 in Paris and then midnight, worked out from the
+EU's summer-time rule; a look that got no answer is tried again an hour later,
+and Edith at the top left opens a menu, as the pill does: the version and
+build, every release since the running one by its pull request's title (fetched
+once per release through git, the tagged commits alone, and kept with the
+answer), when GitHub last answered or what git said when it did not, when it
+looks next in the machine's time, and Check for updates. Driven in headless
+Chrome on Jaffle Shop with a debug build: a start with an empty config
+directory asked GitHub and said 1.17.0 was the newest, a kept answer naming
+newer releases put a dot on the name, the pill in the status bar and one row
+per release in the menu, and a proxy git could not reach put git's line in the
+menu beside the older answer. Pull request titles are held to fifty characters
+from here, one idea in the user's words, so each fits its row (AGENTS.md, and
+CI's naming check). Not yet on the VM.
+
 The venv the terminal activated (1.12.1, 0069), from a report on the VM: once
 a project's own script had switched Git Bash to its Fusion venv, the prompt
 named that venv and the status bar still said `venv (inactive)` with the
@@ -1591,6 +1609,9 @@ cross-compile.
   apart, which take 165, 250 and 230 ms on a Mac. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under
   that on a Mac.
+- **The update look on the VM (0079).** Whether git reaches GitHub from the
+  VM at all, through its proxy: Edith's menu now says when GitHub last
+  answered, or the line git printed when it could not.
 - **The update on Windows (0068).** Whether the running `dbt-edith.exe`
   renames to `.exe.old` while it runs, under Git Bash and under PowerShell,
   and whether `cargo install` then puts the new one in place. The PowerShell

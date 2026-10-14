@@ -49,7 +49,9 @@ const S = {
   collin: null,               // the collin part of /api/meta: installed, stale, and its last run
   collinPoll: 0,              // the timer asking again while a run started by a pick goes on
   update: null,               // payload of /api/update: the newest dbt-edith known, and how to install it
-  updatePoll: 0,              // the timer asking again while the day's look is on its way
+  updatePoll: 0,              // the timer asking again, every few seconds while a look is on its way
+  updateMenu: null,           // Edith's menu, drawn again while open when an answer comes in
+  build: '',                  // the build stamp, under the version in Edith's menu
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
   cllActive: '',              // file name of the one the graph holds, '' for none
   cllTool: '',                // fusion | collin | snowflake | '' for another producer or none
@@ -5293,14 +5295,20 @@ async function redrawLineage() {
    gone, however it went. */
 let popup = null;
 
-function openPopup(anchor, el, closed) {
-  closePopup();
-  document.body.appendChild(el);
+/* Below the anchor when the menu fits there, above it otherwise, and inside
+   the window either way. Again when a menu drawn anew has grown. */
+function placePopup(anchor, el) {
   const at = anchor.getBoundingClientRect();
   const box = el.getBoundingClientRect();
   const below = at.bottom + 4 + box.height <= window.innerHeight;
   el.style.top = `${below ? at.bottom + 4 : Math.max(4, at.top - 4 - box.height)}px`;
   el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
+}
+
+function openPopup(anchor, el, closed) {
+  closePopup();
+  document.body.appendChild(el);
+  placePopup(anchor, el);
   const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"]), a[href]')];
   const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopup(); };
   const onKey = (e) => {
@@ -12083,48 +12091,173 @@ function updateOffer(u) {
   };
 }
 
+/* When a look was made or is due, as the menu says it: today, yesterday or
+   tomorrow and the time, or the date and the time. `t` and `now` in seconds
+   since the epoch, read in the machine's own time zone, so a look the server
+   times in Paris reads in local time. Pure, for web/tests/update.js. */
+function whenLooked(t, now) {
+  const at = new Date(t * 1000);
+  const two = (n) => String(n).padStart(2, '0');
+  const time = `${two(at.getHours())}:${two(at.getMinutes())}`;
+  const midnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  // Rounded, since a day the clocks change on lasts 23 or 25 hours.
+  const days = Math.round((midnight(new Date(now * 1000)) - midnight(at)) / 86400000);
+  if (days === 0) return `today at ${time}`;
+  if (days === 1) return `yesterday at ${time}`;
+  if (days === -1) return `tomorrow at ${time}`;
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][at.getMonth()];
+  return `${at.getDate()} ${month} at ${time}`;
+}
+
+/* What the menu says of the looks for a newer dbt-edith (0068, 0079): one on
+   its way, when the answer came and what it was, what git said when a later
+   one got none, and when the next is due, which the server works out from the
+   Paris clock. Pure, for web/tests/update.js. */
+function updateLook(u, now) {
+  if (!u) return '';
+  if (u.off) return 'Started with --no-update-check, so no release is looked for.';
+  if (u.checking) return 'Looking for a newer release on GitHub…';
+  const said = [];
+  if (u.failed) said.push(`The look ${whenLooked(u.failed, now)} got no answer from GitHub: ${u.error || 'git said nothing'}.`);
+  if (u.checked) {
+    const when = whenLooked(u.checked, now);
+    if (u.newer) said.push(`GitHub listed ${u.latest} ${when}.`);
+    else if (u.latest === u.current) said.push(`${u.current} is the newest release, as GitHub listed it ${when}.`);
+    // A build from a branch, or a release not yet tagged when GitHub answered.
+    else said.push(`This build is ahead of ${u.latest}, the newest release GitHub listed ${when}.`);
+  } else if (!u.failed) {
+    said.push('Not looked for yet.');
+  }
+  if (u.next > now) said.push(`The next look is ${whenLooked(u.next, now)}.`);
+  else if (u.next) said.push('The next look is due now.');
+  return said.join(' ');
+}
+
+/* The releases since the running one, as the menu lists them (0079): a head
+   counting them all, one row per release with its pull request's title, and
+   a last row for the older ones the server left out. Null without the list,
+   when the menu links the newest release's notes alone. Pure, for
+   web/tests/update.js. */
+function releaseRows(u) {
+  if (!u || !u.newer || !(u.releases || []).length) return null;
+  const all = u.releases.length + (u.older || 0);
+  return {
+    head: `${all} release${all === 1 ? '' : 's'} since yours`,
+    rows: u.releases.map((r) => ({ version: r.version, title: r.title, href: r.notes, tip: `dbt-edith ${r.version}: ${r.title}` })),
+    older: u.older && u.older_notes
+      ? { label: `and ${u.older} older`, href: u.older_notes, tip: 'Every release, on GitHub' } : null,
+  };
+}
+
+/* Edith's menu, from the name at the top left and from the status bar's pill
+   alike: which build serves the page, a newer release and how to install it
+   once one is known (0068), and the looks for one, with a button that makes
+   one at once (0079). */
 function openUpdateMenu(anchor) {
   if (closePopup(anchor)) return;
-  const o = updateOffer(S.update);
-  if (!o) return;
-  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  const menu = el('div', 'envmenu updmenu');
+  const menu = document.createElement('div');
+  menu.className = 'envmenu updmenu';
   menu.setAttribute('role', 'menu');
-  menu.append(el('div', 'menuhead', o.head));
-  if (o.command) {
-    const run = el('button', '');
-    run.type = 'button';
-    run.setAttribute('role', 'menuitem');
-    run.title = o.command;
-    run.append(el('span', 'lbl', 'Update in the terminal'));
-    run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); });
-    menu.append(run);
-  }
-  if (o.notes) {
-    const a = el('a', 'menulink');
-    a.setAttribute('role', 'menuitem');
-    a.href = o.notes;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.append(el('span', 'lbl', 'What changed'), el('span', 'sub', 'GitHub'));
-    // After the click, so the link is still in the page when the browser follows it.
-    a.addEventListener('click', () => setTimeout(closePopup));
-    menu.append(a);
-  }
-  menu.append(document.createElement('hr'));
-  for (const line of o.lines) menu.append(el('div', 'menunote', line));
+  S.updateMenu = menu;
+  paintUpdateMenu(menu);
   openPopup(anchor, menu);
 }
 
-/* Asked at boot, then every few seconds while the day's look is on its way,
-   then hourly: the answer moves once a day at most. */
-async function refreshUpdate() {
-  clearTimeout(S.updatePoll);
-  try { S.update = await api.get('/api/update'); } catch {
-    // A request lost to sleep or the network: asked again in a minute.
-    S.updatePoll = setTimeout(refreshUpdate, 60 * 1000);
-    return;
+/* Drawn again in place when an answer comes in while the menu is open. */
+function paintUpdateMenu(menu) {
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  const u = S.update || { current: S.version };
+  const o = updateOffer(u);
+  // Drawn anew under the focus, at a click and every two seconds of a look:
+  // it goes back to the same row, found by its link since an answer can add
+  // rows above it, or to the button, without scrolling the menu to it.
+  const rows = () => [...menu.querySelectorAll('[role=menuitem]')];
+  const had = menu.contains(document.activeElement) ? document.activeElement : null;
+  const same = (r) => (had.getAttribute('href') ? r.getAttribute('href') === had.getAttribute('href') : r.className === had.className);
+  menu.replaceChildren(el('div', 'menuhead', o ? o.head : `dbt-edith ${S.version || '?'}`));
+  if (S.build) menu.append(el('div', 'menunote', S.build));
+  if (o) {
+    menu.append(document.createElement('hr'));
+    if (o.command) {
+      const run = el('button', '');
+      run.type = 'button';
+      run.setAttribute('role', 'menuitem');
+      run.title = o.command;
+      run.append(el('span', 'lbl', 'Update in the terminal'));
+      run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); });
+      menu.append(run);
+    }
+    const link = (href, className, title) => {
+      const a = el('a', className);
+      a.setAttribute('role', 'menuitem');
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      if (title) a.title = title;
+      // After the click, so the link is still in the page when the browser follows it.
+      a.addEventListener('click', () => setTimeout(closePopup));
+      return a;
+    };
+    const listed = releaseRows(u);
+    if (listed) {
+      menu.append(el('div', 'menuhead', listed.head));
+      for (const r of listed.rows) {
+        const a = link(r.href, 'menulink relrow', r.tip);
+        a.append(el('span', 'ver', r.version), el('span', 'lbl', r.title));
+        menu.append(a);
+      }
+      if (listed.older) {
+        const a = link(listed.older.href, 'menulink relrow', listed.older.tip);
+        a.append(el('span', 'ver', ''), el('span', 'lbl', listed.older.label), el('span', 'sub', 'GitHub'));
+        menu.append(a);
+      }
+      // The list ends here, and what follows says how to install it.
+      menu.append(document.createElement('hr'));
+    } else if (o.notes) {
+      const a = link(o.notes, 'menulink');
+      a.append(el('span', 'lbl', 'What changed'), el('span', 'sub', 'GitHub'));
+      menu.append(a);
+    }
+    for (const line of o.lines) menu.append(el('div', 'menunote', line));
   }
+  menu.append(document.createElement('hr'));
+  // What the looks found, beside the button that makes one now.
+  const foot = el('div', 'updfoot');
+  foot.append(el('div', 'menunote', updateLook(u, Math.floor(Date.now() / 1000))));
+  if (!u.off) {
+    const look = el('button', 'btn updcheck', u.checking ? 'Looking…' : 'Check for updates');
+    look.type = 'button';
+    look.setAttribute('role', 'menuitem');
+    // Not `disabled`, which takes no focus: the focus goes back to it once
+    // the menu is drawn anew.
+    if (u.checking) look.setAttribute('aria-disabled', 'true');
+    look.addEventListener('click', () => { if (!u.checking) checkForUpdate(); });
+    foot.append(look);
+  }
+  menu.append(foot);
+  const back = had && (rows().find(same) || menu.querySelector('.updcheck') || rows().pop());
+  if (back) back.focus({ preventScroll: true });
+}
+
+/* The menu's button. The server answers once GitHub has, so the menu says it
+   is looking until then, and is drawn again with the answer. */
+async function checkForUpdate() {
+  S.update = Object.assign({}, S.update, { checking: true });
+  paintUpdate();
+  try {
+    S.update = await api.send('/api/update/check', 'POST', {});
+  } catch (e) {
+    S.update = Object.assign({}, S.update, { checking: false });
+    toast('looking for a newer dbt-edith: ' + e.message, 'err');
+  }
+  paintUpdate();
+  // Another look was on its way, whose answer this one waits for.
+  if (S.update.checking) refreshUpdate();
+}
+
+/* The pill in the status bar, the name at the top left, and the menu if it
+   is open, from the last /api/update answer. */
+function paintUpdate() {
   const o = updateOffer(S.update);
   const pill = $('#status-update');
   pill.classList.toggle('hidden', !o);
@@ -12132,9 +12265,30 @@ async function refreshUpdate() {
     pill.textContent = o.label;
     pill.title = o.title;
   }
+  const brand = $('#brand');
+  brand.classList.toggle('newer', !!o);
+  brand.title = o ? `${o.title}\nClick for what changed and how to update.`
+    : `dbt-edith ${S.version || '?'}${S.build ? '\n' + S.build : ''}\nClick to check for updates.`;
+  if (S.updateMenu && S.updateMenu.isConnected) {
+    paintUpdateMenu(S.updateMenu);
+    if (popup && popup.el === S.updateMenu) placePopup(popup.anchor, S.updateMenu);
+  }
+}
+
+/* Asked at boot, then every few seconds while a look is on its way, then
+   every ten minutes: the server looks on the hour through the Paris night, and
+   the page shows the answer soon after. */
+async function refreshUpdate() {
+  clearTimeout(S.updatePoll);
+  try { S.update = await api.get('/api/update'); } catch {
+    // A request lost to sleep or the network: asked again in a minute.
+    S.updatePoll = setTimeout(refreshUpdate, 60 * 1000);
+    return;
+  }
+  paintUpdate();
   // Switched off, there will be nothing to hear.
   if (S.update.off) return;
-  S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 5000 : 3600 * 1000);
+  S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 2000 : 600 * 1000);
 }
 
 async function boot() {
@@ -12214,9 +12368,12 @@ async function boot() {
   // what tells a stale binary from a frontend change that really did nothing.
   const build = $('#status-build');
   S.version = info.version || '';
+  S.build = info.build || '';
   build.textContent = 'v' + (info.version || '?');
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  $('#brand').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  paintUpdate();
   refreshUpdate();
   S.venv = info.venv || {};
   paintVenv();

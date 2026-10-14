@@ -256,6 +256,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collin/compare", get(compare_collin_versions))
         .route("/api/sidecar", get(sidecar_status))
         .route("/api/update", get(update_status))
+        .route("/api/update/check", post(check_update_now))
         .route("/api/tour", get(tour_model))
         .route("/api/tour/offer", post(claim_tour_offer))
         .route("/api/features", post(set_features))
@@ -2484,6 +2485,10 @@ async fn sidecar_status(State(st): State<Arc<AppState>>) -> Response {
     Json(SidecarBody { enabled: st.sidecar.enabled(), status: st.sidecar.status() }).into_response()
 }
 
+fn is_zero_u64(n: &u64) -> bool {
+    *n == 0
+}
+
 #[derive(serde::Serialize)]
 struct UpdateBody {
     current: &'static str,
@@ -2492,9 +2497,21 @@ struct UpdateBody {
     latest: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     newer: bool,
-    /// The day's look is on its way, so the page asks again shortly.
+    /// When that answer was got, in seconds since the epoch.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    checked: u64,
+    /// A look is on its way, so the page asks again shortly.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     checking: bool,
+    /// When the last look got no answer, if that is later than the answer,
+    /// and what git said: shown in the menu, never in the status bar.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    failed: u64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    error: String,
+    /// When the next look is due, for the menu to say in the machine's time.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    next: u64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     off: bool,
     /// The release's notes, while it is newer.
@@ -2506,12 +2523,31 @@ struct UpdateBody {
     /// Why there is no command, while it is newer.
     #[serde(skip_serializing_if = "Option::is_none")]
     why: Option<crate::update::Why>,
+    /// The releases since this one, newest first, each with its pull
+    /// request's title and its notes, while it is newer and every title is
+    /// known (0079).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    releases: Vec<ReleaseBody>,
+    /// How many older releases since this one the list leaves out, and the
+    /// page that has them.
+    #[serde(skip_serializing_if = "is_zero")]
+    older: usize,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    older_notes: String,
+}
+
+#[derive(serde::Serialize)]
+struct ReleaseBody {
+    version: String,
+    title: String,
+    notes: String,
 }
 
 async fn update_status(State(st): State<Arc<AppState>>) -> Response {
     let current = env!("CARGO_PKG_VERSION");
     // Switched off, nothing was looked for, so nothing is newer.
-    let (latest, checking) = st.update.status();
+    let crate::update::Status { latest, checked, checking, failed, error, next, releases, older } =
+        st.update.status(crate::update::now_secs());
     let newer = crate::update::newer(current, &latest);
     let (how, why) = match &st.update.how {
         _ if !newer => (None, None),
@@ -2525,10 +2561,31 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
         why,
         latest,
         newer,
+        checked,
         checking,
+        failed,
+        error,
+        next,
         off: st.update.off,
+        releases: releases
+            .into_iter()
+            .map(|(version, title)| ReleaseBody { notes: crate::update::notes_url(&version), version, title })
+            .collect(),
+        older,
+        older_notes: if older > 0 { crate::update::releases_url() } else { String::new() },
     })
     .into_response()
+}
+
+/// The menu's button: GitHub asked now, whatever answer is kept, and the
+/// route answers once it has (0079). Switched off, or with a look already on
+/// its way, it answers at once with what is known.
+async fn check_update_now(State(st): State<Arc<AppState>>) -> Response {
+    // On a task of its own: a page closed or reloaded while git waits drops
+    // this request, and the look still ends and keeps its answer.
+    let looking = st.clone();
+    let _ = tokio::spawn(async move { looking.update.check_now().await }).await;
+    update_status(State(st)).await
 }
 
 #[derive(serde::Serialize)]
@@ -3568,7 +3625,15 @@ pub async fn watch_update(st: Arc<AppState>) {
     }
     loop {
         st.update.check().await;
-        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        // Woken when the answer kept stops standing, on the hour from
+        // midnight to 09:00 in Paris and at midnight past it, or an hour after
+        // a look that got no answer, and at least hourly whatever the clock does.
+        // Each process up to two minutes later, by its own spread, so that
+        // dbt-edith on the machine asks GitHub once and the others read its
+        // answer.
+        let now = crate::update::now_secs();
+        let wait = st.update.next_look(now).saturating_sub(now).clamp(1, 3600) + st.update.spread();
+        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
     }
 }
 
@@ -3947,14 +4012,16 @@ mod tests {
 
         let before = response_of(port, get("/api/update", &h)).await;
         assert!(before.starts_with("HTTP/1.1 200"), "{before}");
-        assert_eq!(past_head(&before), format!(r#"{{"current":"{current}"}}"#));
+        // Nothing looked for yet, so the next look is due now.
+        assert!(past_head(&before).starts_with(&format!(r#"{{"current":"{current}","next":"#)), "{before}");
 
         let now = crate::update::now_secs();
         std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"{current}"}}"#)).unwrap();
         st.update.check().await;
         let same = response_of(port, get("/api/update", &h)).await;
         assert!(same.starts_with("HTTP/1.1 200"), "{same}");
-        assert_eq!(past_head(&same), format!(r#"{{"current":"{current}","latest":"{current}"}}"#));
+        let next = st.update.next_look(now);
+        assert_eq!(past_head(&same), format!(r#"{{"current":"{current}","latest":"{current}","checked":{now},"next":{next}}}"#));
 
         std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"99.0.0"}}"#)).unwrap();
         st.update.check().await;
@@ -3963,10 +4030,32 @@ mod tests {
         assert_eq!(
             past_head(&newer),
             format!(
-                r#"{{"current":"{current}","latest":"99.0.0","newer":true,"notes":"https://github.com/IL-William/dbt-edith/releases/tag/v99.0.0","why":"elsewhere"}}"#
+                r#"{{"current":"{current}","latest":"99.0.0","newer":true,"checked":{now},"next":{next},"notes":"https://github.com/IL-William/dbt-edith/releases/tag/v99.0.0","why":"elsewhere"}}"#
             )
         );
+
+        // With the releases since this one titled in the file, each is listed.
+        std::fs::write(
+            root.join("update.json"),
+            format!(
+                r#"{{"checked":{now},"latest":"99.0.0","releases":["99.0.0","98.0.0","{current}"],
+                    "titles":{{"99.0.0":"Show the strategy","98.0.0":"Pan from a box"}}}}"#
+            ),
+        )
+        .unwrap();
+        st.update.check().await;
+        let listed = response_of(port, get("/api/update", &h)).await;
+        let notes = "https://github.com/IL-William/dbt-edith/releases/tag/v";
+        assert!(
+            past_head(&listed).ends_with(&format!(
+                r#""why":"elsewhere","releases":[{{"version":"99.0.0","title":"Show the strategy","notes":"{notes}99.0.0"}},{{"version":"98.0.0","title":"Pan from a box","notes":"{notes}98.0.0"}}]}}"#
+            )),
+            "{listed}"
+        );
         assert!(status_of(port, keyless(get("/api/update", &h))).await.ends_with("401 Unauthorized"));
+        // The button's route reaches GitHub, so only its guard is tried here;
+        // the look it starts is the unit tests' in update.rs.
+        assert!(status_of(port, keyless(raw("POST", "/api/update/check", &h))).await.ends_with("401 Unauthorized"));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
