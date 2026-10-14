@@ -1,40 +1,75 @@
 # dbt-edith
 
-A very small browser IDE for dbt projects: file tree, editor, real terminal and
-lineage read straight from `target/manifest.json`.
+A small browser IDE for dbt projects: file tree, editor, terminal and lineage,
+read straight from `target/manifest.json`.
 
-One Rust binary, no runtime to install, no Node build step. The whole UI is
-embedded in the executable, so the machine that runs it needs nothing but the
-binary itself and a browser.
+It is one Rust binary with its UI inside it: no runtime, no Node, no installer,
+nothing to set up on the machine that runs it. It was made for a locked-down
+Windows machine, and runs the same on macOS and Linux. The lineage is already
+in the manifest, so dbt-edith reads it once, keeps a compact graph in memory
+and draws the part around the model you are on. It never runs dbt itself: dbt
+runs in its terminal, when you run it.
 
 ```
-dbt-edith /path/to/dbt/project
+cd /path/to/your-dbt-project
+dbt-edith
 ```
 
-It prints a `http://127.0.0.1:4321/?key=…` URL and opens it. The key is this
-launch's own: a tab opened without it can read nothing.
+![customers.sql in the editor, the card of the stg_orders it reads under the pointer, and its lineage below](docs/shots/editor.png)
 
-Changing dbt-edith itself rather than using it: [AGENTS.md](AGENTS.md) is the
-short version, and [docs/decisions/](docs/decisions/) says why it is built this
-way.
+## What it does
+
+- **[Lineage](docs/features/lineage.md)** of the model you are editing, drawn
+  from the manifest and following the editor, with a dot that says whether the
+  manifest still matches your files.
+- **[Custom selection](docs/features/selection.md)**: what any dbt selector or
+  named selector matches, drawn on the canvas, and answered on the command line
+  by `--select` without a server.
+- **[Editor](docs/features/editor.md)** links: `ref()`, `source()`, macro calls
+  and the folder keys of `dbt_project.yml` open what they name, and a hover
+  card says what it is, the value of a `var()` or an `env_var()` included.
+- **[Catalog](docs/features/catalog.md)**: a node's columns, tests and
+  incremental strategy, where it is built in each of your `.env` environments,
+  and the compiled and run SQL dbt left for it.
+- **[Column lineage](docs/features/column-lineage.md)**, parsed from the
+  compiled SQL by collin, or fetched from Snowflake on click.
+- **[Jobs and Reports](docs/features/jobs-and-reports.md)**: which Airflow DAG
+  or dbt Cloud job runs a model, which models no scheduled job runs, and what
+  the last dbt command did.
+- **[Terminal and Git](docs/features/terminal-and-git.md)**: a real shell in
+  your Python environment, and a Git tab that stages, commits, pulls, diffs and
+  resolves conflicts, with no command that can destroy work.
+- **[Snowflake](docs/features/snowflake.md)**, switched on per project: your
+  query history, Snowsight links, and the statements that clone a model into
+  your schema.
+
+In the page, `?` lists every shortcut, and *Give me a tour* at the top of that
+list walks through the page on one of your own models.
+
+![The whole project drawn by folder, seeds, staging and models, each model's tests hanging under it](docs/shots/lineage.png)
+
+| ![The Catalog's Columns tab for customers: types, descriptions, tests and lineage](docs/shots/catalog.png) | ![The amount column of stg_payments, from its seed to every column of orders and customers built from it](docs/shots/column-lineage.png) |
+| --- | --- |
+| The Catalog: each column's type, description, tests and lineage | One column's lineage, from the seed to the marts, read by collin |
+| ![The Jobs tab for customers: an Airflow DAG and a dbt Cloud job that run it, and a CI job it cannot resolve](docs/shots/jobs.png) | ![collin's report in the Reports panel: what it read and what to fix in the project](docs/shots/collin-report.png) |
+| The Jobs tab: which DAG and which job run the model | collin's report: what it read, and what to fix |
+
+Every picture is of dbt Labs' Jaffle Shop, with invented jobs.
 
 ## Getting started
 
 ### What you need
 
-- **A dbt project that has been parsed at least once.** dbt-edith reads
-  `target/manifest.json` and never runs dbt itself, so that file has to exist.
-  Any `dbt parse`, `dbt compile` or `dbt build` writes one.
-- **Rust, on the machine that builds.** Not on the machine that runs: the binary
-  carries its own UI and needs nothing installed. Get it from
-  [rustup.rs](https://rustup.rs). Building on Windows itself also takes a C
-  toolchain, see [Build it on the Windows machine](#build-it-on-the-windows-machine).
-- **git on `PATH`**, for the Git tab. On Windows that usually means
-  [Git for Windows](https://git-scm.com/download/win), which brings both `git`
-  and the Git Bash the terminal runs. Where nothing can be installed, its
-  [PortableGit](https://git-scm.com/download/win) archive unpacks into a folder
-  and works the same once it is on `PATH`. Without any git, the rest still runs:
-  the terminal falls back to PowerShell and the Git tab reports no repository.
+- **A dbt project parsed at least once.** dbt-edith reads
+  `target/manifest.json`, which any `dbt parse` writes. A manifest from
+  dbt-core 1.x and one from dbt Fusion 2 both load; Fusion is what it is used
+  against day to day.
+- **Rust, on the machine that builds**, from [rustup.rs](https://rustup.rs).
+  The machine that runs it needs nothing.
+- **git on `PATH`**, for the Git tab. On Windows,
+  [Git for Windows](https://git-scm.com/download/win), or its PortableGit
+  archive where nothing can be installed, also brings the Git Bash the
+  terminal runs. Without git the rest still works.
 - A browser.
 
 ### Install it
@@ -45,131 +80,29 @@ cd dbt-edith
 cargo install --path .
 ```
 
-That one command builds it and puts `dbt-edith` in `~/.cargo/bin`, which rustup
-already has on your `PATH`, so you can run it from any project afterwards. If
-the command is not found once it finishes, add that directory to your `PATH`.
+That builds it and puts `dbt-edith` in `~/.cargo/bin`, which rustup already has
+on your `PATH`. The repository is public, so the clone needs no account and no
+key. There is no published download: building is how you get a binary.
+`cargo build --release` leaves the same binary at `target/release/dbt-edith` if
+you would rather not install it.
 
-The repository is public, so the clone needs no account and no key. There is no
-published download, though: building is how you get a binary.
+To update, `git pull` and run the same `cargo install` again. dbt-edith asks
+GitHub, through git, whether a newer release is out, every hour from midnight
+to 09:00 Paris time, and offers that command in the status bar when one is.
+**Check for updates**, in the menu under Edith at the top left, asks at once
+([docs/features/updates.md](docs/features/updates.md)).
 
-Prefer not to install it? `cargo build --release` leaves the same binary at
-`target/release/dbt-edith`, and everything below works with that path in place of
-the `dbt-edith` command.
+### On Windows
 
-After a `git pull`, run the same command again. The binary carries the UI inside
-it and does not update on its own.
+Running the `.exe` needs no administrator rights and nothing installed. There
+are two ways to get one, both in [docs/windows.md](docs/windows.md):
 
-It asks GitHub, through git, which releases there are, every hour from midnight
-to 09:00 Paris time and then not until the next midnight, so the first start of
-your day knows what came out overnight, wherever you are. When one is newer, a
-pill after the version in the status bar says so and a dot marks Edith at the
-top left. Clicking either opens the same menu: the version and build you run,
-every release since yours by the title of the pull request that released it,
-each linked to its notes, and, for a binary installed or built from a clone on
-that machine, the pull of `main` and the install typed into the terminal for
-you to run; restart dbt-edith once it finishes. Otherwise it says why it has no
-command. The menu also says when GitHub last answered, or what git said when it
-could not reach it, and when it asks next, and Check for updates asks again at
-once. Nothing about your project is sent, a failed look is tried again within
-the hour and stays out of the status bar, and `--no-update-check` turns it off
-(0068, 0079).
-
-### For a Windows machine
-
-Two routes lead to the same `.exe`: build it elsewhere and copy it over, or build
-it on the Windows machine. Either way, running it needs nothing installed.
-
-#### Build it on a Mac or Linux, then copy it
-
-Cross-compile (needs `mingw-w64`, available through Homebrew or your package
-manager):
-
-```
-rustup target add x86_64-pc-windows-gnu
-./scripts/build_windows.sh
-```
-
-The script builds `target/x86_64-pc-windows-gnu/release/dbt-edith.exe` and
-prints its SHA-256, which it also writes beside it in `dbt-edith.exe.sha256`.
-Copy the `.exe` to the machine and, before running it, check that it is the file
-that was built:
-
-```
-certutil -hashfile dbt-edith.exe SHA256
-```
-
-The two hashes must match. A file that came through a share or a remote desktop
-can be a different one, and nothing else would say so. Then run it: no
-installer, no admin rights. It imports nothing but Windows system
-libraries, so there is no runtime to place beside it. The terminal uses ConPTY,
-which ships with Windows 10 and 11. Windows may warn about an unsigned
-executable that arrived by copy, which is what an in-house build looks like
-to it.
-
-To type `dbt-edith` from any project there, as you would elsewhere, keep the
-`.exe` in a folder of your own and put that folder on your `PATH`. Neither step
-needs admin rights. In Git Bash:
-
-```
-mkdir -p ~/bin && mv /c/Users/you/Downloads/dbt-edith.exe ~/bin/
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
-```
-
-In PowerShell, touching your own `PATH` and not the machine's:
-
-```
-[Environment]::SetEnvironmentVariable('Path',
-  [Environment]::GetEnvironmentVariable('Path', 'User') + ';C:\Users\you\bin', 'User')
-```
-
-Updating is replacing that one file, and nothing else.
-
-#### Build it on the Windows machine
-
-Rust alone is not enough there: linking needs a C toolchain, and Windows does not
-ship one. There are two ways to get it.
-
-**With Visual Studio Build Tools** and their C++ workload, which is what rustup's
-default toolchain expects. `cargo install --path .` then works as on any other
-machine. Installing Build Tools takes administrator rights.
-
-**Without administrator rights**, use Rust's GNU toolchain and a mingw-w64 of
-your own. The GNU toolchain is not enough by itself: `windows-sys`, which tokio
-and clap depend on, links Windows functions as `raw-dylib`, so rustc calls
-`dlltool`, which calls the assembler `as`, and Rust does not ship `as`
-([rust-lang/rust#140704](https://github.com/rust-lang/rust/issues/140704)).
-WinLibs, from winget, installs for your user only and brings both. In Git Bash:
-
-```
-rustup toolchain install stable-x86_64-pc-windows-gnu
-rustup default stable-x86_64-pc-windows-gnu
-winget install --id BrechtSanders.WinLibs.POSIX.UCRT -e
-```
-
-winget unpacks it under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`, in a folder
-named after the package. Put that folder's `mingw64\bin` on your `PATH`, open a
-new terminal, and check that `as --version` answers:
-
-```
-echo 'export PATH="/c/Users/you/AppData/Local/Microsoft/WinGet/Packages/<WinLibs folder>/mingw64/bin:$PATH"' >> ~/.bashrc
-```
-
-Then `cargo install --path .` from the clone builds it and drops `dbt-edith.exe`
-in `%USERPROFILE%\.cargo\bin`, which rustup already put on your `PATH`.
-
-The two errors this avoids, word for word, so that searching for them lands here:
-
-- `error calling dlltool 'dlltool.exe': program not found`: `dlltool` itself
-  was not found.
-- `dlltool.exe: CreateProcess`: `dlltool` ran but could not start `as`.
-
-To update, stop dbt-edith first, because Windows will not replace an `.exe` that
-is running, then `git pull` and `cargo install --path .` again. The command the
-status bar offers when a release is out needs no stop: it renames the running
-`dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows allows, and puts it
-back if the build fails. Restart dbt-edith afterwards. A binary run from the
-clone's `target\release` gets no such command: cargo builds it through a file
-the rename does not free, so stop it before building.
+- cross-compile it on a Mac or Linux with `./scripts/build_windows.sh`, copy it
+  over, and check that `certutil -hashfile dbt-edith.exe SHA256` gives the hash
+  the script printed;
+- or build it on the machine with `cargo install --path .`, which needs a C
+  toolchain there: Visual Studio Build Tools with administrator rights, or
+  WinLibs from winget without.
 
 ### Run it
 
@@ -178,10 +111,9 @@ cd /path/to/your-dbt-project
 dbt-edith
 ```
 
-With no argument it opens the current directory, so be in the one that holds
-`dbt_project.yml`. From anywhere else, pass that directory:
-`dbt-edith /path/to/your-dbt-project`. Either way it prints what it found, then
-opens a browser:
+With no argument it opens the current directory, the one holding
+`dbt_project.yml`; from anywhere else, pass that directory. It prints what it
+found, then opens a browser:
 
 ```
   reading /home/you/analytics/target/manifest.json
@@ -195,1325 +127,36 @@ opens a browser:
             the key in it is this launch's: a tab opened without it can read nothing
 ```
 
-Those lines are worth reading once: they say which project, manifest, shell and
-Python environment were picked up, which is where nearly every setup mistake
-shows up first. The version carries the build it came from, from
-`git describe`, so two installs of the same release are still told apart; the
-status bar shows the same thing at the bottom right of the page, and `dbt-edith
---version` prints it without starting anything. `Ctrl+C` in that terminal stops the server.
+Those lines say which manifest, shell and Python environment were picked up,
+which is where most setup mistakes show first. The version carries the build it
+came from, from `git describe`, so two installs of one release are still told
+apart; the status bar shows it at the bottom right of the page, and
+`dbt-edith --version` prints it without starting anything.
 
-The key in the link is what lets that tab use the server: opening the link
-swaps it for a cookie and takes it out of the address bar, so bookmarks and new
-tabs work until the browser closes. Every launch draws a new one, so after a
-restart, open the link it printed again
-([0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md)). Every flag is listed
-under [Options](#options).
-
-Only the manifest fields the UI needs are read and the rest is ignored, so a
-manifest from dbt-core 1.x and one from dbt Fusion 2 both load. Fusion is what
-it is used against day to day.
+Opening the link swaps its key for a cookie and takes it out of the address
+bar, so bookmarks and new tabs work until the browser closes. Every launch
+draws a new key: after a restart, open the new link
+([0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md)).
+`Ctrl+C` stops the server.
 
 ### If something looks off
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| `dbt-edith: command not found` once `cargo install` finishes | `~/.cargo/bin` is not on your `PATH` | add that directory to your `PATH`, then open a new terminal |
 | empty lineage, and startup said `no manifest at ...` | dbt has not written one, or it is elsewhere | run `dbt parse` in the project, or pass `--manifest path/to/manifest.json` |
 | startup said `no dbt_project.yml in ...` | pointed at the wrong folder | pass the directory holding `dbt_project.yml` |
 | the terminal opens PowerShell on Windows | Git Bash was not found where it is usually installed | point at it: `--shell '"C:\Program Files\Git\bin\bash.exe" -i'`, quotes included because of the space |
 | the Git tab reports no repository | `git` is not on `PATH`, or the folder is not a clone | check `git -C <project> status` |
 | column types are missing in the Catalog | no `catalog.json` | dbt Fusion: `dbt compile --write-catalog`; dbt-core: `dbt docs generate` |
 | the URL says a port other than 4321 | 4321 was busy, so it walked forward to a free one | use the URL it printed, or pass `--port` |
-| the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
-| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the snowflake in the top bar |
-| a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
-| a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |
-| Snowsight says a relation's object does not exist | the *resolved* relation is the config before the `generate_*_name` macros, or a source that is a view was asked for as a table | open the *built* relation instead, or the object from its schema's page |
 | no browser opened | `--no-open`, or no default browser | open the printed URL by hand, key included |
 | a red bar says `no key for this server in this tab` | the tab was not opened from the link this launch printed, or dbt-edith restarted since | open the link it printed; the browser keeps the key until it closes |
 | a fix seems to have no effect after reinstalling | the running binary is an older build | compare `dbt-edith --version` with `git describe --tags --always --dirty` in the clone; on Windows, stop dbt-edith first, since the `.exe` cannot be replaced while it runs |
 
-## Why
+Anything about Snowflake is in [docs/features/snowflake.md](docs/features/snowflake.md).
 
-The lineage is already in `manifest.json`. This reads it once (roughly one
-second for a 90 MB manifest), keeps a compact graph in memory, and serves
-sub-graphs around whichever model you are looking at.
-
-## Usage
-
-| Action | |
-| --- | --- |
-| click a `ref()` / `source()` / `source_model` name | jump to that model's file |
-| click a macro call, `{{ hub() }}` or `{{ dbt_utils.star() }}` | open the file that defines it, at its `{% macro %}` line |
-| click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
-| click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
-| the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
-| `Cmd/Ctrl + K` | search models, sources, macros and every file in the project |
-| `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, a node on the lineage, or filter the Catalog's columns |
-| the copy glyph beside the name in the Catalog | that name on the clipboard |
-| `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
-| Give me a tour, at the top of that list | a walk through each part of the page, on a model of your project |
-| the GitHub mark in the top bar | raise an issue or a request on GitHub, your version already in it, or give dbt-edith a star |
-| `Cmd/Ctrl + S` | save the current file |
-| `Cmd/Ctrl + Alt + S` | save every modified file |
-| `Cmd/Ctrl + Alt + X`, `Alt + W`, or middle-click a tab | close a tab |
-| `Cmd/Ctrl + Alt + Shift + X` | close every tab |
-| right-click a tab | close it, the others, those to its right, or those with nothing unsaved |
-| `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
-
-On a French keyboard `Alt + W` cannot be typed at all: the key marked W is the
-one a browser calls `KeyZ`, and the key at `KeyW` is marked Z and writes a letter
-under Option, which is left as typed rather than taken for a shortcut. Closing a
-tab there is `Cmd + Alt + X`, and every shortcut this tool binds carries `Cmd`
-for that reason (0037).
-| `Cmd/Ctrl + \`` | jump to the terminal |
-| click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
-| the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
-| the snowflake in the top bar | Snowflake's features on or off for the project, and where its jobs are read from |
-| the user and plug in the top bar | the dbt profile, opened in the editor; violet when there is one, grey with an amber dot when dbt would find none |
-| the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
-| Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
-| Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |
-| hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
-| hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
-| the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
-| the Search tab in the sidebar | find a word inside every file, not just in their names |
-| click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
-| click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |
-| double-click a lineage node | re-centre the lineage on it and open its file, pinned |
-| `+N` badge on a node | pull in one more level of parents or children |
-| the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector |
-| wheel / drag | zoom and pan the lineage; a drag that starts on a box pans too, and opens nothing |
-| Export above the graph | save what the canvas shows as one HTML file anyone can open |
-| Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
-
-Opening a `.sql` or `.yml` file that belongs to a dbt node moves the lineage
-onto that node, so the graph follows the editor. A properties file declares
-several: when the lineage already shows one of them, it stays there, and
-otherwise it moves onto the first of them by name, the same one every time. A
-file with no node yet, usually a model added or pulled since the last parse,
-says so on the canvas, naming the model still drawn there if there is one, and
-the lineage moves onto it by itself once `dbt parse` rewrites the manifest,
-which dbt-edith reloads on its own within seconds. A macro file says nothing:
-it has no node however fresh the manifest, and the lineage stays on the model
-you were reading.
-
-The up and down boxes start at 1 and keep what you set while you walk the
-canvas, double-clicking a box or pulling in a level with a `+N` badge. A model
-reached any other way, from `Cmd/Ctrl + K`, a tab, a link in the editor or the
-Catalog, brings both back to 1. Going back to a link you followed from another
-tab, and forward again, brings back the depth the lineage had there.
-
-The lineage graph itself comes entirely from `manifest.json` (`parent_map`).
-No `.sql` file is ever parsed to build it: dbt already did that work.
-
-The editor links are a separate mechanism. The manifest knows *what* a model
-depends on, but not reliably *where* in the file that name is written, and its
-positions freeze at parse time anyway. So the vocabulary comes from the
-manifest (a node's real parents) and the positions come from the open buffer,
-which keeps the links correct while you type.
-
-A name is linked when it is quoted, is a YAML key, or is a YAML value, which
-covers `ref()`, `source()` and every automate_dv shape (`source_model` quoted or
-bare, lists, `satellites:`, `stage_tables:`) without linking every column that
-happens to share a model name. Jinja comments are skipped. Disabled models are
-amber and still open; a name in `ref()` that no manifest node matches is red,
-which makes it a genuine dangling-reference signal. Alt-click places the cursor
-instead of navigating.
-
-In a properties file the names that declare nodes are links as well: each
-table under `sources:`, and each entry under `models:`, `seeds:`,
-`snapshots:`, `analyses:` and `exposures:`, but never a column. Clicking one
-moves the lineage onto that node and leaves you in the file, since the line you
-clicked is the definition; from the Terminal tab, the Lineage tab comes
-forward. A name the manifest does not have yet is red, like a dangling `ref()`,
-until the next `dbt parse`.
-
-A macro call inside `{{ }}` or `{% %}` links to the macro's file, and the click
-lands on its `{% macro %}` line: `hub` in `{{ hub(...) }}`, `stage` in
-`{{ automate_dv.stage(...) }}`, a hook in `dbt_project.yml`, an entry under
-`macros:`. Which macro a name reaches follows dbt's own order, from the
-manifest: the package's own macro when you write `automate_dv.hub`, and for a
-bare `hub` the project's before anything else, so a project that wraps a
-package macro under the same name opens its wrapper. A bare name never reaches
-an installed package, because in dbt it does not either. Package macros open
-from `dbt_packages/`, and only once `dbt deps` has installed them. dbt's own
-macros (`is_incremental`, `run_query`) live outside the project and stay text,
-as do Jinja's builtins and a name that is no macro.
-
-In `dbt_project.yml` the keys under `models:`, `seeds:`, `snapshots:`,
-`analyses:`, `macros:` and `data_tests:` name folders, and each one opens its
-folder in the explorer, expanded, so a per-folder config and the folder it
-configures are one click apart. The level naming the project is dropped the way
-dbt drops it, a package key opens under `dbt_packages/`, and a last key naming
-one model opens that file instead. Where a folder starts comes from
-`model-paths` and its siblings, so a project that moved them is followed. A key
-that matches no folder is dashed rather than linked, and its card says so: dbt
-only mentions a config that configures nothing once, at parse time. A key is
-told apart from a config the way dbt-core and Fusion tell it apart: one holding
-a mapping is a folder unless it starts with `+`, whatever its name, so a folder
-named `contract` links like any other. A `docs:` or `meta:` written without its
-`+` is therefore a folder to dbt, which applies nothing under it, and its card
-says so (0039). A package that keeps its models somewhere unconventional opens at its
-own folder rather than at a guess. Hovering a key that did link names the folder, says when no
-resource in the manifest sits under it, and names the other roots it exists
-under when a project has several.
-
-The other way round, a model, seed, snapshot, analysis or singular test has a
-round violet button at the end of its breadcrumb, a file with an arrow coming
-into it, for `dbt_project.yml`. It lists every key of that file
-reaching it, broadest first and indented as the file nests them, each with what
-it sets, and picking one opens `dbt_project.yml` at that key. A key reaches a
-file when its chain begins the file's fqn, which is dbt's own rule, so a model
-three folders below the only key written is listed under that key and those
-above it, not under a key for its own folder that does not exist. A package's
-models are reached by the key naming the package and by the configs set
-directly under `models:`. The list says where `dbt_project.yml` configures a
-file, never the config it ends up with: a `config()` in the file and its
-properties YAML both come first, and `tags`, `meta` and the hooks add up
-across levels (0038).
-
-Jinja in a model is coloured by role: delimiters and keywords in orange, what
-dbt itself provides (`ref`, `source`, `this`, `adapter`, `is_incremental`...) in
-yellow, any other macro or filter in blue, named arguments in red. The SQL
-colouring is never shown the Jinja, so an apostrophe in a Jinja comment cannot
-turn the rest of the file into a string.
-
-The **Catalog** tab mirrors what dbt's own catalog shows: materialization,
-column count, upstream and downstream counts, tags and description under
-Preview, and a Column / Type / Description / Tests table under Columns. The
-upstream and downstream lists navigate like the graph: click moves the lineage
-and the catalog to that node, double-click also opens its file. The column count
-opens the Columns tab.
-An incremental model adds Strategy and Unique key beside the materialization,
-the strategy as its box reads it, and a snapshot its Unique key. The key takes
-one column per line, three at most, then `+N more, in Columns`, and each name
-opens the Columns tab on its row. There, each key column carries a `KEY` tag,
-and a Key sort puts them first in the key's order. A view or a table that a
-folder's config gave a strategy or a key lists it, dimmed, under details: it
-does not use it, but `config.incremental_strategy:` still selects it.
-Once a [job source](#jobs) is named, Preview also lists the steps that run the
-node, one chip each, `DAG › task` or `job › step`, green when the job is
-scheduled, amber when its schedule is not read and grey when it is not
-scheduled, in the Jobs tab's order. A click on one
-opens the Jobs tab on that node at that step, even when it is a box clicked
-once in the lineage rather than the node in focus. A dashed chip counts the
-steps not resolved, or the files not read, that could run it too.
-A column's Tests cell names every test guarding it, one chip each: two
-`relationships` on one column are two tests and read as two. Where they would
-not fit, the first few are shown and a `+N` carries the rest, which hover, click
-or Enter reveals with the name dbt generated for each. A click or Enter on a
-chip opens its properties file at the line that declares the test. The tests
-that guard the model rather than a column, which is every singular test under
-`tests/` and every generic with no column such as
-`unique_combination_of_columns`, are listed under Preview, where clicking one
-moves the lineage to it and double-clicking opens it where it is declared.
-Everything there comes from `manifest.json`, which already holds the merged YAML
-(descriptions, tags, and the tests attached to each column). Column *types* are
-the exception: the manifest only carries them when they are declared in YAML, so
-run `dbt compile --write-catalog` under Fusion, or `dbt docs generate` under
-dbt-core, and
-`catalog.json` is picked up automatically, filling in
-the real warehouse types and listing the columns that exist in the warehouse but
-are not documented (shown in italics).
-
-### The tour
-
-Give me a tour, at the top of the shortcut list, walks through each part of the
-page on a model of your project with parents and children, and one a job runs
-once the Jobs tab has a source, picked the same way every time: the
-`manifest.json` everything is read from and how fresh it is, the editor and the
-`dbt_project.yml` button, the lineage, a Custom selection and how to share it,
-the Catalog, column lineage, Jobs, Reports, the terminal and Search. Each step rings what it is about and says what it is for,
-and a feature that is off says how to turn it on. It runs nothing and changes
-no setting, and when it ends the page is as you left it. The arrow keys walk it
-and Escape ends it.
-
-It is offered once, the first time a page opens on the machine with a model
-to show, by a card under the `?` button: on a project with no `manifest.json`
-yet, it comes once `dbt parse` writes one. The machine remembers it in
-`tour.json`, in dbt-edith's config directory, with the version of dbt-edith
-that served the page.
-
-### Is the lineage still true?
-
-Beside **Reload manifest** sits a dot and the manifest's age. The dot answers
-one question: does the manifest still match the files dbt would parse right
-now?
-
-| | |
-| --- | --- |
-| green | nothing dbt parses has changed since the manifest was written |
-| amber | files are newer, and all of them are yours, saved but not committed |
-| red | files are newer and already committed: a checkout, a pull or a merge moved them under this manifest |
-| grey | there is no `manifest.json` yet |
-
-Hovering says which files, how many, what the last commit was, and what to do
-about it. Clicking runs `dbt parse` in the terminal, which is the command that
-turns the dot green again. dbt runs there, in your shell and your environment,
-never from the server.
-
-Green does not mean recent. A manifest parsed three weeks ago on a branch
-nobody has touched for three weeks is correct, and the age beside the dot is
-there to say so. What makes a manifest wrong is a file moving under it, not
-time passing.
-
-A second segment appears when your branch has fallen behind the default one:
-`main +7` means `origin/main` has seven commits you do not have. It never
-changes the colour, because a branch behind `main` still has a manifest that is
-true for the code in front of you; it is there so you know to pull before
-trusting the lineage as a picture of production. That count is only as current
-as your remote refs, so dbt-edith fetches every ten minutes in the background,
-read only, and the card says when the refs were last refreshed.
-
-### Hover cards
-
-Pausing on a lineage box, or on a `ref()` / `source()` in the editor, opens a
-small card with the model's description, its first columns and their types, the
-upstream, downstream and test counts, and its tags. It is the Catalog Preview in
-passing, without leaving the file or the graph. Panning, zooming, scrolling,
-clicking or typing dismisses it, and a click on a `ref()` still navigates.
-On a macro, the card names the package it came from and its file, which is how
-to tell the project's `hub` from automate_dv's, with the description and
-arguments its YAML documents.
-
-Pausing on a `var('x')` or an `env_var('X')` shows what that variable is worth.
-This is the one thing dbt's own artifacts cannot tell you: the manifest holds no
-`vars` at all, so the values are read straight from the `vars:` block of
-`dbt_project.yml`, and the card names the line they came from. A var whose value
-is itself `{{ env_var(...) }}` is resolved under the environment selected in the
-status bar, and the card says whether the value came from that file or from the
-default written in the call. Any line of the block it could not read is reported
-with its line number rather than quietly skipped.
-
-Two things are never shown, both refused on the server rather than hidden in the
-page: a `DBT_ENV_SECRET_*`, which dbt itself marks as never renderable, and any
-variable whose name reads as a credential (`SNOWFLAKE_PASSWORD`, `DBT_API_KEY`,
-`SF_PW`). Those still show their name and whether the file defines them, which
-is usually the question anyway. Ordinary config keeps working: `PARTITION_KEY`
-and `DBT_UNIQUE_KEY` are not credentials.
-
-`manifest.json` is polled every three seconds: run `dbt build` in the built-in
-terminal and the lineage refreshes on its own when dbt rewrites the file.
-
-### Search
-
-`Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
-macros it lists, and a flat index of every file in the project. That last half
-matters more than it sounds: a script or a dotfile is not a dbt node, and a
-manifest-only search can never find one.
-
-A macro is found by its name, a package's as `package.name`, and opens on the
-line that defines it, so one of twenty in a `utils.sql` is one search away. Only
-a macro whose file is in the project is listed, so dbt's own are not. A file
-named after a macro gives way to the macro, as a model's `.sql` does to the
-model. A generic test or a materialization is a macro too, under the name dbt
-gives it: `test_<name>`, `materialization_<name>_<adapter>`.
-
-The index is a directory walk, redone every 20 seconds, so a new file or a
-branch switch shows up without any invalidation logic. `target`, `logs`, `.git`
-and virtualenvs are skipped, since `target` alone holds more files than the rest
-of the project put together. `dbt_packages` is indexed but ranked below your own
-files, so reading an automate_dv macro is one search away without ever
-outranking your own code.
-
-### Search in file contents
-
-The **Search** tab in the sidebar looks inside every indexed file, which
-`Cmd/Ctrl + K` cannot: that one matches names, so a column used in forty models
-is invisible to it. Type three letters or more and the matching lines appear
-grouped by file, with the match highlighted; clicking one opens the file in the
-preview tab with the cursor on that line.
-
-It is case-insensitive and plain text, not a pattern. Several files are read at
-once, and a full pass over a project of 10 000 files takes about 165 ms on a
-Mac, so results follow typing rather than waiting for Enter. Files it passed over, binaries and anything over 2 MB, are
-counted in the status line rather than quietly dropped.
-
-`.env` files are never opened by it (0020). Searching for a variable's name
-finds where it is used, never where it is set; the Manage environments panel
-answers that other question, by name.
-
-### Find
-
-`Cmd/Ctrl + F` finds inside what you are reading: the file in the editor, the
-SQL in the Compiled or Run tab, either side of a diff. The browser's own find
-cannot do this, because the editor keeps only the lines on screen in the page,
-so a match further down is not there for it to find. The bar counts every match
-in the file and paints them all; `Enter` and `Shift + Enter` step through them,
-and `Escape` closes it with the cursor left on the last one, ready to type.
-
-Beside the box, `Aa` matches case, `ab` whole words, and `.*` takes a regular
-expression, where `^` and `$` are the ends of a line. A selection on one line
-becomes the query, and a bar opened elsewhere starts from the last query, so a
-column found in the model is one `Cmd/Ctrl + F` away in its compiled SQL.
-`Cmd/Ctrl + G` and `F3` step from the text itself, with `Shift` to go back.
-Typing searches from where the cursor was when you started, so in a long file
-the first letters never drag the view to the top. Past 10 000 matches the count
-stops and says so; stepping still reaches every one.
-
-In the Catalog, `Cmd/Ctrl + F` goes to the Columns tab and into its filter,
-which keeps the columns whose name contains what you type, in any case. The
-filter stays as you move to another node, so one column can be followed through
-the lineage a model at a time. `Escape` empties it.
-
-Over the lineage, `Cmd/Ctrl + F` finds a node on the canvas by its name and
-brings it to the middle, zoomed in to its drawn size when the graph was fitted
-smaller. It looks through every source, model and seed drawn, and every test
-once the tests box is on, a test folded under `+N more tests` or a closed
-group's row included: the view goes to that chip or row, and `Enter` opens it.
-A source is found by its table alone too, and a test by its generic or its
-column. A name typed whole comes first, then the names it starts, then those it
-is in; `Enter` and `Shift + Enter` step through the rest, left to right a column
-at a time and down each, a model's tests after it. Every match is outlined in
-amber, and `Escape` closes the bar with the view left where it is. Only what the
-canvas draws is searched: `Cmd/Ctrl + K` searches the whole project.
-
-In the terminal, `Cmd/Ctrl + F` is the browser's own find. `?` outside a text
-box, `F1` from anywhere, or the `?` button in the top bar lists every shortcut,
-with the keys of the machine you are on. `Cmd + H` would have been the obvious
-key, and cannot be: macOS hides the browser on it before the page ever sees it.
-
-### Explorer
-
-Folders carry the state of what is inside them:
-
-| | |
-| --- | --- |
-| green | holds a file with unsaved changes in the editor |
-| amber | holds a file that is saved but not committed, or untracked |
-
-Files are coloured the same way, so a green folder can be followed down to the
-buffer that is still unwritten. Status comes from `git status --porcelain`, run
-server-side, cached for 1.5 s and polled every 5 s, so committing from the
-built-in terminal clears the colours on its own. A hidden tab stops asking,
-and catches up the moment it is shown again.
-
-File types get their own icon and colour; `.sql` files use a database glyph.
-
-The header above the tree names the project and carries two buttons. The first
-collapses every folder, which is what following three `ref()` calls into a deep
-project usually calls for; folders already read stay in the page, so reopening
-one asks the server nothing. The second reopens the tree down to the file being
-edited, and is greyed when the open tab is the dbt profile, which lives outside
-the project.
-
-That profile is not in the tree, unless the project holds one: the violet
-button beside the snowflake in the top bar, a user and a plug, opens it
-instead. dbt-edith looks for it where dbt does, in `DBT_PROFILES_DIR` as
-dbt-edith was started with it, then in the project, then in `~/.dbt`, and the
-button's tooltip names the file it found. Grey, with an amber dot, it names
-where dbt would read one and found none. It is the one file outside the project
-dbt-edith opens, and saving it writes that file in place: dbt-edith never
-creates one (0017, 0049).
-
-Its passwords, tokens and private keys stay on the server. The editor shows
-`<hidden by dbt-edith>` in their place, and the status bar counts them. Saving
-with the placeholder left as it is keeps the value on disk; typing over it
-replaces it. An `env_var()` is shown as it is, since it names where a secret is
-rather than holding one
-([0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md)).
-
-### Column lineage
-
-Column-level edges come from one of three tools, picked in the menu in the top
-bar, next to the model counts. The same menu sits in Catalog > Columns.
-
-| | Tool | Where its edges come from |
-| --- | --- | --- |
-| orange | **Fusion** | `target/column_lineage.fusion.json`. Nothing here writes one yet: dbt Fusion keeps its lineage as parquet under `target/index/` |
-| magenta | **Collin** | `target/column_lineage.collin.json`, parsed out of the compiled SQL by [collin](https://github.com/IL-William/dbt-collin), which dbt-edith runs for you (0023, 0042) |
-| cyan | **Snowflake** | `SNOWFLAKE.CORE.GET_LINEAGE`, fetched when you click a column |
-
-The button names the tool whose edges are on screen, in its colour, and how
-many there are; its tooltip names the file and who wrote it. A tool with
-nothing to offer is greyed, and its tooltip says which file it lacks. A tool
-stands for its newest cache: any other file beside the manifest, an older one
-of a tool's or one written by something else, is listed under "other caches"
-and can still be picked. The choice is remembered per project.
-
-**Snowflake is the one tool that fetches.** Pick it, then click a column. The
-edges come from `tools/sf_lineage.py`; dbt-edith itself never connects to
-Snowflake: it has no HTTP client, no TLS and no credential handling, and
-keeping it that way is what lets it ship as one dependency-free binary. The
-script owns the connection and reads your dbt profile, so SSO, key-pair and
-password targets all work unchanged. Picking Snowflake starts the script and
-checks everything that needs no network: a Python with the connector, your
-profile, its target and role, all named in the button's tooltip. Nothing
-connects until you click a column, and the first click of a session may open a
-sign-in tab.
-
-**Collin runs when you need it.** Picking it runs collin if its cache is missing
-or older than the manifest, and clicking a column while it is behind runs it
-first; Regenerate, in Catalog > Columns, runs it at any time. collin reads the
-compiled SQL, so run `dbt compile` before it for SQL that changed. It takes a
-few seconds on a project of thousands of models and never runs at startup.
-dbt-edith looks for `collin` beside itself, then on your `PATH`. Without it,
-Collin's entry types the command that installs it into the terminal, for you to
-run:
-
-```
-cargo install --locked --git https://github.com/IL-William/dbt-collin collin-cli
-```
-
-Where cargo is not available, copy a `collin.exe` built elsewhere beside
-`dbt-edith.exe`.
-
-**Other collin versions sit beside it.** "Install another collin version…",
-under Collin in the menu, asks for a version and types the command that
-installs it at its tag into a folder of its own, under dbt-edith's config
-directory:
-
-```
-cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 --root "<config>/collin/0.3.0" collin-cli
-```
-
-Once it is built, the menu lists every collin there is, the one beside
-dbt-edith or on your `PATH` first, and the one picked runs for this project
-from then on. Its cache is written again by it, since a cache written by
-another version is treated as stale; the report says which collin wrote it.
-Cargo's advice to add the folder to your `PATH` can be ignored. The update
-line below applies to the default collin only: a version installed by tag
-stays that version (0060).
-
-**Two versions compare.** Each run's cache and report are copied to
-`target/collin/<version>/`, the latest run of each version. Once two versions
-have one, "Compare collin versions" under Collin opens a tab with B against A:
-every figure of the two reports, the findings per kind, the edges by role and
-by what they come from, the edges only one version has or reads with another
-role, and the models where the most moved, each a link to it. A run older than
-the manifest says so (0061).
-
-Once collin is installed and Collin is the tool picked, a line under Collin in
-the menu offers to update it. This dbt-edith expects collin 0.1.0 or later: an
-older one, or one that gives no version, gets "Update collin", which types the
-command above with `--force`. A recent one
-gets "Check for a newer collin", the command as it is, which rebuilds collin
-when GitHub has a newer commit and otherwise says it is already installed.
-
-**Collin is alpha, and can be wrong.** Its button and its menu entry say so,
-and so does Catalog > Columns, with the share of its edges that were matched
-by column name rather than read from the SQL, which collin does when a compile
-did not parse or cannot be trusted. Such an edge looks like any other on the
-canvas, so check one against the compiled SQL before relying on it. collin's
-report, `target/collin.report.json`, says how many models it read the SQL of
-and why it read none of the others: the Columns tab shows the count, its
-tooltip the reasons, and a model collin could not read says why above its
-columns. Where the manifest has no compiled SQL, which a `dbt parse` writes,
-collin reads the file a compile left in `target/compiled/`. Such a file
-can be older than the manifest, or compiled for another target: collin sets
-aside one that reads a table the manifest does not give its model, and matches
-that model's edges by name. The tooltip counts both, the count leaves the set
-aside ones out, and the file is named above a model collin listed. The report
-also names columns, and each one it names is marked with a ! in the Lineage
-column, why on hover: its lineage lost, absent from the warehouse or from the
-compiled SQL, read from a CTE that lacks it, read downstream but missing here,
-or matched by name to several parents. The note over the table names those the
-table has no row for.
-
-**collin's report, whole.** After a run, the Reports button in the top bar says
-how many models and tables collin named, "12 to investigate", until you open
-the report; "Open collin's report", under Collin in the menu, opens it at any
-time. It is a section of [Reports](#reports): collin's figures first, then every
-finding grouped by what would fix it. Rerun dbt: no compiled SQL, a compile for
-another target, a catalog of another table, a table older than its code. Fix in
-the project: a YAML behind the warehouse, a table read without a source or a
-ref, a parent with no known columns, a column a child reads and this model's
-list lacks. Check by hand: SQL collin could not parse, a column matched by name
-to every parent that has it. And what is collin's to fix. A name opens the
-model with its Columns tab, where the marks above say what was found on each
-column. It reads a report from any collin since 0.1.0 (0059). From collin 0.5.0
-the report carries collin's own findings, each with what it saw, what that
-usually means and what to do, and the page shows those instead, in the same
-groups; the badge then counts the models they name (0062).
-
-**Snowflake's features are a setting of the project**, a switch in the menu
-behind the snowflake in the top bar. They are marked alpha: none of them has yet been
-checked against a real warehouse. Until you choose, they follow the manifest:
-on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
-nor are the caches it wrote, and the server refuses every Snowflake route.
-More features that only make sense on Snowflake will sit behind the same
-setting, as the query history below does.
-
-The script reads the dbt profile that the user and plug in the top bar open
-(see [Explorer](#explorer)), once, when it starts, so saving the profile there
-restarts it. When Snowflake refuses the connection, the message points at that
-file rather than leaving you with an error code.
-
-A click asks for that column's upstream and downstream lineage, as deep as the
-`up` and `down` boxes say and at most five levels, which is `GET_LINEAGE`'s
-limit. What comes back is added to the Snowflake cache on screen, or to
-`target/column_lineage.snowflake.json` when there is none, and drawn with
-columns as nodes, so it is still there after a restart. Changing `up` or `down`
-redraws what has been fetched; clicking a column asks Snowflake again.
-
-**Which objects are asked about follows the environment pill** in the status
-bar. On `manifest` that is the relation your last dbt run built, usually your
-own schema. Choose a `.env` file and it is the relation that environment
-resolves to, exactly as the Location table shows it. The cache itself names dbt
-nodes rather than warehouse objects, so one file holds for every environment.
-
-The Python that runs is a virtual environment of the project that has
-`snowflake-connector-python` (dbt-snowflake brings it), else the one the status
-bar names, else `python` on the `PATH`.
-
-`GET_LINEAGE` needs Enterprise Edition and the `VIEW LINEAGE` privilege. When a
-column comes back with nothing, check what the role is allowed to read:
-
-```
-python tools/sf_lineage.py probe \
-  --relation my_database.my_schema.my_model --column my_column
-```
-
-The same script still fills the cache ahead of time, which is what to do before
-working offline. One call covers one column, so a whole project is hundreds of
-thousands of calls: always scope the dump.
-
-```
-python tools/sf_lineage.py dump --select model_a,model_b \
-  --out target/column_lineage.snowflake.json
-```
-
-dbt-edith finds every `target/column_lineage*.json` on its own, the same way it
-picks up `catalog.json`, and reloads the one on screen when it changes.
-`--column-lineage <path>` overrides which file is loaded at startup. With edges
-present, the Catalog > Columns table gains a Lineage column and the canvas gains
-a Models / Columns switch. With no edges and Snowflake not picked, nothing
-changes: the Columns table is exactly as it was and the Columns switch stays
-disabled.
-
-### Where a model lives
-
-The Catalog preview shows each node's database, schema and alias at three
-stages, because in a project driven by `env_var()` and `generate_*_name`
-macros no single value tells the whole story:
-
-| | |
-| --- | --- |
-| **as written** | the config exactly as authored, Jinja included |
-| **resolved** | the config with its env vars evaluated |
-| **built** | where the target that produced the manifest actually built it |
-
-A last row gives the full relation for *resolved* and *built*, each with a Copy
-button, quoted part by part the way dbt quotes the built one. The resolved
-relation is only offered when it can be written for real: a database or schema
-left to the target profile, a placeholder or a missing variable says why
-instead.
-
-With Snowflake's features on, a **Snowsight** menu sits beside each Copy: the
-object, its schema and its database, each opened in Snowsight in a new tab. The
-account is the one your profile's target connects to, which the first menu of
-a page asks Snowflake for, so that click may bring a sign-in tab. The address
-is built from the name, as Snowflake keeps it: an unquoted part in upper case,
-a quoted one as written. A view opens as a view, a dynamic table as a dynamic
-table, and the rest as a table, a source included, since the manifest does not
-say what a source is
-([0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md)).
-
-With Snowflake's features on, **Clone into my schema** sits beside the Location
-heading of a model, a seed or a snapshot. It writes the statements that copy the
-node and its direct parents from an environment into your own schema, so you can
-work on it without building everything above it. Nothing is sent to Snowflake:
-you read the statements, copy them and run them yourself.
-
-- **From** is one of your `.env` files, each node's relation being the one the
-  Location table resolves with it, or *built*, where this manifest's target put
-  it. A node the file cannot place says why and is left out, rather than copied
-  from somewhere else.
-- **Into** is `database.schema`, filled in from your profile's active target:
-  `DBT_TARGET` if dbt-edith was started with it, otherwise the profile's
-  `target:`. What you type instead is kept for the project. Each copy keeps the
-  name of what it copies, so your local `ref()` finds it.
-- **As** is Clone, zero-copy for a table, an incremental model, a seed or a
-  snapshot, or Create as select, a real copy of the rows. A view is always
-  copied as a table of its rows, after dropping a view of that name a local run
-  may have left. Every copy is transient, since Snowflake cannot clone a
-  transient table, which is what dbt builds, into a permanent one.
-
-An ephemeral parent has no object, so what it reads is copied instead. Sources
-are listed and left where they are. Untick a node to leave it out. The notes
-under the table say when the manifest is behind your files, so the parents
-listed may not be the ones the model reads now
-([0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md)).
-
-Without an environment selected, *resolved* is the config as dbt parsed it,
-which means with whatever env vars happened to be loaded at the time. That is
-not necessarily any particular environment: a shell that sourced a CI `.env`
-file yields CI values.
-
-When a manifest comes from a developer sandbox, where nearly every model is
-built into one `database.schema`, dbt-edith detects it once and says so, rather
-than flagging every model as moved. A model built somewhere unexpected is only
-highlighted when it is the exception. The comparison is always between the
-parsed config and the built location, which come from the same parse. Case
-alone is never counted as a move, since Snowflake folds unquoted identifiers,
-and neither is a pair of literal quotes that dbt drops.
-
-### Environments
-
-The `env` pill in the status bar evaluates the *resolved* column against one of
-the project's `.env` files, so a model's location can be read for DEV, QA or
-UAT without running dbt. Built stays tied to the manifest's own target. The same
-switch sits in the header of the resolved column, and the pill takes a colour
-per environment family (DEV, CI, QA, STG, UAT, PROD) so the one in use shows at
-a glance.
-
-- **Detection.** Every `.env` and `.env.*` file in the project root is offered,
-  named after its suffix: `.env.uat` is UAT. A `DBT_TARGET` that disagrees with
-  the suffix is flagged, since it usually means a file copied from another
-  environment. Templates (`.env.example`), backups, and files that define none
-  of the variables in use start hidden.
-- **Evaluation.** `{{ env_var('NAME') }}`, with or without a default, and plain
-  literals are evaluated. A single `if` / `else` is followed through the branch
-  dbt actually took when it parsed, and marked as such. Anything else, filters
-  or `target.*` for instance, is shown as not evaluated rather than guessed.
-- **The file alone.** Values come only from the chosen file, never from the
-  shell dbt-edith was started in. So *missing* means "not defined in this file",
-  which is not quite what dbt would see after sourcing several files in a row.
-  `${...}` interpolation is kept as text and not evaluated.
-- **Flagged, not shown as real.** Variables set to a placeholder (`N/A`, `TODO`,
-  `null` and the like) or left undefined.
-- **Secrets.** `DBT_ENV_SECRET_*` variables are never substituted, and no
-  variable value is ever sent to the browser except resolved locations and
-  `DBT_TARGET`.
-
-*Manage environments* renames or hides files. It also reports, per file, how
-often that file reproduces what dbt parsed: the file dbt actually had loaded
-scores 100%, which makes it easy to spot which environment a manifest came from.
-
-Those settings are stored per project in the user's config directory, never in
-the project itself:
-
-| | |
-| --- | --- |
-| macOS, Linux | `$XDG_CONFIG_HOME/dbt-edith`, else `~/.config/dbt-edith` |
-| Windows | `%APPDATA%\dbt-edith` |
-| anywhere | `DBT_EDITH_CONFIG_DIR` overrides both |
-
-Each browser tab keeps its own environment. The stored one is only where a new
-tab starts.
-
-### Reading the graph
-
-Node colour is the materialization, not the resource type, because that is what
-you reason about when reading a DAG: what exists in the warehouse and what gets
-rebuilt. View, table, incremental and ephemeral each have their own colour,
-sources, seeds and snapshots keep theirs, and **any materialization the tool
-does not know is drawn in magenta** so a custom one stands out rather than
-blending in. Ephemeral models are dashed, like disabled ones: nothing of them
-exists in the warehouse. The legend in the corner lists only the
-materializations actually on screen. The same colours are used for the dots in
-the sidebar and the catalog, so a model looks the same everywhere.
-
-**Click an entry of the legend** to keep what it names lit and fade the rest:
-`incremental` leaves the incremental models and the edges between them. In
-column mode the legend names what happened to each column instead, and
-`transform` leaves the transform edges and the two columns each one joins;
-`raw` and `mixed` leave the columns wearing that badge. Click it again to see
-everything. The pick stays while you move around the graph, as long as the
-legend still lists it, and an exported graph is drawn without it.
-
-In column mode, **stop at** beside the depth boxes lists the roles the column
-lineage holds: tick `window` and each window edge below the focused column is
-still drawn, with the column it reaches, so you see how the column is used,
-but nothing past that column is, unless the walk also reaches it some other
-way within the depth asked.
-Several roles can be ticked. Upstream is left whole. A column the walk
-stopped at wears the +N badge for what goes on, and the status line, copied
-into an export, says where the walk stopped. The button names what it stops
-at, and keeps it while you refocus on other columns, until the page is
-reloaded.
-
-An incremental model's box names its strategy in place of the word
-`incremental`: `merge · marts · 3 tests`. One that configures none shows the
-adapter's default, read from the macros the manifest carries, the project's
-and its packages' overrides included, and keeps `incremental` when they do not
-say. Where those macros insert every row for want of a unique key, the box
-reads `append` with the strategy struck through: on Snowflake, a merge with no
-key is a plain `insert into`. The hover card says where the strategy comes
-from and why an append is one (0076).
-
-Each box sits to the right of all its parents on screen, so every edge runs
-left to right and a model always comes after what it reads. A model read by more
-models than it reads moves right, to just before its first reader, which keeps
-its edges short. An edge that skips columns runs level through a lane between
-the boxes of each column it crosses rather than behind them, and a model read
-across many columns shares one lane among its readers. In column mode, where the
-lineage can loop, the one edge of each loop drawn against its direction is
-dashed. The columns are an order, not a distance: the up and down boxes, the +N
-badges and the export's `dbt ls` line still count levels from the focus, as dbt
-does.
-
-The **tests** eye beside the depth boxes draws the data tests on the canvas too.
-It is off to start with and turns amber when on, because tests can outnumber the
-models several times over: hundreds of boxes slow the canvas and bury what it
-was drawn for. Its tooltip says so.
-
-A test hangs under the model whose YAML declares it, as a one-line box joined
-to it by a stem. A singular test, which has no YAML, hangs under the last built
-of the models it reads. An edge from another model the test reads comes in from
-the left, loops out on the right when that model sits in the same column, and
-comes back dashed when it is built later. Every line into a test, the stem
-included, is dotted and grey, where the lines between models are solid: it links
-a check to what it checks rather than data to where it goes.
-
-A row says what the test checks rather than the name dbt generated for it. A
-test alone on a column reads `unique · order_id`. Two or more tests of one
-generic share a row, `not_null  12 cols ▸`, which a click or Enter opens into a
-row per column, and closes again; a generic that guards the whole model several
-times reads `expect_table_row_count_to_be_between ×3 ▸` and opens into its
-tests, named by what is left of dbt's name once the generic and the model are
-taken off. Generics on the whole model come first, then singular tests, then
-generics on a column, each by name. A model whose rows all fit in five, every
-group opened, starts with its groups open, so a model with three tests shows
-three.
-
-Each kind of test has a grey and a shape, lighter in the order the rows go, and
-the legend names them: a generic on the whole model a near-white bar doubled by
-a thin one, a singular test a light grey bar in three pieces and a dashed
-outline, a generic on a column the grey bar every test had. A test at
-`severity: warn` carries an amber triangle, and a group's row counts how many
-of its tests do. The hover card on a test says which generic it is and on which
-column, the package it was named through when dbt recorded one, and the
-severity when it is warn.
-
-One click on a test row opens its properties file as the preview tab, at the
-item that declares the test, `- not_null` under its column or
-`- dbt_utils.unique_combination_of_columns:` under the model, and moves there
-too when that file is already the one shown; the keyboard stays on the canvas.
-The test's lines, its arguments included, light up and fade, so the eye finds
-it among the others.
-A double click pins the tab. dbt records no line for a test, so the line is
-read off the file: of two tests of one generic on one column, which differ
-only by their arguments, the one named in the YAML as dbt names the test is
-found, else the first. A singular test opens its own file at the top.
-
-Past five rows, a model shows its first five and a chip, `+12 more tests`,
-counting the tests in the rest; opened, it reads `▴ hide 12 tests` and folds
-them again. The test the lineage is centred on is never folded away: in a
-closed group it shows under the group's row on its own. The line under the
-canvas counts what a chip hides, and the eye, while open, counts the tests on
-the canvas. When the canvas is capped
-for room, every model keeps some of its tests: the cap takes one test per model
-a turn.
-
-The **by folder** toggle, beside the eye, draws the same canvas by folder: each
-folder gets a band of columns of its own, at the first level where the models
-drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
-`30_vault` each read as a block. Their names stay pinned over the top of the
-canvas while you pan, and pausing on a band's background names its folder in
-full. The folders go left to right in the order of their numbers, then of the
-edges between them, so `staging`, `intermediate` and `marts` need no numbers.
-An edge that runs from a later folder back to an earlier one, a layer read by
-one before it, is dashed, and the line under the canvas counts them. Seeds,
-snapshots and each installed package get a band of their own, and a test sits
-with the model it tests. It costs width, since a band starts only where the one
-before it ends: a way of reading the graph, not a better layout of it
-([0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md)). An exported
-file and a copied image keep the bands, with each name written at the top.
-
-While the toggle is on, pausing on it opens a **levels** box under it, which
-stays open while you type in it and closes a moment after you leave. It cuts
-each band by its sub-folders: at 2, a `marts` holding `core` and `finance`
-draws each of them as a rectangle inside its band, in the hue of its level, with
-their names on a second row; 3 and 4 go one and two levels further. Sub-folders
-keep the order folders have, numbers first and then edges, inside their band,
-which never moves for them. The models filed in a folder beside its
-sub-folders get columns of their own there, with no rectangle round them. A
-level is the same depth on every band, so a folder holding a single sub-folder
-still draws it, and each level costs columns
-([0080](docs/decisions/0080-a-band-may-be-cut-by-its-sub-folders.md)).
-
-### Custom selection
-
-The **Custom selection** button above the graph swaps the canvas from one model's
-neighbourhood to whatever a dbt selector matches, so you can draw the set you
-actually work on:
-
-```
-stg_customers dim_customers+ fct_orders
-```
-
-A space is a union, a comma is an intersection, and `--exclude` may follow on
-the same line. Whole commands paste in: `dbt ls -s "a b" --exclude tag:x` is
-understood, and the box rewrites itself to the part that was resolved.
-
-| | |
-| --- | --- |
-| `my_model` | by name, or by a dotted path into the fqn (`shop.staging.*`, `staging.my_model`) |
-| `+my_model`, `my_model+` | everything upstream, everything downstream |
-| `2+my_model`, `my_model+3` | as far as that many levels |
-| `@my_model` | it, its children, and every parent of those children |
-| `tag:`, `path:`, `file:`, `package:` | the usual dbt methods, with `*` and `?` wildcards |
-| `resource_type:`, `source:`, `exposure:` | by kind, by source, by exposure |
-| `config.materialized:` | and `config.schema`, `config.database`, `config.alias`, `config.incremental_strategy`, `config.unique_key` |
-| `--selector name` | a named selector from `selectors.yml`, [below](#named-selectors) |
-
-Disabled nodes are never returned, as in dbt. Tests take part only when the
-tests **eye** is open, and then each term brings the tests of what it
-selected, a test joining whenever a parent of it did, which is dbt's own
-default. So a test excluded by name stays out, and `+` and `@` reach tests the
-way dbt's graph does. A term that matches nothing is called out under the
-box rather than dropped, and it says whether the term matched only disabled
-nodes or only tests. The count beside the box is the whole selection; the line
-in the corner is what fits on the canvas, which says `400 of 2422 drawn` when a
-selection is larger than the canvas will take.
-
-**Nothing runs dbt for this.** The expression is resolved against
-`manifest.json`, which is the same data dbt reads, so the answer arrives in
-milliseconds and needs no profile ([0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md)).
-The price is that the answer is this tool's, not dbt's. Two buttons exist for
-that: **Copy** puts the matching names on the clipboard one per line, the way
-`dbt ls --output name` prints them, and **dbt ls** types the equivalent command
-into the Terminal tab without running it, so you can press Enter and compare.
-With the tests eye closed, add `--exclude "resource_type:test"` to dbt's side,
-which is the only routine reason the two counts differ.
-
-A method this build does not know, `state:` for instance, is refused by name
-rather than ignored, because a silently dropped term would draw far too much and
-look right doing it.
-
-#### Named selectors
-
-The **Selectors** button beside the box lists the selectors the project defines
-in `selectors.yml`, with their descriptions, filtered as you type. Picking one
-writes `--selector name` into the box, which you can also type, or paste as
-`dbt ls --selector name`. A named selector stands alone, as it does in dbt,
-which ignores `--select` and `--exclude` beside it: the box refuses them
-instead.
-
-It is resolved from the manifest too, where dbt stores every selector already
-parsed, and resolved whole. Each criterion keeps its own `indirect_selection`,
-so a `buildable` one keeps only the tests whose inputs all sit upstream of the
-selection, and an `empty` one keeps none, as `dbt ls --selector` would
-([0032](docs/decisions/0032-named-selectors-from-the-manifest.md)).
-
-The tests **eye** means something else here. The selector's definition
-already decided which tests belong, so the box only decides what is drawn.
-Either way the models the selected tests belong to are drawn, dimmed when the
-selector did not select them itself, so you see what a test reads and how the
-tests chain. On, the tests are drawn too, each hanging off its models; off,
-only the test boxes go and the corner counts them, so a selector that keeps
-only tests shows the models they check. The count, **Copy** and **dbt ls** are
-the selector's own answer either way.
-
-Two things are said rather than guessed. A selector using `state:`, `result:`
-or `source_status:` is listed but refused, with the reason, since those compare
-with another run's artifacts, which this tool does not read; **dbt ls** still
-types its command. And some dbt Fusion releases, 2.0.0-preview.196 among them,
-write the manifest without `indirect_selection`. When `selectors.yml` sets it
-and the manifest lost it, every criterion answers with dbt's default until the
-project is re-parsed with a dbt that keeps it, and an amber note says so on
-each selector whose answer that could change. A selector of tests alone never
-shows it: it brings no tests of its own for a mode to let through.
-
-#### From the command line
-
-The same engine answers without the browser. `--select` resolves one line,
-prints what it matches and exits, so a script or an agent skill can ask for a
-lineage with no server, no profile and no dbt:
-
-```
-dbt-edith path/to/project -s '+stg_orders+'          # one name per line, as dbt ls --output name prints them
-dbt-edith path/to/project -s 'stg_orders+' --exclude 'resource_type:test' --output json
-dbt-edith path/to/project --selector recon_tests
-```
-
-It takes what the box takes: the same methods and operators, `--exclude`
-inside the line or as a flag of its own, a pasted `dbt ls -s ...`, and a named
-selector as `--selector name`. Tests count as they do in `dbt ls`, a test
-joining whenever one of its parents is selected, and
-`--exclude 'resource_type:test'` leaves them out. `--output json` prints one
-object per node, with dbt's key names (`unique_id`, `resource_type`,
-`original_file_path`, `fqn`, `materialized`, `tags` and the rest) and
-`depends_on.nodes`, the node's parents, which is what tells the edges between
-two sets.
-
-stdout carries the answer and nothing else. stderr says what it is worth: the
-manifest that answered, when it was written and by which dbt, then the verdict
-the [freshness badge](#is-the-lineage-still-true) would give, naming the files
-newer than the manifest. The answer is the manifest's, not the working tree's,
-so after editing models, run `dbt parse` first or read that line.
-
-| Exit | Meaning |
-| --- | --- |
-| 0 | answered, an empty answer included, which stderr says |
-| 1 | refused: a method this build does not know such as `state:`, a malformed term, or a selector it cannot resolve, with the reason and a caret under the term |
-| 2 | nothing was asked: no project, no manifest, an unreadable one, or a wrong flag |
-
-With `--select` or `--selector` nothing is served: no port, no key, no browser,
-no settings read or written, no catalog
-([0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md)).
-On a 19 000 node project it answers in under a second, where `dbt ls` parses
-the project again for fifteen seconds or more.
-
-### Sharing the graph
-
-**Export**, beside Fit, saves what the canvas shows as one HTML file named
-after it, `lineage-<what it shows>-<date>.html`, for a ticket or a message.
-Anyone opens it in a browser with nothing installed and no network. The wheel
-zooms without blurring, a drag pans, `0` fits it back, and a click on a box
-lights its edges. **Nodes** lists every box with its full name and file, and a
-name too long for its box is written whole in the box too, smaller, rather than
-cut short as it is on screen.
-
-The header says what the picture is. It names the `dbt ls` command that lists
-the same nodes, with `--exclude "resource_type:test"` when no test is drawn,
-since dbt would list them. It repeats the warnings of a mistyped selector, and
-says how much of a capped selection was drawn, the rest being listed by name.
-It says where the picture came from, the project, the dbt version, the
-manifest's date, the branch and commit, and whether the manifest still matched
-the files at that moment. Every date carries its offset from UTC: the reader may
-be elsewhere, and reads it later.
-
-**Ctrl+P** then *Save as PDF* in that file prints the whole graph on one page,
-as vectors, so the PDF zooms too. **Copy image** puts the same picture on the
-clipboard as a PNG to paste into a ticket's description, and saves the PNG when
-the browser refuses the clipboard. In a ticket, the PDF and the pasted image
-show in place; the HTML file is downloaded and opened, and it is the one that
-pans and lists names.
-
-The file holds what the canvas shows and that header, nothing else: no absolute
-path and no value from a `.env` file
-([0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md)).
-
-### Compiled and Run
-
-Two tabs, over the two files dbt leaves per model under `target/`. **Compiled**
-is `target/compiled/`: the model with its Jinja rendered, which is what you read
-to check a macro or a `ref()` expanded the way you meant. **Run** is
-`target/run/`: that same SQL wrapped in the statement dbt actually sent to the
-warehouse, `create or replace transient table ...` and all, which is what you
-read when the table is there but looks wrong.
-
-Each names the date its file was written, with the age beside it:
-
-```
-last run 29/07/2026 16:48:06   54d ago, the model file changed after this was run
-target/run/shop/models/marts/.../fct_orders.sql
-```
-
-That path is a link. Clicking it opens the file tree at the file, so the folder
-dbt wrote, the files beside it and the file itself are one click away.
-
-The bar turns amber when something the file was built from has moved since it
-was written, and names what: the model, its schema file, `dbt_project.yml`, or a
-macro. The Run tab asks one more question only it can ask, since dbt writes
-`compiled/` on every compile and `run/` only on a run: has this model been
-compiled again since it was last executed?
-
-Age alone never colours anything. A file nothing has touched since is still
-exactly what dbt would write, whether that was an hour ago or last month, and a
-clock threshold only ever teaches you to ignore the colour. The date is there to
-be read, not to expire.
-
-Any macro counts, not just the ones your model calls. The manifest lists the
-macros reached while parsing a node, which leaves out the ones those in turn
-call and is mostly `macro.dbt.*`, built into dbt-core with no file to look at. A
-macro edit makes every compiled file suspect until it is rebuilt, which is also
-what dbt does about it. The same goes for a `git pull`: it moves the mtime of
-everything it touches, so your artifacts predate the code you now have, which is
-the answer [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) gives
-for the manifest too.
-
-dbt-edith never compiles or runs anything itself. dbt runs where you run it, so
-when a file is not there the tab names the paths it checked and offers to type
-`dbt compile --select <model>` or `dbt run --select <model>` into the integrated
-terminal, without pressing Enter for you.
-
-### Jobs
-
-The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
-the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
-step of it. The jobs are read from their YAML, wherever it lives, which is often
-another repository, and each step's dbt command is resolved by the same engine
-as Custom selection, never by running dbt. Only a step that runs, builds, tests
-or checks the node is listed: a `dbt compile` selects every model and runs
-none, so its job would sit under each of them.
-
-```
-AIRFLOW  DAG shop_daily   (SCHEDULED 0 5 * * *)          orchestration · sales/shop_daily.yml:2
-  task marts    dbt run -s +tag:daily --exclude tag:wip    [dbt ls]
-                via +tag:daily · after stage · awaited by shop_reports › wait_daily
-DBT CLOUD  Job Daily build [[daily]]   (SCHEDULED 0 */2 * * *)   cloud · jobs.yml:14
-  step 3/3      dbt build --select +orders                 [dbt ls]
-                via +orders
-```
-
-The jobs that run on their own come first, with a green **Scheduled** pill
-that gives the schedule, and the ones nothing starts come last, with a grey
-**Manual** one. Next after the scheduled ones come the jobs that may run on
-their own, on something no file read says, with an amber **Not read** pill
-that says what: a schedule in `{{ }}` or `{% %}` or written as a mapping, an
-asset written as a mapping or one no file read updates, an empty list of
-assets, a dbt Cloud job started by one no file defines. A CI or merge job,
-which something starts but no clock, sits before the manual ones, its pill
-saying what starts it.
-
-**via** names the terms of the selection that reached the node, so a staging
-model listed under a marts task says why. **dbt ls** types into the terminal the
-`dbt ls` that should list what the step acts on, without running it, which is
-how you check this tool against dbt. A step that cannot be read or resolved is
-never guessed at: it is listed apart, under *Not resolved*, with the reason. A
-`state:modified+` compares with another run's artifacts, a `$MODELS` or a
-`{{ var }}` is only known when the job runs, and a flag this tool does not know
-might take a value or not.
-
-**Job coverage**, a section of [Reports](#reports) that **Coverage in Reports**
-in the tab opens, turns the question round: which of the
-project's own models, seeds and snapshots no scheduled job runs, which run only
-in jobs nothing schedules (*Only in unscheduled jobs*: manual, CI, a merge),
-which run only in jobs whose schedule is not read and in no scheduled one
-(*Only in jobs whose schedule is not read*), which steps select nothing, and
-which jobs were read.
-A model sits under the deepest folder it shares with another listed model,
-with the rest of its path beside its name, and one no folder gathers is listed
-on its own. An installed package's models are left out, so the report is about
-the project's own. A job counts as
-scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
-starts after one that is: an Airflow DAG on an asset a scheduled DAG updates,
-whether that DAG runs dbt or not, a dbt Cloud job started by a scheduled job's
-end. A dbt Cloud job whose schedule trigger is on is scheduled even when the
-vars file writes its cron. A DAG with `schedule: null`, a CI job or a merge job
-is not. A job that hangs on something no file read says is neither, and the
-news on the Reports button counts only the models surely not scheduled
-([0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md)). Click a model to open it: the reports roll up,
-and the Jobs tab lists its jobs. Coming back finds the list as you left it,
-folds and scroll.
-
-Point dbt-edith at the jobs with **Sources…** in the tab, **Add a source** in
-the Job coverage section of Reports, or **Orchestration** in the menu behind
-the snowflake in the top bar: one or more folders or files, absolute or
-relative to the project, each an Airflow or a dbt Cloud source. **Browse…**
-beside a path, open already on a source being added, lists one folder at a
-time, its folders and YAML files only: a click opens a folder or picks a file,
-and **Use** writes it from the project when it sits within two folders above
-it, in full otherwise
-([0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md)).
-Saving reads them at once. When every source found jobs, no file was refused
-and the sources were saved, the form closes on what it found: the Jobs tab when
-it is showing a model, Job coverage otherwise. Anything else keeps it open on
-what went wrong, file by file, with the line of anything it could not read, and
-so do edits made while it read. They are read again only when something moved:
-when the manifest is reloaded, or when the Jobs tab or the sources form opens
-and a job file was added, removed or changed since. A click inside the tab reads
-nothing, so a `git pull` in the jobs repository shows the next time the tab is
-opened. Only `.yml` and `.yaml` files are read,
-never a hidden file or one reached through a symlink, and what reaches the page
-is what was parsed: names, schedules and the selection in each command. The
-value of `--vars` or `--args` is shown as `…`, since that is where a secret
-would sit
-([0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md)).
-
-dbt Cloud jobs are read in [dbt-jobs-as-code](https://github.com/dbt-labs/dbt-jobs-as-code)'s
-schema, anchors and `<<` merges included: `name`, `execute_steps`,
-`schedule.cron`, `triggers`, `job_type`, `job_completion_trigger_condition`,
-`environment_id` and `settings.target_name`. With `run_generate_sources: true`,
-the `dbt source freshness` dbt Cloud runs first is listed as a step of its own.
-
-Airflow has no standard for this, so dbt-edith proposes a shape, one file per
-DAG, and lets every key be renamed:
-
-```yaml
-dag_id: sales_daily
-schedule: "0 6 * * *"        # a cron, a preset, null for manual, or a list of assets
-tasks:
-  - task_id: build_sales
-    command: dbt run --select tag:sales   # `dbt` in front is optional
-    depends_on: [stage_sales]             # optional, as is everything below
-    outlets: [sales_ready]
-sensors:
-  - task_id: wait_crm
-    external_dag_id: crm_daily
-    external_task_id: crm_load
-```
-
-A key is a dotted path, so a factory that writes `pipeline: {name: ...}` and
-calls its tasks `steps` and their command `dbt` is read with `pipeline.name`,
-`pipeline.cron`, `steps` and `dbt`. The tasks may also be a mapping keyed by
-task id, the way dag-factory writes them. A task with no command is not a
-dbt task and is left out, but the assets it updates still start the DAGs
-scheduled on them; so do those of a DAG file with no dbt task at all, an
-ingestion DAG for instance, which is read for its id, its schedule and its
-outlets alone and is listed nowhere. The form draws the example in your own keys as you
-type them.
-
-What the YAML cannot say, this tab cannot either: tasks a factory builds in
-Python, a paused DAG, a schedule on one task that only the factory interprets,
-`--vars` or `--target` changing which models are enabled, and sources with no
-freshness configured. A `--project-dir` is taken to name this project.
-
-### Reports
-
-**Reports**, a sheet with a bar chart in the top bar whose name unfolds under
-the pointer, rolls a panel down over the editor and the dock
-with what speaks of the whole project, a section each, listed on its left:
-the last dbt command's results once dbt has written them, collin's report once
-collin has written one, and the coverage of your jobs once the Jobs tab has a
-source. The sidebar stays, and anything that shows a file
-or a dock tab rolls the panel up again: a name in a report, a file in the
-tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
-closes it. While no section has anything to show, the button is dimmed and its
-tooltip says what will fill it; it opens on the job coverage, where a source is
-added (0075).
-
-What is new since you last looked rides on the button, a chip per report in
-its colour: the last run's errors and failed tests in red, collin's models to
-investigate in pink, and in orange how many more models no scheduled job runs
-than when you last looked at the coverage. Alone, a chip says its words, "12 to
-investigate"; with others, its count alone, so the button stays short, and the
-tooltip says each in full. The panel opens on the first of them. A section is read again
-each time it is shown, and never redrawn while you read it: when its file
-changes underneath, its **Read again** button says so (0064).
-
-**Last run** reads `target/run_results.json`, which dbt writes again after
-every `build`, `run`, `test`, `seed` or `snapshot`, and after `compile` too. It
-names the command and its selection, then counts what ran of each kind against
-what the manifest holds, and lists the errors and failed tests with dbt's
-message, the warnings, the skipped nodes and the slowest. A model opens with its
-Run tab, the SQL dbt executed; a test opens at its line in its YAML, and a unit
-test at its YAML. A node the
-command did not reach is counted, never listed: not run says nothing about it.
-The section says when the manifest was written after the run, or when the run
-names tables the manifest names otherwise, likely another target. Errors and
-failed tests ride on the Reports button until you look (0065).
-
-### Query history
-
-With Snowflake's features on, the dock has a **Query history** tab: the queries
-your Snowflake user ran in the last seven days, from dbt in the terminal, from
-Snowsight worksheets or from anything else, newest first. It is read from
-Snowflake when you open the tab, which is the click that may bring a sign-in
-tab, and again when you press Refresh; nothing polls, and nothing is kept once
-the page is closed. The same script that fetches column lineage reads it, with
-the same profile and target, so a column lineage tool other than Snowflake
-changes nothing here. It is alpha, like every Snowflake feature.
-
-Twenty queries show at first, and **Load 20 more** goes further back, until
-Snowflake has nothing older: it gives back your newest 10 000 queries of the
-week, so a role you rarely use may run out before the week does. Each row says
-when the query started on your clock, how it ended, how long it took, its role,
-warehouse and type, the first line of its SQL with dbt's leading comment left
-out, and the error under a failed one. Click a row for the statement itself, the
-first 10 000 characters of it, with buttons to copy it or its id. **Snowsight**
-opens the query's own page there, in a new tab, with its profile and every
-detail this tab does not have.
-
-The **Role** menu decides whose queries: by default the role of the target the
-script connected with, then the role of every other target in your profile that
-signs in as the same user, then every role. A target that signs in as another
-user, a service account for instance, is listed greyed: its queries are that
-user's history, not yours. So is a target whose role is a Jinja expression,
-which the script does not evaluate.
-
-The queries dbt-edith runs itself carry the query tag `dbt-edith`, and are left
-out. Reading the history needs no privilege beyond your own role: it is
-`INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER`, which shows any user their own
-queries ([0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md)).
-
-### Python environment
-
-The status bar shows the virtualenv, labelled `venv` when it was active as
-dbt-edith started and `venv (inactive)` when it was merely found in the project,
-with the Python and dbt versions in the tooltip. When several are present, the
-one that actually contains dbt wins.
-
-With bash in the terminal, Git Bash included, the bar then follows the
-terminal: `source .../activate` or a project's own activation script, and the
-bar names that venv at the next prompt; `deactivate`, and it says `venv
-(inactive)` again. A venv made in the project since dbt-edith started is read
-when the terminal names it. Any other venv, outside the project or tracked by
-git, is named without its versions, unless dbt-edith was started in it. zsh,
-fish and PowerShell do not say which venv they hold, and there the bar stays as
-dbt-edith started
-([0069](docs/decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md)).
-
-The bar is green when the venv is active and amber when it is not. Click it
-while it is amber and the line that activates that venv is typed in the
-terminal, `source .../activate` for bash, waiting for Enter; with several venvs
-in the project, the click lists them to pick one
-([0072](docs/decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md)).
-
-Those versions are read from the venv's files, `pyvenv.cfg` and the names of
-its installed packages: opening a project runs nothing it holds. A venv that git
-tracks came with the repository, and its `python` was written by whoever wrote
-the repository, so dbt-edith never runs it, neither for the status bar nor for
-the Snowflake script; the tooltip names it
-([0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md)).
-
-### Git
-
-A third sidebar tab stages, commits, pulls and pushes, and the branch name in
-its header (and in the status bar) opens a filtered branch switcher rather than a
-list, since a long-lived repository easily carries hundreds of branches.
-
-Two rules hold across the whole git surface:
-
-- **Nothing destroys work.** There is no `-f`, no `--hard`, no `clean`, no
-  `push --force` anywhere in `src/git.rs`. The worst any button can do is create
-  a stash. When a branch switch is refused because local changes are in the way,
-  the blocking paths are listed and the only offer is to stash them, tagged with
-  the branch being left, recoverable with `git stash pop`.
-- **Nothing can hang the server.** Network commands run with
-  `GIT_TERMINAL_PROMPT=0` and ssh in batch mode, so a missing credential fails
-  in seconds instead of waiting forever on a prompt nobody can answer. Every
-  command has a deadline, and both pipes are drained by their own threads so a
-  chatty hook cannot deadlock.
-
-Commit fetches first, so the ahead/behind counts next to it are current; a
-failing fetch never blocks the commit. Hooks always run: pre-commit hooks can take
-a while and can fail, and their output is shown in full rather than bypassed
-with `--no-verify`. Pull is `--ff-only`, so it can
-never start a merge on its own; if the branches have diverged it says so and
-leaves the choice of merge or rebase to you.
-
-Clicking a changed file opens a side-by-side diff of HEAD against the working
-tree, in its own tab, read-only: a `+` or `-` sits next to every changed line,
-regions with no counterpart on the other side are hatched, long identical
-stretches collapse, and a ruler down the right edge shows where the changes are
-and jumps to them. New files show entirely as added, deleted ones as removed.
-Editing stays in the file itself, one button away.
-
-Conflicted files get their own section. Opening one highlights the
-`<<<<<<<` / `=======` / `>>>>>>>` blocks and puts *keep ours / keep theirs /
-keep both* above each one; a block only counts once all three markers are
-present, so a half-edited file is left alone. When a file is done, one button
-marks it resolved (`git add`), and the merge can be aborted at any point.
-
-### Tabs
-
-A single click in the file tree opens a **preview** tab, shown in italics and
-reused by the next single click, so browsing the project does not pile up tabs.
-Double-clicking, or editing the file, pins it, and so does following a link out
-of it, a `ref()`, a macro call or a `Cmd/Ctrl + K` result, so that Back has it
-to return to; the link's target opens as the preview in its turn. The **Open
-editors** panel at the top of the sidebar lists every open file with its own
-close and save buttons, plus save-all and close-all in its header. Closing a
-tab never touches the file on disk.
-
-A tab follows its file when something else rewrites it: a `git pull` in the
-terminal, a checkout, dbt, another editor. With nothing unsaved, it shows the
-new text within a few seconds, or as soon as it is clicked, and the cursor
-stays on its line. With unsaved edits, it keeps them and its name turns amber;
-saving it then asks before writing over what the disk now holds, rather than
-quietly putting back what the pull just changed. A file deleted on disk leaves
-its tab as it was, its name struck through: saving the tab writes the file
-back, after asking, and closing it asks first.
-
-### Breadcrumbs
-
-The row under the tabs says where you are twice over: the file's path through
-the project, then, inside a `.yml` or a `.md`, where the cursor sits in the
-document, as `models > 0 > data_tests`. Every segment is a button. A path
-segment opens a menu of the folder it sits in, where a folder drills one level
-down and a file opens in a preview tab; a document segment lists the keys or the
-list entries beside it and jumps the cursor to the one you pick. Arrow keys move
-in the menu, Enter picks, Escape closes.
-
-A `.sql` file shows its path and stops there. Finding a CTE name honestly means
-masking SQL strings and comments first, and a bar that is occasionally wrong is
-worse than one that is short.
-
-### Options
+## Options
 
 ```
 dbt-edith [PROJECT]                       dbt project root, default the current directory
@@ -1521,185 +164,37 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--manifest path/manifest.json] default <project>/target/manifest.json
          [--catalog path/catalog.json]   default <project>/target/catalog.json
          [--column-lineage path.json]    default the tool last picked, else the newest cache
-         [--shell "zsh -l"]              overrides the shell below
+         [--shell "zsh -l"]              the terminal's shell, default $SHELL -l, Git Bash on Windows
          [--no-open]                     do not open a browser at startup
-         [--no-update-check]             do not ask GitHub, once a day, for a newer release
+         [--no-update-check]             never look on GitHub for a newer release, hourly or on demand
          [-s, --select "line"]           print what the line selects and exit, without serving
          [--exclude "line"]              what --select leaves out
          [--selector name]               print what a named selector selects and exit
          [--output name|json]            what those two print, default one name per line
+         [-V, --version]                 print the version and the build it came from, and exit
 ```
 
 A relative path in `--manifest`, `--catalog` or `--column-lineage` is relative
 to where you run the command, not to the project. `dbt-edith --help` prints the
-same list. The terminal runs `$SHELL -l` on macOS
-and Linux, and Git Bash on Windows, falling back to PowerShell when Git Bash is
-not installed. It starts with the environment dbt-edith was started in: activate
-the project's virtual environment first, and `dbt` in the terminal is that
-environment's. Each new terminal then types that environment's own activate
-script, `source …/activate` for bash and zsh, so it comes first again after
-your `~/.bashrc` or `~/.zshrc`, which may have put pyenv or conda before it.
+same list.
 
-## Tests
+## Changing dbt-edith
 
-Everything at once, which is what to run before calling a change done:
+[AGENTS.md](AGENTS.md) says how to build and check a change, and the rules that
+hold everywhere; `./scripts/check.sh` runs every test
+([docs/testing.md](docs/testing.md)). [docs/decisions/](docs/decisions/) says
+why it is built the way it is, [docs/state.md](docs/state.md) what is not built
+yet and in what order, and [CHANGELOG.md](CHANGELOG.md) what shipped in which
+version.
 
-```
-./scripts/check.sh
-```
+## Security
 
-The Rust side has unit tests for `.env` parsing, location resolution and the
-settings store:
-
-```
-cargo test
-```
-
-The browser code has small harnesses that run on macOS with the system
-JavaScript engine, no install required, from the repository root:
-
-```
-JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
-$JSC web/tests/tabs.js        # preview/pinned tab state machine
-$JSC web/tests/disk.js        # the one stretch a tab replaces when its file changed on disk
-$JSC web/tests/explorer.js    # git and unsaved colouring, including folders
-$JSC web/tests/collineage.js  # composite column ids, node subtitles, and the column lineage menu
-$JSC web/tests/conflicts.js   # conflict block detection, including half blocks
-$JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
-$JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
-$JSC web/tests/palette.js     # search palette merging nodes and files
-$JSC web/tests/location.js    # written, resolved and built locations
-$JSC web/tests/snowsight.js   # links into Snowsight: a query, and a relation's object, schema and database
-$JSC web/tests/clone.js       # Clone into my schema: what each node is copied as, from where, and the script
-$JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
-$JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
-$JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
-$JSC web/tests/grep.js        # what a search result says, and where the match falls
-$JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls, named selectors
-$JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outline
-$JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
-$JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
-$JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
-$JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, and the columns its key names
-$JSC web/tests/export.js      # an exported graph: its header, its file, its safety
-$JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
-$JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
-$JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
-$JSC web/tests/macros.js      # macro calls, and the names a properties file declares
-$JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
-$JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the order, a folded test
-$JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
-$JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
-$JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
-```
-
-The Snowflake script has tests of its own, against a fake connector and a fake
-PyYAML, so they need no warehouse and nothing installed:
-
-```
-python3 tools/test_sf_lineage.py
-```
-
-The Custom selection box, `--select` and the lineage are compared with dbt
-itself: every named selector and a list of typed expressions, asked of the box
-and of the command line, and the nodes drawn around each model at one, two and
-twenty levels, resolved by dbt-edith and by `dbt ls`, have to name the same
-nodes. It runs on a copy of dbt Labs' Jaffle Shop in
-`tests/fixtures/`, and on Fivetran's Shopify package, cloned at the tag
-`tests/fixtures/shopify/` names. It needs dbt-core and dbt-duckdb, and skips
-itself without them; without git or the network it skips Shopify:
-
-```
-python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
-/tmp/dbt/bin/python scripts/compare_with_dbt.py                 # every eighth Shopify model's lineage
-/tmp/dbt/bin/python scripts/compare_with_dbt.py --every-model   # all of them, as CI does
-DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executable, Fusion included
-```
-
-The guided tour is walked in headless Chrome on the same Jaffle Shop, every
-step, through the DevTools protocol and the standard library alone. It needs
-dbt to parse the copy, and Chrome; it skips itself without either:
-
-```
-/tmp/dbt/bin/python scripts/walk_tour.py                  # every step, and what the tour leaves behind
-/tmp/dbt/bin/python scripts/walk_tour.py --shots /tmp/t   # and a picture of each
-```
-
-The lineage's up and down boxes are driven the same way: what keeps the depth
-on the canvas, what starts it again at 1, and what Back and Forward bring back:
-
-```
-/tmp/dbt/bin/python scripts/walk_depth.py
-```
-
-## Layout
-
-```
-src/manifest.rs   manifest.json -> raw structs (only the fields the UI needs)
-src/graph.rs      compact node vector, adjacency, search, lineage BFS, selection layering
-src/api.rs        HTTP + WebSocket handlers
-src/collin.rs     the column lineage cache, merged like catalog.json
-src/collin_run.rs collin, found beside the binary or on PATH and run only on request
-src/select.rs     dbt selector expressions, parsed and resolved against the graph
-src/selectors.rs  the named selectors of selectors.yml, as the manifest recorded them
-src/ls.rs         --select and --selector: one selection printed, and no server
-src/jobs.rs       the orchestrator's jobs, read from the folders named, and the nodes each step acts on
-src/command.rs    a dbt command line, read into what it runs and what it selects
-src/yaml.rs       a subset of YAML, anchors and merges included, read into a tree
-src/clone.rs      which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
-src/sidecar.rs    the Snowflake script: started once Snowflake is picked or the history read, one request at a time
-src/compiled.rs   the compiled/ and run/ SQL under target/, and how fresh each is
-src/macros.rs     macros from the manifest, and which one a call in the editor reaches
-src/incremental.rs which incremental strategy dbt runs for a model, read from those macros
-src/freshness.rs  whether manifest.json still matches the files dbt would parse
-src/envs.rs       .env parsing and location resolution per environment
-src/project.rs    the vars: and dispatch: blocks of dbt_project.yml, read by hand
-src/profiles.rs   where dbt looks for profiles.yml, the one file outside the project opened, and its active target
-src/redact.rs     the profile's secrets, replaced before it is sent and put back when it is saved
-src/git.rs        working tree status and the git commands the UI can run
-src/update.rs     whether a newer release is out, asked through git once a day, and the command that installs it
-src/tour.rs       the guided tour's model, and whether it was offered on this machine
-src/settings.rs   per-project settings, kept outside the project
-src/venv.rs       which Python environment is in play
-src/files.rs      filesystem access, confined to the project root
-src/pty.rs        one PTY per terminal connection
-web/              UI: no framework, CodeMirror 5 and xterm.js are vendored
-web/app.js        the shell, including the document outline behind the breadcrumbs and the exported page
-web/lineage.js    layered graph layout and SVG renderer, model, column and selection modes, and the snapshot an export is made of
-web/vendor/       CodeMirror, xterm, the merge addon and diff-match-patch
-tools/            sf_lineage.py, the only piece that talks to Snowflake
-```
-
-The server binds to `127.0.0.1` only, and every file path is resolved against
-the project root, so nothing outside the opened project is reachable but the
-dbt profile and the job folders you name in the settings. Requests
-must come from its own page: a `Host` or `Origin` naming anything else gets a
-`403`, which keeps other web pages in your browser away from the terminal and
-the git buttons. Beyond that, the API and the terminal want the key the launch
-printed, which no other program on the machine has seen, whatever headers it
-writes. [SECURITY.md](SECURITY.md) spells out what is and is not covered.
-
-## Not there yet
-
-Not there yet:
-- a used-by count per macro;
-- run status on the lineage canvas, from the last run Reports reads;
-- which jobs test a model;
-- CTE names in the breadcrumb bar;
-- a dbt section in Reports, with what the project holds counted and dbt's
-  warnings, including config paths in `dbt_project.yml` that apply to nothing;
-- screenshots in this README;
-- a Run button on a node's file, with its parents or children;
-- a dock bar that keeps to one line on a narrow window;
-- a tour of what is new since the version you had, after an update;
-- persisting open tabs between sessions;
-- a second column lineage source using dbt Fusion's local index, which needs no
-  warehouse privileges.
-
-[docs/state.md](docs/state.md) has the list that is kept up to date, in the
-order the work was chosen, and says for each what deferred it. It is the only
-one: a second list here would drift from it, and the older list is the one that
-gets believed.
+The server listens on `127.0.0.1` only and answers its own page alone: a
+request whose `Host` or `Origin` names anything else is refused, and the API and
+the terminal want the key the launch printed. Nothing outside the project is
+read but the dbt profile and the job folders you name, and the profile's
+passwords, tokens and keys never reach the browser.
+[SECURITY.md](SECURITY.md) says what is and is not covered.
 
 ## License
 

@@ -32,6 +32,7 @@ The guided tour is walked step by step in headless Chrome on the same Jaffle
 Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
 `scripts/walk_depth.py` drives the lineage's depth boxes there the same way.
+[docs/testing.md](docs/testing.md) lists each part and how to run it alone.
 Updating a vendored library means changing its version in
 `scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
 when they disagree.
@@ -98,6 +99,15 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   `web/` or `tools/` without one, unless it carries the `no changelog` label,
   which is how a refactor or a dependency bump opts out. That file is appended
   to and never rewritten, unlike `docs/state.md`.
+- **What a feature does is written in its page under
+  [docs/features/](docs/features/)**, changed in the same pull request as the
+  feature. The README is not that place: it is what a developer reads before
+  installing dbt-edith, a line per area, how to install and run it, the options
+  and the common fixes, and it changes only when one of those does. Nor is
+  either page a record of what went wrong on the way: a trap a change ran into
+  goes in its commit body, or in a decision when it shapes the code. A change
+  that alters what one of the README's pictures shows retakes them all with
+  `scripts/take_shots.py` (0082).
 - **Comments say why, not what.** The code already says what it does.
 - **No em dash** in code, comments or documentation.
 
@@ -197,6 +207,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what `--select` prints or exits with, or add a flag that answers without serving | [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
+| build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
+| change what a feature does, or check what it does now | its page in [docs/features/](docs/features/) |
+| add a picture to the README, or retake them | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
@@ -206,16 +219,50 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 
 Every decision, with what was rejected each time, is indexed in
-[docs/decisions/](docs/decisions/). The [README](README.md) is the user-facing
-documentation: what the tool does and how to use it. Rationale lives here, never
+[docs/decisions/](docs/decisions/). [docs/features/](docs/features/) says what
+each part of the tool does, in full, and the [README](README.md) what a
+developer needs to install and run it. Rationale lives in the decisions, never
 in both.
 
 ## Layout
 
-`src/manifest.rs` reads the manifest, `src/graph.rs` holds the compact graph,
-`src/api.rs` serves HTTP and WebSocket, and the remaining modules take one
-concern each: `envs`, `project`, `profiles`, `redact`, `settings`, `git`, `collin`, `collin_run`, `select`,
-`selectors`, `ls`, `jobs`, `run_results`, `command`, `yaml`, `clone`, `sidecar`, `compiled`, `freshness`, `macros`, `incremental`, `venv`, `files`, `pty`, `update`, `tour`. `build.rs` stamps
-the binary with `git describe`, so two builds of one release can be told apart. `web/` is the
-frontend, `web/vendor/` the vendored libraries, `tools/sf_lineage.py` the only
-piece that talks to a warehouse. The README has the annotated version.
+```
+src/main.rs           the command line, startup, and what it prints
+src/manifest.rs       manifest.json -> raw structs (only the fields the UI needs)
+src/graph.rs          compact node vector, adjacency, search, lineage BFS, selection layering
+src/api.rs            HTTP + WebSocket handlers
+src/collin.rs         the column lineage cache, merged like catalog.json
+src/collin_run.rs     collin, found beside the binary or on PATH and run only on request
+src/collin_report.rs  collin's report read whole, filed by kind for the report page
+src/collin_compare.rs what two collin versions read in one project, side by side
+src/run_results.rs    the last dbt command's results, read from run_results.json as dbt left it
+src/select.rs         dbt selector expressions, parsed and resolved against the graph
+src/selectors.rs      the named selectors of selectors.yml, as the manifest recorded them
+src/ls.rs             --select and --selector: one selection printed, and no server
+src/jobs.rs           the orchestrator's jobs, read from the folders named, and the nodes each step acts on
+src/command.rs        a dbt command line, read into what it runs and what it selects
+src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree
+src/clone.rs          which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
+src/sidecar.rs        the Snowflake script: started once Snowflake is picked or the history read, one request at a time
+src/compiled.rs       the compiled/ and run/ SQL under target/, and how fresh each is
+src/macros.rs         macros from the manifest, and which one a call in the editor reaches
+src/incremental.rs    which incremental strategy dbt runs for a model, read from those macros
+src/freshness.rs      whether manifest.json still matches the files dbt would parse
+src/envs.rs           .env parsing and location resolution per environment
+src/project.rs        the vars: and dispatch: blocks of dbt_project.yml, read by hand
+src/profiles.rs       where dbt looks for profiles.yml, the one file outside the project opened, and its active target
+src/redact.rs         the profile's secrets, replaced before it is sent and put back when it is saved
+src/git.rs            working tree status and the git commands the UI can run
+src/update.rs         whether a newer release is out, asked through git hourly through the Paris night or on demand, and the command that installs it
+src/tour.rs           the guided tour's model, and whether it was offered on this machine
+src/settings.rs       per-project settings, kept outside the project
+src/venv.rs           which Python environment is in play
+src/files.rs          filesystem access, confined to the project root
+src/pty.rs            one PTY per terminal connection
+build.rs              stamps the binary with git describe, so two builds of one release can be told apart
+web/                  UI: no framework, CodeMirror 5 and xterm.js are vendored
+web/app.js            the shell, including the document outline behind the breadcrumbs and the exported page
+web/lineage.js        layered graph layout and SVG renderer, model, column and selection modes, and the snapshot an export is made of
+web/vendor/           CodeMirror, xterm, the merge addon and diff-match-patch
+tools/                sf_lineage.py, the only piece that talks to a warehouse
+```

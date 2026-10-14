@@ -8,7 +8,7 @@
 #   certutil -hashfile dbt-edith.exe SHA256
 #
 # The two must match before the file is run. Needs the mingw-w64 linker
-# (README, "For a Windows machine").
+# (docs/windows.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

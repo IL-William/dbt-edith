@@ -3,9 +3,9 @@
 What shipped, and when. This file is appended to, never rewritten, which is
 what makes it the only place that keeps the order:
 [docs/state.md](docs/state.md) says where the work stands today and is rewritten
-as it moves, the [README](README.md) says what the tool does now, and
+as it moves, [docs/features/](docs/features/) says what the tool does now, and
 [docs/decisions/](docs/decisions/) says why it is built this way. A feature
-belongs in the README too; only here does it carry a version.
+belongs in docs/features/ too; only here does it carry a version.
 
 One entry per change someone using dbt-edith would notice, written as a
 sentence saying what it does, the way a commit subject is. A number in brackets
