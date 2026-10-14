@@ -121,8 +121,17 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Pull request titles** are that same sentence, because a pull request is
   squashed into one commit and its title becomes that commit's subject. So:
   three words or more, capitalised, no full stop at the end, no branch name in
-  it, and short enough to read in a list. "Feature/breadcrumb bar" is the shape
-  to avoid, and the only one that ever reached `main`.
+  it. "Feature/breadcrumb bar" is the shape to avoid, and the only one that
+  ever reached `main`. The title is also what someone a release behind reads
+  in Edith's menu, one line per release (0079), so:
+  - **50 characters at most**, which that line holds;
+  - **one idea**, the one someone using it would notice; the rest goes in the
+    CHANGELOG entry and the body, not after a comma;
+  - **in their words**: what they see (the lineage, the Catalog, the terminal,
+    the status bar), not the mechanism behind it;
+  - **a verb first**, in the imperative: "Show the incremental strategy on the
+    lineage", not "Incremental strategy on the lineage and its key in the
+    Catalog".
 
 ## Where to read next
 
@@ -187,6 +196,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
+| change when a newer release is looked for, or what Edith's menu shows | [0079](docs/decisions/0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md), [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | add a step to the guided tour, or change when it is offered or what it touches | [0074](docs/decisions/0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 

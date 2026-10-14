@@ -165,8 +165,8 @@ jobs:
           case "${TITLE%% *}" in
             */*) fail "starts with a branch name, as in 'Feature/breadcrumb bar'" ;;
           esac
-          if [ "${#TITLE}" -gt 72 ]; then
-            fail "${#TITLE} characters, over the 72 that read in a list"
+          if [ "${#TITLE}" -gt 50 ]; then
+            fail "${#TITLE} characters, over the 50 that fit on a line of Edith's menu"
           fi
 
           if [ "$bad" -ne 0 ]; then

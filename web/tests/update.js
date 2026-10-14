@@ -63,3 +63,61 @@ var shell = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why:
 ok('another shell: says which ones it is typed for', says(shell, 'typed for sh, bash, zsh and PowerShell'));
 var path = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' });
 ok('an odd path: says so, not that it was built elsewhere', says(path, 'a character a shell would read') && !says(path, 'where it was built'));
+
+print('\n--- when a look was made, in the machine\'s own time ---');
+// Built from local fields, so the answer is the same in every time zone.
+function at(y, m, d, h, min) { return new Date(y, m - 1, d, h, min).getTime() / 1000; }
+var now = at(2026, 10, 14, 8, 59);
+check('today', whenLooked(at(2026, 10, 14, 7, 5), now), 'today at 07:05');
+check('yesterday', whenLooked(at(2026, 10, 13, 21, 40), now), 'yesterday at 21:40');
+check('before that, the date', whenLooked(at(2026, 10, 12, 9, 30), now), '12 Oct at 09:30');
+check('across the new year', whenLooked(at(2026, 12, 31, 23, 59), at(2027, 1, 1, 0, 1)), 'yesterday at 23:59');
+check('a look due later today', whenLooked(at(2026, 10, 14, 9, 0), now), 'today at 09:00');
+check('a look due tomorrow', whenLooked(at(2026, 10, 15, 0, 0), at(2026, 10, 14, 9, 30)), 'tomorrow at 00:00');
+
+print('\n--- what the menu says of the looks ---');
+check('no answer from the server yet', updateLook(null, now), '');
+check('switched off', updateLook({ current: '1.17.0', off: true }, now),
+  'Started with --no-update-check, so no release is looked for.');
+check('on its way', updateLook({ current: '1.17.0', checking: true, checked: at(2026, 10, 14, 0, 30) }, now),
+  'Looking for a newer release on GitHub…');
+var nine = at(2026, 10, 14, 9, 0);
+check('up to date', updateLook({ current: '1.17.0', latest: '1.17.0', checked: now, next: nine }, now),
+  '1.17.0 is the newest release, as GitHub listed it today at 08:59. The next look is today at 09:00.');
+check('a newer one', updateLook({ current: '1.13.2', latest: '1.17.0', newer: true, checked: now, next: nine }, now),
+  'GitHub listed 1.17.0 today at 08:59. The next look is today at 09:00.');
+check('past 09:00 in Paris, the next is at midnight there, said in the machine\'s time',
+  updateLook({ current: '1.17.0', latest: '1.17.0', checked: at(2026, 10, 14, 9, 0), next: at(2026, 10, 15, 0, 0) }, at(2026, 10, 14, 9, 30)),
+  '1.17.0 is the newest release, as GitHub listed it today at 09:00. The next look is tomorrow at 00:00.');
+check('a build ahead of every release', updateLook({ current: '1.18.0', latest: '1.17.0', checked: now, next: nine }, now),
+  'This build is ahead of 1.17.0, the newest release GitHub listed today at 08:59. The next look is today at 09:00.');
+check('no answer, ever', updateLook({ current: '1.17.0', failed: now, error: 'Could not resolve host: github.com', next: at(2026, 10, 14, 9, 59) }, now),
+  'The look today at 08:59 got no answer from GitHub: Could not resolve host: github.com. The next look is today at 09:59.');
+check('no answer, after an older one that still stands',
+  updateLook({ current: '1.13.2', latest: '1.13.2', checked: at(2026, 10, 13, 9, 30), failed: now, error: 'x', next: at(2026, 10, 14, 9, 59) }, now),
+  'The look today at 08:59 got no answer from GitHub: x. 1.13.2 is the newest release, as GitHub listed it yesterday at 09:30. '
+  + 'The next look is today at 09:59.');
+check('not looked for yet, and due', updateLook({ current: '1.17.0', next: now }, now),
+  'Not looked for yet. The next look is due now.');
+
+print('\n--- the releases since the running one ---');
+var tag = 'https://github.com/IL-William/dbt-edith/releases/tag/v';
+check('no list while up to date', releaseRows({ current: '1.17.0', latest: '1.17.0' }), null);
+check('no list without titles: the single link stays', releaseRows({ current: '1.13.2', latest: '1.17.0', newer: true, notes: tag + '1.17.0' }), null);
+var three = releaseRows({ current: '1.14.1', latest: '1.16.0', newer: true, releases: [
+  { version: '1.16.0', title: 'Give a tour of the page', notes: tag + '1.16.0' },
+  { version: '1.15.1', title: 'Give each dock tab a glyph', notes: tag + '1.15.1' },
+  { version: '1.15.0', title: 'Sort a node\'s jobs by how they start', notes: tag + '1.15.0' },
+] });
+check('counts them', three.head, '3 releases since yours');
+check('newest first, each to its notes', three.rows.map(function (r) { return r.version + ' ' + r.href; }),
+  ['1.16.0 ' + tag + '1.16.0', '1.15.1 ' + tag + '1.15.1', '1.15.0 ' + tag + '1.15.0']);
+check('the whole title in the tooltip', three.rows[2].tip, 'dbt-edith 1.15.0: Sort a node\'s jobs by how they start');
+check('nothing older', three.older, null);
+var one = releaseRows({ current: '1.16.1', latest: '1.17.0', newer: true, releases: [{ version: '1.17.0', title: 'Show the strategy', notes: tag + '1.17.0' }] });
+check('one release, said so', one.head, '1 release since yours');
+var capped = releaseRows({ current: '1.0.0', latest: '1.25.0', newer: true, older: 5,
+  older_notes: 'https://github.com/IL-William/dbt-edith/releases',
+  releases: [{ version: '1.25.0', title: 'A', notes: tag + '1.25.0' }] });
+check('counts the ones left out', capped.head, '6 releases since yours');
+check('and links every release for them', capped.older, { label: 'and 5 older', href: 'https://github.com/IL-William/dbt-edith/releases', tip: 'Every release, on GitHub' });

@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.18.0 - 2026-10-14
+
+- Look for a newer dbt-edith every hour from midnight to 09:00 Paris time,
+  then at the next midnight, rather than 24 hours after the last look, so the
+  first start of a day sees what came out overnight, and try a look that got
+  no answer again within the hour (0079).
+- Open a menu from Edith at the top left, and from the update pill, with the
+  version and build you run, when GitHub last answered or what git said when it
+  could not, when it looks next, and a Check for updates button; a dot on the
+  name says a newer release is out.
+- List every release since yours in that menu, newest first, each by the title
+  of the pull request that released it and linked to its notes.
+
 ## 1.17.0 - 2026-10-14
 
 - Name an incremental model's strategy on its lineage box, in place of the

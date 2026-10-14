@@ -521,15 +521,78 @@ pub fn fetch_quiet(root: &Path) -> bool {
 }
 
 /// The tags a remote holds, as `git ls-remote --tags --refs` lists them, for
-/// the daily look for a newer dbt-edith (0068). Run from `dir`, which only
+/// the look for a newer dbt-edith (0068, 0079). Run from `dir`, which only
 /// has to exist: the URL is the remote, so no repository is involved, and git
-/// looks for none above `dir`, whose configuration could rewrite the URL. None
-/// when git could not ask, offline above all, which the caller keeps quiet.
-pub fn ls_remote_tags(dir: &Path, url: &str) -> Option<String> {
+/// looks for none above `dir`, whose configuration could rewrite the URL. When
+/// git could not ask, offline above all, the first line it printed, for the
+/// menu that says when the last look was made and how it went.
+pub fn ls_remote_tags(dir: &Path, url: &str) -> Result<String, String> {
     let ceiling = dir.parent().and_then(Path::to_str).unwrap_or("");
     let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
     let r = run(dir, &["ls-remote", "--tags", "--refs", url], &env, Duration::from_secs(30));
-    r.ok.then_some(r.stdout)
+    if r.ok {
+        return Ok(r.stdout);
+    }
+    Err(reason(&r))
+}
+
+/// The first line git printed when a command failed, or its exit code.
+fn reason(r: &GitRun) -> String {
+    let line = r.stderr.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    if line.is_empty() {
+        format!("git exited with {}", r.code)
+    } else {
+        line.to_string()
+    }
+}
+
+/// The subject of the commit each of `tags` names on a remote, in the order
+/// given, for the list of what each newer dbt-edith brought (0079). Fetched
+/// into a bare repository made for it under `scratch`, which only has to
+/// exist, and removed afterwards: the tagged commits alone, no history, no
+/// tree and no file, so the request is a few kilobytes. git looks for no
+/// repository above it, as `ls_remote_tags` does not. A tag the remote does
+/// not hold fails the fetch, so every one asked for comes from its listing.
+pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(String, String)>, String> {
+    static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = scratch.join(format!("dbt-edith-titles-{}-{made}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    let ceiling = scratch.to_str().unwrap_or("");
+    let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
+    let answer = (|| {
+        let init = run(&dir, &["init", "--bare", "-q", "."], &env, Duration::from_secs(10));
+        if !init.ok {
+            return Err(reason(&init));
+        }
+        let specs: Vec<String> = tags.iter().map(|t| format!("refs/tags/{t}:refs/tags/{t}")).collect();
+        let mut args = vec!["fetch", "-q", "--depth=1", "--filter=tree:0", "--no-tags", url];
+        args.extend(specs.iter().map(String::as_str));
+        let fetched = run(&dir, &args, &env, Duration::from_secs(30));
+        if !fetched.ok {
+            return Err(reason(&fetched));
+        }
+        // `*subject` is the commit's under an annotated tag, whose own
+        // `subject` is the tag's message; a lightweight tag has only `subject`.
+        let format = "--format=%(refname:strip=2)%09%(*subject)%09%(subject)";
+        let listed = run(&dir, &["for-each-ref", format, "refs/tags"], &env, Duration::from_secs(10));
+        if !listed.ok {
+            return Err(reason(&listed));
+        }
+        let subjects: std::collections::HashMap<&str, &str> = listed
+            .stdout
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(3, '\t');
+                let (tag, peeled, own) = (parts.next()?, parts.next()?, parts.next().unwrap_or(""));
+                Some((tag, if peeled.is_empty() { own } else { peeled }))
+            })
+            .collect();
+        Ok(tags.iter().filter_map(|t| Some((t.clone(), subjects.get(t.as_str())?.to_string()))).collect())
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    answer
 }
 
 #[cfg(test)]
