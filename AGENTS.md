@@ -164,6 +164,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
+| change which jobs count as scheduled, or what the job coverage calls unscheduled | [0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md), [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |

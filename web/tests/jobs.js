@@ -30,13 +30,21 @@ check('started by nothing', jobsStart({ scheduled: false }), 'manual');
 check('CI, which no clock starts', jobsStart({ ci: true, scheduled: false }), 'other');
 check('on an asset only a manual DAG updates', jobsStart({ assets: ['a'], scheduled: false }), 'other');
 check('@once', jobsStart({ note: 'runs once, at its start date', scheduled: false }), 'other');
+check('a templated schedule', jobsStart({ note: 'a schedule only known when the DAG is parsed', scheduled: false, schedule_unread: true }), 'unread');
+check('on an asset no file read updates', jobsStart({ assets: ['raw'], assets_unread: ['raw'], scheduled: false, schedule_unread: true }), 'unread');
+check('a dbt Cloud trigger on, its cron not read', jobsStart({ note: 'a schedule only the vars file knows', scheduled: true }), 'scheduled');
+check('the one asset no file read updates', jobsScheduleText({ kind: 'airflow', assets: ['raw'], assets_unread: ['raw'] }),
+      'on raw, which no file read updates');
+check('one of several', jobsScheduleText({ kind: 'airflow', assets: ['raw', 'marts'], assets_unread: ['raw'] }),
+      'on raw, marts; no file read updates raw');
 var mixed = [
   { job: { name: 'by_hand', scheduled: false } }, { job: { name: 'ci', ci: true, scheduled: false } },
   { job: { name: 'daily', cron: '@daily', scheduled: true } }, { job: { name: 'jaffle_reports', scheduled: false } },
+  { job: { name: 'templated', note: 'a schedule only known when the DAG is parsed', scheduled: false, schedule_unread: true } },
   { job: { name: 'after', after: 'daily', scheduled: true } },
 ];
-check('scheduled first, manual last, each in the order sent',
-      jobsByStart(mixed).map(function (g) { return g.job.name; }).join(' '), 'daily after ci by_hand jaffle_reports');
+check('scheduled first, then not read, manual last, each in the order sent',
+      jobsByStart(mixed).map(function (g) { return g.job.name; }).join(' '), 'daily after templated ci by_hand jaffle_reports');
 check('the order sent is left alone', mixed[0].job.name, 'by_hand');
 check('no groups', jobsByStart(undefined).length, 0);
 check('jobs listed bare, as the coverage reads them',
@@ -111,6 +119,8 @@ check('the server\'s order holds within a group', shape(jobsCoverageGroups([
 check('the line over the lists', jobsCoverageLine({ total: 10, never: [1, 2], unscheduled: [3] }),
       '7 of 10 models, seeds and snapshots run in a scheduled job; 1 only in unscheduled jobs, 2 in no job.');
 check('all covered', jobsCoverageLine({ total: 2, never: [], unscheduled: [] }), '2 of 2 models, seeds and snapshots run in a scheduled job.');
+check('a schedule not read, counted apart', jobsCoverageLine({ total: 10, never: [1], unscheduled: [2], unread: [3, 4] }),
+      '6 of 10 models, seeds and snapshots run in a scheduled job; 2 only in jobs whose schedule is not read, 1 only in unscheduled jobs, 1 in no job.');
 
 print('\n--- what the form sends ---');
 var sent = jobSourcesBody([

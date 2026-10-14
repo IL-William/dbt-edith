@@ -1228,6 +1228,26 @@ a snapshot's own `strategy`, a microbatch model's `batch_size` and
 `event_time`, and a default picked by a condition on the key, the form
 Postgres's takes, which stays unnamed.
 
+Schedules not read (0077), the known limit #36 left: a job whose clock this
+tool could not read counted as one nothing starts, and its models as *Only
+in unscheduled jobs*, with news on the Reports button. `link` in
+`src/jobs.rs` now gives each job one of three answers (`Start`): scheduled,
+not, or not read, a chain taking the best of what pulls it and a DAG the
+worst of its assets. A dbt Cloud job whose schedule trigger is on is
+scheduled, its cron read or not. A DAG file with no dbt task, which left
+nothing, now leaves a `Feeder`, its schedule and its outlets, so a DAG on what
+an ingestion DAG loads is scheduled with it; a task with no command in a dbt
+DAG counts as well. A schedule or a trigger in Jinja, a schedule or an asset
+written as a mapping, an empty list of assets, an asset no file read updates,
+or a job no file defines is not read: an amber **Not read** pill, ranked after the scheduled jobs, the
+Catalog's chip in amber, and the coverage's own list, *Only in jobs whose
+schedule is not read*, which the news leaves out. The Rust tests cover each
+case, the coverage's three lists, and the same answers from files read in the
+reverse order; driven in headless Chrome on Jaffle Shop with invented jobs,
+one of each. Left out unless asked: a job not read only through its chain,
+behind a feeder whose clock is templated for instance, names no link that is
+not read, its pill saying `on copied` under the general tooltip.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1833,6 +1853,14 @@ cross-compile.
   per node, so every request that looks calls `forgetCatalogJobs` too, as do a
   save of the sources and a new manifest: a new path that reads jobs again
   has to, or the Catalog keeps the old chips.
+- **A feeder is never a job (0077).** `Read::feeders` holds the DAGs with no
+  dbt task only for `link` to number after the jobs; nothing that lists,
+  counts or groups jobs may read it, or every ingestion DAG would show under
+  Jobs read and in the sources form's counts. A feeder file still counts as
+  skipped, and is never refused: a file that is not about dbt has no line to
+  be wrong at. `Start` is ordered `No < Unread < Yes`, which `link` and
+  `coverage` compare with `max` and `min`; a fourth state goes in that order
+  or breaks both.
 - **A step's `dbt ls` is written by the server** (`Invocation::ls`), so the
   page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
   harness slices `web/app.js` from `function jobsScheduleText` to

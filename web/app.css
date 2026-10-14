@@ -1025,6 +1025,8 @@ kbd {
 }
 .jobwhen[data-start=scheduled], .jobchip[data-start=scheduled] { color: var(--ok); background: #183026; border-color: #3e7a5c; }
 .jobwhen[data-start=manual], .jobchip[data-start=manual] { background: var(--bg-3); }
+/* May run on its own: neither the green of a clock nor the grey of nothing. */
+.jobwhen[data-start=unread], .jobchip[data-start=unread] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .08); }
 .jobwhen { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0 8px; }
 .jobwhen b { font: 600 9.5px/16px var(--ui); letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }
 .jobchip { background: none; cursor: pointer; padding: 1px 8px; }

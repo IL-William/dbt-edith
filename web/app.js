@@ -7160,7 +7160,11 @@ function jobsScheduleText(job) {
 function jobsStartedBy(job) {
   const parts = [];
   if (job.cron) parts.push(job.cron);
-  if (job.assets && job.assets.length) parts.push('on ' + job.assets.join(', '));
+  if (job.assets && job.assets.length) {
+    const unread = job.assets_unread || [];
+    parts.push('on ' + job.assets.join(', ') + (!unread.length ? ''
+      : job.assets.length === 1 ? ', which no file read updates' : `; no file read updates ${unread.join(', ')}`));
+  }
   if (job.after) parts.push(job.after_unread ? `after job ${job.after}, which no file read defines` : `after ${job.after}`);
   if (job.ci) parts.push('CI');
   if (job.merge) parts.push('on merge');
@@ -7170,17 +7174,20 @@ function jobsStartedBy(job) {
 
 /* Scheduled runs on its own, manual is started by nothing at all, and
    between the two sits what something starts that never leads back to a
-   clock: CI, a merge, an asset only a manual DAG updates, `@once`. */
+   clock: CI, a merge, an asset only a manual DAG updates, `@once`. Unread
+   may run on its own, on what no file read says: a templated schedule, an
+   asset no file read updates (0077). */
 function jobsStart(job) {
   if (job.scheduled) return 'scheduled';
+  if (job.schedule_unread) return 'unread';
   return jobsStartedBy(job).length ? 'other' : 'manual';
 }
 
-/* The jobs that run on their own first and the manual ones last, each class
-   in the order the server sent, which is the files' own (0055). `job` finds
-   the job in an item: a node's groups hold one each. */
+/* The jobs that run on their own first, then those that may, and the manual
+   ones last, each class in the order the server sent, which is the files' own
+   (0055). `job` finds the job in an item: a node's groups hold one each. */
 function jobsByStart(items, job = (g) => g.job) {
-  const rank = { scheduled: 0, other: 1, manual: 2 };
+  const rank = { scheduled: 0, unread: 1, other: 2, manual: 3 };
   return (items || []).map((item) => ({ item, rank: rank[jobsStart(job(item))] }))
     .sort((a, b) => a.rank - b.rank).map((d) => d.item);
 }
@@ -7280,9 +7287,11 @@ function jobsCoverageGroups(rows) {
 
 /* The sentence over the coverage lists. */
 function jobsCoverageLine(cov) {
-  const covered = cov.total - cov.never.length - cov.unscheduled.length;
+  const unread = (cov.unread || []).length;
+  const covered = cov.total - cov.never.length - cov.unscheduled.length - unread;
   const of = `${covered} of ${cov.total} models, seeds and snapshots run in a scheduled job`;
   const rest = [];
+  if (unread) rest.push(`${unread} only in jobs whose schedule is not read`);
   if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} only in unscheduled jobs`);
   if (cov.never.length) rest.push(`${cov.never.length} in no job`);
   return of + (rest.length ? '; ' + rest.join(', ') : '') + '.';
@@ -7458,14 +7467,19 @@ async function loadJobs({ look = false } = {}) {
 
 const jel = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
 
-/* How a job starts, as a pill that says scheduled or manual in a word, so the
-   two can be told apart at a glance down a list of cards. */
+/* How a job starts, as a pill that says scheduled, not read or manual in a
+   word, so they can be told apart at a glance down a list of cards. */
+const JOBS_WORD = { scheduled: 'Scheduled', unread: 'Not read', manual: 'Manual' };
+const JOBS_UNREAD_WHY = 'May start on its own, on what no file read says: a templated schedule, a schedule or an asset written as a mapping, '
+  + 'an empty list of assets, an asset no file read updates, a job no file read defines. Counted neither as scheduled nor as unscheduled';
+
 function jobsWhen(job) {
   const start = jobsStart(job);
   const pill = jel('span', 'jobwhen');
   pill.dataset.start = start;
-  if (start !== 'other') pill.append(jel('b', '', start === 'scheduled' ? 'Scheduled' : 'Manual'));
+  if (JOBS_WORD[start]) pill.append(jel('b', '', JOBS_WORD[start]));
   if (start !== 'manual') pill.append(jel('span', '', jobsScheduleText(job)));
+  if (start === 'unread') pill.title = JOBS_UNREAD_WHY;
   return pill;
 }
 
@@ -7642,6 +7656,10 @@ function renderCoverage(body, cov) {
   out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
   out.push(jobsSection('Only in unscheduled jobs', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
     'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
+  const unread = cov.unread || [];
+  if (unread.length) {
+    out.push(jobsSection('Only in jobs whose schedule is not read', jobsCoverageGroups(unread), unread.length, short(unread.length), JOBS_UNREAD_WHY));
+  }
   if (cov.ephemeral.length) {
     out.push(jobsSection('Ephemeral, so never run on their own', jobsCoverageGroups(cov.ephemeral), cov.ephemeral.length, false));
   }
@@ -10254,9 +10272,11 @@ function paintCatalogJobs(box, view) {
   };
   const chips = jobsChips(view.groups);
   for (const c of chips) {
+    const start = jobsStart(c.job);
+    const word = { scheduled: 'scheduled, ', unread: 'schedule not read, ' }[start] || '';
     chip('jobchip', c.text,
-      `${jobsJobLabel(c.job)}: ${c.job.scheduled ? 'scheduled, ' : ''}${jobsScheduleText(c.job)}\n${c.step.shown}\nclick: show it in the Jobs tab`,
-      { key: jobsStepKey(c.job, c.step), index: c.step.index }).dataset.start = jobsStart(c.job);
+      `${jobsJobLabel(c.job)}: ${word}${jobsScheduleText(c.job)}\n${c.step.shown}\nclick: show it in the Jobs tab`,
+      { key: jobsStepKey(c.job, c.step), index: c.step.index }).dataset.start = start;
   }
   const maybe = jobsMaybeCount(view.maybe);
   if (maybe) {

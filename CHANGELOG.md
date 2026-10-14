@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.19.0 - 2026-10-14
+
+- Count a dbt Cloud job as scheduled when its schedule trigger is on, even
+  when the vars file writes its cron (0077).
+- Count an Airflow DAG on an asset as scheduled when a scheduled DAG with no
+  dbt task updates it, an ingestion DAG for instance, or a task with no command
+  in a dbt DAG.
+- Tell a job whose schedule is not read from one nothing schedules: an amber
+  **Not read** pill for a schedule in Jinja or written as a mapping, an asset
+  written as a mapping or one no file read updates, an empty list of assets,
+  or a job no file defines, ranked after the scheduled jobs, and its models
+  listed apart in the job coverage, out of its news.
+
 ## 1.18.4 - 2026-10-14
 
 - Start the lineage at one level up and one down, and go back to that whenever

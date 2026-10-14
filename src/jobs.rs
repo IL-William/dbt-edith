@@ -394,6 +394,22 @@ pub struct Sensor {
     pub task: String,
 }
 
+/// Whether something starts a job without anyone asking, as far as the files
+/// say. Ordered, so that a chain of triggers takes the best of what pulls it
+/// and a DAG on several assets the worst of them (0077).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Start {
+    /// Nothing does: no schedule, `@once`, CI, a merge, or a chain ending there.
+    #[default]
+    No,
+    /// It hangs on what no file read says: a templated schedule, a schedule
+    /// or an asset written as a mapping, an asset no file read updates, a job
+    /// no file defines.
+    Unread,
+    /// A clock, read or not, or a trigger that leads back to one.
+    Yes,
+}
+
 /// A DAG or a dbt Cloud job.
 #[derive(Clone, Debug, Default)]
 pub struct Job {
@@ -412,6 +428,8 @@ pub struct Job {
     pub cron: String,
     /// Airflow: runs once these assets are updated.
     pub assets: Vec<String>,
+    /// Airflow: it waits on an asset too, one this tool cannot name.
+    asset_unread: bool,
     /// dbt Cloud: runs once this job completes, by its id.
     pub after: String,
     after_job: Option<usize>,
@@ -421,9 +439,24 @@ pub struct Job {
     pub note: String,
     pub sensors: Vec<Sensor>,
     pub steps: Vec<usize>,
-    /// Runs without anyone starting it: on a clock, or after something that
-    /// does (0063).
-    pub scheduled: bool,
+    /// What its tasks with no dbt command update, which starts DAGs too.
+    outlets: Vec<String>,
+    /// What its own schedule or trigger says, before any chain.
+    own: Start,
+    /// What starts it, chains followed (0063, 0077).
+    pub start: Start,
+    /// Its assets that no file read updates.
+    pub assets_unread: Vec<String>,
+}
+
+/// A DAG with no dbt task that updates an asset: not a job here, since it
+/// runs no node, but it may be what starts one (0077).
+#[derive(Clone, Debug, Default)]
+pub struct Feeder {
+    pub assets: Vec<String>,
+    asset_unread: bool,
+    pub outlets: Vec<String>,
+    own: Start,
 }
 
 /// One task of a DAG, or one step of a dbt Cloud job.
@@ -462,6 +495,7 @@ pub struct Read {
     pub sources: Vec<SourceRead>,
     pub jobs: Vec<Job>,
     pub steps: Vec<Step>,
+    pub feeders: Vec<Feeder>,
 }
 
 /* ------------------------------------------------------------- reading -- */
@@ -525,8 +559,66 @@ fn new_step(job: usize, n: usize, name: String, line: usize, command: Option<&st
     step
 }
 
-/// One Airflow DAG file. Ok(false) for a file that holds no dbt task.
-fn read_airflow(si: usize, src: &JobSource, file: &str, doc: &Node, jobs: &mut Vec<Job>, steps: &mut Vec<Step>) -> Result<bool, Refusal> {
+/// What an Airflow schedule says: a clock, assets, nothing, or why it cannot
+/// be read.
+#[derive(Default)]
+struct Schedule {
+    cron: String,
+    assets: Vec<String>,
+    asset_unread: bool,
+    note: String,
+    own: Start,
+}
+
+/// Jinja, in either of its two forms, is only known once rendered.
+fn templated(s: &str) -> bool {
+    s.contains("{{") || s.contains("{%")
+}
+
+fn airflow_schedule(node: Option<&Node>) -> Schedule {
+    let unread = |note: &str| Schedule { note: note.into(), own: Start::Unread, ..Default::default() };
+    match node.map(|n| &n.value) {
+        None | Some(Value::Null) => Schedule::default(),
+        Some(Value::Str(s)) => match s.as_str() {
+            "None" | "null" | "" => Schedule::default(),
+            "@once" => Schedule { note: "runs once, at its start date".into(), ..Default::default() },
+            s if templated(s) => unread("a schedule only known when the DAG is parsed"),
+            s => Schedule { cron: s.to_string(), own: Start::Yes, ..Default::default() },
+        },
+        Some(Value::Seq(items)) => {
+            // An empty entry, `- ` or `~`, names nothing to wait on.
+            let items: Vec<&Node> = items.iter().filter(|n| !n.is_null()).collect();
+            let assets: Vec<String> = items.iter().filter_map(|n| n.str().map(str::to_string)).collect();
+            // An asset written as a mapping, as dag-factory writes one with
+            // its `uri`, is waited on all the same: the DAG may start or not,
+            // whatever the named ones say. An empty list names nothing this
+            // tool can tell a start by.
+            let note = if items.is_empty() {
+                "an empty list of assets, which this tool does not read"
+            } else if items.iter().any(|n| matches!(n.value, Value::Map(_))) {
+                "an asset written as a mapping, which this tool does not read"
+            } else if assets.len() < items.len() {
+                "an asset written as a list, which this tool does not read"
+            } else {
+                ""
+            };
+            Schedule { assets, asset_unread: !note.is_empty(), note: note.into(), ..Default::default() }
+        }
+        Some(Value::Map(_)) => unread("a schedule written as a mapping, which this tool does not read"),
+    }
+}
+
+/// One Airflow DAG file. Ok(false) for a file that holds no dbt task, which
+/// still leaves a feeder behind when it updates an asset.
+fn read_airflow(
+    si: usize,
+    src: &JobSource,
+    file: &str,
+    doc: &Node,
+    jobs: &mut Vec<Job>,
+    steps: &mut Vec<Step>,
+    feeders: &mut Vec<Feeder>,
+) -> Result<bool, Refusal> {
     let refuse = |line: usize, message: String| Refusal { file: file.to_string(), line, message };
     let tasks_key = key(src, "tasks");
     let Some(tasks) = doc.at_path(&tasks_key) else { return Ok(false) };
@@ -539,26 +631,37 @@ fn read_airflow(si: usize, src: &JobSource, file: &str, doc: &Node, jobs: &mut V
         Value::Str(_) => return Err(refuse(tasks.line, format!("`{tasks_key}` is neither a list nor a mapping of tasks"))),
     };
     let command_key = key(src, "command");
-    if !list.iter().any(|(_, t)| t.at_path(&command_key).is_some_and(|c| !c.is_null())) {
+    let is_dbt = |t: &Node| t.at_path(&command_key).is_some_and(|c| !c.is_null());
+    let (dag_key, outlets_key) = (key(src, "dag_id"), key(src, "outlets"));
+    let others: Vec<String> = list.iter().filter(|(_, t)| !is_dbt(t)).flat_map(|(_, t)| names(t.at_path(&outlets_key))).collect();
+    if !list.iter().any(|(_, t)| is_dbt(t)) {
+        // Never refused: it is no job, and only what it updates matters.
+        if !others.is_empty() && text(doc.at_path(&dag_key)).is_some_and(|n| !n.is_empty()) {
+            let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
+            feeders.push(Feeder { assets: sched.assets, asset_unread: sched.asset_unread, outlets: others, own: sched.own });
+        }
         return Ok(false);
     }
-    let dag_key = key(src, "dag_id");
     let Some(dag) = doc.at_path(&dag_key).filter(|n| n.str().is_some_and(|s| !s.is_empty())) else {
         return Err(refuse(0, format!("dbt tasks, and no DAG id at `{dag_key}`")));
     };
     let name = dag.str().unwrap_or_default().to_string();
-    let mut job = Job { source: si, kind: AIRFLOW, file: file.into(), line: dag.line, ident: name.clone(), name, ..Default::default() };
-    match doc.at_path(&key(src, "schedule")).map(|n| &n.value) {
-        None | Some(Value::Null) => {}
-        Some(Value::Str(s)) => match s.as_str() {
-            "None" | "null" | "" => {}
-            "@once" => job.note = "runs once, at its start date".into(),
-            s if s.contains("{{") => job.note = "a schedule only known when the DAG is parsed".into(),
-            s => job.cron = s.to_string(),
-        },
-        Some(Value::Seq(items)) => job.assets = items.iter().filter_map(|n| n.str().map(str::to_string)).collect(),
-        Some(Value::Map(_)) => job.note = "a schedule written as a mapping, which this tool does not read".into(),
-    }
+    let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
+    let mut job = Job {
+        source: si,
+        kind: AIRFLOW,
+        file: file.into(),
+        line: dag.line,
+        ident: name.clone(),
+        name,
+        cron: sched.cron,
+        assets: sched.assets,
+        asset_unread: sched.asset_unread,
+        note: sched.note,
+        own: sched.own,
+        outlets: others,
+        ..Default::default()
+    };
     let (sid, sdag, stask) = (key(src, "sensor_id"), key(src, "external_dag_id"), key(src, "external_task_id"));
     for s in doc.at_path(&key(src, "sensors")).and_then(Node::items).unwrap_or_default() {
         if let Some(dag) = text(s.at_path(&sdag)) {
@@ -566,7 +669,7 @@ fn read_airflow(si: usize, src: &JobSource, file: &str, doc: &Node, jobs: &mut V
         }
     }
     let ji = jobs.len();
-    let (id_key, deps_key, outlets_key) = (key(src, "task_id"), key(src, "depends_on"), key(src, "outlets"));
+    let (id_key, deps_key) = (key(src, "task_id"), key(src, "depends_on"));
     for (own, task) in list {
         let Some(command) = task.at_path(&command_key).filter(|c| !c.is_null()) else { continue };
         let name = text(task.at_path(&id_key)).or_else(|| own.map(str::to_string)).unwrap_or_default();
@@ -609,16 +712,24 @@ fn read_cloud(si: usize, file: &str, doc: &Node, jobs: &mut Vec<Job>, steps: &mu
             after: text(j.at_path("job_completion_trigger_condition.condition.job_id")).unwrap_or_default(),
             ..Default::default()
         };
-        if on("schedule") {
+        // The trigger alone says whether dbt Cloud runs it on a clock; the
+        // cron only says when (0077).
+        let switch = text(triggers.and_then(|t| t.get("schedule"))).is_some_and(|t| templated(&t));
+        if on("schedule") || switch {
             match text(j.at_path("schedule.cron")) {
-                Some(c) if c.contains("{{") => job.note = "a schedule only the vars file knows".into(),
+                Some(c) if templated(&c) => job.note = "a schedule only the vars file knows".into(),
                 Some(c) if !c.is_empty() => job.cron = c,
                 _ => job.note = "on a schedule this tool cannot read".into(),
             }
+            job.own = if switch { Start::Unread } else { Start::Yes };
         }
-        if job.after.contains("{{") {
+        if switch {
+            job.note = "a schedule only the vars file turns on".into();
+        }
+        if templated(&job.after) {
             job.note = "after a job only the vars file names".into();
             job.after.clear();
+            job.own = job.own.max(Start::Unread);
         }
         let ji = jobs.len();
         let mut commands: Vec<(usize, Option<String>, bool)> = Vec::new();
@@ -721,8 +832,11 @@ fn resolve_steps(graph: &Graph, steps: &mut [Step]) {
     }
 }
 
-/// Completion triggers to the jobs they name, and which jobs run on their own.
-fn link(jobs: &mut [Job], steps: &[Step]) {
+/// Completion triggers to the jobs they name, and what starts each job: its
+/// own clock, a job whose end starts it, or the assets it waits on, each
+/// updated by a task of a DAG read or by a feeder (0077).
+fn link(read: &mut Read) {
+    let jobs = &mut read.jobs;
     for i in 0..jobs.len() {
         if jobs[i].after.is_empty() {
             continue;
@@ -730,25 +844,50 @@ fn link(jobs: &mut [Job], steps: &[Step]) {
         let want = jobs[i].after.clone();
         jobs[i].after_job = jobs.iter().position(|j| j.kind == DBT_CLOUD && j.ids.contains(&want));
     }
-    // Who updates each asset, for the DAGs scheduled on it.
-    let producers = |asset: &str| -> Vec<usize> {
-        let mut out: Vec<usize> = steps.iter().filter(|s| s.outlets.iter().any(|o| o == asset)).map(|s| s.job).collect();
-        out.dedup();
-        out
-    };
-    let feeds: Vec<Vec<Vec<usize>>> = jobs.iter().map(|j| j.assets.iter().map(|a| producers(a)).collect()).collect();
-    let mut on: Vec<bool> = jobs.iter().map(|j| !j.cron.is_empty()).collect();
+    // Jobs first, then feeders, in one numbering: a feeder may itself wait on
+    // an asset a DAG updates.
+    let updates: Vec<Vec<&String>> = jobs
+        .iter()
+        .map(|j| j.steps.iter().flat_map(|&s| &read.steps[s].outlets).chain(&j.outlets).collect())
+        .chain(read.feeders.iter().map(|f| f.outlets.iter().collect()))
+        .collect();
+    // Built once and only looked up, never walked, so its order is no answer's
+    // (0055); each producer once per asset, in the numbering's order.
+    let mut producers: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (p, outlets) in updates.iter().enumerate() {
+        for o in outlets {
+            let list = producers.entry(o.as_str()).or_default();
+            if list.last() != Some(&p) {
+                list.push(p);
+            }
+        }
+    }
+    let waits: Vec<&[String]> = jobs.iter().map(|j| j.assets.as_slice()).chain(read.feeders.iter().map(|f| f.assets.as_slice())).collect();
+    let feeds: Vec<Vec<Vec<usize>>> = waits.iter().map(|a| a.iter().map(|a| producers.get(a.as_str()).cloned().unwrap_or_default()).collect()).collect();
+    let hidden: Vec<bool> = jobs.iter().map(|j| j.asset_unread).chain(read.feeders.iter().map(|f| f.asset_unread)).collect();
+    let after: Vec<Option<usize>> = jobs.iter().map(|j| j.after_job).chain(read.feeders.iter().map(|_| None)).collect();
+    // A job no file defines may be on a clock or not.
+    let mut on: Vec<Start> = jobs
+        .iter()
+        .map(|j| if !j.after.is_empty() && j.after_job.is_none() { j.own.max(Start::Unread) } else { j.own })
+        .chain(read.feeders.iter().map(|f| f.own))
+        .collect();
     // A trigger counts once what pulls it counts; cycles simply never start.
+    // An asset is updated by any of its producers, or by something no file
+    // read says when it has none; a DAG waits on all of its assets.
     loop {
         let mut changed = false;
-        for i in 0..jobs.len() {
-            if on[i] {
-                continue;
-            }
-            let after = jobs[i].after_job.is_some_and(|a| on[a]);
-            let assets = !feeds[i].is_empty() && feeds[i].iter().all(|p| p.iter().any(|&j| on[j]));
-            if after || assets {
-                on[i] = true;
+        for i in 0..on.len() {
+            let by_after = after[i].map_or(Start::No, |a| on[a]);
+            let by_assets = feeds[i]
+                .iter()
+                .map(|p| if p.is_empty() { Start::Unread } else { p.iter().map(|&j| on[j]).max().unwrap_or(Start::No) })
+                .chain(hidden[i].then_some(Start::Unread))
+                .min()
+                .unwrap_or(Start::No);
+            let best = on[i].max(by_after).max(by_assets);
+            if best > on[i] {
+                on[i] = best;
                 changed = true;
             }
         }
@@ -756,8 +895,9 @@ fn link(jobs: &mut [Job], steps: &[Step]) {
             break;
         }
     }
-    for (job, on) in jobs.iter_mut().zip(on) {
-        job.scheduled = on;
+    for (i, job) in jobs.iter_mut().enumerate() {
+        job.start = on[i];
+        job.assets_unread = job.assets.iter().zip(&feeds[i]).filter(|(_, p)| p.is_empty()).map(|(a, _)| a.clone()).collect();
     }
 }
 
@@ -786,7 +926,7 @@ fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>
                     let outcome = match read_doc(path, *len) {
                         Err((line, message)) => Err(Refusal { file: file.clone(), line, message }),
                         Ok(doc) if src.kind == DBT_CLOUD => read_cloud(si, &file, &doc, &mut read.jobs, &mut read.steps),
-                        Ok(doc) => read_airflow(si, src, &file, &doc, &mut read.jobs, &mut read.steps),
+                        Ok(doc) => read_airflow(si, src, &file, &doc, &mut read.jobs, &mut read.steps, &mut read.feeders),
                     };
                     match outcome {
                         Ok(true) => {
@@ -809,7 +949,7 @@ fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>
         read.sources.push(sr);
     }
     resolve_steps(graph, &mut read.steps);
-    link(&mut read.jobs, &read.steps);
+    link(&mut read);
     (read, stamps)
 }
 
@@ -887,6 +1027,12 @@ pub struct JobView {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub note: String,
     pub scheduled: bool,
+    /// Whether anything starts it hangs on what no file read says (0077).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub schedule_unread: bool,
+    /// Its assets that no file read updates.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assets_unread: Vec<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub env: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -986,7 +1132,9 @@ fn job_view(read: &Read, ji: usize) -> JobView {
         ci: j.ci,
         merge: j.merge,
         note: j.note.clone(),
-        scheduled: j.scheduled,
+        scheduled: j.start == Start::Yes,
+        schedule_unread: j.start == Start::Unread,
+        assets_unread: j.assets_unread.clone(),
         env: j.env.clone(),
         target: j.target.clone(),
         waits_for: j.sensors.iter().map(|s| if s.task.is_empty() { s.dag.clone() } else { format!("{} › {}", s.dag, s.task) }).collect(),
@@ -1168,6 +1316,9 @@ pub struct Coverage {
     pub never: Vec<Row>,
     /// Run only by jobs nothing schedules.
     pub unscheduled: Vec<Row>,
+    /// Run by no scheduled job, but by one whose start hangs on what no file
+    /// read says (0077).
+    pub unread: Vec<Row>,
     /// Never run on their own, whatever selects them.
     pub ephemeral: Vec<Row>,
     /// Steps that select nothing they act on.
@@ -1216,12 +1367,12 @@ pub fn run_by_a_step(graph: &Graph, read: &Read) -> Vec<bool> {
 
 pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
     let n = graph.nodes.len();
-    let (mut any, mut on) = (vec![false; n], vec![false; n]);
+    let (mut any, mut on) = (vec![false; n], vec![Start::No; n]);
     for s in read.steps.iter().filter(|s| s.executes()) {
-        let scheduled = read.jobs[s.job].scheduled;
+        let start = read.jobs[s.job].start;
         for &i in &s.nodes {
             any[i as usize] = true;
-            on[i as usize] |= scheduled;
+            on[i as usize] = on[i as usize].max(start);
         }
     }
     let mut cov = Coverage { configured: !read.sources.is_empty(), ..Default::default() };
@@ -1243,13 +1394,16 @@ pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
         cov.total += 1;
         if !any[i] {
             cov.never.push(row);
-        } else if !on[i] {
+        } else if on[i] == Start::No {
             cov.unscheduled.push(row);
+        } else if on[i] == Start::Unread {
+            cov.unread.push(row);
         }
     }
     let order = |a: &Row, b: &Row| a.folder.cmp(&b.folder).then_with(|| a.name.cmp(&b.name)).then_with(|| a.id.cmp(&b.id));
     cov.never.sort_by(order);
     cov.unscheduled.sort_by(order);
+    cov.unread.sort_by(order);
     cov.ephemeral.sort_by(order);
     for (si, s) in read.steps.iter().enumerate() {
         if !s.unresolved.is_empty() {
@@ -1437,7 +1591,7 @@ tasks:
         assert_eq!((s.files, s.jobs, s.steps, s.skipped), (2, 1, 2, 1));
         let job = &read.jobs[0];
         assert_eq!((job.name.as_str(), job.cron.as_str(), job.file.as_str(), job.line), ("shop_daily", "0 5 * * *", "dags/shop_daily.yml", 1));
-        assert!(job.scheduled);
+        assert_eq!(job.start, Start::Yes);
         let (stage, marts) = (&read.steps[0], &read.steps[1]);
         assert_eq!(names_of(&g, &stage.nodes), ["stg_customers", "stg_orders"]);
         // `+tag:daily` reaches the ephemeral model and the staging models;
@@ -1467,7 +1621,7 @@ tasks:
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("b"), &keys), source(AIRFLOW, &d.join("a"), &[])]);
         let reports = &read.jobs[0];
         assert_eq!(reports.name, "shop_reports");
-        assert!(!reports.scheduled, "a null schedule is a manual DAG");
+        assert_eq!(reports.start, Start::No, "a null schedule is a manual DAG");
         assert_eq!(names_of(&g, &read.steps[0].nodes), ["customers"]);
         // The selector holds models/marts; `test` keeps its tests.
         assert_eq!(names_of(&g, &read.steps[1].nodes), ["not_null_orders_id"]);
@@ -1486,13 +1640,245 @@ tasks:
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
         let after = read.jobs.iter().find(|j| j.name == "shop_after").unwrap();
         assert_eq!(after.assets, ["marts_ready"]);
-        assert!(after.scheduled);
+        assert_eq!(after.start, Start::Yes);
         let marts = read.steps.iter().position(|s| s.name == "marts").unwrap();
         assert_eq!(step_view(&g, &read, marts, None).feeds, ["shop_after"]);
         // Without the producer's clock, nothing pulls it.
         write(&d, "daily.yml", &DAG.replace("\"0 5 * * *\"", "null"));
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
-        assert!(read.jobs.iter().all(|j| !j.scheduled));
+        assert!(read.jobs.iter().all(|j| j.start == Start::No));
+    }
+
+    /// A DAG running one model, on the schedule given as written in YAML.
+    fn one_dag(id: &str, schedule: &str, select: &str) -> String {
+        format!("dag_id: {id}\nschedule: {schedule}\ntasks:\n  - task_id: t\n    command: dbt run --select {select}\n")
+    }
+
+    fn start_of(read: &Read, name: &str) -> Start {
+        read.jobs.iter().find(|j| j.name == name).unwrap_or_else(|| panic!("no job {name}")).start
+    }
+
+    #[test]
+    fn an_asset_is_updated_by_any_task_read_dbt_or_not() {
+        let d = dir("feeders");
+        // An ingestion DAG runs no dbt, yet starts the DAG waiting on what it loads.
+        write(&d, "ingest.yml", "dag_id: ingest\nschedule: \"0 4 * * *\"\ntasks:\n  - task_id: load\n    outlets: [raw_ready]\n");
+        write(&d, "on_raw.yml", &one_dag("on_raw", "[raw_ready]", "stg_orders"));
+        // A task with no command in a dbt DAG updates an asset as well.
+        write(&d, "daily.yml", &format!("{DAG}  - task_id: publish\n    outlets: [published]\n"));
+        write(&d, "on_published.yml", &one_dag("on_published", "[published]", "orders"));
+        // A feeder waits on an asset a dbt DAG updates, and passes the clock on.
+        write(&d, "copy.yml", "dag_id: copy\nschedule: [marts_ready]\ntasks:\n  load:\n    outlets: [copied]\n");
+        write(&d, "on_copied.yml", &one_dag("on_copied", "[copied]", "customers"));
+        // Nothing read updates `elsewhere`, which an API call may.
+        write(&d, "on_elsewhere.yml", &one_dag("on_elsewhere", "[elsewhere]", "stg_customers"));
+        write(&d, "on_both.yml", &one_dag("on_both", "[raw_ready, elsewhere]", "stg_customers"));
+        // No DAG id: other YAML, neither a feeder nor refused.
+        write(&d, "notes.yml", "tasks:\n  - outlets: [elsewhere]\n");
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        assert_eq!(read.sources[0].refused, []);
+        assert_eq!(read.feeders.len(), 2, "ingest and copy");
+        assert_eq!(read.sources[0].skipped, 3, "the feeders and the notes hold no job");
+        // A feeder is listed nowhere: not among the jobs read, nor the coverage's.
+        assert_eq!(summary(&read).jobs, 6);
+        let listed: Vec<String> = coverage(&g, &read).jobs.into_iter().map(|j| j.name).collect();
+        assert_eq!(listed.len(), 6);
+        assert!(!listed.iter().any(|n| n == "ingest" || n == "copy"), "{listed:?}");
+        assert_eq!(start_of(&read, "on_raw"), Start::Yes);
+        assert_eq!(start_of(&read, "on_published"), Start::Yes);
+        assert_eq!(start_of(&read, "on_copied"), Start::Yes);
+        assert_eq!(start_of(&read, "on_elsewhere"), Start::Unread);
+        assert_eq!(start_of(&read, "on_both"), Start::Unread, "it waits on both");
+        let both = read.jobs.iter().position(|j| j.name == "on_both").unwrap();
+        assert_eq!(job_view(&read, both).assets_unread, ["elsewhere"]);
+        assert!(job_view(&read, both).schedule_unread && !job_view(&read, both).scheduled);
+        // Without the ingestion's clock, nothing pulls what waits on it.
+        write(&d, "ingest.yml", "dag_id: ingest\nschedule: null\ntasks:\n  - task_id: load\n    outlets: [raw_ready]\n");
+        write(&d, "daily.yml", &DAG.replace("\"0 5 * * *\"", "\"{{ var.value.cron }}\""));
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        assert_eq!(start_of(&read, "on_raw"), Start::No);
+        assert_eq!(start_of(&read, "on_both"), Start::No, "raw_ready never comes");
+        assert_eq!(start_of(&read, "shop_daily"), Start::Unread);
+        assert_eq!(start_of(&read, "on_copied"), Start::Unread, "through a clock not read");
+        assert_eq!(start_of(&read, "on_published"), Start::Unread, "daily.yml lost its publish task");
+    }
+
+    #[test]
+    fn a_clock_no_file_says_counts_neither_way() {
+        let d = dir("unread");
+        write(&d, "air/templated.yml", &one_dag("templated", "\"{{ var.value.cron }}\"", "stg_orders"));
+        write(&d, "air/mapping.yml", &one_dag("mapping", "{ cron: \"0 1 * * *\", timezone: UTC }", "stg_customers"));
+        write(&d, "air/once.yml", &one_dag("once", "\"@once\"", "orders"));
+        write(
+            &d,
+            "cloud/jobs.yml",
+            "jobs:
+  hidden_cron:
+    name: Hidden cron
+    execute_steps: [dbt seed]
+    schedule: { cron: \"{{ cron }}\" }
+    triggers: { schedule: true }
+  no_cron:
+    name: No cron
+    execute_steps: [dbt run -s customers]
+    triggers: { schedule: true }
+  switched:
+    name: Switched
+    execute_steps: [dbt run -s orders]
+    schedule: { cron: \"0 6 * * *\" }
+    triggers: { schedule: \"{{ nightly }}\" }
+  after_unknown:
+    name: After unknown
+    execute_steps: [dbt run -s stg_orders]
+    triggers: { schedule: false }
+    job_completion_trigger_condition: { condition: { job_id: 999 } }
+  after_templated:
+    name: After templated
+    execute_steps: [dbt run -s stg_orders]
+    job_completion_trigger_condition: { condition: { job_id: \"{{ upstream }}\" } }
+  off:
+    name: Off
+    execute_steps: [dbt run -s stg_customers]
+    schedule: { cron: \"0 6 * * *\" }
+    triggers: { schedule: false }
+",
+        );
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("air"), &[]), source(DBT_CLOUD, &d.join("cloud"), &[])]);
+        assert_eq!(start_of(&read, "templated"), Start::Unread);
+        assert_eq!(start_of(&read, "mapping"), Start::Unread);
+        assert_eq!(start_of(&read, "once"), Start::No);
+        // dbt Cloud runs a job on a clock when its trigger says so, whether
+        // or not this tool can read when.
+        let hidden = read.jobs.iter().find(|j| j.name == "Hidden cron").unwrap();
+        assert_eq!((hidden.start, hidden.cron.as_str(), hidden.note.as_str()), (Start::Yes, "", "a schedule only the vars file knows"));
+        assert_eq!(start_of(&read, "No cron"), Start::Yes);
+        let switched = read.jobs.iter().find(|j| j.name == "Switched").unwrap();
+        assert_eq!((switched.start, switched.cron.as_str()), (Start::Unread, "0 6 * * *"));
+        assert_eq!(start_of(&read, "After unknown"), Start::Unread);
+        assert_eq!(start_of(&read, "After templated"), Start::Unread);
+        assert_eq!(start_of(&read, "Off"), Start::No);
+    }
+
+    #[test]
+    fn an_asset_this_tool_cannot_name_is_waited_on_all_the_same() {
+        let d = dir("asset-mapping");
+        write(&d, "ingest.yml", "dag_id: ingest\nschedule: \"0 4 * * *\"\ntasks:\n  - task_id: load\n    outlets: [raw_ready]\n");
+        write(&d, "by_hand.yml", "dag_id: by_hand\nschedule: null\ntasks:\n  - task_id: load\n    outlets: [typed_in]\n");
+        // dag-factory writes an asset as a mapping, by its uri.
+        write(&d, "on_uri.yml", &one_dag("on_uri", "[{ __type__: airflow.sdk.Asset, uri: \"s3://bucket/raw\" }]", "stg_orders"));
+        write(&d, "on_mixed.yml", &one_dag("on_mixed", "[raw_ready, { uri: \"s3://bucket/raw\" }]", "stg_customers"));
+        write(&d, "on_mixed_by_hand.yml", &one_dag("on_mixed_by_hand", "[typed_in, { uri: \"s3://bucket/raw\" }]", "customers"));
+        write(&d, "on_nothing.yml", &one_dag("on_nothing", "[]", "orders"));
+        // A feeder on such an asset passes on what it knows.
+        write(&d, "relay.yml", "dag_id: relay\nschedule: [{ uri: \"s3://bucket/raw\" }]\ntasks:\n  - task_id: copy\n    outlets: [relayed]\n");
+        write(&d, "on_relayed.yml", &one_dag("on_relayed", "[relayed]", "orders"));
+        // An empty entry names nothing; a list in the list is no name either.
+        write(&d, "on_blank.yml", &one_dag("on_blank", "[raw_ready, ~]", "stg_orders"));
+        write(&d, "on_nested.yml", &one_dag("on_nested", "[raw_ready, [raw_ready]]", "stg_orders"));
+        write(&d, "on_blanks.yml", &one_dag("on_blanks", "[~]", "stg_orders"));
+        // Jinja's statements are as unknown as its expressions.
+        write(&d, "statement.yml", &one_dag("statement", "\"{% if prod %}0 5 * * *{% endif %}\"", "orders"));
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        assert_eq!(read.sources[0].refused, []);
+        assert_eq!(start_of(&read, "on_uri"), Start::Unread);
+        let mixed = read.jobs.iter().find(|j| j.name == "on_mixed").unwrap();
+        assert_eq!(mixed.assets, ["raw_ready"]);
+        assert_eq!((mixed.start, mixed.note.as_str()), (Start::Unread, "an asset written as a mapping, which this tool does not read"));
+        assert_eq!(start_of(&read, "on_mixed_by_hand"), Start::No, "typed_in never comes on its own");
+        assert_eq!(start_of(&read, "on_nothing"), Start::Unread);
+        let blank = read.jobs.iter().find(|j| j.name == "on_blank").unwrap();
+        assert_eq!((blank.start, blank.note.as_str()), (Start::Yes, ""));
+        let nested = read.jobs.iter().find(|j| j.name == "on_nested").unwrap();
+        assert_eq!((nested.start, nested.note.as_str()), (Start::Unread, "an asset written as a list, which this tool does not read"));
+        let blanks = read.jobs.iter().find(|j| j.name == "on_blanks").unwrap();
+        assert_eq!((blanks.start, blanks.note.as_str()), (Start::Unread, "an empty list of assets, which this tool does not read"));
+        assert_eq!(start_of(&read, "on_relayed"), Start::Unread);
+        assert_eq!(start_of(&read, "statement"), Start::Unread);
+        let cloud = dir("cloud-statement");
+        write(
+            &cloud,
+            "jobs.yml",
+            "jobs:\n  hidden:\n    name: Hidden\n    execute_steps: [dbt seed]\n    schedule: { cron: \"{% if prod %}0 6 * * *{% endif %}\" }\n    triggers: { schedule: \"{% if prod %}true{% endif %}\" }\n",
+        );
+        let (read, _) = build(&g, &cloud, &[source(DBT_CLOUD, &cloud, &[])]);
+        let hidden = &read.jobs[0];
+        assert_eq!((hidden.start, hidden.cron.as_str()), (Start::Unread, ""));
+    }
+
+    /// A dbt Cloud job alone in its file, started when the job `after` ends.
+    fn cloud_after(ident: &str, id: u32, after: u32) -> String {
+        format!(
+            "jobs:\n  {ident}:\n    name: {ident}\n    id: {id}\n    execute_steps: [dbt run -s stg_orders]\n    triggers: {{ schedule: false }}\n    job_completion_trigger_condition: {{ condition: {{ job_id: {after} }} }}\n"
+        )
+    }
+
+    #[test]
+    fn answers_hold_in_any_order_and_a_cycle_never_starts() {
+        let files = [
+            ("air", "dag_id: ingest\nschedule: \"0 4 * * *\"\ntasks:\n  - task_id: load\n    outlets: [raw_ready]\n".to_string()),
+            ("air", one_dag("stage", "[raw_ready]", "stg_orders") + "  - task_id: done\n    outlets: [staged]\n"),
+            ("air", "dag_id: copy\nschedule: [staged]\ntasks:\n  load:\n    outlets: [copied]\n".to_string()),
+            ("air", one_dag("on_copied", "[copied, elsewhere]", "orders")),
+            // A cycle through a feeder, one of its assets updated by no file read.
+            ("air", one_dag("loop", "[looped, elsewhere]", "customers") + "  - task_id: done\n    outlets: [from_loop]\n"),
+            ("air", "dag_id: loop_feed\nschedule: [from_loop]\ntasks:\n  - task_id: load\n    outlets: [looped]\n".to_string()),
+            // A chain behind a job no file defines.
+            ("cloud", cloud_after("first", 201, 999)),
+            ("cloud", cloud_after("second", 202, 201)),
+            ("cloud", cloud_after("third", 203, 202)),
+        ];
+        let g = graph();
+        let answers = |name: &str, reverse: bool| {
+            let d = dir(name);
+            for (i, (sub, text)) in files.iter().enumerate() {
+                let n = if reverse { files.len() - i } else { i };
+                write(&d, &format!("{sub}/{n:02}.yml"), text);
+            }
+            let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("air"), &[]), source(DBT_CLOUD, &d.join("cloud"), &[])]);
+            let mut views: Vec<serde_json::Value> = (0..read.jobs.len())
+                .map(|i| {
+                    // Only where it was read from differs: the folder and the file.
+                    let mut v = serde_json::to_value(job_view(&read, i)).unwrap();
+                    let o = v.as_object_mut().unwrap();
+                    o.remove("source");
+                    o.remove("file");
+                    v
+                })
+                .collect();
+            views.sort_by_key(|v| v["name"].as_str().unwrap_or_default().to_string());
+            let cov = coverage(&g, &read);
+            let names = |rows: &[Row]| rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+            let starts: Vec<(String, Start)> = read.jobs.iter().map(|j| (j.name.clone(), j.start)).collect();
+            (views, [names(&cov.never), names(&cov.unscheduled), names(&cov.unread)], starts)
+        };
+        let (views, lists, starts) = answers("order-a", false);
+        let (views_b, lists_b, _) = answers("order-b", true);
+        assert_eq!(views, views_b);
+        assert_eq!(lists, lists_b);
+        let start = |n: &str| starts.iter().find(|(name, _)| name == n).unwrap().1;
+        assert_eq!(start("stage"), Start::Yes);
+        assert_eq!(start("on_copied"), Start::Unread);
+        assert_eq!(start("loop"), Start::No, "a cycle never starts, whatever else it waits on");
+        assert_eq!([start("first"), start("second"), start("third")], [Start::Unread; 3]);
+    }
+
+    #[test]
+    fn coverage_keeps_a_schedule_not_read_apart() {
+        let d = dir("coverage-unread");
+        write(&d, "daily.yml", &one_dag("daily", "\"0 5 * * *\"", "orders"));
+        write(&d, "templated.yml", &one_dag("templated", "\"{{ var.value.cron }}\"", "orders stg_orders stg_customers"));
+        write(&d, "manual.yml", &one_dag("manual", "null", "stg_customers customers"));
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        let cov = coverage(&g, &read);
+        let names = |rows: &[Row]| rows.iter().map(|r| r.name.clone()).collect::<Vec<_>>();
+        // orders has a scheduled job; stg_customers may have one.
+        assert_eq!(names(&cov.unread), ["stg_customers", "stg_orders"]);
+        assert_eq!(names(&cov.unscheduled), ["customers"]);
+        assert_eq!(names(&cov.never), ["test", "raw_orders"]);
     }
 
     const CLOUD: &str = "defaults: &defaults
@@ -1554,12 +1940,12 @@ jobs:
         assert_eq!(names_of(&g, &steps[1].nodes), ["raw_orders"]);
         assert_eq!(names_of(&g, &steps[2].nodes), ["orders", "raw_orders", "stg_orders"]);
         let exports = &read.jobs[1];
-        assert!(exports.scheduled, "after a scheduled job");
+        assert_eq!(exports.start, Start::Yes, "after a scheduled job");
         assert_eq!(job_view(&read, 1).after, "Daily build");
         assert_eq!(job_view(&read, 0).triggers, ["Exports"]);
         let ci = &read.steps[read.jobs[2].steps[0]];
         assert!(ci.unresolved.contains("--state"), "{}", ci.unresolved);
-        assert!(read.jobs[2].ci && !read.jobs[2].scheduled);
+        assert!(read.jobs[2].ci && read.jobs[2].start == Start::No);
         let templated = &read.steps[read.jobs[3].steps[0]];
         assert!(templated.unresolved.contains("only known when the job runs"), "{}", templated.unresolved);
         assert_eq!(read.jobs[3].env, "{{ env_id }}");
@@ -1615,7 +2001,7 @@ jobs:
         let cov = coverage(&g, &read);
         assert_eq!(cov.empty.len(), 1);
         assert_eq!(cov.empty[0].why, "nothing matches `tag:nowhere`");
-        assert!(read.jobs[0].scheduled, "a preset is a clock");
+        assert_eq!(read.jobs[0].start, Start::Yes, "a preset is a clock");
     }
 
     #[test]
@@ -1847,9 +2233,9 @@ jobs:
         let grants = read.steps.iter().find(|s| s.name == "grants").unwrap();
         assert_eq!(grants.shown, "dbt run-operation grant_select --args …");
         let on_marts = read.jobs.iter().find(|j| j.name == "jaffle_on_marts").unwrap();
-        assert!(on_marts.scheduled, "on an asset a scheduled DAG updates");
-        assert!(read.jobs.iter().find(|j| j.name == "Exports").unwrap().scheduled);
-        assert!(!read.jobs.iter().find(|j| j.name == "CI").unwrap().scheduled);
+        assert_eq!(on_marts.start, Start::Yes, "on an asset a scheduled DAG updates");
+        assert_eq!(read.jobs.iter().find(|j| j.name == "Exports").unwrap().start, Start::Yes);
+        assert_eq!(read.jobs.iter().find(|j| j.name == "CI").unwrap().start, Start::No);
     }
 
     #[test]

@@ -391,7 +391,8 @@ folder's config gave a strategy or a key lists it, dimmed, under details: it
 does not use it, but `config.incremental_strategy:` still selects it.
 Once a [job source](#jobs) is named, Preview also lists the steps that run the
 node, one chip each, `DAG › task` or `job › step`, green when the job is
-scheduled and grey when it is not, in the Jobs tab's order. A click on one
+scheduled, amber when its schedule is not read and grey when it is not
+scheduled, in the Jobs tab's order. A click on one
 opens the Jobs tab on that node at that step, even when it is a box clicked
 once in the lineage rather than the node in focus. A dashed chip counts the
 steps not resolved, or the files not read, that could run it too.
@@ -1189,8 +1190,13 @@ DBT CLOUD  Job Daily build [[daily]]   (SCHEDULED 0 */2 * * *)   cloud · jobs.y
 
 The jobs that run on their own come first, with a green **Scheduled** pill
 that gives the schedule, and the ones nothing starts come last, with a grey
-**Manual** one. A CI or merge job, which something starts but no clock, sits
-between the two, its pill saying what starts it.
+**Manual** one. Next after the scheduled ones come the jobs that may run on
+their own, on something no file read says, with an amber **Not read** pill
+that says what: a schedule in `{{ }}` or `{% %}` or written as a mapping, an
+asset written as a mapping or one no file read updates, an empty list of
+assets, a dbt Cloud job started by one no file defines. A CI or merge job,
+which something starts but no clock, sits before the manual ones, its pill
+saying what starts it.
 
 **via** names the terms of the selection that reached the node, so a staging
 model listed under a marts task says why. **dbt ls** types into the terminal the
@@ -1205,16 +1211,21 @@ might take a value or not.
 in the tab opens, turns the question round: which of the
 project's own models, seeds and snapshots no scheduled job runs, which run only
 in jobs nothing schedules (*Only in unscheduled jobs*: manual, CI, a merge),
-which steps select nothing, and which
-jobs were read.
+which run only in jobs whose schedule is not read and in no scheduled one
+(*Only in jobs whose schedule is not read*), which steps select nothing, and
+which jobs were read.
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed
 on its own. An installed package's models are left out, so the report is about
 the project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
-starts after one that is: an Airflow DAG on an asset a scheduled DAG updates, a
-dbt Cloud job started by a scheduled job's end. A DAG with `schedule: null`, a
-CI job or a merge job is not. Click a model to open it: the reports roll up,
+starts after one that is: an Airflow DAG on an asset a scheduled DAG updates,
+whether that DAG runs dbt or not, a dbt Cloud job started by a scheduled job's
+end. A dbt Cloud job whose schedule trigger is on is scheduled even when the
+vars file writes its cron. A DAG with `schedule: null`, a CI job or a merge job
+is not. A job that hangs on something no file read says is neither, and the
+news on the Reports button counts only the models surely not scheduled
+([0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md)). Click a model to open it: the reports roll up,
 and the Jobs tab lists its jobs. Coming back finds the list as you left it,
 folds and scroll.
 
@@ -1269,7 +1280,10 @@ A key is a dotted path, so a factory that writes `pipeline: {name: ...}` and
 calls its tasks `steps` and their command `dbt` is read with `pipeline.name`,
 `pipeline.cron`, `steps` and `dbt`. The tasks may also be a mapping keyed by
 task id, the way dag-factory writes them. A task with no command is not a
-dbt task and is left out. The form draws the example in your own keys as you
+dbt task and is left out, but the assets it updates still start the DAGs
+scheduled on them; so do those of a DAG file with no dbt task at all, an
+ingestion DAG for instance, which is read for its id, its schedule and its
+outlets alone and is listed nowhere. The form draws the example in your own keys as you
 type them.
 
 What the YAML cannot say, this tab cannot either: tasks a factory builds in

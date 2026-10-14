@@ -968,7 +968,8 @@ struct JobsIndex {
     counts: Option<JobsCounts>,
 }
 
-/// Models, seeds and snapshots run by no job, and by none that is scheduled.
+/// Models, seeds and snapshots run by no job, and only by jobs surely not
+/// scheduled: one whose schedule is not read counts in neither (0077).
 #[derive(serde::Serialize)]
 struct JobsCounts {
     never: usize,
