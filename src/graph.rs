@@ -899,9 +899,12 @@ impl Graph {
                             next.push(nb);
                             continue;
                         }
+                        // On to the next neighbour rather than out: a stop among
+                        // them is still taken back. Nothing more is added, so
+                        // without a cut the answer is the one it always was.
                         if depth.len() >= max_nodes {
                             truncated = true;
-                            break;
+                            continue;
                         }
                         if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
                             v.insert(if upstream { -step } else { step });
@@ -1912,6 +1915,23 @@ mod tests {
         let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
         assert!(!roomy.truncated && roomy.stopped_at.is_empty());
         assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
+
+        // The same, the stop met after a neighbour the cap turns away: the
+        // walk goes on to it rather than out.
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "a", "rename"),
+                link("f", "s", "window"),
+                link("a", "f", "rename"),
+                link("a", "s", "rename"),
+                link("s", "a", "filter"),
+            ]),
+            4,
+        );
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        assert!(roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
+        assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "after a neighbour turned away");
 
         g.merge_col_lineage(
             cache(vec![
