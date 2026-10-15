@@ -6,7 +6,16 @@ updates:
       interval: weekly
     # Lockfile bumps only: a version range change is a decision, not a chore (0003).
     versioning-strategy: lockfile-only
+    # A version is proposed a week after it is published, never the week it
+    # appears: a compromised release is usually yanked within days, and a bump
+    # opened inside that window would carry it (0085). Nothing else is held: a
+    # security update comes the day it is out, and a version yanked once it is
+    # in the lockfile is for cargo audit to refuse.
+    cooldown:
+      default-days: 7
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7

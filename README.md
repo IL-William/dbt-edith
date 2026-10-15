@@ -77,14 +77,16 @@ Every picture is of dbt Labs' Jaffle Shop, with invented jobs.
 ```
 git clone https://github.com/IL-William/dbt-edith.git
 cd dbt-edith
-cargo install --path .
+cargo install --path . --locked
 ```
 
 That builds it and puts `dbt-edith` in `~/.cargo/bin`, which rustup already has
 on your `PATH`. The repository is public, so the clone needs no account and no
 key. There is no published download: building is how you get a binary.
-`cargo build --release` leaves the same binary at `target/release/dbt-edith` if
-you would rather not install it.
+`--locked` builds the crate versions `Cargo.lock` names, the ones CI audits;
+without it, cargo picks the newest it may. `cargo build --release --locked`
+leaves the same binary at `target/release/dbt-edith` if you would rather not
+install it.
 
 To update, `git pull` and run the same `cargo install` again. dbt-edith asks
 GitHub, through git, whether a newer release is out, every hour from midnight
@@ -100,8 +102,8 @@ are two ways to get one, both in [docs/windows.md](docs/windows.md):
 - cross-compile it on a Mac or Linux with `./scripts/build_windows.sh`, copy it
   over, and check that `certutil -hashfile dbt-edith.exe SHA256` gives the hash
   the script printed;
-- or build it on the machine with `cargo install --path .`, which needs a C
-  toolchain there: Visual Studio Build Tools with administrator rights, or
+- or build it on the machine with `cargo install --path . --locked`, which needs
+  a C toolchain there: Visual Studio Build Tools with administrator rights, or
   WinLibs from winget without.
 
 ### Run it

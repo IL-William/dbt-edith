@@ -33,7 +33,7 @@ jobs:
       - name: CHANGELOG.md is at the version Cargo.toml names
         run: scripts/release_notes.sh > /dev/null
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo test
+      - run: cargo test --locked
 
   # The lockfile against the RustSec advisory database. cargo-audit is run
   # directly rather than through an action: it needs no token that way, so a
@@ -49,10 +49,11 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo install cargo-audit --locked
-      - run: cargo audit
+      - run: cargo audit --deny yanked
 
-  # web/vendor/ against OSV: nothing else reads it, not cargo audit, not
-  # Dependabot. Standard library Python, so there is nothing to install.
+  # web/vendor/ against its upstream releases by hash, then against OSV:
+  # nothing else reads it, not cargo audit, not Dependabot. Standard library
+  # Python, so there is nothing to install.
   vendored:
     runs-on: ubuntu-latest
     steps:

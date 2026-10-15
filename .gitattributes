@@ -1,0 +1,4 @@
+# The vendored libraries are compared byte for byte with their upstream
+# releases (scripts/audit_vendored.py, 0085): no line-ending conversion, or a
+# checkout with core.autocrlf=true fails every hash and builds other bytes.
+web/vendor/** -text

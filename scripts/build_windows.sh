@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 target=x86_64-pc-windows-gnu
-cargo build --release --target "$target"
+cargo build --release --locked --target "$target"
 exe="target/$target/release/dbt-edith.exe"
 
 if command -v sha256sum >/dev/null; then
