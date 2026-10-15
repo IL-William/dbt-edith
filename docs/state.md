@@ -1606,6 +1606,89 @@ repository: retake them when a change alters what one shows.
       - the first tour's steps predate the field, and stay out of every tour
         of what is new.
 
+12. **The top bar on a narrow window.** Under about 1000px its chips break
+    onto two or three lines ("5 / models", "Search / ⌘K", "Reload /
+    manifest"), and under about 850px the bar runs past the window. The
+    GitHub mark (1.25.0) brings both about 26px sooner. The status bar does
+    not break, since `#statusbar > *` is `nowrap`; nothing in `#topbar` is.
+    - **The likely answer:** `nowrap` on the bar's items, and the project's
+      name shrinking with an ellipsis, its full name in the tooltip.
+    - **How to check it:** item 10's two measures, at several widths, with
+      Snowflake's features on and off.
+13. **The README's options, held to `--help`.** The README writes its options
+    by hand, and they have drifted once already: `--help` says `--shell`
+    starts `$SHELL`, while `src/pty.rs` and the README say `$SHELL -l`. Fix
+    the help text, then add a test that compares the README's block with what
+    clap prints, so neither can move alone.
+14. **The build stamp of a copy inside another repository.** `build.rs` runs
+    `git describe` from the crate's folder, and git walks up from there. A copy
+    built inside another repository therefore shows that repository's tag in
+    the status bar and in `--version`. The GitHub menu's issue already drops
+    a stamp that is not dbt-edith's (1.25.0). The fix: describe only when
+    `git rev-parse --show-toplevel` is the crate's folder.
+15. **An issue template.** The GitHub menu opens an issue whose body is a
+    version and a system, in English, with no template. A report then often
+    comes without the steps that lead to the bug. Templates under
+    `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
+    what showed.
+16. **The levels box, over what is under it.** By folder's levels box (0080)
+    opens while the pointer rests on the toggle, so a touch screen cannot
+    reach it at all.
+    - **What it covers while open:** the count beside the Custom selection
+      field, and the left of the lineage's find bar (0081).
+    - **Possible answers:** open it on a click too, or place it where it
+      covers no tool.
+17. **Model versions.** The graph does not read a model's `version`, so v1
+    and v2 of a model show the same name, and the Catalog copies that name.
+    Pasted into `--select`, it picks every version; in `ref()`, the latest.
+    Reading `version` and `latest_version` from the manifest would name each
+    one apart, as dbt's `name.v1` does.
+18. **A column walk said cut when nothing was.** `column_lineage` sets
+    `truncated` once the node cap is reached, before it checks whether the
+    next neighbour is already drawn. A walk that holds every column can still
+    say it was cut. Checking for a drawn neighbour before the cap changes that
+    flag alone. The property tests run on #49 found it, on main as well as
+    with the stops (0083).
+
+Left by the pull requests of 2026-10-14, each a known limit written in
+its pull request, unranked:
+
+- **Toasts (1.18.2):** a toast covers the bottom of a tall dialog, a menu by
+  the status bar or the hover card for three seconds, and its text, an
+  error's included, cannot be selected.
+- **The tour (0078):** a page left open on a project that never gets a model
+  never offers it; it stays in the shortcut list.
+- **Schedules not read (0077):**
+  - an asset updated from outside Airflow, through its API or another tool,
+    reads as not read even when it comes every hour;
+  - an asset condition written as a mapping is not read, even when a
+    scheduled DAG updates every asset in it.
+- **Find on the lineage (0081):**
+  - the bar floats over the canvas's top right corner and can hide a box
+    there;
+  - a test's name carries its model's, so a model's tests are found with it;
+  - what a step opened stays open after Escape.
+- **The column stops (0083):**
+  - they last until the page is reloaded;
+  - a copied image, the canvas alone, does not say where the walk stopped;
+  - the +N of a stopped column deepens the walk, which stops at the same
+    role again;
+  - the menu is checked through its source only, since `jsc` has no DOM.
+- **Macros in Cmd/Ctrl + K (0084):**
+  - a search cut short by a stale manifest does not say what it left out;
+  - a materialization naming its adapter by anything but a quoted literal
+    opens at the top of its file.
+- **The update looks (0079):**
+  - a release published during the Paris day is seen at the next midnight;
+  - two dbt-edith on one machine that draw nearly the same spread can both
+    ask at a turn;
+  - behind a proxy that takes the connection and never answers, a look shows
+    `Looking…` for about five minutes, until curl gives up.
+- **`scripts/take_shots.py` (0082):** a collin that dbt-edith started keeps
+  running once dbt-edith itself is stopped, since `src/collin_run.rs` stops
+  it only at its deadline. A run aborted while collin works leaves collin
+  writing into a deleted folder.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by edge kind, which waits on
@@ -1690,6 +1773,26 @@ route and the cross-compile.
   `git log` and in PowerShell typed at the prompt, which says whether bash's
   prompt OSC crosses ConPTY; and, for the cause, what `cat -v` there prints
   for them from a build before 1.14.1.
+- **Three choices left open on 2026-10-14.**
+  - The Catalog's upstream and downstream lists put the depth back to 1, as
+    any move from outside the canvas does, though they list the canvas's own
+    neighbours. Keeping the depth there is one `keepDepth`.
+  - The hues of the sub-folder bands per level (blue, teal, violet) were a
+    first proposal (0080).
+  - A source's copied name is `source.table`, as its title shows it, where
+    `--select` wants `source:` in front and `source()` two arguments.
+- **The 2026-10-14 releases on the VM (1.18.0 to 1.25.0).** None was opened
+  on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
+  next `.exe`:
+  - the config menu on a CRLF `dbt_project.yml` (1.18.1);
+  - the lineage depth back at 1 (1.18.4);
+  - schedules not read (1.19.0);
+  - the copy glyph in the Catalog (1.20.0);
+  - sub-folder bands, whose levels box opens on hover (1.21.0);
+  - find on the lineage (1.22.0);
+  - the column stops (1.23.0);
+  - macros in Cmd/Ctrl + K (1.24.0);
+  - the GitHub menu (1.25.0).
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.
@@ -1957,3 +2060,12 @@ weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also h
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not
 in CI: they need `jsc`, which ships with macOS (0013).
+
+Three checks depend on timing, and can fail on a loaded machine, then pass
+when run again alone:
+
+- the 250 ms layout in `web/tests/layout.js`;
+- `git::a_quick_command_is_not_held_back`;
+- since 1.25.0, the ring around `#keys-btn` in `scripts/walk_tour.py`, drawn
+  2.6px right of the button. The likely cause is that the freshness badge's
+  age gains a digit during the measure, and moves the buttons to its left.
