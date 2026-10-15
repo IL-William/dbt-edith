@@ -10,7 +10,7 @@ The Rust side has unit tests for `.env` parsing, location resolution and the
 settings store:
 
 ```
-cargo test
+cargo test --locked
 ```
 
 The browser code has small harnesses that run on macOS with the system

@@ -96,4 +96,10 @@ Open a private security advisory on the GitHub repository, or write to its
 owner directly. Please include the request that reproduces
 the problem. Rust dependencies are checked against the RustSec database, and the
 vendored frontend libraries against OSV (`scripts/audit_vendored.py`), on every
-push, every Monday, and locally by `./scripts/check.sh`.
+push, every Monday, and locally by `./scripts/check.sh`. Those checks answer
+for one set of versions, so every install command carries `--locked`, which
+builds the lockfile they ran on or nothing, and each vendored file is compared
+by SHA-256 with the upstream release it was taken from. Dependabot proposes a
+version a week after it is published, so a release yanked within days is not
+among the bumps it opens; a security update is not held, and a version yanked
+once it is in the lockfile fails the Monday audit (0085).

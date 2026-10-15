@@ -780,6 +780,15 @@ before merging, both fixed: the venv tooltip named `dbt-autofix` for a Fusion
 venv, and the temporary file's name, one per process, failed two writes at
 once. Not yet on the VM, where a restart now means opening the new link.
 
+Supply-chain pass of 2026-10-15 (0085). The README's `cargo install --path .`
+built the newest versions cargo could pick, not the lockfile CI audits, twenty
+crates apart on the day; every install command now carries `--locked`, the
+`.exe` build too. The vendored audit compared version strings and now compares
+each file's SHA-256 with the upstream release it came from, all thirteen found
+identical, and fails on a file it does not list. Dependabot proposes a version
+a week after it is published. `cargo vet` was measured against the public
+registries, 24 of 129 crates covered at these versions, and not adopted yet.
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it
@@ -1649,6 +1658,17 @@ repository: retake them when a change alters what one shows.
     say it was cut. Checking for a drawn neighbour before the cap changes that
     flag alone. The property tests run on #49 found it, on main as well as
     with the stops (0083).
+19. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+    problem against these versions; `cargo vet` would say someone read them,
+    importing the attestations Mozilla, Google and others publish. Measured
+    on 2026-10-15 with six public registries imported, 24 of the 129 crates
+    were covered at these versions and 105 were not, mostly because an
+    attestation names a version and this lockfile's are newer. The trap is
+    the exemption list those 105 would need on day one: the audit in name
+    only, and every Dependabot bump failing until someone reads the diff.
+    Worth adopting once the registries reach these versions, with trusted
+    publishers for the crates one author maintains, which covers serde, syn,
+    anyhow and tokio's family (0085).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -1732,10 +1752,10 @@ is out (0068), and comparing the stamp with `git describe` in the clone is how
 you check it took.
 
 A locked-down Windows machine can also build its own binary: `cargo install
---path .` works there without administrator rights, with Rust's GNU toolchain
-and a mingw-w64 installed through winget, once the assembler that `raw-dylib`
-linking needs is on `PATH`. [docs/windows.md](windows.md) gives both that
-route and the cross-compile.
+--path . --locked` works there without administrator rights, with Rust's GNU
+toolchain and a mingw-w64 installed through winget, once the assembler that
+`raw-dylib` linking needs is on `PATH`. [docs/windows.md](windows.md) gives
+both that route and the cross-compile.
 
 ## Waiting on a human
 
@@ -2051,11 +2071,12 @@ route and the cross-compile.
 
 ## Automated checks
 
-GitHub Actions runs `cargo test`, a RustSec audit of the lockfile, an OSV audit
-of `web/vendor/`, the Snowflake script's tests and the comparison with dbt-core
-1.11 and 1.12 on Jaffle Shop and Shopify, every model's lineage included
-(0033, 0056), on every push and every Monday, and Dependabot opens
-weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
+GitHub Actions runs `cargo test --locked`, a RustSec audit of the lockfile that
+refuses a yanked version, an audit of `web/vendor/` by SHA-256 against the
+upstream tarballs and against OSV, the Snowflake script's tests and the
+comparison with dbt-core 1.11 and 1.12 on Jaffle Shop and Shopify, every
+model's lineage included (0033, 0056), on every push and every Monday, and
+Dependabot opens weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
 `no changelog` label, and its branch and title have to read the way AGENTS.md
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not

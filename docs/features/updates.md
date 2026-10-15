@@ -20,9 +20,9 @@ the hour and stays out of the status bar, and `--no-update-check` turns it off
 ## On Windows
 
 To update, stop dbt-edith first, because Windows will not replace an `.exe` that
-is running, then `git pull` and `cargo install --path .` again. The command the
-status bar offers when a release is out needs no stop: it renames the running
-`dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows allows, and puts it
-back if the build fails. Restart dbt-edith afterwards. A binary run from the
-clone's `target\release` gets no such command: cargo builds it through a file
-the rename does not free, so stop it before building.
+is running, then `git pull` and `cargo install --path . --locked` again. The
+command the status bar offers when a release is out needs no stop: it renames
+the running `dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows allows,
+and puts it back if the build fails. Restart dbt-edith afterwards. A binary run
+from the clone's `target\release` gets no such command: cargo builds it through
+a file the rename does not free, so stop it before building.

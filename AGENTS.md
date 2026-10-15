@@ -17,9 +17,10 @@ That is why there is no build step, no framework, and a short dependency list.
 Run it before saying a change works. It is the only answer to "how do I check
 this", and it needs nothing installed beyond Rust and macOS. The audit step
 needs `cargo install cargo-audit --locked` and skips itself without it, like
-the browser half without a JavaScript shell. The second audit asks OSV about
-`web/vendor/` and skips itself offline. GitHub Actions runs the Rust tests and
-both audits on every push and every Monday, never the browser half, which wants
+the browser half without a JavaScript shell. The second audit compares
+`web/vendor/` with its upstream releases by hash, offline too, and asks OSV
+about it when online. GitHub Actions runs the Rust tests and both audits on
+every push and every Monday, never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
 The selection engine and the lineage are compared with `dbt ls` on
@@ -33,15 +34,17 @@ Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
 `scripts/walk_depth.py` drives the lineage's depth boxes there the same way.
 [docs/testing.md](docs/testing.md) lists each part and how to run it alone.
-Updating a vendored library means changing its version in
-`scripts/audit_vendored.py` and `THIRD_PARTY_NOTICES.md` too: the audit fails
-when they disagree.
+Updating a vendored library means replacing its files and changing its
+version and each file's SHA-256 in `scripts/audit_vendored.py`, and its
+version in `THIRD_PARTY_NOTICES.md`: the audit fails when they disagree. A
+hash is the one of the file in the upstream npm tarball of that version, which
+the audit fetches to check, never one taken on the copied file.
 
 ## Run
 
 ```
 cargo run -- /path/to/dbt-project --port 4399 --no-open    # debug: serves web/ from disk
-cargo build --release                                      # release: embeds web/
+cargo build --release --locked                             # release: embeds web/
 ./scripts/build_windows.sh                                 # the VM's .exe, and its SHA-256
 ```
 

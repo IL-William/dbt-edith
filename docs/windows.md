@@ -54,8 +54,8 @@ Rust alone is not enough there: linking needs a C toolchain, and Windows does no
 ship one. There are two ways to get it.
 
 **With Visual Studio Build Tools** and their C++ workload, which is what rustup's
-default toolchain expects. `cargo install --path .` then works as on any other
-machine. Installing Build Tools takes administrator rights.
+default toolchain expects. `cargo install --path . --locked` then works as on
+any other machine. Installing Build Tools takes administrator rights.
 
 **Without administrator rights**, use Rust's GNU toolchain and a mingw-w64 of
 your own. The GNU toolchain is not enough by itself: `windows-sys`, which tokio
@@ -78,8 +78,18 @@ new terminal, and check that `as --version` answers:
 echo 'export PATH="/c/Users/you/AppData/Local/Microsoft/WinGet/Packages/<WinLibs folder>/mingw64/bin:$PATH"' >> ~/.bashrc
 ```
 
-Then `cargo install --path .` from the clone builds it and drops `dbt-edith.exe`
-in `%USERPROFILE%\.cargo\bin`, which rustup already put on your `PATH`.
+Then `cargo install --path . --locked` from the clone builds it and drops
+`dbt-edith.exe` in `%USERPROFILE%\.cargo\bin`, which rustup already put on your
+`PATH`.
+
+A clone made before `.gitattributes` kept `web/vendor/` out of line-ending
+conversion still holds those files with CRLF when `core.autocrlf` is on, which
+is Git for Windows's default: the vendored audit then fails on every file, and
+the binary embeds other bytes than the ones audited. Once, in that clone:
+
+```
+rm -r web/vendor && git checkout -- web/vendor
+```
 
 The two errors this avoids, word for word, so that searching for them lands here:
 

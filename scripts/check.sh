@@ -14,7 +14,9 @@ failed=0
 pass=0
 
 echo "== cargo test =="
-if cargo test --quiet; then
+# --locked: the lockfile is what every install builds (0085), so a test that
+# would have rewritten it fails here instead of at the next install.
+if cargo test --quiet --locked; then
   echo "rust ok"
 else
   echo "RUST FAILED"
@@ -36,8 +38,10 @@ echo
 echo "== cargo audit =="
 # The lockfile against the RustSec advisory database. Optional here, like jsc,
 # because it needs a crate installed and the network; CI runs it every time.
+# A yanked version is refused, not warned about: --locked still builds it,
+# where an unlocked resolve would have moved on (0085).
 if cargo audit --version > /dev/null 2>&1; then
-  if cargo audit --quiet; then
+  if cargo audit --quiet --deny yanked; then
     echo "audit ok"
   else
     echo "AUDIT FAILED"
@@ -49,15 +53,16 @@ fi
 
 echo
 echo "== vendored libraries =="
-# web/vendor/ against OSV, which neither cargo audit nor Dependabot reads. Needs
-# python3 and the network, so it skips itself without them; CI runs it every time.
+# web/vendor/ against its upstream releases by hash, then against OSV, which
+# neither cargo audit nor Dependabot reads. Needs python3; without the network
+# the hashes are still checked and only the advisories are skipped.
 if ! command -v python3 > /dev/null 2>&1; then
   echo "SKIPPED: no python3"
 else
   python3 scripts/audit_vendored.py
   case $? in
     0) echo "vendored ok" ;;
-    2) echo "SKIPPED: OSV unreachable" ;;
+    2) echo "vendored files ok; SKIPPED the advisories: OSV unreachable" ;;
     *) echo "VENDORED FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
