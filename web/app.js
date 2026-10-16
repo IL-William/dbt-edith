@@ -38,6 +38,7 @@ const S = {
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
+  selectRaise: null,          // {expr, tests, max} a click asked to draw past the cap, for that line only
   selectHistory: [],          // expressions typed this session, newest first
   selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
@@ -3936,6 +3937,13 @@ async function runSelection() {
   paintMode();
   const expr = $('#select-input').value.trim();
   const ask = ++S.selectAsk;
+  const tests = testsOn() ? 1 : 0;
+  // Drawing past the cap was asked for this line and this tests box only:
+  // anything else, an emptied box included, is cut at the cap again, so a
+  // slow canvas never becomes the default (0087). The by folder toggle draws
+  // the same line, and keeps it.
+  const raise = raiseFor(S.selectRaise, expr, tests);
+  if (!raise) S.selectRaise = null;
   if (!expr) {
     S.selectSub = null;
     Lineage.clear();
@@ -3945,18 +3953,26 @@ async function runSelection() {
     paintSelectWarnings([]);
     return;
   }
-  const tests = testsOn() ? 1 : 0;
   try {
-    const sub = await api.get(`/api/select?q=${encodeURIComponent(expr)}&tests=${tests}`);
+    const sub = await api.get(`/api/select?q=${encodeURIComponent(expr)}&tests=${tests}${raise ? `&max=${raise}` : ''}`);
     if (ask !== S.selectAsk) return;          // a later keystroke already asked
     S.selectSub = sub;
     // A pasted command is written back as what was actually resolved, so the
     // box and the picture never say two different things.
     if (sub.stripped) $('#select-input').value = selectionText(sub);
-    rememberSelection($('#select-input').value.trim());
+    const line = $('#select-input').value.trim();
+    rememberSelection(line);
     // Before drawing: the warnings make the bar taller, and the folder names
     // are placed below it.
-    paintSelectWarnings(selectWarnings(selectNotes(sub).concat(sub.warnings || [])));
+    paintSelectWarnings(selectWarnings(selectCapNote(sub).concat(selectNotes(sub), sub.warnings || [])), false,
+      capOffer(sub, raise), (max) => {
+        // The line this answer was drawn for, not whatever the box holds
+        // now: a line typed since was never offered, and its own run, still
+        // waiting on the keystroke timer, would draw it a second time.
+        clearTimeout(selectTimer);
+        S.selectRaise = { expr: line, tests, max };
+        runSelection();
+      });
     let drawn = null;
     if (sub.nodes.length) {
       $('#lineage-empty').classList.add('hidden');
@@ -4006,17 +4022,35 @@ function expandSelection(dir, node) {
   runSelection();
 }
 
-function paintSelectWarnings(lines, bad) {
+/* `offer`, from capOffer(), puts the button that draws the rest on the first
+   line, the capped canvas's note, which selectCapNote() always puts first.
+   The note gives way to it when the bar is narrow; the button and what it
+   costs never do. `draw` gets the most it asks for. */
+function paintSelectWarnings(lines, bad, offer, draw) {
   const host = $('#select-warn');
   host.textContent = '';
   host.classList.toggle('hidden', !lines.length);
   host.classList.toggle('bad', !!bad);
-  for (const line of lines) {
+  const el = (tag, className, textContent) => Object.assign(document.createElement(tag), { className, textContent });
+  lines.forEach((line, i) => {
     const row = document.createElement('div');
-    row.textContent = line;
     row.title = line;
     host.appendChild(row);
-  }
+    if (i || !offer) {
+      row.textContent = line;
+      return;
+    }
+    const button = el('button', 'btn sm', offer.label);
+    button.type = 'button';
+    button.title = offer.title;
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      button.textContent = 'Drawing…';
+      draw(offer.max);
+    });
+    row.className = 'caprow';
+    row.append(el('span', 'capnote', line), button, el('span', 'caphint', offer.hint));
+  });
 }
 
 /* One place for the clipboard, because a Copy that silently does nothing is
@@ -4068,16 +4102,24 @@ function selectSummary(sub) {
   return selectKindCounts(sub.counts).map(([kind, n]) => `${n} ${kind}${n > 1 ? 's' : ''}`).join('  ·  ');
 }
 
+/* What a selection's canvas holds against its answer. A model drawn only for
+   a selected test's sake is no part of the answer, and a test the tests box
+   keeps off the canvas still is, though no click can draw it (0032). */
+function selectCounts(sub) {
+  const nodes = (sub && sub.nodes) || [];
+  const context = nodes.filter((n) => n && n.context).length;
+  const hidden = (sub && sub.hidden_tests) || 0;
+  return { context, drawn: nodes.length - context, hidden, drawable: ((sub && sub.matched) || 0) - hidden };
+}
+
 /* The canvas half of the answer, which is not the same number: what was drawn,
    against what matched, so a capped picture says so instead of looking whole. */
 function selectStatus(sub) {
   if (!sub.matched) return '';
-  // A model drawn only for a selected test's sake is no part of the answer,
-  // and a test the tests box keeps off the canvas still is (0032).
-  const context = sub.nodes.filter((n) => n && n.context).length;
-  const drawn = sub.nodes.length - context;
-  const hidden = sub.hidden_tests || 0;
-  const head = sub.truncated ? `${drawn} of ${sub.matched} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
+  const { context, drawn, hidden, drawable } = selectCounts(sub);
+  // Of what could be drawn, as the note under the box and its button count:
+  // the hidden tests are said apart, at the end of the line.
+  const head = sub.truncated ? `${drawn} of ${drawable} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
   const edges = `${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
   const tests = hidden && `${hidden} test${hidden === 1 ? '' : 's'} hidden`;
   // Context alone on the canvas, a selector of tests with the tests box off,
@@ -4168,6 +4210,49 @@ function filterSelectors(list, q) {
     else if ((s.description || '').toLowerCase().includes(needle)) byText.push(s);
   }
   return byName.concat(byText);
+}
+
+/* A capped canvas says so under the box, where it is read, and not only in
+   the corner: a part drawn reads as the whole answer, a source whose children
+   were left out as a source read by nothing (0087). On screen only: an
+   exported page has no Copy names, and lists what was left out by name. Said
+   first, so the cap on warnings can never drop it. */
+function selectCapNote(sub) {
+  if (!sub || !sub.truncated) return [];
+  const { drawn, drawable } = selectCounts(sub);
+  // The names sent are cut too, past a few thousand: say how far they go.
+  const names = (sub.names || []).length;
+  const copy = names >= sub.matched ? 'Copy names lists every one' : `Copy names lists the first ${names} by name`;
+  return [`Too large to draw whole: ${drawn} of ${drawable} on the canvas, those nearest what the selection names. `
+    + `${copy}; a narrower selection draws the rest.`];
+}
+
+/* The button beside a capped canvas's note: the rest drawn, this time only.
+   Past the cap every step of zoom and pan slows, a lot on a slow machine, so
+   the button says so and is never remembered (0087). It asks for the most
+   the server says it draws, `most`, and offers nothing once the canvas was
+   drawn at that. Tests the tests eye keeps off are not counted: no click
+   draws them. */
+function capOffer(sub, asked) {
+  const most = (sub && sub.most) || 0;
+  if (!sub || !sub.truncated || !most || asked >= most) return null;
+  const { drawable } = selectCounts(sub);
+  const all = drawable <= most;
+  return {
+    max: most,
+    label: all ? `Draw all ${drawable}` : `Draw ${most}`,
+    hint: 'slower to zoom and pan',
+    title: `${all ? 'Draws every node of this selection' : `Draws ${most} nodes of this selection, the most there is`}, `
+      + 'this time only. Past the cap, zooming and panning slow down, a lot on a slow machine; '
+      + 'another selection, or the tests eye, cuts it at the cap again.',
+  };
+}
+
+/* The ceiling a click lifted, `prev` being {expr, tests, max}: for the line
+   and the tests box it was asked for, and nothing else, an empty box
+   included (0087). */
+function raiseFor(prev, expr, tests) {
+  return prev && expr && prev.expr === expr && prev.tests === tests ? prev.max : 0;
 }
 
 /* Said before any warning, so the cap on warnings can never drop it: it
@@ -6570,6 +6655,8 @@ function paintMode() {
     }
   });
   $('#select-bar').classList.toggle('hidden', !selecting);
+  // Coming back to the selection draws it at the cap again, unasked (0087).
+  if (!selecting) S.selectRaise = null;
   // The depth boxes have nothing to say about a selection: the + in the
   // expression carries it, and two places to set one would contradict.
   $('#up').disabled = $('#down').disabled = selecting;
@@ -6680,7 +6767,9 @@ function relinkTools() {
   $('#select-copy').addEventListener('click', () => {
     const sub = S.selectSub;
     if (!sub || !sub.names || !sub.names.length) return toast('nothing to copy', 'err');
-    copyText(sub.names.join('\n'), `${sub.names.length} names`);
+    // The names sent stop past a few thousand: the toast says so.
+    const n = sub.names.length;
+    copyText(sub.names.join('\n'), n < sub.matched ? `the first ${n} of ${sub.matched} names` : `${n} names`);
   });
   $('#select-ls').addEventListener('click', () => {
     const sub = S.selectSub;

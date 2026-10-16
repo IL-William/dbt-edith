@@ -35,8 +35,23 @@ default. So a test excluded by name stays out, and `+` and `@` reach tests the
 way dbt's graph does. A term that matches nothing is called out under the
 box rather than dropped, and it says whether the term matched only disabled
 nodes or only tests. The count beside the box is the whole selection; the line
-in the corner is what fits on the canvas, which says `400 of 2422 drawn` when a
-selection is larger than the canvas will take.
+in the corner is what the canvas drew.
+
+The canvas draws a selection of up to 3 000 nodes. A larger one is drawn in
+part. A warning under the box says so, and the corner reads, say, `3000 of 4210
+drawn`. The part drawn is the one nearest the start of the selection: first what
+its terms matched themselves (the sources of `source:stripe+`, the model of
+`+orders`, but not every model of `+orders,resource_type:model`, where the
+second term only filters), then the nodes one edge away from those, then two,
+and so on, with tests after the models and sources. A selection without `+` or
+`@`, `tag:nightly` say, begins at its roots instead. Every box drawn past the
+start sits next to one drawn before it, and a `+N` badge counts the neighbours
+left out. **Copy names** still lists every match, up to 5 000 names, and a
+narrower selection draws the rest. So does **Draw all**, beside the warning, up
+to 20 000 nodes: for that selection only, since past the cap zooming and panning
+slow down, a lot on a slow machine. Another selection, an emptied box, or the
+tests eye, is cut at 3 000 again
+([0087](../decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md)).
 
 **Nothing runs dbt for this.** The expression is resolved against
 `manifest.json`, which is the same data dbt reads, so the answer arrives in

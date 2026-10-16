@@ -1018,6 +1018,12 @@ kbd {
   border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
 }
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The capped canvas's note: the button that draws the rest, and what it costs,
+   stay whole however narrow the bar; the note gives way. */
+.sel-warn div.caprow { display: flex; align-items: center; gap: 8px; }
+.caprow .capnote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.caprow .btn { flex: none; }
+.caprow .caphint { flex: none; }
 .sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
 /* The named selectors menu: the environment menu's rows, a filter on top, and
    a list that scrolls, since a project can name dozens of selectors. */

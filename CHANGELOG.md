@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.27.0 - 2026-10-16
+
+- Draw a selection of up to 3000 nodes whole on the lineage, where it used to
+  stop at 400; past that, draw what lies nearest what it names first, and say
+  under the box that it is cut, with a button that draws the rest, this time
+  only, slower to zoom and pan. The cut used to keep the first 400 names,
+  which drew sources without the children they feed (0087).
+
 ## 1.26.1 - 2026-10-16
 
 - Count in the column lineage's stop at menu the edges of each role on the
