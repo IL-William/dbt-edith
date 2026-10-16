@@ -15,6 +15,26 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.25.1 - 2026-10-16
+
+- Read a compiled SQL file only under the target directory, whatever path the
+  manifest records for it: a `..`, an absolute path or a link out of it is
+  refused, as a path the browser sends is.
+- Hide a profile password or key written on the line after its key, past a
+  comment, or inside a flow mapping on one line, and keep a hidden block under
+  its key when a saved profile moved that key.
+- Refuse to write through a link in the project that points at a file not
+  there yet, which the write would have created outside the project.
+- Hide `DB_PASS`, `DATABASE_URL`, `CONN_STR` and any value carrying a password,
+  in a URL or as a `password=` parameter, in the hover card, whatever the
+  variable is called, and say whether the name or the value gave it away.
+- Look for a newer release from the config directory, not from the temporary
+  one every account on the machine shares.
+- Refuse to type a selection from a job file, or from the box, that holds a
+  character the shell would act on between quotes, `$`, a backtick, `\`, `!`,
+  a quote or a control character, and say why, rather than type it with the
+  character dropped.
+
 ## 1.25.0 - 2026-10-14
 
 - Raise an issue or a request, or give dbt-edith a star, from the GitHub mark

@@ -103,9 +103,24 @@ fn joined(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
 /// `out`, refused when a link takes it out of the project. Apart from `resolve`
 /// so a search can canonicalize the root once rather than once per file.
 fn confined(root: &Path, canon_root: &Path, out: PathBuf) -> anyhow::Result<PathBuf> {
+    // A link to nothing: `exists` follows it and says no, so it would pass as
+    // a new file below, and a write would then create the file the link
+    // names, wherever that is. It is judged by where it points, link by link
+    // for a few hops: inside the project, a file not generated yet is an
+    // ordinary new file; outside, or past the hops, it is refused.
+    let mut pointed = out.clone();
+    let mut hops = 0;
+    while pointed.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) && !pointed.exists() {
+        if hops == 8 {
+            anyhow::bail!("path escapes the project root");
+        }
+        hops += 1;
+        let target = std::fs::read_link(&pointed)?;
+        pointed = if target.is_absolute() { target } else { pointed.parent().unwrap_or(root).join(target) };
+    }
     // A path that does not exist yet (a new file, or a deleted one being
     // diffed) is judged by its nearest existing ancestor.
-    let mut probe = out.as_path();
+    let mut probe = pointed.as_path();
     while !probe.exists() {
         probe = probe.parent().unwrap_or(root);
     }
@@ -807,6 +822,25 @@ mod tests {
         {
             std::os::unix::fs::symlink("/", dir.join("escape")).unwrap();
             assert!(resolve(&root, "escape/etc/passwd").is_err());
+            // A link to a file that is not there: `exists` said no, so it
+            // passed as a new file, and the write created the file it named.
+            let planted = std::env::temp_dir().join(format!("edith-planted-{}", std::process::id()));
+            let _ = std::fs::remove_file(&planted);
+            std::os::unix::fs::symlink(&planted, dir.join("models").join("dangle.sql")).unwrap();
+            assert!(resolve(&root, "models/dangle.sql").is_err());
+            assert!(write_file(&root, "models/dangle.sql", "x", None).is_err());
+            assert!(!planted.exists(), "the write followed the link");
+            // A link to a file not there yet, inside the project: an ordinary
+            // new file, made where the link points.
+            std::fs::create_dir_all(dir.join("generated")).unwrap();
+            std::os::unix::fs::symlink("../generated/shared.sql", dir.join("models").join("shared.sql")).unwrap();
+            assert!(resolve(&root, "models/shared.sql").is_ok());
+            assert!(write_file(&root, "models/shared.sql", "select 2", None).is_ok());
+            assert_eq!(std::fs::read_to_string(dir.join("generated").join("shared.sql")).unwrap(), "select 2");
+            // A chain of links that ends outside is refused as one link is.
+            std::os::unix::fs::symlink(&planted, dir.join("models").join("hop2.sql")).unwrap();
+            std::os::unix::fs::symlink("hop2.sql", dir.join("models").join("hop1.sql")).unwrap();
+            assert!(resolve(&root, "models/hop1.sql").is_err());
         }
 
         std::fs::remove_dir_all(&dir).unwrap();

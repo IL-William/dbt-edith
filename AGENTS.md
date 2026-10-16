@@ -75,7 +75,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   (0063). To pick one, the sources form lists any folder, by the names of its
   folders and YAML files only (0070). Whether this binary was installed by
   cargo or built in a clone is told from which files exist beside it, never
-  from inside them (0068).
+  from inside them (0068). A path the manifest records for a compiled file is
+  held to the target directory, as a path the browser sends is to the project.
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -160,7 +161,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | persist anything, or add a write endpoint | [0011](docs/decisions/0011-settings-outside-the-project.md) |
 | add a field to a payload, a log line or a route | [0012](docs/decisions/0012-secrets-and-boundaries.md), [0017](docs/decisions/0017-the-profile-is-reachable.md) |
 | change which `profiles.yml` is opened, or when it can be | [0049](docs/decisions/0049-the-profile-is-found-where-dbt-looks.md) |
-| change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md) |
+| change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | change what a tab does when its file changes on disk, or what a save checks first | [0067](docs/decisions/0067-an-open-tab-follows-its-file-on-disk.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
 | add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md), [0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md) |
@@ -181,7 +182,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |
-| return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md) |
+| return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | make the server read files it was not asked for by name | [0020](docs/decisions/0020-search-never-opens-an-env-file.md) |
 | show the structure inside a file, or parse SQL for it | [0022](docs/decisions/0022-the-outline-is-scanned-in-the-browser.md) |
 | read a `.sql` file to work out anything at all | [0002](docs/decisions/0002-lineage-from-the-manifest.md), [0023](docs/decisions/0023-column-lineage-may-be-parsed.md) |

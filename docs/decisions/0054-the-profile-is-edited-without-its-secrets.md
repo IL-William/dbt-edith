@@ -1,6 +1,6 @@
 # 0054. The profile is edited without its secrets
 
-Date: 2026-10-10 · Status: accepted · Amends 0017
+Date: 2026-10-10 · Status: accepted, amended by 0090 · Amends 0017
 
 **Trigger:** read before changing what `/api/profiles` sends or accepts, or
 which keys of a profile count as secret.
@@ -22,6 +22,9 @@ was the one file with credentials that crossed.
 - **What is secret** is the vocabulary 0019 uses for environment variables,
   plus `pass`. A key naming where a secret is, `private_key_path`, is not one;
   neither is an `env_var()`, an empty value or `true`.
+  *Amended by [0090](0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md):
+  the value is found on the line after its key too, past a comment, and a
+  quoted scalar with a colon in it is a value, not a mapping.*
 - **A placeholder with nowhere to go is refused**, a target renamed or a line
   pasted elsewhere, and nothing is written. Typing over the placeholder replaces
   the value, as any edit would.

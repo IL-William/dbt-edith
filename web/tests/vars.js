@@ -70,9 +70,12 @@ check('unevaluated covers the secret case',
   varNote({ status: 'unevaluated', vars: [] }, '.env.dev'),
   'not evaluated: a secret, or Jinja this does not read');
 check('a redacted name never says the value, but does say it is set',
-  varNote({ status: 'env', redacted: true, vars: ['SF_PW'] }, '.env.dev'),
+  varNote({ status: 'env', redacted: 'name', vars: ['SF_PW'] }, '.env.dev'),
   'set in .env.dev, hidden because the name reads as a credential');
 check('a redacted and unset name says only that it is hidden',
-  varNote({ status: 'missing', redacted: true, vars: ['SF_PW'] }, '.env.dev'),
+  varNote({ status: 'missing', redacted: 'name', vars: ['SF_PW'] }, '.env.dev'),
   'hidden because the name reads as a credential');
+check('a value hidden for what it carries says so, not that the name gave it away',
+  varNote({ status: 'env', redacted: 'value', vars: ['REPORTS_URL'] }, '.env.dev'),
+  'set in .env.dev, hidden because the value carries a password');
 check('a plain literal has nothing to add', varNote({ status: 'literal', vars: [] }, ''), '');

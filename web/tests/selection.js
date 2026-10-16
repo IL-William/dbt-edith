@@ -52,7 +52,16 @@ check('tests the box keeps off the canvas are named',
 
 print('\n--- a named selector ---');
 check('its command carries nothing else', selectorCommand('nightly'), 'dbt ls --selector "nightly" --output name');
-check('a quote cannot escape into it', selectorCommand('a"b'), 'dbt ls --selector "ab" --output name');
+// Refused rather than cleaned: a name with the character dropped would be
+// another name than the one resolved.
+check('a quote is not typed', selectorCommand('a"b'), '');
+check('nor a control character', selectorCommand('night\u001bly'), '');
+check('nor a C1 control', selectorCommand('night\u0085ly'), '');
+check('nor what the shell acts on in double quotes', selectorCommand('$(id)'), '');
+check('nor a backtick, a backslash or a bang', [selectorCommand('`id`'), selectorCommand('a\\b'), selectorCommand('a!b')], ['', '', '']);
+check('nor a typographic double quote, which PowerShell reads as one',
+  [selectorCommand('a\u201d;calc;\u201cb'), lsCommand('a\u201eb', ''), lsCommand('a', 'b\u201d')], ['', '', '']);
+check('a name in any script is typed as it is', selectorCommand('nuit_été'), 'dbt ls --selector "nuit_été" --output name');
 check('the box shows a selector as typed', selectionText({ selector: 'nightly', select: '' }), '--selector nightly');
 check('and an expression with its exclusion', selectionText({ select: 'a+', exclude: 'tag:x' }), 'a+ --exclude tag:x');
 check('an expression alone', selectionText({ select: 'a+' }), 'a+');
@@ -98,10 +107,11 @@ check('the plain form', lsCommand('dim_customers+', ''),
   'dbt ls --select "dim_customers+" --output name');
 check('an exclude half comes along', lsCommand('dim_customers+', 'tag:deprecated'),
   'dbt ls --select "dim_customers+" --exclude "tag:deprecated" --output name');
-// The server drops quotes while parsing, so one can never come back in a
-// selector; dropping them here too means the command is always runnable.
-check('a quote cannot escape into the command', lsCommand('a"b', ''),
-  'dbt ls --select "ab" --output name');
+// The server refuses a quote in a selector, and so does this: a command
+// with the character dropped would check another selection than the one run.
+check('a quote is not typed', lsCommand('a"b', ''), '');
+check('nor a control character, on either half', [lsCommand('a\rb', ''), lsCommand('a', 'c\u001b[2Jd')], ['', '']);
+check('nor what the shell acts on in double quotes', [lsCommand('$(id)', ''), lsCommand('a', '`b`')], ['', '']);
 
 print('\n--- a +N badge writes itself into the expression ---');
 check('upstream is a leading plus', expandTerm('dim_customers', 'stg_customers', 'up'),
