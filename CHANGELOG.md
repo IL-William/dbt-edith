@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.29.0 - 2026-10-16
+
+- Show a test in the Catalog by what it checks: the generic, its model and
+  column, its severity, the config it changed such as `store_failures` or
+  `where`, the relation its failures are stored in, and the models it reads,
+  with no Columns tab, location or description to fill.
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,
