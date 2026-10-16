@@ -89,3 +89,10 @@ on the canvas, what starts it again at 1, and what Back and Forward bring back:
 ```
 /tmp/dbt/bin/python scripts/walk_depth.py
 ```
+
+Edith's menu is driven by a real pointer, the same way: what opens it under
+the pointer, what closes it, and what a click on it holds open:
+
+```
+/tmp/dbt/bin/python scripts/walk_menu.py
+```

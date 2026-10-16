@@ -5530,8 +5530,11 @@ async function redrawLineage() {
 
 /* One floating menu at a time, closed by a click outside it, Escape, a resize,
    or a second click on the button that opened it. `closed` runs once it is
-   gone, however it went. */
+   gone, however it went. One the pointer opened (openOnHover) also closes once
+   the pointer has left it and its button, until a click holds it (0086). */
 let popup = null;
+const MENU_REST = 150;    // a pointer crossing the button on its way elsewhere opens nothing
+const MENU_GRACE = 300;   // time to cross the gap between the button and its menu
 
 /* Below the anchor when the menu fits there, above it otherwise, and inside
    the window either way. Again when a menu drawn anew has grown. */
@@ -5543,13 +5546,26 @@ function placePopup(anchor, el) {
   el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
 }
 
-function openPopup(anchor, el, closed) {
+function openPopup(anchor, el, closed, hover = false) {
   closePopup();
   document.body.appendChild(el);
   placePopup(anchor, el);
   const live = () => [...el.querySelectorAll('button:not([aria-disabled="true"]), a[href]')];
-  const onDown = (e) => { if (!el.contains(e.target) && !anchor.contains(e.target)) closePopup(); };
+  const onDown = (e) => {
+    // A click in a menu the pointer opened holds it, so an answer it waits for is still read there.
+    if (el.contains(e.target)) holdPopup();
+    else if (!anchor.contains(e.target)) closePopup();
+  };
   const onKey = (e) => {
+    // Held by nothing, the menu has no focus: the keys go on to the editor or
+    // the terminal that has it, and close the menu on their way, as they close
+    // a hover card. Escape too, which vim in the terminal or the lineage's find
+    // bar is waiting for. A modifier alone may be the start of a Cmd/Ctrl +
+    // click on one of its links.
+    if (me.hover) {
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      return closePopup();
+    }
     if (e.key === 'Tab') return closePopup();
     const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
     if (e.key !== 'Escape' && !step) return;
@@ -5569,23 +5585,84 @@ function openPopup(anchor, el, closed) {
   document.addEventListener('mousedown', onDown, true);
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', onResize);
-  popup = {
-    el, anchor, closed,
+  const me = popup = {
+    el, anchor, closed, hover, grace: null,
+    focus: () => {
+      const first = live();
+      (first.find((b) => b.classList.contains('on')) || first[0] || el).focus();
+    },
     off: () => {
+      clearTimeout(me.grace);
       document.removeEventListener('mousedown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', onResize);
     },
   };
-  const first = live();
-  (first.find((b) => b.classList.contains('on')) || first[0] || el).focus();
+  if (hover) {
+    // Gone with the menu, so they need no taking off.
+    el.addEventListener('mouseenter', () => clearTimeout(me.grace));
+    el.addEventListener('mouseleave', popupLeft);
+  } else {
+    me.focus();
+  }
+}
+
+/* The pointer left a menu it opened, or that menu's button: it closes unless
+   the pointer comes back to either within MENU_GRACE. */
+function popupLeft() {
+  const p = popup;
+  if (!p || !p.hover) return;
+  clearTimeout(p.grace);
+  p.grace = setTimeout(() => { if (popup === p && p.hover) closePopup(); }, MENU_GRACE);
+}
+
+/* A menu the pointer opened becomes one a click opened: it stays until a click
+   elsewhere, Escape or its button again, and the keys reach it. */
+function holdPopup() {
+  if (!popup || !popup.hover) return;
+  popup.hover = false;
+  clearTimeout(popup.grace);
+}
+
+/* Whether any menu is open: the one popup, or one of the four that keep their
+   own, with their own keys. */
+function anyMenuOpen() {
+  return !!(popup || crumbMenu || envMenu || selectorMenu || stopAtMenu);
+}
+
+/* `anchor`'s menu opens under the pointer, once the pointer has rested on it,
+   unless another menu is open: one someone clicked open is not swapped for a
+   pointer passing by, nor joined by a second taking the same keys.
+   `open(true)` opens it unfocused, held by the pointer (0086). */
+function openOnHover(anchor, open) {
+  let timer = null;
+  const mine = () => !!popup && popup.anchor === anchor;
+  anchor.addEventListener('mouseenter', () => {
+    clearTimeout(timer);
+    if (mine()) return clearTimeout(popup.grace);
+    timer = setTimeout(() => { if (!anyMenuOpen()) open(true); }, MENU_REST);
+  });
+  anchor.addEventListener('mouseleave', () => {
+    clearTimeout(timer);
+    if (mine()) popupLeft();
+  });
+  // A click opens it at once, without the rest.
+  anchor.addEventListener('click', () => clearTimeout(timer));
 }
 
 /* Closes the open menu. True when `anchor` opened it, so the click on that
-   button closes it rather than opening it again. */
+   button closes it rather than opening it again. The pointer having opened it
+   already, that click holds it instead and gives it the focus, as a click
+   that opened it would: a person reaching for the button out of habit has
+   come to read it. */
 function closePopup(anchor) {
   if (!popup) return false;
   const same = !!anchor && popup.anchor === anchor;
+  if (same && popup.hover) {
+    holdPopup();
+    popup.focus();
+    return true;
+  }
   const { closed } = popup;
   popup.off();
   popup.el.remove();
@@ -12708,15 +12785,15 @@ function releaseRows(u) {
 /* Edith's menu, from the name at the top left and from the status bar's pill
    alike: which build serves the page, a newer release and how to install it
    once one is known (0068), and the looks for one, with a button that makes
-   one at once (0079). */
-function openUpdateMenu(anchor) {
+   one at once (0079). The name opens it under the pointer too (0086). */
+function openUpdateMenu(anchor, hover = false) {
   if (closePopup(anchor)) return;
   const menu = document.createElement('div');
   menu.className = 'envmenu updmenu';
   menu.setAttribute('role', 'menu');
   S.updateMenu = menu;
   paintUpdateMenu(menu);
-  openPopup(anchor, menu);
+  openPopup(anchor, menu, null, hover);
 }
 
 /* Drawn again in place when an answer comes in while the menu is open. */
@@ -12821,10 +12898,12 @@ function paintUpdate() {
     pill.textContent = o.label;
     pill.title = o.title;
   }
+  // No tooltip on the name: the menu it opens under the pointer says all of
+  // it, and a tooltip would land on the menu's first lines. A screen reader
+  // still hears what the dot shows.
   const brand = $('#brand');
   brand.classList.toggle('newer', !!o);
-  brand.title = o ? `${o.title}\nClick for what changed and how to update.`
-    : `dbt-edith ${S.version || '?'}${S.build ? '\n' + S.build : ''}\nClick to check for updates.`;
+  brand.setAttribute('aria-description', o ? o.title : `dbt-edith ${S.version || '?'}`);
   if (S.updateMenu && S.updateMenu.isConnected) {
     paintUpdateMenu(S.updateMenu);
     if (popup && popup.el === S.updateMenu) placePopup(popup.anchor, S.updateMenu);
@@ -12987,6 +13066,7 @@ async function boot() {
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
   $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
   $('#brand').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  openOnHover($('#brand'), (hover) => openUpdateMenu($('#brand'), hover));
   $('#github-btn').addEventListener('click', (e) => openGithubMenu(e.currentTarget));
   paintUpdate();
   refreshUpdate();

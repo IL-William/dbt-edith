@@ -1,6 +1,6 @@
 # 0079. An update is looked for hourly through the Paris night, and on demand
 
-Date: 2026-10-14 · Status: accepted · Amends 0068
+Date: 2026-10-14 · Status: accepted, amended by 0086 · Amends 0068
 
 **Trigger:** read before changing when dbt-edith looks for a newer release,
 what Edith's menu shows, or what a look that got no answer says.
