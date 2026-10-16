@@ -217,6 +217,7 @@ var app = read('web/app.js');
 eval(app.slice(app.indexOf('function findLabel'), app.indexOf('function findOverlay')));
 eval(app.slice(app.indexOf('function findButton'), app.indexOf('/* One editor\'s bar')));
 eval(app.slice(app.indexOf('function findInPane'), app.indexOf('const base = (path)')));
+eval(app.slice(app.indexOf('function panelOpen'), app.indexOf('/* Rolls a panel down')));
 
 function fakeEl(tag) {
   var e = { tagName: String(tag).toUpperCase(), className: '', value: '', title: '', textContent: '', placeholder: '',
@@ -286,7 +287,11 @@ group('which pane Cmd+F and Cmd+G reach', function () {
   check('the lineage remembered but not on screen: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
   S.dock = 'lineage'; S.panel = 'reports';
   check('a panel over everything: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
-  S.panel = '';
+  // The selection's panel holds the canvas, whatever tab the dock had (0092).
+  S.dock = 'terminal'; S.panel = 'select';
+  check('the canvas up in the selection\'s panel keeps its own', [findInPane('lineage'), S.graphFind.open, take()], [true, true, ['heads', 'find "" false']]);
+  closeGraphFind(); take();
+  S.dock = 'lineage'; S.panel = '';
 
   S.graphFind.input.value = '';
   check('Cmd+G from the canvas with no query yet: the browser\'s', [stepGraphFind('lineage', 1), take()], [false, []]);

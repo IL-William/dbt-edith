@@ -2099,6 +2099,17 @@ both that route and the cross-compile.
   what paints its button, what it does once rolled up, and how the tour puts
   it back; `S.panel` names the one down. A check for "something covers the
   editor and the dock" reads `S.panel`, one for a given panel `panelOpen(name)`.
+- **The selection's panel borrows the dock's canvas (0092).** `SELECT_MOVES`
+  lists what `selectPanelDown` moves up, `#dock-lineage` with the selector bar,
+  five of the canvas's tools and `#catalog`, and `selectPanelUp` puts each back
+  before the sibling it was taken from, the last first. Code that asks whether
+  the canvas or the Catalog is on screen reads `lineageSeen()` or
+  `catalogSeen()`, never `S.dock` alone: with the panel down, `S.dock` may be
+  the terminal while the canvas is in front. `showDock` leaves `#dock-lineage`
+  shown while it is up there, `paintMode` rolls the panel up once the mode is
+  no longer `select`, and `focusNode` draws its answer only while the canvas
+  still asks for that model, since the panel rolling up and a file opened can
+  each ask for one, in either order.
 - **`activate()` rolls the panel up, and `settleTabs` passes `keepPanel`**,
   so closing a tab from the sidebar while one is down leaves it there.
   `showDock` leaves it alone: a column's lineage brings the canvas forward
