@@ -267,9 +267,148 @@ impl ColLineage {
         self.by_to[lo..hi].iter().map(move |&i| &self.edges[i as usize])
     }
 
-    /// (upstream, downstream) edge counts, for the Columns table.
+    /// (upstream, downstream) edge counts: one level, what the canvas opens on.
+    /// An edge from a column to itself is no lineage, and `reach_all` skips it too:
+    /// counted here, it gave a Lineage cell of `←0 0→`.
     pub fn degree(&self, r: ColRef) -> (usize, usize) {
-        (self.incoming(r).count(), self.outgoing(r).len())
+        (self.incoming(r).filter(|e| e.from != r).count(), self.outgoing(r).iter().filter(|e| e.to != r).count())
+    }
+
+    /// How many columns lie on one side of each of `starts`, the whole chain:
+    /// the Columns table's figure, as "in total" is for a model. One level
+    /// alone reads as how far the column goes, and the canvas goes further.
+    ///
+    /// One pass for all of them, not a walk each, which costs starts times
+    /// chain and took seconds for a wide model on a dense cache. The columns
+    /// they reach are cut into strongly connected parts, a cycle being one
+    /// part, and the starts that reach each part are carried as bits from part
+    /// to part in topological order, so each edge is crossed once. A worklist
+    /// that walked a column again while it gained a bit did as well on most
+    /// graphs, and worse than a walk each when the starts joined one long
+    /// chain at staggered depths: it walked the chain once per depth.
+    pub fn reach_all(&self, starts: &[ColRef], upstream: bool) -> Vec<usize> {
+        // The columns reached, numbered, with their edges in the walk's
+        // direction; an edge from a column to itself is no lineage.
+        let mut at: HashMap<ColRef, u32> = HashMap::new();
+        let mut cols: Vec<ColRef> = Vec::new();
+        for &s in starts {
+            if let std::collections::hash_map::Entry::Vacant(v) = at.entry(s) {
+                v.insert(cols.len() as u32);
+                cols.push(s);
+            }
+        }
+        let mut first: Vec<usize> = vec![0];
+        let mut next: Vec<u32> = Vec::new();
+        let mut i = 0;
+        while i < cols.len() {
+            let c = cols[i];
+            let side: Vec<ColRef> = if upstream {
+                self.incoming(c).map(|e| e.from).collect()
+            } else {
+                self.outgoing(c).iter().map(|e| e.to).collect()
+            };
+            for nb in side.into_iter().filter(|&nb| nb != c) {
+                let n = *at.entry(nb).or_insert_with(|| {
+                    cols.push(nb);
+                    cols.len() as u32 - 1
+                });
+                next.push(n);
+            }
+            first.push(next.len());
+            i += 1;
+        }
+        let out = |v: usize| &next[first[v]..first[v + 1]];
+
+        // Tarjan's, without recursion: a part is closed only once every part
+        // it reaches is, so parts are numbered from the far end back.
+        let n = cols.len();
+        let (mut index, mut low) = (vec![u32::MAX; n], vec![0u32; n]);
+        let mut part = vec![u32::MAX; n];
+        let (mut open, mut on_open) = (Vec::new(), vec![false; n]);
+        let (mut counter, mut parts) = (0u32, 0u32);
+        for root in 0..n {
+            if index[root] != u32::MAX {
+                continue;
+            }
+            let mut calls: Vec<(usize, usize)> = vec![(root, 0)];
+            index[root] = counter;
+            low[root] = counter;
+            counter += 1;
+            open.push(root);
+            on_open[root] = true;
+            while let Some(&(v, k)) = calls.last() {
+                if let Some(&w) = out(v).get(k) {
+                    calls.last_mut().unwrap().1 += 1;
+                    let w = w as usize;
+                    if index[w] == u32::MAX {
+                        index[w] = counter;
+                        low[w] = counter;
+                        counter += 1;
+                        open.push(w);
+                        on_open[w] = true;
+                        calls.push((w, 0));
+                    } else if on_open[w] {
+                        low[v] = low[v].min(index[w]);
+                    }
+                    continue;
+                }
+                calls.pop();
+                if let Some(&(u, _)) = calls.last() {
+                    low[u] = low[u].min(low[v]);
+                }
+                if low[v] == index[v] {
+                    while let Some(w) = open.pop() {
+                        on_open[w] = false;
+                        part[w] = parts;
+                        if w == v {
+                            break;
+                        }
+                    }
+                    parts += 1;
+                }
+            }
+        }
+
+        // Each part's starts, as bits, handed on to the parts it reaches: a
+        // part's number is higher than any it reaches, so from the highest
+        // down, a part has every start that reaches it before it hands them on.
+        let words = starts.len().div_ceil(64).max(1);
+        let mut bits = vec![0u64; parts as usize * words];
+        let mut size = vec![0usize; parts as usize];
+        for &p in &part {
+            size[p as usize] += 1;
+        }
+        let own: Vec<usize> = starts.iter().map(|s| part[at[s] as usize] as usize).collect();
+        for (i, &p) in own.iter().enumerate() {
+            bits[p * words + i / 64] |= 1 << (i % 64);
+        }
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_unstable_by_key(|&v| std::cmp::Reverse(part[v]));
+        for v in order {
+            let p = part[v] as usize;
+            for &w in out(v) {
+                let q = part[w as usize] as usize;
+                if q != p {
+                    let (lower, higher) = bits.split_at_mut(p * words);
+                    for (to, &from) in lower[q * words..(q + 1) * words].iter_mut().zip(&higher[..words]) {
+                        *to |= from;
+                    }
+                }
+            }
+        }
+        // A start counts every column of each part it reaches, but itself.
+        let mut counts = vec![0; starts.len()];
+        for p in 0..parts as usize {
+            for (w, &word) in bits[p * words..(p + 1) * words].iter().enumerate() {
+                let mut word = word;
+                while word != 0 {
+                    let i = w * 64 + word.trailing_zeros() as usize;
+                    counts[i] += size[p] - usize::from(own[i] == p);
+                    word &= word - 1;
+                }
+            }
+        }
+        counts
     }
 }
 
@@ -1744,6 +1883,150 @@ mod tests {
         assert_eq!(names(&cut), ["fct", "int", "rpt", "stg", "wide"]);
         assert!(cut.edge_kinds.contains(&"window"));
         assert_eq!(hidden(&cut, "fct"), 0);
+
+        // The Columns table: one level on hover, the whole chain in the cell,
+        // fct.x counted once though two ways lead to it.
+        let cll = g.cll.as_ref().unwrap();
+        let reach = |r: ColRef, upstream: bool| cll.reach_all(&[r], upstream)[0];
+        assert_eq!(cll.degree(at(&g, "int")), (1, 2));
+        assert_eq!((reach(at(&g, "int"), true), reach(at(&g, "int"), false)), (1, 3));
+        assert_eq!((reach(at(&g, "fct"), true), reach(at(&g, "rpt"), false)), (3, 0));
+        let both = cll.reach_all(&[at(&g, "int"), at(&g, "fct"), at(&g, "stg")], false);
+        assert_eq!(both, [3, 1, 4], "one walk for three, each counted apart");
+
+        // A column a cache says feeds itself has no lineage on either side.
+        g.merge_col_lineage(cache(vec![link("int", "int", "rename")]), 3);
+        let cll = g.cll.as_ref().unwrap();
+        assert_eq!(cll.degree(at(&g, "int")), (0, 0));
+        assert_eq!(cll.reach_all(&[at(&g, "int")], true), [0]);
+    }
+
+    // A walk per start, written apart from `reach_all`, which it checks.
+    fn walk_each(cll: &ColLineage, s: ColRef, upstream: bool) -> usize {
+        let mut seen = HashSet::from([s]);
+        let mut stack = vec![s];
+        while let Some(cur) = stack.pop() {
+            let side: Vec<ColRef> = if upstream {
+                cll.incoming(cur).map(|e| e.from).collect()
+            } else {
+                cll.outgoing(cur).iter().map(|e| e.to).collect()
+            };
+            for nb in side {
+                if seen.insert(nb) {
+                    stack.push(nb);
+                }
+            }
+        }
+        seen.len() - 1
+    }
+
+    fn xorshift(mut seed: u64) -> impl FnMut(u64) -> u64 {
+        move |n| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        }
+    }
+
+    // Edges laid out as `merge_col_lineage` lays them, for graphs wider than
+    // a manifest worth writing.
+    fn lineage_of(mut edges: Vec<ColEdge>) -> ColLineage {
+        edges.sort_by(|a, b| (a.from, a.to).cmp(&(b.from, b.to)));
+        edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
+        let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
+        by_to.sort_by_key(|&i| edges[i as usize].to);
+        ColLineage { edges, by_to, kinds: vec!["rename".into()] }
+    }
+
+    fn col_edge(from: (u32, u32), to: (u32, u32)) -> ColEdge {
+        ColEdge { from: ColRef { node: from.0, col: from.1 }, to: ColRef { node: to.0, col: to.1 }, kind: 0 }
+    }
+
+    // The pass against a walk per start, on graphs with diamonds, cycles,
+    // self-edges and starts that reach each other, every column a start,
+    // through the cache's own merge.
+    #[test]
+    fn one_walk_for_many_columns_counts_as_one_walk_each() {
+        let names: Vec<String> = (0..12).map(|i| format!("m{i}")).collect();
+        let cols: serde_json::Map<String, serde_json::Value> =
+            (0..8).map(|c| (format!("c{c}"), serde_json::json!({ "name": format!("c{c}") }))).collect();
+        let nodes: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .map(|n| {
+                let v = serde_json::json!({ "name": n, "resource_type": "model", "package_name": "shop", "columns": cols });
+                (format!("model.shop.{n}"), v)
+            })
+            .collect();
+        let manifest = serde_json::json!({ "nodes": nodes });
+        let mut next = xorshift(0x2545_f491_4f6c_dd1d);
+        for round in 0..20 {
+            let raw: RawManifest = serde_json::from_value(manifest.clone()).unwrap();
+            let mut g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+            let edges: Vec<RawColEdge> = (0..150 + 20 * round)
+                .map(|_| RawColEdge {
+                    from: format!("model.shop.m{}", next(12)),
+                    from_col: format!("c{}", next(8)),
+                    to: format!("model.shop.m{}", next(12)),
+                    to_col: format!("c{}", next(8)),
+                    kind: "rename".into(),
+                })
+                .collect();
+            g.merge_col_lineage(cache(edges), 1);
+            let cll = g.cll.as_ref().unwrap();
+            let starts: Vec<ColRef> = (0..12u32).flat_map(|n| (0..8u32).map(move |c| ColRef { node: n, col: c })).collect();
+            for upstream in [true, false] {
+                let alone: Vec<usize> = starts.iter().map(|&s| walk_each(cll, s, upstream)).collect();
+                assert_eq!(cll.reach_all(&starts, upstream), alone, "round {round}, upstream {upstream}");
+            }
+        }
+    }
+
+    // As the route asks: one node's columns that have an edge on that side,
+    // among many columns that are not starts, at widths on each side of a
+    // word of bits, with a cycle through two of them.
+    #[test]
+    fn the_columns_of_one_node_count_as_one_walk_each() {
+        let mut next = xorshift(0x9e37_79b9_7f4a_7c15);
+        for width in [1u32, 2, 63, 64, 65, 129] {
+            for round in 0..12u64 {
+                let wide = |node: u32| if node == 0 { width } else { 40 };
+                let mut edges: Vec<ColEdge> = (0..200 + 150 * round)
+                    .map(|_| {
+                        let (f, t) = (next(30) as u32, next(30) as u32);
+                        col_edge((f, next(wide(f) as u64) as u32), (t, next(wide(t) as u64) as u32))
+                    })
+                    .collect();
+                edges.push(col_edge((0, 0), (0, 0)));
+                if width > 1 {
+                    edges.extend([col_edge((0, 0), (5, 1)), col_edge((5, 1), (0, width - 1)), col_edge((0, width - 1), (0, 0))]);
+                }
+                let cll = lineage_of(edges);
+                for upstream in [true, false] {
+                    let starts: Vec<ColRef> = (0..width)
+                        .map(|col| ColRef { node: 0, col })
+                        .filter(|&r| if upstream { cll.degree(r).0 > 0 } else { cll.degree(r).1 > 0 })
+                        .collect();
+                    let alone: Vec<usize> = starts.iter().map(|&s| walk_each(&cll, s, upstream)).collect();
+                    assert_eq!(cll.reach_all(&starts, upstream), alone, "width {width}, round {round}, upstream {upstream}");
+                }
+            }
+        }
+    }
+
+    // The review's shape: the starts join one long chain at staggered depths,
+    // last start deepest, where a worklist walked the chain once per depth.
+    // The answer only: the time is the review's and the benches'.
+    #[test]
+    fn starts_joining_one_chain_at_staggered_depths() {
+        let (starts_n, chain) = (150u32, 3000u32);
+        let mut edges: Vec<ColEdge> = (0..chain - 1).map(|j| col_edge((1, j + 1), (1, j))).collect();
+        edges.extend((0..starts_n).map(|k| col_edge((1, starts_n - 1 - k), (0, k))));
+        let cll = lineage_of(edges);
+        let starts: Vec<ColRef> = (0..starts_n).map(|col| ColRef { node: 0, col }).collect();
+        let alone: Vec<usize> = starts.iter().map(|&s| walk_each(&cll, s, true)).collect();
+        assert_eq!(cll.reach_all(&starts, true), alone);
+        assert_eq!((alone[0], alone[starts_n as usize - 1]), ((chain - starts_n + 1) as usize, chain as usize));
     }
 
     // The review's two cases. An edge leaving a stopped column for a column

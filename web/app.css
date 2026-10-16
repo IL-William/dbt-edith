@@ -92,6 +92,7 @@ kbd {
 #stop-at.on { color: var(--accent); border-color: rgba(77, 163, 255, .55); background: rgba(77, 163, 255, .12); }
 #stop-at span:empty { display: none; }
 .stopmenu .rolesq { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.stopmenu button.absent .lbl, .stopmenu button.absent .rolesq { opacity: .5; }
 .envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .envdot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: 0 0 auto; }
 .envdot[data-tone=manifest] { background: transparent; border: 1px solid #6f7f93; }

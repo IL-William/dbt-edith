@@ -34,6 +34,8 @@ const S = {
   graphMode: 'model',         // lineage canvas: model | column | select
   colFocus: null,             // {id, column} when the canvas shows columns
   colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
+  colSub: null,               // last /api/collineage payload, which the stop at menu counts
+  colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
   selectHistory: [],          // expressions typed this session, newest first
@@ -3871,6 +3873,9 @@ function splitColId(id) {
    nodes are columns instead of models. */
 async function focusColumn(id, column) {
   S.graphMode = 'column';
+  // The stop at menu counts the graph drawn: another column's says nothing
+  // of this one, so a menu opened before the answer counts none.
+  if (!S.colFocus || S.colFocus.id !== id || S.colFocus.column !== column) S.colSub = null;
   S.colFocus = { id, column };
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
@@ -3880,6 +3885,8 @@ async function focusColumn(id, column) {
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`
       + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : ''));
     if (ask !== S.colDraw) return;            // a later tick or click already asked
+    S.colSub = sub;
+    if (stopAtMenu) stopAtMenu.recount(sub.edge_kinds);
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
@@ -3891,6 +3898,8 @@ async function focusColumn(id, column) {
     toast('column lineage: ' + e.message, 'err');
     S.graphMode = 'model';
     S.colFocus = null;
+    S.colSub = null;
+    closeStopAt();
     paintMode();
   }
 }
@@ -6413,6 +6422,8 @@ function paintLegend(sub) {
 function paintStopAt() {
   const b = $('#stop-at');
   b.classList.toggle('hidden', S.graphMode !== 'column');
+  // Ticking a role outside column mode would redraw whatever mode is on.
+  if (S.graphMode !== 'column') closeStopAt();
   const on = [...S.colCut].sort();
   // Short, the bar being full in column mode: one role by name, more counted.
   b.querySelector('span').textContent = !on.length ? '' : on.length === 1 ? on[0] : `${on.length} roles`;
@@ -6420,6 +6431,30 @@ function paintStopAt() {
   b.title = on.length
     ? `Downstream, the walk ends at the column each ${on.join(' or ')} edge reaches`
     : 'Pick roles the walk downstream stops at: their edges stay, what comes after them goes';
+}
+
+/* The roles the stop at menu lists: every one the cache holds, then any ticked
+   that it lost, each with its edges on the canvas, so the menu adds up to the
+   status line's count beside it rather than to the project's (0089). Busiest
+   on the canvas first, then in the cache's order. */
+function stopAtRoles(cacheKinds, edgeKinds, ticked) {
+  const here = roleCounts(edgeKinds);
+  const roles = cacheKinds.filter((k) => k.kind && k.kind !== 'unknown').map((k) => ({ role: k.kind, total: k.edges }));
+  for (const r of ticked) if (!roles.some((x) => x.role === r)) roles.push({ role: r, total: 0 });
+  // A stable sort, so a tie keeps the cache's order.
+  return roles.map((x) => ({ ...x, here: here.get(x.role) || 0 })).sort((a, b) => b.here - a.here);
+}
+
+function roleCounts(edgeKinds) {
+  const here = new Map();
+  for (const k of edgeKinds || []) here.set(k, (here.get(k) || 0) + 1);
+  return here;
+}
+
+/* The edges drawn that the cache names no role for, which no row can stop at:
+   a line of their own, so the menu still adds up to the status line. */
+function unroled(here) {
+  return (here.get('') || 0) + (here.get('unknown') || 0);
 }
 
 let stopAtMenu = null;
@@ -6434,17 +6469,22 @@ function closeStopAt({ refocus = false } = {}) {
 
 function openStopAt(anchor) {
   if (stopAtMenu) return closeStopAt();
-  // The roles the cache has, busiest first, and any ticked that it lost.
-  const kinds = ((S.meta && S.meta.cll_kinds) || []).filter((k) => k.kind && k.kind !== 'unknown');
-  const roles = kinds.map((k) => [k.kind, k.edges]);
-  for (const r of S.colCut) if (!roles.some(([k]) => k === r)) roles.push([r, 0]);
+  const roles = stopAtRoles((S.meta && S.meta.cll_kinds) || [], S.colSub && S.colSub.edge_kinds, S.colCut);
+  // Each item's count, repainted when the graph a tick asked for arrives.
+  const counts = [];
+  const bare = Object.assign(document.createElement('div'), { className: 'menunote' });
+  const countBare = (here) => {
+    const n = unroled(here);
+    bare.textContent = n ? `${n} edge${n === 1 ? '' : 's'} with no role` : '';
+    bare.classList.toggle('hidden', !n);
+  };
   const el = document.createElement('div');
   el.className = 'envmenu stopmenu';
   el.setAttribute('role', 'menu');
   el.setAttribute('aria-label', 'Roles the column walk stops at');
   el.append(Object.assign(document.createElement('div'), { className: 'menuhead', textContent: 'Stop downstream after' }));
   if (!roles.length) el.append(Object.assign(document.createElement('div'), { className: 'menunote', textContent: 'The column lineage names no roles.' }));
-  roles.forEach(([role, edges]) => {
+  roles.forEach(({ role, total, here }) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'menuitemcheckbox');
@@ -6458,7 +6498,15 @@ function openStopAt(anchor) {
     sq.style.background = Lineage.roleColor(role);
     b.append(Object.assign(document.createElement('span'), { className: 'check' }), sq,
       Object.assign(document.createElement('span'), { className: 'lbl', textContent: role }),
-      Object.assign(document.createElement('span'), { className: 'sub', textContent: edges ? `${edges} edge${edges === 1 ? '' : 's'}` : '' }));
+      Object.assign(document.createElement('span'), { className: 'sub' }));
+    // Dimmed rather than left out: a deeper walk may still meet one.
+    const count = (n) => {
+      b.querySelector('.sub').textContent = n ? `${n} edge${n === 1 ? '' : 's'}` : '';
+      b.classList.toggle('absent', !n);
+      b.title = `${n ? n : 'none'} on the canvas, ${total} in the project`;
+    };
+    count(here);
+    counts.push([role, count]);
     // Stays open: several roles can be ticked in a row.
     b.addEventListener('click', () => {
       if (S.colCut.has(role)) S.colCut.delete(role); else S.colCut.add(role);
@@ -6469,6 +6517,8 @@ function openStopAt(anchor) {
     paint();
     el.appendChild(b);
   });
+  countBare(roleCounts(S.colSub && S.colSub.edge_kinds));
+  el.appendChild(bare);
   document.body.appendChild(el);
   const place = placeFloating(anchor.getBoundingClientRect(), el.getBoundingClientRect(),
     { width: window.innerWidth, height: window.innerHeight }, 4);
@@ -6491,7 +6541,13 @@ function openStopAt(anchor) {
   document.addEventListener('mousedown', onDown, true);
   window.addEventListener('resize', onResize);
   stopAtMenu = {
-    el, anchor, off: () => {
+    el, anchor,
+    recount: (edgeKinds) => {
+      const here = roleCounts(edgeKinds);
+      for (const [role, count] of counts) count(here.get(role) || 0);
+      countBare(here);
+    },
+    off: () => {
       document.removeEventListener('keydown', onKey, true);
       document.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('resize', onResize);
@@ -10890,6 +10946,33 @@ function focusColumnFilter() {
   return true;
 }
 
+/* The whole chain of each column of a node, asked for by the Columns table
+   alone (0089). Kept with the /api/node payload it completes: sorting or
+   filtering the table paints it again at once, and a payload asked for again,
+   as the node cache does every few seconds, asks again too. */
+function columnReaches(n) {
+  let hit = S.colReach.get(n);
+  if (!hit) {
+    hit = { v: null };
+    hit.p = api.get('/api/colreach?id=' + encodeURIComponent(n.id))
+      .then((rows) => (hit.v = new Map(rows.map((r) => [r.name, r]))))
+      .catch((e) => { S.colReach.delete(n); throw e; });
+    S.colReach.set(n, hit);
+  }
+  return hit;
+}
+
+/* A column's Lineage cell: the whole chain on each side, as the Preview's
+   "in total" is for a model, and one level on hover (0089). One level alone
+   reads as how far the column goes, and the canvas goes further. `r` is the
+   chain, undefined while it is on its way, null when it could not be had. */
+function columnReach(c, r) {
+  const one = `directly: ${c.up} column${c.up === 1 ? '' : 's'} upstream, ${c.down} downstream`;
+  if (r === undefined) return { up: '\u2190\u2026', down: '\u2026\u2192', title: one };
+  if (!r) return { up: `\u2190${c.up}`, down: `${c.down}\u2192`, title: `${one}\nthe whole chain could not be counted` };
+  return { up: `\u2190${r.up}`, down: `${r.down}\u2192`, title: `${one}\nin all: ${r.up} upstream, ${r.down} downstream` };
+}
+
 function catalogColumns(body, n) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -10998,6 +11081,7 @@ function catalogColumns(body, n) {
   // With Snowflake picked, every column can be asked about, not just the cached ones.
   const live = sidecarOn();
   const linked = live || n.columns.some((c) => c.up || c.down || flags.has(c.name.toLowerCase()));
+  const reaches = n.columns.some((c) => c.up || c.down) ? columnReaches(n) : null;
   const table = document.createElement('table');
   table.className = 'cols';
   const head = document.createElement('tr');
@@ -11045,10 +11129,23 @@ function catalogColumns(body, n) {
     if (linked) {
       const lin = document.createElement('td');
       lin.className = 'c-lin';
+      const action = live ? `fetch the lineage of ${c.name} from Snowflake` : `column lineage for ${c.name}`;
       if (c.up || c.down) {
-        const u = document.createElement('b'); u.textContent = `\u2190${c.up}`;
-        const dn = document.createElement('b'); dn.textContent = `${c.down}\u2192`;
+        const u = document.createElement('b');
+        const dn = document.createElement('b');
         lin.append(u, document.createTextNode('  '), dn);
+        // The cell's title wins over the row's, so it says what a click does too.
+        const fill = (r) => {
+          const reach = columnReach(c, r);
+          u.textContent = reach.up;
+          dn.textContent = reach.down;
+          lin.title = `${reach.title}\n${action}`;
+        };
+        if (reaches.v) fill(reaches.v.get(c.name) || null);
+        else {
+          fill(undefined);
+          reaches.p.then((v) => fill(v.get(c.name) || null), () => fill(null));
+        }
       } else if (live) {
         const ask = document.createElement('span');
         ask.className = 'c-ask';
@@ -11070,7 +11167,7 @@ function catalogColumns(body, n) {
       }
       if (c.up || c.down || live) {
         tr.classList.add('c-linked');
-        tr.title = live ? `fetch the lineage of ${c.name} from Snowflake` : `column lineage for ${c.name}`;
+        tr.title = action;
         // The name cell is left out of the click target on purpose: copying a
         // column name is the more common thing to want, and a click target
         // makes the text impossible to select. The Tests cell is left out

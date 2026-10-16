@@ -241,6 +241,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/select", get(selection))
         .route("/api/selectors", get(list_selectors))
         .route("/api/collineage", get(col_lineage))
+        .route("/api/colreach", get(col_reach))
         .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
         .route("/api/snowflake/history", post(query_history))
@@ -2555,6 +2556,55 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
     Json(sub).into_response()
 }
 
+#[derive(Deserialize)]
+struct ColReachQuery {
+    id: String,
+}
+
+#[derive(serde::Serialize)]
+struct ColReach {
+    name: String,
+    up: usize,
+    down: usize,
+}
+
+/// How many columns lie upstream and downstream of each column of one node,
+/// the whole chain, for the Columns table alone (0089). Not in `/api/node`,
+/// which the hover card, the canvas and the editor ask for far more often: on
+/// a dense cache the chains cost more than the rest of a node. Only the
+/// columns that have an edge are listed.
+async fn col_reach(State(st): State<Arc<AppState>>, Query(q): Query<ColReachQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let Some(&idx) = graph.index.get(&q.id) else {
+        return (StatusCode::NOT_FOUND, "unknown node").into_response();
+    };
+    let walk = tokio::task::spawn_blocking(move || {
+        let Some(cll) = graph.cll.as_ref() else { return Vec::new() };
+        let columns = &graph.nodes[idx as usize].columns;
+        let at = |i: usize| ColRef { node: idx, col: i as u32 };
+        let degree: Vec<(usize, usize)> = (0..columns.len()).map(|i| cll.degree(at(i))).collect();
+        // Each side walked once for every column that has an edge on it.
+        let side = |upstream: bool| {
+            let starts: Vec<usize> = (0..columns.len()).filter(|&i| if upstream { degree[i].0 > 0 } else { degree[i].1 > 0 }).collect();
+            let counts = cll.reach_all(&starts.iter().map(|&i| at(i)).collect::<Vec<_>>(), upstream);
+            let mut all = vec![0; columns.len()];
+            for (&i, n) in starts.iter().zip(counts) {
+                all[i] = n;
+            }
+            all
+        };
+        let (up, down) = (side(true), side(false));
+        (0..columns.len())
+            .filter(|&i| degree[i].0 + degree[i].1 > 0)
+            .map(|i| ColReach { name: columns[i].name.clone(), up: up[i], down: down[i] })
+            .collect::<Vec<_>>()
+    });
+    match walk.await {
+        Ok(rows) => Json(rows).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, "walking the column lineage failed").into_response(),
+    }
+}
+
 // ------------------------------------------------------------- snowflake ----
 
 #[derive(serde::Serialize)]
@@ -4125,6 +4175,16 @@ mod tests {
         let cut = response_of(port, get("/api/collineage?id=model.demo.stg&column=x&up=0&down=3&cut=window,nonsense", &h)).await;
         assert!(cut.contains(r#""sub":"orders""#) && !cut.contains(r#""sub":"mart""#), "{cut}");
         assert!(cut.contains(r#""stopped_at":["window"]"#), "{cut}");
+
+        // The whole chain on each side, and a node's answer that does not
+        // carry it, since the hover card asks for nodes far more often.
+        let reach = response_of(port, get("/api/colreach?id=model.demo.orders", &h)).await;
+        assert!(reach.ends_with(r#"[{"name":"x","up":1,"down":1}]"#), "{reach}");
+        let reach = response_of(port, get("/api/colreach?id=model.demo.stg", &h)).await;
+        assert!(reach.ends_with(r#"[{"name":"x","up":0,"down":2}]"#), "{reach}");
+        assert!(status_of(port, get("/api/colreach?id=model.demo.nothing", &h)).await.ends_with("404 Not Found"));
+        let node = response_of(port, get("/api/node?id=model.demo.stg", &h)).await;
+        assert!(node.contains(r#""up":0,"down":1"#) && !node.contains("up_total"), "{node}");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

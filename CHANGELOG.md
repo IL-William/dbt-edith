@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.26.1 - 2026-10-16
+
+- Count in the column lineage's stop at menu the edges of each role on the
+  canvas rather than in the whole project, whose count is on hover (0089).
+- Count in the Catalog's Lineage cell every column upstream and downstream
+  of a column, the whole chain rather than one level, which hovering it still
+  says (0089).
+
 ## 1.26.0 - 2026-10-16
 
 - Open Edith's menu by resting the pointer on the name at the top left, no

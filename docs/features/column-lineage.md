@@ -161,6 +161,12 @@ dbt-edith finds every `target/column_lineage*.json` on its own, the same way it
 picks up `catalog.json`, and reloads the one on screen when it changes.
 `--column-lineage <path>` overrides which file is loaded at startup. With edges
 present, the Catalog > Columns table gains a Lineage column and the canvas gains
-a Models / Columns switch. With no edges and Snowflake not picked, nothing
-changes: the Columns table is exactly as it was and the Columns switch stays
-disabled.
+a Models / Columns switch. The Lineage cell counts the columns on each side of
+the column, the whole chain in the lineage loaded: `←0 10→` is nothing
+upstream and ten columns downstream, however many levels down. With Snowflake
+picked, that is what the clicks have fetched so far. Hovering it adds how many
+of them sit one level away, which is what the canvas opens on at a depth of 1.
+The canvas draws 200 columns at most, so past that it says `truncated` and
+draws fewer than the cell counts. With no edges and Snowflake not picked,
+nothing changes: the Columns table is exactly as it was and the Columns switch
+stays disabled.
