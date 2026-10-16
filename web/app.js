@@ -7677,9 +7677,14 @@ function renderCatalog(n) {
 
   const tabs = document.createElement('div');
   tabs.className = 'cat-tabs';
-  for (const [key, label] of [['preview', 'Preview'], ['columns', `Columns${n.columns.length ? ' (' + n.columns.length + ')' : ''}`]]) {
+  // A test has no columns of its own, so it has Preview alone. The tab picked
+  // stays picked, for the next model shown.
+  const test = n.kind === 'test';
+  const shown = test ? 'preview' : S.catTab;
+  for (const [key, label] of test ? [['preview', 'Preview']]
+    : [['preview', 'Preview'], ['columns', `Columns${n.columns.length ? ' (' + n.columns.length + ')' : ''}`]]) {
     const t = document.createElement('button');
-    t.className = 'ctab' + (S.catTab === key ? ' active' : '');
+    t.className = 'ctab' + (shown === key ? ' active' : '');
     t.textContent = label;
     t.addEventListener('click', () => showCatalogTab(n, key));
     tabs.appendChild(t);
@@ -7688,7 +7693,7 @@ function renderCatalog(n) {
 
   const body = document.createElement('div');
   body.className = 'cat-body';
-  (S.catTab === 'columns' ? catalogColumns : catalogPreview)(body, n);
+  (shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n);
   host.append(head, body);
   const filter = typing && $('#col-filter');
   if (filter) {
@@ -10721,18 +10726,7 @@ function catalogPreview(body, n) {
   catalogLocation(body, n);
   catalogJobs(body, n);
 
-  if (n.tags.length) {
-    body.appendChild(h3('tags'));
-    const box = document.createElement('div');
-    box.className = 'links';
-    n.tags.forEach((t) => {
-      const c = document.createElement('span');
-      c.className = 'tagchip';
-      c.textContent = t;
-      box.appendChild(c);
-    });
-    body.appendChild(box);
-  }
+  catalogTags(body, n);
 
   const kv = document.createElement('dl');
   kv.className = 'kvline';
@@ -10757,42 +10751,128 @@ function catalogPreview(body, n) {
   add('unique id', n.id);
   if (kv.children.length) { body.appendChild(h3('details')); body.appendChild(kv); }
 
-  const refs = (label, items, text) => {
-    if (!items.length) return;
-    body.appendChild(h3(`${label} (${items.length})`));
-    const box = document.createElement('div');
-    box.className = 'links';
-    // Same gestures as a box in the graph: click moves the lineage and the
-    // catalog to that node, double-click also opens its file.
-    items.slice(0, 300).forEach((r) => {
-      const a = document.createElement('span');
-      a.className = 'link';
-      a.append(dot(r), document.createTextNode(text ? text(r) : r.name));
-      const test = r.kind === 'test' && r.test_name;
-      a.title = `${r.id}\nclick: show it here and in the lineage`
-        + (r.file ? `\ndouble-click: also open ${test ? 'where it is declared' : 'its file'}` : '');
-      a.addEventListener('click', () => focusNode(r.id));
-      a.addEventListener('dblclick', () => {
-        if (!r.file) return;
-        if (test) return openTest(r, { pin: true });
-        pushJump();
-        openFile(r.file, { focusLineage: false });
-        revealInTree(r.file);
-      });
-      box.appendChild(a);
-    });
-    body.appendChild(box);
-  };
-  refs('upstream', n.parents);
-  refs('downstream', n.children);
+  catalogRefs(body, 'upstream', n.parents);
+  catalogRefs(body, 'downstream', n.children);
   const guards = splitTests(n.tests);
   // The model's own tests come first, and they are the point of this section:
   // guarding no column, they have no row in the Columns table and are named
   // nowhere else at all. The column ones follow for completeness, each saying
   // which column, because a relationships test counts on both models it joins
   // and reads as a stranger on the one that did not declare it.
-  refs('tests on the model', guards.model, (r) => r.test_name || r.name);
-  refs('tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+  catalogRefs(body, 'tests on the model', guards.model, (r) => r.test_name || r.name);
+  catalogRefs(body, 'tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+}
+
+/* Nodes linked from the Catalog, under a heading that counts them. */
+function catalogRefs(body, label, items, text) {
+  if (!items.length) return;
+  body.appendChild(h3(`${label} (${items.length})`));
+  const box = document.createElement('div');
+  box.className = 'links';
+  // Same gestures as a box in the graph: click moves the lineage and the
+  // catalog to that node, double-click also opens its file.
+  items.slice(0, 300).forEach((r) => {
+    const a = document.createElement('span');
+    a.className = 'link';
+    a.append(dot(r), document.createTextNode(text ? text(r) : r.name));
+    const test = r.kind === 'test' && r.test_name;
+    a.title = `${r.id}\nclick: show it here and in the lineage`
+      + (r.file ? `\ndouble-click: also open ${test ? 'where it is declared' : 'its file'}` : '');
+    a.addEventListener('click', () => focusNode(r.id));
+    a.addEventListener('dblclick', () => {
+      if (!r.file) return;
+      if (test) return openTest(r, { pin: true });
+      pushJump();
+      openFile(r.file, { focusLineage: false });
+      revealInTree(r.file);
+    });
+    box.appendChild(a);
+  });
+  body.appendChild(box);
+}
+
+/* A test, which builds nothing of its own to read about: what it checks and
+   on what come first, as its hover card says it, then the jobs that run it
+   and the models it reads. No location table, since a relation is built for
+   it only to store its failures, which its config section names, and no
+   columns, downstream or tests of its own. */
+function catalogTestPreview(body, n) {
+  if (n.description) body.appendChild(jel('p', 'cat-desc', n.description));
+  body.appendChild(h3('what it checks'));
+  const stats = document.createElement('div');
+  stats.className = 'stats';
+  const level = Lineage.testLevel(n);
+  const severity = stat('Severity', n.warn ? 'warn' : 'error');
+  if (n.warn) severity.querySelector('.v').classList.add('warn');
+  // The model whose YAML declares it: a singular test has none, and the
+  // models it reads say the rest.
+  const host = level !== 'singular' && n.parents.find((p) => p.name === n.host);
+  stats.append(
+    stat('Test', level === 'singular' ? 'singular' : n.test_name),
+    ...(host ? [stat('Model', host.name, () => focusNode(host.id))] : []),
+    ...(n.column ? [stat('Column', n.column)] : []),
+    severity,
+    stat('Models read', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
+  );
+  const totals = document.createElement('div');
+  totals.className = 'muted';
+  totals.style.cssText = 'font-size:11px;margin-top:8px';
+  totals.textContent = `${n.upstream_total} models upstream in total (whole graph).`;
+  body.append(stats, totals);
+  catalogTestConfig(body, n);
+  catalogJobs(body, n);
+  catalogTags(body, n);
+
+  const kv = document.createElement('dl');
+  kv.className = 'kvline';
+  for (const [k, v] of [
+    [level === 'singular' ? 'test file' : 'declared in', n.file],
+    ['generic from', n.namespace],
+    ['unique id', n.id],
+  ]) {
+    if (v) kv.append(jel('dt', '', k), jel('dd', '', v));
+  }
+  body.append(h3('details'), kv);
+  catalogRefs(body, 'reads', n.parents);
+}
+
+/* The config the test moved off dbt's defaults, which the server alone
+   sends, and where its failing rows go when it keeps them: the one relation a
+   test builds. store_failures_as wins over store_failures when both are set,
+   and keeps nothing as ephemeral. */
+function testStoresFailures(settings) {
+  const get = (k) => ((settings || []).find((s) => s.key === k) || {}).value;
+  const as = get('store_failures_as');
+  return as ? as.toLowerCase() !== 'ephemeral' : get('store_failures') === 'true';
+}
+
+function catalogTestConfig(body, n) {
+  const settings = n.settings || [];
+  if (!settings.length) return;
+  body.appendChild(h3('config'));
+  const kv = document.createElement('dl');
+  kv.className = 'kvline';
+  for (const s of settings) kv.append(jel('dt', '', s.key), jel('dd', '', s.value));
+  const built = n.location && n.location.built;
+  if (testStoresFailures(settings) && built && built.schema) {
+    const at = [built.database, built.schema, built.alias].filter(Boolean).join('.');
+    kv.append(jel('dt', '', 'failures stored in'), jel('dd', '', at));
+  }
+  body.appendChild(kv);
+}
+
+function catalogTags(body, n) {
+  if (!n.tags.length) return;
+  body.appendChild(h3('tags'));
+  const box = document.createElement('div');
+  box.className = 'links';
+  n.tags.forEach((t) => {
+    const c = document.createElement('span');
+    c.className = 'tagchip';
+    c.textContent = t;
+    box.appendChild(c);
+  });
+  body.appendChild(box);
 }
 
 /* The steps that run the node, one chip each, a click away from their card
