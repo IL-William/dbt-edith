@@ -1797,6 +1797,14 @@ async fn lineage(State(st): State<Arc<AppState>>, Query(q): Query<LineageQuery>)
 /// and short enough that one expression cannot answer with megabytes.
 const MAX_NAMES: usize = 5000;
 
+/// How many nodes a selection draws unless the page asks for more (0087).
+const SELECT_DRAWN: usize = 3000;
+
+/// The most a page may ask a selection to draw: a ceiling on what one answer
+/// weighs and one canvas holds, sent with every answer so the page never
+/// offers more (0087).
+const SELECT_MOST: usize = 20_000;
+
 #[derive(Deserialize)]
 struct SelectorQuery {
     q: String,
@@ -1848,6 +1856,8 @@ struct SelectorBody<'a> {
     /// named selector's answer is dbt's whatever the box says.
     #[serde(skip_serializing_if = "is_zero")]
     hidden_tests: usize,
+    /// The most nodes the page may ask this route to draw.
+    most: usize,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1872,7 +1882,12 @@ struct SelectorFailed {
 /// belong, and the answer stays dbt's either way (0032).
 async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuery>) -> Response {
     let graph = st.graph.read().await.clone();
-    let max = q.max.unwrap_or(400).min(3000);
+    // A selection is drawn whole up to SELECT_DRAWN nodes, where model mode
+    // stops at 400: its depth boxes narrow a picture too big, and a selection
+    // has nothing else to narrow it with but a rewrite. Past it every step of
+    // zoom and pan slows, so more is drawn only when the page asks for it, a
+    // click at a time, and never past SELECT_MOST (0087).
+    let max = q.max.unwrap_or(SELECT_DRAWN).min(SELECT_MOST);
     let failed = |e: select::SelectError| {
         let body = SelectorFailed { error: e.to_string(), code: e.code(), at: e.pos() };
         (StatusCode::BAD_REQUEST, Json(body)).into_response()
@@ -1888,7 +1903,7 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
             Err(e) => return failed(e),
         };
         let shown = selectors::shown(&graph, &res.nodes, q.tests == 1);
-        let sub = graph.selection(&shown.drawn, &shown.context, q.tests == 1, max);
+        let sub = graph.selection(&shown.drawn, &shown.context, &res.starts, q.tests == 1, max);
         let (counts, names) = tally(&graph, &res.nodes);
         let named = graph.selectors.get(&name);
         return Json(SelectorBody {
@@ -1905,6 +1920,7 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
             // selector of tests alone never is.
             lost_indirect: graph.selectors.lost_indirect() && graph.selectors.depends_on_indirect(&graph, &name),
             hidden_tests: shown.hidden_tests,
+            most: SELECT_MOST,
             graph: sub,
         })
         .into_response();
@@ -1915,7 +1931,7 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
         Ok(v) => v,
         Err(e) => return failed(e),
     };
-    let sub = graph.selection(&res.nodes, &[], tests == select::Tests::Eager, max);
+    let sub = graph.selection(&res.nodes, &[], &res.starts, tests == select::Tests::Eager, max);
     let (counts, names) = tally(&graph, &res.nodes);
     Json(SelectorBody {
         matched: res.nodes.len(),
@@ -1929,6 +1945,7 @@ async fn selection(State(st): State<Arc<AppState>>, Query(q): Query<SelectorQuer
         description: "",
         lost_indirect: false,
         hidden_tests: 0,
+        most: SELECT_MOST,
         graph: sub,
     })
     .into_response()
@@ -4472,6 +4489,42 @@ mod tests {
 
         // Read-only, so the guard asks for the Host and nothing more.
         assert!(status_of(port, get("/api/select?q=a", &[("Host", "evil.test")])).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The cap a selection is drawn at, and the ceiling a page may lift it to,
+    /// which the answer carries so the page's button never offers more.
+    #[tokio::test]
+    async fn a_selection_draws_its_cap_unless_asked_and_never_past_the_ceiling() {
+        let root = temp_project("cap");
+        let (port, st, server) = serve(&root).await;
+        let nodes: serde_json::Map<String, serde_json::Value> = (0..=SELECT_DRAWN)
+            .map(|i| {
+                let name = format!("m{i:05}");
+                let node =
+                    serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo", "fqn": ["demo", name] });
+                (format!("model.demo.{name}"), node)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let drawn = |body: &str| body.matches(r#""name":"m"#).count();
+
+        let capped = response_of(port, get("/api/select?q=*", &h)).await;
+        assert_eq!(drawn(&capped), SELECT_DRAWN);
+        assert!(capped.contains(r#""truncated":true"#), "{}", &capped[..200]);
+        assert!(capped.contains(&format!(r#""matched":{}"#, SELECT_DRAWN + 1)));
+        assert!(capped.contains(&format!(r#""most":{SELECT_MOST}"#)));
+
+        let lifted = response_of(port, get("/api/select?q=*&max=999999", &h)).await;
+        assert_eq!(drawn(&lifted), SELECT_DRAWN + 1);
+        assert!(lifted.contains(r#""truncated":false"#));
+        assert_eq!(drawn(&response_of(port, get("/api/select?q=*&max=2", &h)).await), 2);
+        assert_eq!((SELECT_DRAWN, SELECT_MOST), (3000, 20_000), "0087 and the docs name both");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

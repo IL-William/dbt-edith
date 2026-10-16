@@ -35,6 +35,11 @@ check('a capped canvas says what it left out',
 check('one node and one edge are singular',
   selectStatus({ matched: 1, nodes: new Array(1), edges: new Array(1), truncated: false }),
   '1 node · 1 edge');
+// The corner, the note under the box and its button count the same drawing
+// the same way: a hidden test is said apart, and no click draws it.
+check('a capped selector with hidden tests counts what could be drawn',
+  selectStatus({ matched: 6000, hidden_tests: 2000, nodes: new Array(3000), edges: new Array(10), truncated: true }),
+  '3000 of 4000 drawn · 10 edges · 2000 tests hidden');
 check('one node and no edge', selectStatus({ matched: 1, nodes: new Array(1), edges: [], truncated: false }),
   '1 node · 0 edges');
 // A named selector's answer is dbt's whatever the tests box says: a model drawn
@@ -77,6 +82,55 @@ check('a name that matches comes before a description that does',
   filterSelectors(menu, 'NIGHT').map(function (s) { return s.name; }), ['nightly', 'daily', 'marts']);
 check('nothing matches', filterSelectors(menu, 'zzz'), []);
 check('a manifest that kept indirect_selection has nothing to say', selectNotes({ lost_indirect: false }), []);
+// The corner's `3000 of 4210 drawn` went unread: a capped canvas looked like a
+// lineage missing half its nodes.
+var names = function (n) { return new Array(n).fill('x'); };
+check('a capped canvas says so under the box',
+  selectCapNote({ truncated: true, matched: 4210, nodes: new Array(3000), names: names(4210) }),
+  ['Too large to draw whole: 3000 of 4210 on the canvas, those nearest what the selection names. '
+    + 'Copy names lists every one; a narrower selection draws the rest.']);
+// The names sent stop at 5000, and a selection can match more than that.
+check('and does not say Copy names lists every one when the names were cut',
+  /Copy names lists the first 5000 by name;/.test(selectCapNote({ truncated: true, matched: 22500, nodes: new Array(3000), names: names(5000) })[0]),
+  true);
+check('tests the eye keeps off are no part of what is left to draw',
+  selectCapNote({ truncated: true, matched: 6000, hidden_tests: 2000, nodes: new Array(3000), names: names(5000) })[0]
+    .indexOf('3000 of 4000 on') > 0, true);
+check('counting what was selected, not what was drawn for a test\'s sake',
+  selectCapNote({ truncated: true, matched: 50, nodes: [{}, {}, { context: true }] })[0].indexOf('2 of 50') > 0, true);
+check('and a whole one says nothing', selectCapNote({ truncated: false, matched: 42, nodes: new Array(42) }), []);
+check('first, and kept with the lost indirect_selection by the cap on warnings',
+  selectWarnings(selectCapNote({ truncated: true, matched: 9, nodes: new Array(3) })
+    .concat(selectNotes({ lost_indirect: true }), ['a', 'b', 'c', 'd'])).slice(0, 2).map(function (l) { return l.slice(0, 10); }),
+  ['Too large ', 'This manif']);
+// Past the cap zoom and pan slow down: drawing the rest is a click, said to
+// cost something, and never what the next selection does.
+var capped = { truncated: true, matched: 4210, nodes: new Array(3000), most: 20000 };
+check('a capped canvas offers to draw the rest', capOffer(capped, 0).label, 'Draw all 4210');
+check('as many as the server draws at most', capOffer(capped, 0).max, 20000);
+check('and says what it costs', capOffer(capped, 0).hint, 'slower to zoom and pan');
+check('and that it is this time only', /this time only/.test(capOffer(capped, 0).title), true);
+check('a whole canvas offers nothing', capOffer({ truncated: false, matched: 42, nodes: new Array(42), most: 20000 }, 0), null);
+check('past the most there is, it offers that much',
+  capOffer({ truncated: true, matched: 25000, nodes: new Array(3000), most: 20000 }, 0).label, 'Draw 20000');
+check('and nothing more once drawn at it',
+  capOffer({ truncated: true, matched: 25000, nodes: new Array(20000), most: 20000 }, 20000), null);
+// A server that lowers its ceiling is taken at its word.
+check('the ceiling is the server\'s',
+  capOffer({ truncated: true, matched: 16000, nodes: new Array(3000), most: 15000 }, 0).label, 'Draw 15000');
+check('and none sent, no offer', capOffer({ truncated: true, matched: 4210, nodes: new Array(3000) }, 0), null);
+// A named selector's hidden tests are in `matched`, and no click draws them.
+check('all is what can be drawn',
+  capOffer({ truncated: true, matched: 6000, hidden_tests: 2000, nodes: new Array(3000), most: 20000 }, 0).label, 'Draw all 4000');
+check('and what fits is offered whole',
+  capOffer({ truncated: true, matched: 22000, hidden_tests: 3000, nodes: new Array(3000), most: 20000 }, 0).label, 'Draw all 19000');
+// A raise holds for the line and the tests box it was asked for, nothing else.
+var raised = { expr: 'source:stripe+', tests: 0, max: 20000 };
+check('the same line keeps it', raiseFor(raised, 'source:stripe+', 0), 20000);
+check('another line is cut again', raiseFor(raised, 'source:stripe+1', 0), 0);
+check('so is the tests eye', raiseFor(raised, 'source:stripe+', 1), 0);
+check('and an emptied box', raiseFor(raised, '', 0), 0);
+check('nothing asked, nothing lifted', raiseFor(null, 'source:stripe+', 0), 0);
 var lost = selectNotes({ lost_indirect: true });
 check('one that lost it says so, once', lost.length, 1);
 check('the menu says it about the manifest, not about one selector',

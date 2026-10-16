@@ -150,6 +150,10 @@ pub struct Resolved {
     pub nodes: Vec<u32>,
     /// One line per term that matched nothing, in the order typed.
     pub warnings: Vec<String>,
+    /// What the criteria matched before their operators grew it, among
+    /// `nodes`: the sources of `source:x+`, the model of `+my_model`. Where a
+    /// capped canvas starts drawing from. Ascending.
+    pub starts: Vec<u32>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -921,8 +925,9 @@ fn neighbours(
     }
 }
 
-/// One term's own matches, then whatever its operators add around them.
-fn expand(graph: &Graph, term: &Term, universe: &[bool]) -> Vec<bool> {
+/// One term's own matches, then whatever its operators add around them, and
+/// the own matches alone.
+fn expand(graph: &Graph, term: &Term, universe: &[bool]) -> (Vec<bool>, Vec<u32>) {
     let mut mask = vec![false; graph.nodes.len()];
     for (i, node) in graph.nodes.iter().enumerate() {
         if universe[i] && matches(term, node) {
@@ -931,7 +936,7 @@ fn expand(graph: &Graph, term: &Term, universe: &[bool]) -> Vec<bool> {
     }
     let direct = marked(&mask);
     neighbours(graph, &direct, term.at, term.parents, term.children, universe, &mut mask);
-    mask
+    (mask, direct)
 }
 
 /// dbt's `expand_selection`: the tests a criterion's own answer brings with
@@ -1027,6 +1032,10 @@ struct Ctx<'g, 's> {
     memo: HashMap<(String, bool), Vec<bool>>,
     stack: Vec<String>,
     warnings: Vec<String>,
+    /// Each criterion's own matches, by its address in the tree, kept for
+    /// `Starts` so it does not match every node against it a second time.
+    /// Only for an answer that is drawn: a bounded one never is.
+    direct: HashMap<*const Term, Vec<u32>>,
 }
 
 impl Ctx<'_, '_> {
@@ -1065,7 +1074,10 @@ fn eval(cx: &mut Ctx, spec: &Spec, negated: bool) -> Result<Vec<bool>, SelectErr
     let n = cx.graph.nodes.len();
     Ok(match spec {
         Spec::Criteria { term, indirect } => {
-            let mut mask = expand(cx.graph, term, &cx.universe);
+            let (mut mask, direct) = expand(cx.graph, term, &cx.universe);
+            if cx.bound.is_none() {
+                cx.direct.insert(term as *const Term, direct);
+            }
             if !mask.iter().any(|&m| m) {
                 cx.warnings.push(why_empty(cx.graph, term, cx.tests));
             }
@@ -1164,13 +1176,118 @@ fn run<'s>(
                 && (node.kind != Kind::Test || tests == Tests::Eager)
         })
         .collect();
-    let mut cx =
-        Ctx { graph, universe, tests, lookup, bound, memo: HashMap::new(), stack: Vec::new(), warnings: Vec::new() };
+    let mut cx = Ctx {
+        graph,
+        universe,
+        tests,
+        lookup,
+        bound,
+        memo: HashMap::new(),
+        stack: Vec::new(),
+        warnings: Vec::new(),
+        direct: HashMap::new(),
+    };
     let mask = eval(&mut cx, spec, false)?;
     let mut seen: HashSet<String> = HashSet::new();
-    let mut warnings = cx.warnings;
+    let mut warnings = std::mem::take(&mut cx.warnings);
     warnings.retain(|w| seen.insert(w.clone()));
-    Ok(Resolved { nodes: marked(&mask), warnings })
+    // A bounded answer is only compared with another, never drawn.
+    let starts = match bound {
+        Some(_) => Vec::new(),
+        None => {
+            let marked = vec![false; graph.nodes.len()];
+            let mut walk = Starts { cx: &cx, marked, done: HashSet::new(), grows: HashMap::new() };
+            walk.mark(spec, 0);
+            // A start an intersection or an exclude left out is no part of the answer.
+            walk.marked.iter().zip(&mask).enumerate().filter(|(_, (s, m))| **s && **m).map(|(i, _)| i as u32).collect()
+        }
+    };
+    Ok(Resolved { nodes: marked(&mask), warnings, starts })
+}
+
+/// Where a capped canvas starts drawing from: every criterion's own matches,
+/// before its operators grew them, outside the second half of any difference,
+/// however deep. Walked apart from `eval`, so the answer and the named
+/// selectors' memo are the same as if nobody asked.
+struct Starts<'c, 'g, 's> {
+    cx: &'c Ctx<'g, 's>,
+    marked: Vec<bool>,
+    /// Named selectors already marked: the same criteria mark the same nodes.
+    done: HashSet<String>,
+    grows: HashMap<String, bool>,
+}
+
+impl Starts<'_, '_, '_> {
+    fn mark(&mut self, spec: &Spec, depth: usize) {
+        match spec {
+            Spec::Criteria { term, .. } => match self.cx.direct.get(&(term as *const Term)) {
+                Some(direct) => direct.iter().for_each(|&i| self.marked[i as usize] = true),
+                // `eval` saw every criterion this walk reaches, a named
+                // selector's included, since its tree is the same one; this
+                // is only for whatever reaches here some other way, which
+                // the tests would catch.
+                None => {
+                    debug_assert!(false, "a criterion eval never saw: {}", term.raw);
+                    for (i, node) in self.cx.graph.nodes.iter().enumerate() {
+                        if self.cx.universe[i] && matches(term, node) {
+                            self.marked[i] = true;
+                        }
+                    }
+                }
+            },
+            Spec::Ref { name, .. } => {
+                let lookup = self.cx.lookup;
+                if depth < MAX_REFS && self.done.insert(name.clone()) {
+                    if let Some(spec) = lookup(name) {
+                        self.mark(spec, depth + 1);
+                    }
+                }
+            }
+            Spec::Union(parts) => {
+                for part in parts {
+                    self.mark(part, depth);
+                }
+            }
+            Spec::Intersection(parts) => {
+                // A member that no operator grows only filters the others:
+                // `+fct_orders,tag:finance` starts at fct_orders, and not at
+                // every finance node feeding it, which would start everywhere.
+                // With no operator at all, every member matched the answer
+                // itself, and every one starts it.
+                let grown: Vec<bool> = parts.iter().map(|p| self.grows(p, depth)).collect();
+                let any = grown.contains(&true);
+                for (part, grown) in parts.iter().zip(grown) {
+                    if grown || !any {
+                        self.mark(part, depth);
+                    }
+                }
+            }
+            // What an exclude matched is never a start, at any depth below it.
+            Spec::Difference(keep, _) => self.mark(keep, depth),
+        }
+    }
+
+    /// Whether an operator grows anything in this part of the tree, the
+    /// named selectors it reaches included.
+    fn grows(&mut self, spec: &Spec, depth: usize) -> bool {
+        match spec {
+            Spec::Criteria { term, .. } => term.at || term.parents.is_some() || term.children.is_some(),
+            Spec::Ref { name, at, parents, children } => {
+                if *at || parents.is_some() || children.is_some() {
+                    return true;
+                }
+                if let Some(&known) = self.grows.get(name) {
+                    return known;
+                }
+                let lookup = self.cx.lookup;
+                let known = depth < MAX_REFS && lookup(name).is_some_and(|s| self.grows(s, depth + 1));
+                self.grows.insert(name.clone(), known);
+                known
+            }
+            Spec::Union(parts) | Spec::Intersection(parts) => parts.iter().any(|p| self.grows(p, depth)),
+            Spec::Difference(keep, _) => self.grows(keep, depth),
+        }
+    }
 }
 
 fn no_selectors(_: &str) -> Option<&'static Spec> {
@@ -1312,6 +1429,54 @@ mod tests {
 
     fn err(line: &str) -> SelectError {
         Expr::parse(line, "").expect_err(line)
+    }
+
+    fn starts(line: &str, exclude: &str) -> Vec<String> {
+        let g = graph();
+        let (_, res) = select(&g, line, exclude, Tests::Excluded).expect(line);
+        let mut out: Vec<String> = res.starts.iter().map(|&i| g.nodes[i as usize].name.clone()).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_selection_starts_from_what_its_criteria_matched_before_their_operators() {
+        assert_eq!(starts("source:crm+", ""), ["crm.customers"]);
+        assert_eq!(starts("+fct_orders", ""), ["fct_orders"]);
+        assert_eq!(starts("@stg_customers country_codes+1", ""), ["country_codes", "stg_customers"]);
+        // A start the answer lost to an exclude, or to an intersection, is none.
+        assert_eq!(starts("stg_customers+", "stg_customers"), Vec::<String>::new());
+        assert_eq!(starts("+fct_orders,+dim_customers", ""), ["dim_customers"]);
+        // Nor is what an exclude matched.
+        assert_eq!(starts("+fct_orders", "+stg_orders"), ["fct_orders"]);
+    }
+
+    #[test]
+    fn a_member_of_an_intersection_with_no_operator_only_filters() {
+        // Every model feeding fct_orders is a model: the start is still
+        // fct_orders, and not every node of the answer.
+        assert_eq!(starts("+fct_orders,resource_type:model", ""), ["fct_orders"]);
+        assert_eq!(starts("resource_type:model,+fct_orders", ""), ["fct_orders"]);
+        // With no operator anywhere, the answer is its own start.
+        assert_eq!(starts("fct_orders,resource_type:model", ""), ["fct_orders"]);
+        // An intersection that keeps no start leaves the canvas to its roots.
+        assert_eq!(starts("stg_orders+,resource_type:model", "stg_orders"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn nothing_under_an_exclude_starts_a_selection_however_deep() {
+        // A - (B - C): C is put back into the answer, but it was written
+        // under an exclude, and the start is still A's.
+        let term = |line: &str| {
+            let term = Expr::parse(line, "").unwrap().include.0[0][0].clone();
+            Box::new(Spec::Criteria { term, indirect: Indirect::Eager })
+        };
+        let spec = Spec::Difference(term("+fct_orders"), Box::new(Spec::Difference(term("+stg_orders"), term("stg_orders"))));
+        let g = graph();
+        let res = resolve_spec(&g, &spec, Tests::Excluded, &no_selectors).unwrap();
+        let names: Vec<&str> = res.starts.iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+        assert!(res.nodes.contains(&g.index["model.shop.stg_orders"]), "C is back in the answer");
+        assert_eq!(names, ["fct_orders"]);
     }
 
     #[test]

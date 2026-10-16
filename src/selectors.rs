@@ -605,6 +605,23 @@ mod tests {
     }
 
     #[test]
+    fn a_selector_starts_from_its_criteria_wherever_they_are_named() {
+        let g = graph(named(&[
+            ("customers", json!({ "method": "fqn", "value": "customers" })),
+            ("by_ref", json!({ "method": "selector", "value": "customers", "children": true })),
+            // Named first in an exclusion, where it is no start, then outside
+            // one, where it is.
+            ("twice", json!({ "union": [
+                { "union": [{ "method": "fqn", "value": "orders", "parents": true }, { "exclude": [{ "method": "selector", "value": "customers" }] }] },
+                { "method": "selector", "value": "customers" },
+            ]})),
+        ]));
+        let starts = |name: &str| names(&g, &g.selectors.resolve(&g, name).expect(name).starts);
+        assert_eq!(starts("by_ref"), ["customers"]);
+        assert_eq!(starts("twice"), ["customers", "orders"]);
+    }
+
+    #[test]
     fn both_shapes_of_an_exclusion_subtract_the_same_thing() {
         let orders = json!({ "method": "fqn", "value": "orders" });
         let not_null = json!({ "method": "fqn", "value": "not_null_orders_id" });

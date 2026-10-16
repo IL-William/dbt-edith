@@ -1433,11 +1433,93 @@ impl Graph {
         (&x.name, &x.id).cmp(&(&y.name, &y.id))
     }
 
+    /// The order a capped selection keeps its nodes in, tests and context
+    /// aside: breadth first from the starts, over the edges the canvas would
+    /// draw, either way, each node's neighbours by name. So whatever the cap
+    /// keeps past the starts hangs off something kept before it.
+    ///
+    /// A start that is a test stands for the model it hangs under, which is
+    /// where the reader looks for it: tests are only drawn after every model.
+    /// The parts of the selection no start reaches, because none was given,
+    /// every node is one, or an exclude cut the path, start together from
+    /// their roots, the nodes nothing in the selection feeds, so no part is
+    /// drawn to its end before another begins.
+    fn nearest_first(&self, members: &[u32], context: &HashSet<u32>, starts: &[u32]) -> HashMap<u32, usize> {
+        let core: HashSet<u32> =
+            members.iter().copied().filter(|i| !context.contains(i) && self.nodes[*i as usize].kind != Kind::Test).collect();
+        let by_name = |list: &mut Vec<u32>| {
+            list.sort_by(|&a, &b| self.by_name_then_id(a, b));
+            list.dedup();
+        };
+        let mut seeds: Vec<u32> = Vec::new();
+        for &s in starts {
+            let n = &self.nodes[s as usize];
+            if core.contains(&s) {
+                seeds.push(s);
+            } else if n.kind == Kind::Test {
+                match self.host(n).filter(|h| core.contains(h)) {
+                    Some(h) => seeds.push(h),
+                    None => seeds.extend(n.parents.iter().copied().filter(|p| core.contains(p))),
+                }
+            }
+        }
+        by_name(&mut seeds);
+        // A selection that is all start, `tag:nightly` or `*`, says nothing
+        // about where to begin: its roots do, as when no start was given.
+        if seeds.len() == core.len() {
+            seeds.clear();
+        }
+        let mut rank: HashMap<u32, usize> = HashMap::with_capacity(core.len());
+        let mut queue: Vec<u32> = Vec::with_capacity(core.len());
+        let push = |i: u32, rank: &mut HashMap<u32, usize>, queue: &mut Vec<u32>| {
+            if !rank.contains_key(&i) {
+                rank.insert(i, rank.len());
+                queue.push(i);
+            }
+        };
+        for &i in &seeds {
+            push(i, &mut rank, &mut queue);
+        }
+        let mut head = 0usize;
+        let mut roots_seeded = false;
+        while rank.len() < core.len() {
+            if head == queue.len() {
+                let mut fresh: Vec<u32> = if roots_seeded {
+                    Vec::new()
+                } else {
+                    roots_seeded = true;
+                    let fed = |i: u32| self.nodes[i as usize].parents.iter().any(|p| core.contains(p));
+                    core.iter().copied().filter(|&i| !rank.contains_key(&i) && !fed(i)).collect()
+                };
+                by_name(&mut fresh);
+                if fresh.is_empty() {
+                    // Only a cycle has no root, which dbt refuses to build;
+                    // this keeps the walk finite if a manifest holds one.
+                    fresh = core.iter().copied().filter(|i| !rank.contains_key(i)).collect();
+                    by_name(&mut fresh);
+                    fresh.truncate(1);
+                }
+                for i in fresh {
+                    push(i, &mut rank, &mut queue);
+                }
+            }
+            let n = &self.nodes[queue[head] as usize];
+            head += 1;
+            let mut near: Vec<u32> =
+                n.parents.iter().chain(&n.children).copied().filter(|i| core.contains(i) && !rank.contains_key(i)).collect();
+            by_name(&mut near);
+            for i in near {
+                push(i, &mut rank, &mut queue);
+            }
+        }
+        rank
+    }
+
     /// Each test's place among the tests of the model it hangs under on the
-    /// canvas, by name: its declaring model when that is among `members`,
-    /// otherwise its first parent there. The cap takes the first of every
-    /// model before the second of any.
-    fn test_turns(&self, members: &[u32]) -> HashMap<u32, usize> {
+    /// canvas, by name, and that model: its declaring model when that is
+    /// among `members`, otherwise its first parent there. The cap takes the
+    /// first of every model before the second of any.
+    fn test_turns(&self, members: &[u32]) -> HashMap<u32, (usize, u32)> {
         let set: HashSet<u32> = members.iter().copied().collect();
         let mut groups: HashMap<u32, Vec<u32>> = HashMap::new();
         for &i in members {
@@ -1450,10 +1532,10 @@ impl Graph {
             groups.entry(host).or_default().push(i);
         }
         let mut turn = HashMap::new();
-        for mut list in groups.into_values() {
+        for (host, mut list) in groups {
             list.sort_by(|&a, &b| self.by_name_then_id(a, b));
             for (k, t) in list.into_iter().enumerate() {
-                turn.insert(t, k);
+                turn.insert(t, (k, host));
             }
         }
         turn
@@ -1500,7 +1582,10 @@ impl Graph {
     /// a selected test belongs to that a named selector did not select itself,
     /// so the test hangs off something (0032). They count as models when the
     /// canvas is capped, and never in anything the selection reports.
-    pub fn selection(&self, picked: &[u32], context: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
+    ///
+    /// `starts` is what the selection's criteria matched before their
+    /// operators grew it, where a capped canvas starts drawing from.
+    pub fn selection(&self, picked: &[u32], context: &[u32], starts: &[u32], with_tests: bool, max_nodes: usize) -> Lineage<'_> {
         let mut members: Vec<u32> = picked.to_vec();
         members.extend_from_slice(context);
         let in_context: HashSet<u32> = context.iter().copied().collect();
@@ -1508,8 +1593,10 @@ impl Graph {
         // room is drawn as room allows, and says nothing about the answer.
         let truncated = picked.len() > max_nodes;
         if members.len() > max_nodes {
-            // Cut by name, never by index: the index follows the unique_id,
-            // which puts the kind and the package before the name.
+            // Nearest the starts first, each step away from them in turn
+            // (0087). Cut by name, as it was, a selection of sources and their
+            // children kept the sources, whose names sort together, and
+            // dropped every child: a canvas of sources read by nothing.
             //
             // Tests go last, because a selection with tests switched on is
             // mostly tests, and an alphabetical cut would fill the canvas with
@@ -1518,13 +1605,18 @@ impl Graph {
             // a cut leaves every model some. Context goes after everything: it
             // is drawn for the tests' sake, and a named selector that keeps
             // only tests can bring more of it than there are tests.
+            //
+            // A test's step is its model's, so of two models' first tests the
+            // one nearer the starts is kept. When only context is left out,
+            // what the selection chose is drawn whole and the order among it
+            // changes nothing.
             let turn = self.test_turns(&members);
-            members.sort_by(|&a, &b| {
-                let key = |i: u32| {
-                    let n = &self.nodes[i as usize];
-                    (in_context.contains(&i), n.kind == Kind::Test, turn.get(&i).copied().unwrap_or(0), &n.name, &n.id)
-                };
-                key(a).cmp(&key(b))
+            let near = if truncated { self.nearest_first(&members, &in_context, starts) } else { HashMap::new() };
+            members.sort_by_cached_key(|&i| {
+                let n = &self.nodes[i as usize];
+                let (k, host) = turn.get(&i).copied().unwrap_or((0, i));
+                let step = near.get(&host).copied().unwrap_or(usize::MAX);
+                (in_context.contains(&i), n.kind == Kind::Test, k, step, &n.name, &n.id)
             });
             members.truncate(max_nodes);
         }
@@ -2276,7 +2368,7 @@ mod tests {
     #[test]
     fn a_selection_layers_every_component_from_its_own_zero() {
         let g = shapes();
-        let sub = g.selection(&all(&g, &["a", "b", "c", "d", "x", "y"]), &[], false, 100);
+        let sub = g.selection(&all(&g, &["a", "b", "c", "d", "x", "y"]), &[], &[], false, 100);
         for (name, want) in [("a", 0), ("b", 1), ("c", 1), ("d", 2), ("x", 0), ("y", 1)] {
             assert_eq!(by_name(&sub, name).depth, want, "{name}");
         }
@@ -2288,7 +2380,7 @@ mod tests {
     #[test]
     fn a_selection_counts_the_neighbours_it_left_out() {
         let g = shapes();
-        let sub = g.selection(&all(&g, &["b", "d"]), &[], false, 100);
+        let sub = g.selection(&all(&g, &["b", "d"]), &[], &[], false, 100);
         assert_eq!(by_name(&sub, "b").hidden_up, 1, "a is upstream and out of view");
         assert_eq!(by_name(&sub, "d").hidden_up, 1, "c is out of view, b is not");
         assert_eq!(by_name(&sub, "b").hidden_down, 0, "d is the only child and it is in view");
@@ -2301,13 +2393,117 @@ mod tests {
     fn a_capped_selection_says_so_and_cuts_the_same_way_twice() {
         let g = shapes();
         let picked = all(&g, &["a", "b", "c", "d", "x", "y"]);
-        let sub = g.selection(&picked, &[], false, 3);
+        let sub = g.selection(&picked, &[], &[], false, 3);
         assert!(sub.truncated);
         assert_eq!(sub.nodes.len(), 3);
         let mut drawn: Vec<&str> = sub.nodes.iter().map(|n| n.name).collect();
         drawn.sort();
-        // By name, so the same selection draws the same three every time.
-        assert_eq!(drawn, ["a", "b", "c"]);
+        // With no start, from every root at once, then each node's
+        // neighbours by name, so the same selection draws the same three
+        // every time.
+        assert_eq!(drawn, ["a", "b", "x"]);
+    }
+
+    fn drawn(sub: &Lineage) -> Vec<String> {
+        let mut out: Vec<String> = sub.nodes.iter().map(|n| n.name.to_string()).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_capped_selection_starts_from_what_its_criteria_named() {
+        let g = shapes();
+        let picked = all(&g, &["a", "b", "c", "d", "x", "y"]);
+        // `+d`: d and its nearest parents, not the root its walk ended on.
+        let sub = g.selection(&picked, &[], &all(&g, &["d"]), false, 3);
+        assert!(sub.truncated);
+        assert_eq!(drawn(&sub), ["b", "c", "d"]);
+        // Two starts are both kept before a step away from either, and the
+        // step goes to the first by name.
+        let sub = g.selection(&picked, &[], &all(&g, &["a", "x"]), false, 3);
+        assert_eq!(drawn(&sub), ["a", "b", "x"]);
+        // A start the selection does not hold is no start.
+        let picked = all(&g, &["a", "b", "c", "d"]);
+        let sub = g.selection(&picked, &[], &all(&g, &["y"]), false, 2);
+        assert_eq!(drawn(&sub), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_selection_that_is_all_start_begins_at_its_roots() {
+        let g = shapes();
+        // `*`: by name it would keep a, b, c and d, and nothing of x's part.
+        // From the roots, both parts begin, then a step from each in turn.
+        let picked = all(&g, &["a", "b", "c", "d", "x", "y"]);
+        assert_eq!(drawn(&g.selection(&picked, &[], &picked, false, 4)), ["a", "b", "c", "x"]);
+        assert_eq!(drawn(&g.selection(&picked, &[], &picked, false, 5)), ["a", "b", "c", "x", "y"]);
+    }
+
+    #[test]
+    fn the_parts_no_start_reaches_begin_together() {
+        let g = shapes();
+        // `a+ --exclude a`: no start is left, and b, c and x each begin a
+        // part. One part drawn to its end would leave the others out.
+        let picked = all(&g, &["b", "c", "d", "x", "y"]);
+        assert_eq!(drawn(&g.selection(&picked, &[], &[], false, 3)), ["b", "c", "x"]);
+        assert_eq!(drawn(&g.selection(&picked, &[], &[], false, 4)), ["b", "c", "d", "x"]);
+    }
+
+    /// a -> b -> c -> d, with a test declared on b and one on d.
+    fn chain() -> Graph {
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                                "fqn": ["shop", name] })
+        };
+        let test = |name: &str, on: &str| {
+            serde_json::json!({ "name": name, "resource_type": "test", "package_name": "shop",
+                                "fqn": ["shop", name], "attached_node": format!("model.shop.{on}") })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.a": model("a"), "model.shop.b": model("b"),
+                "model.shop.c": model("c"), "model.shop.d": model("d"),
+                "test.shop.t_b": test("t_b", "b"), "test.shop.t_d": test("t_d", "d"),
+            },
+            "parent_map": {
+                "model.shop.b": ["model.shop.a"],
+                "model.shop.c": ["model.shop.b"],
+                "model.shop.d": ["model.shop.c"],
+                "test.shop.t_b": ["model.shop.b"],
+                "test.shop.t_d": ["model.shop.d"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    #[test]
+    fn a_test_that_starts_a_selection_starts_it_at_its_model() {
+        let g = chain();
+        let ids = ["model.shop.a", "model.shop.b", "model.shop.c", "model.shop.d", "test.shop.t_b", "test.shop.t_d"];
+        let every: Vec<u32> = ids.iter().map(|id| g.index[*id]).collect();
+        // `+t_d` with the tests eye open: d and its parent, not the far root.
+        let sub = g.selection(&every, &[], &[g.index["test.shop.t_d"]], true, 2);
+        assert_eq!(drawn(&sub), ["c", "d"]);
+        // Of two first tests, the one whose model is nearer the start is
+        // kept, though the other sorts first by name.
+        let sub = g.selection(&every, &[], &[g.index["model.shop.d"]], true, 5);
+        assert_eq!(drawn(&sub), ["a", "b", "c", "d", "t_d"]);
+    }
+
+    #[test]
+    fn whatever_a_cap_keeps_past_the_starts_hangs_off_something_kept() {
+        let g = shapes();
+        // x and y are out: nothing reaches them from d, so x would start on
+        // its own, as a root.
+        let picked = all(&g, &["a", "b", "c", "d"]);
+        let starts = all(&g, &["d"]);
+        for cap in 1..picked.len() {
+            let sub = g.selection(&picked, &[], &starts, false, cap);
+            for (p, n) in sub.nodes.iter().enumerate() {
+                let linked = sub.edges.iter().any(|e| e.contains(&p));
+                assert!(n.name == "d" || linked, "cap {cap}: {} drawn alone", n.name);
+            }
+        }
     }
 
     #[test]
@@ -2316,7 +2512,7 @@ mod tests {
         // The test sorts first by name, so an alphabetical cut alone would keep
         // it and drop a model. With tests on, most of a selection is tests.
         let picked = vec![g.index["test.shop.aaa_not_null_a"], g.index["model.shop.a"]];
-        let sub = g.selection(&picked, &[], true, 1);
+        let sub = g.selection(&picked, &[], &[], true, 1);
         assert!(sub.truncated);
         assert_eq!(sub.nodes.iter().map(|n| n.name).collect::<Vec<_>>(), ["a"]);
     }
@@ -2325,7 +2521,7 @@ mod tests {
     fn only_a_selection_has_no_focus() {
         let g = shapes();
         let picked = all(&g, &["a", "b"]);
-        let select = serde_json::to_value(g.selection(&picked, &[], false, 100)).unwrap();
+        let select = serde_json::to_value(g.selection(&picked, &[], &[], false, 100)).unwrap();
         assert!(select.get("focus").is_none(), "a selection has no centre to send");
 
         let lineage = serde_json::to_value(g.lineage(picked[0], 1, 1, false, 100)).unwrap();
@@ -2377,7 +2573,7 @@ mod tests {
         assert_eq!(names, ["t_a1", "t_a2"], "each model's first tests, by name");
 
         let all: Vec<u32> = (0..g.nodes.len() as u32).filter(|&i| !g.nodes[i as usize].disabled).collect();
-        let picked = g.selection(&all, &[], true, 9);
+        let picked = g.selection(&all, &[], &[], true, 9);
         assert_eq!(tests_per_model(&picked), [("a".into(), 2), ("b".into(), 2), ("c".into(), 2)]);
     }
 
@@ -2386,7 +2582,7 @@ mod tests {
         let g = tested();
         let at = |id: &str| g.index[id];
         let picked = vec![at("model.shop.dim_customers"), at("model.shop.dim_legacy"), at("test.shop.rel_a"), at("test.shop.combo")];
-        let sub = serde_json::to_value(g.selection(&picked, &[], true, 100)).unwrap();
+        let sub = serde_json::to_value(g.selection(&picked, &[], &[], true, 100)).unwrap();
         let nodes = sub["nodes"].as_array().unwrap();
         let find = |name: &str| nodes.iter().find(|n| n["name"] == name).unwrap();
         let owner = find("rel_a")["attached"].as_u64().unwrap() as usize;
@@ -2395,7 +2591,7 @@ mod tests {
         assert!(find("dim_customers").get("attached").is_none(), "a model is attached to nothing");
 
         // With its model off the canvas, the test names nothing either.
-        let alone = serde_json::to_value(g.selection(&[at("test.shop.rel_a")], &[], true, 100)).unwrap();
+        let alone = serde_json::to_value(g.selection(&[at("test.shop.rel_a")], &[], &[], true, 100)).unwrap();
         assert!(alone["nodes"][0].get("attached").is_none());
     }
 
@@ -2410,7 +2606,7 @@ mod tests {
             .iter()
             .map(|id| at(id))
             .collect();
-        let selected = serde_json::to_value(g.selection(&picked, &[], true, 100)).unwrap();
+        let selected = serde_json::to_value(g.selection(&picked, &[], &[], true, 100)).unwrap();
         let around = serde_json::to_value(g.lineage(at("model.shop.dim_customers"), 1, 1, true, 100)).unwrap();
         for sub in [&selected, &around] {
             let nodes = sub["nodes"].as_array().unwrap();
@@ -2433,7 +2629,7 @@ mod tests {
         }
         // No test_metadata at all is a singular test: no generic to name.
         let s = shapes();
-        let lone = serde_json::to_value(s.selection(&[s.index["test.shop.aaa_not_null_a"]], &[], true, 100)).unwrap();
+        let lone = serde_json::to_value(s.selection(&[s.index["test.shop.aaa_not_null_a"]], &[], &[], true, 100)).unwrap();
         assert!(lone["nodes"][0].get("test_name").is_none());
     }
 
@@ -2450,13 +2646,13 @@ mod tests {
             .iter()
             .map(|id| at(id))
             .collect();
-        let sub = serde_json::to_value(g.selection(&picked, &[], true, 100)).unwrap();
+        let sub = serde_json::to_value(g.selection(&picked, &[], &[], true, 100)).unwrap();
         let nodes = sub["nodes"].as_array().unwrap();
         let find = |name: &str| nodes.iter().find(|n| n["name"] == name).unwrap();
         assert_eq!(find("rel_a")["host"], "dim_customers", "declared there, though it points at dim_legacy");
         assert!(find("dim_customers").get("host").is_none(), "a model has no host");
         // Its host need not be drawn: the name is what the browser looks for.
-        let alone = serde_json::to_value(g.selection(&[at("test.shop.rel_a")], &[], true, 100)).unwrap();
+        let alone = serde_json::to_value(g.selection(&[at("test.shop.rel_a")], &[], &[], true, 100)).unwrap();
         assert_eq!(alone["nodes"][0]["host"], "dim_customers");
 
         let raw: RawManifest = serde_json::from_value(serde_json::json!({
@@ -2515,7 +2711,7 @@ mod tests {
     fn only_a_context_node_says_so() {
         let g = shapes();
         let picked = vec![g.index["test.shop.aaa_not_null_a"]];
-        let sub = serde_json::to_value(g.selection(&picked, &[g.index["model.shop.a"]], true, 100)).unwrap();
+        let sub = serde_json::to_value(g.selection(&picked, &[g.index["model.shop.a"]], &[], true, 100)).unwrap();
         let nodes = sub["nodes"].as_array().unwrap();
         assert_eq!(nodes.len(), 2);
         let flagged: Vec<&str> =
@@ -2525,7 +2721,7 @@ mod tests {
 
         // A cut drops context before anything the selection chose, and the
         // selection itself is whole, so nothing reads as truncated.
-        let capped = g.selection(&picked, &[g.index["model.shop.a"]], true, 1);
+        let capped = g.selection(&picked, &[g.index["model.shop.a"]], &[], true, 1);
         assert!(!capped.truncated);
         assert_eq!(capped.nodes.iter().map(|n| n.name).collect::<Vec<_>>(), ["aaa_not_null_a"]);
     }
@@ -2830,7 +3026,7 @@ mod tests {
             [
                 format!("{:?}", ids(all.clone())),
                 serde_json::to_string(&g.lineage(g.index["model.shop.hub"], 1, 1, true, 9)).unwrap(),
-                serde_json::to_string(&g.selection(&all, &[], true, 20)).unwrap(),
+                serde_json::to_string(&g.selection(&all, &[], &[], true, 20)).unwrap(),
                 format!("{:?}", ids(g.search("_", &[], 5))),
                 format!("{:?}", g.node_of_file("models/schema.yml").map(|i| g.nodes[i as usize].id.clone())),
                 serde_json::to_string(&g.meta.counts).unwrap(),

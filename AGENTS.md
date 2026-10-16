@@ -192,7 +192,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | export the graph, or change what an exported file carries | [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md) |
 | move a box on the lineage canvas, or read `n.depth` | [0027](docs/decisions/0027-the-canvas-lays-out-from-the-edges.md) |
 | change where the canvas draws a test, or what `attached` means | [0034](docs/decisions/0034-a-test-hangs-under-its-model.md) |
-| change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md) |
+| change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md), [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |
+| change how many nodes a selection draws, or where a capped one starts | [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |
 | group, label or colour the tests under a model, or add a field a test carries in a payload | [0040](docs/decisions/0040-tests-hang-grouped-by-generic.md) |
 | change where opening a data test lands, or find a line in a properties file | [0041](docs/decisions/0041-a-test-opens-at-its-line.md) |
 | handle a key inside the terminal, or change what Ctrl + C does there | [0044](docs/decisions/0044-the-terminal-copies-like-windows-terminal.md), [0073](docs/decisions/0073-the-terminal-sends-the-line-keys-the-shell-reads-everywhere.md) |
