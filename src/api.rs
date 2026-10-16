@@ -2807,7 +2807,7 @@ struct ProfileBody {
 }
 
 /// The profile as it is on disk, secrets included. Never sent as it is.
-fn profile_text(path: &Path) -> Result<String, String> {
+pub(crate) fn profile_text(path: &Path) -> Result<String, String> {
     let meta = std::fs::metadata(path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => format!("no profiles.yml at {}", path.display()),
         _ => format!("cannot read {}: {e}", path.display()),

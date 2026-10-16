@@ -32,7 +32,8 @@ dbt-edith
   incremental strategy, where it is built in each of your `.env` environments,
   and the compiled and run SQL dbt left for it.
 - **[Column lineage](docs/features/column-lineage.md)**, parsed from the
-  compiled SQL by collin, or fetched from Snowflake on click.
+  compiled SQL by collin, or fetched from Snowflake on click, and answered on
+  the command line by `--column`.
 - **[Jobs and Reports](docs/features/jobs-and-reports.md)**: which Airflow DAG
   or dbt Cloud job runs a model, which models no scheduled job runs, and what
   the last dbt command did.
@@ -172,7 +173,11 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [-s, --select "line"]           print what the line selects and exit, without serving
          [--exclude "line"]              what --select leaves out
          [--selector name]               print what a named selector selects and exit
-         [--output name|json]            what those two print, default one name per line
+         [--column model.column]         print one column's lineage from the cache and exit
+         [--up N|all] [--down N|all]     how far --column walks, default 0
+         [--stop-at window,aggregate]    roles --column does not walk past downstream
+         [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
+         [--output name|json]            what those three print, default one name per line
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 

@@ -20,6 +20,10 @@ pub struct RawColLineage {
     pub target: String,
     #[serde(default)]
     pub generated_at: String,
+    /// What wrote it, `collin 0.7.0`, when the cache says. Never written
+    /// back empty, so a Snowflake cache saved here keeps its shape.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub producer: String,
     /// What a `dump` could not read, kept so merging into its file loses nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
@@ -128,6 +132,11 @@ struct Header {
     generated_at: String,
     #[serde(default)]
     producer: String,
+    /// Only whether the file has edges at all, skipped without being kept:
+    /// collin's report, which `collin generate` names
+    /// `column_lineage.report.json` beside the cache, has none.
+    #[serde(default)]
+    edges: Option<serde::de::IgnoredAny>,
 }
 
 /// Where a producer writes. One file per source, so two producers never contend
@@ -148,11 +157,12 @@ pub fn path_for(target_dir: &Path, source: &str) -> PathBuf {
     }
 }
 
-/// A cache's header, or None when this build cannot read the file.
+/// A cache's header, or None when this build cannot read the file or it is
+/// not a cache.
 fn header(path: &Path) -> Option<Header> {
     let bytes = std::fs::read(path).ok()?;
     let head = serde_json::from_slice::<Header>(&bytes).ok()?;
-    (head.version <= 1).then_some(head)
+    (head.version <= 1 && head.edges.is_some()).then_some(head)
 }
 
 /// The tool whose answer a cache file holds, read from its header: empty when
@@ -672,8 +682,10 @@ mod tests {
             "column_lineage.collin.json",
             r#"{"version":1,"source":"collin","target":"qa","generated_at":"2026-02-02T00:00:00Z","edges":[{"from":"a","from_col":"x","to":"b","to_col":"y","kind":"passthrough"}]}"#,
         );
-        // Not a cache, and a cache this build is too old to read.
+        // Not a cache, and a cache this build is too old to read. collin's
+        // report, written by hand beside its cache, is no cache either.
         write("manifest.json", r#"{"nodes":{}}"#);
+        write("column_lineage.report.json", r#"{"totals":{"models":2},"models":[]}"#);
         write("column_lineage.future.json", r#"{"version":9,"source":"later","edges":[]}"#);
         write("column_lineage.broken.json", "{not json");
 

@@ -157,8 +157,10 @@ python tools/sf_lineage.py dump --select model_a,model_b \
   --out target/column_lineage.snowflake.json
 ```
 
-dbt-edith finds every `target/column_lineage*.json` on its own, the same way it
-picks up `catalog.json`, and reloads the one on screen when it changes.
+dbt-edith finds every `target/column_lineage*.json` that holds edges on its own,
+the same way it picks up `catalog.json`, and reloads the one on screen when it
+changes. The report `collin generate` writes beside its cache, under the same
+prefix, is not offered.
 `--column-lineage <path>` overrides which file is loaded at startup. With edges
 present, the Catalog > Columns table gains a Lineage column and the canvas gains
 a Models / Columns switch. The Lineage cell counts the columns on each side of
@@ -170,3 +172,78 @@ The canvas draws 200 columns at most, so past that it says `truncated` and
 draws fewer than the cell counts. With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
+
+## From the command line
+
+`--column` answers one column's lineage without the browser, as
+[`--select`](selection.md#from-the-command-line) answers a selection, so a
+script or an agent can ask what a column reaches with one command
+([0088](../decisions/0088-a-column-is-answered-on-the-command-line-from-the-cache-already-written.md)):
+
+```
+dbt-edith path/to/project --column stg_payments.amount --down all --output json
+dbt-edith path/to/project --column orders.coupon_amount --up all
+dbt-edith path/to/project --column stg_orders.order_id --down 2 --stop-at window,aggregate
+```
+
+The column is `model.column`, `source_name.table.column`, or a unique_id and
+its column. `--up` and `--down` take a number of levels or `all`; with neither,
+only the column itself is printed. `--stop-at` stops the walk downstream at
+the roles named, as the stop at menu does on the canvas. The walk is the
+canvas's own, with no cap.
+
+`--output name` prints `model.column`, one per line, upstream first, then the
+column, then downstream. `--output json` prints one line per model reached,
+with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
+`materialized`) and only the columns reached. This line is the `orders` of
+`--column raw_payments.amount --down all` on Jaffle Shop:
+
+```json
+{"unique_id":"model.jaffle_shop.orders","name":"orders","resource_type":"model","package_name":"jaffle_shop","original_file_path":"models/orders.sql","materialized":"table","depth":2,"columns":{"coupon_amount":{"depth":2,"from":{"stg_payments.amount":"aggregate"},"tests":["not_null_orders_coupon_amount"]}}}
+```
+
+| Key | What it holds |
+| --- | --- |
+| `depth` | levels from the column asked, negative upstream; the model's is its nearest column's |
+| `from` | the columns of the answer this one is read from, with the role of each edge: a rename shows here, under its new name |
+| `tests` | the data tests on the column |
+| `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
+
+It reads a cache already written and writes none: collin is never started and
+Snowflake never asked. `--column-tool collin`, `fusion` or `snowflake` picks a
+tool's newest cache, `--column-lineage path` a file. Otherwise collin's or
+Fusion's newest cache answers, since Snowflake's holds only the columns
+fetched so far from the page; without either, the cache the page loads with
+nothing picked.
+
+stderr says what the answer is worth, a refusal included: the manifest and the
+freshness badge's verdict, as for `--select`, then the cache, who wrote it, for
+which target and when, how many of its edge ends name nothing the manifest
+holds, and, for Snowflake's, that it may be partial. A cache older than the
+manifest still answers, and stderr then gives the
+steps that write a new one, with the target left as `<TARGET>`: the manifest,
+the catalog and collin's run must all come from the target you choose, with
+its `.env` loaded, and only you know which one the answer should describe. It
+lists the profile's targets and the `.env` files, and the command for the dbt
+that wrote the manifest:
+
+```
+dbt docs generate --target <TARGET>                 # dbt-core, which compiles too
+dbt compile --target <TARGET> --write-catalog       # dbt Fusion, which writes no catalog unless told
+collin generate --project . --target <TARGET> --out target/column_lineage.collin.json --report target/collin.report.json
+```
+
+collin is told the names the page's own run writes, so the page then loads
+this cache and reads this report rather than older ones it remembers.
+
+With `--manifest` in another folder than `target/`, the steps send dbt
+(`--target-path`) and collin (`--manifest`, `--catalog`, `--out`) there. collin's
+report from the same run says whether it set compiled files aside as compiled
+for another target, or found catalog entries describing another table: either
+means the three did not come from one target.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | answered, a stale cache included, which stderr says |
+| 1 | refused: no node of that name, two of it, which wants the unique_id, or no such column, with the columns that have edges |
+| 2 | nothing was asked: no manifest, no cache, which stderr says how to write, an unreadable one, a file that is not a cache, or a wrong flag |

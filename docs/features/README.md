@@ -16,7 +16,7 @@ pull request.
 | [lineage.md](lineage.md) | the graph, how it follows the editor, whether it is still true, reading it, sharing it |
 | [selection.md](selection.md) | Custom selection, named selectors, `--select` on the command line |
 | [catalog.md](catalog.md) | the Catalog tab, where a model lives, environments, Compiled and Run |
-| [column-lineage.md](column-lineage.md) | column lineage from Fusion, Collin or Snowflake |
+| [column-lineage.md](column-lineage.md) | column lineage from Fusion, Collin or Snowflake, `--column` on the command line |
 | [jobs-and-reports.md](jobs-and-reports.md) | the Jobs tab, job coverage, Reports, Last run |
 | [snowflake.md](snowflake.md) | the Snowflake switch, Snowsight links, Clone into my schema, Query history |
 | [terminal-and-git.md](terminal-and-git.md) | the terminal, the Python environment, the Git tab |

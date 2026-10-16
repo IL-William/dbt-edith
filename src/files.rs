@@ -10,6 +10,12 @@ const NOT_INDEXED: &[&str] = &["target", "logs", ".git", "node_modules", "__pyca
 const MAX_INDEXED: usize = 60_000;
 const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
 
+/// The folder a file named on the command line sits in: `.` for a bare file
+/// name, whose parent is an empty path that reads as no folder at all.
+pub fn folder_of(path: &Path) -> Option<PathBuf> {
+    path.parent().map(|p| if p.as_os_str().is_empty() { PathBuf::from(".") } else { p.to_path_buf() })
+}
+
 /// Seconds since the epoch, or 0 when the file is missing or unreadable. Every
 /// freshness comparison in the tool is between two of these, so a missing file
 /// reads as infinitely old rather than as an error to thread through.
@@ -580,6 +586,13 @@ pub fn is_dbt_project(root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bare_file_name_sits_in_the_current_folder() {
+        assert_eq!(folder_of(Path::new("manifest.json")), Some(PathBuf::from(".")));
+        assert_eq!(folder_of(Path::new("target-qa/manifest.json")), Some(PathBuf::from("target-qa")));
+        assert_eq!(folder_of(Path::new("/")), None);
+    }
 
     #[test]
     fn a_verbatim_path_is_spelled_the_way_cmd_reads_it() {

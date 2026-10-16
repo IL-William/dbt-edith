@@ -17,6 +17,7 @@ mod graph;
 mod incremental;
 mod jobs;
 mod ls;
+mod ls_column;
 mod macros;
 mod manifest;
 mod profiles;
@@ -63,7 +64,7 @@ struct Args {
     #[arg(long)]
     catalog: Option<PathBuf>,
 
-    /// Path to the column lineage cache (default: the tool last picked in the menu, else the newest target/column_lineage*.json)
+    /// Path to the column lineage cache (default: the tool last picked in the menu, else the newest target/column_lineage*.json; for --column, collin's or Fusion's newest, else the newest)
     #[arg(long)]
     column_lineage: Option<PathBuf>,
 
@@ -91,7 +92,27 @@ struct Args {
     #[arg(long, value_name = "NAME", conflicts_with = "select")]
     selector: Option<String>,
 
-    /// What --select and --selector print: one name per line, or one JSON object per node
+    /// Walk one column's lineage over the column lineage cache beside the manifest, print it and exit, without serving
+    #[arg(long, value_name = "MODEL.COLUMN", conflicts_with_all = ["select", "selector"])]
+    column: Option<String>,
+
+    /// Levels --column walks upstream: a number, or all (default 0)
+    #[arg(long, value_name = "N", value_parser = ls_column::levels, requires = "column")]
+    up: Option<u32>,
+
+    /// Levels --column walks downstream: a number, or all (default 0)
+    #[arg(long, value_name = "N", value_parser = ls_column::levels, requires = "column")]
+    down: Option<u32>,
+
+    /// Roles --column does not walk past downstream, comma-separated: window,aggregate
+    #[arg(long, value_name = "ROLES", value_delimiter = ',', requires = "column")]
+    stop_at: Vec<String>,
+
+    /// The tool whose cache --column reads (default: collin's or Fusion's newest, else the newest)
+    #[arg(long, value_enum, value_name = "TOOL", requires = "column", conflicts_with = "column_lineage")]
+    column_tool: Option<ls_column::Tool>,
+
+    /// What --select, --selector and --column print: one name per line, or one JSON object per node, per model for --column
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
 }
@@ -109,6 +130,17 @@ async fn main() -> anyhow::Result<()> {
     if let Some(query) = query {
         std::process::exit(ls::run(&args.project, args.manifest.as_deref(), &query, args.output));
     }
+    if let Some(column) = args.column {
+        let ask = ls_column::Ask {
+            column,
+            up: args.up.unwrap_or(0),
+            down: args.down.unwrap_or(0),
+            stop_at: args.stop_at,
+            tool: args.column_tool,
+            cache: args.column_lineage,
+        };
+        std::process::exit(ls_column::run(&args.project, args.manifest.as_deref(), &ask, args.output));
+    }
     let root = args
         .project
         .canonicalize()
@@ -123,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
     // user last chose decides which file is loaded before the state exists.
     let settings = settings::Store::new(&root);
     let saved = settings.load();
-    let target_dir = manifest_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.join("target"));
+    let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
 
     // Loaded without column lineage first. That is the base every cache is
     // merged into, and whether a Snowflake cache may be loaded at all depends on
@@ -163,6 +195,10 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("  {} not loaded: it holds Snowflake's lineage, and Snowflake's features are off", path.display());
             PathBuf::new()
         }
+        // A bare name as `./name`, the way `folder_of` names the folder of a
+        // bare `--manifest`: the paths built from that folder are compared
+        // with this one, and `x` is not `./x` to a Path.
+        Some(path) if path.parent().is_some_and(|p| p.as_os_str().is_empty()) => Path::new(".").join(path),
         Some(path) => path,
         None => {
             // A project can hold one cache per producer: the saved choice, else
