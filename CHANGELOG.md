@@ -15,6 +15,14 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.25.2 - 2026-10-16
+
+- Tell the lineage's two copies apart: Fit, Export and Copy image carry a glyph
+  before their name, a picture for Copy image, and the selection bar's Copy,
+  which copies the names, is Copy names, under a list. When the row runs out of
+  room even with the dock's tabs down to their glyphs, the three keep their
+  glyph alone too, so the bar holds on a window 60px narrower than before.
+
 ## 1.25.1 - 2026-10-16
 
 - Read a compiled SQL file only under the target directory, whatever path the

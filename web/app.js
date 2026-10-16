@@ -11540,27 +11540,34 @@ function showDock(which, { look = true } = {}) {
 /* The dock's tabs share their row with the lineage's tools, and the glyphs
    made each tab wider. Once the row cannot hold every label on one line, the
    tabs keep their glyph alone, named by their tooltip, rather than the tools
-   breaking onto a second line the 30px row cannot show. It is measured, never
-   set at a width, because the room moves with the sidebar, Query history, the
-   eye's count and the column chip. It is measured with the tools shown, and
-   the open tab folds with the others, so that a click on a tab never moves
-   the tabs under the pointer: wireTabs() calls it when the row or the tools
-   change, and never on a tab change. Only the tools are asked whether they
-   broke, since a tab cannot, and a tab taller than the row, under a large
-   minimum font, would keep the labels folded at any width. Past that, the
-   tools still break: docs/state.md has the rest. */
+   breaking onto a second line the 30px row cannot show. If that is still not
+   enough, Fit, Export and Copy image keep theirs alone too, the actions that
+   matter least to what is drawn. It is measured, never set at a width,
+   because the room moves with the sidebar, Query history, the eye's count and
+   the column chip. It is measured with the tools shown, and the open tab
+   folds with the others, so that a click on a tab never moves the tabs under
+   the pointer: wireTabs() calls it when the row or the tools change, and
+   never on a tab change. The tools' own class is the one change of theirs it
+   does not hear, which is why the second fold is set there. Only the tools
+   are asked whether they broke, since a tab cannot, and a tab taller than the
+   row, under a large minimum font, would keep the labels folded at any width.
+   Past both folds, the tools still break: docs/state.md has the rest. */
 function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
   const was = row.classList.contains('folded');
   row.classList.remove('folded');
-  tools.classList.remove('hidden');
-  const h = row.getBoundingClientRect().height;
-  const fits = row.scrollWidth <= row.clientWidth
-    && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
-  tools.classList.toggle('hidden', away);
+  tools.classList.remove('hidden', 'iconic');
+  const fit = () => {
+    const h = row.getBoundingClientRect().height;
+    return row.scrollWidth <= row.clientWidth
+      && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
+  };
+  const fits = fit();
   row.classList.toggle('folded', !fits);
+  if (!fits) tools.classList.toggle('iconic', !fit());
+  tools.classList.toggle('hidden', away);
   if (was === !fits) return;
   $$('#dock > .tabs .tab').forEach((t) => {
     const { name, about } = t.dataset;
@@ -11670,7 +11677,7 @@ function tourSteps(c) {
     steps.push({ key: 'share', target: ['#export-btn', '#image-btn', '#select-copy'], title: 'Export, or copy as an image',
       text: 'Whatever the canvas shows, this selection included. Export saves it as one HTML file that opens offline, '
         + 'zooms without blurring and prints on one page. Copy image puts the same picture on the clipboard as a PNG, '
-        + 'for a ticket. Copy, in the bar of the selection, copies the names instead, one per line.' });
+        + 'for a ticket. Copy names, in the bar of the selection, copies the names instead, one per line.' });
     steps.push({ key: 'catalog', target: '#dock-catalog', title: 'Catalog',
       text: `What the manifest says of \`${m.name}\`: its materialization, description, tags and tests, where it lands `
         + 'in each environment, the steps of your jobs that run it once the Jobs tab has a source, and its columns '

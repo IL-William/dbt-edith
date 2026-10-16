@@ -188,10 +188,15 @@
           <!-- Opened under the toggle, over the canvas, by wireFolderLevels(). -->
           <label id="folder-levels-box" title="How many levels of folders to draw: 1 gives a band to each folder where the models drawn stop sharing a path, 2 cuts each band again by its sub-folders, and so on, as deep as a path goes">levels <input id="folder-levels" type="number" min="1" max="4" value="1"></label>
           </span>
-          <button class="btn sm" id="fit-btn">Fit</button>
-          <button class="btn sm" id="export-btn"
-                  title="Save what the canvas shows as one HTML file: opens offline, zooms without blurring, prints to one page">Export</button>
-          <button class="btn sm" id="image-btn" title="Copy the canvas as a PNG, to paste into a ticket">Copy image</button>
+          <!-- Four corners closing on the graph; a file coming down into a
+               tray; a picture, which is what tells this Copy from the
+               selection bar's, a list. -->
+          <button class="btn sm icobtn" id="fit-btn" type="button"
+                  title="Fit the whole graph in the pane"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2.5H5.5M10.5 2.5H14V6M14 10V13.5H10.5M5.5 13.5H2V10"/></svg><span>Fit</span></button>
+          <button class="btn sm icobtn" id="export-btn" type="button"
+                  title="Save what the canvas shows as one HTML file: opens offline, zooms without blurring, prints to one page"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5V10M4.75 6.75L8 10L11.25 6.75M2.5 10.5V13.5H13.5V10.5"/></svg><span>Export</span></button>
+          <button class="btn sm icobtn" id="image-btn" type="button"
+                  title="Copy the canvas as a PNG picture, to paste into a ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5H14V12.5H2Z"/><path d="M2 11L5.75 7.25L9 10.5L10.75 8.75L14 12"/><circle cx="10.75" cy="6" r="1.1"/></svg><span>Copy image</span></button>
         </div>
       </div>
       <div id="dock-lineage" class="dock-pane">
@@ -208,9 +213,12 @@
                      placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
                      aria-label="dbt node selection expression, or --selector and a name">
               <span id="select-sum" class="sel-sum"></span>
-              <button class="btn sm" id="select-copy" title="Copy the matching names, one per line">Copy</button>
-              <button class="btn sm" id="select-ls"
-                      title="Type the dbt ls that should print the same list into the terminal, without running it">dbt ls</button>
+              <!-- A list, against the picture of Copy image above the canvas;
+                   dbt ls takes the Terminal tab's glyph, where it types. -->
+              <button class="btn sm icobtn" id="select-copy" type="button"
+                      title="Copy the matching names, one per line, the way dbt ls --output name prints them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4H13.5M6 8H13.5M6 12H13.5M2.4 4H2.9M2.4 8H2.9M2.4 12H2.9"/></svg><span>Copy names</span></button>
+              <button class="btn sm icobtn" id="select-ls" type="button"
+                      title="Type the dbt ls that should print the same list into the terminal, without running it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>dbt ls</span></button>
             </div>
             <div id="select-warn" class="sel-warn hidden"></div>
           </div>
