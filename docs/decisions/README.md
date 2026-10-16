@@ -91,6 +91,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0085](0085-what-is-installed-is-what-was-audited.md) | What is installed is what was audited | writing an install or build command into the docs or the status bar, adding or replacing a file under `web/vendor/`, or changing how Dependabot bumps the lockfile |
 | [0086](0086-edith-s-menu-opens-under-the-pointer.md) | Edith's menu opens under the pointer | opening a menu under the pointer, or changing what closes or holds one |
 | [0087](0087-a-capped-selection-draws-what-is-nearest-its-start.md) | A capped selection draws what is nearest its start | changing how many nodes a selection draws, which a capped canvas keeps, or what it says when capped |
+| [0088](0088-a-column-is-answered-on-the-command-line-from-the-cache-already-written.md) | A column is answered on the command line, from the cache already written | letting anything but the page walk the column lineage, or letting a command line produce one |
 | [0089](0089-a-column-count-says-what-it-counts.md) | A column count says what it counts: the canvas, or the whole chain | changing the stop at menu's counts, or what the Catalog's Lineage cell counts |
 | [0090](0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) | A credential is hidden by its value as well as its name | changing what the hover card or the profile form hides, or the vocabulary `sensitive_name` and `secret_key` share |
 

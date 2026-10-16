@@ -13,7 +13,7 @@ use crate::graph::{Graph, Node};
 use crate::select::{self, Resolved, SelectError, Tests};
 use crate::{api, files, freshness, git};
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// What to resolve: a typed line, as the Selection box takes it, or a
 /// selector from `selectors.yml` by name.
@@ -41,24 +41,9 @@ pub const CANNOT_RUN: i32 = 2;
 
 /// The whole mode, from the command line's arguments to the exit code.
 pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Output) -> i32 {
-    let root = match project.canonicalize() {
-        Ok(p) => files::plain(p),
-        Err(e) => {
-            eprintln!("error: cannot open {}: {e}", project.display());
-            return CANNOT_RUN;
-        }
-    };
-    let manifest_path = manifest.map(Path::to_path_buf).unwrap_or_else(|| root.join("target").join("manifest.json"));
-    if !manifest_path.is_file() {
-        eprintln!("error: no manifest at {}: run dbt parse, or pass --manifest", manifest_path.display());
-        return CANNOT_RUN;
-    }
-    let graph = match api::load_manifest(&root, &manifest_path) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("error: cannot read {}: {e}", manifest_path.display());
-            return CANNOT_RUN;
-        }
+    let (root, _, graph) = match open(project, manifest) {
+        Ok(opened) => opened,
+        Err(code) => return code,
     };
 
     let mut err = io::stderr().lock();
@@ -78,6 +63,31 @@ pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Outpu
     // it back.
     let _ = provenance(&root, &graph, &mut err);
     code
+}
+
+/// The project's root, the manifest's path and the graph it holds, or the exit
+/// code once the reason it cannot be read is on stderr. `--column` opens the
+/// project the same way.
+pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, PathBuf, Graph), i32> {
+    let root = match project.canonicalize() {
+        Ok(p) => files::plain(p),
+        Err(e) => {
+            eprintln!("error: cannot open {}: {e}", project.display());
+            return Err(CANNOT_RUN);
+        }
+    };
+    let manifest_path = manifest.map(Path::to_path_buf).unwrap_or_else(|| root.join("target").join("manifest.json"));
+    if !manifest_path.is_file() {
+        eprintln!("error: no manifest at {}: run dbt parse, or pass --manifest", manifest_path.display());
+        return Err(CANNOT_RUN);
+    }
+    match api::load_manifest(&root, &manifest_path) {
+        Ok(graph) => Ok((root, manifest_path, graph)),
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", manifest_path.display());
+            Err(CANNOT_RUN)
+        }
+    }
 }
 
 /// Resolves the query and prints it. Returns the exit code; an `Err` is only
@@ -198,7 +208,7 @@ impl<'a> Listed<'a> {
 
 /// Which manifest answered and whether the project moved since, because the
 /// answer is the manifest's and not the working tree's.
-fn provenance(root: &Path, graph: &Graph, err: &mut impl Write) -> io::Result<()> {
+pub(crate) fn provenance(root: &Path, graph: &Graph, err: &mut impl Write) -> io::Result<()> {
     let m = &graph.meta;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -246,7 +256,7 @@ fn freshness_line(f: &freshness::Freshness) -> String {
     line
 }
 
-fn age(secs: u64) -> String {
+pub(crate) fn age(secs: u64) -> String {
     match secs {
         0..=59 => format!("{secs} s"),
         60..=3_599 => format!("{} min", secs / 60),

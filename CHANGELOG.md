@@ -15,6 +15,18 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.28.0 - 2026-10-16
+
+- Print one column's lineage from the command line with `--column model.column`,
+  `--up` and `--down`, one JSON line per model reached with its file, its
+  columns, the role of each edge and their tests, and say on stderr when the
+  cache is older than the manifest and how to write one for a target you
+  choose (0088).
+- Stop offering the report `collin generate` writes beside its cache as a
+  column lineage cache.
+- Find the column lineage caches beside a manifest named by its file name
+  alone with `--manifest`.
+
 ## 1.27.0 - 2026-10-16
 
 - Draw a selection of up to 3000 nodes whole on the lineage, where it used to

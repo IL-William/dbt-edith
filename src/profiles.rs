@@ -136,6 +136,19 @@ pub struct Target {
     pub why: String,
 }
 
+/// The names of a profile's targets, sorted: names only, so a caller can ask
+/// which one without anything of a target leaving this module.
+pub fn target_names(text: &str, profile: &str) -> Vec<String> {
+    let mut names: Vec<String> = entries(text)
+        .into_iter()
+        .filter(|(p, _)| p.len() == 3 && p[0] == profile && p[1] == "outputs")
+        .map(|(mut p, _)| p.swap_remove(2))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
 /// A profile's target and its database and schema, chosen as dbt chooses:
 /// `DBT_TARGET`, then the profile's `target:`, then `default`. Only a plain
 /// value is taken. A target written as `env_var('DBT_TARGET', 'dev')` is
@@ -197,13 +210,7 @@ pub fn active_target(text: &str, profile: &str, from_env: Option<&str>) -> Targe
     let target = t.target.clone();
     let output = [profile, "outputs", target.as_str()];
     if !has(&output) {
-        let mut names: Vec<&str> = all
-            .iter()
-            .filter(|(p, _)| p.len() == 3 && p[0] == profile && p[1] == "outputs")
-            .map(|(p, _)| p[2].as_str())
-            .collect();
-        names.sort();
-        names.dedup();
+        let names = target_names(text, profile);
         t.why = if names.is_empty() {
             format!("profile {profile} has no outputs")
         } else {

@@ -1161,6 +1161,7 @@ impl Graph {
                         children: down_n,
                         hidden_up: cll.incoming(c).filter(|e| !drawn(e)).count(),
                         hidden_down: cll.outgoing(c).iter().filter(|e| !drawn(e)).count(),
+                        at: Some(c),
                     }
                 })
                 .collect(),
@@ -1421,6 +1422,7 @@ impl Graph {
                         children: n.children.len(),
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
+                        at: None,
                     }
                 })
                 .collect(),
@@ -1704,6 +1706,7 @@ impl Graph {
                         children: n.children.len(),
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
+                        at: None,
                     }
                 })
                 .collect(),
@@ -1784,6 +1787,10 @@ pub struct LineageNode<'a> {
     pub children: usize,
     pub hidden_up: usize,
     pub hidden_down: usize,
+    /// Column mode only: the column itself, so a caller other than the page
+    /// reads its node and its slot rather than parsing `id` (0088).
+    #[serde(skip)]
+    pub at: Option<ColRef>,
 }
 
 /// What an incremental model's box and hover card say of its strategy

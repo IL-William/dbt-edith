@@ -854,6 +854,32 @@ settings: 1 124 of 1 124 agree with `--every-model` under dbt-core 1.11.15
 and 1.12.5, for about 3 s more on check.sh's run. No skill is written here;
 the one on that project still runs `dbt ls`.
 
+A column on the command line (0088): `--column MODEL.COLUMN` with
+`--up` and `--down`, a number of levels or `all`, and `--stop-at`, walks the
+canvas's own column walk over a cache already beside the manifest, prints and
+exits, with no port, key, settings or catalog. `--output json` gives one line
+per model reached, with `original_file_path`, `materialized`, and only the
+columns reached, each with its depth, the columns it is read from and the role
+of each edge, its tests, and `more_up` or `more_down` where the answer stops
+short. Without a cache named, collin's or Fusion's newest answers before
+Snowflake's, which holds only the columns fetched. Nothing produces lineage
+there: a cache older than the manifest still
+answers, and stderr gives the steps that write one, the target left as
+`<TARGET>` for the user to name, with the profile's target names, the `.env`
+files and the command of the dbt that wrote the manifest, sent to the
+manifest's folder when it is not `target/`; Fusion's
+`docs generate` writes no catalog without `--write-catalog`, checked with
+Fusion 2.0.8 and dbt-core 1.11.16 on Jaffle Shop. collin's report from the
+same run says whether it set files aside as compiled for another target. On
+Jaffle Shop, `dbt build`, `dbt docs generate` and collin 0.7.0 gave a cache
+whose answers follow `raw_payments.amount` through its rename into
+`stg_payments` and its aggregates in `orders` and `customers`. On a large real
+project the command line and the page gave the same columns, edges and roles
+for one column, upstream, downstream and three levels each way. Discovery
+now asks a cache for `edges`: the report `collin generate` names
+`column_lineage.report.json` beside its cache had been offered as a cache of
+no edges, and answered in its place when collin's cache was missing.
+
 Clone into my schema (0058): with Snowflake's features on, a button beside a
 model's, a seed's or a snapshot's Location heading writes the statements that
 copy it and its direct parents from an environment into the developer's
@@ -1692,6 +1718,12 @@ repository: retake them when a change alters what one shows.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
+20. **A target for Regenerate.** The page runs collin without `--target`, so
+    its caches say "target not recorded", and `--column` (0088) cannot say
+    which target its answer describes. The manifest does not record the
+    target it was compiled for, so the page cannot fill it in: Regenerate
+    would offer the profile's targets and pass the one picked, which the
+    user then has to have compiled and generated the catalog under.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
