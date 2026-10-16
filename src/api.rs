@@ -544,6 +544,10 @@ struct MetaBody {
 struct ProfileFound {
     path: String,
     found: bool,
+    /// Why the file there is not opened: a `profiles.yml` of the project
+    /// linking out of it (0094). The button says so before any click.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    refused: String,
 }
 
 #[derive(serde::Serialize)]
@@ -582,6 +586,11 @@ struct CollinBody {
     /// The versions whose last run is kept to compare, newest first (0061).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     kept: Vec<String>,
+    /// A collin found and not run because git tracks it, so it came with a
+    /// repository: the menu names it, or the user would be left wondering why
+    /// the copy beside dbt-edith does nothing (0094).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    refused: String,
 }
 
 #[derive(serde::Serialize)]
@@ -602,6 +611,8 @@ struct CollinNow {
     version: Option<String>,
     stale: bool,
     versions: Vec<CollinVersion>,
+    /// A collin passed over because git tracks it (0094).
+    refused: Option<PathBuf>,
 }
 
 async fn collin_now(st: &Arc<AppState>) -> CollinNow {
@@ -609,9 +620,9 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
     let chosen = st.collin_chosen.lock().ok().and_then(|c| c.clone());
     let read = tokio::task::spawn_blocking(move || {
         let installs = shared.collin_installs.as_deref().map(collin_run::installed).unwrap_or_default();
-        let bin = collin_run::chosen_bin(&installs, chosen.as_deref());
+        let collin_run::Located { bin: default, refused } = collin_run::locate();
+        let bin = collin_run::chosen_bin(&installs, chosen.as_deref(), default.as_deref());
         let version = bin.as_deref().and_then(|b| shared.collin_version.get(b));
-        let default = collin_run::locate();
         let short = |v: Option<String>| v.as_deref().unwrap_or_default().split_whitespace().next().unwrap_or_default().to_string();
         let mut versions = Vec::new();
         if let Some(d) = &default {
@@ -629,9 +640,9 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         // version, or a collin that gives none, is judged by its time alone.
         let other = matches!((&wrote, short(version.clone())), (Some(w), now) if !now.is_empty() && *w != now);
         let stale = collin_run::stale(&out, &shared.manifest_path) || other;
-        CollinNow { bin, version, stale, versions }
+        CollinNow { bin, version, stale, versions, refused }
     });
-    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new() })
+    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), refused: None })
 }
 
 #[derive(serde::Serialize)]
@@ -678,6 +689,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
             version: now.version.unwrap_or_default(),
             wants: collin_run::WANTS_TEXT,
             update: collin_run::UPDATE,
+            refused: now.refused.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
             status: st.collin.status(),
             report,
             versions: now.versions,
@@ -705,7 +717,11 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         features: Features { snowflake, snowflake_set: chosen.is_some() },
         sidecar: SidecarBody { enabled: live, status: st.sidecar.status() },
         collin,
-        profiles: st.profiles.path(&st.root).map(|p| ProfileFound { found: p.is_file(), path: p.display().to_string() }),
+        profiles: st.profiles.path(&st.root).map(|p| ProfileFound {
+            found: p.is_file(),
+            refused: crate::profiles::held(&st.root, &p).err().unwrap_or_default(),
+            path: p.display().to_string(),
+        }),
     }
 }
 
@@ -2806,20 +2822,24 @@ struct ProfileBody {
     hidden: usize,
 }
 
-/// The profile as it is on disk, secrets included. Never sent as it is.
-pub(crate) fn profile_text(path: &Path) -> Result<String, String> {
+/// The profile as it is on disk, secrets included. Never sent as it is. The
+/// one reader of it, so a `profiles.yml` of the project that links out of it
+/// is refused for every route alike (0094); the status is the one a route
+/// answers with.
+pub(crate) fn profile_text(root: &Path, path: &Path) -> Result<String, (StatusCode, String)> {
+    crate::profiles::held(root, path).map_err(|e| (StatusCode::FORBIDDEN, e))?;
     let meta = std::fs::metadata(path).map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => format!("no profiles.yml at {}", path.display()),
-        _ => format!("cannot read {}: {e}", path.display()),
+        std::io::ErrorKind::NotFound => (StatusCode::NOT_FOUND, format!("no profiles.yml at {}", path.display())),
+        _ => (StatusCode::NOT_FOUND, format!("cannot read {}: {e}", path.display())),
     })?;
     if meta.len() > MAX_PROFILE_BYTES {
-        return Err(format!("{} is far larger than a dbt profile, so it is left alone", path.display()));
+        return Err((StatusCode::NOT_FOUND, format!("{} is far larger than a dbt profile, so it is left alone", path.display())));
     }
-    std::fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))
+    std::fs::read_to_string(path).map_err(|e| (StatusCode::NOT_FOUND, format!("cannot read {}: {e}", path.display())))
 }
 
-fn profile_on_disk(path: &Path) -> Result<ProfileBody, String> {
-    let (content, hidden) = crate::redact::hide(&profile_text(path)?);
+fn profile_on_disk(root: &Path, path: &Path) -> Result<ProfileBody, (StatusCode, String)> {
+    let (content, hidden) = crate::redact::hide(&profile_text(root, path)?);
     Ok(ProfileBody { path: path.display().to_string(), content, hidden })
 }
 
@@ -2837,9 +2857,10 @@ async fn read_profile(State(st): State<Arc<AppState>>) -> Response {
     let Some(path) = st.profiles.path(&st.root) else {
         return (StatusCode::CONFLICT, NO_PROFILE).into_response();
     };
-    match tokio::task::spawn_blocking(move || profile_on_disk(&path)).await {
+    let root = st.root.clone();
+    match tokio::task::spawn_blocking(move || profile_on_disk(&root, &path)).await {
         Ok(Ok(body)) => Json(body).into_response(),
-        Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
+        Ok(Err(refused)) => refused.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
@@ -2860,7 +2881,9 @@ struct ProfileSaved {
 
 /// Saves that same file, and only if it is already there: this route never
 /// creates a file, and never takes a path (0017). The write is atomic, so a
-/// half-written profile cannot be left behind.
+/// half-written profile cannot be left behind, and goes through a link to the
+/// file it names, so a profile linked from a dotfiles repository stays linked
+/// (0094).
 async fn write_profile(State(st): State<Arc<AppState>>, Json(b): Json<ProfileWrite>) -> Response {
     let Some(path) = st.profiles.path(&st.root) else {
         return (StatusCode::CONFLICT, NO_PROFILE).into_response();
@@ -2873,11 +2896,11 @@ async fn write_profile(State(st): State<Arc<AppState>>, Json(b): Json<ProfileWri
     }
     // The page saw placeholders where the secrets are, and sends them back
     // where it left them alone: those are the values on disk again (0054).
-    let (target, content) = (path.clone(), b.content);
+    let (root, target, content) = (st.root.clone(), path.clone(), b.content);
     let written = tokio::task::spawn_blocking(move || -> Result<(), (StatusCode, String)> {
-        let on_disk = profile_text(&target).map_err(|e| (StatusCode::NOT_FOUND, e))?;
+        let on_disk = profile_text(&root, &target)?;
         let full = crate::redact::restore(&content, &on_disk).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-        crate::settings::write_atomic(&target, full.as_bytes())
+        crate::settings::write_atomic_through_link(&target, full.as_bytes())
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("cannot write {}: {e}", target.display())))
     })
     .await;
@@ -3276,8 +3299,8 @@ async fn clone_plan(State(st): State<Arc<AppState>>, Query(q): Query<CloneQuery>
         let env_files = envs::discover(&root);
         let target = match lookup.path(&root) {
             None => crate::profiles::Target { why: NO_PROFILE.into(), ..Default::default() },
-            Some(path) => match profile_text(&path) {
-                Err(e) => crate::profiles::Target { why: e, ..Default::default() },
+            Some(path) => match profile_text(&root, &path) {
+                Err((_, e)) => crate::profiles::Target { why: e, ..Default::default() },
                 Ok(text) => crate::profiles::active_target(
                     &text,
                     &crate::project::profile(&root).unwrap_or_default(),
@@ -5402,6 +5425,65 @@ b"}"#,
         assert!(answer.contains("local:"), "{answer}");
 
         st.sidecar.stop().await;
+        server.abort();
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A profile linked into `~/.dbt` from a dotfiles repository is saved
+    /// through its link, which stays; a `profiles.yml` the project holds that
+    /// links out of it is refused, read and write alike, and the button says
+    /// so before any click (0094). On main the save replaced the link with a
+    /// plain file, and the key the project's link named was served.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_profile_link_is_kept_and_one_out_of_the_project_refused() {
+        use std::os::unix::fs::symlink;
+        let root = temp_project("profile-links");
+        let home = std::env::temp_dir().join(format!("dbt-edith-profile-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let dotfiles = home.join("dotfiles");
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::create_dir_all(home.join(".dbt")).unwrap();
+        let real = dotfiles.join("profiles.yml");
+        std::fs::write(&real, "shop:\n  target: dev\n  outputs:\n    dev:\n      password: hunter2\n").unwrap();
+        let link = home.join(".dbt").join("profiles.yml");
+        symlink(&real, &link).unwrap();
+        let (port, _st, server) = serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()), target: None }).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let put = |body: &str| with_json("PUT", "/api/profiles", &[("Host", &host), ("Origin", &own)], body);
+
+        let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        assert!(answer.starts_with("HTTP/1.1 200") && !answer.contains("hunter2"), "{answer}");
+        let edited = format!(r#"{{"content":"shop:\n  target: prod\n  outputs:\n    dev:\n      password: {}\n"}}"#, crate::redact::HIDDEN);
+        assert!(status_of(port, put(&edited)).await.ends_with("200 OK"));
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "the link is still a link");
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "shop:\n  target: prod\n  outputs:\n    dev:\n      password: hunter2\n");
+
+        // The project's own profiles.yml wins, as for dbt, and links out.
+        let key = home.join("id_ed25519");
+        std::fs::write(&key, "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n").unwrap();
+        symlink(&key, root.join("profiles.yml")).unwrap();
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
+        assert!(meta.contains(&format!(r#""found":true,"refused":"{}""#, crate::profiles::LINKS_OUT)), "{meta}");
+        let refused = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        assert!(refused.starts_with("HTTP/1.1 403") && refused.contains("links to a file outside it"), "{refused}");
+        assert!(!refused.contains("PRIVATE KEY") && !refused.contains("b3BlbnNzaC1rZXk"), "{refused}");
+        let overwrite = response_of(port, put(r#"{"content":"shop:\n"}"#)).await;
+        assert!(overwrite.starts_with("HTTP/1.1 403"), "{overwrite}");
+        assert!(std::fs::read_to_string(&key).unwrap().contains("PRIVATE KEY"), "nothing written through it");
+
+        // One that stays in the project opens as before.
+        std::fs::remove_file(root.join("profiles.yml")).unwrap();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(root.join("config").join("profiles.yml"), "local:\n").unwrap();
+        symlink("config/profiles.yml", root.join("profiles.yml")).unwrap();
+        let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
+        assert!(!meta.contains(r#""refused":"profiles.yml"#), "{meta}");
+        let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
+        assert!(answer.starts_with("HTTP/1.1 200") && answer.contains("local:"), "{answer}");
+
         server.abort();
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&root);

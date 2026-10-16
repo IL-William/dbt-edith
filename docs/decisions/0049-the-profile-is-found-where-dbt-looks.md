@@ -1,6 +1,6 @@
 # 0049. The profile is found where dbt looks, whatever the warehouse
 
-Date: 2026-10-08 · Status: accepted · Amends 0017 and 0031
+Date: 2026-10-08 · Status: accepted, amended by 0094 · Amends 0017 and 0031
 
 **Trigger:** read before changing which `profiles.yml` dbt-edith opens, or
 what decides whether it can be opened.
@@ -20,6 +20,8 @@ by every dbt command typed in the terminal, whatever its warehouse.
   Its environment is read once at startup, the one the terminal and the script
   inherit, and a relative `DBT_PROFILES_DIR` is taken from the project, where
   both run. `src/profiles.rs` holds the order; `tools/sf_lineage.py` repeats it.
+  *Amended by [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md):
+  one in a folder of the project that links out of it is not opened.*
 - **The route still takes no path.** Only where it looks has changed: what
   0017 says about `/api/file`, writing atomically and never creating a file
   stands.

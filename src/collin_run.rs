@@ -9,9 +9,11 @@
 //! into its own folder under dbt-edith's config directory, and the one picked
 //! for the project is the one that runs (0060).
 //!
-//! Three rules hold here:
+//! Four rules hold here:
 //!   - nothing runs at startup. A run follows picking Collin, clicking a column
 //!     while its cache is older than the manifest, or the Regenerate button.
+//!   - a collin git tracks never runs, beside dbt-edith or on the PATH: it came
+//!     with a repository, not from the user (0094).
 //!   - one run at a time. A request arriving during a run waits for that run
 //!     rather than starting a second over the same files.
 //!   - the cache is written under a temporary name and renamed, so the watcher
@@ -59,17 +61,66 @@ fn exe_name() -> &'static str {
     }
 }
 
-/// collin beside dbt-edith first, so a copy shipped with it wins over an older
-/// one installed long ago, then the first on the PATH.
-pub fn locate() -> Option<PathBuf> {
-    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
-    locate_in(beside.as_deref(), std::env::var_os("PATH"))
+/// What the search for collin found: the one that runs, and the first one it
+/// passed over because git tracks it, so the menu can say why that one did
+/// not run (0094).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Located {
+    pub bin: Option<PathBuf>,
+    pub refused: Option<PathBuf>,
 }
 
-fn locate_in(beside: Option<&Path>, path_var: Option<OsString>) -> Option<PathBuf> {
+/// collin beside dbt-edith first, so a copy shipped with it wins over an older
+/// one installed long ago, then the first on the PATH. A collin git tracks is
+/// passed over wherever it is: a dbt-edith copied into a project, as the
+/// Windows VM gets it, would otherwise run the one the repository commits
+/// beside it on the first pick, where the user's own copy, untracked, still
+/// runs (0094).
+pub fn locate() -> Located {
+    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    locate_in(beside.as_deref(), std::env::var_os("PATH"), tracked)
+}
+
+fn locate_in(beside: Option<&Path>, path_var: Option<OsString>, tracked: impl Fn(&Path) -> bool) -> Located {
     let name = exe_name();
     let dirs = beside.map(Path::to_path_buf).into_iter().chain(path_var.iter().flat_map(std::env::split_paths));
-    dirs.map(|d| d.join(name)).find(|p| p.is_file())
+    let mut found = Located::default();
+    for bin in dirs.map(|d| d.join(name)).filter(|p| p.is_file()) {
+        if !tracked(&bin) {
+            found.bin = Some(bin);
+            break;
+        }
+        found.refused.get_or_insert(bin);
+    }
+    found
+}
+
+/// Whether git tracks this file, which nobody's own copy of collin is: one
+/// that arrived with a clone was put there by whoever wrote the repository,
+/// as 0053 says of a venv. Asked in the file's own folder, of whichever
+/// repository holds it, and false outside one, where there is nobody to ask.
+/// The answer is kept while the file is the same one: the menu asks on every
+/// opening, and git rewrites a file it starts tracking, so a new answer comes
+/// with a new file.
+fn tracked(bin: &Path) -> bool {
+    static SEEN: std::sync::OnceLock<Mutex<std::collections::HashMap<PathBuf, (Option<std::time::SystemTime>, u64, bool)>>> =
+        std::sync::OnceLock::new();
+    let Ok(meta) = std::fs::metadata(bin) else { return false };
+    let stamp = (meta.modified().ok(), meta.len());
+    let seen = SEEN.get_or_init(Default::default);
+    let known = seen.lock().ok().and_then(|s| s.get(bin).copied());
+    if let Some((m, l, answer)) = known {
+        if (m, l) == stamp {
+            return answer;
+        }
+    }
+    let (Some(dir), Some(name)) = (bin.parent(), bin.file_name().and_then(|n| n.to_str())) else { return false };
+    let listed = crate::git::run(dir, &["ls-files", "--", name], &[], Duration::from_secs(10));
+    let answer = listed.ok && !listed.stdout.trim().is_empty();
+    if let Ok(mut s) = seen.lock() {
+        s.insert(bin.to_path_buf(), (stamp.0, stamp.1, answer));
+    }
+    answer
 }
 
 /// What `collin --version` says after `collin `, `0.2.0 (a142ee5)`, or None
@@ -187,11 +238,12 @@ pub fn install_command(dir: &Path, version: &str) -> Option<String> {
 }
 
 /// The collin that runs: the version picked for the project when it is
-/// installed, else the one beside dbt-edith or on the PATH.
-pub fn chosen_bin(installs: &[Install], chosen: Option<&str>) -> Option<PathBuf> {
+/// installed, else the one beside dbt-edith or on the PATH that `locate`
+/// found.
+pub fn chosen_bin(installs: &[Install], chosen: Option<&str>, default: Option<&Path>) -> Option<PathBuf> {
     match chosen.and_then(|v| installs.iter().find(|i| i.version == v)) {
         Some(install) => Some(install.bin.clone()),
-        None => locate(),
+        None => default.map(Path::to_path_buf),
     }
 }
 
@@ -751,10 +803,50 @@ mod tests {
         std::fs::create_dir_all(&on_path).unwrap();
         std::fs::write(on_path.join(exe_name()), "").unwrap();
         let path_var = std::env::join_paths([d.join("missing"), on_path.clone()]).unwrap();
-        assert_eq!(locate_in(Some(&beside), Some(path_var.clone())), Some(on_path.join(exe_name())));
+        let untracked = |_: &Path| false;
+        assert_eq!(locate_in(Some(&beside), Some(path_var.clone()), untracked).bin, Some(on_path.join(exe_name())));
         std::fs::write(beside.join(exe_name()), "").unwrap();
-        assert_eq!(locate_in(Some(&beside), Some(path_var)), Some(beside.join(exe_name())));
-        assert_eq!(locate_in(None, None), None);
+        assert_eq!(
+            locate_in(Some(&beside), Some(path_var), untracked),
+            Located { bin: Some(beside.join(exe_name())), refused: None }
+        );
+        assert_eq!(locate_in(None, None, untracked), Located::default());
+    }
+
+    /// A dbt-edith copied into a project, as the Windows VM gets it, sits
+    /// beside whatever the repository commits there. The collin git tracks is
+    /// passed over and named; the user's own copy, untracked, still runs
+    /// (0094). On main the tracked one was the one found.
+    #[test]
+    fn a_collin_git_tracks_is_passed_over_and_named() {
+        let d = dir("tracked");
+        let (project, on_path) = (d.join("project"), d.join("bin"));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&on_path).unwrap();
+        let git = |args: &[&str]| crate::git::run(&project, args, &[], Duration::from_secs(20));
+        assert!(git(&["init", "-q"]).ok);
+        let shipped = project.join(exe_name());
+        executable(&shipped, "#!/bin/sh\ntouch \"$(dirname \"$0\")/shipped-ran\"\n");
+        assert!(git(&["add", exe_name()]).ok);
+        let path_var = std::env::join_paths([on_path.clone()]).unwrap();
+
+        let none_else = locate_in(Some(&project), Some(path_var.clone()), tracked);
+        assert_eq!(none_else, Located { bin: None, refused: Some(shipped.clone()) });
+        let installed = on_path.join(exe_name());
+        std::fs::write(&installed, "").unwrap();
+        let found = locate_in(Some(&project), Some(path_var.clone()), tracked);
+        assert_eq!(found, Located { bin: Some(installed.clone()), refused: Some(shipped.clone()) }, "the next one runs");
+        assert!(!project.join("shipped-ran").exists(), "asking git runs nothing of the repository's");
+
+        // The user's own copy beside the binary: untracked, in the same
+        // repository, and run first again.
+        assert!(git(&["rm", "-q", "--cached", exe_name()]).ok);
+        std::fs::remove_file(&shipped).unwrap();
+        executable(&shipped, "#!/bin/sh\n");
+        assert_eq!(locate_in(Some(&project), Some(path_var), tracked), Located { bin: Some(shipped), refused: None });
+
+        // Outside a repository there is nobody to ask, and nothing is passed over.
+        assert!(!tracked(&installed));
     }
 
     #[test]
@@ -844,8 +936,10 @@ mod tests {
         let found: Vec<String> = installed(&d).into_iter().map(|i| i.version).collect();
         assert_eq!(found, ["0.10.0", "0.3.0"], "by number, not by name; one still building is not there yet");
         assert!(installed(&d.join("missing")).is_empty());
-        let picked = chosen_bin(&installed(&d), Some("0.3.0"));
+        let picked = chosen_bin(&installed(&d), Some("0.3.0"), None);
         assert_eq!(picked, Some(d.join("0.3.0").join("bin").join(exe_name())));
+        let default = d.join("default");
+        assert_eq!(chosen_bin(&installed(&d), Some("0.9.9"), Some(&default)), Some(default), "one not installed falls back");
     }
 
     #[test]

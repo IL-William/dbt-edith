@@ -1,6 +1,6 @@
 # 0042. collin runs on demand, as an executable found beside the binary
 
-Date: 2026-10-06 · Status: accepted, amended by 0060 · Amends 0023 and 0031
+Date: 2026-10-06 · Status: accepted, amended by 0060 and 0094 · Amends 0023 and 0031
 
 **Trigger:** read before starting collin from the server, changing when it runs,
 or bundling any column lineage producer with dbt-edith.
@@ -19,6 +19,8 @@ project in about five seconds on 3341 models. It cannot answer one column.
   on the PATH. It is not in `Cargo.toml` and not inside the binary, so starting
   dbt-edith costs what it did before, and nobody who ignores column lineage
   builds it.
+  *Amended by [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md):
+  a collin git tracks is passed over, wherever it was found, and named.*
 - **It runs on request and never at startup**: when Collin is picked and its
   cache is missing or older than `manifest.json`, in the background; when a
   column is clicked while that is still so, before drawing it; and on the

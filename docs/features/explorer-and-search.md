@@ -34,7 +34,18 @@ dbt-edith was started with it, then in the project, then in `~/.dbt`, and the
 button's tooltip names the file it found. Grey, with an amber dot, it names
 where dbt would read one and found none. It is the one file outside the project
 dbt-edith opens, and saving it writes that file in place: dbt-edith never
-creates one (0017, 0049).
+creates one (0017, 0049). A profile that is a link, `~/.dbt/profiles.yml`
+pointing into a dotfiles repository say, stays a link: the save writes the
+file it points at.
+
+A `profiles.yml` in the project is one of the project's files, and is held to
+it as every path the editor opens is. When it links to a file outside the
+project, dbt still follows the link, but dbt-edith does not open it: the
+button turns grey with its dot, its tooltip says `profiles.yml: not opened`
+and why, and a click says the same. To edit that file here, start dbt-edith
+with `DBT_PROFILES_DIR` set to the folder it links to. A link that stays in the
+project opens as any file does
+([0094](../decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md)).
 
 Its passwords, tokens and private keys stay on the server. The editor shows
 `<hidden by dbt-edith>` in their place, and the status bar counts them. Saving

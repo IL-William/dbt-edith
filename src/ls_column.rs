@@ -549,7 +549,11 @@ fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, err: &mut i
     if !envs.is_empty() {
         writeln!(err, "  .env files: {}", envs.join(", "))?;
     }
-    if collin_run::locate().is_none() {
+    let collin = collin_run::locate();
+    if let Some(refused) = &collin.refused {
+        writeln!(err, "  {} is not run: git tracks it, so it came with a repository", printable(&refused.display().to_string()))?;
+    }
+    if collin.bin.is_none() {
         writeln!(err, "  collin is not installed: {}", collin_run::INSTALL)?;
     }
     Ok(())
@@ -581,7 +585,7 @@ fn printable(text: &str) -> String {
 fn targets(root: &Path) -> Option<Vec<String>> {
     let profile = crate::project::profile(root)?;
     let lookup = profiles::Lookup::from_env(|name| std::env::var_os(name), cfg!(windows));
-    let text = crate::api::profile_text(&lookup.path(root)?).ok()?;
+    let text = crate::api::profile_text(root, &lookup.path(root)?).ok()?;
     Some(profiles::target_names(&text, &profile))
 }
 
