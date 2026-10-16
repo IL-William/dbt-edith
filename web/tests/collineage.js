@@ -536,3 +536,26 @@ check('while the chain is on its way, no figure stands for it', columnReach(col,
 check('a chain that could not be had leaves the one level, said as such',
       columnReach(col, null).up + ' ' + columnReach(col, null).down + ' | ' + columnReach(col, null).title,
       '←0 1→ | directly: 0 columns upstream, 1 downstream\nthe whole chain could not be counted');
+
+print('\n--- a generated column, in the Lineage cell and on hover ---');
+// collin's roots (0096): one value, one per branch of a union, or none told.
+var one = generatedSaid(['current_timestamp()']);
+check('one value is the cell', one.short, '= current_timestamp()');
+check('and is said whole on hover', one.long, "generated: set to current_timestamp() by its model's SQL, from no column");
+var union = generatedSaid(["'store'", "'web'"]);
+check('a union\'s values side by side', union.short, "= 'store' | 'web'");
+check('each on a line of its own on hover', union.long.split('\n').slice(1).join(','), "'store','web'");
+var untold = generatedSaid([]);
+check('none told still says generated', untold.short, 'generated');
+check('and that collin gave none, with examples rather than a cause it cannot know',
+      /collin gives no value, not having read all of it, as for /.test(untold.long), true);
+check('the first line of each is what a box says aloud',
+      [one, union, untold].map(function (s) { return s.long.split('\n')[0].indexOf('generated') === 0; }).join(), 'true,true,true');
+
+var none = new Map();
+check('a column nothing reads still gets the Lineage column for its value',
+      lineageColumnShown([{ name: 'loaded_at', up: 0, down: 0, generated: [] }], false, none), true);
+check('a table with no edge, no mark and no root has none, as before',
+      lineageColumnShown([{ name: 'id', up: 0, down: 0 }], false, none), false);
+check('a mark of collin\'s still brings it', lineageColumnShown([{ name: 'id', up: 0, down: 0 }], false, new Map([['id', ['lost']]])), true);
+check('so does Snowflake picked', lineageColumnShown([], true, none), true);

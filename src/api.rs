@@ -1356,6 +1356,10 @@ struct Col<'a> {
     undeclared: bool,
     up: usize,
     down: usize,
+    /// What its model's SQL sets the column to, from no column, which the
+    /// Lineage cell shows (0096). Absent unless collin listed it as a root.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generated: Option<&'a [String]>,
 }
 
 /// The same node at three stages: as written, as dbt parsed it, and where it
@@ -1494,11 +1498,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let (up, down) = graph
-                    .cll
-                    .as_ref()
-                    .map(|l| l.degree(ColRef { node: idx, col: i as u32 }))
-                    .unwrap_or((0, 0));
+                let at = ColRef { node: idx, col: i as u32 };
+                let (up, down) = graph.cll.as_ref().map(|l| l.degree(at)).unwrap_or((0, 0));
                 Col {
                     name: &c.name,
                     data_type: &c.data_type,
@@ -1519,6 +1520,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
                     undeclared: c.undeclared,
                     up,
                     down,
+                    generated: graph.cll.as_ref().and_then(|l| l.root(at)),
                 }
             })
             .collect(),
@@ -4183,7 +4185,8 @@ mod tests {
             kind: kind.into(),
         };
         let edges = vec![link("stg", "orders", "window"), link("orders", "mart", "rename")];
-        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges, ..Default::default() }, 1);
+        let roots = vec![crate::collin::RawRoot { node: "model.demo.mart".into(), column: "at".into(), expressions: vec!["now()".into()] }];
+        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges, roots, ..Default::default() }, 1);
         *st.graph.write().await = Arc::new(g);
 
         let whole = response_of(port, get("/api/collineage?id=model.demo.stg&column=x&up=0&down=3", &h)).await;
@@ -4202,6 +4205,10 @@ mod tests {
         assert!(status_of(port, get("/api/colreach?id=model.demo.nothing", &h)).await.ends_with("404 Not Found"));
         let node = response_of(port, get("/api/node?id=model.demo.stg", &h)).await;
         assert!(node.contains(r#""up":0,"down":1"#) && !node.contains("up_total"), "{node}");
+        assert!(!node.contains("generated"), "{node}");
+        // A root reaches the Catalog's Columns table with its value (0096).
+        let mart = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
+        assert!(mart.contains(r#""name":"at","data_type":"","description":"","undeclared":true,"up":0,"down":0,"generated":["now()"]"#), "{mart}");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

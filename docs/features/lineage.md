@@ -75,9 +75,9 @@ the sidebar and the catalog, so a model looks the same everywhere.
 `incremental` leaves the incremental models and the edges between them. In
 column mode the legend names what happened to each column instead, and
 `transform` leaves the transform edges and the two columns each one joins;
-`raw` and `mixed` leave the columns wearing that badge. Click it again to see
-everything. The pick stays while you move around the graph, as long as the
-legend still lists it, and an exported graph is drawn without it.
+`raw`, `generated` and `mixed` leave the columns wearing that badge. Click it
+again to see everything. The pick stays while you move around the graph, as
+long as the legend still lists it, and an exported graph is drawn without it.
 
 In column mode, **stop at** beside the depth boxes lists the roles the column
 lineage holds, each with how many of its edges the canvas draws. A line under

@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+- Badge a column its model's SQL sets from a literal `generated` on the
+  column lineage, with its value on hover, in Catalog > Columns and in
+  `--column`'s JSON, from the roots collin 0.8.0 writes, and keep `raw` for
+  the columns of sources, seeds and tables no node owns: a model's column with
+  nothing feeding it that is no root now has no badge (0096).
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,

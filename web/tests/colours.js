@@ -103,12 +103,12 @@ print('\n--- the role badge on a column box ---');
 // The badge says what produced the column it sits on, so it is read off the
 // incoming edges rather than taken from the payload.
 var chain = {
-  nodes: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
+  nodes: [{ name: 'a', kind: 'source' }, { name: 'b' }, { name: 'c' }],
   edges: [[0, 1], [1, 2]],
   edge_kinds: ['passthrough', 'aggregate'],
 };
 var r = nodeRoles(chain);
-check('the first column has nothing feeding it, so it is raw', r[0], 'raw');
+check('a source\'s column has nothing feeding it, so it is raw', r[0], 'raw');
 check('a column takes the role of its incoming edge', r[1], 'passthrough');
 check('and so does the next one', r[2], 'aggregate');
 
@@ -129,12 +129,31 @@ check('two edges that agree are not mixed', nodeRoles(agree)[2], 'passthrough');
 
 // A node with upstream out of view is not the start of anything, so it gets no
 // badge rather than a wrong "raw".
-var cut = { nodes: [{ name: 'a', hidden_up: 3 }], edges: [], edge_kinds: [] };
+var cut = { nodes: [{ name: 'a', kind: 'source', hidden_up: 3 }], edges: [], edge_kinds: [] };
 check('a truncated upstream is not called raw', nodeRoles(cut)[0], '');
 
-var model = { nodes: [{ name: 'a' }, { name: 'b' }], edges: [[0, 1]] };
-check('no edge kinds at all leaves the roles empty except the start',
+var model = { nodes: [{ name: 'a', kind: 'seed' }, { name: 'b', kind: 'source' }], edges: [[0, 1]] };
+check('no edge kinds at all leaves the roles empty except the starts',
       nodeRoles(model).join(','), 'raw,raw');
+
+// Where data enters the project is raw; a model's column with nothing feeding
+// it is a literal collin names, or a lineage nobody knows (0096).
+var starts = { nodes: [
+  { name: 'id', kind: 'source' }, { name: 'id', kind: 'seed' }, { name: 'code', kind: 'model', outside: true },
+  { name: 'lost', kind: 'model' }, { name: 'kept', kind: 'snapshot' },
+  { name: 'loaded_at', kind: 'model', generated: ['current_timestamp()'] }, { name: 'day', kind: 'model', generated: [] },
+  { name: 'channel', kind: 'model', generated: ["'web'"] }, { name: 'gone', kind: 'model', generated: ['NULL'], hidden_up: 4 },
+], edges: [[0, 7]], edge_kinds: ['filter'] };
+check('a source\'s and a seed\'s column are raw, and so is one read from a table no node owns',
+      nodeRoles(starts).slice(0, 3).join(','), 'raw,raw,raw');
+check('a model\'s column with nothing feeding it that is no root has no badge, nor a snapshot\'s',
+      nodeRoles(starts).slice(3, 5).join(','), ',');
+check('a root is generated, with its value or without one', nodeRoles(starts).slice(5, 7).join(','), 'generated,generated');
+check('a filter edge into a root never takes its badge away', nodeRoles(starts)[7], 'generated');
+check('nor does an upstream out of view', nodeRoles(starts)[8], 'generated');
+check('a model\'s column with no roots in the cache reads as before there were any, from its edges',
+      nodeRoles({ nodes: [{ name: 'a', kind: 'model' }, { name: 'b', kind: 'model' }], edges: [[0, 1]], edge_kinds: ['rename'] }).join(','),
+      ',rename');
 
 print('\n--- a seed does not pass for a table ---');
 // Two colours that merely differ can still read as one: a seed's green sat 4
@@ -184,6 +203,7 @@ TESTS.forEach(function (t) { beside['a ' + matLabel(t)] = nodeColor(t); });
 beside['a custom materialization'] = nodeColor({ kind: 'model', materialized: 'something_custom' });
 ROLES.forEach(function (r) { beside['the ' + r + ' role'] = roleColor(r); });
 beside['the raw badge'] = roleColor('raw');
+beside['the generated badge'] = roleColor('generated');
 Object.keys(beside).forEach(function (k) {
   var seen = apart(seed, beside[k]);
   var redGreen = Math.min(apart(seed, beside[k], CVD.protan), apart(seed, beside[k], CVD.deutan));
@@ -191,6 +211,13 @@ Object.keys(beside).forEach(function (k) {
   print((ok ? 'PASS  ' : 'FAIL  ') + 'a seed stands apart from ' + k + ': ' + seen.toFixed(1)
         + ', and ' + redGreen.toFixed(1) + ' to a red-green colour-blind eye' + (ok ? '' : '   expected 15 and 8'));
 });
+
+// The two badges of a start sit side by side wherever a model reads a source
+// beside a literal, so they are held to a seed's floors against each other.
+var gen = roleColor('generated'), raw = roleColor('raw');
+var genRedGreen = Math.min(apart(gen, raw, CVD.protan), apart(gen, raw, CVD.deutan));
+check('generated stands apart from raw, to a red-green colour-blind eye too', apart(gen, raw) >= 15 && genRedGreen >= 8, true);
+check('generated reuses no box colour and no role colour', boxColours.concat(ROLES.map(roleColor), [raw]).indexOf(gen), -1);
 
 print('\n--- the kinds of test stand apart ---');
 // The three kinds of test are greys, slate at most like the rest of the
