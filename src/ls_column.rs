@@ -322,6 +322,11 @@ struct Reach<'a> {
     /// the column it reaches.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     from: BTreeMap<String, &'a str>,
+    /// A root of collin's: what the SQL sets the column to, from no column,
+    /// one text per branch of a union that sets it differently, and none when
+    /// collin could not tell all of it (0096).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generated: Option<&'a [String]>,
     /// The data tests on this column, by name.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tests: Vec<&'a str>,
@@ -388,6 +393,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
             Reach {
                 depth: c.depth,
                 from: BTreeMap::new(),
+                generated: c.generated,
                 tests,
                 more_up: if c.depth <= 0 && ask.up > 0 { c.hidden_up } else { 0 },
                 more_down: if c.depth >= 0 && ask.down > 0 { c.hidden_down } else { 0 },
@@ -695,6 +701,56 @@ mod tests {
         assert_eq!((got[1]["package_name"].as_str(), got[3]["package_name"].as_str()), (Some("shop"), Some("audit")));
         // The focus is drawn without its own parents: upstream was not asked.
         assert_eq!(got[0]["columns"], json!({ "amount": { "depth": 0 } }));
+    }
+
+    /// A root of collin's says what the SQL sets it to, even with the filter
+    /// edge `--indirect` sends into it, and a column without one says nothing
+    /// new: a cache without roots answers as it always did.
+    #[test]
+    fn a_generated_column_says_its_value() {
+        let mut g = graph();
+        let edges = |extra: bool| {
+            let edge = |from: &str, from_col: &str, to: &str, to_col: &str, kind: &str| RawColEdge {
+                from: from.into(),
+                from_col: from_col.into(),
+                to: to.into(),
+                to_col: to_col.into(),
+                kind: kind.into(),
+            };
+            let mut list = vec![edge("model.shop.stg_orders", "loaded_at", "model.shop.orders", "loaded_at", "passthrough")];
+            if extra {
+                list.push(edge("source.shop.raw.orders", "status", "model.shop.stg_orders", "loaded_at", "filter"));
+            }
+            list
+        };
+        let before = run_on(&graph(), &ask("orders.order_amount", ALL, ALL), Output::Json).0;
+        let root = |exprs: &[&str]| crate::collin::RawRoot {
+            node: "model.shop.stg_orders".into(),
+            column: "loaded_at".into(),
+            expressions: exprs.iter().map(|e| e.to_string()).collect(),
+        };
+        let cache = |extra: bool, roots: Vec<crate::collin::RawRoot>| RawColLineage {
+            version: 1,
+            source: "collin".into(),
+            edges: edges(extra),
+            roots,
+            ..Default::default()
+        };
+        g.merge_col_lineage(cache(true, vec![root(&["current_timestamp()"])]), 2);
+        let (out, _, _) = run_on(&g, &ask("orders.loaded_at", ALL, 0), Output::Json);
+        let got = lines(&out);
+        let stg = got.iter().find(|l| l["name"] == "stg_orders").unwrap();
+        assert_eq!(stg["columns"]["loaded_at"]["generated"], json!(["current_timestamp()"]), "{out}");
+        assert_eq!(stg["columns"]["loaded_at"]["from"].as_object().map(|m| m.len()), Some(1), "the filter edge stays: {out}");
+        assert!(got.iter().find(|l| l["name"] == "orders").unwrap()["columns"]["loaded_at"].get("generated").is_none());
+
+        // collin could not tell all of it: generated still, with no value.
+        let mut untold = graph();
+        untold.merge_col_lineage(cache(false, vec![root(&[])]), 2);
+        let (out, _, _) = run_on(&untold, &ask("stg_orders.loaded_at", 0, 0), Output::Json);
+        assert_eq!(lines(&out)[0]["columns"]["loaded_at"], json!({ "depth": 0, "generated": [] }));
+
+        assert!(!before.contains("generated"), "{before}");
     }
 
     #[test]

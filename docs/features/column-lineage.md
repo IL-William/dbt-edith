@@ -173,6 +173,26 @@ draws fewer than the cell counts. With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
 
+**The tag above a column box says what produced it**, read off the edges into
+it: their role, or `mixed` when two roles meet there. A column nothing feeds
+in view is tagged by where it starts
+([0096](../decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md)):
+
+| Tag | The column |
+| --- | --- |
+| `raw` | a source's or a seed's, or one a model reads from a table no node of the project owns |
+| `generated` | set by its model's SQL from no column, `current_timestamp() as loaded_at`: one of the roots collin 0.8.0 lists in its cache |
+| none | a model's or a snapshot's column that is no root: collin lost its lineage, which a ! in the Catalog may say, or the cache cannot tell, being Fusion's, Snowflake's or an older collin's |
+
+A `generated` column keeps its tag when filter or join key edges reach it, as
+they reach every column of a model under collin's `--indirect`. Hovering its
+box says what the SQL sets it to, and so does its Lineage cell in Catalog >
+Columns, before the counts, clipped and whole on hover: one value, one per
+branch of a union that sets it differently, `'store' | 'web'`, or `generated`
+alone when collin could not tell all of it, as for a value computed from a
+literal or a union it read in part. The legend lists each tag on the canvas,
+and a click on it lights its columns.
+
 ## From the command line
 
 `--column` answers one column's lineage without the browser, as
@@ -206,6 +226,7 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | --- | --- |
 | `depth` | levels from the column asked, negative upstream; the model's is its nearest column's |
 | `from` | the columns of the answer this one is read from, with the role of each edge: a rename shows here, under its new name |
+| `generated` | on a column its model's SQL sets from no column, the values it is set to, `["current_timestamp()"]`, one per branch of a union, `[]` when collin could not tell (0096) |
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
 
