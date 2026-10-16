@@ -2673,6 +2673,10 @@ struct UpdateBody {
     /// Why there is no command, while it is newer.
     #[serde(skip_serializing_if = "Option::is_none")]
     why: Option<crate::update::Why>,
+    /// Another binary sits at this one's path since it started: the update
+    /// is installed, and a restart runs it (0095).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    replaced: bool,
     /// The releases since this one, newest first, each with its pull
     /// request's title and its notes, while it is newer and every title is
     /// known (0079).
@@ -2709,6 +2713,7 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
         notes: if newer { crate::update::notes_url(&latest) } else { String::new() },
         how,
         why,
+        replaced: st.update.replaced(),
         latest,
         newer,
         checked,

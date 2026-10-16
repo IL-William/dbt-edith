@@ -25,7 +25,9 @@
 //!     terminal for the user to run, as collin's install is (0042), and only
 //!     for a binary built from a clone on this machine, where updating means a
 //!     pull and a rebuild. Any other, a copy carried from another machine above
-//!     all, is told what is out and why there is no command.
+//!     all, is told what is out and why there is no command. Once another
+//!     binary sits at the running one's path, the page says to restart
+//!     rather than offer the command again (0095).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -359,6 +361,14 @@ pub struct Update {
     pub how: Result<How, Why>,
     known: Mutex<Known>,
     spread: u64,
+    /// The running binary's path, and when its file was last written as this
+    /// process started, for telling that another has been put in its place.
+    binary: Option<(PathBuf, std::time::SystemTime)>,
+}
+
+/// When the file at `path` was last written, following a link to it.
+fn written(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 /// Seconds from 0 to 119, different from one process to the next: the
@@ -383,7 +393,31 @@ impl Drop for OnItsWay<'_> {
 
 impl Update {
     pub fn new(off: bool, file: Option<PathBuf>, how: Result<How, Why>) -> Update {
-        Update { off, current: env!("CARGO_PKG_VERSION").to_string(), file, how, known: Mutex::default(), spread: spread() }
+        Update {
+            off,
+            current: env!("CARGO_PKG_VERSION").to_string(),
+            file,
+            how,
+            known: Mutex::default(),
+            spread: spread(),
+            binary: None,
+        }
+    }
+
+    /// Watches the file `exe` names, the running binary, from now on.
+    pub fn watching(mut self, exe: Option<PathBuf>) -> Update {
+        self.binary = exe.and_then(|exe| written(&exe).map(|at| (exe, at)));
+        self
+    }
+
+    /// Whether another binary sits at the running one's path since it
+    /// started: an update installed, which only a restart runs (0095). Its
+    /// file's time is all that is read, never what is inside, as for telling
+    /// how it was installed (0068). A path left empty, while the update has
+    /// renamed the running `.exe` on Windows and cargo is still building, is
+    /// not one yet.
+    pub fn replaced(&self) -> bool {
+        self.binary.as_ref().is_some_and(|(exe, at)| written(exe).is_some_and(|now| now != *at))
     }
 
     /// The same, as if `version` were running.
@@ -626,11 +660,14 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
 /// Pull, then rebuild, each only once the step before it worked. The pull
 /// names `main`, where every release is tagged (0045), whatever branch the
 /// clone has out: one that cannot fast-forward to it stops the command there.
+/// It brings the tags too, which a pull naming a branch leaves behind: the
+/// build stamp is `git describe` in the clone, and would name the last
+/// release the clone had heard of rather than the one it builds (0095).
 /// With `swap`, the running binary is renamed to `<exe>.old` before the
 /// rebuild and put back when the rebuild fails, so a failed update still
 /// leaves one to start.
 fn compose(shell: Shell, source: &str, step: &str, swap: Option<&str>) -> String {
-    let pull = format!("git -C \"{source}\" pull --ff-only origin main");
+    let pull = format!("git -C \"{source}\" pull --ff-only --tags origin main");
     match (shell, swap) {
         (Shell::Posix, None) => format!("{pull} && {step}"),
         (Shell::Posix, Some(exe)) => {
@@ -1109,7 +1146,7 @@ mod tests {
         let s = source.display();
         assert_eq!(
             how.command,
-            format!("git -C \"{s}\" pull --ff-only origin main && cargo install --locked --path \"{s}\"")
+            format!("git -C \"{s}\" pull --ff-only --tags origin main && cargo install --locked --path \"{s}\"")
         );
         assert_eq!((how.kind, how.renames, how.exe.as_str()), ("install", false, "dbt-edith"));
         let _ = std::fs::remove_dir_all(source.parent().unwrap());
@@ -1170,19 +1207,81 @@ mod tests {
         assert_eq!(
             compose(Shell::Posix, "C:/src/dbt-edith", step, Some(exe)),
             format!(
-                "git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
+                "git -C \"C:/src/dbt-edith\" pull --ff-only --tags origin main && mv -f \"{exe}\" \"{exe}.old\" && \
                  ({step} || mv -f \"{exe}.old\" \"{exe}\")"
             )
         );
         assert_eq!(
             compose(Shell::PowerShell, "C:/src/dbt-edith", step, Some(exe)),
             format!(
-                "git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
+                "git -C \"C:/src/dbt-edith\" pull --ff-only --tags origin main; if ($?) {{ \
                  Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
                  if (-not $?) {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
             )
         );
         assert_eq!(quotable(Path::new(r"C:\Users\ada\.cargo\bin\dbt-edith.exe"), true).as_deref(), Some(exe));
+    }
+
+    /// The menu says to restart once another binary sits at this one's
+    /// path, and not while the path is empty or holds this one again: the
+    /// update on Windows renames the running `.exe` away, then back when the
+    /// build fails, which keeps its time.
+    #[test]
+    fn a_binary_put_in_the_running_ones_place_is_told() {
+        let dir = scratch("replaced");
+        let exe = dir.join("dbt-edith.exe");
+        std::fs::write(&exe, "1.25.0").unwrap();
+        let u = Update::new(false, None, Err(Why::Elsewhere)).watching(Some(exe.clone()));
+        assert!(!u.replaced());
+        let old = dir.join("dbt-edith.exe.old");
+        std::fs::rename(&exe, &old).unwrap();
+        assert!(!u.replaced(), "renamed away while cargo builds");
+        std::fs::rename(&old, &exe).unwrap();
+        assert!(!u.replaced(), "put back when the build fails");
+        std::fs::rename(&exe, &old).unwrap();
+        std::fs::write(&exe, "1.28.0").unwrap();
+        let later = written(&old).unwrap() + std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&exe).unwrap().set_modified(later).unwrap();
+        assert!(u.replaced(), "installed");
+        // Nothing to watch, nothing to tell.
+        assert!(!Update::new(false, None, Err(Why::Elsewhere)).watching(None).replaced());
+        assert!(!Update::new(false, None, Err(Why::Elsewhere)).watching(Some(dir.join("missing"))).replaced());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real git and sh, on a local repository standing for GitHub: the
+    /// update's pull brings the release's tag, which a pull naming a branch
+    /// alone leaves behind, so the build stamp names the release it builds.
+    #[cfg(unix)]
+    #[test]
+    fn the_update_brings_the_tags_the_build_stamp_names() {
+        let dir = scratch("tags");
+        let (remote, clone) = (dir.join("remote"), dir.join("clone"));
+        let run = |program: &str, args: &[&str]| {
+            let out = std::process::Command::new(program)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Ada")
+                .env("GIT_AUTHOR_EMAIL", "ada@example.com")
+                .env("GIT_COMMITTER_NAME", "Ada")
+                .env("GIT_COMMITTER_EMAIL", "ada@example.com")
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{program} {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        let (r, c) = (remote.to_str().unwrap(), clone.to_str().unwrap());
+        run("git", &["init", "-q", "-b", "main", r]);
+        run("git", &["-C", r, "commit", "-q", "--allow-empty", "-m", "one"]);
+        run("git", &["-C", r, "tag", "v1.25.0"]);
+        run("git", &["clone", "-q", r, c]);
+        run("git", &["-C", r, "commit", "-q", "--allow-empty", "-m", "two"]);
+        run("git", &["-C", r, "tag", "v1.28.0"]);
+
+        run("sh", &["-c", &compose(Shell::Posix, c, "true", None)]);
+        assert_eq!(run("git", &["-C", c, "describe", "--tags"]), "v1.28.0");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

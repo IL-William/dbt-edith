@@ -17,6 +17,17 @@ asks next, and Check for updates asks again at once. Nothing about your project
 is sent, a failed look is tried again within the hour and stays out of the
 status bar, and `--no-update-check` turns it off (0068, 0079).
 
+The update is the menu's button, `Update to` the newest release, and right
+under it is how it goes: it types the command into the terminal below, Enter
+there runs it, a minute or two, and dbt-edith then has to be stopped where it
+was started and started again, since the version that started serves the page
+until then. The pull brings the release tags as well, so the build stamp names
+the release it built. Once the new binary is in place, which dbt-edith tells
+by the time its own file was written, the menu says `Installed: restart
+dbt-edith to run it` in place of the button and the pill reads `restart for`
+the release, within a few seconds of the update ending, and of an update run
+by hand once the menu is opened (0095).
+
 Opened by the pointer, the menu closes once the pointer has left Edith and the
 menu, or at the next key, which goes on to the editor or the terminal you were
 typing in: it takes no focus. A click on Edith or in the menu keeps it open
@@ -26,10 +37,11 @@ is open, the GitHub one or a breadcrumb's say, resting on Edith opens nothing
 
 ## On Windows
 
-To update, stop dbt-edith first, because Windows will not replace an `.exe` that
-is running, then `git pull` and `cargo install --path . --locked` again. The
-command the status bar offers when a release is out needs no stop: it renames
-the running `dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows allows,
-and puts it back if the build fails. Restart dbt-edith afterwards. A binary run
+To update by hand, stop dbt-edith first, because Windows will not replace an
+`.exe` that is running, then `git pull` and `cargo install --path . --locked`
+again. The command the menu types when a release is out needs no stop: it
+renames the running `dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows
+allows, and the old one goes on serving the page from there; it puts it back if
+the build fails. Restart dbt-edith afterwards. A binary run
 from the clone's `target\release` gets no such command: cargo builds it through
 a file the rename does not free, so stop it before building.
