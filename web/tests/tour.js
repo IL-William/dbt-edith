@@ -53,7 +53,7 @@ check('  and with no manifest, that there is none yet, and no colours to read',
 check('the selection drawn is the one the step names', step(all, 'select').text.indexOf('`+stg_orders+`') >= 0, true);
 check('the dbt_project.yml button rings its menu too, which the step opens',
   step(all, 'config').target, ['#crumbs .cfg', '.crumbmenu.config']);
-check('Export, Copy image and Copy are rung together, after the selection they share',
+check('Export, Copy image and Copy names are rung together, after the selection they share',
   [step(all, 'share').target, keys(all).indexOf('share') === keys(all).indexOf('select') + 1], [['#export-btn', '#image-btn', '#select-copy'], true]);
 
 print('\n--- a feature that is off says how to turn it on ---');

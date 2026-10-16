@@ -42,9 +42,10 @@ selection is larger than the canvas will take.
 `manifest.json`, which is the same data dbt reads, so the answer arrives in
 milliseconds and needs no profile ([0024](../decisions/0024-selectors-resolved-from-the-manifest.md)).
 The price is that the answer is this tool's, not dbt's. Two buttons exist for
-that: **Copy** puts the matching names on the clipboard one per line, the way
-`dbt ls --output name` prints them, and **dbt ls** types the equivalent command
-into the Terminal tab without running it, so you can press Enter and compare.
+that: **Copy names** puts the matching names on the clipboard one per line, the
+way `dbt ls --output name` prints them, and **dbt ls** types the equivalent
+command into the Terminal tab without running it, so you can press Enter and
+compare.
 With the tests eye closed, add `--exclude "resource_type:test"` to dbt's side,
 which is the only routine reason the two counts differ.
 
@@ -73,8 +74,8 @@ Either way the models the selected tests belong to are drawn, dimmed when the
 selector did not select them itself, so you see what a test reads and how the
 tests chain. On, the tests are drawn too, each hanging off its models; off,
 only the test boxes go and the corner counts them, so a selector that keeps
-only tests shows the models they check. The count, **Copy** and **dbt ls** are
-the selector's own answer either way.
+only tests shows the models they check. The count, **Copy names** and **dbt ls**
+are the selector's own answer either way.
 
 Two things are said rather than guessed. A selector using `state:`, `result:`
 or `source_status:` is listed but refused, with the reason, since those compare

@@ -1208,8 +1208,8 @@ with what it is for: the freshness badge, right after the welcome, saying that
 everything is read from `manifest.json` and as true as the last `dbt parse`,
 what its age and its dot's colours mean, and that a click types `dbt parse`;
 the model's file, the `dbt_project.yml` button with its menu open, the
-lineage, a Custom selection of `+model+`, Export, Copy image and Copy, the
-Catalog, the column lineage menu, the Jobs tab, the Reports button, the
+lineage, a Custom selection of `+model+`, Export, Copy image and Copy names,
+the Catalog, the column lineage menu, the Jobs tab, the Reports button, the
 Terminal tab, Search and the `?` button. The model is the server's pick
 (`src/tour.rs`): one of the project's own with parents and children, then one a
 job runs when the Jobs tab has a source (`jobs::run_by_a_step`), the most on
@@ -1533,9 +1533,10 @@ repository: retake them when a change alters what one shows.
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
-    Past that, nothing in the tools is set to give way: the browser shrinks
-    each one to its narrowest, so every label that can break does ("Custom
-    selection", "up", "down", "Copy image") and the row spills over the
+    If that is not enough, Fit, Export and Copy image keep theirs alone too,
+    the same way. Past that, nothing in the tools is set to give way: the
+    browser shrinks each one to its narrowest, so every label that can break
+    does ("Custom selection", "up", "down") and the row spills over the
     canvas.
     - **When it happens:** the room left depends on several things at once:
       - the window's width, and the sidebar's;
@@ -1548,9 +1549,12 @@ repository: retake them when a change alters what one shows.
 
       On Jaffle Shop, with Snowflake's features and the tests on and the
       sidebar at its default width, the tools broke from a 1470px window
-      before the tabs could fold, and break from 1240px now. The glyphs made
-      the labelled tabs wider, so the tabs fold from 1590px: in a window the
-      size of a laptop's screen, they show their glyphs alone.
+      before the tabs could fold, and broke from 1240px once they did. The
+      glyphs made the labelled tabs wider, so the tabs folded from 1590px: in
+      a window the size of a laptop's screen, they show their glyphs alone.
+      The glyphs before Fit, Export and Copy image cost the row 60px more:
+      the tabs fold from 1650px. Those three then fold to their glyphs from
+      1300px, and the tools break from 1180px.
     - **Why the tabs fold that way.** It is measured, rather than set at a
       width through a container query, because the room moves with
       everything listed above, and any width would be wrong for some of it.
@@ -1569,20 +1573,19 @@ repository: retake them when a change alters what one shows.
       ellipsis, the other answer for the tabs, frees nothing without
       Snowflake's features.
     - **What any answer for the tools needs:** no label ever breaks inside
-      its own item. The two toggles, `.eyebtn`, and the tabs are `nowrap`
-      already. These are not:
+      its own item. The two toggles, `.eyebtn`, the three actions after
+      them, `.icobtn`, and the tabs are `nowrap` already. These are not:
       - the segmented modes;
       - the `up` and `down` labels, whose input drops under the word;
-      - the plain `.btn sm` tools, Fit, Export and Copy image;
       - the column chip.
-    - **Still open: what gives way after the tabs.**
+    - **Still open: what gives way after the tabs and the three actions.**
       - The tools that matter least, Export and Copy image first, fold behind
         a `…` menu at the end of the row once they stop fitting. This is the
         way VS Code's panels go. `foldDockTabs` already measures the row, and
-        would go on to this once the tabs are folded.
-      - The tools give way to their icons alone, as the tabs do. Every tool
-        needs an icon first, and the segmented modes and the `up` and `down`
-        inputs have no obvious one.
+        would go on to this once the actions are folded.
+      - The rest of the tools give way to their icons alone, as the tabs and
+        the three actions do. The two toggles have theirs; the segmented
+        modes and the `up` and `down` inputs have no obvious one.
       - The row scrolls sideways, with no scrollbar showing. This is the
         simplest, but a tool past the edge is a tool nobody finds.
       - The tools take a second row, and the bar grows to 60px. Nothing is
@@ -1603,7 +1606,8 @@ repository: retake them when a change alters what one shows.
         so a tool pushed past the edge would vanish without a scrollbar.
 
       `foldDockTabs` decides on the first measure, for the tools only, and
-      the `scrollWidth` half of the second. #28 added up its items' widths
+      the `scrollWidth` half of the second, once for the tabs and once again,
+      with the tabs folded, for the three actions. #28 added up its items' widths
       against the row's own, which predicts both but proves neither. Columns
       mode needs a column lineage, which Jaffle Shop comes without
       (`/api/collineage` answers 404): run collin on it first, or put a long

@@ -192,8 +192,17 @@ still draws it, and each level costs columns
 
 ## Sharing the graph
 
-**Export**, beside Fit, saves what the canvas shows as one HTML file named
-after it, `lineage-<what it shows>-<date>.html`, for a ticket or a message.
+Three buttons at the right of the bar above the canvas, each with a glyph
+before its name: **Fit**, four corners, brings the whole graph into the pane;
+**Export**, a file coming down into a tray, and **Copy image**, a picture, send
+it out. Copy image copies the picture alone, never the names: those are
+**Copy names**, under a list glyph, in the bar of a
+[Custom selection](selection.md). On a narrow window the dock's tabs show
+their glyphs alone first; on a narrower one still, when the row runs out of
+room even then, these three keep theirs alone too, each named by its tooltip.
+
+**Export** saves what the canvas shows as one HTML file named after it,
+`lineage-<what it shows>-<date>.html`, for a ticket or a message.
 Anyone opens it in a browser with nothing installed and no network. The wheel
 zooms without blurring, a drag pans, `0` fits it back, and a click on a box
 lights its edges. **Nodes** lists every box with its full name and file, and a
