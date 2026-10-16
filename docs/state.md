@@ -880,6 +880,25 @@ now asks a cache for `edges`: the report `collin generate` names
 `column_lineage.report.json` beside its cache had been offered as a cache of
 no edges, and answered in its place when collin's cache was missing.
 
+Column counts that say what they count (0089, 1.26.1). The stop at menu counts
+each role's edges on the canvas, from the answer last drawn, with a line for
+the edges that have no role, so that it adds up to the status line; the
+project's count is on hover. The Catalog's Lineage cell counts the whole chain
+upstream and downstream, as "in total" does for a model, and its hover adds
+the one level the canvas opens on. `/api/colreach` walks it, asked by the
+Columns table alone: each side is one pass for all of a node's columns, cut
+into strongly connected parts and crossed once in topological order, where a
+walk per column took hundreds of milliseconds a table on a dense synthetic
+cache, and seconds on one shaped as a long chain.
+
+A capped selection, nearest its start (0087, 1.27.0). A selection draws up to
+3 000 nodes, where it stopped at 400, and past that keeps what is nearest what
+its criteria matched before their operators grew it, breadth first, where the
+cut used to keep the first names: `source:stripe+1` no longer draws sources
+read by nothing. A warning under the box says so, and `Draw all N` draws the
+rest of that line, up to 20 000 nodes. Model mode keeps 400. A selection
+1.26.1 drew whole answers as it did, its new `most` field aside.
+
 Clone into my schema (0058): with Snowflake's features on, a button beside a
 model's, a seed's or a snapshot's Location heading writes the statements that
 copy it and its direct parents from an environment into the developer's
@@ -1724,6 +1743,70 @@ repository: retake them when a change alters what one shows.
     target it was compiled for, so the page cannot fill it in: Regenerate
     would offer the profile's targets and pass the one picked, which the
     user then has to have compiled and generated the catalog under.
+21. **collin beside a binary copied into a project.** `collin_run::locate`
+    looks in the running binary's folder before `PATH`, so that a collin
+    shipped with dbt-edith wins over one installed long ago (0042). A
+    `dbt-edith.exe` copied into a project folder therefore runs a
+    `collin.exe` the repository commits beside it: `--version` at every page
+    load, through `/api/meta`, and the generation once Collin is the column
+    tool. An empty entry in `PATH` finds one in the folder dbt-edith started
+    in the same way. The trap: the VM's own fallback is a `collin.exe` copied
+    beside the binary (above), so the fix has to tell the user's copy from
+    the repository's, for instance by refusing a collin git tracks, as 0053
+    refuses a venv it tracks. Found by the security review of 2026-10-15,
+    which 1.25.1 did not take up.
+22. **Saving the profile through a link.** `settings::write_atomic` renames a
+    temporary file over the path it writes. When `~/.dbt/profiles.yml` is a
+    link into a dotfiles repository, a save from the page replaces the link
+    with a plain file, silently, and later edits to the link's target no
+    longer reach dbt. The likely answer: write beside the link's target and
+    rename over that, keeping the link, as the file's mode is already kept.
+23. **A project's `profiles.yml` link is followed.** `profiles::Lookup::path`
+    takes the project's own `profiles.yml` whenever `is_file()` says yes,
+    which follows a link. A project whose `profiles.yml` points outside it, at a
+    key file say, has that file served by `/api/profiles`, where the
+    redaction finds no key to hide. `/api/file` refuses the same link, and
+    SECURITY.md says the one file outside the project the page reaches is
+    the profile dbt would find. The likely answer: hold the project's copy to
+    the project, as `files::confined` holds the editor's paths.
+24. **Merging a cache, quadratic in a model's width.** `merge_col_lineage`
+    looks each wanted column up among the node's columns by lower-casing
+    every one of them, so a model fed 20 000 columns spends tens of seconds
+    merging, where real widths cost nothing. The page and `--column` (0088)
+    share it. The likely answer: one lower-cased index of the node's columns
+    per merge.
+25. **Saying when the starts fill the cap.** Past 3 000 nodes a selection
+    draws what is nearest its start (0087). When the starts alone take most
+    of the cap, as `source:*+` can on a large project, the canvas shows them
+    with few of their children, each with a `+N`, and the warning says only
+    that the canvas is cut. The order stays, chosen again on 2026-10-16; the
+    warning should say that the starts take most of what is drawn, and that
+    Draw all or a narrower selection draws their children.
+26. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
+    (its own 0045): a column built from no column, a literal's value with it
+    when there is one. The canvas badges such a column `raw`, as it does a
+    source's own column and a column whose lineage collin lost. Read, `roots`
+    would give it a `generated` badge, the value on hover and in the Columns
+    table, and the hover says so when a root has none (a date spine, a union
+    read in part, a `VALUES` list):
+    - sources, seeds and `rel:` tables keep `raw`;
+    - in a cache that has `roots`, a model column with no edge in that is no
+      root gets no badge; a cache without them (Fusion's, Snowflake's, an
+      older collin's) badges as before;
+    - a `filter` or `join_key` edge, which `--indirect` also sends into a
+      root, never takes the badge away.
+
+    `collin_run::WANTS` still asks for 0.1.0, so nothing offers the update
+    that brings `roots`.
+27. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
+    publisher, product or version in its properties, which antivirus
+    heuristics hold against a fresh unsigned binary. A resource naming
+    Datadorelix, dbt-edith and the version, in the `.exe` that
+    `scripts/build_windows.sh` cross-builds and in one `cargo install` builds
+    on Windows, needs no certificate; signing stays a later step (below). The
+    trap: a resource compiler, mingw-w64's `windres` or MSVC's `rc.exe`, or a
+    crate that finds one (0003), which the VM's `cargo install` has to find
+    too.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -1764,6 +1847,92 @@ its pull request, unranked:
   it only at its deadline. A run aborted while collin works leaves collin
   writing into a deleted folder.
 
+Left by the pull requests of 2026-10-15 and 2026-10-16, each a known limit
+written in its pull request or left by its review, unranked:
+
+- **The supply chain (0085):**
+  - the cooldown holds what Dependabot proposes, not a `cargo update` run by
+    hand nor a crate a bump resolves on the way;
+  - `--deny yanked` fails Monday's audit on a yank with no fix out yet, and
+    the answer that day is a bump or a pin;
+  - the vendored files are compared with upstream only online, and
+    diff-match-patch, which has no release, answers for itself by its pin;
+  - a compromised npm release copied in as a new version, with its own
+    tarball's hashes, passes: OSV answers for that, a week late at most;
+  - a hidden file under `web/vendor/` is not audited but is embedded, and
+    `scripts/build_windows.sh` builds from the working tree;
+  - `--locked` holds the crates, not the compiler: there is no
+    `rust-toolchain.toml`, and the scripts' own `cargo build` runs without
+    `--locked`;
+  - a Windows clone made before `.gitattributes` keeps its vendored files in
+    CRLF until the one-time fix in [windows.md](windows.md).
+- **The security pass (0090):**
+  - a credential whose name says nothing, and whose value is neither a URL
+    with a password nor a `password=` parameter, still shows in the hover
+    card: `DBT_ENV_SECRET_*` is the way to mark one;
+  - `CI_PASS`, `TESTS_PASS` and `EXASOL_DSN` are hidden by their name, while
+    the profile key `dsn`, a host and a port to dbt-exasol, is not;
+  - a flow mapping holding a secret key is one placeholder, so changing its
+    other keys in the page means typing the mapping over;
+  - the link tests run on Unix only, and the `create_dir` race in
+    `git::tag_subjects` has no test;
+  - a NEL inside a `--select` splits the term, where `--selector` refuses it;
+  - the review did not cover `web/lineage.js` beyond a search for sinks,
+    Windows' ConPTY and `cmd /C start` other than by reading, nor any real
+    warehouse; `.git/config` reads through `/api/file` as the rest of the
+    project does (SECURITY.md).
+- **The column counts (0089):**
+  - with Snowflake picked, a cell counts what the clicks have fetched, and
+    grows with each click;
+  - past 200 columns the canvas draws fewer than the cell counts, and the
+    cell counts the whole chain whatever stop is ticked;
+  - on a cycle of two columns each counts the other on both sides, where the
+    canvas draws it on one;
+  - the count runs again with each node payload the Columns table shows, and
+    a walk is never cancelled when the user moves on;
+  - its hover is a native tooltip, shown after the browser's delay.
+- **The selection cap (0087):**
+  - each pause in typing redraws up to 3 000 boxes, even when the answer did
+    not change;
+  - past 3 000 boxes zoom and pan slow down; boxes drawn without text when
+    far out would let the default rise;
+  - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
+  - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
+    before;
+  - the starts are worked out for every caller, the Jobs tab and `--select`
+    included, at the cost of one insertion per criterion.
+- **A column on the command line (0088):**
+  - it answers from collin's or Fusion's newest cache, not from the one the
+    page's menu picked, and reads every cache whole to choose;
+  - a test on a column the YAML does not declare is not listed, as in the
+    Catalog, and the cache's age is judged by time alone (0042);
+  - stderr prints a `DBT_TARGET` value shaped like a name, not only the
+    profile's target names;
+  - the startup line and the Catalog's notes give one dbt's catalog command,
+    Fusion's `dbt compile --write-catalog` in some and `dbt docs generate` in
+    others, each wrong for the other dbt;
+  - collin's own `--help` names `column_lineage.json` as `--out`'s default,
+    where it writes `column_lineage.collin.json`; the printed steps pass
+    `--out` and `--report` to write the names the page's own run writes.
+- **Edith's menu under the pointer (0086):**
+  - the status bar's pill opens it on a click only, and a menu the pointer
+    opened takes no arrow keys;
+  - Escape on a menu a click held sends the focus to the name, not back to
+    the editor or the terminal that had it;
+  - `closePopup(anchor)` holds a menu the pointer opened rather than closing
+    it, which a later caller passing an anchor would trip on;
+  - its rest and grace, 150 and 300 ms, are a pair of its own beside the
+    hover cards' 350 and 180 ms, in code of its own too.
+- **The lineage's buttons (1.25.2):**
+  - the Custom selection row is about 75px wider at its narrowest, and
+    spills under a dock of about 500px;
+  - the Jobs tab's `dbt ls` has no glyph, where the selection's has one;
+  - [the lineage page](features/lineage.md) describes Fit under "Sharing the
+    graph".
+- **`scripts/take_shots.py` (0082):** without `COLLIN`, which wins, it takes
+  the first collin on `PATH` and prints no version, so a stale one puts an
+  older report in `collin-report.png`, which happened twice on 2026-10-15.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by edge kind, which waits on
@@ -1798,7 +1967,11 @@ published with its CHANGELOG.md section by CI (0045). No binary is attached, so
 installing means building from source, as
 [the README](../README.md#getting-started) describes. Attaching binaries is a
 deliberate later step: an unsigned executable download brings its own friction
-on a managed Windows machine.
+on a managed Windows machine. Signing would come with it, a certificate 0085
+leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
+Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
+licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource comes first
+(item 27).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then
@@ -1856,7 +2029,7 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The releases since 2026-10-14 on the VM (1.18.0 to 1.26.0).** None was
+- **The releases since 2026-10-14 on the VM (1.18.0 to 1.28.0).** None was
   opened on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
   next `.exe`:
   - the config menu on a CRLF `dbt_project.yml` (1.18.1);
@@ -1870,7 +2043,12 @@ both that route and the cross-compile.
   - the GitHub menu (1.25.0);
   - the six gaps of the security review (1.25.1);
   - Copy image told from Copy names (1.25.2);
-  - Edith's menu under the pointer (1.26.0).
+  - Edith's menu under the pointer (1.26.0);
+  - the column counts (1.26.1);
+  - the selection cap and Draw all (1.27.0), with a source's tables grown by
+    one step, the case reported from the VM;
+  - `--column` (1.28.0): its `.env` discovery, Windows paths and the quoting
+    of the steps it prints.
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.
@@ -2138,7 +2316,8 @@ Dependabot opens weekly lockfile bumps. A pull request touching `src/`, `web/` o
 `no changelog` label, and its branch and title have to read the way AGENTS.md
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not
-in CI: they need `jsc`, which ships with macOS (0013).
+in CI: they need `jsc`, which ships with macOS (0013). Nor are the Chrome
+walks `scripts/check.sh` runs, the tour, the depth boxes and Edith's menu.
 
 Three checks depend on timing, and can fail on a loaded machine, then pass
 when run again alone:
@@ -2148,3 +2327,8 @@ when run again alone:
 - since 1.25.0, the ring around `#keys-btn` in `scripts/walk_tour.py`, drawn
   2.6px right of the button. The likely cause is that the freshness badge's
   age gains a digit during the measure, and moves the buttons to its left.
+
+A fourth is skipped rather than failed: since 1.26.0, "crossing the name opens
+nothing" in `scripts/walk_menu.py` needs two pointer moves within 100 ms, and
+after three slow tries it is not made, with a NOTE under "menu ok" while
+check.sh stays green.
