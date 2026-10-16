@@ -15,6 +15,15 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.28.3 - 2026-10-16
+
+- Draw the update in Edith's menu as a button, `Update to` the release, with
+  what it types and the Enter and restart it needs right under it, and say
+  `Installed: restart dbt-edith to run it` once the new binary is in place
+  rather than offer the update again (0095).
+- Bring the release tags with the update's pull, so the build stamp names the
+  release it built rather than the last one the clone had heard of.
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,

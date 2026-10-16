@@ -237,7 +237,8 @@ async fn main() -> anyhow::Result<()> {
     // Switched off, it neither asks GitHub nor looks at where it was built,
     // and shows nothing, so the reason it gives is never read.
     let how = if args.no_update_check { Err(update::Why::Elsewhere) } else { update_how(&shell) };
-    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how);
+    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how)
+        .watching(std::env::current_exe().ok());
     let state = Arc::new(api::AppState {
         port: listener.local_addr()?.port(),
         root: root.clone(),

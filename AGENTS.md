@@ -76,7 +76,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   (0063). To pick one, the sources form lists any folder, by the names of its
   folders and YAML files only (0070). Whether this binary was installed by
   cargo or built in a clone is told from which files exist beside it, never
-  from inside them (0068). A path the manifest records for a compiled file is
+  from inside them (0068), and whether another was installed in its place from
+  the time its own file was written (0095). A path the manifest records for a
+  compiled file is
   held to the target directory, as a path the browser sends is to the project.
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
@@ -222,6 +224,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change when a newer release is looked for, or what Edith's menu shows | [0079](docs/decisions/0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md), [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
+| change what the update types, or what the menu offers once it has run | [0095](docs/decisions/0095-the-update-says-when-it-is-installed-and-brings-its-tags.md) |
 | open a menu under the pointer, or change what closes or holds one | [0086](docs/decisions/0086-edith-s-menu-opens-under-the-pointer.md) |
 | add a step to the guided tour, or change when it is offered or what it touches | [0074](docs/decisions/0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md), [0078](docs/decisions/0078-the-tour-is-offered-once-there-is-a-model-to-show.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
