@@ -217,6 +217,7 @@ var app = read('web/app.js');
 eval(app.slice(app.indexOf('function findLabel'), app.indexOf('function findOverlay')));
 eval(app.slice(app.indexOf('function findButton'), app.indexOf('/* One editor\'s bar')));
 eval(app.slice(app.indexOf('function findInPane'), app.indexOf('const base = (path)')));
+eval(app.slice(app.indexOf('function panelOpen'), app.indexOf('/* Rolls a panel down')));
 
 function fakeEl(tag) {
   var e = { tagName: String(tag).toUpperCase(), className: '', value: '', title: '', textContent: '', placeholder: '',
@@ -262,7 +263,7 @@ var Lineage = {
   findEnd: function () { called.push('end'); },
   placeHeads: function () { called.push('heads'); },
 };
-var S = { dock: 'lineage', reportsOpen: false, graphMode: 'model', graphFind: null };
+var S = { dock: 'lineage', panel: '', graphMode: 'model', graphFind: null };
 function focusColumnFilter() { called.push('column filter'); return true; }
 function activeEditor() { return null; }
 function openFind() { called.push('editor find'); }
@@ -284,9 +285,13 @@ group('which pane Cmd+F and Cmd+G reach', function () {
   check('the terminal keeps the browser\'s find', [findInPane('terminal'), take()], [false, []]);
   S.dock = 'catalog';
   check('the lineage remembered but not on screen: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
-  S.dock = 'lineage'; S.reportsOpen = true;
-  check('the reports over everything: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
-  S.reportsOpen = false;
+  S.dock = 'lineage'; S.panel = 'reports';
+  check('a panel over everything: the browser\'s', [findInPane('lineage'), S.graphFind.open], [false, false]);
+  // The selection's panel holds the canvas, whatever tab the dock had (0092).
+  S.dock = 'terminal'; S.panel = 'select';
+  check('the canvas up in the selection\'s panel keeps its own', [findInPane('lineage'), S.graphFind.open, take()], [true, true, ['heads', 'find "" false']]);
+  closeGraphFind(); take();
+  S.dock = 'lineage'; S.panel = '';
 
   S.graphFind.input.value = '';
   check('Cmd+G from the canvas with no query yet: the browser\'s', [stepGraphFind('lineage', 1), take()], [false, []]);
@@ -394,9 +399,9 @@ group('which Escape from outside the bar closes it', function () {
   modalBox.className = '';
   check('not with a dialog open over the page', escapesGraphFind(esc(document.body)), false);
   modalBox.className = 'hidden';
-  S.reportsOpen = true;
-  check('not under the reports', escapesGraphFind(esc(canvas)), false);
-  S.reportsOpen = false;
+  S.panel = 'reports';
+  check('not under a panel', escapesGraphFind(esc(canvas)), false);
+  S.panel = '';
   S.dock = 'terminal';
   check('not with the lineage off screen', escapesGraphFind(esc(canvas)), false);
   S.dock = 'lineage';

@@ -167,8 +167,8 @@
             <button class="segbtn active" data-mode="model"
                     title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
-            <button class="segbtn" data-mode="select"
-                    title="Any set of nodes you describe, drawn together: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
+            <button class="segbtn" data-mode="select" aria-controls="select-panel" aria-expanded="false"
+                    title="Any set of nodes you describe, drawn together over the editor and the dock: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
@@ -250,11 +250,26 @@
       </div>
     </section>
 
-    <!-- Over the editor and the dock rather than in their place, so nothing under
-         it is measured again when it rolls up or down (0064). -->
-    <section id="reports" class="reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
+    <!-- The panels, over the editor and the dock rather than in their place, so
+         nothing under them is measured again when one rolls up or down (0064, 0091). -->
+    <section id="reports" class="panel reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
       <nav id="reports-nav" class="reports-nav" aria-label="Reports"></nav>
       <div id="reports-view" class="reports-view"></div>
+    </section>
+    <!-- Custom selection at the window's height (0092). It holds nothing of its
+         own: selectPanelDown() brings the dock's canvas up into it, the selector
+         bar over it and the canvas's tools, and the Catalog beside it. -->
+    <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Custom selection" aria-hidden="true">
+      <div class="selpanel-main">
+        <div class="selpanel-head">
+          <span class="selpanel-title">Custom selection</span>
+          <div class="grow"></div>
+          <span id="selpanel-tools" class="tools"></span>
+          <button class="icon" id="selpanel-close" type="button" aria-label="Close the selection">×</button>
+        </div>
+        <div id="selpanel-canvas" class="selpanel-canvas"></div>
+      </div>
+      <aside id="selpanel-card" class="selpanel-card" aria-label="The box clicked"></aside>
     </section>
   </main>
 </div>

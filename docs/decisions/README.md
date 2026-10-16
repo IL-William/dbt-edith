@@ -94,6 +94,8 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0088](0088-a-column-is-answered-on-the-command-line-from-the-cache-already-written.md) | A column is answered on the command line, from the cache already written | letting anything but the page walk the column lineage, or letting a command line produce one |
 | [0089](0089-a-column-count-says-what-it-counts.md) | A column count says what it counts: the canvas, or the whole chain | changing the stop at menu's counts, or what the Catalog's Lineage cell counts |
 | [0090](0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) | A credential is hidden by its value as well as its name | changing what the hover card or the profile form hides, or the vocabulary `sensitive_name` and `secret_key` share |
+| [0091](0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) | What speaks of the whole project opens in a panel | adding a panel over the editor and the dock, moving a view between the dock and a panel, or changing what opens, closes or covers one |
+| [0092](0092-custom-selection-opens-in-a-panel.md) | Custom selection opens in a panel | changing where a selection is drawn, what a click or a double-click on a box does there, or what goes back to the dock when its panel rolls up |
 
 ## Keeping these honest
 

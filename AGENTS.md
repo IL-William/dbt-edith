@@ -173,6 +173,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start collin, change when it runs, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md), [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
+| add a panel, or move a view between the dock and a panel | [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
 | hide the Reports button, or change what it says with no report | [0075](docs/decisions/0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md) |
 | give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
@@ -194,6 +195,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change where the canvas draws a test, or what `attached` means | [0034](docs/decisions/0034-a-test-hangs-under-its-model.md) |
 | change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md), [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |
 | change how many nodes a selection draws, or where a capped one starts | [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |
+| change where a selection is drawn, or what a click on a box does in its panel | [0092](docs/decisions/0092-custom-selection-opens-in-a-panel.md) |
 | group, label or colour the tests under a model, or add a field a test carries in a payload | [0040](docs/decisions/0040-tests-hang-grouped-by-generic.md) |
 | change where opening a data test lands, or find a line in a properties file | [0041](docs/decisions/0041-a-test-opens-at-its-line.md) |
 | handle a key inside the terminal, or change what Ctrl + C does there | [0044](docs/decisions/0044-the-terminal-copies-like-windows-terminal.md), [0073](docs/decisions/0073-the-terminal-sends-the-line-keys-the-shell-reads-everywhere.md) |

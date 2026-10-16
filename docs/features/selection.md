@@ -5,13 +5,21 @@ command line.
 
 ## Custom selection
 
-The **Custom selection** button above the graph swaps the canvas from one model's
-neighbourhood to whatever a dbt selector matches, so you can draw the set you
-actually work on:
+The **Custom selection** button above the graph opens a panel over the editor
+and the dock, the sidebar staying beside it, and draws there whatever a dbt
+selector matches, at the window's height, so you can draw the set you actually
+work on:
 
 ```
 stg_customers dim_customers+ fct_orders
 ```
+
+A click on a box shows its card from the Catalog beside the canvas, the
+canvas staying put. A double-click opens its file, and the panel rolls up, the
+dock's lineage moving onto that model. Escape, the × at the top right, or a
+file opened from the sidebar rolls it up as well, and the dock's lineage is
+back as it was. The selection is kept: the button draws it again
+([0092](../decisions/0092-custom-selection-opens-in-a-panel.md)).
 
 A space is a union, a comma is an intersection, and `--exclude` may follow on
 the same line. Whole commands paste in: `dbt ls -s "a b" --exclude tag:x` is
