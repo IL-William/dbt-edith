@@ -4530,6 +4530,61 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// `source:*+` on a project of many sources: the starts take most of the
+    /// cap, and the answer says how many were drawn, so the warning can say
+    /// they leave room for little else. Not sent when nothing was cut, nor
+    /// when the selection is all start and is drawn from its roots instead.
+    #[tokio::test]
+    async fn a_cut_selection_says_how_many_of_its_starts_it_drew() {
+        let root = temp_project("starts");
+        let (port, st, server) = serve(&root).await;
+        let tables = 2000;
+        let mut sources = serde_json::Map::new();
+        let mut nodes = serde_json::Map::new();
+        let mut parents = serde_json::Map::new();
+        for i in 0..tables {
+            let (table, model) = (format!("t{i:04}"), format!("stg_t{i:04}"));
+            let source = format!("source.demo.raw.{table}");
+            let fqn = serde_json::json!(["demo", "raw", table]);
+            sources.insert(
+                source.clone(),
+                serde_json::json!({ "name": table, "source_name": "raw", "resource_type": "source", "package_name": "demo", "fqn": fqn }),
+            );
+            let fqn = serde_json::json!(["demo", model]);
+            nodes.insert(
+                format!("model.demo.{model}"),
+                serde_json::json!({ "name": model, "resource_type": "model", "package_name": "demo", "fqn": fqn }),
+            );
+            parents.insert(format!("model.demo.{model}"), serde_json::json!([source]));
+        }
+        let raw: RawManifest =
+            serde_json::from_value(serde_json::json!({ "nodes": nodes, "sources": sources, "parent_map": parents })).unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let starts = |body: &str| body.split(r#""starts":"#).nth(1).and_then(|rest| rest.split(',').next()).map(str::to_string);
+
+        let sources_down = response_of(port, get("/api/select?q=source%3A%2A%2B", &h)).await;
+        assert!(sources_down.contains(r#""truncated":true"#), "{}", &sources_down[..200]);
+        assert_eq!(sources_down.matches(r#""name":"raw.t"#).count(), tables);
+        assert_eq!(sources_down.matches(r#""name":"stg_t"#).count(), SELECT_DRAWN - tables);
+        assert_eq!(starts(&sources_down).as_deref(), Some("2000"), "every source drawn is a start");
+        // The same, upstream: the starts are the models, and what is left is their parents.
+        let models_up = response_of(port, get("/api/select?q=%2Bstg_t%2A", &h)).await;
+        assert_eq!(starts(&models_up).as_deref(), Some("2000"));
+
+        let whole = response_of(port, get("/api/select?q=source%3A%2A%2B&max=999999", &h)).await;
+        assert!(whole.contains(r#""truncated":false"#) && starts(&whole).is_none(), "nothing cut, nothing to say");
+        let narrow = response_of(port, get("/api/select?q=source%3Araw.t0001%2B", &h)).await;
+        assert!(narrow.contains(r#""matched":2"#) && starts(&narrow).is_none(), "{narrow}");
+        // Every node named by a term of its own: drawn from its roots.
+        let every = response_of(port, get("/api/select?q=source%3A%2A%20stg_t%2A", &h)).await;
+        assert!(every.contains(r#""truncated":true"#) && starts(&every).is_none(), "all start, nothing walked from");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// What a named selector keeps is settled in `selectors.rs`. This is what
     /// only the route decides: the tests box filters the drawing and never the
     /// answer, a model drawn for a test's sake says so, and the list names

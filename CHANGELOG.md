@@ -15,6 +15,10 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+- Say under the box when what a selection names takes half or more of a cut
+  canvas, as `source:*+` can, and that Draw all or a narrower selection draws
+  the rest of their lineage (0087).
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,

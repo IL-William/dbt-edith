@@ -124,6 +124,32 @@ check('all is what can be drawn',
   capOffer({ truncated: true, matched: 6000, hidden_tests: 2000, nodes: new Array(3000), most: 20000 }, 0).label, 'Draw all 4000');
 check('and what fits is offered whole',
   capOffer({ truncated: true, matched: 22000, hidden_tests: 3000, nodes: new Array(3000), most: 20000 }, 0).label, 'Draw all 19000');
+check('the offer says whether it draws it all', [capOffer(capped, 0).all,
+  capOffer({ truncated: true, matched: 25000, nodes: new Array(3000), most: 20000 }, 0).all], [true, false]);
+// `source:*+` on a large project: the starts alone take most of the cap, and
+// the canvas is sources with few of what they feed. The note says so, and
+// what draws the rest, before Copy names, which a narrow bar cuts first.
+var filled = { truncated: true, matched: 4210, nodes: new Array(3000), names: names(4210), most: 20000, starts: 2650 };
+check('starts that fill the cap are said, with the button that draws the rest',
+  selectCapNote(filled, capOffer(filled, 0)),
+  ['Too large to draw whole: 3000 of 4210 on the canvas, 2650 of them what the selection names. '
+    + 'Draw all or a narrower selection draws the rest of their lineage; Copy names lists every one.']);
+check('from half the canvas',
+  /1500 of them what the selection names/.test(selectCapNote(Object.assign({}, filled, { starts: 1500 }), capOffer(filled, 0))[0]), true);
+check('below it, the note is the one before',
+  selectCapNote(Object.assign({}, filled, { starts: 1499 }), capOffer(filled, 0)),
+  selectCapNote({ truncated: true, matched: 4210, nodes: new Array(3000), names: names(4210) }));
+check('and with no starts sent, too',
+  selectCapNote(Object.assign({}, filled, { starts: undefined }), capOffer(filled, 0)),
+  selectCapNote({ truncated: true, matched: 4210, nodes: new Array(3000), names: names(4210) }));
+var huge = { truncated: true, matched: 25000, nodes: new Array(3000), names: names(5000), most: 20000, starts: 2900 };
+check('a button that cannot draw it all draws more of it',
+  /^Draw 20000 or a narrower selection draws more of their lineage; Copy names lists the first 5000 by name\.$/
+    .test(selectCapNote(huge, capOffer(huge, 0))[0].split('names. ')[1]), true);
+var atMost = { truncated: true, matched: 25000, nodes: new Array(20000), names: names(5000), most: 20000, starts: 12000 };
+check('and once drawn at the most there is, only a narrower selection is left',
+  /names\. A narrower selection draws more of their lineage;/.test(selectCapNote(atMost, capOffer(atMost, 20000))[0]), true);
+check('a whole canvas says nothing, starts or not', selectCapNote({ truncated: false, matched: 42, nodes: new Array(42), starts: 40 }, null), []);
 // A raise holds for the line and the tests box it was asked for, nothing else.
 var raised = { expr: 'source:stripe+', tests: 0, max: 20000 };
 check('the same line keeps it', raiseFor(raised, 'source:stripe+', 0), 20000);

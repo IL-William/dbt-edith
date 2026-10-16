@@ -997,6 +997,7 @@ impl Graph {
                 edges: Vec::new(),
                 edge_kinds: Vec::new(),
                 stopped_at: Vec::new(),
+                starts: 0,
             };
         };
         let cut: Vec<u8> = (0..cll.kinds.len().min(256))
@@ -1125,6 +1126,7 @@ impl Graph {
             mode: "column",
             edge_kinds,
             stopped_at,
+            starts: 0,
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
@@ -1394,6 +1396,7 @@ impl Graph {
             focus_column: "",
             edge_kinds: Vec::new(),
             stopped_at: Vec::new(),
+            starts: 0,
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1438,7 +1441,9 @@ impl Graph {
     /// The order a capped selection keeps its nodes in, tests and context
     /// aside: breadth first from the starts, over the edges the canvas would
     /// draw, either way, each node's neighbours by name. So whatever the cap
-    /// keeps past the starts hangs off something kept before it.
+    /// keeps past the starts hangs off something kept before it. The starts
+    /// walked from take the first ranks, and their count comes back with the
+    /// order: none when the walk began at the roots.
     ///
     /// A start that is a test stands for the model it hangs under, which is
     /// where the reader looks for it: tests are only drawn after every model.
@@ -1446,7 +1451,7 @@ impl Graph {
     /// every node is one, or an exclude cut the path, start together from
     /// their roots, the nodes nothing in the selection feeds, so no part is
     /// drawn to its end before another begins.
-    fn nearest_first(&self, members: &[u32], context: &HashSet<u32>, starts: &[u32]) -> HashMap<u32, usize> {
+    fn nearest_first(&self, members: &[u32], context: &HashSet<u32>, starts: &[u32]) -> (HashMap<u32, usize>, usize) {
         let core: HashSet<u32> =
             members.iter().copied().filter(|i| !context.contains(i) && self.nodes[*i as usize].kind != Kind::Test).collect();
         let by_name = |list: &mut Vec<u32>| {
@@ -1514,7 +1519,7 @@ impl Graph {
                 push(i, &mut rank, &mut queue);
             }
         }
-        rank
+        (rank, seeds.len())
     }
 
     /// Each test's place among the tests of the model it hangs under on the
@@ -1594,6 +1599,7 @@ impl Graph {
         // Truncated means part of the selection is missing. Context cut for
         // room is drawn as room allows, and says nothing about the answer.
         let truncated = picked.len() > max_nodes;
+        let mut starts_drawn = 0;
         if members.len() > max_nodes {
             // Nearest the starts first, each step away from them in turn
             // (0087). Cut by name, as it was, a selection of sources and their
@@ -1613,7 +1619,7 @@ impl Graph {
             // what the selection chose is drawn whole and the order among it
             // changes nothing.
             let turn = self.test_turns(&members);
-            let near = if truncated { self.nearest_first(&members, &in_context, starts) } else { HashMap::new() };
+            let (near, seeded) = if truncated { self.nearest_first(&members, &in_context, starts) } else { (HashMap::new(), 0) };
             members.sort_by_cached_key(|&i| {
                 let n = &self.nodes[i as usize];
                 let (k, host) = turn.get(&i).copied().unwrap_or((0, i));
@@ -1621,6 +1627,13 @@ impl Graph {
                 (in_context.contains(&i), n.kind == Kind::Test, k, step, &n.name, &n.id)
             });
             members.truncate(max_nodes);
+            // Only a cut among the models and sources can leave a start
+            // without the nodes around it: one that reached the tests drew
+            // every model and source first. Ranked by the walk are exactly
+            // those, so the cut fell among them when they outnumber the room.
+            if max_nodes < near.len() {
+                starts_drawn = members.iter().filter(|i| near.get(i).is_some_and(|&r| r < seeded)).count();
+            }
         }
         members.sort_unstable();
         members.dedup();
@@ -1677,6 +1690,7 @@ impl Graph {
             focus_column: "",
             edge_kinds: Vec::new(),
             stopped_at: Vec::new(),
+            starts: starts_drawn,
             nodes: members
                 .iter()
                 .enumerate()
@@ -1735,6 +1749,16 @@ pub struct Lineage<'a> {
     /// names them, so an export can say why a column ends there (0083).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub stopped_at: Vec<&'a str>,
+    /// Selection mode, cut among its models and sources: how many of those
+    /// drawn are its starts, so the page can say when they leave room for
+    /// little else (0087). Not sent otherwise, so an answer the cap did not
+    /// cut, or cut only in its tests, is as it was.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub starts: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 #[derive(serde::Serialize)]
@@ -2453,6 +2477,28 @@ mod tests {
         let picked = all(&g, &["b", "c", "d", "x", "y"]);
         assert_eq!(drawn(&g.selection(&picked, &[], &[], false, 3)), ["b", "c", "x"]);
         assert_eq!(drawn(&g.selection(&picked, &[], &[], false, 4)), ["b", "c", "d", "x"]);
+    }
+
+    #[test]
+    fn a_cut_among_the_models_counts_the_starts_it_drew() {
+        let g = shapes();
+        let models = all(&g, &["a", "b", "c", "d", "x", "y"]);
+        let starts = all(&g, &["a", "x"]);
+        assert_eq!(g.selection(&models, &[], &starts, false, 3).starts, 2, "a, x, then b");
+        assert_eq!(g.selection(&models, &[], &starts, false, 1).starts, 1, "the starts alone fill it");
+        // Not cut, nothing to say, and nothing sent: the answer is as it was.
+        let whole = g.selection(&models, &[], &starts, false, 100);
+        assert_eq!(whole.starts, 0);
+        assert!(serde_json::to_value(&whole).unwrap().get("starts").is_none());
+        // All start, `*`: drawn from its roots, so no start is walked from.
+        assert_eq!(g.selection(&models, &[], &models, false, 3).starts, 0);
+        // Cut only in its tests: every model is drawn, every start's
+        // neighbours with it.
+        let mut tested = models.clone();
+        tested.push(g.index["test.shop.aaa_not_null_a"]);
+        let sub = g.selection(&tested, &[], &starts, true, 6);
+        assert!(sub.truncated);
+        assert_eq!(sub.starts, 0);
     }
 
     /// a -> b -> c -> d, with a test declared on b and one on d.

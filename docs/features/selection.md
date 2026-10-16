@@ -53,6 +53,20 @@ slow down, a lot on a slow machine. Another selection, an emptied box, or the
 tests eye, is cut at 3 000 again
 ([0087](../decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md)).
 
+The start can take most of the canvas by itself: `source:*+` on a project
+with thousands of sources draws the sources and few of the models they feed.
+Those few hang off the first sources by name, and the later ones stand alone
+with their `+N` badge. When the start takes half the canvas or more, the warning
+counts it, and says what draws the rest: "Too large to draw whole: 3000 of
+4210 on the canvas, 2650 of them what the selection names. Draw all or a
+narrower selection draws the rest of their lineage; Copy names lists every
+one." It says lineage rather than children because a start can grow either
+way: `+tag:finance` starts at the tagged models and draws their parents. A
+selection of more than 20 000 nodes offers `Draw 20000`, which the warning
+says draws more of their lineage. A cut that reaches the tests has drawn
+every model and source first, and a selection that is all start is drawn
+from its roots, so neither says it.
+
 **Nothing runs dbt for this.** The expression is resolved against
 `manifest.json`, which is the same data dbt reads, so the answer arrives in
 milliseconds and needs no profile ([0024](../decisions/0024-selectors-resolved-from-the-manifest.md)).
