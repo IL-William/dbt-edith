@@ -28,7 +28,11 @@ installer, no admin rights. It imports nothing but Windows system
 libraries, so there is no runtime to place beside it. The terminal uses ConPTY,
 which ships with Windows 10 and 11. Windows may warn about an unsigned
 executable that arrived by copy, which is what an in-house build looks like
-to it.
+to it. Its properties, under Details, name dbt-edith as the product, the
+version it was built at and Datadorelix in the copyright, and
+`(Get-Item dbt-edith.exe).VersionInfo` in PowerShell lists every field, the
+company among them. The mingw-w64 `windres` compiles them in, and the script
+refuses an `.exe` built without them (0093).
 
 To type `dbt-edith` from any project there, as you would elsewhere, keep the
 `.exe` in a folder of your own and put that folder on your `PATH`. Neither step
@@ -80,7 +84,14 @@ echo 'export PATH="/c/Users/you/AppData/Local/Microsoft/WinGet/Packages/<WinLibs
 
 Then `cargo install --path . --locked` from the clone builds it and drops
 `dbt-edith.exe` in `%USERPROFILE%\.cargo\bin`, which rustup already put on your
-`PATH`.
+`PATH`. WinLibs also brings the `windres` that names the publisher and the
+version in the `.exe`'s properties. Where none is on `PATH`, and always with
+Visual Studio Build Tools, the build goes on without them and cargo says so
+(0093):
+
+```
+warning: dbt-edith@<version>: dbt-edith.exe is built without its version resource: ...
+```
 
 A clone made before `.gitattributes` kept `web/vendor/` out of line-ending
 conversion still holds those files with CRLF when `core.autocrlf` is on, which

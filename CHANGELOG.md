@@ -15,6 +15,10 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+- Name Datadorelix as the company, dbt-edith as the product and its version
+  in the Windows `.exe`'s properties, which an antivirus reads on an unsigned
+  file, and refuse a cross-built `.exe` without them (0093).
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,

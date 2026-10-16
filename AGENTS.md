@@ -215,6 +215,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
+| change what the `.exe`'s properties say, or what a Windows build does without `windres` | [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md) |
 | change what a feature does, or check what it does now | its page in [docs/features/](docs/features/) |
 | add a picture to the README, or retake them | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
@@ -267,7 +268,7 @@ src/settings.rs       per-project settings, kept outside the project
 src/venv.rs           which Python environment is in play
 src/files.rs          filesystem access, confined to the project root
 src/pty.rs            one PTY per terminal connection
-build.rs              stamps the binary with git describe, so two builds of one release can be told apart
+build.rs              stamps the binary with git describe, so two builds of one release can be told apart, and names its publisher in a Windows .exe
 web/                  UI: no framework, CodeMirror 5 and xterm.js are vendored
 web/app.js            the shell, including the document outline behind the breadcrumbs and the exported page
 web/lineage.js        layered graph layout and SVG renderer, model, column and selection modes, and the snapshot an export is made of
