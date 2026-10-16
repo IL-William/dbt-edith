@@ -1,6 +1,6 @@
 # 0064. Project-wide reports open in a panel over the editor and the dock
 
-Date: 2026-10-11 · Status: accepted, amended by 0070 and 0075 · Amends 0059 and 0063
+Date: 2026-10-11 · Status: accepted, amended by 0070, 0075 and 0091 · Amends 0059 and 0063
 
 **Trigger:** read before adding a report, or changing what opens or closes the
 Reports panel, what its button counts, or when a report's file is read.
@@ -54,3 +54,6 @@ next.
 
 The panel is the place for every later report: each brings a section, a field
 in the index, and the file it reads, read when its section is shown.
+*Amended by [0091](0091-what-speaks-of-the-whole-project-opens-in-a-panel.md):
+the panel is one of several, each rolled down over the editor and the dock
+by the same mechanism, one at a time.*
