@@ -84,7 +84,10 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   guard in `src/api.rs`, and no CORS header is ever added (0015). Every
   `/api/` and `/ws/` route also wants the key the launch printed (0052).
 - **Nothing in the project runs on its own.** Learn about a venv from its files,
-  never by running it, and never run one git tracks (0053).
+  never by running it, and never run one git tracks (0053), nor a collin git
+  tracks, beside the binary or on the PATH (0094). A link the repository
+  commits is held to the project, a `profiles.yml` included; one the user made
+  outside it, a dotfiles one, is followed and kept (0094).
 - **Bump the version in `Cargo.toml`** for anything anyone installs, and turn
   `## Unreleased` into `## <version> - <date>` in the same pull request: CI
   refuses one without the other. Merging it is the whole release: the release
@@ -161,16 +164,16 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the location table or the environment selector | [0010](docs/decisions/0010-moved-compares-parsed-with-built.md) |
 | persist anything, or add a write endpoint | [0011](docs/decisions/0011-settings-outside-the-project.md) |
 | add a field to a payload, a log line or a route | [0012](docs/decisions/0012-secrets-and-boundaries.md), [0017](docs/decisions/0017-the-profile-is-reachable.md) |
-| change which `profiles.yml` is opened, or when it can be | [0049](docs/decisions/0049-the-profile-is-found-where-dbt-looks.md) |
+| change which `profiles.yml` is opened, or when it can be, or how it is saved | [0049](docs/decisions/0049-the-profile-is-found-where-dbt-looks.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md) |
 | change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | change what a tab does when its file changes on disk, or what a save checks first | [0067](docs/decisions/0067-an-open-tab-follows-its-file-on-disk.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
 | add a route, change the port logic, or add a CORS header | [0015](docs/decisions/0015-the-browser-is-not-trusted.md), [0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md) |
-| run a program found in the project, or ask a venv what it holds | [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md) |
+| run a program found in the project, or ask a venv what it holds | [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md) |
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
-| start collin, change when it runs, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md) |
+| start collin, change when it runs or where it is looked for, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md), [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | hide the Reports button, or change what it says with no report | [0075](docs/decisions/0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md) |

@@ -45,7 +45,18 @@ cargo install --locked --git https://github.com/IL-William/dbt-collin collin-cli
 ```
 
 Where cargo is not available, copy a `collin.exe` built elsewhere beside
-`dbt-edith.exe`.
+`dbt-edith.exe`, in a folder git does not track.
+
+**A collin git tracks does not run.** One the repository commits came with it,
+not from you, and a `dbt-edith.exe` copied into the project would otherwise run
+it the moment Collin is picked. dbt-edith asks git about the collin it finds,
+beside itself or on the `PATH`, passes over one that git tracks and goes on to
+the next. The column lineage menu then says, under Collin, `Not run: git tracks
+<path>, so it came with a repository`, and with no other collin found the
+Columns tab says the same and Collin's entry offers the install. Your own copy
+beside `dbt-edith.exe`, which git does not track, runs as before; one copied
+over a file git tracks is still that tracked file, and is passed over too
+([0094](../decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md)).
 
 **Other collin versions sit beside it.** "Install another collin version…",
 under Collin in the menu, asks for a version and types the command that

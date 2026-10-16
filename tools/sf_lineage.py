@@ -70,7 +70,21 @@ def profiles_path(profiles_dir: str | None) -> Path:
         found = Path("profiles.yml")
     else:
         found = Path.home() / ".dbt" / "profiles.yml"
+    held(found)
     return found.resolve()
+
+
+def held(found: Path) -> None:
+    """A profiles.yml in a folder of the project, which runs this script, is a
+    file of the repository, and a link it commits there may name any file of
+    yours: one leading out of the project is not read, as dbt-edith does not
+    open it (0094). One outside the project is yours, and its links are
+    followed as dbt follows them."""
+    project = Path.cwd().resolve()
+    inside = lambda p: p == project or project in p.parents  # noqa: E731
+    if inside(found.parent.resolve()) and not inside(found.resolve()):
+        die("profiles.yml in the project links to a file outside it, so it is not read. "
+            "dbt still follows the link: start dbt-edith with DBT_PROFILES_DIR set to the folder it links to")
 
 
 def profile_outputs(profile: str, profiles_dir: str | None):
@@ -85,6 +99,10 @@ def profile_outputs(profile: str, profiles_dir: str | None):
         die(f"no profiles.yml at {path}")
 
     doc = yaml.safe_load(path.read_text()) or {}
+    # Anything but a mapping is no profile, and the message below would list
+    # it: a string's characters, a list's items, whatever the file holds.
+    if not isinstance(doc, dict):
+        die(f"{path} is not a dbt profile: it holds no profile names")
     if profile not in doc:
         die(f"profile {profile!r} not in {path} (found: {', '.join(k for k in doc if k != 'config')})")
     return doc[profile], path

@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+- Pass over a collin that git tracks, beside dbt-edith or on the `PATH`, since
+  it came with a repository, and say under Collin in the column lineage menu
+  and in the Columns tab which one was not run and why (0094).
+- Keep `profiles.yml` a link when saving it from the page: the file the link
+  points at takes the change, its mode kept, rather than a plain file taking
+  the link's place.
+- Refuse to open a `profiles.yml` in the project that links to a file outside
+  it, and say why on its button, rather than serve whatever file it names; the
+  Snowflake script refuses it too, and never lists what a profile that is no
+  mapping holds in its error.
+- Refuse a link through a folder that is not there and back, and on Windows a
+  path segment naming a drive, such as `C:x`, as paths that leave the project.
+
 ## 1.28.0 - 2026-10-16
 
 - Print one column's lineage from the command line with `--column model.column`,

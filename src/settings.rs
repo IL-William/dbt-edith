@@ -195,6 +195,20 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))
 }
 
+/// `write_atomic` of the file a link names, keeping the link. For the dbt
+/// profile alone, which a dotfiles repository commonly links into `~/.dbt`:
+/// renamed over, the link became a plain file, silently, and edits to the
+/// dotfiles stopped reaching dbt (0094). Not the default, since every other
+/// caller writes into the config directory or the project's target
+/// directory, where a link a repository commits would carry the write out of
+/// the project. A plain file is written exactly as `write_atomic` writes it.
+pub(crate) fn write_atomic_through_link(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => write_atomic(&std::fs::canonicalize(path)?, bytes),
+        _ => write_atomic(path, bytes),
+    }
+}
+
 /// Writes a file only its owner can read from the moment it exists: the bytes
 /// may be a profile's password, and a file created through the umask is
 /// readable by every account on the machine until its mode is narrowed, long
@@ -382,6 +396,60 @@ mod tests {
         std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o644)).unwrap();
         write_atomic(&shared, b"after\n").unwrap();
         assert_eq!(std::fs::metadata(&shared).unwrap().permissions().mode() & 0o777, 0o644);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A profile linked into `~/.dbt` from a dotfiles repository stays a link
+    /// once saved: the file it names takes the new text and keeps its mode,
+    /// through a chain of links too (0094). On main the save replaced the
+    /// link with a plain file. `write_atomic` itself still replaces a link,
+    /// which is what keeps a cache under the project's target directory from
+    /// being written through one a repository commits.
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_saved_through_a_link_keeps_the_link() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let dir = std::env::temp_dir().join(format!("dbt-edith-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (dotfiles, dbt) = (dir.join("dotfiles").join("dbt"), dir.join("home").join(".dbt"));
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::create_dir_all(&dbt).unwrap();
+        let real = dotfiles.join("profiles.yml");
+        std::fs::write(&real, b"before\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let link = dbt.join("profiles.yml");
+        symlink("../../dotfiles/dbt/profiles.yml", &link).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let strays = |d: &Path| -> Vec<String> {
+            std::fs::read_dir(d).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("tmp-")).collect()
+        };
+
+        write_atomic_through_link(&link, b"after\n").unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "the link is still a link");
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "after\n");
+        assert_eq!(mode(&real), 0o600);
+        assert!(strays(&dbt).is_empty() && strays(&dotfiles).is_empty());
+
+        // A link to a link: the file at the end of the chain is the one written.
+        let hop = dir.join("home").join("hop.yml");
+        symlink(&real, &hop).unwrap();
+        std::fs::remove_file(&link).unwrap();
+        symlink(&hop, &link).unwrap();
+        write_atomic_through_link(&link, b"again\n").unwrap();
+        assert!(std::fs::symlink_metadata(&hop).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "again\n");
+
+        // A plain file is written as write_atomic writes it.
+        let plain = dbt.join("plain.yml");
+        std::fs::write(&plain, b"before\n").unwrap();
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o640)).unwrap();
+        write_atomic_through_link(&plain, b"after\n").unwrap();
+        assert_eq!((std::fs::read_to_string(&plain).unwrap().as_str(), mode(&plain)), ("after\n", 0o640));
+
+        // The plain write still takes the link's place and leaves its target alone.
+        write_atomic(&link, b"replaced\n").unwrap();
+        assert!(!std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "again\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

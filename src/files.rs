@@ -97,13 +97,20 @@ fn joined(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
     for seg in rel.replace('\\', "/").split('/') {
         match seg {
             "" | "." => continue,
-            ".." => anyhow::bail!("path escapes the project root"),
-            // A drive letter: on Windows `push` would replace the root with it.
-            s if s.ends_with(':') => anyhow::bail!("path escapes the project root"),
+            s if leaves_by_spelling(s, cfg!(windows)) => anyhow::bail!("path escapes the project root"),
             s => out.push(s),
         }
     }
     Ok(out)
+}
+
+/// A segment that takes a path out of the root by its spelling alone: `..`,
+/// or a drive. A bare `C:` anywhere, and on Windows any colon at all: `C:x`
+/// is relative to the current folder of drive C, and `push` replaces the
+/// root with it. A Windows file name holds no colon of its own, so none is
+/// lost there; elsewhere `a:b.sql` is an ordinary name.
+fn leaves_by_spelling(seg: &str, windows: bool) -> bool {
+    seg == ".." || seg.ends_with(':') || (windows && seg.contains(':'))
 }
 
 /// `out`, refused when a link takes it out of the project. Apart from `resolve`
@@ -128,6 +135,13 @@ fn confined(root: &Path, canon_root: &Path, out: PathBuf) -> anyhow::Result<Path
     // diffed) is judged by its nearest existing ancestor.
     let mut probe = pointed.as_path();
     while !probe.exists() {
+        // A `..` after a folder that is not there: `parent` drops the two
+        // together, which the disk does not, so `nodir/../../x` was judged as
+        // the folder it started from. Made between the check and the write,
+        // `nodir` lets the `..` count, and the write lands outside.
+        if probe.ends_with("..") {
+            anyhow::bail!("path escapes the project root");
+        }
         probe = probe.parent().unwrap_or(root);
     }
     let canon = probe.canonicalize()?;
@@ -854,8 +868,44 @@ mod tests {
             std::os::unix::fs::symlink(&planted, dir.join("models").join("hop2.sql")).unwrap();
             std::os::unix::fs::symlink("hop2.sql", dir.join("models").join("hop1.sql")).unwrap();
             assert!(resolve(&root, "models/hop1.sql").is_err());
+            // Through a folder that is not there and back: judged by its
+            // spelling, `nodir/..` cancelled out and it passed on main, and a
+            // `nodir` made before the write took it outside.
+            std::os::unix::fs::symlink("../nodir/../../outside/escape.txt", dir.join("models").join("lexical")).unwrap();
+            assert!(resolve(&root, "models/lexical").is_err());
+            std::fs::create_dir_all(dir.join("nodir")).unwrap();
+            assert!(resolve(&root, "models/lexical").is_err(), "with the folder there, the link plainly leaves");
+            // A link into a folder a generator has not made yet stays a new file.
+            std::os::unix::fs::symlink("../later/x.sql", dir.join("models").join("later.sql")).unwrap();
+            assert!(resolve(&root, "models/later.sql").is_ok());
         }
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A drive in a segment replaces the root when pushed: `C:` everywhere,
+    /// and on Windows `C:x` too, relative to drive C's current folder. A
+    /// colon elsewhere is part of a name. On main `C:x` passed the spelling.
+    #[test]
+    fn a_drive_leaves_the_root_by_its_spelling() {
+        for (seg, windows, leaves) in [
+            ("..", false, true),
+            ("C:", false, true),
+            ("C:", true, true),
+            ("C:x", true, true),
+            ("a.sql:stream", true, true),
+            ("C:x", false, false),
+            ("a:b.sql", false, false),
+            ("orders.sql", true, false),
+            ("...", true, false),
+        ] {
+            assert_eq!(leaves_by_spelling(seg, windows), leaves, "{seg} on windows={windows}");
+        }
+        #[cfg(windows)]
+        {
+            let root = std::env::temp_dir().canonicalize().unwrap();
+            assert!(resolve(&root, "C:x").is_err());
+            assert!(resolve(&root, "models/C:x").is_err());
+        }
     }
 }

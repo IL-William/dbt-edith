@@ -509,6 +509,41 @@ class Profile(ScriptTest):
         (self.project / "profiles.yml").unlink()
         self.assertEqual(role(), "from_home")
 
+    @unittest.skipIf(os.name == "nt", "a link needs a privilege on Windows")
+    def test_a_project_profile_linking_out_is_not_read(self):
+        # The project's profiles.yml names a file of the user's, here a key
+        # that parses as a string: on main its characters ended up listed in
+        # the error the page shows (0094).
+        key = self.home / "id_ed25519"
+        key.write_text('"-----BEGIN OPENSSH PRIVATE KEY-----"')
+        (self.project / "profiles.yml").unlink()
+        (self.project / "profiles.yml").symlink_to(key)
+        code, lines, err = self.serve({"op": "quit"})
+        self.assertEqual(code, 2)
+        self.assertIn("links to a file outside it", err)
+        self.assertNotIn("PRIVATE", err)
+        self.assertNotIn("O, P, E, N", err)
+
+        # One the user keeps outside the project is followed, as dbt does.
+        self.write(self.home, profiles(role="from_dotfiles"))
+        (self.project / "profiles.yml").unlink()
+        (self.home / ".dbt" / "profiles.yml").symlink_to(self.home / "profiles.yml")
+        self.assertEqual(sf.load_profile("shop", None, None)[0]["role"], "from_dotfiles")
+
+        # And one that stays in the project is a file of it.
+        (self.project / "config").mkdir()
+        self.write(self.project / "config", profiles(role="from_config"))
+        (self.project / "profiles.yml").symlink_to("config/profiles.yml")
+        self.assertEqual(sf.load_profile("shop", None, None)[0]["role"], "from_config")
+
+    def test_a_profile_that_is_no_mapping_is_not_listed_in_the_error(self):
+        (self.home / ".dbt" / "profiles.yml").write_text('"hunter2"')
+        (self.project / "profiles.yml").unlink()
+        code, lines, err = self.serve({"op": "quit"})
+        self.assertEqual(code, 2)
+        self.assertIn("is not a dbt profile", err)
+        self.assertNotIn("h, u, n", err)
+
     def test_dbt_target_is_read_the_way_dbt_reads_it(self):
         self.assertEqual(sf.load_profile("shop", None, None)[1], "dev")
         os.environ["DBT_TARGET"] = "prod"
