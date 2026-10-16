@@ -240,13 +240,12 @@ fn plain(reason: &str) -> String {
     }
 }
 
-/// Asks GitHub, from the temporary directory: `ls-remote` on a URL needs no
-/// repository, and none is looked for above it, so no project's git
-/// configuration has a say in it. The user's own has, as in their pulls: a
-/// proxy the machine needs above all. Every release, newest first, or why
-/// there is no answer.
-pub fn ask() -> Result<Vec<String>, String> {
-    let listed = crate::git::ls_remote_tags(&std::env::temp_dir(), REPO).map_err(|e| plain(&e))?;
+/// Asks GitHub, from `scratch`: `ls-remote` on a URL needs no repository, and
+/// none is looked for above it, so no project's git configuration has a say
+/// in it. The user's own has, as in their pulls: a proxy the machine needs
+/// above all. Every release, newest first, or why there is no answer.
+pub fn ask(scratch: &Path) -> Result<Vec<String>, String> {
+    let listed = crate::git::ls_remote_tags(scratch, REPO).map_err(|e| plain(&e))?;
     let found = releases(&listed);
     if found.is_empty() {
         return Err("GitHub listed no release".to_string());
@@ -258,10 +257,29 @@ pub fn ask() -> Result<Vec<String>, String> {
 /// is one pull request, squashed into one commit whose subject is its title,
 /// and the release workflow tags that commit (0045), so the tagged commits are
 /// all it takes: fetched through git, as the look is, without a file.
-pub fn titles(versions: Vec<String>) -> Result<Vec<(String, String)>, String> {
+pub fn titles(scratch: &Path, versions: Vec<String>) -> Result<Vec<(String, String)>, String> {
     let tags: Vec<String> = versions.iter().map(|v| format!("v{v}")).collect();
-    let found = crate::git::tag_subjects(&std::env::temp_dir(), REPO, &tags).map_err(|e| plain(&e))?;
+    let found = crate::git::tag_subjects(scratch, REPO, &tags).map_err(|e| plain(&e))?;
     Ok(found.into_iter().filter_map(|(tag, subject)| Some((tag.strip_prefix('v')?.to_string(), title(&subject)))).collect())
+}
+
+/// Where git runs for a look, given the file the answer is kept in: its
+/// directory, the config one, which is the user's own, rather than the
+/// temporary one, which on a shared machine is every account's. There,
+/// another account could put a directory or a link where the titles'
+/// repository is made, under a name the pid makes predictable, or a `.git` for
+/// `ls-remote` to find. Without a config directory, or when it cannot be made,
+/// the temporary one serves, and the repository is then made only where
+/// nothing was before (`git::tag_subjects`). Called inside the look, once it
+/// is due, so a check with nothing to do makes nothing.
+fn look_dir(file: Option<&Path>) -> PathBuf {
+    if let Some(dir) = file.and_then(Path::parent) {
+        let _ = std::fs::create_dir_all(dir);
+        if dir.is_dir() {
+            return dir.to_path_buf();
+        }
+    }
+    std::env::temp_dir()
 }
 
 pub fn now_secs() -> u64 {
@@ -412,13 +430,17 @@ impl Update {
     /// Looks for a newer release unless the answer kept, here or by another
     /// dbt-edith in the file, still stands.
     pub async fn check(&self) {
-        self.look(now_secs(), false, ask, titles).await
+        let (asked, titled) = (self.file.clone(), self.file.clone());
+        self.look(now_secs(), false, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v))
+            .await
     }
 
     /// Looks now, whatever is kept: the menu's button. Not while a look is
     /// already on its way, whose answer this one would only repeat.
     pub async fn check_now(&self) {
-        self.look(now_secs(), true, ask, titles).await
+        let (asked, titled) = (self.file.clone(), self.file.clone());
+        self.look(now_secs(), true, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v))
+            .await
     }
 
     /// `ask` lists the releases; `titler` names the ones this dbt-edith is
@@ -654,6 +676,22 @@ mod tests {
     fn touch(path: &Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, "").unwrap();
+    }
+
+    /// The look runs from the config directory, made on the way, and from the
+    /// temporary one when there is none or it cannot be made, as 1.25.0 did
+    /// everywhere: a locked-down home must not stop the look.
+    #[test]
+    fn the_look_runs_from_the_config_directory_or_the_temporary_one() {
+        let dir = scratch("lookdir");
+        let file = dir.join("config").join("update.json");
+        assert_eq!(look_dir(Some(&file)), dir.join("config"));
+        assert!(dir.join("config").is_dir(), "made on the way");
+        std::fs::write(dir.join("blocker"), "").unwrap();
+        let blocked = dir.join("blocker").join("config").join("update.json");
+        assert_eq!(look_dir(Some(&blocked)), std::env::temp_dir());
+        assert_eq!(look_dir(None), std::env::temp_dir());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

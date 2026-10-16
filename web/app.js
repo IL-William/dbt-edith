@@ -432,13 +432,20 @@ function scanVars(text) {
 /* The line under a variable's value, saying where the value came from. Pure, so
    the wording can be checked without a DOM. `env` is the chosen file's name, or
    '' when this tab is showing the manifest as dbt parsed it. */
+/* Why a value is hidden: the server says whether its name or its value gave
+   it away, and a value found out by its name is the usual case. */
+function hiddenWhy(row) {
+  return row.redacted === 'value'
+    ? 'hidden because the value carries a password'
+    : 'hidden because the name reads as a credential';
+}
+
 function varNote(row, env) {
   const names = (row.vars || []).join(', ');
   const where = env || 'any environment file';
   if (row.redacted) {
-    return row.status === 'env' || row.status === 'placeholder'
-      ? `set in ${where}, hidden because the name reads as a credential`
-      : 'hidden because the name reads as a credential';
+    const why = hiddenWhy(row);
+    return row.status === 'env' || row.status === 'placeholder' ? `set in ${where}, ${why}` : why;
   }
   switch (row.status) {
     case 'env':
@@ -4106,19 +4113,25 @@ function selectWarnings(list) {
   return seen.length <= 4 ? seen : seen.slice(0, 4).concat(`and ${seen.length - 4} more`);
 }
 
+/* What the shell still acts on between double quotes, and what the line
+   editor acts on: a selection carrying one is not typed at all, since
+   dropping the character would type a name other than the one resolved. The
+   same set as the server's (src/command.rs), C1 controls and the typographic
+   double quotes PowerShell reads as `"` included. */
+const SHELL_ACTS_ON = /["$`\\!\u0000-\u001f\u007f-\u009f“”„]/;
+
 /* The command that should print the same list, for checking this build against
-   dbt itself. No escaping: the server strips quotes while parsing, so what
-   comes back can never contain one. */
+   dbt itself, or nothing when it could not be typed as it is. */
 function lsCommand(select, exclude) {
-  const quote = (s) => '"' + String(s).replace(/"/g, '') + '"';
-  const tail = exclude ? ` --exclude ${quote(exclude)}` : '';
-  return `dbt ls --select ${quote(select)}${tail} --output name`;
+  if (SHELL_ACTS_ON.test(String(select)) || SHELL_ACTS_ON.test(String(exclude))) return '';
+  const tail = exclude ? ` --exclude "${exclude}"` : '';
+  return `dbt ls --select "${select}"${tail} --output name`;
 }
 
 /* A named selector's command has nothing else to carry: dbt ignores --select
    and --exclude beside --selector, and so does the box. */
 function selectorCommand(name) {
-  return `dbt ls --selector "${String(name).replace(/"/g, '')}" --output name`;
+  return SHELL_ACTS_ON.test(String(name)) ? '' : `dbt ls --selector "${name}" --output name`;
 }
 
 /* What was resolved, in the box's own words. */
@@ -6539,9 +6552,10 @@ function relinkTools() {
   $('#select-ls').addEventListener('click', () => {
     const sub = S.selectSub;
     const named = sub ? sub.selector : boxSelector(box.value);
-    if (named) return sendToTerminal(selectorCommand(named));
-    if (!sub) return toast('run a selection first', 'err');
-    sendToTerminal(lsCommand(sub.select, sub.exclude || ''));
+    if (!named && !sub) return toast('run a selection first', 'err');
+    const command = named ? selectorCommand(named) : lsCommand(sub.select, sub.exclude || '');
+    if (!command) return toast('not typed: the selection holds a character the shell would act on', 'err');
+    sendToTerminal(command);
   });
   $('#select-named').addEventListener('click', (e) => openSelectorMenu(e.currentTarget));
   $('#stop-at').addEventListener('click', (e) => openStopAt(e.currentTarget));
@@ -9138,12 +9152,13 @@ function fillVarCard(el, t) {
       return show(null, miss, body.file, 'warn');
     }
     const lines = [];
-    // A redacted value is never shown, but the expression that produced it is
-    // text from the repository, so "as written" still earns its place.
+    // A redacted value is never shown, nor the expression that produced it:
+    // the server blanks `raw` too, since an `env_var()` default may be the
+    // secret itself.
     const value = row.null || row.redacted ? null : (row.resolved !== undefined ? row.resolved : row.raw);
     if (row.null) lines.push('declared with no value, so var() returns null');
     if (row.status) lines.push(varNote(row, envLabel));
-    else if (row.redacted) lines.push('hidden because the name reads as a credential');
+    else if (row.redacted) lines.push(hiddenWhy(row));
     if (row.status && row.raw) lines.push('as written: ' + row.raw);
     show(value, lines.filter(Boolean).join('\n'), `${body.file}:${row.line}`, row.redacted ? 'warn' : '');
   }).catch(() => show(null, 'could not read dbt_project.yml', '', 'warn'));

@@ -789,6 +789,24 @@ identical, and fails on a file it does not list. Dependabot proposes a version
 a week after it is published. `cargo vet` was measured against the public
 registries, 24 of 129 crates covered at these versions, and not adopted yet.
 
+Security pass of 2026-10-15 (1.25.1). A review of `main` with a server up on
+an invented project found six gaps, each needing the launch key or a hostile
+file in the project, none a way past the key, all closed here. The compiled
+SQL route joined whatever path the manifest recorded onto `target/`, and
+`/etc/hosts` came back: candidates are relative now and confined to the target
+directory, as the browser's paths are to the project. The profile's redaction
+missed a value written on the line after its key, and a placeholder saved at
+a deeper indentation got its block put back level with the key, where the
+next showing sent it in clear: the line below is judged, and the block moves
+with its key. A link in the project to a file not there yet passed as a new
+file, and the write created it outside. The hover card's vocabulary lacked
+`PASS`, `DSN` and connection URLs, and a password inside a URL is hidden now
+whatever the name. The release look ran git from the temporary directory,
+shared on Linux, under a name the pid made predictable: it runs from the
+config directory, and makes its repository only where nothing was. A selector
+name from a job file was typed with its control characters. Each has a test
+beside it, the link ones on Unix (0090).
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it

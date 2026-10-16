@@ -2131,12 +2131,30 @@ struct VarOut<'a> {
     /// than from the file, which the card has to be able to say.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     default_used: bool,
-    /// The name reads as a credential, so no value is returned (0019).
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    redacted: bool,
+    /// Why no value is returned (0019): "name" when the name reads as a
+    /// credential, "value" when the value carries a password in a URL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redacted: Option<&'static str>,
     /// Declared with no value, so var() returns null.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     null: bool,
+}
+
+/// Nothing of a hidden var leaves, not even the expression that produced it:
+/// an `env_var()` default may be the secret itself, and a literal committed to
+/// the repository rather than read from a .env is one 0012 does not reach,
+/// which is still no reason to hand it over.
+fn blank_hidden(row: &mut VarOut) {
+    if row.redacted.is_some() {
+        row.raw = "";
+        row.list = None;
+        row.resolved = None;
+    }
+}
+
+/// Whether a literal var, or any item of a list one, carries a credential.
+fn literal_carries_credential(raw: &str, list: Option<&[String]>) -> bool {
+    envs::carries_credential(raw) || list.is_some_and(|items| items.iter().any(|item| envs::carries_credential(item)))
 }
 
 #[derive(serde::Serialize)]
@@ -2145,8 +2163,9 @@ struct EnvVarOut {
     status: envs::Status,
     #[serde(skip_serializing_if = "Option::is_none")]
     value: Option<String>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    redacted: bool,
+    /// "name" or "value", as for a project var.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redacted: Option<&'static str>,
 }
 
 #[derive(serde::Serialize)]
@@ -2204,7 +2223,7 @@ async fn list_vars(State(st): State<Arc<AppState>>, Query(q): Query<VarsQuery>) 
             status: None,
             vars: Vec::new(),
             default_used: false,
-            redacted: envs::sensitive_name(&v.name),
+            redacted: envs::sensitive_name(&v.name).then_some("name"),
             null: v.null,
         };
         if v.jinja {
@@ -2212,19 +2231,25 @@ async fn list_vars(State(st): State<Arc<AppState>>, Query(q): Query<VarsQuery>) 
             // Reading from the file and falling back to the default written in
             // the call both end up as Env, and the card has to tell them apart.
             row.default_used = envs::used_default(&cell, &vars);
-            row.redacted = row.redacted || cell.vars.iter().any(|n| envs::sensitive_name(n));
+            if cell.vars.iter().any(|n| envs::sensitive_name(n)) {
+                row.redacted = row.redacted.or(Some("name"));
+            }
             row.status = Some(cell.kind);
             row.vars = cell.vars;
-            if !row.redacted {
+            // A password inside a URL is one whatever the variable is called.
+            if envs::carries_credential(&value) {
+                row.redacted = row.redacted.or(Some("value"));
+            }
+            if row.redacted.is_none() {
                 row.resolved = Some(value);
             }
-        } else if row.redacted {
-            // Committed to the repository rather than read from a .env, so 0012
-            // does not reach it. Handing over a credential because of where it
-            // happens to be written is still not a distinction worth defending.
-            row.raw = "";
-            row.list = None;
+        } else if row.redacted.is_none() && literal_carries_credential(&v.raw, v.list.as_deref()) {
+            // A literal, and each item of a list, is judged on what it carries
+            // too: `reports_conn: postgres://svc:hunter2@db/x` is a credential
+            // whatever the key is called.
+            row.redacted = Some("value");
         }
+        blank_hidden(&mut row);
         out.push(row);
     }
 
@@ -2232,11 +2257,17 @@ async fn list_vars(State(st): State<Arc<AppState>>, Query(q): Query<VarsQuery>) 
         .into_iter()
         .map(|name| {
             let (value, cell) = envs::lookup(&name, &vars);
-            let redacted = envs::sensitive_name(&name);
+            let redacted = if envs::sensitive_name(&name) {
+                Some("name")
+            } else if envs::carries_credential(&value) {
+                Some("value")
+            } else {
+                None
+            };
             EnvVarOut {
                 name,
                 status: cell.kind,
-                value: if redacted || cell.kind != envs::Status::Env && cell.kind != envs::Status::Placeholder {
+                value: if redacted.is_some() || cell.kind != envs::Status::Env && cell.kind != envs::Status::Placeholder {
                     None
                 } else {
                     Some(value)
@@ -3746,6 +3777,31 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hidden_var_keeps_nothing_of_its_text() {
+        let list = vec!["a".to_string()];
+        let mut row = VarOut {
+            name: "reports_url",
+            line: 3,
+            raw: "{{ env_var('REPORTS_URL', 'postgres://svc:hunter2@db.example.com/x') }}",
+            list: Some(&list),
+            resolved: Some("postgres://svc:hunter2@db.example.com/x".to_string()),
+            status: Some(envs::Status::Env),
+            vars: vec!["REPORTS_URL".to_string()],
+            default_used: true,
+            redacted: Some("value"),
+            null: false,
+        };
+        blank_hidden(&mut row);
+        assert!(row.raw.is_empty() && row.list.is_none() && row.resolved.is_none());
+        let mut shown = VarOut { redacted: None, raw: "{{ env_var('X', 'db') }}", ..row };
+        blank_hidden(&mut shown);
+        assert_eq!(shown.raw, "{{ env_var('X', 'db') }}");
+        assert!(literal_carries_credential("postgres://svc:hunter2@db.example.com/x", None));
+        assert!(literal_carries_credential("", Some(&["a".to_string(), "redis://:s3cret@cache/0".to_string()])));
+        assert!(!literal_carries_credential("raw_db", Some(&["a".to_string(), "b".to_string()])));
+    }
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// Past the cap, the names copied are the first by name, the way

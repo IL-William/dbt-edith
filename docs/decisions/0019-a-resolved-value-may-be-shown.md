@@ -1,6 +1,6 @@
 # 0019. A resolved value may reach the browser, under two guards
 
-Date: 2026-09-18 · Status: accepted · Amends 0017
+Date: 2026-09-18 · Status: accepted, amended by 0090 · Amends 0017
 
 **Trigger:** read before returning any value derived from a `.env` file.
 
@@ -27,6 +27,10 @@ hover card, subject to two guards, both server-side and both in `src/envs.rs`:
   It is applied only by the vars route: the location resolver legitimately reads
   names like `DBT_DB_RAW`, and a broad rule there would blank real schema names
   and quietly wreck `agreement` (0009).
+
+*Amended by [0090](0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md):
+a third guard hides a value carrying a password in a URL whatever its name,
+and `DB_PASS`, `SNOWFLAKE_DSN` and connection strings joined the vocabulary.*
 
 The Manage environments panel is unchanged: names, counts and an agreement
 percentage, never a value.

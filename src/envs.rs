@@ -176,15 +176,55 @@ fn is_secret(name: &str) -> bool {
 /// catches `PARTITION_KEY`, `DBT_UNIQUE_KEY` and `MONKEY`.
 pub fn sensitive_name(name: &str) -> bool {
     const ALWAYS: [&str; 10] = [
-        "PASSWORD", "PASSWD", "PWD", "PW", "SECRET", "TOKEN", "CREDENTIAL", "CREDENTIALS", "PRIVATE",
-        "PASSPHRASE",
+        "PASSWORD", "PASSWD", "PWD", "PW", "SECRET", "TOKEN", "CREDENTIAL", "CREDENTIALS", "PRIVATE", "PASSPHRASE",
     ];
+    // Only as the last token after a prefix: `DB_PASS` and `SNOWFLAKE_DSN` are
+    // credentials; `PASS_RATE`, `DQ_PASS_THRESHOLD`, Fivetran's
+    // `<pkg>__<table>_pass_through_columns` and dbt-exasol's `dsn`, a host
+    // and a port, are not.
+    const LAST: [&str; 2] = ["PASS", "DSN"];
     const BEFORE_KEY: [&str; 6] = ["API", "ACCESS", "PRIVATE", "SECRET", "ENCRYPTION", "SIGNING"];
+    // A connection string carries its password: `DATABASE_URL`, `DB_URI`,
+    // `CONN_STR`, `CONNECTION_STRING`. `POWER_BI_URL` is a place, and stays.
+    const BEFORE_URL: [&str; 4] = ["DATABASE", "DB", "CONNECTION", "CONN"];
     let upper = name.to_ascii_uppercase();
     let tokens: Vec<&str> = upper.split('_').filter(|t| !t.is_empty()).collect();
     tokens.iter().enumerate().any(|(i, t)| {
-        ALWAYS.contains(t) || (*t == "KEY" && i > 0 && BEFORE_KEY.contains(&tokens[i - 1]))
+        ALWAYS.contains(t)
+            || (LAST.contains(t) && i > 0 && i == tokens.len() - 1)
+            || (*t == "KEY" && i > 0 && BEFORE_KEY.contains(&tokens[i - 1]))
+            || (matches!(*t, "URL" | "URI" | "STR" | "STRING") && i > 0 && BEFORE_URL.contains(&tokens[i - 1]))
     })
+}
+
+/// Whether a value carries a credential whatever its name is called. No list
+/// of names is complete, and the value says so itself: a `password=` wherever
+/// a connection string puts one, in a URL's query, after a JDBC `;`, in an
+/// ODBC `Pwd=` or a libpq `password=` keyword; or a URL's userinfo,
+/// `postgres://me:hunter2@host/db`. The password may itself hold a `/`, `?`
+/// or `#`, which cuts the authority short of the `@`, so a `:` in the
+/// authority followed by something other than a port, with an `@` further on,
+/// is one too; `https://example.com/a:b@c` has no `:` in its authority and
+/// stays what it is. A URL's fragment is never one.
+pub fn carries_credential(value: &str) -> bool {
+    let as_parameter = value.split('#').next().unwrap_or("").split(|c: char| matches!(c, ';' | '&' | '?') || c.is_whitespace()).any(|pair| {
+        pair.split_once('=').is_some_and(|(key, password)| {
+            matches!(key.trim().to_ascii_lowercase().as_str(), "password" | "passwd" | "pwd") && !password.is_empty()
+        })
+    });
+    if as_parameter {
+        return true;
+    }
+    let Some(at) = value.find("://") else { return false };
+    let tail = &value[at + 3..];
+    let authority = &tail[..tail.find(['/', '?', '#']).unwrap_or(tail.len())];
+    match authority.rsplit_once('@') {
+        Some((userinfo, _)) => userinfo.split_once(':').is_some_and(|(_, password)| !password.is_empty()),
+        None => {
+            authority.split_once(':').is_some_and(|(_, rest)| !rest.is_empty() && !rest.bytes().all(|b| b.is_ascii_digit()))
+                && tail.split_whitespace().next().unwrap_or("").contains('@')
+        }
+    }
 }
 
 /// Whether an expression's value came from the defaults written in its
@@ -782,15 +822,38 @@ mod tests {
     fn sensitive_name_catches_credentials() {
         for name in ["SNOWFLAKE_PASSWORD", "DBT_API_KEY", "MY_TOKEN", "AZURE_CLIENT_SECRET",
                      "svc_passwd", "DB_CREDENTIALS", "SSH_PRIVATE_KEY", "A_PASSPHRASE",
-                     "SF_PW", "DB_PWD"] {
+                     "SF_PW", "DB_PWD", "DB_PASS", "DATABASE_URL", "DB_URI", "CONN_STR", "CONNECTION_STRING",
+                     "SNOWFLAKE_DSN"] {
             assert!(sensitive_name(name), "{name} should be treated as sensitive");
+        }
+    }
+
+    #[test]
+    fn a_value_with_a_password_in_its_url_is_a_credential_whatever_its_name() {
+        for value in ["postgres://me:hunter2@db.example.com:5432/shop", "redis://:s3cret@cache/0?ssl=true",
+                      "postgresql://db.example.com/shop?user=me&password=hunter2",
+                      "jdbc:snowflake://acct.snowflakecomputing.com/?user=me&PASSWORD=s3cret&role=r",
+                      "mssql://host/db?Pwd=x;Encrypt=true",
+                      "jdbc:sqlserver://db:1433;databaseName=x;user=me;password=hunter2",
+                      "Driver={ODBC Driver 18 for SQL Server};Server=db;Uid=me;Pwd=hunter2;",
+                      "host=db user=me password=hunter2",
+                      "postgres://me:ab/cd@db/x", "postgres://me:ab?cd@db/x", "postgres://me:ab#cd@db/x"] {
+            assert!(carries_credential(value), "{value}");
+        }
+        for value in ["postgres://me@db.example.com/shop", "https://example.com/a:b@c", "https://host:8080/x@y",
+                      "RAW_DB", "me:hunter2", "", "https://example.com/?password=",
+                      "https://example.com/docs?topic=password", "https://example.com/reset#password=x",
+                      "host=db user=me", "ssh://git@github.com:org/repo"] {
+            assert!(!carries_credential(value), "{value}");
         }
     }
 
     #[test]
     fn sensitive_name_leaves_ordinary_config_alone() {
         for name in ["DBT_UNIQUE_KEY", "PARTITION_KEY", "SORT_KEY", "MERGE_KEY", "KEYSTONE_SCHEMA",
-                     "MONKEY", "DBT_DB_RAW", "DBT_TARGET", "KEY", "POWER_BI_URL", "PWA_HOST"] {
+                     "MONKEY", "DBT_DB_RAW", "DBT_TARGET", "KEY", "POWER_BI_URL", "PWA_HOST", "API_URL",
+                     "BYPASS_CACHE", "DB_NAME", "PASSPORT_ID", "stripe__charge_pass_through_columns",
+                     "DQ_PASS_THRESHOLD", "PASS_RATE", "PASS", "DSN", "dsn", "DSN_TEMPLATE"] {
             assert!(!sensitive_name(name), "{name} should not be treated as sensitive");
         }
     }

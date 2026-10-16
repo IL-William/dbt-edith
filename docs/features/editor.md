@@ -100,8 +100,10 @@ with its line number rather than quietly skipped.
 Two things are never shown, both refused on the server rather than hidden in the
 page: a `DBT_ENV_SECRET_*`, which dbt itself marks as never renderable, and any
 variable whose name reads as a credential (`SNOWFLAKE_PASSWORD`, `DBT_API_KEY`,
-`SF_PW`). Those still show their name and whether the file defines them, which
-is usually the question anyway. Ordinary config keeps working: `PARTITION_KEY`
+`SF_PW`, `DATABASE_URL`), or whose value carries a password inside a URL,
+whatever it is called. Those still show their name, whether the file defines
+them, and which of the two gave them away, which is usually the question
+anyway. Ordinary config keeps working: `PARTITION_KEY`
 and `DBT_UNIQUE_KEY` are not credentials.
 
 ## Find

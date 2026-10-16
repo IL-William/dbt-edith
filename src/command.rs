@@ -150,6 +150,23 @@ impl Invocation {
     }
 }
 
+/// Why a selection cannot be typed into the terminal as it is, or nothing.
+/// `ls` puts it between double quotes, where the shell still acts on `$`, a
+/// backtick, `\\` and `!`, and a control character acts on the line editor;
+/// PowerShell, the Windows fallback, reads the typographic double quotes as
+/// `"` too. A job file is a project file and its selector is typed on a
+/// click, so the rule `src/pty.rs` applies to a path applies here. Refused
+/// rather than cleaned, so that the name typed is the name resolved.
+fn shell_acts_on(text: &str) -> Option<String> {
+    text.chars()
+        .find(|c| matches!(c, '"' | '\u{201c}' | '\u{201d}' | '\u{201e}' | '$' | '`' | '\\' | '!') || c.is_control())
+        .map(|c| match c {
+            '"' | '\u{201c}' | '\u{201d}' | '\u{201e}' => "a quote inside a selector".to_string(),
+            c if c.is_control() => "a control character inside a selector".to_string(),
+            c => format!("a `{c}` inside a selector, which the shell would act on"),
+        })
+}
+
 /// Flags that take no value and change nothing about what is selected.
 const SWITCHES: &[&str] = &[
     "--full-refresh", "-f", "--no-full-refresh", "--fail-fast", "-x", "--no-fail-fast", "--defer", "--no-defer",
@@ -425,10 +442,16 @@ pub fn read(line: &str) -> Result<Invocation, String> {
                 if v.dynamic {
                     return Err("a selection only known when the job runs, built with $, a backtick or a template".into());
                 }
-                if v.text.contains('"') {
-                    return Err("a quote inside a selector".into());
+                // Judged piece by piece: a newline or a tab between the terms
+                // of a quoted value, as a block scalar in a job file writes
+                // them, never reaches the terminal, since `ls` joins the
+                // pieces with spaces.
+                for piece in v.text.split_whitespace() {
+                    if let Some(why) = shell_acts_on(piece) {
+                        return Err(why);
+                    }
+                    into.push(piece.to_string());
                 }
-                into.extend(v.text.split_whitespace().map(str::to_string));
             }
             shown.push(flag.to_string());
             shown.extend(values.iter().map(|v| shown_word(&v.text)));
@@ -446,8 +469,8 @@ pub fn read(line: &str) -> Result<Invocation, String> {
             if value.dynamic {
                 return Err("a selector only known when the job runs, built with $, a backtick or a template".into());
             }
-            if value.text.contains('"') {
-                return Err("a quote inside a selector".into());
+            if let Some(why) = shell_acts_on(&value.text) {
+                return Err(why);
             }
             shown.push("--selector".to_string());
             shown.push(shown_word(&value.text));
@@ -637,6 +660,45 @@ mod tests {
         let inv = ok("dbt build --exclude-resource-type test");
         assert_eq!(inv.kinds(), Some(vec![Kind::Model, Kind::Seed, Kind::Snapshot]));
         assert_eq!(ok("dbt build --resource-type all").kinds().unwrap().len(), 4);
+    }
+
+    /// Inside quotes the shell keeps a carriage return or an escape, and the
+    /// terminal's line editor would act on it when the command is typed.
+    #[test]
+    fn a_selection_the_shell_would_act_on_is_refused_not_retyped() {
+        // Single quotes keep these literal in the job file, and double quotes
+        // would not in the terminal: no ls command, rather than one with the
+        // character dropped, which would type a name other than the one read.
+        for line in [
+            "test --selector 'night\rly'",
+            "run --select 'a\u{1b}[2Jb'",
+            "test --selector '$(touch /tmp/x)'",
+            "run --select '`id`'",
+            "run --select 'a\\b'",
+            "run --exclude 'a!b'",
+            "test --selector 'é\u{85}'",
+            "run --select 'a\u{201d};calc;\u{201c}b'",
+            "test --selector 'night\u{201e}ly'",
+        ] {
+            assert!(read(line).is_err(), "{line:?} was accepted");
+        }
+        assert_eq!(
+            ok("run --select 'tag:nightly+ é'").ls().unwrap(),
+            "dbt ls --select \"tag:nightly+ é\" --resource-type model --output name"
+        );
+        // A block scalar in a job file breaks a quoted value over lines and
+        // tabs; those never reach the terminal, since the pieces are joined
+        // with spaces, so the step reads as it did before.
+        assert_eq!(
+            ok("run --select 'model_a\n  model_b\tmodel_c\r\n'").ls().unwrap(),
+            "dbt ls --select \"model_a model_b model_c\" --resource-type model --output name"
+        );
+        // A C1 control that is whitespace to Rust and to Python alike, NEL,
+        // splits a `--select` the same way and is typed as the space it is.
+        assert_eq!(
+            ok("run --select 'é\u{85}b'").ls().unwrap(),
+            "dbt ls --select \"é b\" --resource-type model --output name"
+        );
     }
 
     #[test]

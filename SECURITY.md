@@ -27,7 +27,11 @@ the editor reads and writes their files.
   `Cross-Origin-Resource-Policy` and `Cross-Origin-Opener-Policy` set to
   `same-origin`.
 - **Every file path is confined to the opened project.** `..`, absolute paths,
-  drive letters and symlinks pointing out are refused. One file outside it is
+  drive letters and symlinks pointing out are refused, and so is a link to a
+  file that is not there, which a write would otherwise create outside. The
+  path the manifest records for a compiled file is held to the target
+  directory the same way, since a manifest is a file a repository can commit.
+  One file outside the project is
   reachable: the dbt profile, found where dbt looks for it, and served only by
   its own route. No path for it ever comes from the browser (0017, 0049). The
   clone route reads it as well, and sends only the active target's name,
@@ -51,7 +55,8 @@ the editor reads and writes their files.
   editor is for. The environments panel, by contrast, never returns a `.env`
   value, only names and counts. The hover card on a variable does show a
   resolved value, but never one whose name is a `DBT_ENV_SECRET_*` or reads as a
-  credential; both guards are server-side (0019). Searching across file contents
+  credential, nor one carrying a password in a URL; the guards are all
+  server-side (0019). Searching across file contents
   skips `.env` files entirely, since a search is a wide read nobody aimed at a
   particular file (0020). A `profiles.yml` kept inside the project is one of its
   files: opened from the tree, it shows as it is, like a `.env`.

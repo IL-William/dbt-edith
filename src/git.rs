@@ -558,8 +558,13 @@ pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(S
     static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let made = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = scratch.join(format!("dbt-edith-titles-{}-{made}", std::process::id()));
+    // Made here or not at all: `create_dir_all` takes a directory already
+    // there, which in a shared temporary directory could be another account's,
+    // planted under this predictable name, or a link into somewhere the fetch
+    // would then write. A leftover of our own from a crash is removed first;
+    // someone else's cannot be, and the look fails rather than use it.
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+    std::fs::create_dir(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     let ceiling = scratch.to_str().unwrap_or("");
     let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
     let answer = (|| {

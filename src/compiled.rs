@@ -127,16 +127,17 @@ fn under(inside: &str, kind: Kind) -> String {
     }
 }
 
-/// Where dbt would have written this artifact for this node. Its own record
-/// comes first where it left one. Then the packaged path before the bare one: a
-/// project and an installed package can hold a model of the same name, and the
-/// packaged one is the node we were asked about.
-fn candidates(target: &Path, kind: Kind, s: &Subject) -> Vec<PathBuf> {
+/// Where dbt would have written this artifact for this node, relative to the
+/// target directory. Its own record comes first where it left one. Then the
+/// packaged path before the bare one: a project and an installed package can
+/// hold a model of the same name, and the packaged one is the node we were
+/// asked about.
+fn candidates(kind: Kind, s: &Subject) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(inside) = inside_target(s.compiled) {
-        out.push(target.join(under(inside, kind)));
+        out.push(under(inside, kind));
     }
-    let dir = target.join(kind.dir());
+    let dir = kind.dir();
     // dbt writes a generic test into a directory named after the schema file
     // that declares it, one .sql per test. Only ever reached with no
     // compiled_path to read, because the file name is then a guess: the
@@ -148,17 +149,37 @@ fn candidates(target: &Path, kind: Kind, s: &Subject) -> Vec<PathBuf> {
             }
             let leaf = format!("{}/{stem}.sql", s.file);
             if !s.package.is_empty() {
-                out.push(dir.join(s.package).join(&leaf));
+                out.push(format!("{dir}/{}/{leaf}", s.package));
             }
-            out.push(dir.join(&leaf));
+            out.push(format!("{dir}/{leaf}"));
         }
     }
     if !s.package.is_empty() {
-        out.push(dir.join(s.package).join(s.file));
+        out.push(format!("{dir}/{}/{}", s.package, s.file));
     }
-    out.push(dir.join(s.file));
+    out.push(format!("{dir}/{}", s.file));
     out.dedup();
     out
+}
+
+/// The candidates that stay under the target directory once resolved, the
+/// way a path the browser sends is kept under the project. Every part of a
+/// candidate comes from the manifest, and a manifest is a file a repository
+/// can commit: a `..`, an absolute path or a link in it names a file outside,
+/// which is not read. Lazy, so a lookup stops at the first file found, as it
+/// did before the confinement. Nothing at all when the target directory is
+/// not there.
+fn confined<'a>(target: &'a Path, rels: &'a [String]) -> impl Iterator<Item = PathBuf> + 'a {
+    let canon = target.canonicalize().ok();
+    rels.iter().filter_map(move |rel| crate::files::resolve_under(target, canon.as_deref()?, rel).ok())
+}
+
+/// The mtime of a project file the manifest names, held to the project as a
+/// compiled path is held to the target directory: an `original_file_path`
+/// pointing outside is nothing, not the stat of a file the page could never
+/// open.
+fn input_mtime(root: &Path, rel: &str) -> u64 {
+    crate::files::resolve(root, rel).map(|p| mtime(&p)).unwrap_or(0)
 }
 
 /// Project-relative and slash-separated, or empty when the file is not under
@@ -173,13 +194,16 @@ fn relative(root: &Path, path: &Path) -> String {
 
 pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u64) -> CompiledInfo {
     let mut info = CompiledInfo { kind: kind.dir().to_string(), ..Default::default() };
-    let tried = candidates(target, kind, s);
-    let hit = tried.iter().find(|p| p.is_file());
+    let tried = candidates(kind, s);
+    let hit = confined(target, &tried).find(|p| p.is_file());
 
     let Some(path) = hit else {
-        info.candidates = tried.iter().map(|p| p.display().to_string()).collect();
+        // Every path probed, the refused ones included: where it looked is the
+        // answer to "why is there nothing", whatever the reason.
+        info.candidates = tried.iter().map(|rel| target.join(rel).display().to_string()).collect();
         return info;
     };
+    let path = &path;
 
     info.found = true;
     info.path = path.display().to_string();
@@ -198,9 +222,9 @@ pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u
     // A generic test's own file is the schema file that declares it, so calling
     // that one "the model file" would name it as something it is not.
     let own = if is_schema(s.file) { "the schema file" } else { "the model file" };
-    let mut inputs = vec![(mtime(&root.join(s.file)), own.to_string())];
+    let mut inputs = vec![(input_mtime(root, s.file), own.to_string())];
     if !s.yml.is_empty() && s.yml != s.file {
-        inputs.push((mtime(&root.join(s.yml)), "the schema file".to_string()));
+        inputs.push((input_mtime(root, s.yml), "the schema file".to_string()));
     }
     inputs.push((mtime(&root.join(PROJECT_FILE)), PROJECT_FILE.to_string()));
     // Any macro, not the ones this node calls. The manifest's `depends_on` lists
@@ -216,11 +240,7 @@ pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u
     // compiled sibling being newer is the run file's own question answered:
     // this model has been compiled since it was last executed.
     if kind == Kind::Run {
-        let sibling = candidates(target, Kind::Compiled, s)
-            .iter()
-            .find(|p| p.is_file())
-            .map(|p| mtime(p))
-            .unwrap_or(0);
+        let sibling = confined(target, &candidates(Kind::Compiled, s)).find(|p| p.is_file()).map(|p| mtime(&p)).unwrap_or(0);
         if sibling > info.compiled_at {
             info.reasons.push("compiled again after this was run".into());
         }
@@ -461,6 +481,36 @@ mod tests {
         assert!(kind("").is_none());
         assert!(kind("Run").is_none());
         assert!(kind("../compiled").is_none());
+    }
+
+    /// A manifest is a file the repository can commit, so the path it records
+    /// is no more trusted than one the browser sends: a `..`, an absolute
+    /// path or a link out of the target directory is refused rather than read.
+    #[test]
+    fn a_recorded_path_cannot_leave_the_target_directory() {
+        let dir = project(&[("secret.txt", "not for the page"), ("target/compiled/.keep", "")]);
+        for recorded in ["target/../secret.txt", "target/compiled/../../secret.txt"] {
+            let s = Subject { compiled: recorded, ..subject("models/marts/orders.sql") };
+            let info = look_up(&dir, &dir.join("target"), Kind::Compiled, &s, 1 << 20);
+            assert!(!info.found, "{recorded} was read");
+            assert!(info.content.is_empty());
+            assert!(!info.candidates.is_empty(), "where it looked is still reported");
+        }
+        // An absolute original_file_path is re-rooted under the target, not followed.
+        let outside = dir.join("secret.txt").display().to_string();
+        let s = Subject { file: &outside, ..subject("models/marts/orders.sql") };
+        let info = look_up(&dir, &dir.join("target"), Kind::Compiled, &s, 1 << 20);
+        assert!(!info.found, "{}", info.path);
+        #[cfg(unix)]
+        {
+            std::fs::create_dir_all(dir.join("elsewhere")).unwrap();
+            std::fs::write(dir.join("elsewhere/orders.sql"), "select 1").unwrap();
+            std::fs::create_dir_all(dir.join("target/compiled/shop/models")).unwrap();
+            std::os::unix::fs::symlink(dir.join("elsewhere"), dir.join("target/compiled/shop/models/marts")).unwrap();
+            let info = look(&dir, Kind::Compiled);
+            assert!(!info.found, "read through a link out of the target: {}", info.path);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The file name of a generic test is dbt's, not ours: a long generated
