@@ -6,16 +6,23 @@ It asks GitHub, through git, which releases there are, every hour from midnight
 to 09:00 Paris time and then not until the next midnight, so the first start of
 your day knows what came out overnight, wherever you are. When one is newer, a
 pill after the version in the status bar says so and a dot marks Edith at the
-top left. Clicking either opens the same menu: the version and build you run,
-every release since yours by the title of the pull request that released it,
-each linked to its notes, and, for a binary installed or built from a clone on
-that machine, the pull of `main` and the install typed into the terminal for
-you to run; restart dbt-edith once it finishes. Otherwise it says why it has no
-command. The menu also says when GitHub last answered, or what git said when it
-could not reach it, and when it asks next, and Check for updates asks again at
-once. Nothing about your project is sent, a failed look is tried again within
-the hour and stays out of the status bar, and `--no-update-check` turns it off
-(0068, 0079).
+top left. Resting the pointer on Edith opens a menu, as a click on either does:
+the version and build you run, every release since yours by the title of the
+pull request that released it, each linked to its notes, and, for a binary
+installed or built from a clone on that machine, the pull of `main` and the
+install typed into the terminal for you to run; restart dbt-edith once it
+finishes. Otherwise it says why it has no command. The menu also says when
+GitHub last answered, or what git said when it could not reach it, and when it
+asks next, and Check for updates asks again at once. Nothing about your project
+is sent, a failed look is tried again within the hour and stays out of the
+status bar, and `--no-update-check` turns it off (0068, 0079).
+
+Opened by the pointer, the menu closes once the pointer has left Edith and the
+menu, or at the next key, which goes on to the editor or the terminal you were
+typing in: it takes no focus. A click on Edith or in the menu keeps it open
+until a click elsewhere, a second click on Edith or Escape. While another menu
+is open, the GitHub one or a breadcrumb's say, resting on Edith opens nothing
+(0086).
 
 ## On Windows
 

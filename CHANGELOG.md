@@ -15,6 +15,11 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.26.0 - 2026-10-16
+
+- Open Edith's menu by resting the pointer on the name at the top left, no
+  click needed; a click there still opens it, and keeps it open (0086).
+
 ## 1.25.2 - 2026-10-16
 
 - Tell the lineage's two copies apart: Fit, Export and Copy image carry a glyph

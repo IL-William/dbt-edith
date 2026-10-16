@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-14.
+belongs here. Last updated 2026-10-16.
 
 ## Shipped
 
@@ -404,7 +404,8 @@ the active tab, which it never did while the bar overflowed. Not yet on the VM.
 
 A tab's own menu and a way back: right-click a tab for Close,
 Close others, Close to the right and Close saved, the app's first context menu;
-every other menu here is click-opened. `Cmd + Alt + P` and `Cmd + Alt + N` walk
+every other menu here is click-opened, but for Edith's, which opens under the
+pointer too since 1.26.0 (0086). `Cmd + Alt + P` and `Cmd + Alt + N` walk
 the two stacks of where following a link came from, with two chevrons before the
 breadcrumbs doing the same. Not `Alt + Left` and `Alt + Right`: CodeMirror binds
 those in both keymaps, and moving by word is worth more than the history. They
@@ -1823,8 +1824,8 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The 2026-10-14 releases on the VM (1.18.0 to 1.25.0).** None was opened
-  on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
+- **The releases since 2026-10-14 on the VM (1.18.0 to 1.26.0).** None was
+  opened on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
   next `.exe`:
   - the config menu on a CRLF `dbt_project.yml` (1.18.1);
   - the lineage depth back at 1 (1.18.4);
@@ -1834,7 +1835,10 @@ both that route and the cross-compile.
   - find on the lineage (1.22.0);
   - the column stops (1.23.0);
   - macros in Cmd/Ctrl + K (1.24.0);
-  - the GitHub menu (1.25.0).
+  - the GitHub menu (1.25.0);
+  - the six gaps of the security review (1.25.1);
+  - Copy image told from Copy names (1.25.2);
+  - Edith's menu under the pointer (1.26.0).
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.

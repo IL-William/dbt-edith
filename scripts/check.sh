@@ -136,6 +136,22 @@ else
 fi
 
 echo
+echo "== Edith's menu in Chrome =="
+# The menu the name at the top left opens under the pointer (0086), driven by
+# a real pointer the same way, and skipped the same way.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+else
+  out=$("$py" scripts/walk_menu.py 2>&1)
+  case $? in
+    # A NOTE is a check the machine was too slow to make, which a count alone would hide.
+    0) echo "menu ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)"; printf '%s\n' "$out" | grep '^NOTE' || true ;;
+    2) printf '%s\n' "$out" | tail -1 ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "MENU FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
 echo "== browser tests =="
 if [ ! -x "$JSC" ] && ! command -v "$JSC" > /dev/null 2>&1; then
   echo "SKIPPED: no JavaScript shell at $JSC. Set JSC to one to run these."
