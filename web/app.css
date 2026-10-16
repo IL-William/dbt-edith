@@ -647,18 +647,19 @@ kbd {
 
 #editor-host { flex: 1; min-height: 0; }
 #diff-host { flex: 1; min-height: 0; position: relative; }
-/* The reports (0064), over the editor and the dock. Rolled up it is still laid
-   out, clipped to nothing, so the editor, the terminal and the canvas under it
-   never measure again; a class rather than .hidden, which no transition can
-   leave. Above the find bar (12), below the palette (50) and every popup. */
-.reports {
+/* A panel (0064, 0091), over the editor and the dock. Rolled up it is still
+   laid out, clipped to nothing, so the editor, the terminal and the canvas
+   under it never measure again; a class rather than .hidden, which no
+   transition can leave. Above the find bar (12), below the palette (50) and
+   every popup. */
+.panel {
   position: absolute; inset: 0; z-index: 30; display: flex; background: var(--bg);
   visibility: hidden; clip-path: inset(0 0 100% 0);
   transition: clip-path .2s ease-out, visibility 0s linear .2s;
 }
-.reports.open { visibility: visible; clip-path: inset(0); transition: clip-path .2s ease-out, visibility 0s; }
-.reports:focus { outline: none; }
-@media (prefers-reduced-motion: reduce) { .reports, .reports.open { transition: none; } }
+.panel.open { visibility: visible; clip-path: inset(0); transition: clip-path .2s ease-out, visibility 0s; }
+.panel:focus { outline: none; }
+@media (prefers-reduced-motion: reduce) { .panel, .panel.open { transition: none; } }
 .reports-nav { flex: 0 0 210px; overflow-y: auto; padding: 8px 0; background: var(--bg-2); border-right: 1px solid var(--line); }
 .reports-navrow {
   display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 12px;
