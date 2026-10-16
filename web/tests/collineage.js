@@ -505,3 +505,34 @@ check('a model that moved says how', collinMoveText({ a: 'inferred', b: 'parsed'
 check('a run older than the manifest says so',
       / before the manifest was last written/.test(collinSideNote({ version: '0.1.0', edges: 3, mtime: 100, report: true }, 200)), true);
 check('...and one without a report', / no report kept/.test(collinSideNote({ version: '0.1.0', edges: 3, mtime: 300 }, 200)), true);
+
+print('\n--- the stop at menu counts the canvas ---');
+eval(app.slice(app.indexOf('function stopAtRoles'), app.indexOf('let stopAtMenu')));
+var kinds = [{ kind: 'inferred', edges: 500 }, { kind: 'passthrough', edges: 400 }, { kind: 'unknown', edges: 9 },
+  { kind: 'rename', edges: 30 }, { kind: 'transform', edges: 3 }];
+var drawn = ['passthrough', 'transform', 'passthrough', '', 'transform', 'passthrough'];
+var roles = stopAtRoles(kinds, drawn, new Set(['window']));
+check('the roles on the canvas come first, busiest there first, then the rest in the cache\'s order',
+      roles.map(function (r) { return r.role + ' ' + r.here; }).join(', '),
+      'passthrough 3, transform 2, inferred 0, rename 0, window 0');
+check('the project\'s count is kept beside it', roles[0].total, 400);
+check('an edge with no role has a line of its own', unroled(roleCounts(drawn)), 1);
+check('...so the menu adds up to the edges the status line counts',
+      roles.reduce(function (s, r) { return s + r.here; }, 0) + unroled(roleCounts(drawn)), drawn.length);
+check('a role named unknown is no role either', unroled(roleCounts(['unknown', 'rename'])), 1);
+check('no graph yet counts nothing', stopAtRoles(kinds, null, new Set()).map(function (r) { return r.here; }).join(''), '0000');
+
+print('\n--- a column\'s Lineage cell ---');
+eval(app.slice(app.indexOf('function columnReach(c'), app.indexOf('function catalogColumns')));
+var col = { up: 0, down: 1 };
+var reach = columnReach(col, { up: 0, down: 10 });
+check('the cell counts the whole chain', reach.up + ' ' + reach.down, '←0 10→');
+check('hovering it says one level as well', reach.title,
+      'directly: 0 columns upstream, 1 downstream\nin all: 0 upstream, 10 downstream');
+check('one column reads as one', columnReach({ up: 1, down: 0 }, { up: 3, down: 0 }).title.split('\n')[0],
+      'directly: 1 column upstream, 0 downstream');
+check('while the chain is on its way, no figure stands for it', columnReach(col, undefined).up + ' ' + columnReach(col, undefined).down,
+      '←… …→');
+check('a chain that could not be had leaves the one level, said as such',
+      columnReach(col, null).up + ' ' + columnReach(col, null).down + ' | ' + columnReach(col, null).title,
+      '←0 1→ | directly: 0 columns upstream, 1 downstream\nthe whole chain could not be counted');

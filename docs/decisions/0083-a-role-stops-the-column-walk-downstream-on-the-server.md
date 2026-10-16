@@ -1,6 +1,6 @@
 # 0083. A role stops the column walk downstream, on the server
 
-Date: 2026-10-14 · Status: accepted
+Date: 2026-10-14 · Status: accepted, amended by 0089
 
 **Trigger:** read before hiding part of a column graph by role, or making
 the column walk skip an edge.

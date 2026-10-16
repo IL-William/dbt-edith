@@ -90,6 +90,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0084](0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) | A macro is searched by its name, and opens on its line | changing what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands |
 | [0085](0085-what-is-installed-is-what-was-audited.md) | What is installed is what was audited | writing an install or build command into the docs or the status bar, adding or replacing a file under `web/vendor/`, or changing how Dependabot bumps the lockfile |
 | [0086](0086-edith-s-menu-opens-under-the-pointer.md) | Edith's menu opens under the pointer | opening a menu under the pointer, or changing what closes or holds one |
+| [0089](0089-a-column-count-says-what-it-counts.md) | A column count says what it counts: the canvas, or the whole chain | changing the stop at menu's counts, or what the Catalog's Lineage cell counts |
 | [0090](0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) | A credential is hidden by its value as well as its name | changing what the hover card or the profile form hides, or the vocabulary `sensitive_name` and `secret_key` share |
 
 ## Keeping these honest
