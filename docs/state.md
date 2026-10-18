@@ -2279,6 +2279,21 @@ both that route and the cross-compile.
   panel takes another's place, `closePanel({ next })` runs the first one's
   hooks with `S.panel` already naming the second: a hook asking whether
   something under them is seen, `catalogSeen()` say, must hear no.
+- **The selection's panel borrows the dock's canvas (0092).** `SELECT_MOVES`
+  lists what `selectPanelDown` moves up, `#dock-lineage` with the selector bar,
+  five of the canvas's tools and `#catalog`, and `selectPanelUp` puts each back
+  before the sibling it was taken from, the last first. Code that asks whether
+  the canvas or the Catalog is on screen reads `lineageSeen()` or
+  `catalogSeen()`, never `S.dock` alone: with the panel down, `S.dock` may be
+  the terminal while the canvas is in front. `showDock` leaves `#dock-lineage`
+  shown while it is up there, `paintMode` rolls the panel up once the mode is
+  no longer `select`, and `focusNode` draws its answer only while the canvas
+  still asks for that model, since the panel rolling up and a file opened can
+  each ask for one, in either order. `runSelection` calls `selectPanelDown`
+  before it sets the mode, so `S.selectBack` holds the mode, the column and
+  the card the dock had; `selectPanelUp` clears `selectTimer` and bumps
+  `S.selectAsk`, so neither a keystroke's run nor an answer on its way lands
+  after it.
 - **`activate()` rolls the panel up, and `settleTabs` passes `keepPanel`**,
   so closing a tab from the sidebar while one is down leaves it there.
   `showDock` leaves it alone: a column's lineage brings the canvas forward

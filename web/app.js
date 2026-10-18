@@ -39,6 +39,7 @@ const S = {
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
   selectRaise: null,          // {expr, tests, max} a click asked to draw past the cap, for that line only
+  selectBack: null,           // while the selection's panel is down: where what it took from the dock goes back, and the mode
   selectHistory: [],          // expressions typed this session, newest first
   selectHistAt: -1,           // where the arrow keys are in that history, -1 being the empty line
   colHighlight: '',           // column row to mark in the Columns table
@@ -1750,6 +1751,8 @@ function paneOf(el) {
   if (!el || !el.closest || el === document.body) return '';
   if (el.closest('#editor-pane')) return 'editor';
   if (el.closest('#sidebar')) return 'sidebar';
+  // The selection's panel holds the canvas and the Catalog beside it.
+  if (el.closest('#select-panel')) return el.closest('#catalog') ? 'catalog' : 'lineage';
   if (el.closest('#dock')) return S.dock;
   return 'other';
 }
@@ -1758,8 +1761,9 @@ function paneOf(el) {
    nothing of ours to search, the terminal, and the browser's own find opens
    instead. */
 function findInPane(pane) {
-  // A panel covers every pane: the browser's own find searches it.
-  if (S.panel) return false;
+  // A panel covers every pane: the browser's own find searches it. The
+  // selection's holds the canvas and the Catalog, which keep their own.
+  if (S.panel && !panelOpen('select')) return false;
   if (pane === 'catalog') return focusColumnFilter();
   if (pane === 'lineage') return openGraphFind();
   if (pane === 'compiled' || pane === 'run') {
@@ -1824,11 +1828,15 @@ function showGraphFind(st) {
   Lineage.find(st.input.value, false);
 }
 
+/* Whether the canvas is on screen: the dock's lineage with no panel over it,
+   or up in the selection's panel. */
+const lineageSeen = () => panelOpen('select') || (S.dock === 'lineage' && !S.panel);
+
 /* Cmd+F over the lineage. False where the canvas is not on screen, and the
    browser's own find opens instead. What had the focus gets it back when the
    bar closes: the selector's box, say, or nothing from the canvas. */
 function openGraphFind() {
-  if (S.dock !== 'lineage') return false;
+  if (!lineageSeen()) return false;
   const st = graphFindBar();
   const was = document.activeElement;
   if (!st.bar.contains(was)) st.back = was && was !== document.body ? was : null;
@@ -1843,7 +1851,7 @@ function openGraphFind() {
    query yet they are the browser's. */
 function stepGraphFind(pane, dir) {
   const st = S.graphFind;
-  if (pane !== 'lineage' || S.dock !== 'lineage' || S.panel || !st || !st.input.value) return false;
+  if (pane !== 'lineage' || !lineageSeen() || !st || !st.input.value) return false;
   showGraphFind(st);
   Lineage.findStep(dir);
   return true;
@@ -1885,7 +1893,7 @@ function closeGraphFind() {
    closed it already. */
 function escapesGraphFind(e) {
   const st = S.graphFind;
-  if (!st || !st.open || e.defaultPrevented || S.panel || S.dock !== 'lineage') return false;
+  if (!st || !st.open || e.defaultPrevented || !lineageSeen()) return false;
   if (isTyping(e.target) || !$('#modal').classList.contains('hidden')) return false;
   return (paneOf(e.target) || S.lastPane) === 'lineage';
 }
@@ -3854,6 +3862,10 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
       api.get(`/api/lineage?id=${encodeURIComponent(id)}&up=${up}&down=${down}&tests=${tests}`),
       nodeDetail({ id }),
     ]);
+    // Another node, a column or a selection asked for since draws instead:
+    // the selection's panel rolled up redraws the model it covered while the
+    // file opened draws its own.
+    if (S.graphMode !== 'model' || S.focus !== id) return;
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
@@ -3934,8 +3946,82 @@ function canvasOptions() {
    for it (0024): the terminal button is how you check that against dbt itself. */
 let selectTimer = null;
 
+/* Custom selection at the window's height, in a panel of its own (0092). The
+   canvas is one: the dock's lineage pane, the selector bar over it, comes up
+   into the panel while it is down, with the canvas's own tools and, beside it,
+   the Catalog for the box clicked. All of it goes back to the dock as the
+   panel rolls up. Moved rather than copied, so the canvas keeps its
+   listeners, its find bar and its folder names. */
+const SELECT_MOVES = [
+  ['#dock-lineage', '#selpanel-canvas'],
+  ['#with-tests', '#selpanel-tools'], ['#folder-tool', '#selpanel-tools'],
+  ['#fit-btn', '#selpanel-tools'], ['#export-btn', '#selpanel-tools'], ['#image-btn', '#selpanel-tools'],
+  ['#catalog', '#selpanel-card'],
+];
+
+/* Called before anything changes the mode: what the dock showed, a column's
+   lineage included, is what it gets back. */
+function selectPanelDown() {
+  if (panelOpen('select')) return;
+  // Where each went from, taken before any moves: two of them sit side by side.
+  const places = SELECT_MOVES.map(([sel]) => {
+    const el = $(sel);
+    return { el, parent: el.parentNode, next: el.nextSibling };
+  });
+  S.selectBack = { mode: S.graphMode, colFocus: S.colFocus, node: S.node, card: [...$('#catalog').childNodes], places };
+  for (const [sel, to] of SELECT_MOVES) $(to).appendChild($(sel));
+  // The card starts empty: the dock's model, which the selection may not
+  // even hold, would read as a box clicked.
+  S.node = null;
+  $('#catalog').replaceChildren(jel('p', 'muted pad', 'Click a box to read its card here.'));
+  $('#dock-lineage').classList.remove('hidden');
+  openPanel('select');
+  setTimeout(() => Lineage.fit(), 30);
+}
+
+/* What the panel took goes back where it was, the last first, so each lands
+   before a neighbour that is back already. A selection typed and not yet
+   asked for, or asked for and not yet answered, is dropped: the panel would
+   come down again, or the dock's canvas get it. Rolled up with the selection
+   still drawn, by Escape, its button or a file opened, the dock gets back
+   what it showed, its card included. A double-click on a box, or a column
+   clicked in the card, has drawn something else already, and the card stays
+   on what was clicked. */
+function selectPanelUp() {
+  const back = S.selectBack;
+  if (!back) return;
+  S.selectBack = null;
+  clearTimeout(selectTimer);
+  S.selectAsk++;
+  for (const p of back.places.slice().reverse()) p.parent.insertBefore(p.el, p.next);
+  $('#dock-lineage').classList.toggle('hidden', S.dock !== 'lineage');
+  if (S.graphMode !== 'select') return;
+  S.node = back.node;
+  $('#catalog').replaceChildren(...back.card);
+  if (back.mode === 'column' && back.colFocus) focusColumn(back.colFocus.id, back.colFocus.column);
+  else if (S.focus) focusNode(S.focus, { keepDepth: true });
+  else blankLineage();
+}
+
+/* No model to draw: the canvas empty, and saying how to fill it. */
+function blankLineage() {
+  S.graphMode = 'model';
+  paintMode();
+  Lineage.clear();
+  emptyHint('Select a model to see its lineage.');
+  $('#lineage-status').textContent = '';
+}
+
+/* The way in: the dock's Custom selection button, and the tour. */
+function openSelection() {
+  const run = runSelection();
+  $('#select-input').focus();
+  return run;
+}
+
 async function runSelection() {
   closeHoverCard();
+  selectPanelDown();                          // noting the dock's mode before it changes
   S.graphMode = 'select';
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
@@ -6691,6 +6777,9 @@ function paintMode() {
   $('#select-bar').classList.toggle('hidden', !selecting);
   // Coming back to the selection draws it at the cap again, unasked (0087).
   if (!selecting) S.selectRaise = null;
+  // A model or a column drawn, from a double-click on a box or a column in
+  // the Catalog beside the canvas, is the dock's again.
+  if (!selecting && panelOpen('select')) closePanel();
   // The depth boxes have nothing to say about a selection: the + in the
   // expression carries it, and two places to set one would contradict.
   $('#up').disabled = $('#down').disabled = selecting;
@@ -6779,11 +6868,11 @@ function relinkTools() {
   $('#image-btn').addEventListener('click', copyLineageImage);
   $$('#graph-mode .segbtn').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
-    if (b.dataset.mode === 'select') { runSelection(); $('#select-input').focus(); return; }
+    if (b.dataset.mode === 'select') { openSelection(); return; }
     emptyHint('Select a model to see its lineage.');
     if (b.dataset.mode === 'column' && S.colFocus) focusColumn(S.colFocus.id, S.colFocus.column);
     else if (S.focus) focusNode(S.focus);
-    else { S.graphMode = b.dataset.mode; paintMode(); Lineage.clear(); }
+    else blankLineage();
   }));
 
   const box = $('#select-input');
@@ -8620,6 +8709,14 @@ const PANELS = {
     closed: () => fillCatalogJobs($('#catalog .cat-jobs')),
     save: () => ({ section: S.reportsSection }),
     reopen: (saved) => openReports(saved.section, { reread: false }),
+  },
+  select: {
+    el: '#select-panel',
+    paint: () => $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(panelOpen('select'))),
+    closed: () => selectPanelUp(),
+    // Its line is the tour's to put back, with the selector box's history.
+    save: () => ({}),
+    reopen: () => openSelection(),
   },
 };
 
@@ -10968,7 +11065,7 @@ function catalogJobs(body, n) {
   fillCatalogJobs(box);
 }
 
-const catalogSeen = () => S.dock === 'catalog' && !S.panel;
+const catalogSeen = () => panelOpen('select') || (S.dock === 'catalog' && !S.panel);
 
 async function fillCatalogJobs(box) {
   if (!box || box.dataset.asked) return;
@@ -11938,7 +12035,8 @@ function showDock(which, { look = true } = {}) {
   let loading = null;
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
-  $('#dock-lineage').classList.toggle('hidden', which !== 'lineage');
+  // Up in the selection's panel, the canvas is not the dock's to hide.
+  if (!panelOpen('select')) $('#dock-lineage').classList.toggle('hidden', which !== 'lineage');
   $('#dock-terminal').classList.toggle('hidden', which !== 'terminal');
   $('#dock-catalog').classList.toggle('hidden', which !== 'catalog');
   $('#dock-compiled').classList.toggle('hidden', which !== 'compiled');
@@ -12034,9 +12132,9 @@ function wireSplitters() {
 /* "Give me a tour", from the shortcut list, and offered once on its own
    (0074). Each step points at a part of the page and says what it is for,
    on a model the server picks with parents and children. It runs nothing and
-   changes no setting: it opens a file as a preview, moves the lineage, the
-   dock and the Custom selection box, and puts them back as they were when it
-   ends. The pure part runs from tourSteps to tourPlace, which
+   changes no setting: it opens a file as a preview, moves the lineage and the
+   dock, draws a Custom selection in its panel, and puts them back as they were
+   when it ends. The pure part runs from tourSteps to tourPlace, which
    web/tests/tour.js slices. */
 
 /* The steps, from what the page knows when the tour starts: `model` from
@@ -12096,7 +12194,9 @@ function tourSteps(c) {
     steps.push({ key: 'select', target: '#select-bar', title: 'Custom selection',
       text: 'Any set of nodes, written the way dbt reads a selection: names, `tag:`, `path:`, `+` and `@`, or a named '
         + `selector from \`selectors.yml\`. This one, \`+${m.name}+\`, is everything it is built from and everything `
-        + 'built from it. dbt ls types the same selection into the terminal, for you to check against dbt itself.' });
+        + 'built from it. It opens over the editor and the dock, to be read at the window\'s height: a click on a box '
+        + 'shows its card beside the canvas, a double-click opens its file. dbt ls types the same selection into the '
+        + 'terminal, for you to check against dbt itself.' });
     steps.push({ key: 'share', target: ['#export-btn', '#image-btn', '#select-copy'], title: 'Export, or copy as an image',
       text: 'Whatever the canvas shows, this selection included. Export saves it as one HTML file that opens offline, '
         + 'zooms without blurring and prints on one page. Copy image puts the same picture on the clipboard as a PNG, '
@@ -12482,17 +12582,12 @@ async function endTour() {
     const depth = $('#up').value !== s.up || $('#down').value !== s.down;
     $('#up').value = s.up;
     $('#down').value = s.down;
-    if (s.mode === 'select') await runSelection();
-    else if (s.mode === 'column' && s.colFocus) await focusColumn(s.colFocus.id, s.colFocus.column);
+    // A selection is never the mode noted: the tour rolls its panel up
+    // first, and puts the panel back last.
+    if (s.mode === 'column' && s.colFocus) await focusColumn(s.colFocus.id, s.colFocus.column);
     else if (s.focus) {
       if (S.focus !== s.focus || S.graphMode !== 'model' || depth) await focusNode(s.focus, { keepDepth: true });
-    } else {
-      S.graphMode = 'model';
-      paintMode();
-      Lineage.clear();
-      emptyHint('Select a model to see its lineage.');
-      $('#lineage-status').textContent = '';
-    }
+    } else blankLineage();
     // Whatever the canvas shows, Jobs, Compiled and Run speak of these.
     Object.assign(S, { focus: s.focus, colFocus: s.colFocus, jobsFor: s.jobsFor, unsynced: s.unsynced });
     if ((S.node && S.node.id) !== (s.node && s.node.id)) {
@@ -12680,7 +12775,7 @@ function shortcutSheet(os) {
       [['Enter'], 'Open or pick'],
       [['Escape'], 'Close'],
     ] },
-    { title: 'Custom selection box, above the lineage', keys: [
+    { title: 'Custom selection box, in its panel', keys: [
       [['Enter'], 'Draw it now'],
       [['ArrowUp', 'ArrowDown'], 'Earlier expressions'],
     ] },
@@ -12963,11 +13058,16 @@ function wireKeys() {
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
   $('#reports-btn').addEventListener('click', toggleReports);
+  $('#selpanel-close').title = `Close the selection (${keyLabel('Escape', IS_MAC)})`;
+  $('#selpanel-close').addEventListener('click', () => closePanel({ restore: true }));
   // On each panel rather than the document: a dialog over it answers its own
   // Escape there, and must not take the panel with it.
   for (const p of Object.values(PANELS)) {
     $(p.el).addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // The canvas's find bar closes first, from wherever its Escape comes:
+      // the window's handler takes it (0081).
+      if (escapesGraphFind(e)) return;
       e.preventDefault();
       e.stopPropagation();
       closePanel({ restore: true });
@@ -13410,6 +13510,9 @@ async function boot() {
       highlightColumn(column, nodeId);
       if (column) S.catTab = 'columns';
       nodeDetail({ id: nodeId }).then(renderCatalog).catch(() => {});
+      // In the selection's panel the Catalog beside the canvas is the answer:
+      // a file opened would roll the panel up (0092).
+      if (panelOpen('select')) return;
       // A column's box opens its model's file too: following a column from
       // model to model is reading each one in turn.
       previewBox(n);

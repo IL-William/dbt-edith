@@ -683,6 +683,38 @@ kbd {
 .reports-navrow.empty .tooldot { background: none; box-shadow: inset 0 0 0 1.5px var(--tool); }
 .reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Custom selection in its panel (0092): the dock's canvas at the window's
+   height, its tools in the head, and the Catalog of the box clicked beside
+   it, as wide as a card is read. */
+.selpanel-main { flex: 1; min-width: 0; display: flex; flex-direction: column; container: selmain / inline-size; }
+.selpanel-head {
+  flex: none; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 12px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+}
+.selpanel-title { font: 12px var(--ui); color: var(--fg); white-space: nowrap; }
+.selpanel-canvas { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.selpanel-card {
+  flex: 0 0 clamp(280px, 36%, 420px); min-width: 0; display: flex; flex-direction: column;
+  background: var(--bg-2); border-left: 1px solid var(--line);
+}
+/* Narrower, the selector row takes a second line rather than crush its box,
+   and the head's tools keep their glyph alone, named by their tooltip and
+   still read out, as the dock's do when its row runs out. */
+.selpanel .select-row { flex-wrap: wrap; }
+/* The card is narrower than the dock's Catalog: a table of names keeps each
+   on one line and scrolls sideways, rather than break them letter by letter
+   down a column a few characters wide. */
+.selpanel-card .loc { display: block; overflow-x: auto; }
+.selpanel-card .loc td { word-break: normal; white-space: nowrap; }
+.selpanel #select-input { flex: 1 1 160px; }
+@container selmain (max-width: 680px) {
+  .selpanel-title { display: none; }
+}
+@container selmain (max-width: 560px) {
+  #selpanel-tools .icobtn > span, #selpanel-tools .eyebtn > span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  }
+}
 .reports-view .diff-head { padding: 6px 12px 5px; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
 .rnew[data-tone=bad] { color: var(--bad); border-color: var(--bad); }

@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.30.0 - 2026-10-18
+
+- Open Custom selection in a panel over the editor and the dock, the canvas
+  at the window's height: a click on a box shows its card beside the canvas,
+  a double-click opens its file and rolls the panel up, and Escape gives the
+  dock back its model's lineage as it was (0092).
+
 ## 1.29.2 - 2026-10-18
 
 - Load a model thousands of columns wide at once, on the page and with

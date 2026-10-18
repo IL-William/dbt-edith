@@ -112,9 +112,9 @@ check('the section on screen', PANELS.reports.save(), { section: 'collin' });
 log = [];
 PANELS.reports.reopen({ section: 'collin' });
 check('put back on it', log, ['reopen reports collin']);
-check('every panel has every hook', Object.keys(PANELS).map(function (k) {
-  return ['el', 'paint', 'closed', 'save', 'reopen'].filter(function (h) { return !PANELS[k][h]; });
-}), [[], []]);
+check('every panel has every hook', Object.keys(PANELS).filter(function (k) {
+  return ['el', 'paint', 'closed', 'save', 'reopen'].some(function (h) { return !PANELS[k][h]; });
+}), []);
 
 print('\n--- Escape on the page, with a panel down ---');
 // A key goes through the window's capture listeners, then the document's, then
