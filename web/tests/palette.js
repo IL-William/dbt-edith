@@ -97,7 +97,7 @@ var q = Promise.resolve().then(function () { return answers.settled(); }).then(f
 eval(src.slice(src.indexOf('function choosePalette'), src.indexOf('// ------------------------------------------------------------------ tabs --')));
 var did = [];
 function closePalette() { did.push('close'); }
-function closeReports() { did.push('reports'); }
+function closePanel() { did.push('panel'); }
 function pushJump() { did.push('jump'); }
 function openMacro(m) { did.push('macro:' + m.file + ':' + m.name); }
 function openFile(p) { did.push('open:' + p); }
@@ -109,10 +109,10 @@ var palHits = mergeHits([], [{ call: 'automate_dv.hub', name: 'hub', file: 'dbt_
 q = q.then(function () {
   choosePalette(0);
   later('a macro opens through openMacro, which records the jump itself', function () {
-    return did.join() === 'close,reports,macro:dbt_packages/automate_dv/macros/tables/hub.sql:hub'; });
+    return did.join() === 'close,panel,macro:dbt_packages/automate_dv/macros/tables/hub.sql:hub'; });
   did = [];
   choosePalette(1);
-  later('a file records the jump here', function () { return did.join() === 'close,reports,jump,open:macros/money.sql'; });
+  later('a file records the jump here', function () { return did.join() === 'close,panel,jump,open:macros/money.sql'; });
   did = [];
   choosePalette(5);
   later('no row there, nothing done', function () { return did.length === 0; });

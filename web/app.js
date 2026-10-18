@@ -88,10 +88,10 @@ const S = {
   collinSeen: undefined,      // collin's run counter when its report was last shown, for the news
   reports: null,              // /api/reports: which reports have something to show, and when written
   reportsAt: undefined,       // the newest report file the freshness poll last named
-  reportsOpen: false,         // the panel is rolled down over the editor and the dock (0064)
+  panel: '',                  // the panel rolled down over the editor and the dock, '' for none (0064, 0091)
+  panelReturn: null,          // where focus goes back to when the panel is closed from the keyboard
   reportsSection: '',         // the section on screen in it, or last on screen this session
   reportsShown: null,         // the index entry the section on screen was read at
-  reportsReturn: null,        // where focus goes back to when the panel is closed from the keyboard
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
   reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
@@ -1758,8 +1758,8 @@ function paneOf(el) {
    nothing of ours to search, the terminal, and the browser's own find opens
    instead. */
 function findInPane(pane) {
-  // The reports cover every pane: the browser's own find searches them.
-  if (S.reportsOpen) return false;
+  // A panel covers every pane: the browser's own find searches it.
+  if (S.panel) return false;
   if (pane === 'catalog') return focusColumnFilter();
   if (pane === 'lineage') return openGraphFind();
   if (pane === 'compiled' || pane === 'run') {
@@ -1843,7 +1843,7 @@ function openGraphFind() {
    query yet they are the browser's. */
 function stepGraphFind(pane, dir) {
   const st = S.graphFind;
-  if (pane !== 'lineage' || S.dock !== 'lineage' || S.reportsOpen || !st || !st.input.value) return false;
+  if (pane !== 'lineage' || S.dock !== 'lineage' || S.panel || !st || !st.input.value) return false;
   showGraphFind(st);
   Lineage.findStep(dir);
   return true;
@@ -1885,7 +1885,7 @@ function closeGraphFind() {
    closed it already. */
 function escapesGraphFind(e) {
   const st = S.graphFind;
-  if (!st || !st.open || e.defaultPrevented || S.reportsOpen || S.dock !== 'lineage') return false;
+  if (!st || !st.open || e.defaultPrevented || S.panel || S.dock !== 'lineage') return false;
   if (isTyping(e.target) || !$('#modal').classList.contains('hidden')) return false;
   return (paneOf(e.target) || S.lastPane) === 'lineage';
 }
@@ -2094,12 +2094,12 @@ function collinTab(f) {
   return !!f && f.kind === 'compare';
 }
 
-/* Showing a tab is asking for the editor, so the reports roll up: a file
-   opened from the sidebar, the palette or a link lands here. `keepReports` is
-   for a tab shown because another was closed, from the sidebar while the
-   reports stay down. */
-function activate(path, focusLineage = true, keepReports = false) {
-  if (!keepReports) closeReports();
+/* Showing a tab is asking for the editor, so a panel over it rolls up: a
+   file opened from the sidebar, the palette or a link lands here. `keepPanel`
+   is for a tab shown because another was closed, from the sidebar while the
+   panel stays down. */
+function activate(path, focusLineage = true, keepPanel = false) {
+  if (!keepPanel) closePanel();
   S.active = path;
   const f = S.open.get(path);
   $('#editor-empty').classList.add('hidden');
@@ -3442,8 +3442,8 @@ async function refreshModels() {
     row.title = h.file;
     // A click here asks for the lineage and the Catalog, which the reports
     // cover; focusNode cannot close them itself, since a run's end calls it.
-    row.addEventListener('click', () => { closeReports(); focusNode(h.id, { open: false }); });
-    row.addEventListener('dblclick', () => { closeReports(); focusNode(h.id, { open: true }); });
+    row.addEventListener('click', () => { closePanel(); focusNode(h.id, { open: false }); });
+    row.addEventListener('dblclick', () => { closePanel(); focusNode(h.id, { open: true }); });
     list.appendChild(row);
   }
   if (!hits.length) list.innerHTML = '<p class="muted pad">No match.</p>';
@@ -7647,7 +7647,7 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
    no warehouse, and a command that can is never run for the user (0071). */
 function sendToTerminal(cmd, run) {
   // Always on a click, and the terminal is what it asks to see.
-  closeReports();
+  closePanel();
   showDock('terminal');
   let tries = 0;
   const attempt = () => {
@@ -8568,7 +8568,7 @@ async function openJobSources({ add = false } = {}) {
       if (!open) {
         toast(...jobsSaveToast(answer));
         if (S.dock === 'jobs') loadJobs();
-        if (S.reportsOpen && S.reportsSection === 'jobs') return showReportSection('jobs');
+        if (panelOpen('reports') && S.reportsSection === 'jobs') return showReportSection('jobs');
         return loadReportsIndex();
       }
       if (jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults))) return closeForm(answer);
@@ -8598,10 +8598,79 @@ async function openJobSources({ add = false } = {}) {
     toast(...jobsSaveToast(answer));
     // The Jobs tab already answers for the model it shows, and Reports would
     // roll down over it; anywhere else the answer is the coverage.
-    if (S.dock === 'jobs' && jobsNode() && !S.reportsOpen) return loadReportsIndex();
+    if (S.dock === 'jobs' && jobsNode() && !S.panel) return loadReportsIndex();
     return openReports('jobs');
   }
-  if (S.reportsOpen && S.reportsSection === 'jobs') showReportSection('jobs');
+  if (panelOpen('reports') && S.reportsSection === 'jobs') showReportSection('jobs');
+}
+
+// ----------------------------------------------------------------- panels --
+/* What rolls down over the editor and the dock, the sidebar staying beside
+   it (0064, 0091): what speaks of the whole project, or wants the window's
+   height. What follows the file in front stays in the dock. One panel at a
+   time, opening one rolls up the one that was down. Each names its element,
+   what paints its button, what it does once rolled up, and how the tour puts
+   it back. */
+const PANELS = {
+  reports: {
+    el: '#reports',
+    paint: paintReportsButton,
+    // The Catalog it covered asks for its jobs if it has not, once it is
+    // seen again: not when another panel takes this one's place (0063).
+    closed: () => fillCatalogJobs($('#catalog .cat-jobs')),
+    save: () => ({ section: S.reportsSection }),
+    reopen: (saved) => openReports(saved.section, { reread: false }),
+  },
+};
+
+/* Inert while a panel is down, so nothing under it takes a key or a Tab: the
+   editor and the terminal would otherwise go on typing under it. */
+const PANEL_COVERS = ['#editor-pane', '#gutter-dock', '#dock'];
+
+const panelOpen = (name) => S.panel === name;
+
+/* Rolls a panel down over the editor and the dock, the one already down
+   rolling up first. A close from the keyboard sends the focus back to where
+   it was before the first of them came down. */
+function openPanel(name) {
+  if (S.panel === name) return;
+  closeHoverCard();
+  closePopup();
+  // Read once the popups are closed: a button in one would be gone by the
+  // time the focus is given back.
+  const back = S.panel ? S.panelReturn : document.activeElement;
+  if (S.panel) closePanel({ next: name });
+  S.panel = name;
+  S.panelReturn = back;
+  for (const id of PANEL_COVERS) $(id).inert = true;
+  const p = PANELS[name];
+  const el = $(p.el);
+  el.classList.add('open');
+  el.setAttribute('aria-hidden', 'false');
+  el.focus({ preventScroll: true });
+  p.paint();
+}
+
+/* Rolls the panel up. `restore` gives the focus back to where it was when the
+   panel came down, for a close from the keyboard or from its own buttons; a
+   file opened from it is where the reader goes next instead. `next` is the
+   panel taking its place: what is under them stays inert, and the hooks run
+   with it already down, so nothing under it counts as seen in between. */
+function closePanel({ restore = false, next = '' } = {}) {
+  const name = S.panel;
+  if (!name) return;
+  const p = PANELS[name];
+  const el = $(p.el);
+  S.panel = next;
+  el.classList.remove('open');
+  el.setAttribute('aria-hidden', 'true');
+  if (!next) for (const id of PANEL_COVERS) $(id).inert = false;
+  const back = S.panelReturn;
+  S.panelReturn = null;
+  if (el.contains(document.activeElement)) document.activeElement.blur();
+  if (restore && back && back.focus && document.body.contains(back) && !el.contains(back)) back.focus();
+  p.paint();
+  p.closed();
 }
 
 // ---------------------------------------------------------------- reports --
@@ -8796,7 +8865,7 @@ async function loadReportsIndex() {
   catch { return; }   // what the button said still stands: a poll never interrupts
   paintReportsButton();
   if (S.dock === 'jobs') paintJobsHead();
-  if (S.reportsOpen) paintReportsNav();
+  if (panelOpen('reports')) paintReportsNav();
 }
 
 function newsChip(n) {
@@ -8830,10 +8899,11 @@ function paintReportsButton() {
   // its tooltip (0075).
   const some = sections.some((sec) => !sec.empty);
   btn.classList.remove('hidden');
-  btn.classList.toggle('dim', !some && !S.reportsOpen);
+  const open = panelOpen('reports');
+  btn.classList.toggle('dim', !some && !open);
   if (!some) news.length = 0;
-  btn.classList.toggle('on', S.reportsOpen);
-  btn.setAttribute('aria-expanded', String(S.reportsOpen));
+  btn.classList.toggle('on', open);
+  btn.setAttribute('aria-expanded', String(open));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
   const texts = reportsChipTexts(news);
   btn.querySelector('.rnews').replaceChildren(...news.map((n, i) => newsChip(Object.assign({}, n, { text: texts[i] }))));
@@ -8848,21 +8918,7 @@ async function openReports(section, { reread = true } = {}) {
   // The coverage is always listed, empty before any source, so there is
   // always a section to open on (0070).
   const key = sections.some((sec) => sec.key === section) ? section : reportsDefaultSection(sections, news, S.reportsSection);
-  if (!S.reportsOpen) {
-    closeHoverCard();
-    closePopup();
-    S.reportsReturn = document.activeElement;
-    S.reportsOpen = true;
-    // Nothing under the panel takes a key or a Tab while it is down: the
-    // editor and the terminal lose the focus they had, and closeReports gives
-    // it back.
-    for (const id of ['#editor-pane', '#gutter-dock', '#dock']) $(id).inert = true;
-    const panel = $('#reports');
-    panel.classList.add('open');
-    panel.setAttribute('aria-hidden', 'false');
-    panel.focus({ preventScroll: true });
-  }
-  paintReportsButton();
+  openPanel('reports');
   // Put back by the tour as it was left (0075): the section is still drawn,
   // so it is not read again, and its Read again says when its file changed.
   if (!reread && key === S.reportsDrawn) {
@@ -8873,27 +8929,8 @@ async function openReports(section, { reread = true } = {}) {
   showReportSection(key);
 }
 
-/* Rolls the panel up. `restore` gives the focus back to where it was when the
-   panel came down, for a close from the keyboard or from its own buttons; a
-   file opened from it is where the reader goes next instead. */
-function closeReports({ restore = false } = {}) {
-  if (!S.reportsOpen) return;
-  S.reportsOpen = false;
-  const panel = $('#reports');
-  panel.classList.remove('open');
-  panel.setAttribute('aria-hidden', 'true');
-  for (const id of ['#editor-pane', '#gutter-dock', '#dock']) $(id).inert = false;
-  const back = S.reportsReturn;
-  S.reportsReturn = null;
-  if (panel.contains(document.activeElement)) document.activeElement.blur();
-  if (restore && back && back.focus && document.body.contains(back) && !panel.contains(back)) back.focus();
-  paintReportsButton();
-  // The Catalog it covered is seen again, and asks for its jobs if it has not.
-  if (S.dock === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
-}
-
 function toggleReports() {
-  if (S.reportsOpen) closeReports({ restore: true });
+  if (panelOpen('reports')) closePanel({ restore: true });
   else openReports();
 }
 
@@ -8938,7 +8975,7 @@ function reportHead({ title, tool, about, again, extra = [] }) {
   const close = jel('button', 'icon', '×');
   close.title = `Close the reports (${keyLabel('Escape', IS_MAC)})`;
   close.setAttribute('aria-label', 'Close the reports');
-  close.addEventListener('click', () => closeReports({ restore: true }));
+  close.addEventListener('click', () => closePanel({ restore: true }));
   row.append(read, close);
   head.append(row);
   return head;
@@ -9082,13 +9119,13 @@ function runEntryRow(e) {
    for it, which is where an error is read. */
 function openRunEntry(e) {
   if (e.kind === 'test') {
-    closeReports();
+    closePanel();
     openTest(e, { pin: true });
     return;
   }
   // A unit test is no node of the graph: its YAML is all there is to open.
   if (e.kind === 'unit_test') {
-    closeReports();
+    closePanel();
     pushJump();
     openFile(e.file);
     revealInTree(e.file);
@@ -9130,7 +9167,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
   // as the panel rolls up or the tab comes forward.
   const stale = $('#catalog .cat-jobs');
   if (stale) stale.dataset.asked = '1';
-  closeReports();
+  closePanel();
   pushJump();
   if (dock === 'catalog') {
     S.catTab = 'columns';
@@ -10921,7 +10958,7 @@ function catalogTags(body, n) {
 /* The steps that run the node, one chip each, a click away from their card
    in the Jobs tab. The jobs are asked for only once the Catalog is seen, as
    the tab asks once it is opened (0063): one drawn behind another tab, or
-   under Reports, is filled in by showDock or closeReports. An answer is kept
+   under a panel, is filled in by showDock or as the panel rolls up. An answer is kept
    per node, so drawing the Catalog again asks nothing until the jobs may have
    changed (forgetCatalogJobs). Nothing shows until a source is named. */
 function catalogJobs(body, n) {
@@ -10931,7 +10968,7 @@ function catalogJobs(body, n) {
   fillCatalogJobs(box);
 }
 
-const catalogSeen = () => S.dock === 'catalog' && !S.reportsOpen;
+const catalogSeen = () => S.dock === 'catalog' && !S.panel;
 
 async function fillCatalogJobs(box) {
   if (!box || box.dataset.asked) return;
@@ -11748,8 +11785,8 @@ function choosePalette(i) {
   const h = palHits[i ?? palIndex];
   if (!h) return;
   closePalette();
-  // A node without a file opens nothing, so activate() would not close them.
-  closeReports();
+  // A node without a file opens nothing, so activate() would not close it.
+  closePanel();
   // It records its own place to come back to.
   if (h.kind === 'macro') { openMacro(h.macro); return; }
   pushJump();
@@ -12136,9 +12173,10 @@ async function startTour() {
   if (S.tour) return;
   closeShortcuts();
   closePalette();
-  const reports = S.reportsOpen;
-  const reportsReturn = S.reportsReturn;
-  closeReports();
+  const panel = S.panel;
+  const panelSaved = panel ? PANELS[panel].save() : null;
+  const panelReturn = S.panelReturn;
+  closePanel();
   closePopup();
   closeHoverCard();
   for (const offer of $$('.tour-offer')) offer.remove();
@@ -12150,7 +12188,7 @@ async function startTour() {
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
     up: $('#up').value, down: $('#down').value,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
-    reports, reportsSection: S.reportsSection, reportsReturn,
+    panel, panelSaved, panelReturn,
   };
   buildTour(t);
   // The index too, so the Reports step says what the button shows even when
@@ -12476,10 +12514,10 @@ async function endTour() {
   window.removeEventListener('resize', paintTour);
   if (t.root) t.root.remove();
   for (const id of ['#topbar', '#body', '#statusbar']) $(id).inert = false;
-  if (s.reports) {
-    await openReports(s.reportsSection, { reread: false });
+  if (s.panel) {
+    await PANELS[s.panel].reopen(s.panelSaved);
     // Where Escape in the panel sends the focus back, as before the tour.
-    S.reportsReturn = s.reportsReturn;
+    S.panelReturn = s.panelReturn;
   } else if (s.back && s.back.focus && document.body.contains(s.back)) s.back.focus();
   // A manifest that landed during the tour was not asked about (0078).
   if (S.tourOfferHeld && !S.tour) offerTour();
@@ -12772,14 +12810,20 @@ function buildShortcuts() {
   return box;
 }
 
-/* What a close key closes: the reports when they are down, since the tab
-   under them cannot be seen, and the tab otherwise. */
+/* What a close key closes: the panel when one is down, since the tab under
+   it cannot be seen, and the tab otherwise. */
 function closeFront() {
-  if (S.reportsOpen) closeReports({ restore: true });
+  if (S.panel) closePanel({ restore: true });
   else if (S.active) closeFile(S.active);
 }
 
 function wireKeys() {
+  /* Whether a menu was open as the key came in, read before any menu sees it.
+     One the pointer opened closes on any key and lets it go on, Escape too
+     (0086): that Escape was the menu's, and must not also roll up the panel
+     under it once the menu is gone. */
+  let menuAtKey = false;
+  window.addEventListener('keydown', () => { menuAtKey = anyMenuOpen(); }, true);
   window.addEventListener('keydown', (e) => {
     switch (keyCombo(e, IS_MAC)) {
       case 'Mod+Alt+S': e.preventDefault(); saveAll(); return;
@@ -12803,7 +12847,7 @@ function wireKeys() {
       case 'Mod+Alt+P': e.preventDefault(); jumpBack(); return;
       case 'Mod+Alt+N': e.preventDefault(); jumpForward(); return;
       case 'Mod+K': e.preventDefault(); openPalette(); return;
-      case 'Mod+`': e.preventDefault(); closeReports(); showDock('terminal'); return;
+      case 'Mod+`': e.preventDefault(); closePanel(); showDock('terminal'); return;
       /* R for reports, in the same place on every layout, with Cmd so that
          keyCombo reads the key and not what Option typed (0037). */
       case 'Mod+Alt+R': e.preventDefault(); toggleReports(); return;
@@ -12835,6 +12879,13 @@ function wireKeys() {
     else if (e.key === 'Escape' && escapesGraphFind(e)) {
       e.preventDefault();
       closeGraphFind();
+    } else if (e.key === 'Escape' && S.panel && !e.defaultPrevented && !menuAtKey
+      && (!e.target || e.target === document.body)) {
+      // A panel takes Escape on its own element. Once the focus has fallen
+      // back to the page, a filter emptied by Escape blurring itself, say,
+      // the key reaches only here, and the panel is still what is in front.
+      e.preventDefault();
+      closePanel({ restore: true });
     }
   });
   // What Cmd+F searches when nothing has the focus: the pane last used, never a
@@ -12912,14 +12963,16 @@ function wireKeys() {
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
   $('#reports-btn').addEventListener('click', toggleReports);
-  // On the panel rather than the document: a dialog over it answers its own
+  // On each panel rather than the document: a dialog over it answers its own
   // Escape there, and must not take the panel with it.
-  $('#reports').addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
-    e.preventDefault();
-    e.stopPropagation();
-    closeReports({ restore: true });
-  });
+  for (const p of Object.values(PANELS)) {
+    $(p.el).addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closePanel({ restore: true });
+    });
+  }
   // Keyed on the state, so a card being read is not rebuilt under the pointer
   // by a poll that changed nothing.
   $('#fresh-badge').addEventListener('mouseenter', (e) => {
