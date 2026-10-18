@@ -102,6 +102,40 @@ fn text(v: &Option<serde_json::Value>) -> String {
     }
 }
 
+/// One config key of a test, set to something other than dbt's default.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct Setting {
+    pub key: &'static str,
+    pub value: String,
+}
+
+/// What a test is configured to do beyond its severity, which the warn mark
+/// already says: only the keys moved off dbt's defaults, since the manifest
+/// writes every one of them on every test and the defaults say nothing.
+/// Spaces are ignored in comparing, so `!=0` is the default `!= 0`.
+fn test_settings(c: &crate::manifest::RawConfig) -> Box<[Setting]> {
+    let keys: [(&'static str, &Option<Box<serde_json::Value>>, &[&str]); 7] = [
+        ("store_failures", &c.store_failures, &["false"]),
+        ("store_failures_as", &c.store_failures_as, &[]),
+        ("where", &c.where_, &[]),
+        ("limit", &c.limit, &[]),
+        ("fail_calc", &c.fail_calc, &["count(*)"]),
+        ("warn_if", &c.warn_if, &["!=0"]),
+        ("error_if", &c.error_if, &["!=0"]),
+    ];
+    keys.into_iter()
+        .filter_map(|(key, v, defaults)| {
+            let value = match v.as_deref() {
+                None | Some(serde_json::Value::Null) => String::new(),
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(other) => other.to_string(),
+            };
+            let bare: String = value.chars().filter(|c| !c.is_whitespace()).collect();
+            (!bare.is_empty() && !defaults.iter().any(|d| d.eq_ignore_ascii_case(&bare))).then_some(Setting { key, value })
+        })
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Column {
     pub name: String,
@@ -181,6 +215,9 @@ pub struct Node {
     /// that have none.
     pub namespace: String,
     pub warn: bool,
+    /// Test nodes only, and empty on most: a boxed slice, so none costs no
+    /// allocation and less than a Vec on every node.
+    pub settings: Box<[Setting]>,
     attached: String,
     pub parents: Vec<u32>,
     pub children: Vec<u32>,
@@ -550,6 +587,7 @@ impl Graph {
                     .as_ref()
                     .and_then(|v| v.as_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case("warn"));
+            let settings = if kind == Kind::Test { test_settings(&raw_node.config) } else { Box::default() };
             let search_key = format!("{}\u{0}{}", name.to_lowercase(), file.to_lowercase());
             index.insert(id.clone(), nodes.len() as u32);
             nodes.push(Node {
@@ -632,6 +670,7 @@ impl Graph {
                 column: raw_node.column_name.unwrap_or_default(),
                 namespace,
                 warn,
+                settings,
                 attached: raw_node.attached_node.unwrap_or_default(),
                 parents: Vec::new(),
                 children: Vec::new(),
@@ -2712,6 +2751,34 @@ mod tests {
             assert_eq!(g.nodes[g.index["test.shop.t"] as usize].warn, warn, "{severity}");
             assert!(!g.nodes[g.index["model.shop.m"] as usize].warn, "a model is never at warn");
         }
+    }
+
+    /// A test lists only the config it moved off dbt's defaults, which the
+    /// manifest writes on every test, and a model none of it.
+    #[test]
+    fn a_test_lists_the_config_it_changed() {
+        let defaults = serde_json::json!({ "store_failures": null, "store_failures_as": null, "where": null,
+            "limit": null, "fail_calc": "count(*)", "warn_if": "!= 0", "error_if": "!=0" });
+        let changed = serde_json::json!({ "store_failures": true, "where": "status != 'void'", "limit": 10,
+            "fail_calc": "count(*)", "warn_if": ">10", "error_if": "!= 0" });
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.m": { "name": "m", "resource_type": "model", "config": changed.clone() },
+                "test.shop.plain": { "name": "plain", "resource_type": "test", "config": defaults },
+                "test.shop.set": { "name": "set", "resource_type": "test", "config": changed },
+            },
+            "parent_map": { "test.shop.plain": ["model.shop.m"], "test.shop.set": ["model.shop.m"] },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let of = |id: &str| g.nodes[g.index[id] as usize].settings.iter().map(|s| (s.key, s.value.clone())).collect::<Vec<_>>();
+        assert!(of("test.shop.plain").is_empty(), "the defaults say nothing");
+        assert!(of("model.shop.m").is_empty(), "a model carries no test config");
+        let set = |k: &'static str, v: &str| (k, v.to_string());
+        assert_eq!(
+            of("test.shop.set"),
+            vec![set("store_failures", "true"), set("where", "status != 'void'"), set("limit", "10"), set("warn_if", ">10")]
+        );
     }
 
     #[test]

@@ -156,6 +156,23 @@ pub struct RawConfig {
     /// not expect costs one test its warn mark, not the whole manifest.
     #[serde(default)]
     pub severity: Option<serde_json::Value>,
+    /// Tests only, the rest of what changes how one runs, read as Values for
+    /// the same reason, and boxed: every node of the manifest passes through
+    /// this struct, and a box is a quarter of a Value's size when absent.
+    #[serde(default)]
+    pub store_failures: Option<Box<serde_json::Value>>,
+    #[serde(default)]
+    pub store_failures_as: Option<Box<serde_json::Value>>,
+    #[serde(default, rename = "where")]
+    pub where_: Option<Box<serde_json::Value>>,
+    #[serde(default)]
+    pub limit: Option<Box<serde_json::Value>>,
+    #[serde(default)]
+    pub fail_calc: Option<Box<serde_json::Value>>,
+    #[serde(default)]
+    pub warn_if: Option<Box<serde_json::Value>>,
+    #[serde(default)]
+    pub error_if: Option<Box<serde_json::Value>>,
 }
 
 /// The three location keys, and nothing else, out of `unrendered_config`.

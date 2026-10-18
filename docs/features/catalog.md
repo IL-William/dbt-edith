@@ -34,6 +34,17 @@ that guard the model rather than a column, which is every singular test under
 `tests/` and every generic with no column such as
 `unique_combination_of_columns`, are listed under Preview, where clicking one
 moves the lineage to it and double-clicking opens it where it is declared.
+A test shown in the Catalog has Preview alone, since it has no columns of its
+own. It opens on what it checks, as its hover card says it: the generic, or
+`singular`, the model whose YAML declares it, its column, its severity, `warn`
+in amber, and the count of models it reads, which moves the lineage to them.
+Under config come the keys it moved off dbt's defaults, among `store_failures`,
+`store_failures_as`, `where`, `limit`, `fail_calc`, `warn_if` and `error_if`,
+and, when it keeps its failing rows, the relation they are stored in: the only
+one dbt builds for a test, which is why it has no location table. A
+`--store-failures` given on the command line is not in the manifest, so it is
+not shown. Then the steps that run it, its tags,
+the file it is declared in, and the models it reads.
 Everything there comes from `manifest.json`, which already holds the merged YAML
 (descriptions, tags, and the tests attached to each column). Column *types* are
 the exception: the manifest only carries them when they are declared in YAML, so

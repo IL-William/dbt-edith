@@ -1313,6 +1313,7 @@ kbd {
    several lines. */
 .stats { align-items: flex-start; }
 .stat .v.none { color: var(--fg-dim); font-weight: 400; }
+.stat .v.warn { color: var(--warn); }
 .stat .v s { color: var(--fg-dim); font-weight: 400; }
 .stat .under { margin-top: 1px; font-size: 11px; color: var(--fg-dim); }
 .stat .v.keys { font: 600 12.5px/1.5 var(--mono); }
