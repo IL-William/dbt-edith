@@ -55,6 +55,11 @@ const S = {
   collinPoll: 0,              // the timer asking again while a run started by a pick goes on
   update: null,               // payload of /api/update: the newest dbt-edith known, and how to install it
   updatePoll: 0,              // the timer asking again, every few seconds while a look is on its way
+  updateAsks: 0,              // requests to /api/update made, numbered, so an older answer never replaces a newer one
+  updateShown: 0,             // the number of the request whose answer is in `update`
+  updateAt: 0,                // when that answer came, which the menu's opening asks again after
+  lookPosted: false,          // a Check for updates waits on its answer, which the polls' answers must not replace
+  installSince: 0,            // when the update was typed into the terminal, asked every few seconds after (0095)
   updateMenu: null,           // Edith's menu, drawn again while open when an answer comes in
   build: '',                  // the build stamp, under the version in Edith's menu
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
@@ -12877,16 +12882,33 @@ function pinBoxFile(n) {
 function updateOffer(u) {
   if (!u || !u.newer) return null;
   const how = u.how || null;
+  const restart = `stop dbt-edith where you started it and start it again: until then, ${u.current} serves this page.`;
+  const head = `dbt-edith ${u.latest} · this is ${u.current}`;
+  // Installed in this one's place (0095): what is left is the restart, and
+  // the command again would only stop on the renamed .exe. Which version
+  // went in is not known, and a release out since may not be it, so none is
+  // named: a restart onto one still behind is offered the update again.
+  if (u.replaced) {
+    return {
+      label: 'restart to update',
+      title: `A new dbt-edith is installed in this one's place, and this is still ${u.current}: restart it to run it`,
+      head: `dbt-edith ${u.current} · a new one is installed`,
+      notes: u.notes || '',
+      command: '',
+      installed: true,
+      step: `A new dbt-edith is installed in this one's place. To run it, ${restart}`,
+      lines: [],
+    };
+  }
   const lines = [];
   if (how) {
     lines.push(how.kind === 'build'
-      ? `It pulls main into ${how.source} and builds it again with cargo build --release, a minute or two.`
-      : `It pulls main into ${how.source} and installs it again with cargo install, a minute or two.`);
+      ? `It pulls main into ${how.source} and builds it again with cargo build --release.`
+      : `It pulls main into ${how.source} and installs it again with cargo install.`);
     if (how.renames) {
-      lines.push(`${how.exe} steps aside as ${how.exe}.old first, since Windows will not replace a running .exe, `
-        + 'and comes back if the build fails.');
+      lines.push(`Windows will not replace a running .exe but lets it be renamed: ${how.exe} steps aside as `
+        + `${how.exe}.old first, goes on serving this page, and comes back if the build fails.`);
     }
-    lines.push(`Then stop dbt-edith and start it again: until then, ${u.current} serves this page.`);
   } else if (u.why === 'locked') {
     lines.push('This dbt-edith runs from its clone\'s target/release, which a build cannot replace on Windows '
       + 'while it runs: stop it, then pull and build it again.');
@@ -12903,9 +12925,12 @@ function updateOffer(u) {
   return {
     label: `${u.latest} available`,
     title: `dbt-edith ${u.latest} is out, and this is ${u.current}`,
-    head: `dbt-edith ${u.latest} · this is ${u.current}`,
+    head,
     notes: u.notes || '',
     command: how ? how.command : '',
+    button: `Update to ${u.latest}`,
+    step: how ? `It types the update into the terminal below. Press Enter there to run it, a minute or two, `
+      + `then ${restart}` : '',
     lines,
   };
 }
@@ -12970,8 +12995,9 @@ function releaseRows(u) {
 
 /* Edith's menu, from the name at the top left and from the status bar's pill
    alike: which build serves the page, a newer release and how to install it
-   once one is known (0068), and the looks for one, with a button that makes
-   one at once (0079). The name opens it under the pointer too (0086). */
+   once one is known (0068), the restart left once it is installed (0095), and
+   the looks for one, with a button that makes one at once (0079). The name
+   opens it under the pointer too (0086). */
 function openUpdateMenu(anchor, hover = false) {
   if (closePopup(anchor)) return;
   const menu = document.createElement('div');
@@ -12980,6 +13006,12 @@ function openUpdateMenu(anchor, hover = false) {
   S.updateMenu = menu;
   paintUpdateMenu(menu);
   openPopup(anchor, menu, null, hover);
+  // An update installed by hand since the last answer says so on opening,
+  // the answer drawn only if it changed anything. Not more than twice a
+  // minute, since the pointer opens it too (0086), nor while a look is on
+  // its way, whose answer is the newer one.
+  const u = S.update;
+  if (u && !u.off && !u.checking && !S.lookPosted && Date.now() - S.updateAt > 30 * 1000) refreshUpdate();
 }
 
 /* Drawn again in place when an answer comes in while the menu is open. */
@@ -12997,15 +13029,19 @@ function paintUpdateMenu(menu) {
   if (S.build) menu.append(el('div', 'menunote', S.build));
   if (o) {
     menu.append(document.createElement('hr'));
-    if (o.command) {
-      const run = el('button', '');
+    // What to do comes first, drawn as a button or said as done, with how it
+    // goes right under it: a row like the others read as a heading.
+    if (o.installed) {
+      menu.append(el('div', 'updready', 'Installed: restart dbt-edith to run it'));
+    } else if (o.command) {
+      const run = el('button', 'updrun', o.button);
       run.type = 'button';
       run.setAttribute('role', 'menuitem');
       run.title = o.command;
-      run.append(el('span', 'lbl', 'Update in the terminal'));
-      run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); });
+      run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); watchInstall(); });
       menu.append(run);
     }
+    if (o.step) menu.append(el('div', 'menunote updstep', o.step));
     const link = (href, className, title) => {
       const a = el('a', className);
       a.setAttribute('role', 'menuitem');
@@ -13030,8 +13066,8 @@ function paintUpdateMenu(menu) {
         a.append(el('span', 'ver', ''), el('span', 'lbl', listed.older.label), el('span', 'sub', 'GitHub'));
         menu.append(a);
       }
-      // The list ends here, and what follows says how to install it.
-      menu.append(document.createElement('hr'));
+      // The list ends here, and what follows says how the update goes.
+      if (o.lines.length) menu.append(document.createElement('hr'));
     } else if (o.notes) {
       const a = link(o.notes, 'menulink');
       a.append(el('span', 'lbl', 'What changed'), el('span', 'sub', 'GitHub'));
@@ -13062,12 +13098,18 @@ function paintUpdateMenu(menu) {
    is looking until then, and is drawn again with the answer. */
 async function checkForUpdate() {
   S.update = Object.assign({}, S.update, { checking: true });
+  S.lookPosted = true;
+  const asked = ++S.updateAsks;
   paintUpdate();
   try {
     S.update = await api.send('/api/update/check', 'POST', {});
+    S.updateShown = asked;
+    S.updateAt = Date.now();
   } catch (e) {
     S.update = Object.assign({}, S.update, { checking: false });
     toast('looking for a newer dbt-edith: ' + e.message, 'err');
+  } finally {
+    S.lookPosted = false;
   }
   paintUpdate();
   // Another look was on its way, whose answer this one waits for.
@@ -13101,15 +13143,39 @@ function paintUpdate() {
    the page shows the answer soon after. */
 async function refreshUpdate() {
   clearTimeout(S.updatePoll);
-  try { S.update = await api.get('/api/update'); } catch {
+  const asked = ++S.updateAsks;
+  let got;
+  try { got = await api.get('/api/update'); } catch {
     // A request lost to sleep or the network: asked again in a minute.
     S.updatePoll = setTimeout(refreshUpdate, 60 * 1000);
     return;
   }
-  paintUpdate();
+  // Only an answer asked after the one shown is newer. A Check for updates
+  // on its way, or answered since this was asked, knows more: taken, this
+  // would put its button back while the look runs, or an older answer back
+  // for ten minutes.
+  if (!S.lookPosted && asked > S.updateShown) {
+    const changed = JSON.stringify(got) !== JSON.stringify(S.update);
+    S.update = got;
+    S.updateShown = asked;
+    S.updateAt = Date.now();
+    if (changed) paintUpdate();
+  }
   // Switched off, there will be nothing to hear.
   if (S.update.off) return;
-  S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 2000 : 600 * 1000);
+  // Waiting on the update only while there is one to wait on.
+  if (!S.update.newer || !S.update.how || S.update.replaced) S.installSince = 0;
+  const installing = S.installSince && Date.now() - S.installSince < 30 * 60 * 1000;
+  S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 2000 : installing ? 5000 : 600 * 1000);
+}
+
+/* Once the update is typed, asked every few seconds for half an hour, so the
+   menu and the pill say to restart soon after cargo puts the new binary in
+   place (0095). */
+function watchInstall() {
+  S.installSince = Date.now();
+  clearTimeout(S.updatePoll);
+  S.updatePoll = setTimeout(refreshUpdate, 5000);
 }
 
 /* Where the GitHub menu's two rows go. An issue starts with the version, the

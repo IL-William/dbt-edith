@@ -32,7 +32,10 @@ check('the command is the server\'s, untouched', installed.command,
   'git -C "/src/dbt-edith" pull --ff-only origin main && cargo install --locked --path "/src/dbt-edith"');
 check('the notes link is the release page', installed.notes, notes);
 ok('names the branch and the clone it pulls', says(installed, 'It pulls main into /src/dbt-edith and installs it again with cargo install'));
-ok('says the page is still the old one until a restart', says(installed, 'Then stop dbt-edith and start it again: until then, 1.11.0 serves this page.'));
+check('the button names the release', installed.button, 'Update to 1.12.0');
+ok('right under it: the terminal, Enter, and the restart',
+  installed.step === 'It types the update into the terminal below. Press Enter there to run it, a minute or two, '
+    + 'then stop dbt-edith where you started it and start it again: until then, 1.11.0 serves this page.');
 ok('says nothing of Windows elsewhere', !says(installed, 'Windows'));
 
 print('\n--- built in place ---');
@@ -49,13 +52,33 @@ var renamed = updateOffer({
   how: { command: 'git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
     source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true },
 });
-ok('says why the running .exe steps aside', says(renamed, 'dbt-edith.exe steps aside as dbt-edith.exe.old first, since Windows will not replace a running .exe'));
+ok('says why the running .exe steps aside', says(renamed, 'Windows will not replace a running .exe but lets it be renamed: dbt-edith.exe steps aside as dbt-edith.exe.old first'));
+ok('that it goes on serving the page', says(renamed, 'goes on serving this page'));
 ok('and that it comes back on a failure', says(renamed, 'comes back if the build fails'));
+
+print('\n--- installed, not yet restarted (0095) ---');
+var waiting = updateOffer({
+  current: '1.11.0', latest: '1.12.0', newer: true, notes: notes, replaced: true,
+  how: { command: 'git -C "C:/src/dbt-edith" fetch --tags --force origin; git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
+    source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true },
+});
+check('the pill says to restart, naming no version, since which went in is not known', waiting.label, 'restart to update');
+check('nor does the menu\'s heading, whose newest release may have come out since', waiting.head,
+  'dbt-edith 1.11.0 · a new one is installed');
+ok('the menu says it is installed', waiting.installed);
+check('and offers the command no more', waiting.command, '');
+check('the step says how to restart', waiting.step,
+  'A new dbt-edith is installed in this one\'s place. To run it, stop dbt-edith where you started it and start it '
+    + 'again: until then, 1.11.0 serves this page.');
+check('nothing left to say of the command', waiting.lines, []);
+check('the notes stay', waiting.notes, notes);
+check('a restart on the newest one offers nothing', updateOffer({ current: '1.12.0', latest: '1.12.0', replaced: true }), null);
 
 print('\n--- no command, and why ---');
 var carried = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, notes: notes, why: 'elsewhere' });
 check('still offered', carried.label, '1.12.0 available');
 check('with no command', carried.command, '');
+check('nor a step to follow', carried.step, '');
 ok('carried from another machine: says where to rebuild it', says(carried, 'pull and rebuild it where it was built'));
 var locked = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'locked' });
 ok('built in place on Windows: says to stop it first', says(locked, 'stop it, then pull and build it again'));

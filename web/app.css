@@ -231,6 +231,16 @@ kbd {
 .relrow .ver { flex: 0 0 46px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .relrow .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .updfoot .menunote { flex: 1; padding-bottom: 0; }
+/* The update, drawn as the app's primary button with how it goes under it,
+   and once it is installed the restart it waits for, in the colour of done. */
+.envmenu button.updrun {
+  display: inline-block; width: auto; margin: 4px 8px 2px; padding: 5px 12px;
+  background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 5px; font-weight: 600;
+}
+.envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: #2c5a8a; }
+.envmenu button.updrun:focus:not(:focus-visible) { background: var(--accent-dim); }
+.updmenu .updready { padding: 4px 8px 2px; font: 600 12px var(--ui); color: var(--ok); }
+.updmenu .menunote.updstep { padding-top: 3px; padding-bottom: 6px; color: var(--fg); }
 /* A button among the menu's rows, drawn as the app's other buttons are. */
 .envmenu button.updcheck {
   display: inline-block; flex: 0 0 auto; width: auto; padding: 4px 9px; white-space: nowrap;

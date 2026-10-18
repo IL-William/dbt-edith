@@ -234,10 +234,16 @@ async fn main() -> anyhow::Result<()> {
     let key = api::new_key();
     let url = format!("http://{}/?key={key}", listener.local_addr()?);
     let config_dir = settings::config_dir(|key| std::env::var_os(key), cfg!(windows));
+    // The running binary, by the one path the update names and the page
+    // watches for a replacement alike (0068, 0095). One that cannot be made
+    // canonical gets no command, and is still watched where it was started.
+    let started = std::env::current_exe().ok();
+    let exe = started.as_ref().and_then(|p| p.canonicalize().ok()).map(files::plain);
     // Switched off, it neither asks GitHub nor looks at where it was built,
     // and shows nothing, so the reason it gives is never read.
-    let how = if args.no_update_check { Err(update::Why::Elsewhere) } else { update_how(&shell) };
-    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how);
+    let how = if args.no_update_check { Err(update::Why::Elsewhere) } else { update_how(&shell, exe.as_deref()) };
+    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how)
+        .watching(exe.or(started));
     let state = Arc::new(api::AppState {
         port: listener.local_addr()?.port(),
         root: root.clone(),
@@ -323,11 +329,11 @@ async fn main() -> anyhow::Result<()> {
 
 /// The command that updates this binary, from the clone it was built from
 /// when that clone is still on this machine, or why there is none (0068).
-fn update_how(shell: &pty::ShellSpec) -> Result<update::How, update::Why> {
-    let canonical = |p: &Path| p.canonicalize().ok().map(files::plain).ok_or(update::Why::Elsewhere);
-    let source = canonical(Path::new(env!("CARGO_MANIFEST_DIR")))?;
-    let exe = std::env::current_exe().map_err(|_| update::Why::Elsewhere).and_then(|p| canonical(&p))?;
-    update::how(&source, &exe, update::shell_kind(&shell.program), cfg!(windows))
+fn update_how(shell: &pty::ShellSpec, exe: Option<&Path>) -> Result<update::How, update::Why> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().map_err(|_| update::Why::Elsewhere)?;
+    let source = files::plain(source);
+    let exe = exe.ok_or(update::Why::Elsewhere)?;
+    update::how(&source, exe, update::shell_kind(&shell.program), cfg!(windows))
 }
 
 /// Binds to localhost only, walking forward if the port is already in use.
