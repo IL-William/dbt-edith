@@ -27,15 +27,21 @@ the editor reads and writes their files.
   `Cross-Origin-Resource-Policy` and `Cross-Origin-Opener-Policy` set to
   `same-origin`.
 - **Every file path is confined to the opened project.** `..`, absolute paths,
-  drive letters and symlinks pointing out are refused, and so is a link to a
-  file that is not there, which a write would otherwise create outside. The
+  drive letters, a drive-relative `C:x` on Windows and symlinks pointing out
+  are refused, and so is a link to a file that is not there, which a write
+  would otherwise create outside, a link through a folder that is not there
+  and back included. The
   path the manifest records for a compiled file is held to the target
   directory the same way, since a manifest is a file a repository can commit.
   One file outside the project is
   reachable: the dbt profile, found where dbt looks for it, and served only by
   its own route. No path for it ever comes from the browser (0017, 0049). The
   clone route reads it as well, and sends only the active target's name,
-  database and schema (0058).
+  database and schema (0058). A `profiles.yml` in a folder of the project is
+  one of its files, held to it like the others: one that links outside the
+  project is not opened, by the server or by the Snowflake script, even though
+  dbt follows it. One outside the project, `~/.dbt/profiles.yml` linked from a
+  dotfiles repository say, is followed as dbt follows it (0094).
 - **The job folders the user names are read, and nothing else outside.** The
   page may name folders holding the orchestrator's jobs, outside the project;
   the key it needs already opens a shell, so this widens nothing (0052). Under
@@ -47,10 +53,17 @@ the editor reads and writes their files.
   password, token and private key with a placeholder before sending it, and
   puts the value on disk back when the placeholder is saved unchanged (0054).
   A save never widens the file's permissions, and the temporary file it goes
-  through is readable by its owner alone from its first byte.
+  through is readable by its owner alone from its first byte. A profile that
+  is a link stays one: the save replaces the file at its end (0094).
 - **Opening a project runs nothing in it.** The venv in the status bar is read
   from its files, never asked by running its `python` or `dbt`, and a venv git
-  tracks, which came with the repository, is never run at all (0053).
+  tracks, which came with the repository, is never run at all (0053). Nor is a
+  collin git tracks, found beside dbt-edith or on the `PATH`: a dbt-edith
+  copied into a project sits beside whatever the repository commits there.
+  The column lineage menu names the one passed over (0094). Whatever dbt-edith
+  starts by its name, git, the `cmd` that opens the browser on Windows or a
+  Python for the Snowflake script, is found on the `PATH` alone, never in the
+  folder the binary sits in, where Windows looks first.
 - **The editor reads the whole project, `.env` included.** That is what an
   editor is for. The environments panel, by contrast, never returns a `.env`
   value, only names and counts. The hover card on a variable does show a
@@ -73,7 +86,11 @@ the editor reads and writes their files.
 - The project you open is yours. Its git hooks run when you commit, as they
   would from the command line; a clone brings none. With Snowflake picked as
   the column lineage tool, a virtual environment of the project that git does
-  not track runs the lineage script.
+  not track runs the lineage script. With Collin picked, a collin git does not
+  track runs, beside dbt-edith or on the `PATH`, wherever that is. Outside a
+  repository nothing is set aside. Inside one git refuses to read, another
+  account's say, a collin is passed over, with git's reason, while a venv
+  still runs as before (0053).
 - Anything already running as your user on the same machine. It can read the
   printed key from the terminal, or the cookie from the browser's profile.
 - Another account reading the key off the browser's command line, on a Unix

@@ -808,6 +808,21 @@ config directory, and makes its repository only where nothing was. A selector
 name from a job file was typed with its control characters. Each has a test
 beside it, the link ones on Unix (0090).
 
+What a repository brings is held to it (0094, 1.29.1). Three findings of that
+review waited a day. A collin git tracks is passed over, beside the binary or
+on `PATH`, and the column lineage menu says which one and why: a
+`dbt-edith.exe` copied into a project had run the `collin.exe` committed beside
+it, its `--version` at every page load. A save from the page writes through a
+`profiles.yml` that is a link, rather than replacing the link with a plain
+file. A `profiles.yml` in the project that links outside it is refused by every
+reader, its button says why, and the Snowflake script refuses it too. A `..`
+after a folder that is not there, and on Windows a segment holding a colon,
+are refused as paths that leave the project. Its review added four: git is
+asked case aside, so a committed `Collin` counts, and the answer is kept
+against the index; a path not there yet is walked link by link, a folder's
+included; and git, `cmd` and a bare `python` are found on the `PATH` alone,
+never beside the binary, where Windows looks first.
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it
@@ -1743,46 +1758,20 @@ repository: retake them when a change alters what one shows.
     target it was compiled for, so the page cannot fill it in: Regenerate
     would offer the profile's targets and pass the one picked, which the
     user then has to have compiled and generated the catalog under.
-21. **collin beside a binary copied into a project.** `collin_run::locate`
-    looks in the running binary's folder before `PATH`, so that a collin
-    shipped with dbt-edith wins over one installed long ago (0042). A
-    `dbt-edith.exe` copied into a project folder therefore runs a
-    `collin.exe` the repository commits beside it: `--version` at every page
-    load, through `/api/meta`, and the generation once Collin is the column
-    tool. An empty entry in `PATH` finds one in the folder dbt-edith started
-    in the same way. The trap: the VM's own fallback is a `collin.exe` copied
-    beside the binary (above), so the fix has to tell the user's copy from
-    the repository's, for instance by refusing a collin git tracks, as 0053
-    refuses a venv it tracks. Found by the security review of 2026-10-15,
-    which 1.25.1 did not take up.
-22. **Saving the profile through a link.** `settings::write_atomic` renames a
-    temporary file over the path it writes. When `~/.dbt/profiles.yml` is a
-    link into a dotfiles repository, a save from the page replaces the link
-    with a plain file, silently, and later edits to the link's target no
-    longer reach dbt. The likely answer: write beside the link's target and
-    rename over that, keeping the link, as the file's mode is already kept.
-23. **A project's `profiles.yml` link is followed.** `profiles::Lookup::path`
-    takes the project's own `profiles.yml` whenever `is_file()` says yes,
-    which follows a link. A project whose `profiles.yml` points outside it, at a
-    key file say, has that file served by `/api/profiles`, where the
-    redaction finds no key to hide. `/api/file` refuses the same link, and
-    SECURITY.md says the one file outside the project the page reaches is
-    the profile dbt would find. The likely answer: hold the project's copy to
-    the project, as `files::confined` holds the editor's paths.
-24. **Merging a cache, quadratic in a model's width.** `merge_col_lineage`
+21. **Merging a cache, quadratic in a model's width.** `merge_col_lineage`
     looks each wanted column up among the node's columns by lower-casing
     every one of them, so a model fed 20 000 columns spends tens of seconds
     merging, where real widths cost nothing. The page and `--column` (0088)
     share it. The likely answer: one lower-cased index of the node's columns
     per merge.
-25. **Saying when the starts fill the cap.** Past 3 000 nodes a selection
+22. **Saying when the starts fill the cap.** Past 3 000 nodes a selection
     draws what is nearest its start (0087). When the starts alone take most
     of the cap, as `source:*+` can on a large project, the canvas shows them
     with few of their children, each with a `+N`, and the warning says only
     that the canvas is cut. The order stays, chosen again on 2026-10-16; the
     warning should say that the starts take most of what is drawn, and that
     Draw all or a narrower selection draws their children.
-26. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
+23. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
     (its own 0045): a column built from no column, a literal's value with it
     when there is one. The canvas badges such a column `raw`, as it does a
     source's own column and a column whose lineage collin lost. Read, `roots`
@@ -1798,7 +1787,7 @@ repository: retake them when a change alters what one shows.
 
     `collin_run::WANTS` still asks for 0.1.0, so nothing offers the update
     that brings `roots`.
-27. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
+24. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
     publisher, product or version in its properties, which antivirus
     heuristics hold against a fresh unsigned binary. A resource naming
     Datadorelix, dbt-edith and the version, in the `.exe` that
@@ -1807,6 +1796,13 @@ repository: retake them when a change alters what one shows.
     trap: a resource compiler, mingw-w64's `windres` or MSVC's `rc.exe`, or a
     crate that finds one (0003), which the VM's `cargo install` has to find
     too.
+25. **The update command names git by its path.** The command the status bar
+    types into the terminal to update dbt-edith runs in the project folder,
+    and under Windows `cmd.exe`, which looks in the current folder first, a
+    `git.exe` committed at the project's root would run on Enter. Likely
+    answer: type the absolute path `program::on_path` finds for git into that
+    command (0094). The trap: the command is shown and copied as typed, so a
+    long path makes it harder to read, and Git Bash wants it in its own form.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -1971,7 +1967,7 @@ on a managed Windows machine. Signing would come with it, a certificate 0085
 leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
 Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
 licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource comes first
-(item 27).
+(item 24).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then

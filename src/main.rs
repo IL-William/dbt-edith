@@ -21,6 +21,7 @@ mod ls_column;
 mod macros;
 mod manifest;
 mod profiles;
+mod program;
 mod project;
 mod run_results;
 mod pty;
@@ -355,9 +356,12 @@ fn open_browser(url: &str) {
         c.arg(url);
         c
     };
+    // From the PATH, never beside this binary, where a repository could
+    // have committed a `cmd.exe` that would run at every start (0094).
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = std::process::Command::new("cmd");
+        let Some(cmd) = program::on_path("cmd") else { return };
+        let mut c = std::process::Command::new(cmd);
         c.args(["/C", "start", "", url]);
         c
     };

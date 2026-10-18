@@ -4384,12 +4384,29 @@ function columnsHint(sc, cached) {
   return cached ? null : { text: 'click a column to fetch its lineage from Snowflake', tone: 'hint' };
 }
 
+/* Why a collin that was found does not run: git tracks it, so it came with a
+   repository, as a venv git tracks never runs (0053, 0094). Said in the menu
+   and the Columns tab, or a copy beside dbt-edith would sit there doing
+   nothing and nobody would know why. */
+function collinRefusedNote(cl) {
+  if (!cl || !cl.refused) return '';
+  // Another collin runs: say which first, so the note does not read as if
+  // collin were not running at all.
+  // git said nothing: it sits in a repository, and may be the repository's.
+  const why = cl.refused_why
+    ? `${cl.refused} sits in a repository git could not answer for (${cl.refused_why})`
+    : `git tracks ${cl.refused}, so it came with a repository`;
+  if (cl.found && cl.path) return `Using ${cl.path}. Skipped ${cl.refused}: ${why}.`;
+  return `Not run: ${why}. Keep your own collin in a folder git does not track.`;
+}
+
 /* The same, for collin while it is the tool picked: what it is doing, why it
    failed, or that its cache is behind the manifest (0042). */
 function collinHint(tool, cl, kinds) {
   if (tool !== 'collin' || !cl) return null;
   if (cl.state === 'running') return { text: 'collin is reading the compiled SQL', tone: 'busy' };
   if (cl.state === 'failed') return { text: `collin: ${cl.error || 'the run failed'}`, tone: 'failed' };
+  if (!cl.found && cl.refused) return { text: collinRefusedNote(cl), tone: 'hint' };
   if (!cl.found) return { text: 'collin is not installed: the column lineage menu installs it', tone: 'hint' };
   if (cl.outdated) {
     const v = shortVersion(cl.version);
@@ -4667,6 +4684,8 @@ function lineageTools(sources, active, live, snowflake, cl) {
     else if (collin && !src) sub = installed ? 'runs on pick' : 'install';
     if (collin && !src && installed) {
       title = 'Runs collin over the compiled SQL, which writes column_lineage.collin.json.';
+    } else if (collin && !src && cl && cl.refused) {
+      title = `${collinRefusedNote(cl)}\nClick to type the command that installs it into the terminal.`;
     } else if (snow) {
       title = 'Fetches a column\'s lineage from Snowflake when you click it, under your dbt profile.'
         + (src ? `\nAdds to ${src.file}` : '');
@@ -4835,6 +4854,10 @@ async function openSourceMenu(anchor) {
       }
       const gone = collinChosenGone(S.collin);
       if (gone && S.cllTool === 'collin') menu.appendChild(Object.assign(document.createElement('div'), { className: 'menunote', textContent: gone }));
+      // Whatever the tool picked: it says why the entry offers an install,
+      // or why the collin that runs is not the one beside dbt-edith.
+      const refused = collinRefusedNote(S.collin);
+      if (refused) menu.appendChild(Object.assign(document.createElement('div'), { className: 'menunote', textContent: refused }));
       if (compare) {
         add({ label: compare.label, sub: compare.sub, tool: 'collin', on: false, title: compare.title, action: true,
           pick: () => openCollinCompare() });
@@ -5539,7 +5562,7 @@ function connectionAdvice(error, phase, profiles) {
    no file there. */
 function profileLink() {
   const p = S.profiles;
-  if (!p || !p.found) return null;
+  if (!p || !p.found || p.refused) return null;
   const a = document.createElement('a');
   a.className = 'filelink';
   a.textContent = fileName(p.path);
@@ -5556,7 +5579,13 @@ function paintProfileButton() {
   const p = S.profiles;
   b.classList.toggle('hidden', !p);
   if (!p) return;
-  b.dataset.found = String(!!p.found);
+  // A refused one is drawn as a missing one, grey with its dot: there is
+  // nothing here to open, and the tooltip says why (0094).
+  b.dataset.found = String(!!p.found && !p.refused);
+  if (p.refused) {
+    b.title = `profiles.yml: not opened\n${p.path}\n${p.refused}.`;
+    return;
+  }
   b.title = p.found
     ? `profiles.yml\n${p.path}\nThe dbt profile: click to open it here.`
     : `profiles.yml: none\nNo dbt profile at ${p.path}, where dbt looks for one.`;
@@ -13389,7 +13418,8 @@ async function boot() {
   $('#profile-btn').append(profileIcon());
   $('#profile-btn').addEventListener('click', () => {
     const p = S.profiles;
-    if (p && p.found) openProfiles();
+    if (p && p.refused) toast(p.refused, 'err');
+    else if (p && p.found) openProfiles();
     else if (p) toast(`no profiles.yml at ${p.path}`, 'err');
   });
   paintTestsToggle(false);

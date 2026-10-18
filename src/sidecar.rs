@@ -392,7 +392,21 @@ impl Sidecar {
         let mut error = String::from("no Python found: create the project's virtual environment, or put python on the PATH");
         let mut spawned = None;
         for candidate in candidates {
-            let mut cmd = Command::new(&candidate.program);
+            // A bare name is looked up on the PATH alone: on Windows `Command`
+            // would look beside this binary first, where a repository could
+            // have committed a `python.exe` (0094).
+            let program = if candidate.program.components().count() == 1 {
+                match crate::program::on_path(&candidate.program.to_string_lossy()) {
+                    Some(found) => found,
+                    None => {
+                        error = format!("cannot run {}: it is not on the PATH", candidate.program.display());
+                        continue;
+                    }
+                }
+            } else {
+                candidate.program.clone()
+            };
+            let mut cmd = Command::new(&program);
             cmd.args(&candidate.args)
                 .arg("-u")
                 .arg(script)

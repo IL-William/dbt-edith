@@ -97,44 +97,109 @@ fn joined(root: &Path, rel: &str) -> anyhow::Result<PathBuf> {
     for seg in rel.replace('\\', "/").split('/') {
         match seg {
             "" | "." => continue,
-            ".." => anyhow::bail!("path escapes the project root"),
-            // A drive letter: on Windows `push` would replace the root with it.
-            s if s.ends_with(':') => anyhow::bail!("path escapes the project root"),
+            s if leaves_by_spelling(s, cfg!(windows)) => anyhow::bail!("path escapes the project root"),
             s => out.push(s),
         }
     }
     Ok(out)
 }
 
+/// A segment that takes a path out of the root by its spelling alone: `..`,
+/// or a drive. A bare `C:` anywhere, and on Windows any colon at all: `C:x`
+/// is relative to the current folder of drive C, and `push` replaces the
+/// root with it. A Windows file name holds no colon of its own, so none is
+/// lost there; elsewhere `a:b.sql` is an ordinary name.
+fn leaves_by_spelling(seg: &str, windows: bool) -> bool {
+    seg == ".." || seg.ends_with(':') || (windows && seg.contains(':'))
+}
+
 /// `out`, refused when a link takes it out of the project. Apart from `resolve`
 /// so a search can canonicalize the root once rather than once per file.
 fn confined(root: &Path, canon_root: &Path, out: PathBuf) -> anyhow::Result<PathBuf> {
-    // A link to nothing: `exists` follows it and says no, so it would pass as
-    // a new file below, and a write would then create the file the link
-    // names, wherever that is. It is judged by where it points, link by link
-    // for a few hops: inside the project, a file not generated yet is an
-    // ordinary new file; outside, or past the hops, it is refused.
-    let mut pointed = out.clone();
-    let mut hops = 0;
-    while pointed.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) && !pointed.exists() {
-        if hops == 8 {
-            anyhow::bail!("path escapes the project root");
-        }
-        hops += 1;
-        let target = std::fs::read_link(&pointed)?;
-        pointed = if target.is_absolute() { target } else { pointed.parent().unwrap_or(root).join(target) };
-    }
-    // A path that does not exist yet (a new file, or a deleted one being
-    // diffed) is judged by its nearest existing ancestor.
-    let mut probe = pointed.as_path();
-    while !probe.exists() {
-        probe = probe.parent().unwrap_or(root);
-    }
-    let canon = probe.canonicalize()?;
-    if !canon.starts_with(canon_root) {
+    // A path that is there is where the system says it is. One that is not,
+    // a new file or a deleted one being diffed, is where a write would put
+    // it, links on the way followed.
+    let landed = if out.exists() {
+        out.canonicalize()?
+    } else {
+        let rel = out.strip_prefix(root).map_err(|_| anyhow::anyhow!("path escapes the project root"))?;
+        landing(canon_root, rel)?
+    };
+    if !landed.starts_with(canon_root) {
         anyhow::bail!("path escapes the project root");
     }
     Ok(out)
+}
+
+/// How many links a path not there yet may pass through on its way, eight,
+/// past which it is refused rather than followed (0090).
+pub(crate) const MAX_LINKS: usize = 8;
+
+/// One step of a path being walked: a link's target is put back in front of
+/// what is left, so it is walked by the same rules.
+enum Step {
+    Root(std::ffi::OsString),
+    Up,
+    Name(std::ffi::OsString),
+}
+
+fn steps(path: &Path) -> Vec<Step> {
+    use std::path::Component;
+    path.components()
+        .filter_map(|c| match c {
+            Component::Prefix(_) | Component::RootDir => Some(Step::Root(c.as_os_str().to_owned())),
+            Component::CurDir => None,
+            Component::ParentDir => Some(Step::Up),
+            Component::Normal(name) => Some(Step::Name(name.to_owned())),
+        })
+        .collect()
+}
+
+/// Where a write to `rel`, a path not there yet, would land: name by name
+/// from the root, every link on the way followed as the system follows it,
+/// a folder's included, and every `..` taken against the folder actually
+/// reached, never against the spelling. Once a name is not there the rest is
+/// new and taken as spelt, but for a `..`: the system would take that one
+/// against folders made in the meantime, so `nodir/../..` is refused rather
+/// than judged as the folder it started from. Judging only the last name
+/// let `models/sub -> ../nodir/../../out` pass with `models/sub/new.sql`.
+fn landing(canon_root: &Path, rel: &Path) -> anyhow::Result<PathBuf> {
+    let escapes = || anyhow::anyhow!("path escapes the project root");
+    let mut real = canon_root.to_path_buf();
+    let mut new = PathBuf::new();
+    let mut rest: std::collections::VecDeque<Step> = steps(rel).into();
+    let mut links = 0;
+    while let Some(step) = rest.pop_front() {
+        match step {
+            Step::Root(at) => real.push(at),
+            Step::Up if !new.as_os_str().is_empty() => return Err(escapes()),
+            Step::Up => {
+                real.pop();
+            }
+            Step::Name(name) if !new.as_os_str().is_empty() => new.push(name),
+            Step::Name(name) => {
+                let next = real.join(&name);
+                match next.symlink_metadata() {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        links += 1;
+                        if links > MAX_LINKS {
+                            return Err(escapes());
+                        }
+                        let target = std::fs::read_link(&next)?;
+                        if target.is_absolute() {
+                            real = PathBuf::new();
+                        }
+                        for s in steps(&target).into_iter().rev() {
+                            rest.push_front(s);
+                        }
+                    }
+                    Ok(_) => real = next,
+                    Err(_) => new.push(name),
+                }
+            }
+        }
+    }
+    Ok(real.canonicalize()?.join(new))
 }
 
 #[derive(serde::Serialize)]
@@ -854,8 +919,64 @@ mod tests {
             std::os::unix::fs::symlink(&planted, dir.join("models").join("hop2.sql")).unwrap();
             std::os::unix::fs::symlink("hop2.sql", dir.join("models").join("hop1.sql")).unwrap();
             assert!(resolve(&root, "models/hop1.sql").is_err());
+            // Through a folder that is not there and back: judged by its
+            // spelling, `nodir/..` cancelled out and it passed on main, and a
+            // `nodir` made before the write took it outside.
+            std::os::unix::fs::symlink("../nodir/../../outside/escape.txt", dir.join("models").join("lexical")).unwrap();
+            assert!(resolve(&root, "models/lexical").is_err());
+            std::fs::create_dir_all(dir.join("nodir")).unwrap();
+            assert!(resolve(&root, "models/lexical").is_err(), "with the folder there, the link plainly leaves");
+            // A link into a folder a generator has not made yet stays a new file.
+            std::os::unix::fs::symlink("../later/x.sql", dir.join("models").join("later.sql")).unwrap();
+            assert!(resolve(&root, "models/later.sql").is_ok());
+            // A folder link on the way, not the last name: judged too. Only the
+            // last link was followed, and `models/sub/new.sql` passed.
+            std::fs::remove_dir_all(dir.join("nodir")).unwrap();
+            std::os::unix::fs::symlink("../nodir/../../outside", dir.join("models").join("sub")).unwrap();
+            assert!(resolve(&root, "models/sub/new.sql").is_err());
+            std::fs::create_dir_all(dir.join("nodir")).unwrap();
+            assert!(resolve(&root, "models/sub/new.sql").is_err());
+            std::os::unix::fs::symlink("../generated", dir.join("models").join("gen")).unwrap();
+            assert!(resolve(&root, "models/gen/new.sql").is_ok(), "a folder link inside, to a new file");
+            // Out and back in by name is in: the `..` are taken against
+            // folders that are there.
+            let back = format!("../../{}/generated/back.sql", dir.file_name().unwrap().to_str().unwrap());
+            std::os::unix::fs::symlink(&back, dir.join("models").join("back.sql")).unwrap();
+            assert!(resolve(&root, "models/back.sql").is_ok());
+            // Past eight links, refused, as the script refuses it (0094).
+            for i in 0..9 {
+                std::os::unix::fs::symlink(format!("c{}", i + 1), dir.join("models").join(format!("c{i}"))).unwrap();
+            }
+            assert!(resolve(&root, "models/c1").is_ok(), "eight links, to a file not there yet");
+            assert!(resolve(&root, "models/c0").is_err(), "nine");
         }
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A drive in a segment replaces the root when pushed: `C:` everywhere,
+    /// and on Windows `C:x` too, relative to drive C's current folder. A
+    /// colon elsewhere is part of a name. On main `C:x` passed the spelling.
+    #[test]
+    fn a_drive_leaves_the_root_by_its_spelling() {
+        for (seg, windows, leaves) in [
+            ("..", false, true),
+            ("C:", false, true),
+            ("C:", true, true),
+            ("C:x", true, true),
+            ("a.sql:stream", true, true),
+            ("C:x", false, false),
+            ("a:b.sql", false, false),
+            ("orders.sql", true, false),
+            ("...", true, false),
+        ] {
+            assert_eq!(leaves_by_spelling(seg, windows), leaves, "{seg} on windows={windows}");
+        }
+        #[cfg(windows)]
+        {
+            let root = std::env::temp_dir().canonicalize().unwrap();
+            assert!(resolve(&root, "C:x").is_err());
+            assert!(resolve(&root, "models/C:x").is_err());
+        }
     }
 }

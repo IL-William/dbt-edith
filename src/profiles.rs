@@ -2,7 +2,8 @@
 //!
 //! The one file outside the project dbt-edith opens (0017), found the way dbt
 //! finds it rather than named by the browser, so no request can point it at
-//! another file (0049). `tools/sf_lineage.py` repeats the same order in Python,
+//! another file (0049). One the project holds is held to the project, as any
+//! of its files is: a `profiles.yml` there linking out is not opened (0094). `tools/sf_lineage.py` repeats the same order in Python,
 //! from the same directory and the same environment, so the two agree.
 //!
 //! The active target's database and schema are where a clone lands (0058).
@@ -49,6 +50,28 @@ impl Lookup {
         }
         self.home.as_ref().map(|h| h.join(".dbt").join("profiles.yml"))
     }
+}
+
+/// Why a profile dbt would read is not opened here: it sits in a folder of
+/// the project and links out of it.
+pub const LINKS_OUT: &str = "profiles.yml in the project links to a file outside it, so dbt-edith does not open it. \
+     dbt still follows the link: start dbt-edith with DBT_PROFILES_DIR set to the folder it links to, to open it here";
+
+/// Whether the profile at `path` may be opened. One in a folder of the
+/// project, after links, is a file of the repository, which can commit it as
+/// a link to any file of the user's, a key say, in which redaction finds no
+/// key to hide: it is held to the project as the editor's paths are, by
+/// `files::resolve`. One outside the project is the user's own, linked from a
+/// dotfiles repository or not, and is followed as dbt follows it (0094).
+pub fn held(root: &Path, path: &Path) -> Result<(), String> {
+    let (Ok(canon_root), Some(Ok(folder)), Some(name)) =
+        (root.canonicalize(), path.parent().map(Path::canonicalize), path.file_name())
+    else {
+        return Ok(());
+    };
+    let Ok(rel) = folder.strip_prefix(&canon_root) else { return Ok(()) };
+    let rel = rel.join(name).to_string_lossy().into_owned();
+    crate::files::resolve(&canon_root, &rel).map(|_| ()).map_err(|_| LINKS_OUT.to_string())
 }
 
 /// One line, without its ending, and the ending it had: a profile written on
@@ -300,6 +323,73 @@ mod tests {
         let relative = Lookup::from_env(env(&[("DBT_PROFILES_DIR", "config")]), false);
         assert_eq!(relative.path(&root), Some(root.join("config").join("profiles.yml")));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The project's own `profiles.yml` is held to the project, whichever
+    /// way dbt found it there; one outside is followed wherever it links,
+    /// as dbt follows it (0094). On main every one of these was opened.
+    #[cfg(unix)]
+    #[test]
+    fn a_profile_in_the_project_is_held_to_it() {
+        use std::os::unix::fs::symlink;
+        let root = project("held", false);
+        let outside = project("held-outside", false);
+        let key = outside.join("id_ed25519");
+        std::fs::write(&key, "-----BEGIN OPENSSH PRIVATE KEY-----\n").unwrap();
+        let local = root.join("profiles.yml");
+        assert_eq!(held(&root, &local), Ok(()), "none there yet: the read says so");
+        std::fs::write(&local, "shop:\n").unwrap();
+        assert_eq!(held(&root, &local), Ok(()), "a plain file, as before");
+
+        std::fs::remove_file(&local).unwrap();
+        symlink(&key, &local).unwrap();
+        assert_eq!(held(&root, &local), Err(LINKS_OUT.to_string()));
+        // Found through a DBT_PROFILES_DIR naming the project, however spelt.
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        for dir in [".", "config/..", root.to_str().unwrap()] {
+            let named = Lookup::from_env(env(&[("DBT_PROFILES_DIR", dir)]), false);
+            assert_eq!(held(&root, &named.path(&root).unwrap()), Err(LINKS_OUT.to_string()), "{dir}");
+        }
+
+        // The cases the Snowflake script's test runs too, so the two agree
+        // on every profile (0049, 0094).
+        let relink = |target: &Path| {
+            let _ = std::fs::remove_file(&local);
+            symlink(target, &local).unwrap();
+        };
+        relink(&outside.join("missing.yml"));
+        assert_eq!(held(&root, &local), Err(LINKS_OUT.to_string()), "a link to nothing outside");
+        relink(Path::new("nodir/../config/profiles.yml"));
+        assert_eq!(held(&root, &local), Err(LINKS_OUT.to_string()), "a `..` after a folder that is not there");
+        for i in 2..9 {
+            let next = if i < 8 { format!("c{}", i + 1) } else { "config/none.yml".to_string() };
+            symlink(next, root.join(format!("c{i}"))).unwrap();
+        }
+        relink(Path::new("c2"));
+        assert_eq!(held(&root, &local), Ok(()), "eight links to a file not there yet");
+        symlink("c2", root.join("c1")).unwrap();
+        relink(Path::new("c1"));
+        assert_eq!(held(&root, &local), Err(LINKS_OUT.to_string()), "nine");
+
+        // A link that stays in the project is a file of it like any other.
+        std::fs::remove_file(&local).unwrap();
+        std::fs::write(root.join("config").join("profiles.yml"), "shop:\n").unwrap();
+        symlink("config/profiles.yml", &local).unwrap();
+        assert_eq!(held(&root, &local), Ok(()));
+
+        // Outside the project the user's own links are followed, a dotfiles
+        // one included, and a DBT_PROFILES_DIR spelt from the project but
+        // naming a folder beside it is outside too.
+        let home = outside.join(".dbt");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(outside.join("dotfiles.yml"), "shop:\n").unwrap();
+        symlink(outside.join("dotfiles.yml"), home.join("profiles.yml")).unwrap();
+        assert_eq!(held(&root, &home.join("profiles.yml")), Ok(()));
+        let beside = format!("../{}/.dbt", outside.file_name().unwrap().to_str().unwrap());
+        let named = Lookup::from_env(env(&[("DBT_PROFILES_DIR", beside.as_str())]), false);
+        assert_eq!(held(&root, &named.path(&root).unwrap()), Ok(()));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside);
     }
 
     #[test]
