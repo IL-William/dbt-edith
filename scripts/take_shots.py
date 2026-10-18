@@ -210,7 +210,7 @@ class Shots:
         self.take("lineage")
         self.click("#by-folder")
         self.click("#with-tests")
-        self.click("[data-mode=model]")
+        self.click("#selpanel-close")
 
         # Jobs: which of them run customers, and the one that cannot be told.
         self.dock_to(380)

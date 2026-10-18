@@ -49,6 +49,7 @@ $JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
+$JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 ```
 

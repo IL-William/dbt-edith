@@ -155,7 +155,8 @@ class Walk:
         self.depth(2, 3)
         page.js("document.querySelector('[data-mode=select]').click()")
         page.until("!document.querySelector('#select-bar').classList.contains('hidden')", "Custom selection")
-        page.js("document.querySelector('[data-mode=model]').click()")
+        # In its panel over the dock (0092): its close button is the way back.
+        page.js("document.querySelector('#selpanel-close').click()")
         page.until("document.querySelector('#select-bar').classList.contains('hidden')", "Models")
         self.drawn("Custom selection and back on orders, still 2 and 3", "orders", "2/3")
 
