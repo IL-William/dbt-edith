@@ -6,6 +6,13 @@ Everything at once, which is what to run before calling a change done:
 ./scripts/check.sh
 ```
 
+A part that needs something this machine lacks skips itself, and the run
+still passes, but its last line then reads `passed, but skipped:` and names
+each part left out, where a run of everything reads `all good`. The
+comparison with dbt and the Chrome walks build dbt-edith and run it from
+where cargo says it put it, which `CARGO_TARGET_DIR` moves, or run the binary
+`DBT_EDITH` names.
+
 The Rust side has unit tests for `.env` parsing, location resolution and the
 settings store:
 

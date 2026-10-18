@@ -61,4 +61,5 @@ are. 0091 sorts views of that kind into a panel.
 The dock's lineage is one model's or one column's. A model's lineage answer
 is drawn only while the canvas still asks for that model, since the panel
 rolling up and a file opened can each ask for one. The card is the Catalog at
-420px, where its location table wraps.
+280 to 420px, where its tables of names keep each name on one line and scroll
+sideways.

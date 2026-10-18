@@ -17,7 +17,9 @@ That is why there is no build step, no framework, and a short dependency list.
 Run it before saying a change works. It is the only answer to "how do I check
 this", and it needs nothing installed beyond Rust and macOS. The audit step
 needs `cargo install cargo-audit --locked` and skips itself without it, like
-the browser half without a JavaScript shell. The second audit compares
+the browser half without a JavaScript shell. A passing run that skipped
+anything ends on `passed, but skipped:` and the parts it left out, never on
+`all good`, so say which when reporting it. The second audit compares
 `web/vendor/` with its upstream releases by hash, offline too, and asks OSV
 about it when online. GitHub Actions runs the Rust tests and both audits on
 every push and every Monday, never the browser half, which wants
