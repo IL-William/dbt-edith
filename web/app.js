@@ -7682,18 +7682,23 @@ function renderCatalog(n) {
 
   const tabs = document.createElement('div');
   tabs.className = 'cat-tabs';
-  for (const [key, label] of [['preview', 'Preview'], ['columns', `Columns${n.columns.length ? ' (' + n.columns.length + ')' : ''}`]]) {
+  // A test has no columns of its own, so it has Preview alone. The tab picked
+  // stays picked, for the next model shown.
+  const test = n.kind === 'test';
+  const shown = test ? 'preview' : S.catTab;
+  for (const [key, label] of test ? [['preview', 'Preview']]
+    : [['preview', 'Preview'], ['columns', `Columns${n.columns.length ? ' (' + n.columns.length + ')' : ''}`]]) {
     const t = document.createElement('button');
-    t.className = 'ctab' + (S.catTab === key ? ' active' : '');
+    t.className = 'ctab' + (shown === key ? ' active' : '');
     t.textContent = label;
-    t.addEventListener('click', () => showCatalogTab(n, key));
+    t.addEventListener('click', () => (test ? renderCatalog(n) : showCatalogTab(n, key)));
     tabs.appendChild(t);
   }
   head.append(title, crumb, tabs);
 
   const body = document.createElement('div');
   body.className = 'cat-body';
-  (S.catTab === 'columns' ? catalogColumns : catalogPreview)(body, n);
+  (shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n);
   host.append(head, body);
   const filter = typing && $('#col-filter');
   if (filter) {
@@ -7713,6 +7718,25 @@ function h3(label) {
   const h = document.createElement('h3');
   h.textContent = label;
   return h;
+}
+
+/* The lineage on a node and its direct parents, the upstream box set to 1
+   and the downstream one left as it was. */
+function lineageOneUp(n) {
+  $('#up').value = 1;
+  focusNode(n.id, { keepDepth: true });
+  showDock('lineage');
+}
+
+/* A details list: a line per [key, value, dim] whose value is not empty. */
+function kvLines(pairs) {
+  const kv = document.createElement('dl');
+  kv.className = 'kvline';
+  for (const [k, v, dim] of pairs) {
+    if (!v) continue;
+    kv.append(jel('dt', dim ? 'muted' : '', k), jel('dd', dim ? 'muted' : '', v));
+  }
+  return kv;
 }
 
 function stat(label, value, onClick) {
@@ -10711,7 +10735,7 @@ function catalogPreview(body, n) {
     stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
     // Each sets the box it names and leaves the other: the Catalog shows
     // another node than the canvas's only when a box was clicked on it.
-    stat('Upstream models', `${n.parents.length}`, () => { $('#up').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
+    stat('Upstream models', `${n.parents.length}`, () => lineageOneUp(n)),
     stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
     stat('Tests', String(n.tests.length), n.tests.length ? () => {
       const h = [...body.querySelectorAll('h3')].find((e) => e.textContent.startsWith('tests on'));
@@ -10726,28 +10750,8 @@ function catalogPreview(body, n) {
   catalogLocation(body, n);
   catalogJobs(body, n);
 
-  if (n.tags.length) {
-    body.appendChild(h3('tags'));
-    const box = document.createElement('div');
-    box.className = 'links';
-    n.tags.forEach((t) => {
-      const c = document.createElement('span');
-      c.className = 'tagchip';
-      c.textContent = t;
-      box.appendChild(c);
-    });
-    body.appendChild(box);
-  }
+  catalogTags(body, n);
 
-  const kv = document.createElement('dl');
-  kv.className = 'kvline';
-  const add = (k, v, dim) => {
-    if (!v) return;
-    const dt = document.createElement('dt'); dt.textContent = k;
-    const dd = document.createElement('dd'); dd.textContent = v;
-    if (dim) dt.className = dd.className = 'muted';
-    kv.append(dt, dd);
-  };
   // A folder's config reaches every node under it. What a node of dbt's own
   // materializations does not use stays said, dimmed, since a selection by it
   // still picks the node; a custom materialization may read either, so its
@@ -10755,49 +10759,134 @@ function catalogPreview(body, n) {
   const key = (n.unique_key || []).join(', ');
   const mat = n.materialized || n.kind;
   const unused = UNUSED_BY.includes(mat) && !n.disabled ? `, unused by ${article(mat)}` : '';
-  if (!incremental && n.strategy) add('incremental_strategy', n.strategy + unused, !!unused);
-  if (!keyed && key) add('unique_key', key + unused, !!unused);
-  add('model file', n.file);
-  add('schema file', n.yml);
-  add('unique id', n.id);
+  const kv = kvLines([
+    ['incremental_strategy', !incremental && n.strategy ? n.strategy + unused : '', !!unused],
+    ['unique_key', !keyed && key ? key + unused : '', !!unused],
+    ['model file', n.file],
+    ['schema file', n.yml],
+    ['unique id', n.id],
+  ]);
   if (kv.children.length) { body.appendChild(h3('details')); body.appendChild(kv); }
 
-  const refs = (label, items, text) => {
-    if (!items.length) return;
-    body.appendChild(h3(`${label} (${items.length})`));
-    const box = document.createElement('div');
-    box.className = 'links';
-    // Same gestures as a box in the graph: click moves the lineage and the
-    // catalog to that node, double-click also opens its file.
-    items.slice(0, 300).forEach((r) => {
-      const a = document.createElement('span');
-      a.className = 'link';
-      a.append(dot(r), document.createTextNode(text ? text(r) : r.name));
-      const test = r.kind === 'test' && r.test_name;
-      a.title = `${r.id}\nclick: show it here and in the lineage`
-        + (r.file ? `\ndouble-click: also open ${test ? 'where it is declared' : 'its file'}` : '');
-      a.addEventListener('click', () => focusNode(r.id));
-      a.addEventListener('dblclick', () => {
-        if (!r.file) return;
-        if (test) return openTest(r, { pin: true });
-        pushJump();
-        openFile(r.file, { focusLineage: false });
-        revealInTree(r.file);
-      });
-      box.appendChild(a);
-    });
-    body.appendChild(box);
-  };
-  refs('upstream', n.parents);
-  refs('downstream', n.children);
+  catalogRefs(body, 'upstream', n.parents);
+  catalogRefs(body, 'downstream', n.children);
   const guards = splitTests(n.tests);
   // The model's own tests come first, and they are the point of this section:
   // guarding no column, they have no row in the Columns table and are named
   // nowhere else at all. The column ones follow for completeness, each saying
   // which column, because a relationships test counts on both models it joins
   // and reads as a stranger on the one that did not declare it.
-  refs('tests on the model', guards.model, (r) => r.test_name || r.name);
-  refs('tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+  catalogRefs(body, 'tests on the model', guards.model, (r) => r.test_name || r.name);
+  catalogRefs(body, 'tests on a column', guards.column, (r) => `${r.test_name || r.name} · ${r.column}`);
+}
+
+/* Nodes linked from the Catalog, under a heading that counts them. */
+function catalogRefs(body, label, items, text) {
+  if (!items.length) return;
+  body.appendChild(h3(`${label} (${items.length})`));
+  const box = document.createElement('div');
+  box.className = 'links';
+  // Same gestures as a box in the graph: click moves the lineage and the
+  // catalog to that node, double-click also opens its file.
+  items.slice(0, 300).forEach((r) => {
+    const a = document.createElement('span');
+    a.className = 'link';
+    a.append(dot(r), document.createTextNode(text ? text(r) : r.name));
+    const test = r.kind === 'test' && r.test_name;
+    a.title = `${r.id}\nclick: show it here and in the lineage`
+      + (r.file ? `\ndouble-click: also open ${test ? 'where it is declared' : 'its file'}` : '');
+    a.addEventListener('click', () => focusNode(r.id));
+    a.addEventListener('dblclick', () => {
+      if (!r.file) return;
+      if (test) return openTest(r, { pin: true });
+      pushJump();
+      openFile(r.file, { focusLineage: false });
+      revealInTree(r.file);
+    });
+    box.appendChild(a);
+  });
+  body.appendChild(box);
+}
+
+/* A test, which builds nothing of its own to read about: what it checks and
+   on what come first, as its hover card says it, then the jobs that run it
+   and the models it reads. No location table, since a relation is built for
+   it only to store its failures, which its config section names, and no
+   columns, downstream or tests of its own. */
+const HOST_LABELS = { model: 'Model', source: 'Source', seed: 'Seed', snapshot: 'Snapshot' };
+
+function catalogTestPreview(body, n) {
+  if (n.description) body.appendChild(jel('p', 'cat-desc', n.description));
+  body.appendChild(h3('what it checks'));
+  const stats = document.createElement('div');
+  stats.className = 'stats';
+  const level = Lineage.testLevel(n);
+  const severity = stat('Severity', n.warn ? 'warn' : 'error');
+  if (n.warn) severity.querySelector('.v').classList.add('warn');
+  // The node whose YAML declares it, a model or a source, found by id: two
+  // parents can share a name. A singular test has none, and the models it
+  // reads say the rest.
+  const host = level !== 'singular' && n.host_id && n.parents.find((p) => p.id === n.host_id);
+  const hostLabel = host && (HOST_LABELS[host.kind] || 'Declared on');
+  stats.append(
+    stat('Test', level === 'singular' ? 'singular' : n.test_name),
+    ...(host ? [stat(hostLabel, host.name, () => focusNode(host.id))] : []),
+    ...(n.column ? [stat('Column', n.column)] : []),
+    severity,
+    stat('Models read', `${n.parents.length}`, () => lineageOneUp(n)),
+  );
+  const totals = document.createElement('div');
+  totals.className = 'muted';
+  totals.style.cssText = 'font-size:11px;margin-top:8px';
+  totals.textContent = `${n.upstream_total} models upstream in total (whole graph).`;
+  body.append(stats, totals);
+  catalogTestConfig(body, n);
+  catalogJobs(body, n);
+  catalogTags(body, n);
+
+  body.append(h3('details'), kvLines([
+    [level === 'singular' ? 'test file' : 'declared in', n.file],
+    ['generic from', n.namespace],
+    ['unique id', n.id],
+  ]));
+  catalogRefs(body, 'reads', n.parents);
+}
+
+/* The config the test moved off dbt's defaults, which the server alone
+   sends, and where its failing rows go when it keeps them: the one relation a
+   test builds. store_failures_as wins over store_failures when both are set,
+   and keeps nothing as ephemeral. */
+function testStoresFailures(settings) {
+  const get = (k) => ((settings || []).find((s) => s.key === k) || {}).value;
+  const as = get('store_failures_as');
+  return as ? as.toLowerCase() !== 'ephemeral' : (get('store_failures') || '').toLowerCase() === 'true';
+}
+
+function catalogTestConfig(body, n) {
+  const settings = n.settings || [];
+  if (!settings.length) return;
+  body.appendChild(h3('config'));
+  // dbt's relation_name, quoted as dbt writes it, and the parts it was built
+  // from only where a manifest lacks it. It is the manifest's: an environment
+  // picked in the Catalog resolves a model's location, never a test's.
+  const built = n.location && n.location.built;
+  const at = n.relation || (built && built.schema ? [built.database, built.schema, built.alias].filter(Boolean).join('.') : '');
+  body.appendChild(kvLines(settings.map((s) => [s.key, s.value])
+    .concat([['failures stored in', testStoresFailures(settings) ? at : '']])));
+}
+
+function catalogTags(body, n) {
+  if (!n.tags.length) return;
+  body.appendChild(h3('tags'));
+  const box = document.createElement('div');
+  box.className = 'links';
+  n.tags.forEach((t) => {
+    const c = document.createElement('span');
+    c.className = 'tagchip';
+    c.textContent = t;
+    box.appendChild(c);
+  });
+  body.appendChild(box);
 }
 
 /* The steps that run the node, one chip each, a click away from their card
@@ -12209,7 +12298,9 @@ async function tourEnter(key, t, live) {
     case 'catalog':
       await onModel();
       if (!live()) break;
-      if (S.catTab !== 'preview') showCatalogTab(S.node, 'preview');
+      // A test shows Preview whatever the tab, and leaves the one picked for
+      // the next model.
+      if (S.catTab !== 'preview' && S.node.kind !== 'test') showCatalogTab(S.node, 'preview');
       showDock('catalog');
       break;
     case 'columns':

@@ -1406,8 +1406,14 @@ struct NodeDetail<'a> {
     namespace: &'a str,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     warn: bool,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    settings: &'a [crate::graph::Setting],
     #[serde(skip_serializing_if = "str::is_empty")]
     host: &'a str,
+    /// The node `host` names, since two parents of one test may share a name:
+    /// a relationships test to a source or another package's model.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    host_id: &'a str,
     /// What collin's report says about this model, while its lineage is the one
     /// on screen: why its SQL was not read, or that its edges are inferred.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1481,7 +1487,9 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         column: &n.column,
         namespace: &n.namespace,
         warn: n.warn,
+        settings: &n.settings,
         host: graph.host_of(n).map(|h| h.name.as_str()).unwrap_or(""),
+        host_id: graph.host_of(n).map(|h| h.id.as_str()).unwrap_or(""),
         collin: note,
         location: Location {
             written: &n.written,

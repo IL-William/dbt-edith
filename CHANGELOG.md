@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.29.0 - 2026-10-18
+
+- Show a test in the Catalog by what it checks: the generic, its model and
+  column, its severity, the config it changed such as `store_failures` or
+  `where`, the relation its failures are stored in, and the models it reads,
+  with no Columns tab, location or description to fill.
+
 ## 1.28.1 - 2026-10-18
 
 - Draw the update in Edith's menu as a button, `Update to` the release, with
