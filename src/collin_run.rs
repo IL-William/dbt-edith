@@ -200,7 +200,8 @@ pub fn producer_version(producer: &str) -> Option<&str> {
     producer.trim().strip_prefix("collin ").map(|v| v.split_whitespace().next().unwrap_or(v))
 }
 
-fn mtime(path: &Path) -> Option<std::time::SystemTime> {
+/// When the file at `path` was last written, following a link to it.
+pub fn mtime(path: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 

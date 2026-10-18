@@ -2029,7 +2029,7 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The releases since 2026-10-14 on the VM (1.18.0 to 1.28.0).** None was
+- **The releases since 2026-10-14 on the VM (1.18.0 to 1.28.1).** None was
   opened on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
   next `.exe`:
   - the config menu on a CRLF `dbt_project.yml` (1.18.1);
@@ -2048,7 +2048,10 @@ both that route and the cross-compile.
   - the selection cap and Draw all (1.27.0), with a source's tables grown by
     one step, the case reported from the VM;
   - `--column` (1.28.0): its `.env` discovery, Windows paths and the quoting
-    of the steps it prints.
+    of the steps it prints;
+  - the update button and its Installed line, the tags fetched before the
+    pull (1.28.1): the update to it is typed by the release before, so only
+    the update after it shows them, and a stamp naming its release (0095).
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.
