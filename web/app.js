@@ -6588,24 +6588,28 @@ async function openColumn(n, column) {
    Model mode explains the boxes, whose colour is the materialization. Column
    mode explains the edges instead, whose colour is what happened to the column:
    that is the question the column graph exists to answer, and repeating the
-   materializations there would explain something nobody is looking at.
+   materializations there would explain something nobody is looking at. With
+   no role on any edge, a lone column or a cache that names none, it explains
+   the boxes again.
+
+   The badges in column mode either way: `raw`, `generated` and `mixed` only
+   ever appear on a box, and a legend that skipped them would leave their
+   colours unexplained, a root nothing reads included, drawn with no edge.
 
    Pure, and shared with an exported graph, so the file and the screen explain
    the same colours. */
 function legendEntries(sub) {
   const seen = new Map();
   const kinds = sub.edge_kinds || [];
-  if (kinds.length) {
-    // The badges too, not just the edges: `raw` and `mixed` only ever appear on
-    // a box, and a legend that skipped them would leave two colours unexplained.
-    for (const k of kinds.concat(Lineage.nodeRoles(sub))) {
-      if (k && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
-    }
-  } else {
+  const badges = sub.mode === 'column' ? Lineage.nodeRoles(sub) : [];
+  if (!kinds.length) {
     for (const n of sub.nodes) {
       const label = Lineage.matLabel(n);
       if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
     }
+  }
+  for (const k of kinds.concat(badges)) {
+    if (k && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
   }
   return [...seen].sort((a, b) => a[0].localeCompare(b[0]));
 }
@@ -9480,6 +9484,15 @@ function hoverLeave() {
   hoverGrace = setTimeout(closeHoverCard, HOVER_GRACE);
 }
 
+/* A generated column's box: its name, its model, and what the SQL sets it to,
+   all in the box's payload, so it paints once. */
+function fillGeneratedCard(el, n) {
+  const tone = Object.assign(document.createElement('span'), { className: 'dot' });
+  tone.style.background = Lineage.roleColor('generated');
+  hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
+  el.append(Object.assign(document.createElement('div'), { className: 'hc-note', textContent: Lineage.generatedSaid(n.generated).long }));
+}
+
 /* Painted twice: once from what the caller already holds, so the card appears
    with the pointer, and again when /api/node answers with the description and
    the columns. */
@@ -11339,6 +11352,21 @@ function columnReach(c, r) {
   return { up: `\u2190${r.up}`, down: `${r.down}\u2192`, title: `${one}\nin all: ${r.up} upstream, ${r.down} downstream` };
 }
 
+/* Whether the Columns table has a Lineage column: Snowflake picked, or a
+   column with an edge, a mark of collin's, or a value it is generated from,
+   which a column nothing reads still has (0096). */
+function lineageColumnShown(columns, live, flags) {
+  return live || columns.some((c) => c.up || c.down || Array.isArray(c.generated) || flags.has(c.name.toLowerCase()));
+}
+
+/* Whether a click on a column's row opens its lineage: an edge, Snowflake to
+   ask, or a root nothing reads, drawn alone with its badge and its value on
+   hover, as every filled Lineage cell opens. A mark of collin's alone does
+   not: there is nothing to draw. */
+function columnOpens(c, live) {
+  return !!(c.up || c.down || live || Array.isArray(c.generated));
+}
+
 function catalogColumns(body, n) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -11446,7 +11474,7 @@ function catalogColumns(body, n) {
 
   // With Snowflake picked, every column can be asked about, not just the cached ones.
   const live = sidecarOn();
-  const linked = live || n.columns.some((c) => c.up || c.down || flags.has(c.name.toLowerCase()));
+  const linked = lineageColumnShown(n.columns, live, flags);
   const reaches = n.columns.some((c) => c.up || c.down) ? columnReaches(n) : null;
   const table = document.createElement('table');
   table.className = 'cols';
@@ -11496,6 +11524,13 @@ function catalogColumns(body, n) {
       const lin = document.createElement('td');
       lin.className = 'c-lin';
       const action = live ? `fetch the lineage of ${c.name} from Snowflake` : `column lineage for ${c.name}`;
+      // Where the column comes from, so before the counts: a root's upstream
+      // is its value. Its own title, so hovering it says what it is.
+      if (Array.isArray(c.generated)) {
+        const said = Lineage.generatedSaid(c.generated);
+        lin.append(Object.assign(document.createElement('span'), { className: 'c-gen', textContent: said.short, title: said.long }));
+        if (c.up || c.down || live) lin.append(document.createTextNode('  '));
+      }
       if (c.up || c.down) {
         const u = document.createElement('b');
         const dn = document.createElement('b');
@@ -11517,7 +11552,7 @@ function catalogColumns(body, n) {
         ask.className = 'c-ask';
         ask.textContent = 'fetch';
         lin.append(ask);
-      } else {
+      } else if (!lin.firstChild) {
         lin.append(nul());
       }
       const flagged = flags.get(c.name.toLowerCase());
@@ -11531,7 +11566,7 @@ function catalogColumns(body, n) {
         lin.append(mark);
         tr.classList.add('c-flagged');
       }
-      if (c.up || c.down || live) {
+      if (columnOpens(c, live)) {
         tr.classList.add('c-linked');
         tr.title = action;
         // The name cell is left out of the click target on purpose: copying a
@@ -13539,7 +13574,12 @@ async function boot() {
     },
     onHover: (n, g) => {
       const { node: nodeId, column } = splitColId(n.id);
-      if (column) return;                  // in column mode the box already says everything
+      // In column mode the box already says everything, but for the value a
+      // generated column is set to, which has no room on it (0096).
+      if (column) {
+        if (Array.isArray(n.generated)) hoverEnter('gen:' + n.id, () => g.getBoundingClientRect(), (el) => fillGeneratedCard(el, n));
+        return;
+      }
       hoverEnter('node:' + nodeId, () => g.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));
     },
     onHoverOut: hoverLeave,

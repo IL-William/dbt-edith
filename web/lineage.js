@@ -71,9 +71,13 @@ const Lineage = (() => {
     window: '#8b46c9',
     transform: '#d94f4f',
     inferred: '#5f6a78',
-    /* Not an edge kind: the badge a column with no incoming edge in view gets.
-       That column is where the graph starts, which is raw rather than unknown. */
+    /* Not edge kinds: the badges of a column where the project's lineage
+       starts. `raw` is read from outside it, a source's, a seed's or a table
+       no node owns; `generated` is set by its model's SQL from no column, a
+       literal collin names (0096). A pink far from that green, since the two
+       sit side by side wherever a model mixes both. */
     raw: '#7fb069',
+    generated: '#f5a7f9',
   };
   /* The plain edge colour, also used for a role this build does not know: a
      cache from another producer may use words that did not exist when this
@@ -89,9 +93,21 @@ const Lineage = (() => {
 
      A column fed by several edges of different roles is `mixed`, which has no
      colour of its own on purpose: it falls back to the neutral, because naming
-     one of the roles would be picking a winner at random. A column with nothing
-     feeding it inside the current view is where the graph starts, and that is
-     `raw` rather than unknown. */
+     one of the roles would be picking a winner at random.
+
+     A column its model's SQL sets from no column is `generated`, whatever
+     reaches it: under collin's `--indirect` the filter and join key edges of
+     its model's reads reach every column, a root included, and say which rows
+     exist, not what the column holds.
+
+     A column with nothing feeding it in view is where the graph starts. When
+     the cache lists roots (`roots_known`), that is `raw` only where data
+     enters the project: a source's, a seed's, or one read from a table no
+     node owns. A model's such column that is no root has a lineage nobody
+     knows, and no badge says less than a wrong one. A cache without roots,
+     Fusion's, Snowflake's or an older collin's, cannot tell a literal from a
+     source, and its starts stay `raw`, as before roots (0096). */
+  const RAW_KINDS = new Set(['source', 'seed']);
   function nodeRoles(d) {
     const found = d.nodes.map(() => '');
     (d.edges || []).forEach(([, to], i) => {
@@ -99,7 +115,13 @@ const Lineage = (() => {
       if (!kind) return;
       found[to] = !found[to] ? kind : (found[to] === kind ? kind : 'mixed');
     });
-    return found.map((role, i) => role || (d.nodes[i].hidden_up ? '' : 'raw'));
+    return found.map((role, i) => {
+      const n = d.nodes[i];
+      if (Array.isArray(n.generated)) return 'generated';
+      if (role || n.hidden_up) return role;
+      if (!d.roots_known) return 'raw';
+      return RAW_KINDS.has(n.kind) || n.outside ? 'raw' : '';
+    });
   }
 
   /* Which of the three a test is. Every payload that carries a test carries
@@ -129,21 +151,24 @@ const Lineage = (() => {
 
      A role lights its edges and the two columns each one joins: an edge left
      running between two faded boxes would say nothing of where it goes. A
-     badge lights its columns, which is all `raw` and `mixed` ever are. A
-     materialization lights its boxes, and an edge only between two of them,
-     since a line into a faded box would draw the eye to it. */
+     badge lights its columns, which is all `raw`, `generated` and `mixed`
+     ever are, whether or not an edge carries a role: a root nothing reads is
+     drawn alone, with no edge at all. A materialization lights its boxes, and
+     an edge only between two of them, since a line into a faded box would
+     draw the eye to it. */
   function legendKeeps(d, label) {
     const nodes = new Set(), edges = new Set();
     const kinds = d.edge_kinds || [];
+    if (d.mode === 'column') nodeRoles(d).forEach((role, i) => { if (role === label) nodes.add(i); });
     if (kinds.length) {
-      nodeRoles(d).forEach((role, i) => { if (role === label) nodes.add(i); });
       (d.edges || []).forEach(([a, b], i) => {
         if (kinds[i] !== label) return;
         edges.add(i); nodes.add(a); nodes.add(b);
       });
     } else {
-      d.nodes.forEach((n, i) => { if (matLabel(n) === label) nodes.add(i); });
-      (d.edges || []).forEach(([a, b], i) => { if (nodes.has(a) && nodes.has(b)) edges.add(i); });
+      const boxes = new Set();
+      d.nodes.forEach((n, i) => { if (matLabel(n) === label) { boxes.add(i); nodes.add(i); } });
+      (d.edges || []).forEach(([a, b], i) => { if (boxes.has(a) && boxes.has(b)) edges.add(i); });
     }
     return { nodes, edges };
   }
@@ -1335,6 +1360,32 @@ const Lineage = (() => {
     return subJoin(p, (s) => s);
   }
 
+  /* What a generated column is set to, as collin read it (0096): `short` for
+     the Catalog's Lineage cell, `long` for a hover, `line` for a box's label,
+     the one place an exported page keeps it, so every value is on that one
+     line. One value per branch of a union that sets it differently, and none
+     when collin could not tell all of it. The cases named then are examples,
+     not a diagnosis: the cache says that collin gave none, never why. */
+  function generatedSaid(values) {
+    const v = values || [];
+    if (!v.length) {
+      return {
+        short: 'generated',
+        long: 'generated: set by its model\'s SQL from no column.\n'
+          + 'collin gives no value, not having read all of it, as for one computed from a literal or a union read in part',
+        line: 'generated, its value not given by collin',
+      };
+    }
+    if (v.length === 1) {
+      return { short: `= ${v[0]}`, long: `generated: set to ${v[0]} by its model's SQL, from no column`, line: `generated, set to ${v[0]}` };
+    }
+    return {
+      short: `= ${v.join(' | ')}`,
+      long: `generated: set by its model's SQL, from no column, to one of ${v.length} values, a branch of a union each:\n${v.join('\n')}`,
+      line: `generated, set to one of ${v.join(', ')}`,
+    };
+  }
+
   /* Writes the second line into a box's <text>, the struck word in a <tspan>
      of its own, which a clip or a textContent would flatten. `max` cuts the
      line from its end, the test count first and then the schema, never the
@@ -1776,8 +1827,10 @@ const Lineage = (() => {
       // exposed on a bare <g>.
       g.setAttribute('role', 'img');
       const said = strategySaid(n, opts.adapter);
+      // The value too, which only a hover shows: an exported page has none.
+      const set = roles[i] === 'generated' ? generatedSaid(n.generated).line : '';
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
-        + (said ? `${said}, ` : '') + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
+        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -2277,7 +2330,7 @@ const Lineage = (() => {
 
   return {
     init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles, find, findStep, findEnd, placeHeads,
+    testLevel, roleColor, nodeRoles, generatedSaid, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked,
   };
 })();

@@ -285,6 +285,10 @@ pub struct ColRef {
     pub col: u32,
 }
 
+/// collin's indirect roles (its 0011): the column decided which rows exist,
+/// not what any value is, so such an edge reaches every column of a model.
+pub const ROW_ROLES: [&str; 3] = ["filter", "join_key", "dedup_key"];
+
 #[derive(Clone, Copy)]
 pub struct ColEdge {
     pub from: ColRef,
@@ -301,9 +305,27 @@ pub struct ColLineage {
     by_to: Vec<u32>,
     /// Interned edge kinds; `ColEdge.kind` indexes this.
     pub kinds: Vec<String>,
+    /// The columns a literal sets, with what it sets them to, by column:
+    /// collin's roots (0096). Beside the edges, never among them, since an
+    /// edge from nowhere would count as lineage wherever edges are counted.
+    roots: Vec<(ColRef, Vec<String>)>,
+    /// The columns read from a table no node owns. Its edge has no node to
+    /// start from, so it is never drawn, and the column is where the project's
+    /// lineage starts, as a source's is.
+    outside: Vec<ColRef>,
 }
 
 impl ColLineage {
+    /// What the SQL sets `r` to, when it is a root: empty when collin could
+    /// not tell all of it.
+    pub fn root(&self, r: ColRef) -> Option<&[String]> {
+        self.roots.binary_search_by(|(c, _)| c.cmp(&r)).ok().map(|i| self.roots[i].1.as_slice())
+    }
+
+    pub fn outside(&self, r: ColRef) -> bool {
+        self.outside.binary_search(&r).is_ok()
+    }
+
     pub fn outgoing(&self, r: ColRef) -> &[ColEdge] {
         let lo = self.edges.partition_point(|e| e.from < r);
         let hi = self.edges.partition_point(|e| e.from <= r);
@@ -945,6 +967,13 @@ impl Graph {
                 }
             }
         }
+        // A root is a column its model's SQL writes, as sure as an edge's end.
+        // One naming no node is left out of `dropped`, which counts edge ends.
+        for r in &raw.roots {
+            if let Some(&n) = self.index.get(r.node.as_str()) {
+                want.push((n, r.column.to_lowercase()));
+            }
+        }
         want.sort();
         want.dedup();
         // Sorted, so a node's names come together and one index of its
@@ -990,8 +1019,19 @@ impl Graph {
         // 3. Edges.
         let mut kinds: Vec<String> = Vec::new();
         let mut edges: Vec<ColEdge> = Vec::with_capacity(raw.edges.len());
+        let mut outside: Vec<ColRef> = Vec::new();
         for e in &raw.edges {
             let (Some(&fi), Some(&ti)) = (self.index.get(e.from.as_str()), self.index.get(e.to.as_str())) else {
+                // Only `rel:`: an id the manifest lacks is a stale cache's,
+                // and says nothing of where the column starts. Only an edge
+                // of the column's value, too: a filter or a join key on that
+                // table says which rows exist, and reaches every column.
+                let direct = !ROW_ROLES.contains(&e.kind.as_str());
+                if let Some(&ti) = self.index.get(e.to.as_str()).filter(|_| direct && e.from.starts_with("rel:")) {
+                    if let Some(&tc) = slot.get(&(ti, e.to_col.to_lowercase())) {
+                        outside.push(ColRef { node: ti, col: tc });
+                    }
+                }
                 continue;
             };
             let (Some(&fc), Some(&tc)) = (
@@ -1035,7 +1075,38 @@ impl Graph {
             .collect();
         breakdown.sort_by(|a, b| b.edges.cmp(&a.edges));
         self.meta.cll_kinds = breakdown;
-        self.cll = Some(ColLineage { edges, by_to, kinds });
+        outside.sort_unstable();
+        outside.dedup();
+        let mut roots: Vec<(ColRef, Vec<String>)> = raw
+            .roots
+            .into_iter()
+            .filter_map(|r| {
+                let n = *self.index.get(r.node.as_str())?;
+                let col = *slot.get(&(n, r.column.to_lowercase()))?;
+                Some((ColRef { node: n, col }, r.expressions))
+            })
+            .collect();
+        // By column, for the lookup. A column named twice, in two spellings,
+        // gets the values of both, or none when either was not told whole:
+        // part of a list would say the column holds only those.
+        roots.sort_by_key(|(c, _)| *c);
+        let mut merged: Vec<(ColRef, Vec<String>)> = Vec::with_capacity(roots.len());
+        for (c, values) in roots {
+            match merged.last_mut() {
+                Some((last, kept)) if *last == c => {
+                    if kept.is_empty() || values.is_empty() {
+                        kept.clear();
+                    } else {
+                        kept.extend(values);
+                        kept.sort();
+                        kept.dedup();
+                    }
+                }
+                _ => merged.push((c, values)),
+            }
+        }
+        let roots = merged;
+        self.cll = Some(ColLineage { edges, by_to, kinds, roots, outside });
         self.meta.cll_edges = total;
         self.meta.cll_dropped = dropped;
         self.meta.cll_mtime = mtime;
@@ -1067,6 +1138,7 @@ impl Graph {
                 edge_kinds: Vec::new(),
                 stopped_at: Vec::new(),
                 starts: 0,
+                roots_known: false,
             };
         };
         let cut: Vec<u8> = (0..cll.kinds.len().min(256))
@@ -1196,6 +1268,7 @@ impl Graph {
             edge_kinds,
             stopped_at,
             starts: 0,
+            roots_known: !cll.roots.is_empty(),
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
@@ -1233,6 +1306,10 @@ impl Graph {
                         hidden_up: cll.incoming(c).filter(|e| !drawn(e)).count(),
                         hidden_down: cll.outgoing(c).iter().filter(|e| !drawn(e)).count(),
                         at: Some(c),
+                        generated: cll.root(c),
+                        // Without roots the page badges every start `raw`, so
+                        // the mark would say nothing and change the answer.
+                        outside: !cll.roots.is_empty() && cll.outside(c),
                     }
                 })
                 .collect(),
@@ -1471,6 +1548,7 @@ impl Graph {
             edge_kinds: Vec::new(),
             stopped_at: Vec::new(),
             starts: 0,
+            roots_known: false,
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1500,6 +1578,8 @@ impl Graph {
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
+                        generated: None,
+                        outside: false,
                     }
                 })
                 .collect(),
@@ -1772,6 +1852,7 @@ impl Graph {
             edge_kinds: Vec::new(),
             stopped_at: Vec::new(),
             starts: starts_drawn,
+            roots_known: false,
             nodes: members
                 .iter()
                 .enumerate()
@@ -1802,6 +1883,8 @@ impl Graph {
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
+                        generated: None,
+                        outside: false,
                     }
                 })
                 .collect(),
@@ -1837,6 +1920,11 @@ pub struct Lineage<'a> {
     /// cut, or cut only in its tests, is as it was.
     #[serde(skip_serializing_if = "is_zero")]
     pub starts: usize,
+    /// Column mode: the cache lists collin's roots, so a model's column with
+    /// no edge in that is none of them is no literal, and the page draws no
+    /// `raw` on it. Absent, the page badges as it did before roots (0096).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub roots_known: bool,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1897,6 +1985,13 @@ pub struct LineageNode<'a> {
     /// reads its node and its slot rather than parsing `id` (0088).
     #[serde(skip)]
     pub at: Option<ColRef>,
+    /// Column mode only: what its model's SQL sets the column to, from no
+    /// column, as collin read it; empty when it could not tell (0096).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated: Option<&'a [String]>,
+    /// Column mode only: read from a table no node owns, which is never drawn.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub outside: bool,
 }
 
 /// What an incremental model's box and hover card say of its strategy
@@ -2033,6 +2128,80 @@ mod tests {
         assert_eq!(columns(&twice), columns(&once));
     }
 
+    /// collin's roots land on their columns, a root's own column included when
+    /// no YAML and no edge names it; a column read from a table no node owns
+    /// is told apart from one whose edge names a node the manifest lost. With
+    /// neither, a column's box carries nothing it did not carry before (0096).
+    #[test]
+    fn roots_and_tables_no_node_owns_mark_where_a_column_starts() {
+        let to_dim = |from: &str, to_col: &str| RawColEdge {
+            from: from.into(),
+            from_col: "code".into(),
+            to: "model.shop.dim_customers".into(),
+            to_col: to_col.into(),
+            kind: "passthrough".into(),
+        };
+        let root = |node: &str, column: &str, exprs: &[&str]| crate::collin::RawRoot {
+            node: node.into(),
+            column: column.into(),
+            expressions: exprs.iter().map(|e| e.to_string()).collect(),
+        };
+        let mut g = graph();
+        let mut raw = cache(vec![
+            edge("customer_id", "customer_id"),
+            to_dim("rel:RAW.CRM.CODES", "region"),
+            to_dim("model.shop.gone", "segment"),
+            // A table no node owns, filtered on: it says which rows exist,
+            // not where `tier` comes from.
+            RawColEdge { kind: "filter".into(), ..to_dim("rel:RAW.CRM.BLOCKED", "tier") },
+            // A filter edge into a root, as collin's `--indirect` writes.
+            RawColEdge { kind: "filter".into(), ..edge("customer_id", "loaded_at") },
+        ]);
+        raw.roots = vec![
+            root("model.shop.dim_customers", "LOADED_AT", &["current_timestamp()"]),
+            root("model.shop.stg_customers", "channel", &["'store'", "'web'"]),
+            root("model.shop.nowhere", "x", &["1"]),
+            // One column in two spellings: both values, sorted; and a column
+            // told whole once and not the other time, told as none.
+            root("model.shop.stg_customers", "Channel", &["'app'", "'web'"]),
+            root("model.shop.stg_customers", "tag", &["'a'"]),
+            root("model.shop.stg_customers", "TAG", &[]),
+        ];
+        g.merge_col_lineage(raw, 1);
+        let (stg, dim) = (g.index["model.shop.stg_customers"], g.index["model.shop.dim_customers"]);
+        let at = |node: u32, col: &str| ColRef { node, col: g.col_slot(node, col).unwrap() };
+        let cll = g.cll.as_ref().unwrap();
+        assert_eq!(cll.root(at(dim, "loaded_at")), Some(&["current_timestamp()".to_string()][..]));
+        let channel: Vec<&str> = cll.root(at(stg, "channel")).unwrap().iter().map(String::as_str).collect();
+        assert_eq!(channel, ["'app'", "'store'", "'web'"], "a root nothing reads still gets its column, and a twice-named one both lists");
+        assert_eq!(cll.root(at(stg, "tag")), Some(&[][..]), "part of a list would claim the column holds only those");
+        assert_eq!(cll.root(at(dim, "customer_id")), None);
+        assert!(cll.outside(at(dim, "region")) && !cll.outside(at(dim, "segment")) && !cll.outside(at(dim, "customer_id")));
+        assert!(!cll.outside(at(dim, "tier")), "a filter on a table no node owns is no read of the column");
+        assert_eq!(g.meta.cll_dropped, 3, "the dropped edge ends still count, and a root naming no node is none");
+
+        let drawn = serde_json::to_string(&g.column_lineage(at(stg, "customer_id"), 0, 1, 100, &[])).unwrap();
+        assert!(drawn.contains(r#""name":"loaded_at""#) && drawn.contains(r#""generated":["current_timestamp()"]"#), "{drawn}");
+        assert!(drawn.ends_with(r#""roots_known":true}"#), "{drawn}");
+        let region = serde_json::to_string(&g.column_lineage(at(dim, "region"), 0, 0, 100, &[])).unwrap();
+        assert!(region.contains(r#""outside":true"#) && !region.contains("generated"), "{region}");
+
+        let mut plain = graph();
+        plain.merge_col_lineage(cache(vec![edge("customer_id", "customer_id")]), 1);
+        let focus = ColRef { node: plain.index["model.shop.stg_customers"], col: plain.col_slot(plain.index["model.shop.stg_customers"], "customer_id").unwrap() };
+        let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[])).unwrap();
+        assert!(!drawn.contains("generated") && !drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
+
+        // Without roots, a column read from a table no node owns carries no
+        // mark: the page badges every start `raw` then, as before roots.
+        let mut old = graph();
+        old.merge_col_lineage(cache(vec![to_dim("rel:RAW.CRM.CODES", "region")]), 1);
+        let dim = old.index["model.shop.dim_customers"];
+        let region = ColRef { node: dim, col: old.col_slot(dim, "region").unwrap() };
+        let drawn = serde_json::to_string(&old.column_lineage(region, 0, 0, 100, &[])).unwrap();
+        assert!(!drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
+    }
+
     // stg.x feeds int.x, which feeds fct.x through a window and wide.x through
     // a rename, and wide.x feeds fct.x again: fct.x is reached past the cut
     // and around it. Then fct.x feeds rpt.x.
@@ -2141,7 +2310,7 @@ mod tests {
         edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
         let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
         by_to.sort_by_key(|&i| edges[i as usize].to);
-        ColLineage { edges, by_to, kinds: vec!["rename".into()] }
+        ColLineage { edges, by_to, kinds: vec!["rename".into()], ..Default::default() }
     }
 
     fn col_edge(from: (u32, u32), to: (u32, u32)) -> ColEdge {
@@ -3416,7 +3585,7 @@ mod tests {
             .collect();
         breakdown.sort_by(|a, b| b.edges.cmp(&a.edges));
         g.meta.cll_kinds = breakdown;
-        g.cll = Some(ColLineage { edges, by_to, kinds });
+        g.cll = Some(ColLineage { edges, by_to, kinds, ..Default::default() });
         g.meta.cll_edges = total;
         g.meta.cll_dropped = dropped;
         g.meta.cll_mtime = mtime;

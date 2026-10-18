@@ -1399,6 +1399,21 @@ client, into `docs/shots/`, committed with the README so a tag shows its own
 interface (0082). It is not in `check.sh`, since it writes into the
 repository: retake them when a change alters what one shows.
 
+A `generated` badge from collin's roots (0096, 1.32.0): collin 0.8.0 lists
+the columns a literal sets, with the value, and the column lineage now badges
+such a column `generated`, whatever filter or join key edge reaches it, with
+the value on a hover card on its box, in its label on one line, in the
+Catalog's Lineage cell, whose row opens it even when nothing reads it, and in
+`--column`'s JSON. With roots in the cache (`roots_known`), `raw` is kept for
+sources, seeds and a column a table no node owns feeds by value, and a
+model's column with nothing feeding it that is no root has no badge; a cache
+without roots badges as before and answers as main did, byte for byte. The
+legend lists every badge drawn, with or without a role on an edge. Checked
+against main on Jaffle Shop and on Shopify v1.10.0, and in headless Chrome on
+a Jaffle copy that sets literals and reads tables no node owns. Left:
+`collin_run::WANTS` still asks for collin 0.1.0, so nothing offers the update
+that brings roots.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1768,23 +1783,7 @@ repository: retake them when a change alters what one shows.
     target it was compiled for, so the page cannot fill it in: Regenerate
     would offer the profile's targets and pass the one picked, which the
     user then has to have compiled and generated the catalog under.
-21. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
-    (its own 0045): a column built from no column, a literal's value with it
-    when there is one. The canvas badges such a column `raw`, as it does a
-    source's own column and a column whose lineage collin lost. Read, `roots`
-    would give it a `generated` badge, the value on hover and in the Columns
-    table, and the hover says so when a root has none (a date spine, a union
-    read in part, a `VALUES` list):
-    - sources, seeds and `rel:` tables keep `raw`;
-    - in a cache that has `roots`, a model column with no edge in that is no
-      root gets no badge; a cache without them (Fusion's, Snowflake's, an
-      older collin's) badges as before;
-    - a `filter` or `join_key` edge, which `--indirect` also sends into a
-      root, never takes the badge away.
-
-    `collin_run::WANTS` still asks for 0.1.0, so nothing offers the update
-    that brings `roots`.
-22. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
+21. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
     publisher, product or version in its properties, which antivirus
     heuristics hold against a fresh unsigned binary. A resource naming
     Datadorelix, dbt-edith and the version, in the `.exe` that
@@ -1793,7 +1792,7 @@ repository: retake them when a change alters what one shows.
     trap: a resource compiler, mingw-w64's `windres` or MSVC's `rc.exe`, or a
     crate that finds one (0003), which the VM's `cargo install` has to find
     too.
-23. **The update command names git by its path.** The command the status bar
+22. **The update command names git by its path.** The command the status bar
     types into the terminal to update dbt-edith runs in the project folder,
     and under Windows `cmd.exe`, which looks in the current folder first, a
     `git.exe` committed at the project's root would run on Enter. Likely
@@ -1964,7 +1963,7 @@ on a managed Windows machine. Signing would come with it, a certificate 0085
 leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
 Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
 licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource comes first
-(item 22).
+(item 21).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then
