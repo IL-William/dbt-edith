@@ -189,6 +189,32 @@ draws fewer than the cell counts. With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
 
+**The tag above a column box says what produced it**, read off the edges into
+it: their role, or `mixed` when two roles meet there. A column nothing feeds
+in view is tagged by where it starts. With a cache that lists collin 0.8.0's
+roots ([0096](../decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md)):
+
+| Tag | The column |
+| --- | --- |
+| `raw` | a source's or a seed's, or one a model reads from a table no node of the project owns |
+| `generated` | set by its model's SQL from no column, `current_timestamp() as loaded_at`: one of the roots collin lists in its cache |
+| none | a model's or a snapshot's column that is no root: collin lost its lineage, which a ! in the Catalog may say |
+
+A filter or a join key on a table no node owns reads no column of it, so it
+makes nothing `raw`. A cache without roots, Fusion's, Snowflake's or an older
+collin's, cannot tell a literal from a source: every column nothing feeds is
+`raw` there.
+
+A `generated` column keeps its tag when filter or join key edges reach it, as
+they reach every column of a model under collin's `--indirect`. Hovering its
+box says what the SQL sets it to, and so does its Lineage cell in Catalog >
+Columns, before the counts, clipped and whole on hover: one value, one per
+branch of a union that sets it differently, `'store' | 'web'`, or `generated`
+alone when collin could not tell all of it, as for a value computed from a
+literal or a union it read in part. Its row opens the column even when
+nothing reads it, drawn alone. The legend lists each tag on the canvas, with
+or without a role on an edge, and a click on it lights its columns.
+
 ## From the command line
 
 `--column` answers one column's lineage without the browser, as
@@ -222,6 +248,7 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | --- | --- |
 | `depth` | levels from the column asked, negative upstream; the model's is its nearest column's |
 | `from` | the columns of the answer this one is read from, with the role of each edge: a rename shows here, under its new name |
+| `generated` | on a column its model's SQL sets from no column, the values it is set to, `["current_timestamp()"]`, one per branch of a union, `[]` when collin could not tell (0096) |
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
 

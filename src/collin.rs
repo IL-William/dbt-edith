@@ -29,6 +29,22 @@ pub struct RawColLineage {
     pub errors: Vec<String>,
     #[serde(default)]
     pub edges: Vec<RawColEdge>,
+    /// The columns a literal sets, which collin writes beside the edges since
+    /// its 0.8.0 (its 0045): a root has no parent, so it is no edge. A cache
+    /// without them reads as before, and one saved here keeps them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roots: Vec<RawRoot>,
+}
+
+/// A model's column built from no column, `'web' as channel`, and what the SQL
+/// sets it to: one text per branch of a union that sets it differently, and
+/// none when collin could not say all of it.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RawRoot {
+    pub node: String,
+    pub column: String,
+    #[serde(default)]
+    pub expressions: Vec<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
@@ -655,6 +671,30 @@ mod tests {
         assert_eq!(loaded.edges[1], edge("customer_key"));
         assert_eq!(loaded.errors, ["model.shop.x.y: denied"], "a dump's errors survive a merge");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// collin 0.8.0 lists its roots beside the edges; 0.7.0 wrote none, and
+    /// its cache reads, and saves, exactly as it did.
+    #[test]
+    fn roots_are_read_beside_the_edges_and_an_older_cache_has_none() {
+        let edge = r#"{"from":"source.shop.raw.orders","from_col":"id","to":"model.shop.stg_orders","to_col":"order_id","kind":"rename"}"#;
+        let new = format!(
+            r#"{{"version":1,"source":"collin","producer":"collin 0.8.0","edges":[{edge}],"roots":[
+                {{"node":"model.shop.stg_orders","column":"loaded_at","expressions":["current_timestamp()"]}},
+                {{"node":"model.shop.stg_orders","column":"channel","expressions":["'store'","'web'"]}},
+                {{"node":"model.shop.stg_orders","column":"day"}}]}}"#
+        );
+        let cache: RawColLineage = serde_json::from_str(&new).unwrap();
+        let said: Vec<(&str, Vec<&str>)> =
+            cache.roots.iter().map(|r| (r.column.as_str(), r.expressions.iter().map(String::as_str).collect())).collect();
+        assert_eq!(said, [("loaded_at", vec!["current_timestamp()"]), ("channel", vec!["'store'", "'web'"]), ("day", vec![])]);
+        assert_eq!(cache.roots[0].node, "model.shop.stg_orders");
+        assert!(serde_json::to_string(&cache).unwrap().contains(r#""roots":[{"node""#), "a save keeps them");
+
+        let old: RawColLineage =
+            serde_json::from_str(&format!(r#"{{"version":1,"source":"collin","producer":"collin 0.7.0","edges":[{edge}]}}"#)).unwrap();
+        assert!(old.roots.is_empty());
+        assert!(!serde_json::to_string(&old).unwrap().contains("roots"), "nor does a cache without any grow the field");
     }
 
     #[test]

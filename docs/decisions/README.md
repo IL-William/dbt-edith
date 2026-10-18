@@ -98,6 +98,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0092](0092-custom-selection-opens-in-a-panel.md) | Custom selection opens in a panel | changing where a selection is drawn, what a click or a double-click on a box does there, or what goes back to the dock when its panel rolls up |
 | [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md) | What a repository brings is held to it, what you bring is followed | running or opening a file found beside dbt-edith or in the project, or writing a file that may be a link |
 | [0095](0095-the-update-says-when-it-is-installed-and-brings-its-tags.md) | The update says when it is installed, and brings its tags | changing what the update types, what Edith's menu offers once it has run, or how the build stamp names a release |
+| [0096](0096-a-column-a-literal-sets-is-generated-not-raw.md) | A column a literal sets is generated, not raw | changing what a column box's badge says, or reading a field of collin's cache other than its edges |
 
 ## Keeping these honest
 

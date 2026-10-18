@@ -15,6 +15,17 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.32.0 - 2026-10-18
+
+- Badge a column its model's SQL sets from a literal `generated` on the
+  column lineage, with its value on hover, in Catalog > Columns and in
+  `--column`'s JSON, from the roots collin 0.8.0 writes. With them, `raw` is
+  kept for the columns of sources, seeds and tables no node owns, and a
+  model's column with nothing feeding it that is no root has no badge; a cache
+  without roots badges as before (0096).
+- List the `raw`, `generated` and `mixed` badges in the column lineage's
+  legend even when no edge on the canvas carries a role.
+
 ## 1.31.0 - 2026-10-18
 
 - Say under the box when what a selection names takes half or more of a cut

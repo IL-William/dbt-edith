@@ -39,14 +39,19 @@ var testSub = { mode: 'model', edges: [], nodes: [
 check('each kind of test once, in its own colour', legendEntries(testSub).map(function (e) { return e.join(' '); }), [
   'column test ' + nodeColor(testSub.nodes[1]), 'model test ' + nodeColor(testSub.nodes[3]),
   'singular test ' + nodeColor(testSub.nodes[4]), 'table ' + nodeColor(testSub.nodes[0])]);
-// Two roles meet on the third column, which makes it mixed; the other two have
-// nothing feeding them, which makes them raw. Both only ever appear on a box.
-var colSub = { mode: 'column', nodes: [{ name: 'x' }, { name: 'y' }, { name: 'z' }],
+// Two roles meet on the third column, which makes it mixed; the other two are
+// a source's, with nothing feeding them, which makes them raw. The fourth is
+// set by a literal: generated. All three only ever appear on a box.
+var colSub = { mode: 'column', nodes: [{ name: 'x', kind: 'source' }, { name: 'y', kind: 'source' }, { name: 'z' },
+  { name: 'at', kind: 'model', generated: ['current_timestamp()'] }],
   edges: [[0, 2], [1, 2]], edge_kinds: ['rename', 'cast'] };
-check('column mode explains the edges, and the raw and mixed badges', labels(legendEntries(colSub)),
-  ['cast', 'mixed', 'raw', 'rename']);
-check('a column graph with no roles falls back to materializations',
-  labels(legendEntries({ mode: 'column', edges: [], nodes: [{ name: 'x', kind: 'model', materialized: 'view' }] })), ['view']);
+check('column mode explains the edges, and the raw, generated and mixed badges', labels(legendEntries(colSub)),
+  ['cast', 'generated', 'mixed', 'raw', 'rename']);
+check('generated in the badge\'s colour', legendEntries(colSub)[1][1], roleColor('generated'));
+check('a column graph with no roles falls back to materializations, and keeps the badges',
+  labels(legendEntries({ mode: 'column', edges: [], nodes: [{ name: 'x', kind: 'model', materialized: 'view' }] })), ['raw', 'view']);
+check('a model graph lists no badge',
+  labels(legendEntries({ mode: 'model', edges: [], nodes: [{ name: 'x', kind: 'model', materialized: 'view' }] })), ['view']);
 ok('the legend on screen paints the same entries',
   /function paintLegend\(sub\) \{[\s\S]{0,120}legendEntries\(sub\)/.test(src));
 
