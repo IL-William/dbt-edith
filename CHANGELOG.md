@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.31.0 - 2026-10-18
+
+- Say under the box when what a selection names takes half or more of a cut
+  canvas, as `source:*+` can, and that Draw all or a narrower selection draws
+  the rest of their lineage (0087).
+
 ## 1.30.0 - 2026-10-18
 
 - Open Custom selection in a panel over the editor and the dock, the canvas
