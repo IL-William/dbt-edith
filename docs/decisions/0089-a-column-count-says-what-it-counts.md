@@ -1,6 +1,6 @@
 # 0089. A column count says what it counts: the canvas, or the whole chain
 
-Date: 2026-10-16 · Status: accepted · Amends 0083
+Date: 2026-10-16 · Status: accepted, amended by 0097 · Amends 0083
 
 **Trigger:** read before changing a figure the column lineage shows: the stop
 at menu's counts, or the Catalog's Lineage cell.

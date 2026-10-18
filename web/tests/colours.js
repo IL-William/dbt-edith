@@ -159,6 +159,38 @@ var noRoots = { nodes: [{ name: 'loaded_at', kind: 'model' }, { name: 'code', ki
 check('without roots in the cache, a model\'s or a snapshot\'s column with nothing feeding it stays raw',
       nodeRoles(noRoots).join(','), 'raw,raw,raw,rename');
 
+print('\n--- indirect edges: dashed, and read by no badge (0097) ---');
+// collin's filter, join key and dedup key edges say which rows a model keeps,
+// not where a value comes from: one colour, one dash, and no badge from them.
+check('the three indirect roles share one colour', [roleColor('filter'), roleColor('join_key'), roleColor('DEDUP_KEY')].join(),
+      [roleColor('indirect'), roleColor('indirect'), roleColor('indirect')].join());
+check('which no value role and no badge uses',
+      ROLES.concat(['raw', 'generated', '']).filter(function (r) { return roleColor(r) === roleColor('indirect'); }).join(), '');
+var rowsIn = { roots_known: true, nodes: [
+  { name: 'status', kind: 'seed' }, { name: 'loaded_at', kind: 'model' }, { name: 'id', kind: 'model' },
+  { name: 'amount', kind: 'model' }, { name: 'at', kind: 'model', generated: ['now()'] },
+], edges: [[0, 1], [0, 2], [3, 2], [0, 4]], edge_kinds: ['filter', 'join_key', 'rename', 'filter'] };
+check('a column only an indirect edge reaches reads as one nothing feeds', nodeRoles(rowsIn)[1], '');
+check('one a value edge reaches as well takes that edge\'s role, not mixed', nodeRoles(rowsIn)[2], 'rename');
+check('a root reached by a filter stays generated', nodeRoles(rowsIn)[4], 'generated');
+var oldRows = { nodes: rowsIn.nodes.slice(0, 2), edges: [[0, 1]], edge_kinds: ['filter'] };
+check('without roots in the cache, such a column is raw, as one nothing feeds', nodeRoles(oldRows)[1], 'raw');
+check('a +N of indirect edges only is no feeding either',
+      nodeRoles({ roots_known: true, nodes: [{ name: 'x', kind: 'model', hidden_up: 3, hidden_up_rows: 3 }], edges: [] })[0], '');
+check('a +N holding a value edge still is',
+      nodeRoles({ roots_known: true, nodes: [{ name: 'x', kind: 'model', hidden_up: 3, hidden_up_rows: 2 }], edges: [] })[0], '');
+check('and without roots it reads as before, fed', nodeRoles({ nodes: [{ name: 'x', kind: 'model', hidden_up: 1 }], edges: [] })[0], '');
+function dash(rule) {
+  var line = css.split('\n').filter(function (l) { return l.indexOf(rule + ' {') === 0; })[0] || '';
+  return (line.match(/stroke-dasharray:\s*([^;]+);/) || [])[1] || '';
+}
+var dashes = ['.edge.test', '.edge.back', '.edge.test.back', '.edge.indirect', '.edge.indirect.back'].map(dash);
+check('every dash is its own: a test, a back edge, an indirect edge and both', dashes.filter(function (v, i) {
+  return v && dashes.indexOf(v) === i; }).length, 5);
+check('an indirect edge is drawn before .edge.hi, which keeps its dash and takes the stroke',
+      css.indexOf('.edge.indirect {') < css.indexOf('.edge.hi {') && !/\.edge\.hi \{[^}]*dasharray/.test(css), true);
+check('the canvas gives an indirect edge its class', /isRowKind\(d\.edge_kinds && d\.edge_kinds\[i\]\) \? ' indirect' : ''/.test(lin), true);
+
 print('\n--- a seed does not pass for a table ---');
 // Two colours that merely differ can still read as one: a seed's green sat 4
 // from a table's on the scale below, and every seed was drawn as a table. The
@@ -208,6 +240,7 @@ beside['a custom materialization'] = nodeColor({ kind: 'model', materialized: 's
 ROLES.forEach(function (r) { beside['the ' + r + ' role'] = roleColor(r); });
 beside['the raw badge'] = roleColor('raw');
 beside['the generated badge'] = roleColor('generated');
+beside['the indirect edges'] = roleColor('indirect');
 Object.keys(beside).forEach(function (k) {
   var seen = apart(seed, beside[k]);
   var redGreen = Math.min(apart(seed, beside[k], CVD.protan), apart(seed, beside[k], CVD.deutan));

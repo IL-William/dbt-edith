@@ -75,8 +75,11 @@ the sidebar and the catalog, so a model looks the same everywhere.
 `incremental` leaves the incremental models and the edges between them. In
 column mode the legend names what happened to each column instead, and
 `transform` leaves the transform edges and the two columns each one joins;
-`raw`, `generated` and `mixed` leave the columns wearing that badge. Click it
-again to see everything. The pick stays while you move around the graph, as
+`raw`, `generated` and `mixed` leave the columns wearing that badge, and
+`indirect`, the dashed entry for collin's filter, join key and dedup key
+edges, shown once the indirect button is on, leaves those edges and the
+columns they join. Click it again to see
+everything. The pick stays while you move around the graph, as
 long as the legend still lists it, and an exported graph is drawn without it.
 
 In column mode, **stop at** beside the depth boxes lists the roles the column

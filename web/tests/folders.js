@@ -304,6 +304,10 @@ group('fast enough to redraw on every click', function () {
 group('the line under the canvas', function () {
   var sub = { mode: 'model', nodes: new Array(12), edges: new Array(15), truncated: false };
   check('without folders, as before', canvasStatus(sub), '12 nodes · 15 edges');
+  // collin's indirect edges left out of a column graph are said (0097).
+  check('a column graph says its indirect edges are hidden',
+    canvasStatus({ mode: 'column', focus_column: 'loaded_at', nodes: new Array(2), edges: new Array(1), indirect_hidden: true }),
+    'loaded_at · 2 columns · 1 edges · indirect edges hidden');
   check('with them, how many', canvasStatus(sub, { folders: 4, against: 0 }), '12 nodes · 15 edges · 4 folders');
   check('and the edges drawn against their order', canvasStatus(sub, { folders: 3, against: 1 }),
     '12 nodes · 15 edges · 3 folders · 1 edge against their order');

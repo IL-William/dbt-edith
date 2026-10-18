@@ -49,6 +49,9 @@ pub struct Ask {
     pub tool: Option<Tool>,
     /// A cache named outright by `--column-lineage`.
     pub cache: Option<PathBuf>,
+    /// `--indirect`: cross collin's indirect edges, which the answer leaves
+    /// out by default, as the canvas does (0097).
+    pub indirect: bool,
 }
 
 /// `--up` and `--down`: a number of levels, or `all`.
@@ -183,7 +186,7 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
     }
     // No cap: a caller asking for every level wants all of them, as
     // `--select` prints a whole selection.
-    let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut);
+    let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut, ask.indirect);
     let models = reached(graph, &lineage, ask);
     for m in &models {
         match output {
@@ -206,6 +209,11 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
         writeln!(err, "only the column itself: --down N or all for what it feeds, --up N or all for what feeds it")?;
     } else if lineage.nodes.len() == 1 {
         writeln!(err, "no edge of this cache reaches or leaves {} in the direction asked", ask.column)?;
+    }
+    // Said whatever was found: an agent reading the default answer learns
+    // that the cache holds edges it left out, and how to ask for them.
+    if !ask.indirect && graph.cll.as_ref().is_some_and(|c| c.has_indirect()) {
+        writeln!(err, "collin's indirect edges, a filter's, a join key's or a dedup key's, are left out: --indirect crosses them too")?;
     }
     Ok(ANSWERED)
 }
@@ -281,7 +289,7 @@ fn columns_with_lineage(graph: &Graph, node: u32) -> String {
         .columns
         .iter()
         .enumerate()
-        .filter(|&(i, _)| cll.degree(ColRef { node, col: i as u32 }) != (0, 0))
+        .filter(|&(i, _)| cll.degree(ColRef { node, col: i as u32 }, true) != (0, 0))
         .map(|(_, c)| c.name.as_str())
         .collect();
     names.sort_unstable();
@@ -676,7 +684,7 @@ mod tests {
     }
 
     fn ask(column: &str, up: u32, down: u32) -> Ask {
-        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None }
+        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false }
     }
 
     fn run_on(g: &Graph, a: &Ask, output: Output) -> (String, String, i32) {
@@ -750,7 +758,10 @@ mod tests {
             ..Default::default()
         };
         g.merge_col_lineage(cache(true, vec![root(&["current_timestamp()"])]), 2);
-        let (out, _, _) = run_on(&g, &ask("orders.loaded_at", ALL, 0), Output::Json);
+        // By default the filter edge is left out, as on the canvas (0097).
+        let (hidden, _, _) = run_on(&g, &ask("orders.loaded_at", ALL, 0), Output::Json);
+        assert!(!hidden.contains("filter") && !hidden.contains("source.shop.raw.orders"), "{hidden}");
+        let (out, _, _) = run_on(&g, &Ask { indirect: true, ..ask("orders.loaded_at", ALL, 0) }, Output::Json);
         let got = lines(&out);
         let stg = got.iter().find(|l| l["name"] == "stg_orders").unwrap();
         assert_eq!(stg["columns"]["loaded_at"]["generated"], json!(["current_timestamp()"]), "{out}");

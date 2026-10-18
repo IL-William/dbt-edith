@@ -4,7 +4,8 @@
 // Run from the repository root: jsc web/tests/legendpick.js
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
-var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor };
+var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor,
+  edgeLegendLabel: edgeLegendLabel, legendSwatch: legendSwatch };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function legendEntries'), src.indexOf('function paintLegend')));
@@ -83,9 +84,20 @@ var lone = { mode: 'column', roots_known: true, nodes: [
 check('a root drawn alone puts generated in the legend', labels(legendEntries(lone)), ['generated', 'table']);
 check('and picking it keeps that column', keeps(lone, 'generated'), { nodes: [0], edges: [] });
 
+print('\n--- column mode: the indirect edges (0097) ---');
+// A filter, a join key and a dedup key are one entry, indirect, drawn dashed.
+var rowSub = { mode: 'column', roots_known: true, nodes: [
+  { name: 'status', kind: 'seed' }, { name: 'order_id', kind: 'model' }, { name: 'id', kind: 'model' },
+  { name: 'loaded_at', kind: 'model', generated: ['now()'] },
+], edges: [[0, 3], [1, 2], [0, 2], [2, 3]], edge_kinds: ['filter', 'join_key', 'rename', 'dedup_key'] };
+check('the three indirect roles are one entry, collin\'s word for them', labels(legendEntries(rowSub)), ['generated', 'indirect', 'raw', 'rename']);
+check('in their colour', legendEntries(rowSub)[1][1], roleColor('filter'));
+check('picking indirect keeps each indirect edge and the columns it joins', keeps(rowSub, 'indirect'), { nodes: [0, 1, 2, 3], edges: [0, 1, 3] });
+check('picking a value role leaves the indirect edges out', keeps(rowSub, 'rename'), { nodes: [0, 2], edges: [2] });
+
 print('\n--- the legend never lists an entry that lights nothing ---');
 function labels(entries) { return entries.map(function (e) { return e[0]; }); }
-[['model', modelSub], ['tests', testSub], ['column', colSub], ['bare column', bare], ['lone root', lone]].forEach(function (f) {
+[['model', modelSub], ['tests', testSub], ['column', colSub], ['bare column', bare], ['lone root', lone], ['rows', rowSub]].forEach(function (f) {
   var dark = labels(legendEntries(f[1])).filter(function (l) { return legendKeeps(f[1], l).nodes.size === 0; });
   check(f[0] + ': every entry keeps a box', dark, []);
 });

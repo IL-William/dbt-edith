@@ -289,6 +289,17 @@ pub struct ColRef {
 /// not what any value is, so such an edge reaches every column of a model.
 pub const ROW_ROLES: [&str; 3] = ["filter", "join_key", "dedup_key"];
 
+/// Whether a role is one of `ROW_ROLES`, in any case, as the page's
+/// `isRowKind` reads it: a `FILTER` the server crossed would be drawn dashed
+/// under "indirect edges hidden", and the button would do nothing.
+pub fn is_row_role(kind: &str) -> bool {
+    ROW_ROLES.iter().any(|r| r.eq_ignore_ascii_case(kind))
+}
+
+/// How many columns a card names for "rows kept by", the rest counted: a
+/// model joined many times over brings a join key from each.
+pub const ROWS_BY: usize = 8;
+
 #[derive(Clone, Copy)]
 pub struct ColEdge {
     pub from: ColRef,
@@ -313,9 +324,30 @@ pub struct ColLineage {
     /// start from, so it is never drawn, and the column is where the project's
     /// lineage starts, as a source's is.
     outside: Vec<ColRef>,
+    /// The interned kinds of collin's indirect roles, `ROW_ROLES`: edges the
+    /// canvas, the Columns table and `--column` leave out unless asked (0097).
+    row_kinds: Vec<u8>,
 }
 
 impl ColLineage {
+    /// Whether the cache holds any indirect edge, which is what puts the
+    /// canvas's indirect button in view.
+    pub fn has_indirect(&self) -> bool {
+        !self.row_kinds.is_empty()
+    }
+
+    /// An edge of an indirect role: its column decided which rows exist, not
+    /// what a value is.
+    pub fn is_indirect(&self, e: &ColEdge) -> bool {
+        self.row_kinds.contains(&e.kind)
+    }
+
+    /// Whether a walk crosses `e`: every edge with the indirect ones asked
+    /// for, or the value edges alone.
+    fn crossed(&self, e: &ColEdge, indirect: bool) -> bool {
+        indirect || !self.is_indirect(e)
+    }
+
     /// What the SQL sets `r` to, when it is a root: empty when collin could
     /// not tell all of it.
     pub fn root(&self, r: ColRef) -> Option<&[String]> {
@@ -340,9 +372,13 @@ impl ColLineage {
 
     /// (upstream, downstream) edge counts: one level, what the canvas opens on.
     /// An edge from a column to itself is no lineage, and `reach_all` skips it too:
-    /// counted here, it gave a Lineage cell of `←0 0→`.
-    pub fn degree(&self, r: ColRef) -> (usize, usize) {
-        (self.incoming(r).filter(|e| e.from != r).count(), self.outgoing(r).iter().filter(|e| e.to != r).count())
+    /// counted here, it gave a Lineage cell of `←0 0→`. The indirect edges
+    /// count only when asked, as the canvas draws them (0097).
+    pub fn degree(&self, r: ColRef, indirect: bool) -> (usize, usize) {
+        (
+            self.incoming(r).filter(|e| e.from != r && self.crossed(e, indirect)).count(),
+            self.outgoing(r).iter().filter(|e| e.to != r && self.crossed(e, indirect)).count(),
+        )
     }
 
     /// How many columns lie on one side of each of `starts`, the whole chain:
@@ -357,7 +393,7 @@ impl ColLineage {
     /// that walked a column again while it gained a bit did as well on most
     /// graphs, and worse than a walk each when the starts joined one long
     /// chain at staggered depths: it walked the chain once per depth.
-    pub fn reach_all(&self, starts: &[ColRef], upstream: bool) -> Vec<usize> {
+    pub fn reach_all(&self, starts: &[ColRef], upstream: bool, indirect: bool) -> Vec<usize> {
         // The columns reached, numbered, with their edges in the walk's
         // direction; an edge from a column to itself is no lineage.
         let mut at: HashMap<ColRef, u32> = HashMap::new();
@@ -374,9 +410,9 @@ impl ColLineage {
         while i < cols.len() {
             let c = cols[i];
             let side: Vec<ColRef> = if upstream {
-                self.incoming(c).map(|e| e.from).collect()
+                self.incoming(c).filter(|e| self.crossed(e, indirect)).map(|e| e.from).collect()
             } else {
-                self.outgoing(c).iter().map(|e| e.to).collect()
+                self.outgoing(c).iter().filter(|e| self.crossed(e, indirect)).map(|e| e.to).collect()
             };
             for nb in side.into_iter().filter(|&nb| nb != c) {
                 let n = *at.entry(nb).or_insert_with(|| {
@@ -1026,7 +1062,7 @@ impl Graph {
                 // and says nothing of where the column starts. Only an edge
                 // of the column's value, too: a filter or a join key on that
                 // table says which rows exist, and reaches every column.
-                let direct = !ROW_ROLES.contains(&e.kind.as_str());
+                let direct = !is_row_role(&e.kind);
                 if let Some(&ti) = self.index.get(e.to.as_str()).filter(|_| direct && e.from.starts_with("rel:")) {
                     if let Some(&tc) = slot.get(&(ti, e.to_col.to_lowercase())) {
                         outside.push(ColRef { node: ti, col: tc });
@@ -1106,7 +1142,11 @@ impl Graph {
             }
         }
         let roots = merged;
-        self.cll = Some(ColLineage { edges, by_to, kinds, roots, outside });
+        let row_kinds: Vec<u8> = (0..kinds.len().min(256))
+            .filter(|&k| is_row_role(&kinds[k]))
+            .map(|k| k as u8)
+            .collect();
+        self.cll = Some(ColLineage { edges, by_to, kinds, roots, outside, row_kinds });
         self.meta.cll_edges = total;
         self.meta.cll_dropped = dropped;
         self.meta.cll_mtime = mtime;
@@ -1124,7 +1164,11 @@ impl Graph {
     /// `hidden_down`, so the +N badge says something goes on. Upstream is left
     /// whole: the question is "how is this column used, up to its window", not
     /// where it came from.
-    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[&str]) -> Lineage<'_> {
+    /// `indirect` crosses collin's indirect edges, a filter's, a join key's
+    /// or a dedup key's, in both directions; without it they are left out of
+    /// the walk, the edges drawn and every count, as if the cache had none
+    /// (0097), and only their names reach each column, for its card.
+    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[&str], indirect: bool) -> Lineage<'_> {
         // The handler already refuses this case; the guard keeps the borrow of
         // `cll` tied to `self` so the returned Lineage can reference its kinds.
         let Some(cll) = self.cll.as_ref() else {
@@ -1139,12 +1183,15 @@ impl Graph {
                 stopped_at: Vec::new(),
                 starts: 0,
                 roots_known: false,
+                indirect_hidden: false,
             };
         };
         let cut: Vec<u8> = (0..cll.kinds.len().min(256))
             .filter(|&k| cut.contains(&cll.kinds[k].as_str()))
             .map(|k| k as u8)
             .collect();
+        // An edge the walk may cross: an indirect one only when asked for.
+        let shown = |e: &ColEdge| cll.crossed(e, indirect);
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
         // Reached downstream only through a cut edge: drawn, not walked from.
         let mut stopped: HashSet<ColRef> = HashSet::new();
@@ -1167,9 +1214,9 @@ impl Graph {
                 let mut next = Vec::new();
                 for &cur in &frontier {
                     let neighbours: Vec<ColRef> = if upstream {
-                        cll.incoming(cur).map(|e| e.from).collect()
+                        cll.incoming(cur).filter(|e| shown(e)).map(|e| e.from).collect()
                     } else {
-                        cll.outgoing(cur).iter().filter(|e| !cut.contains(&e.kind)).map(|e| e.to).collect()
+                        cll.outgoing(cur).iter().filter(|e| shown(e) && !cut.contains(&e.kind)).map(|e| e.to).collect()
                     };
                     for nb in neighbours {
                         // A stop reached around the cut takes no room, so the
@@ -1198,7 +1245,7 @@ impl Graph {
                 }
                 if !upstream && !cut.is_empty() && !truncated {
                     'stop: for &cur in &frontier {
-                        for e in cll.outgoing(cur).iter().filter(|e| cut.contains(&e.kind)) {
+                        for e in cll.outgoing(cur).iter().filter(|e| shown(e) && cut.contains(&e.kind)) {
                             if depth.contains_key(&e.to) {
                                 continue;
                             }
@@ -1224,7 +1271,8 @@ impl Graph {
         // Nothing leaves a column the walk stopped at, even to a column drawn
         // for another reason: that edge is past the cut, and both ends count it
         // in their badges.
-        let drawn = |e: &ColEdge| pos.contains_key(&e.from) && pos.contains_key(&e.to) && !stopped.contains(&e.from);
+        let drawn =
+            |e: &ColEdge| shown(e) && pos.contains_key(&e.from) && pos.contains_key(&e.to) && !stopped.contains(&e.from);
 
         let mut pairs: Vec<([usize; 2], u8)> = Vec::new();
         for (p, &c) in members.iter().enumerate() {
@@ -1269,13 +1317,14 @@ impl Graph {
             stopped_at,
             starts: 0,
             roots_known: !cll.roots.is_empty(),
+            indirect_hidden: !indirect && cll.has_indirect(),
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             nodes: members
                 .iter()
                 .map(|&c| {
                     let owner = &self.nodes[c.node as usize];
                     let column = &owner.columns[c.col as usize];
-                    let (up_n, down_n) = cll.degree(c);
+                    let (up_n, down_n) = cll.degree(c, indirect);
                     let mut sub = owner.name.clone();
                     if !column.data_type.is_empty() {
                         sub.push_str("  ·  ");
@@ -1303,8 +1352,15 @@ impl Graph {
                         tests: column.tests.len(),
                         parents: up_n,
                         children: down_n,
-                        hidden_up: cll.incoming(c).filter(|e| !drawn(e)).count(),
-                        hidden_down: cll.outgoing(c).iter().filter(|e| !drawn(e)).count(),
+                        // What a +N opens: an indirect edge counts only when
+                        // the walk may cross it.
+                        hidden_up: cll.incoming(c).filter(|e| shown(e) && !drawn(e)).count(),
+                        hidden_up_rows: cll.incoming(c).filter(|e| shown(e) && !drawn(e) && cll.is_indirect(e)).count(),
+                        hidden_down: cll.outgoing(c).iter().filter(|e| shown(e) && !drawn(e)).count(),
+                        // Filled by `name_rows_by` for the page's card; a
+                        // caller that prints none, `--column`, pays nothing.
+                        rows_by: Vec::new(),
+                        rows_by_more: 0,
                         at: Some(c),
                         generated: cll.root(c),
                         // Without roots the page badges every start `raw`, so
@@ -1315,6 +1371,40 @@ impl Graph {
                 .collect(),
             edges,
         }
+    }
+
+    /// Names, on each column box of `lineage`, the columns whose indirect
+    /// edges reach it, for the page's card (0097). Apart from the walk, which
+    /// `--column` shares and which prints no card.
+    pub fn name_rows_by(&self, lineage: &mut Lineage<'_>) {
+        let Some(cll) = self.cll.as_ref() else { return };
+        for n in &mut lineage.nodes {
+            if let Some(c) = n.at {
+                (n.rows_by, n.rows_by_more) = self.rows_by(cll, c);
+            }
+        }
+    }
+
+    /// The columns whose indirect edges reach `c`, named as a box names them,
+    /// `model.column (role)`, the first `ROWS_BY` in order and how many more.
+    fn rows_by(&self, cll: &ColLineage, c: ColRef) -> (Vec<String>, usize) {
+        if !cll.has_indirect() {
+            return (Vec::new(), 0);
+        }
+        let mut named: Vec<String> = cll
+            .incoming(c)
+            .filter(|e| e.from != c && cll.is_indirect(e))
+            .map(|e| {
+                let owner = &self.nodes[e.from.node as usize];
+                let role = cll.kinds.get(e.kind as usize).map(String::as_str).unwrap_or("");
+                format!("{}.{} ({role})", owner.name, owner.columns[e.from.col as usize].name)
+            })
+            .collect();
+        named.sort_unstable();
+        named.dedup();
+        let more = named.len().saturating_sub(ROWS_BY);
+        named.truncate(ROWS_BY);
+        (named, more)
     }
 
     /// Folds catalog.json into the graph: fills in missing data types and adds
@@ -1549,6 +1639,7 @@ impl Graph {
             stopped_at: Vec::new(),
             starts: 0,
             roots_known: false,
+            indirect_hidden: false,
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1576,6 +1667,9 @@ impl Graph {
                         parents: n.parents.len(),
                         children: n.children.len(),
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
+                        hidden_up_rows: 0,
+                        rows_by: Vec::new(),
+                        rows_by_more: 0,
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
@@ -1853,6 +1947,7 @@ impl Graph {
             stopped_at: Vec::new(),
             starts: starts_drawn,
             roots_known: false,
+            indirect_hidden: false,
             nodes: members
                 .iter()
                 .enumerate()
@@ -1881,6 +1976,9 @@ impl Graph {
                         parents: n.parents.len(),
                         children: n.children.len(),
                         hidden_up: n.parents.iter().filter(|p| !pos.contains_key(p)).count(),
+                        hidden_up_rows: 0,
+                        rows_by: Vec::new(),
+                        rows_by_more: 0,
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
@@ -1925,6 +2023,10 @@ pub struct Lineage<'a> {
     /// `raw` on it. Absent, the page badges as it did before roots (0096).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub roots_known: bool,
+    /// Column mode: the cache holds indirect edges and this answer leaves
+    /// them out, so the status line and an export can say so (0097).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub indirect_hidden: bool,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -1980,6 +2082,21 @@ pub struct LineageNode<'a> {
     pub parents: usize,
     pub children: usize,
     pub hidden_up: usize,
+    /// Column mode only: how many of `hidden_up` are indirect edges, a filter's,
+    /// a join key's or a dedup key's, which say which rows exist and feed no
+    /// value: a column whose hidden edges are all of them is fed by nothing
+    /// the badge reads (0097). Absent without them, so a cache with no
+    /// indirect edge answers as before.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub hidden_up_rows: usize,
+    /// Column mode only: the columns whose indirect edges reach this one, as
+    /// `model.column (role)`, sorted, at most `ROWS_BY` of them, whether the
+    /// canvas draws those edges or not, for the card's "rows kept by" (0097).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rows_by: Vec<String>,
+    /// How many more there are than `rows_by` names.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rows_by_more: usize,
     pub hidden_down: usize,
     /// Column mode only: the column itself, so a caller other than the page
     /// reads its node and its slot rather than parsing `id` (0088).
@@ -2123,7 +2240,7 @@ mod tests {
         assert_eq!(named(&twice), named(&once));
         assert_eq!((twice.meta.cll_edges, twice.meta.cll_mtime), (2, 2));
         let slot = twice.col_slot(dim(&twice), "customer_id").unwrap();
-        assert_eq!(twice.cll.as_ref().unwrap().degree(ColRef { node: dim(&twice), col: slot }), (1, 0));
+        assert_eq!(twice.cll.as_ref().unwrap().degree(ColRef { node: dim(&twice), col: slot }, true), (1, 0));
         let columns = |g: &Graph| g.nodes[dim(g) as usize].columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         assert_eq!(columns(&twice), columns(&once));
     }
@@ -2180,16 +2297,16 @@ mod tests {
         assert!(!cll.outside(at(dim, "tier")), "a filter on a table no node owns is no read of the column");
         assert_eq!(g.meta.cll_dropped, 3, "the dropped edge ends still count, and a root naming no node is none");
 
-        let drawn = serde_json::to_string(&g.column_lineage(at(stg, "customer_id"), 0, 1, 100, &[])).unwrap();
+        let drawn = serde_json::to_string(&g.column_lineage(at(stg, "customer_id"), 0, 1, 100, &[], true)).unwrap();
         assert!(drawn.contains(r#""name":"loaded_at""#) && drawn.contains(r#""generated":["current_timestamp()"]"#), "{drawn}");
         assert!(drawn.ends_with(r#""roots_known":true}"#), "{drawn}");
-        let region = serde_json::to_string(&g.column_lineage(at(dim, "region"), 0, 0, 100, &[])).unwrap();
+        let region = serde_json::to_string(&g.column_lineage(at(dim, "region"), 0, 0, 100, &[], false)).unwrap();
         assert!(region.contains(r#""outside":true"#) && !region.contains("generated"), "{region}");
 
         let mut plain = graph();
         plain.merge_col_lineage(cache(vec![edge("customer_id", "customer_id")]), 1);
         let focus = ColRef { node: plain.index["model.shop.stg_customers"], col: plain.col_slot(plain.index["model.shop.stg_customers"], "customer_id").unwrap() };
-        let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[])).unwrap();
+        let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[], false)).unwrap();
         assert!(!drawn.contains("generated") && !drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
 
         // Without roots, a column read from a table no node owns carries no
@@ -2198,8 +2315,79 @@ mod tests {
         old.merge_col_lineage(cache(vec![to_dim("rel:RAW.CRM.CODES", "region")]), 1);
         let dim = old.index["model.shop.dim_customers"];
         let region = ColRef { node: dim, col: old.col_slot(dim, "region").unwrap() };
-        let drawn = serde_json::to_string(&old.column_lineage(region, 0, 0, 100, &[])).unwrap();
+        let drawn = serde_json::to_string(&old.column_lineage(region, 0, 0, 100, &[], false)).unwrap();
         assert!(!drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
+    }
+
+    /// A column's +N says how much of it is indirect edges, which no badge
+    /// reads (0097); a cache with no indirect edge answers as it did.
+    #[test]
+    fn a_hidden_row_edge_is_counted_apart() {
+        // Named for the page alone, as the route does.
+        fn named(g: &Graph, mut l: Lineage<'_>) -> String {
+            g.name_rows_by(&mut l);
+            serde_json::to_string(&l).unwrap()
+        }
+        let mut g = graph();
+        g.merge_col_lineage(
+            cache(vec![
+                RawColEdge { kind: "filter".into(), ..edge("status", "customer_id") },
+                RawColEdge { kind: "join_key".into(), ..edge("id", "customer_id") },
+                RawColEdge { kind: "rename".into(), ..edge("customer_key", "customer_id") },
+            ]),
+            1,
+        );
+        let dim = g.index["model.shop.dim_customers"];
+        let at = ColRef { node: dim, col: g.col_slot(dim, "customer_id").unwrap() };
+        let lone = serde_json::to_string(&g.column_lineage(at, 0, 0, 100, &[], true)).unwrap();
+        assert!(lone.contains(r#""hidden_up":3,"hidden_up_rows":2,"#), "{lone}");
+        let drawn = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], true)).unwrap();
+        assert!(!drawn.contains("hidden_up_rows") && !drawn.contains("indirect_hidden"), "nothing hidden once drawn: {drawn}");
+
+        // By default the indirect edges are not walked, not drawn and not
+        // counted, and only their names reach the column, for its card.
+        let hidden = named(&g, g.column_lineage(at, 1, 0, 100, &[], false));
+        let bare = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], false)).unwrap();
+        assert!(!bare.contains("rows_by"), "the walk alone names nothing, as --column wants: {bare}");
+        assert!(hidden.contains(r#""parents":1,"children":0,"hidden_up":0,"rows_by":["stg_customers.id (join_key)","stg_customers.status (filter)"]"#), "{hidden}");
+        assert!(hidden.contains(r#""edge_kinds":["rename"]"#) && hidden.ends_with(r#""indirect_hidden":true}"#), "{hidden}");
+        let cll = g.cll.as_ref().unwrap();
+        assert_eq!((cll.degree(at, false), cll.degree(at, true)), ((1, 0), (3, 0)));
+        let stg = g.index["model.shop.stg_customers"];
+        let status = ColRef { node: stg, col: g.col_slot(stg, "status").unwrap() };
+        assert_eq!((cll.reach_all(&[status], false, false), cll.reach_all(&[status], false, true)), (vec![0], vec![1]));
+        // Downstream too: from the column filtered on, nothing is reached
+        // with the indirect edges hidden, and the filtered column with them.
+        let down = |indirect: bool| g.column_lineage(status, 0, 3, 100, &[], indirect).nodes.len();
+        assert_eq!((down(false), down(true)), (1, 2));
+    }
+
+    /// A role is an indirect one in any case, as the page reads it; and a card
+    /// names eight columns at most, counting the rest.
+    #[test]
+    fn indirect_roles_are_read_in_any_case_and_named_eight_at_most() {
+        assert!(is_row_role("FILTER") && is_row_role("Join_Key") && !is_row_role("passthrough"));
+        let mut g = graph();
+        let mut edges = vec![RawColEdge { kind: "FILTER".into(), ..edge("status", "customer_id") }];
+        for i in 0..10 {
+            edges.push(RawColEdge { kind: "join_key".into(), ..edge(&format!("k{i:02}"), "customer_id") });
+        }
+        g.merge_col_lineage(cache(edges), 1);
+        let dim = g.index["model.shop.dim_customers"];
+        let at = ColRef { node: dim, col: g.col_slot(dim, "customer_id").unwrap() };
+        let mut l = g.column_lineage(at, 1, 0, 100, &[], false);
+        assert_eq!((l.nodes.len(), l.indirect_hidden), (1, true), "an upper-case FILTER is hidden as a filter is");
+        g.name_rows_by(&mut l);
+        let n = &l.nodes[0];
+        assert_eq!((n.rows_by.len(), n.rows_by_more), (ROWS_BY, 3));
+        assert_eq!(n.rows_by[0], "stg_customers.k00 (join_key)");
+
+        let mut plain = graph();
+        plain.merge_col_lineage(cache(vec![edge("customer_key", "customer_id")]), 1);
+        let dim = plain.index["model.shop.dim_customers"];
+        let at = ColRef { node: dim, col: plain.col_slot(dim, "customer_id").unwrap() };
+        let lone = serde_json::to_string(&plain.column_lineage(at, 0, 0, 100, &[], false)).unwrap();
+        assert!(lone.contains(r#""hidden_up":1,"hidden_down""#) && !lone.contains("rows") && !lone.contains("indirect"), "{lone}");
     }
 
     // stg.x feeds int.x, which feeds fct.x through a window and wide.x through
@@ -2234,13 +2422,13 @@ mod tests {
         };
         let hidden = |l: &Lineage, name: &str| l.nodes.iter().find(|n| n.sub == name).unwrap().hidden_down;
 
-        let whole = g.column_lineage(at(&g, "int"), 3, 3, 100, &[]);
+        let whole = g.column_lineage(at(&g, "int"), 3, 3, 100, &[], false);
         assert_eq!(whole.nodes.len(), 4, "{:?}", names(&whole));
-        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"]);
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], false);
         assert_eq!(names(&cut), ["fct", "int", "stg"], "the window stays drawn, rpt past it goes");
         assert_eq!(cut.edge_kinds, ["window", "window"]);
         assert_eq!((hidden(&cut, "int"), hidden(&cut, "fct")), (0, 1), "the badge is on the column past the window");
-        let unknown = g.column_lineage(at(&g, "int"), 3, 3, 100, &["no_such_role"]);
+        let unknown = g.column_lineage(at(&g, "int"), 3, 3, 100, &["no_such_role"], false);
         assert_eq!(unknown.nodes.len(), 4);
 
         // fct.x is reached through the window and around it, through wide.x:
@@ -2253,7 +2441,7 @@ mod tests {
             link("fct", "rpt", "rename"),
         ];
         g.merge_col_lineage(cache(around), 2);
-        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"]);
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], false);
         assert_eq!(names(&cut), ["fct", "int", "rpt", "stg", "wide"]);
         assert!(cut.edge_kinds.contains(&"window"));
         assert_eq!(hidden(&cut, "fct"), 0);
@@ -2261,18 +2449,18 @@ mod tests {
         // The Columns table: one level on hover, the whole chain in the cell,
         // fct.x counted once though two ways lead to it.
         let cll = g.cll.as_ref().unwrap();
-        let reach = |r: ColRef, upstream: bool| cll.reach_all(&[r], upstream)[0];
-        assert_eq!(cll.degree(at(&g, "int")), (1, 2));
+        let reach = |r: ColRef, upstream: bool| cll.reach_all(&[r], upstream, true)[0];
+        assert_eq!(cll.degree(at(&g, "int"), true), (1, 2));
         assert_eq!((reach(at(&g, "int"), true), reach(at(&g, "int"), false)), (1, 3));
         assert_eq!((reach(at(&g, "fct"), true), reach(at(&g, "rpt"), false)), (3, 0));
-        let both = cll.reach_all(&[at(&g, "int"), at(&g, "fct"), at(&g, "stg")], false);
+        let both = cll.reach_all(&[at(&g, "int"), at(&g, "fct"), at(&g, "stg")], false, true);
         assert_eq!(both, [3, 1, 4], "one walk for three, each counted apart");
 
         // A column a cache says feeds itself has no lineage on either side.
         g.merge_col_lineage(cache(vec![link("int", "int", "rename")]), 3);
         let cll = g.cll.as_ref().unwrap();
-        assert_eq!(cll.degree(at(&g, "int")), (0, 0));
-        assert_eq!(cll.reach_all(&[at(&g, "int")], true), [0]);
+        assert_eq!(cll.degree(at(&g, "int"), true), (0, 0));
+        assert_eq!(cll.reach_all(&[at(&g, "int")], true, true), [0]);
     }
 
     // A walk per start, written apart from `reach_all`, which it checks.
@@ -2351,7 +2539,7 @@ mod tests {
             let starts: Vec<ColRef> = (0..12u32).flat_map(|n| (0..8u32).map(move |c| ColRef { node: n, col: c })).collect();
             for upstream in [true, false] {
                 let alone: Vec<usize> = starts.iter().map(|&s| walk_each(cll, s, upstream)).collect();
-                assert_eq!(cll.reach_all(&starts, upstream), alone, "round {round}, upstream {upstream}");
+                assert_eq!(cll.reach_all(&starts, upstream, true), alone, "round {round}, upstream {upstream}");
             }
         }
     }
@@ -2379,10 +2567,10 @@ mod tests {
                 for upstream in [true, false] {
                     let starts: Vec<ColRef> = (0..width)
                         .map(|col| ColRef { node: 0, col })
-                        .filter(|&r| if upstream { cll.degree(r).0 > 0 } else { cll.degree(r).1 > 0 })
+                        .filter(|&r| if upstream { cll.degree(r, true).0 > 0 } else { cll.degree(r, true).1 > 0 })
                         .collect();
                     let alone: Vec<usize> = starts.iter().map(|&s| walk_each(&cll, s, upstream)).collect();
-                    assert_eq!(cll.reach_all(&starts, upstream), alone, "width {width}, round {round}, upstream {upstream}");
+                    assert_eq!(cll.reach_all(&starts, upstream, true), alone, "width {width}, round {round}, upstream {upstream}");
                 }
             }
         }
@@ -2399,7 +2587,7 @@ mod tests {
         let cll = lineage_of(edges);
         let starts: Vec<ColRef> = (0..starts_n).map(|col| ColRef { node: 0, col }).collect();
         let alone: Vec<usize> = starts.iter().map(|&s| walk_each(&cll, s, true)).collect();
-        assert_eq!(cll.reach_all(&starts, true), alone);
+        assert_eq!(cll.reach_all(&starts, true, true), alone);
         assert_eq!((alone[0], alone[starts_n as usize - 1]), ((chain - starts_n + 1) as usize, chain as usize));
     }
 
@@ -2439,12 +2627,12 @@ mod tests {
         };
 
         g.merge_col_lineage(cache(vec![link("f", "a", "window"), link("f", "b", "rename"), link("a", "b", "rename")]), 1);
-        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
         assert_eq!(drawn(&l), ["a", "b", "f"]);
         assert_eq!(l.edges.len(), 2, "a to b is past the window");
         assert_eq!((node(&l, "a"), node(&l, "b")), ((0, 1), (1, 0)), "both ends of it count it");
         assert_eq!(l.stopped_at, ["window"]);
-        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[]).stopped_at.is_empty());
+        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[], false).stopped_at.is_empty());
 
         let around = vec![
             link("f", "s", "window"),
@@ -2454,15 +2642,15 @@ mod tests {
             link("s", "x", "rename"),
         ];
         g.merge_col_lineage(cache(around), 2);
-        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"]);
+        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"], false);
         assert_eq!(drawn(&two), ["b", "c", "f", "s"], "within two levels s is reached only past the window");
         assert_eq!(node(&two, "s").1, 1);
-        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
         assert_eq!(drawn(&three), ["b", "c", "f", "s"], "at three, s is reached around it, on the last level");
-        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], false);
         assert_eq!(drawn(&four), ["b", "c", "f", "s", "x"]);
         // The same depths with nothing stopped, for contrast: x comes at two.
-        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[])), ["b", "c", "f", "s", "x"]);
+        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[], false)), ["b", "c", "f", "s", "x"]);
     }
 
     // The second review's probes: under a cap the stop next to the focus
@@ -2510,10 +2698,10 @@ mod tests {
             ]),
             1,
         );
-        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"]);
+        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"], false);
         assert!(capped.truncated);
         assert_eq!(drawn(&capped), [d("a1", 1), d("a2", 2), d("f", 0), d("w", 1)]);
-        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"]);
+        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"], false);
         assert_eq!(drawn(&far), [d("m01", 2), d("m05", 0), d("m06", 1), d("m07", 2), d("m09", 1)]);
         assert_eq!(far.stopped_at, ["window"], "aggregate is ticked, but nothing stopped at one");
     }
@@ -2555,7 +2743,7 @@ mod tests {
             cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]),
             1,
         );
-        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"]);
+        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"], false);
         assert_eq!(two.stopped_at, ["window"], "the aggregate between the two stops is not drawn");
         assert_eq!(two.edge_kinds, ["window", "window"]);
 
@@ -2568,8 +2756,8 @@ mod tests {
             ]),
             2,
         );
-        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
-        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], true);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], true);
         assert!(!roomy.truncated && roomy.stopped_at.is_empty());
         assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
 
@@ -2585,8 +2773,8 @@ mod tests {
             ]),
             4,
         );
-        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"]);
-        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"]);
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], true);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], true);
         assert!(roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
         assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "after a neighbour turned away");
 
@@ -2600,10 +2788,10 @@ mod tests {
             ]),
             3,
         );
-        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"]);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
         assert_eq!(drawn(&three), [d("a", 1), d("b", 2), d("f", 0), d("p", 1)]);
         assert!(three.stopped_at.is_empty(), "p is reached around the window: not a stop");
-        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"]);
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], false);
         assert_eq!(drawn(&four), [d("a", 1), d("b", 2), d("f", 0), d("p", 1), d("t", 4)]);
     }
 

@@ -5,7 +5,8 @@
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 eval(lin.slice(lin.indexOf('function subtitle(n)'), lin.indexOf('  function init(')));
-var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor, subtitle: subtitle };
+var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor, subtitle: subtitle,
+  edgeLegendLabel: edgeLegendLabel, legendSwatch: legendSwatch };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function selectKindCounts'), src.indexOf('async function loadSidecar')));
@@ -247,6 +248,14 @@ check('exactly one script', hostile.split('<script').length - 1, 1);
 function script(html) { return html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>')); }
 var expected = '(' + exportViewer + ')(' + zoomViewBox + ');';
 ok('and it is the same text whatever is drawn', script(hostile) === expected && script(plain) === expected);
+// The indirect entry is a dash in the file as on screen, its colour kept (0097).
+var rowsDoc = exportDocument({ heading: 'x', noun: 'Columns', svg: svgText, frame: { x: 0, y: 0, w: 1000, h: 560 },
+  legend: [['indirect', roleColor('indirect')], ['rename', roleColor('rename')]],
+  facts: { kicker: 'Column', lines: [], warnings: [], undrawn: [], command: '' }, nodes: [] });
+ok('an exported legend draws indirect as a dash', rowsDoc.indexOf('<i class="dash" style="background:repeating-linear-gradient(90deg,'
+  + roleColor('indirect') + ' 0 3px,transparent 3px 5px)"></i>indirect') > 0
+  && rowsDoc.indexOf('<i style="background:' + roleColor('rename') + '"></i>rename') > 0);
+ok('and the file styles that dash', rowsDoc.indexOf('.legend i.dash {') > 0);
 // Quoted values are blanked first: the hostile text is still in them, escaped,
 // and `onerror=` inside a data-id is only text.
 ok('no handler in any tag', !(hostile.match(/<[a-z][^>]*>/gi) || []).some(function (tag) {
