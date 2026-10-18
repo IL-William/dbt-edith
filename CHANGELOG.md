@@ -15,6 +15,19 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.34.0 - 2026-10-18
+
+- Draw collin's indirect edges, `filter`, `join_key` and `dedup_key`, thin
+  and dashed under one `indirect` entry in the legend, read no badge from them,
+  and say on a column's card what keeps its rows, `rows kept by:
+  raw_orders.status (filter)`, apart from where its value comes from (0097).
+- Hide collin's indirect edges from the column lineage by default, walk, draw
+  and count them with an `indirect` button beside stop at, shown when the
+  cache holds them, and say `indirect edges hidden` on the status line and in
+  an export; the Catalog's Lineage counts leave them out too (0097).
+- Leave the indirect edges out of `--column` unless `--indirect` asks for
+  them (0097).
+
 ## 1.33.0 - 2026-10-18
 
 - Name Datadorelix as the company, dbt-edith as the product and its version

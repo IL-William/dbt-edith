@@ -215,6 +215,26 @@ literal or a union it read in part. Its row opens the column even when
 nothing reads it, drawn alone. The legend lists each tag on the canvas, with
 or without a role on an edge, and a click on it lights its columns.
 
+**Indirect edges are hidden unless asked for.** Under collin's
+`--indirect`, a `filter`, a `join_key` or a `dedup_key` edge runs from a
+column that decided which rows a model keeps to every column of that model.
+It says nothing of a value, so the canvas leaves it out: the walk does not
+cross it, upstream or down, and neither the +N nor the status line counts
+it; the status line, and an export, say `indirect edges hidden`
+([0097](../decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md)).
+The **indirect** button beside stop at, an eye like the tests one, shown only
+when the cache holds such edges, walks and draws them: thin, in short dashes
+and a teal of its own, under one dashed `indirect` entry in the legend. It
+stays as set while you move from column to column, and is off again after a
+reload. No badge reads an indirect edge: a column only they reach is tagged
+as one nothing feeds. Hovering a column they reach says what keeps its rows,
+apart from where its value comes from, with the button on or off:
+`rows kept by: raw_orders.status (filter)`, eight at most and how many more.
+While they are hidden, stop at offers none of the three roles, and the
+Lineage cell's counts, and its one level on hover, leave them out and say so;
+a column only they reach or leave reads `indirect only` there, and still
+opens from its row, onto its box, with its card when they reach it.
+
 ## From the command line
 
 `--column` answers one column's lineage without the browser, as
@@ -231,8 +251,10 @@ dbt-edith path/to/project --column stg_orders.order_id --down 2 --stop-at window
 The column is `model.column`, `source_name.table.column`, or a unique_id and
 its column. `--up` and `--down` take a number of levels or `all`; with neither,
 only the column itself is printed. `--stop-at` stops the walk downstream at
-the roles named, as the stop at menu does on the canvas. The walk is the
-canvas's own, with no cap.
+the roles named, as the stop at menu does on the canvas. `--indirect` crosses
+collin's indirect edges too, which the answer leaves out by default, as the
+canvas does with its indirect button off (0097). The walk is the canvas's
+own, with no cap.
 
 `--output name` prints `model.column`, one per line, upstream first, then the
 column, then downstream. `--output json` prints one line per model reached,

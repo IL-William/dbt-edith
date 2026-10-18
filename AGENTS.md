@@ -212,7 +212,8 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands | [0084](docs/decisions/0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
-| change what a column box's badge says, or read a field of collin's cache other than its edges | [0096](docs/decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md) |
+| change what a column box's badge says, or read a field of collin's cache other than its edges | [0096](docs/decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md), [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) |
+| change how an edge of a role is drawn or walked, what the legend groups, or what the indirect button hides | [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) |
 | change what the stop at menu or a column's Lineage cell counts | [0089](docs/decisions/0089-a-column-count-says-what-it-counts.md), [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | change what find on the lineage matches, the order it steps in, or where it moves the view | [0081](docs/decisions/0081-find-on-the-lineage-centres-the-box-it-finds.md), [0035](docs/decisions/0035-tests-fold-past-five.md) |

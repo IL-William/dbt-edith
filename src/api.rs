@@ -1398,6 +1398,11 @@ struct Col<'a> {
     /// Lineage cell shows (0096). Absent unless collin listed it as a root.
     #[serde(skip_serializing_if = "Option::is_none")]
     generated: Option<&'a [String]>,
+    /// An indirect edge reaches or leaves the column, which `up` and `down`
+    /// leave out: its row still opens, onto its box, with its card when they
+    /// reach it, and its cell reads `indirect only` (0097).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    indirect: bool,
 }
 
 /// The same node at three stages: as written, as dbt parsed it, and where it
@@ -1545,7 +1550,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             .enumerate()
             .map(|(i, c)| {
                 let at = ColRef { node: idx, col: i as u32 };
-                let (up, down) = graph.cll.as_ref().map(|l| l.degree(at)).unwrap_or((0, 0));
+                // What the canvas opens on by default: no indirect edge (0097).
+                let (up, down) = graph.cll.as_ref().map(|l| l.degree(at, false)).unwrap_or((0, 0));
                 Col {
                     name: &c.name,
                     data_type: &c.data_type,
@@ -1567,6 +1573,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
                     up,
                     down,
                     generated: graph.cll.as_ref().and_then(|l| l.root(at)),
+                    // Counted again only where the cache holds an indirect role.
+                    indirect: graph.cll.as_ref().is_some_and(|l| l.has_indirect() && l.degree(at, true) != (up, down)),
                 }
             })
             .collect(),
@@ -2596,6 +2604,10 @@ struct ColLineageQuery {
     /// Roles the walk downstream stops at, comma-separated: `window,aggregate`.
     #[serde(default)]
     cut: String,
+    /// 1 crosses collin's indirect edges, which the canvas leaves out unless
+    /// its indirect button is on (0097).
+    #[serde(default)]
+    indirect: u8,
 }
 
 /// Column-level lineage around one column. Columns fan out harder than models,
@@ -2611,13 +2623,15 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
     let Some(col) = graph.col_slot(idx, &q.column) else {
         return (StatusCode::NOT_FOUND, "unknown column").into_response();
     };
-    let sub = graph.column_lineage(
+    let mut sub = graph.column_lineage(
         ColRef { node: idx, col },
         q.up.min(20),
         q.down.min(20),
         q.max.unwrap_or(200).min(2000),
         &q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>(),
+        q.indirect == 1,
     );
+    graph.name_rows_by(&mut sub);
     Json(sub).into_response()
 }
 
@@ -2647,11 +2661,12 @@ async fn col_reach(State(st): State<Arc<AppState>>, Query(q): Query<ColReachQuer
         let Some(cll) = graph.cll.as_ref() else { return Vec::new() };
         let columns = &graph.nodes[idx as usize].columns;
         let at = |i: usize| ColRef { node: idx, col: i as u32 };
-        let degree: Vec<(usize, usize)> = (0..columns.len()).map(|i| cll.degree(at(i))).collect();
+        // The default canvas's figures: the indirect edges left out (0097).
+        let degree: Vec<(usize, usize)> = (0..columns.len()).map(|i| cll.degree(at(i), false)).collect();
         // Each side walked once for every column that has an edge on it.
         let side = |upstream: bool| {
             let starts: Vec<usize> = (0..columns.len()).filter(|&i| if upstream { degree[i].0 > 0 } else { degree[i].1 > 0 }).collect();
-            let counts = cll.reach_all(&starts.iter().map(|&i| at(i)).collect::<Vec<_>>(), upstream);
+            let counts = cll.reach_all(&starts.iter().map(|&i| at(i)).collect::<Vec<_>>(), upstream, false);
             let mut all = vec![0; columns.len()];
             for (&i, n) in starts.iter().zip(counts) {
                 all[i] = n;
@@ -3160,7 +3175,7 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     }
     let graph = st.graph.read().await.clone();
     let (up, down) = match (graph.cll.as_ref(), graph.index.get(&b.id)) {
-        (Some(cll), Some(&node)) => graph.col_slot(node, &b.column).map_or((0, 0), |col| cll.degree(ColRef { node, col })),
+        (Some(cll), Some(&node)) => graph.col_slot(node, &b.column).map_or((0, 0), |col| cll.degree(ColRef { node, col }, false)),
         _ => (0, 0),
     };
     Json(Fetched {
@@ -4237,6 +4252,48 @@ mod tests {
         assert!(c.contains(r#""gained":1,"lost":0"#), "{c}");
         let none = status_of(port, get("/api/collin/compare?a=0.1.0&b=..%2F..%2Fx", &h)).await;
         assert!(none.ends_with("404 Not Found"), "{none}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// collin's indirect edges are left out of the column route unless
+    /// `indirect=1` asks, their names still reach the card, and a column only
+    /// they reach still opens from the Catalog (0097).
+    #[tokio::test]
+    async fn the_column_route_hides_indirect_edges_unless_asked() {
+        let root = temp_project("col-indirect");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                                "columns": { "x": { "name": "x" }, "y": { "name": "y" } } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.demo.stg": model("stg"), "model.demo.mart": model("mart"),
+        } }))
+        .unwrap();
+        let mut g = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        let link = |from_col: &str, to_col: &str, kind: &str| crate::collin::RawColEdge {
+            from: "model.demo.stg".into(),
+            from_col: from_col.into(),
+            to: "model.demo.mart".into(),
+            to_col: to_col.into(),
+            kind: kind.into(),
+        };
+        let edges = vec![link("x", "x", "rename"), link("y", "x", "filter"), link("y", "y", "filter")];
+        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges, ..Default::default() }, 1);
+        *st.graph.write().await = Arc::new(g);
+
+        let hidden = response_of(port, get("/api/collineage?id=model.demo.mart&column=x&up=1&down=0", &h)).await;
+        assert!(!hidden.contains(r#""name":"y""#) && hidden.contains(r#""indirect_hidden":true"#), "{hidden}");
+        assert!(hidden.contains(r#""rows_by":["stg.y (filter)"]"#), "the card's names come anyway: {hidden}");
+        let shown = response_of(port, get("/api/collineage?id=model.demo.mart&column=x&up=1&down=0&indirect=1", &h)).await;
+        assert!(shown.contains(r#""name":"y""#) && shown.contains(r#""edge_kinds":["rename","filter"]"#), "{shown}");
+        assert!(!shown.contains("indirect_hidden"), "{shown}");
+        // A column only indirect edges reach counts none, and still opens.
+        let node = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
+        assert!(node.contains(r#""name":"y","data_type":"","description":"","undeclared":false,"up":0,"down":0,"indirect":true"#), "{node}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -109,6 +109,10 @@ struct Args {
     #[arg(long, value_name = "ROLES", value_delimiter = ',', requires = "column")]
     stop_at: Vec<String>,
 
+    /// --column crosses collin's indirect edges too, a filter's, a join key's or a dedup key's, which it leaves out by default
+    #[arg(long, requires = "column")]
+    indirect: bool,
+
     /// The tool whose cache --column reads (default: collin's or Fusion's newest, else the newest)
     #[arg(long, value_enum, value_name = "TOOL", requires = "column", conflicts_with = "column_lineage")]
     column_tool: Option<ls_column::Tool>,
@@ -139,6 +143,7 @@ async fn main() -> anyhow::Result<()> {
             stop_at: args.stop_at,
             tool: args.column_tool,
             cache: args.column_lineage,
+            indirect: args.indirect,
         };
         std::process::exit(ls_column::run(&args.project, args.manifest.as_deref(), &ask, args.output));
     }

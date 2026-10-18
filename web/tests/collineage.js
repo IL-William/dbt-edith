@@ -591,3 +591,46 @@ check('a root nothing reads opens its lineage, its box alone', columnOpens({ up:
 check('as a column with an edge does', columnOpens({ up: 0, down: 2 }, false), true);
 check('and a column with neither does not', columnOpens({ up: 0, down: 0 }, false), false);
 check('the row asks the same', /if \(columnOpens\(c, live\)\) \{\s*tr\.classList\.add\('c-linked'\)/.test(app), true);
+
+print('\n--- what keeps a column\'s rows (0097) ---');
+eval(lin.slice(lin.indexOf('  const ROW_KINDS'), lin.indexOf('  function roleColor(')));
+// The names come from the server, `rows_by`, drawn or not, so the card says
+// them with the indirect button off as well.
+var kept = rowsKept({ nodes: [
+  { id: 'seed.shop.raw_orders::status', name: 'status' },
+  { id: 'model.shop.stg_orders::loaded_at', name: 'loaded_at',
+    rows_by: ['raw_orders.status (filter)', 'stg_payments.order_id (join_key)'], rows_by_more: 2 },
+  { id: 'model.shop.stg_orders::id', name: 'id', rows_by: ['raw_orders.status (filter)'] },
+], edges: [] });
+check('the indirect edges into a column, each with its role, and how many more',
+      kept[1], 'rows kept by: raw_orders.status (filter), stg_payments.order_id (join_key), and 2 more');
+check('one alone', kept[2], 'rows kept by: raw_orders.status (filter)');
+check('a column no indirect edge reaches says nothing', kept[0], '');
+
+print('\n--- the indirect button (0097) ---');
+var Lineage = { isRowKind: isRowKind };
+eval(app.slice(app.indexOf('function cacheHasIndirect'), app.indexOf('/* The indirect button')));
+var meta = [{ kind: 'passthrough', edges: 9 }, { kind: 'join_key', edges: 4 }, { kind: 'filter', edges: 2 }];
+check('it shows for a cache with indirect edges', cacheHasIndirect(meta), true);
+check('and not for one without', cacheHasIndirect([{ kind: 'passthrough', edges: 9 }]) || cacheHasIndirect(null), false);
+check('off, stop at offers no indirect role', stopAtKinds(meta, false).map(function (k) { return k.kind; }).join(), 'passthrough');
+check('on, it offers them all', stopAtKinds(meta, true).length, 3);
+check('a cell says its figures leave the indirect edges out',
+      columnReach({ up: 1, down: 0 }, { up: 2, down: 0 }, true).title.split('\n')[2],
+      'indirect edges left out, as on the canvas with its indirect button off');
+check('and says nothing of them for a cache without', columnReach({ up: 1, down: 0 }, { up: 2, down: 0 }, false).title.split('\n').length, 2);
+check('the request asks for them only when it is on', /\+ \(S\.colIndirect \? '&indirect=1' : ''\)/.test(app), true);
+check('it starts off', /colIndirect: false,/.test(app), true);
+var ticked = new Set(['window', 'filter', 'JOIN_KEY']);
+check('off, a stop at an indirect role goes, and the others stay', [...cutsKept(ticked, false)].join(), 'window');
+check('on, every tick stays', [...cutsKept(ticked, true)].join(), 'window,filter,JOIN_KEY');
+check('and the set given is left as it was', ticked.size, 3);
+check('a column only indirect edges reach still opens from the Catalog', columnOpens({ up: 0, down: 0, indirect: true }, false), true);
+check('and gets the Lineage column', lineageColumnShown([{ name: 'loaded_at', up: 0, down: 0, indirect: true }], false, new Map()), true);
+check('whose cell says it, not the dash of a column with nothing',
+      JSON.stringify(indirectOnlyCell({ up: 0, down: 0, indirect: true })),
+      JSON.stringify({ text: 'indirect only', title: 'only indirect edges reach or leave it; turn indirect on to draw them' }));
+check('a column with a value edge keeps its counts', indirectOnlyCell({ up: 1, down: 0, indirect: true }), null);
+check('and one with no indirect edge its dash', indirectOnlyCell({ up: 0, down: 0 }), null);
+check('the box\'s label carries it, as an exported page keeps it', /\(rows \? `\$\{rows\}, ` : ''\)/.test(lin), true);
+check('and its hover opens a card with it', /if \(Array\.isArray\(n\.generated\) \|\| rows\) hoverEnter/.test(app), true);

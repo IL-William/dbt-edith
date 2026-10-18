@@ -1,6 +1,6 @@
 # 0096. A column a literal sets is generated, not raw
 
-Date: 2026-10-16 · Status: accepted · Follows dbt-collin's 0045
+Date: 2026-10-16 · Status: accepted, amended by 0097 · Follows dbt-collin's 0045
 
 **Trigger:** read before changing what a column box's badge says, or reading
 a field of collin's cache other than its edges.

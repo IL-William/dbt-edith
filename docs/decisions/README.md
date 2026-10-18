@@ -100,6 +100,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md) | What a repository brings is held to it, what you bring is followed | running or opening a file found beside dbt-edith or in the project, or writing a file that may be a link |
 | [0095](0095-the-update-says-when-it-is-installed-and-brings-its-tags.md) | The update says when it is installed, and brings its tags | changing what the update types, what Edith's menu offers once it has run, or how the build stamp names a release |
 | [0096](0096-a-column-a-literal-sets-is-generated-not-raw.md) | A column a literal sets is generated, not raw | changing what a column box's badge says, or reading a field of collin's cache other than its edges |
+| [0097](0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) | An indirect edge is hidden by default, drawn dashed when shown | changing how an edge of a role is drawn or walked, what the legend groups, or which edges a column's badge or counts read |
 
 ## Keeping these honest
 

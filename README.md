@@ -176,6 +176,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column model.column]         print one column's lineage from the cache and exit
          [--up N|all] [--down N|all]     how far --column walks, default 0
          [--stop-at window,aggregate]    roles --column does not walk past downstream
+         [--indirect]                    --column crosses collin's indirect edges too, left out by default
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
          [--output name|json]            what those three print, default one name per line
          [-V, --version]                 print the version and the build it came from, and exit

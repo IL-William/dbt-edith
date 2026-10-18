@@ -34,6 +34,7 @@ const S = {
   graphMode: 'model',         // lineage canvas: model | column | select
   colFocus: null,             // {id, column} when the canvas shows columns
   colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
+  colIndirect: false,         // collin's indirect edges walked and drawn: off on load, kept across refocuses (0097)
   colSub: null,               // last /api/collineage payload, which the stop at menu counts
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
@@ -3901,7 +3902,8 @@ async function focusColumn(id, column) {
   try {
     const sub = await api.get(
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`
-      + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : ''));
+      + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : '')
+      + (S.colIndirect ? '&indirect=1' : ''));
     if (ask !== S.colDraw) return;            // a later tick or click already asked
     S.colSub = sub;
     if (stopAtMenu) stopAtMenu.recount(sub.edge_kinds);
@@ -4229,7 +4231,9 @@ function canvasStatus(sub, drawn) {
   if (sub.mode === 'select') return selectStatus(sub) + foldersStatus(drawn);
   // A stopped column's +N reads as the depth's limit otherwise (0083).
   const stopped = (sub.stopped_at || []).length ? ` · stopped downstream at ${sub.stopped_at.join(', ')}` : '';
-  const tail = `${sub.edges.length} edges${stopped}${sub.truncated ? ' · truncated' : ''}`;
+  // collin's indirect edges, left out unless the indirect button is on (0097).
+  const indirect = sub.indirect_hidden ? ' · indirect edges hidden' : '';
+  const tail = `${sub.edges.length} edges${stopped}${indirect}${sub.truncated ? ' · truncated' : ''}`;
   return (sub.mode === 'column'
     ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
@@ -6608,7 +6612,8 @@ function legendEntries(sub) {
       if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
     }
   }
-  for (const k of kinds.concat(badges)) {
+  // The three indirect roles share one dashed entry, `indirect` (0097).
+  for (const k of kinds.map(Lineage.edgeLegendLabel).concat(badges)) {
     if (k && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
   }
   return [...seen].sort((a, b) => a[0].localeCompare(b[0]));
@@ -6634,7 +6639,9 @@ function paintLegend(sub) {
     chip.setAttribute('role', 'button');
     chip.tabIndex = 0;
     const sq = document.createElement('i');
-    sq.style.background = colour;
+    const swatch = Lineage.legendSwatch(label, colour);
+    if (swatch.cls) sq.className = swatch.cls;
+    sq.setAttribute('style', swatch.style);
     chip.append(sq, document.createTextNode(label));
     const toggle = () => { Lineage.pick(Lineage.picked() === label ? null : label); mark(); };
     chip.addEventListener('click', toggle);
@@ -6649,6 +6656,7 @@ function paintLegend(sub) {
    Beside the depth boxes rather than in the legend, being a depth of a kind:
    it changes what the server walks, where a legend click only repaints. */
 function paintStopAt() {
+  paintIndirectToggle();
   const b = $('#stop-at');
   b.classList.toggle('hidden', S.graphMode !== 'column');
   // Ticking a role outside column mode would redraw whatever mode is on.
@@ -6660,6 +6668,39 @@ function paintStopAt() {
   b.title = on.length
     ? `Downstream, the walk ends at the column each ${on.join(' or ')} edge reaches`
     : 'Pick roles the walk downstream stops at: their edges stay, what comes after them goes';
+}
+
+/* Whether the cache holds collin's indirect edges, by the roles /api/meta
+   counts: what puts the indirect button in view (0097). */
+function cacheHasIndirect(cllKinds) {
+  return (cllKinds || []).some((k) => Lineage.isRowKind(k.kind));
+}
+
+/* The roles the stop at menu offers: the indirect ones only while they are
+   walked, since a stop at an edge the canvas leaves out stops nothing. */
+function stopAtKinds(cllKinds, indirect) {
+  return (cllKinds || []).filter((k) => indirect || !Lineage.isRowKind(k.kind));
+}
+
+/* The stop at roles kept as the indirect button turns: off, an indirect role
+   ticked while they showed goes, since it would stop nothing and the menu no
+   longer lists it. A new set, the one given left as it was. */
+function cutsKept(cut, indirect) {
+  return new Set([...cut].filter((r) => indirect || !Lineage.isRowKind(r)));
+}
+
+/* The indirect button, in column mode only, and only when the cache holds
+   indirect edges, so a cache without them shows nothing new (0097). */
+function paintIndirectToggle() {
+  const b = $('#indirect-btn');
+  if (!b) return;
+  const shown = S.graphMode === 'column' && cacheHasIndirect(S.meta && S.meta.cll_kinds);
+  b.classList.toggle('hidden', !shown);
+  b.setAttribute('aria-pressed', String(S.colIndirect));
+  b.title = S.colIndirect
+    ? 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are walked and drawn dashed: they say which rows a model keeps. Click to leave them out'
+    : 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are left out: the walk, the edges and the counts are the values\' alone. Click to walk and draw them';
+  b.replaceChildren(testsEye(S.colIndirect), Object.assign(document.createElement('span'), { textContent: 'indirect' }));
 }
 
 /* The roles the stop at menu lists: every one the cache holds, then any ticked
@@ -6698,7 +6739,7 @@ function closeStopAt({ refocus = false } = {}) {
 
 function openStopAt(anchor) {
   if (stopAtMenu) return closeStopAt();
-  const roles = stopAtRoles((S.meta && S.meta.cll_kinds) || [], S.colSub && S.colSub.edge_kinds, S.colCut);
+  const roles = stopAtRoles(stopAtKinds(S.meta && S.meta.cll_kinds, S.colIndirect), S.colSub && S.colSub.edge_kinds, S.colCut);
   // Each item's count, repainted when the graph a tick asked for arrives.
   const counts = [];
   const bare = Object.assign(document.createElement('div'), { className: 'menunote' });
@@ -6885,6 +6926,13 @@ function relinkTools() {
     el.addEventListener('change', rerender);
   }
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
+  $('#indirect-btn').addEventListener('click', () => {
+    S.colIndirect = !S.colIndirect;
+    S.colCut = cutsKept(S.colCut, S.colIndirect);
+    closeStopAt();
+    paintStopAt();
+    rerender();
+  });
   $('#by-folder').addEventListener('click', () => { $('#by-folder').setAttribute('aria-pressed', String(!foldersOn())); rerender(); });
   wireFolderLevels();
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
@@ -7124,9 +7172,11 @@ function exportCanvasCss() {
     '#graph text { font-family: var(--ui); user-select: none; }',
     '.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }',
     '.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }',
+    '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
     '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
+    '.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }',
     '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
     '.nd:hover rect.box { stroke: var(--fg-dim); }',
     '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
@@ -7182,6 +7232,7 @@ h1 { margin: 1px 0 6px; font-size: 17px; font-weight: 600; overflow-wrap: anywhe
 .facts .warn { color: var(--warn); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
+.legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
 .tools { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--fg-dim); }
 button { display: none; padding: 2px 8px; font: 11px var(--ui); color: var(--fg); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
@@ -7336,8 +7387,10 @@ function exportViewer(zoomViewBox) {
 function exportDocument(o) {
   const e = escapeHtml;
   const f = o.facts;
-  const legend = o.legend.map(([label, colour]) =>
-    `<span><i style="background:${e(colour)}"></i>${e(label)}</span>`).join('');
+  const legend = o.legend.map(([label, colour]) => {
+    const swatch = Lineage.legendSwatch(label, colour);
+    return `<span><i${swatch.cls ? ` class="${e(swatch.cls)}"` : ''} style="${e(swatch.style)}"></i>${e(label)}</span>`;
+  }).join('');
   const facts = f.warnings.map((w) => `<li class="warn">${e(w)}</li>`)
     .concat(f.lines.map((l) => `<li>${e(l)}</li>`)).join('');
   // The struck strategy keeps its strike in the list, as it does on the picture.
@@ -9484,13 +9537,17 @@ function hoverLeave() {
   hoverGrace = setTimeout(closeHoverCard, HOVER_GRACE);
 }
 
-/* A generated column's box: its name, its model, and what the SQL sets it to,
-   all in the box's payload, so it paints once. */
-function fillGeneratedCard(el, n) {
+/* A column's box, when it has more to say than the box shows: what the SQL
+   sets a generated column to (0096), and apart from it what keeps the rows
+   it is in (0097), so "from no column" and a filter on another column are
+   two facts rather than one contradiction. All in the box's payload, so it
+   paints once. */
+function fillColumnCard(el, n, rows) {
   const tone = Object.assign(document.createElement('span'), { className: 'dot' });
-  tone.style.background = Lineage.roleColor('generated');
+  tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
   hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
-  el.append(Object.assign(document.createElement('div'), { className: 'hc-note', textContent: Lineage.generatedSaid(n.generated).long }));
+  const lines = (Array.isArray(n.generated) ? [Lineage.generatedSaid(n.generated).long] : []).concat(rows ? [rows] : []);
+  for (const line of lines) el.append(Object.assign(document.createElement('div'), { className: 'hc-note', textContent: line }));
 }
 
 /* Painted twice: once from what the caller already holds, so the card appears
@@ -11344,27 +11401,41 @@ function columnReaches(n) {
 /* A column's Lineage cell: the whole chain on each side, as the Preview's
    "in total" is for a model, and one level on hover (0089). One level alone
    reads as how far the column goes, and the canvas goes further. `r` is the
-   chain, undefined while it is on its way, null when it could not be had. */
-function columnReach(c, r) {
+   chain, undefined while it is on its way, null when it could not be had.
+   The figures are the default canvas's: with `indirect`, a cache holding
+   collin's indirect edges, the hover says they are left out (0097). */
+function columnReach(c, r, indirect) {
   const one = `directly: ${c.up} column${c.up === 1 ? '' : 's'} upstream, ${c.down} downstream`;
-  if (r === undefined) return { up: '\u2190\u2026', down: '\u2026\u2192', title: one };
-  if (!r) return { up: `\u2190${c.up}`, down: `${c.down}\u2192`, title: `${one}\nthe whole chain could not be counted` };
-  return { up: `\u2190${r.up}`, down: `${r.down}\u2192`, title: `${one}\nin all: ${r.up} upstream, ${r.down} downstream` };
+  const left = indirect ? '\nindirect edges left out, as on the canvas with its indirect button off' : '';
+  if (r === undefined) return { up: '\u2190\u2026', down: '\u2026\u2192', title: one + left };
+  if (!r) return { up: `\u2190${c.up}`, down: `${c.down}\u2192`, title: `${one}\nthe whole chain could not be counted${left}` };
+  return { up: `\u2190${r.up}`, down: `${r.down}\u2192`, title: `${one}\nin all: ${r.up} upstream, ${r.down} downstream${left}` };
 }
 
 /* Whether the Columns table has a Lineage column: Snowflake picked, or a
    column with an edge, a mark of collin's, or a value it is generated from,
    which a column nothing reads still has (0096). */
 function lineageColumnShown(columns, live, flags) {
-  return live || columns.some((c) => c.up || c.down || Array.isArray(c.generated) || flags.has(c.name.toLowerCase()));
+  return live || columns.some((c) => c.up || c.down || c.indirect || Array.isArray(c.generated) || flags.has(c.name.toLowerCase()));
 }
 
 /* Whether a click on a column's row opens its lineage: an edge, Snowflake to
    ask, or a root nothing reads, drawn alone with its badge and its value on
-   hover, as every filled Lineage cell opens. A mark of collin's alone does
-   not: there is nothing to draw. */
+   hover, as every filled Lineage cell opens. So does a column only collin's
+   indirect edges reach or leave, which `up` and `down` leave out: its box,
+   with a card saying what keeps its rows when they reach it, and the indirect
+   button draws them (0097). A mark of collin's alone does not: there is
+   nothing to draw. */
 function columnOpens(c, live) {
-  return !!(c.up || c.down || live || Array.isArray(c.generated));
+  return !!(c.up || c.down || live || c.indirect || Array.isArray(c.generated));
+}
+
+/* The Lineage cell of a column only collin's indirect edges reach or leave:
+   not the "-" of a column with nothing, since its row opens and the indirect
+   button draws them (0097). Null for any other column. */
+function indirectOnlyCell(c) {
+  if (!c.indirect || c.up || c.down) return null;
+  return { text: 'indirect only', title: 'only indirect edges reach or leave it; turn indirect on to draw them' };
 }
 
 function catalogColumns(body, n) {
@@ -11537,7 +11608,7 @@ function catalogColumns(body, n) {
         lin.append(u, document.createTextNode('  '), dn);
         // The cell's title wins over the row's, so it says what a click does too.
         const fill = (r) => {
-          const reach = columnReach(c, r);
+          const reach = columnReach(c, r, cacheHasIndirect(S.meta && S.meta.cll_kinds));
           u.textContent = reach.up;
           dn.textContent = reach.down;
           lin.title = `${reach.title}\n${action}`;
@@ -11552,6 +11623,9 @@ function catalogColumns(body, n) {
         ask.className = 'c-ask';
         ask.textContent = 'fetch';
         lin.append(ask);
+      } else if (!lin.firstChild && indirectOnlyCell(c)) {
+        const only = indirectOnlyCell(c);
+        lin.append(Object.assign(document.createElement('span'), { className: 'c-ask', textContent: only.text, title: only.title }));
       } else if (!lin.firstChild) {
         lin.append(nul());
       }
@@ -13148,6 +13222,8 @@ function applyMeta(meta) {
   // a feature or a collin poll brings the same one again.
   const moved = !S.meta || S.meta.manifest_mtime !== meta.manifest_mtime;
   S.meta = meta;
+  // Another cache may hold indirect edges where this one had none.
+  paintIndirectToggle();
   $('#project').textContent = meta.project || '(no manifest)';
   $('#tree-title').textContent = meta.project || 'Project';
   const c = meta.counts || {};
@@ -13572,12 +13648,14 @@ async function boot() {
       // model to model is reading each one in turn.
       previewBox(n);
     },
-    onHover: (n, g) => {
+    onHover: (n, g, said) => {
       const { node: nodeId, column } = splitColId(n.id);
       // In column mode the box already says everything, but for the value a
-      // generated column is set to, which has no room on it (0096).
+      // generated column is set to (0096) and what keeps its rows (0097),
+      // which have no room on it.
       if (column) {
-        if (Array.isArray(n.generated)) hoverEnter('gen:' + n.id, () => g.getBoundingClientRect(), (el) => fillGeneratedCard(el, n));
+        const rows = (said && said.rows) || '';
+        if (Array.isArray(n.generated) || rows) hoverEnter('col:' + n.id, () => g.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
         return;
       }
       hoverEnter('node:' + nodeId, () => g.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));

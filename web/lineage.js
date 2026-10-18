@@ -78,14 +78,44 @@ const Lineage = (() => {
        sit side by side wherever a model mixes both. */
     raw: '#7fb069',
     generated: '#f5a7f9',
+    /* collin's indirect edges, `filter`, `join_key` and `dedup_key` (0097):
+       the column on the left decided which rows exist, not what any value
+       is. One muted teal for the three, drawn dashed and thin, so the eye
+       reads a value edge first and never takes an indirect edge for one. */
+    indirect: '#6aa0a8',
   };
   /* The plain edge colour, also used for a role this build does not know: a
      cache from another producer may use words that did not exist when this
      shipped, and a wrong hue would claim more than a neutral one. */
   const EDGE_PLAIN = '#33445c';
+  /* collin's indirect roles, `ROW_ROLES` on the server: they reach every
+     column of a model and none in particular (collin's 0011). */
+  const ROW_KINDS = new Set(['filter', 'join_key', 'dedup_key']);
+
+  function isRowKind(kind) {
+    return ROW_KINDS.has(String(kind || '').toLowerCase());
+  }
 
   function roleColor(kind) {
+    if (isRowKind(kind)) return ROLE.indirect;
     return ROLE[String(kind || '').toLowerCase()] || EDGE_PLAIN;
+  }
+
+  /* The legend's word for an edge's role: the three indirect roles share
+     `indirect`, collin's own word for them and the canvas button's, one
+     dashed entry, since they are drawn alike and one question is asked of
+     them, which rows this model keeps. The stop at menu still lists each. */
+  function edgeLegendLabel(kind) {
+    return isRowKind(kind) ? 'indirect' : kind;
+  }
+
+  /* A legend entry's swatch: a dashed line for `indirect`, as its edges are
+     drawn, a square of the colour for every other entry. Shared with the
+     exported page, whose legend has no stylesheet of the canvas's. */
+  function legendSwatch(label, colour) {
+    return label === 'indirect'
+      ? { cls: 'dash', style: `background:repeating-linear-gradient(90deg,${colour} 0 3px,transparent 3px 5px)` }
+      : { cls: '', style: `background:${colour}` };
   }
 
   /* What produced each column, read off its incoming edges, so the badge sits on
@@ -94,6 +124,11 @@ const Lineage = (() => {
      A column fed by several edges of different roles is `mixed`, which has no
      colour of its own on purpose: it falls back to the neutral, because naming
      one of the roles would be picking a winner at random.
+
+     Only the edges of a value count: an indirect edge, a filter's, a join
+     key's or a dedup key's, says which rows the model keeps, so a column it
+     alone reaches reads as one nothing feeds, in view or behind its +N, whose
+     `hidden_up_rows` says how much of it is indirect (0097).
 
      A column its model's SQL sets from no column is `generated`, whatever
      reaches it: under collin's `--indirect` the filter and join key edges of
@@ -112,13 +147,13 @@ const Lineage = (() => {
     const found = d.nodes.map(() => '');
     (d.edges || []).forEach(([, to], i) => {
       const kind = (d.edge_kinds && d.edge_kinds[i]) || '';
-      if (!kind) return;
+      if (!kind || isRowKind(kind)) return;
       found[to] = !found[to] ? kind : (found[to] === kind ? kind : 'mixed');
     });
     return found.map((role, i) => {
       const n = d.nodes[i];
       if (Array.isArray(n.generated)) return 'generated';
-      if (role || n.hidden_up) return role;
+      if (role || n.hidden_up > (n.hidden_up_rows || 0)) return role;
       if (!d.roots_known) return 'raw';
       return RAW_KINDS.has(n.kind) || n.outside ? 'raw' : '';
     });
@@ -162,7 +197,7 @@ const Lineage = (() => {
     if (d.mode === 'column') nodeRoles(d).forEach((role, i) => { if (role === label) nodes.add(i); });
     if (kinds.length) {
       (d.edges || []).forEach(([a, b], i) => {
-        if (kinds[i] !== label) return;
+        if (edgeLegendLabel(kinds[i]) !== label) return;
         edges.add(i); nodes.add(a); nodes.add(b);
       });
     } else {
@@ -1386,6 +1421,20 @@ const Lineage = (() => {
     };
   }
 
+  /* What keeps the rows each column is in, apart from where its value comes
+     from (0097): the columns whose indirect edges reach it, each with its
+     role, `rows kept by: raw_orders.status (filter)`, and how many more than
+     the server names. Empty for a column no indirect edge reaches. Said
+     apart so that a card saying "from no column" is not contradicted by a
+     line in. The server sends the names, `rows_by`, whether the canvas draws
+     those edges or not, so the card says it with the indirect button off. */
+  function rowsKept(d) {
+    return d.nodes.map((n) => {
+      const by = n.rows_by || [], more = n.rows_by_more || 0;
+      return by.length ? `rows kept by: ${by.join(', ')}${more ? `, and ${more} more` : ''}` : '';
+    });
+  }
+
   /* Writes the second line into a box's <text>, the struck word in a <tspan>
      of its own, which a clip or a textContent would flatten. `max` cuts the
      line from its end, the test count first and then the schema, never the
@@ -1713,6 +1762,7 @@ const Lineage = (() => {
     selected = d.nodes[d.focus] ? d.nodes[d.focus].id : null;
     // Column mode only: in model mode the box colour already carries the answer.
     const roles = columnMode ? nodeRoles(d) : [];
+    const kept = columnMode ? rowsKept(d) : [];
     const L = layout(d, opts.folders, opts.levels);
     place = L.boxes;
     groups = L.groups || [];
@@ -1754,7 +1804,8 @@ const Lineage = (() => {
       const path = el('path', {
         // A line into a test links a check to what it checks, not data to
         // where it goes, so it is drawn apart: see `.edge.test`.
-        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : ''),
+        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : '')
+          + (isRowKind(d.edge_kinds && d.edge_kinds[i]) ? ' indirect' : ''),
         'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i],
       });
       // A custom property, not `stroke`: setting the property leaves `.edge.hi`
@@ -1829,8 +1880,10 @@ const Lineage = (() => {
       const said = strategySaid(n, opts.adapter);
       // The value too, which only a hover shows: an exported page has none.
       const set = roles[i] === 'generated' ? generatedSaid(n.generated).line : '';
+      const rows = kept[i] || '';
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
-        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
+        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + (rows ? `${rows}, ` : '')
+        + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1843,7 +1896,7 @@ const Lineage = (() => {
       g.addEventListener('dblclick', (e) => { e.stopPropagation(); handlers.onOpen && handlers.onOpen(n); });
       // enter/leave, not over/out: the group has four children, and crossing
       // between them would fire over/out as if the box had been left.
-      g.addEventListener('mouseenter', () => { if (!drag) handlers.onHover && handlers.onHover(n, g); });
+      g.addEventListener('mouseenter', () => { if (!drag) handlers.onHover && handlers.onHover(n, g, { rows: kept[i] || '' }); });
       g.addEventListener('mouseleave', () => handlers.onHoverOut && handlers.onHoverOut());
       nodeLayer.appendChild(g);
       nodeEls[i] = g;
@@ -2330,7 +2383,7 @@ const Lineage = (() => {
 
   return {
     init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles, generatedSaid, find, findStep, findEnd, placeHeads,
+    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, isRowKind, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked,
   };
 })();

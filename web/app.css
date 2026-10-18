@@ -923,12 +923,19 @@ kbd {
    tests' grey, since it carries no data. Before `.edge.hi`, so a selected one
    still turns accent. */
 .edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }
+/* An indirect edge, a filter's, a join key's or a dedup key's (0097): the
+   column decided which rows exist, not what a value is. Thin and in short
+   dashes, neither the test's dots nor the back edge's long dashes; before
+   `.edge.hi`, which keeps the dashes and takes the stroke. */
+.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }
 .edge.hi { stroke: var(--accent); stroke-width: 2; }
 /* An edge drawn against its direction, where column lineage loops: with no
    arrowheads, left to right is the only direction a reader has (0027). */
 .edge.back { stroke-dasharray: 5 4; }
 /* Both at once, a test read from a later column: dash and dot. */
 .edge.test.back { stroke-dasharray: 5 3 1 3; }
+/* An indirect edge against the direction: a long dash between pairs of short ones. */
+.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
 .nd:hover rect.box { stroke: var(--fg-dim); }
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
@@ -1003,6 +1010,8 @@ kbd {
   padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+/* The `indirect` entry, a dash as its edges are drawn (0097). */
+.legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
 /* The entries take a click, the strip around them still does not: a pan
    started beside them has to reach the canvas. */
 .legend span { pointer-events: auto; cursor: pointer; border-radius: 3px; }
