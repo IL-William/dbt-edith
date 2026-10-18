@@ -4053,10 +4053,12 @@ async function runSelection() {
     if (sub.stripped) $('#select-input').value = selectionText(sub);
     const line = $('#select-input').value.trim();
     rememberSelection(line);
+    // The note names the button when there is one, so it is asked first.
+    const offer = capOffer(sub, raise);
     // Before drawing: the warnings make the bar taller, and the folder names
     // are placed below it.
-    paintSelectWarnings(selectWarnings(selectCapNote(sub).concat(selectNotes(sub), sub.warnings || [])), false,
-      capOffer(sub, raise), (max) => {
+    paintSelectWarnings(selectWarnings(selectCapNote(sub, offer).concat(selectNotes(sub), sub.warnings || [])), false,
+      offer, (max) => {
         // The line this answer was drawn for, not whatever the box holds
         // now: a line typed since was never offered, and its own run, still
         // waiting on the keystroke timer, would draw it a second time.
@@ -4307,15 +4309,32 @@ function filterSelectors(list, q) {
    the corner: a part drawn reads as the whole answer, a source whose children
    were left out as a source read by nothing (0087). On screen only: an
    exported page has no Copy names, and lists what was left out by name. Said
-   first, so the cap on warnings can never drop it. */
-function selectCapNote(sub) {
+   first, so the cap on warnings can never drop it.
+
+   When the starts take half the canvas or more, as `source:*+` can, it
+   holds at most one other node per start, and the walk hands those out
+   start by start, by name: the starts it never got to stand alone with a
+   +N badge. "Those nearest what the selection names" then reads as if
+   their lineage had been drawn, so the note says how many are starts, and
+   what draws the rest, before Copy names, since a narrow bar cuts the end
+   of the line. `offer` is capOffer()'s button, named when there is one. */
+function selectCapNote(sub, offer) {
   if (!sub || !sub.truncated) return [];
   const { drawn, drawable } = selectCounts(sub);
   // The names sent are cut too, past a few thousand: say how far they go.
   const names = (sub.names || []).length;
   const copy = names >= sub.matched ? 'Copy names lists every one' : `Copy names lists the first ${names} by name`;
-  return [`Too large to draw whole: ${drawn} of ${drawable} on the canvas, those nearest what the selection names. `
-    + `${copy}; a narrower selection draws the rest.`];
+  const starts = sub.starts || 0;
+  if (!starts || 2 * starts < drawn) {
+    return [`Too large to draw whole: ${drawn} of ${drawable} on the canvas, those nearest what the selection names. `
+      + `${copy}; a narrower selection draws the rest.`];
+  }
+  // Their lineage, not their children: `+tag:x` starts at models and grows
+  // to their parents. A button that cannot draw it all draws more of it.
+  const rest = offer && offer.all ? 'the rest of their lineage' : 'more of their lineage';
+  const who = offer ? `${offer.all ? 'Draw all' : `Draw ${offer.max}`} or a narrower selection` : 'A narrower selection';
+  return [`Too large to draw whole: ${drawn} of ${drawable} on the canvas, ${starts} of them what the selection names. `
+    + `${who} draws ${rest}; ${copy}.`];
 }
 
 /* The button beside a capped canvas's note: the rest drawn, this time only.
@@ -4331,6 +4350,7 @@ function capOffer(sub, asked) {
   const all = drawable <= most;
   return {
     max: most,
+    all,
     label: all ? `Draw all ${drawable}` : `Draw ${most}`,
     hint: 'slower to zoom and pan',
     title: `${all ? 'Draws every node of this selection' : `Draws ${most} nodes of this selection, the most there is`}, `
