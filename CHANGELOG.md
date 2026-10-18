@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.29.2 - 2026-10-18
+
+- Load a model thousands of columns wide at once, on the page and with
+  `--column`: its column lineage, its catalog and its column tests were each
+  matched to its columns one name at a time, over every column, which took
+  under a second at 5 000 columns and over ten at 20 000.
+
 ## 1.29.1 - 2026-10-18
 
 - Pass over a collin that git tracks, beside dbt-edith or on the `PATH`, whatever

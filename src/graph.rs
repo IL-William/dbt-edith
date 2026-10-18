@@ -152,6 +152,18 @@ pub struct Column {
     pub undeclared: bool,
 }
 
+/// A node's columns by lower-cased name, each at the first column of that
+/// name: the one a scan in order would find. Lower-cased once per node, where
+/// a scan for every name looked up cost the node's width squared, tens of
+/// seconds on a model 20 000 columns wide.
+fn first_by_name(columns: &[Column]) -> HashMap<String, usize> {
+    let mut at = HashMap::with_capacity(columns.len());
+    for (i, c) in columns.iter().enumerate() {
+        at.entry(c.name.to_lowercase()).or_insert(i);
+    }
+    at
+}
+
 #[derive(Clone)]
 pub struct Node {
     pub id: String,
@@ -740,6 +752,7 @@ impl Graph {
         // `attached_node`, and a relationships one has the model it points at
         // as a parent too: models are numbered before sources, so taking the
         // first parent hung it on that model's column of the same name.
+        let mut guarded: Vec<(u32, u32)> = Vec::new();
         for i in 0..nodes.len() {
             if nodes[i].kind != Kind::Test || nodes[i].column.is_empty() {
                 continue;
@@ -749,14 +762,22 @@ impl Graph {
             } else {
                 index.get(&nodes[i].attached).copied()
             };
-            let Some(owner) = owner else { continue };
-            let wanted = nodes[i].column.to_lowercase();
-            if let Some(col) = nodes[owner as usize]
-                .columns
-                .iter_mut()
-                .find(|c| c.name.to_lowercase() == wanted)
-            {
-                col.tests.push(i as u32);
+            if let Some(owner) = owner {
+                guarded.push((owner, i as u32));
+            }
+        }
+        // By owner, so one index of its columns serves all of its tests, and
+        // each column still meets its tests in the order of their index.
+        guarded.sort_unstable();
+        let mut names: HashMap<String, usize> = HashMap::new();
+        let mut indexed: Option<u32> = None;
+        for (owner, test) in guarded {
+            if indexed != Some(owner) {
+                names = first_by_name(&nodes[owner as usize].columns);
+                indexed = Some(owner);
+            }
+            if let Some(&col) = names.get(&nodes[test as usize].column.to_lowercase()) {
+                nodes[owner as usize].columns[col].tests.push(test);
             }
         }
 
@@ -926,9 +947,18 @@ impl Graph {
         }
         want.sort();
         want.dedup();
+        // Sorted, so a node's names come together and one index of its
+        // columns serves them all.
+        let mut names: HashMap<String, usize> = HashMap::new();
+        let mut indexed: Option<u32> = None;
         for (n, col) in &want {
             let node = &mut self.nodes[*n as usize];
-            if !node.columns.iter().any(|c| c.name.to_lowercase() == *col) {
+            if indexed != Some(*n) {
+                names = first_by_name(&node.columns);
+                indexed = Some(*n);
+            }
+            if !names.contains_key(col) {
+                names.insert(col.clone(), node.columns.len());
                 node.columns.push(Column {
                     name: col.clone(),
                     data_type: String::new(),
@@ -1215,10 +1245,12 @@ impl Graph {
         for (id, entry) in cat.nodes.into_iter().chain(cat.sources) {
             let Some(&i) = self.index.get(&id) else { continue };
             let node = &mut self.nodes[i as usize];
+            let mut names = first_by_name(&node.columns);
             for (_, col) in entry.columns {
                 let key = col.name.to_lowercase();
-                match node.columns.iter_mut().find(|c| c.name.to_lowercase() == key) {
-                    Some(existing) => {
+                match names.get(&key).copied() {
+                    Some(at) => {
+                        let existing = &mut node.columns[at];
                         if existing.data_type.is_empty() {
                             existing.data_type = col.r#type.clone();
                         }
@@ -1226,13 +1258,16 @@ impl Graph {
                             existing.description = col.comment.clone().unwrap_or_default();
                         }
                     }
-                    None => node.columns.push(Column {
-                        name: col.name,
-                        data_type: col.r#type,
-                        description: col.comment.unwrap_or_default(),
-                        tests: Vec::new(),
-                        undeclared: true,
-                    }),
+                    None => {
+                        names.insert(key, node.columns.len());
+                        node.columns.push(Column {
+                            name: col.name,
+                            data_type: col.r#type,
+                            description: col.comment.unwrap_or_default(),
+                            tests: Vec::new(),
+                            undeclared: true,
+                        });
+                    }
                 }
                 touched += 1;
             }
@@ -3226,5 +3261,359 @@ mod tests {
         let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
         assert_eq!(chips(&g, "source.shop.raw.orders"), ["source_relationships_raw_orders_customer_id"]);
         assert!(chips(&g, "model.shop.customers").is_empty(), "the model it points at guards nothing");
+    }
+
+    // The two merges as they were when each name scanned its node's columns,
+    // kept to hold the index they use now to the answers they gave.
+    fn merge_col_lineage_by_scan(g: &mut Graph, raw: RawColLineage, mtime: u64) -> usize {
+        const MAX_EDGES: usize = 5_000_000;
+        let mut dropped = 0usize;
+        let mut touched: Vec<u32> = Vec::new();
+        let mut want: Vec<(u32, String)> = Vec::new();
+        for e in &raw.edges {
+            for (id, col) in [(&e.from, &e.from_col), (&e.to, &e.to_col)] {
+                match g.index.get(id.as_str()) {
+                    Some(&n) => want.push((n, col.to_lowercase())),
+                    None => dropped += 1,
+                }
+            }
+        }
+        want.sort();
+        want.dedup();
+        for (n, col) in &want {
+            let node = &mut g.nodes[*n as usize];
+            if !node.columns.iter().any(|c| c.name.to_lowercase() == *col) {
+                node.columns.push(Column {
+                    name: col.clone(),
+                    data_type: String::new(),
+                    description: String::new(),
+                    tests: Vec::new(),
+                    undeclared: true,
+                });
+                touched.push(*n);
+            }
+        }
+        touched.sort_unstable();
+        touched.dedup();
+        for n in &touched {
+            g.nodes[*n as usize].columns.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        let mut slot: HashMap<(u32, String), u32> = HashMap::new();
+        let mut indexed: HashSet<u32> = HashSet::new();
+        for (n, _) in &want {
+            if !indexed.insert(*n) {
+                continue;
+            }
+            for (i, c) in g.nodes[*n as usize].columns.iter().enumerate() {
+                slot.insert((*n, c.name.to_lowercase()), i as u32);
+            }
+        }
+        let mut kinds: Vec<String> = Vec::new();
+        let mut edges: Vec<ColEdge> = Vec::with_capacity(raw.edges.len());
+        for e in &raw.edges {
+            let (Some(&fi), Some(&ti)) = (g.index.get(e.from.as_str()), g.index.get(e.to.as_str())) else {
+                continue;
+            };
+            let (Some(&fc), Some(&tc)) =
+                (slot.get(&(fi, e.from_col.to_lowercase())), slot.get(&(ti, e.to_col.to_lowercase())))
+            else {
+                dropped += 1;
+                continue;
+            };
+            let kind = match kinds.iter().position(|k| *k == e.kind) {
+                Some(i) => i,
+                None => {
+                    kinds.push(e.kind.clone());
+                    kinds.len() - 1
+                }
+            };
+            edges.push(ColEdge { from: ColRef { node: fi, col: fc }, to: ColRef { node: ti, col: tc }, kind: kind.min(255) as u8 });
+            if edges.len() >= MAX_EDGES {
+                break;
+            }
+        }
+        edges.sort_by(|a, b| (a.from, a.to).cmp(&(b.from, b.to)));
+        edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
+        let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
+        by_to.sort_by_key(|&i| edges[i as usize].to);
+        let total = edges.len();
+        let mut breakdown: Vec<KindCount> = kinds
+            .iter()
+            .enumerate()
+            .map(|(i, k)| KindCount {
+                kind: if k.is_empty() { "unknown".into() } else { k.clone() },
+                edges: edges.iter().filter(|e| e.kind as usize == i).count(),
+            })
+            .collect();
+        breakdown.sort_by(|a, b| b.edges.cmp(&a.edges));
+        g.meta.cll_kinds = breakdown;
+        g.cll = Some(ColLineage { edges, by_to, kinds });
+        g.meta.cll_edges = total;
+        g.meta.cll_dropped = dropped;
+        g.meta.cll_mtime = mtime;
+        g.meta.cll_source = raw.source;
+        g.meta.cll_target = raw.target;
+        g.meta.cll_generated_at = raw.generated_at;
+        total
+    }
+
+    fn merge_catalog_by_scan(g: &mut Graph, cat: RawCatalog, mtime: u64) -> usize {
+        let mut touched = 0;
+        for (id, entry) in cat.nodes.into_iter().chain(cat.sources) {
+            let Some(&i) = g.index.get(&id) else { continue };
+            let node = &mut g.nodes[i as usize];
+            for (_, col) in entry.columns {
+                let key = col.name.to_lowercase();
+                match node.columns.iter_mut().find(|c| c.name.to_lowercase() == key) {
+                    Some(existing) => {
+                        if existing.data_type.is_empty() {
+                            existing.data_type = col.r#type.clone();
+                        }
+                        if existing.description.is_empty() {
+                            existing.description = col.comment.clone().unwrap_or_default();
+                        }
+                    }
+                    None => node.columns.push(Column {
+                        name: col.name,
+                        data_type: col.r#type,
+                        description: col.comment.unwrap_or_default(),
+                        tests: Vec::new(),
+                        undeclared: true,
+                    }),
+                }
+                touched += 1;
+            }
+            node.columns.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        g.catalog_mtime = mtime;
+        touched
+    }
+
+    type Merged = (Vec<Vec<(String, String, String, Vec<u32>, bool)>>, Vec<(ColRef, ColRef, u8)>, Vec<u32>, Vec<String>, String);
+
+    // Everything a merge leaves behind, the meta included, in a form that compares.
+    fn merged(g: &Graph) -> Merged {
+        let columns = g
+            .nodes
+            .iter()
+            .map(|n| {
+                n.columns
+                    .iter()
+                    .map(|c| (c.name.clone(), c.data_type.clone(), c.description.clone(), c.tests.clone(), c.undeclared))
+                    .collect()
+            })
+            .collect();
+        let (edges, by_to, kinds) = match &g.cll {
+            Some(c) => (c.edges.iter().map(|e| (e.from, e.to, e.kind)).collect(), c.by_to.clone(), c.kinds.clone()),
+            None => Default::default(),
+        };
+        let meta = serde_json::to_string(&g.meta).unwrap() + &g.catalog_mtime.to_string();
+        (columns, edges, by_to, kinds, meta)
+    }
+
+    // Names that meet once lower-cased, in ASCII and past it, where
+    // `to_ascii_lowercase` would keep them apart. The last one no node is
+    // given, so a cache or a catalog always brings columns of its own.
+    const SPELLINGS: [&str; 9] = ["customer_id", "order_id", "amount", "status", "Straße", "ÉTÉ", "ΣΑΣ", "İd", "payment_method"];
+
+    fn spelled(roll: &mut impl FnMut(u64) -> u64, names: usize) -> String {
+        SPELLINGS[roll(names as u64) as usize]
+            .chars()
+            .map(|c| if roll(2) == 0 { c.to_uppercase().collect::<String>() } else { c.to_lowercase().collect() })
+            .collect()
+    }
+
+    // Four Jaffle Shop models whose columns repeat a name, exactly or in
+    // another case, are sorted or not, and are declared or not.
+    fn crowded_columns(roll: &mut impl FnMut(u64) -> u64) -> Graph {
+        let mut g = Graph::build(
+            serde_json::from_value(serde_json::json!({
+                "nodes": {
+                    "model.shop.stg_customers": { "name": "stg_customers", "resource_type": "model" },
+                    "model.shop.stg_orders": { "name": "stg_orders", "resource_type": "model" },
+                    "model.shop.customers": { "name": "customers", "resource_type": "model" },
+                    "model.shop.orders": { "name": "orders", "resource_type": "model" },
+                },
+            }))
+            .unwrap(),
+            std::path::Path::new("manifest.json"),
+            0,
+            0,
+        );
+        for n in g.nodes.iter_mut() {
+            n.columns = (0..roll(12))
+                .map(|i| Column {
+                    name: spelled(roll, SPELLINGS.len() - 1),
+                    data_type: ["", "integer"][roll(2) as usize].to_string(),
+                    description: ["", "declared"][roll(2) as usize].to_string(),
+                    tests: vec![i as u32],
+                    undeclared: roll(2) == 0,
+                })
+                .collect();
+            if roll(2) == 0 {
+                n.columns.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+        }
+        g
+    }
+
+    fn some_node(g: &Graph, roll: &mut impl FnMut(u64) -> u64) -> String {
+        let at = roll(g.nodes.len() as u64 + 1) as usize;
+        g.nodes.get(at).map_or("model.shop.gone".to_string(), |n| n.id.clone())
+    }
+
+    fn random_cache(g: &Graph, roll: &mut impl FnMut(u64) -> u64) -> RawColLineage {
+        let edges = (0..roll(40))
+            .map(|_| RawColEdge {
+                from: some_node(g, roll),
+                from_col: spelled(roll, SPELLINGS.len()),
+                to: some_node(g, roll),
+                to_col: spelled(roll, SPELLINGS.len()),
+                kind: ["rename", "window", "", "aggregate"][roll(4) as usize].into(),
+            })
+            .collect();
+        RawColLineage { version: 1, source: "collin".into(), edges, ..Default::default() }
+    }
+
+    // A catalog's key is the column's name as a rule; one apart from it gives
+    // two columns the same name. An entry may sit in either section, or both.
+    fn random_catalog(g: &Graph, roll: &mut impl FnMut(u64) -> u64) -> serde_json::Value {
+        let (mut nodes, mut sources) = (serde_json::Map::new(), serde_json::Map::new());
+        for _ in 0..roll(6) {
+            let mut columns = serde_json::Map::new();
+            for k in 0..roll(10) {
+                let name = spelled(roll, SPELLINGS.len());
+                let key = if roll(4) == 0 { format!("{name}{k}") } else { name.clone() };
+                let comment = if roll(2) == 0 { serde_json::Value::Null } else { "from the warehouse".into() };
+                let kind = ["INTEGER", "TEXT"][roll(2) as usize];
+                columns.insert(key, serde_json::json!({ "name": name, "type": kind, "comment": comment }));
+            }
+            let entry = serde_json::json!({ "columns": columns });
+            let id = some_node(g, roll);
+            match roll(3) {
+                0 => {
+                    nodes.insert(id, entry);
+                }
+                1 => {
+                    sources.insert(id, entry);
+                }
+                _ => {
+                    nodes.insert(id.clone(), entry.clone());
+                    sources.insert(id, entry);
+                }
+            }
+        }
+        serde_json::json!({ "nodes": nodes, "sources": sources })
+    }
+
+    #[test]
+    fn a_catalog_merges_as_it_did_by_scan() {
+        let mut roll = xorshift(0x2545_F491_4F6C_DD1D);
+        for case in 0..500 {
+            let mut new = crowded_columns(&mut roll);
+            let mut old = new.clone();
+            let cat = random_catalog(&new, &mut roll);
+            let (a, b) = (serde_json::from_value(cat.clone()).unwrap(), serde_json::from_value(cat).unwrap());
+            assert_eq!(merge_catalog_by_scan(&mut old, a, 7), new.merge_catalog(b, 7), "case {case}");
+            assert_eq!(merged(&old), merged(&new), "case {case}");
+        }
+    }
+
+    // Where each column test hung when it scanned its owner's columns, in the
+    // order of the tests' indices. A column's tests are then ordered by rank,
+    // which no two share, so the same tests make the same list.
+    fn hung_by_scan(g: &Graph) -> Vec<Vec<Vec<u32>>> {
+        let mut hung: Vec<Vec<Vec<u32>>> = g.nodes.iter().map(|n| vec![Vec::new(); n.columns.len()]).collect();
+        for (i, t) in g.nodes.iter().enumerate() {
+            if t.kind != Kind::Test || t.column.is_empty() {
+                continue;
+            }
+            let owner = if t.attached.is_empty() {
+                declaring(&g.nodes, &g.index, t).or_else(|| t.parents.first().copied())
+            } else {
+                g.index.get(&t.attached).copied()
+            };
+            let Some(owner) = owner else { continue };
+            let wanted = t.column.to_lowercase();
+            if let Some(c) = g.nodes[owner as usize].columns.iter().position(|c| c.name.to_lowercase() == wanted) {
+                hung[owner as usize][c].push(i as u32);
+            }
+        }
+        hung
+    }
+
+    // Models whose columns share names, and tests on them in any case, some
+    // attached, some found by the file that declares them, some on nothing.
+    #[test]
+    fn column_tests_hang_as_they_did_by_scan() {
+        let mut roll = xorshift(0xD1B5_4A32_D192_ED03);
+        let models = ["stg_customers", "stg_orders", "customers", "orders"];
+        for case in 0..300 {
+            let (mut nodes, mut parents) = (serde_json::Map::new(), serde_json::Map::new());
+            for m in models {
+                let columns: serde_json::Map<String, serde_json::Value> =
+                    (0..roll(10)).map(|k| (format!("k{k}"), serde_json::json!({ "name": spelled(&mut roll, SPELLINGS.len()) }))).collect();
+                nodes.insert(
+                    format!("model.shop.{m}"),
+                    serde_json::json!({ "name": m, "resource_type": "model", "original_file_path": format!("models/{m}.sql"),
+                                        "patch_path": format!("shop://models/{}.yml", ["staging", "marts"][roll(2) as usize]),
+                                        "columns": columns }),
+                );
+            }
+            for t in 0..roll(30) {
+                let id = format!("test.shop.t{t}");
+                let attached = match roll(3) {
+                    0 => String::new(),
+                    1 => "model.shop.gone".to_string(),
+                    _ => format!("model.shop.{}", models[roll(4) as usize]),
+                };
+                let file = ["models/staging.yml", "models/marts.yml", ""][roll(3) as usize];
+                let generic = ["not_null", "unique"][roll(2) as usize];
+                nodes.insert(
+                    id.clone(),
+                    serde_json::json!({ "name": format!("t{t}"), "resource_type": "test", "original_file_path": file,
+                                        "column_name": spelled(&mut roll, SPELLINGS.len()), "attached_node": attached,
+                                        "test_metadata": { "name": generic } }),
+                );
+                let from: Vec<String> = (0..roll(3)).map(|_| format!("model.shop.{}", models[roll(4) as usize])).collect();
+                parents.insert(id, serde_json::json!(from));
+            }
+            let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes, "parent_map": parents })).unwrap();
+            let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+            let hung: Vec<Vec<Vec<u32>>> = g
+                .nodes
+                .iter()
+                .map(|n| {
+                    n.columns
+                        .iter()
+                        .map(|c| {
+                            let mut tests = c.tests.clone();
+                            tests.sort_unstable();
+                            tests
+                        })
+                        .collect()
+                })
+                .collect();
+            assert_eq!(hung, hung_by_scan(&g), "case {case}");
+        }
+    }
+
+    // Once or twice into the same graph, as a fetch merges its grown file
+    // into the previous merge, and over a catalog or not.
+    #[test]
+    fn a_cache_merges_as_it_did_by_scan() {
+        let mut roll = xorshift(0x9E37_79B9_7F4A_7C15);
+        for case in 0..500 {
+            let mut new = crowded_columns(&mut roll);
+            if roll(2) == 0 {
+                new.merge_catalog(serde_json::from_value(random_catalog(&new, &mut roll)).unwrap(), 1);
+            }
+            let mut old = new.clone();
+            for round in 0..1 + roll(2) {
+                let raw = random_cache(&new, &mut roll);
+                assert_eq!(merge_col_lineage_by_scan(&mut old, raw.clone(), round), new.merge_col_lineage(raw, round), "case {case}");
+                assert_eq!(merged(&old), merged(&new), "case {case}, round {round}");
+            }
+        }
     }
 }
