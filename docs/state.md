@@ -1249,7 +1249,7 @@ the steps not resolved and the files refused that could run the node, and open
 the tab on them. A node no job runs says so, and without a source the section
 is not drawn. The Catalog asks `/api/jobs/node` without `look`, and only while
 it is seen, its tab forward and Reports rolled up: one drawn behind either is
-filled in by `showDock` or `closeReports`, so no tab nobody looks at reads the
+filled in by `showDock` or as Reports rolls up, so no tab nobody looks at reads the
 job files (0063). Each answer is kept per node (`S.catJobs`), so the Catalog
 drawn again for an env, a sidecar or a profile asks nothing, until a look, a
 save of the sources or a manifest that moved forgets them all
@@ -2251,7 +2251,7 @@ both that route and the cross-compile.
   panel it rolled up comes back with `openReports(key, { reread: false })`,
   unread (0075). The Catalog's Jobs section asks
   without `look` too, and only while the Catalog is seen (`fillCatalogJobs`,
-  from `catalogPreview`, `showDock` and `closeReports`). It keeps each answer
+  from `catalogPreview`, `showDock` and the Reports panel rolling up). It keeps each answer
   per node, so every request that looks calls `forgetCatalogJobs` too, as do a
   save of the sources and a new manifest: a new path that reads jobs again
   has to, or the Catalog keeps the old chips.
@@ -2267,19 +2267,27 @@ both that route and the cross-compile.
   page, `web/tests/jobs.js` and `compare_with_dbt.py` type the same line. That
   harness slices `web/app.js` from `function jobsScheduleText` to
   `async function loadJobs`; the DOM half sits after it.
-- **The Reports panel rolls up and down by its `.open` class, never
-  `.hidden`.** No transition leaves `display: none`, and the editor, the
-  terminal and the canvas under it must never be measured at nothing. Closed,
-  it is clipped and `visibility: hidden`; open, what is under it is `inert`.
-- **`activate()` rolls the reports up, and `settleTabs` passes `keepReports`**,
-  so closing a tab from the sidebar while they are down leaves them there.
-  `showDock` leaves them alone: a column's lineage brings the canvas forward
+- **A panel rolls up and down by its `.open` class, never `.hidden`** (0091).
+  No transition leaves `display: none`, and the editor, the terminal and the
+  canvas under it must never be measured at nothing. Closed, it is clipped
+  and `visibility: hidden`; open, what is under it is `inert`. Every panel
+  goes through `openPanel` and `closePanel`, and is listed in `PANELS` with
+  all five of its hooks: what paints its button, what it does once rolled
+  up, what the tour keeps of it (`save`) and how it puts it back (`reopen`);
+  `S.panel` names the one down. A check for "something covers the editor and
+  the dock" reads `S.panel`, one for a given panel `panelOpen(name)`. When one
+  panel takes another's place, `closePanel({ next })` runs the first one's
+  hooks with `S.panel` already naming the second: a hook asking whether
+  something under them is seen, `catalogSeen()` say, must hear no.
+- **`activate()` rolls the panel up, and `settleTabs` passes `keepPanel`**,
+  so closing a tab from the sidebar while one is down leaves it there.
+  `showDock` leaves it alone: a column's lineage brings the canvas forward
   when its answer lands, seconds later with Snowflake, and must not roll up a
   panel opened meanwhile, so the terminal's key and `sendToTerminal` close
-  them themselves.
-  `focusNode` cannot close them, since a collin run's end calls it in the
+  it themselves.
+  `focusNode` cannot close it, since a collin run's end calls it in the
   background: every way in from a report goes through `openFromReport`, and
-  the Models list and the palette call `closeReports` themselves.
+  the Models list and the palette call `closePanel` themselves.
 - **The index counts the job coverage only once the jobs were read**
   (`jobs::Cache::read_once`), and with `look=false`: it never reads the job
   files first, and a new manifest reads them again as the Jobs tab would
