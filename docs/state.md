@@ -833,6 +833,13 @@ names takes half the canvas or more, as `source:*+` can, the warning under
 the box counts them and says that Draw all, or a narrower selection, draws
 the rest of their lineage; the order 0087 chose stays.
 
+The Windows `.exe` names its publisher (0093, 1.33.0). A Windows build
+writes a VERSIONINFO resource naming Datadorelix, dbt-edith and the version,
+through mingw-w64's `windres`, which antivirus heuristics read on an unsigned
+file. Without `windres` the build warns and goes on;
+`scripts/build_windows.sh`, which makes the VM's `.exe`, refuses one without
+it. MSVC gets none.
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it
@@ -1783,16 +1790,7 @@ that brings roots.
     target it was compiled for, so the page cannot fill it in: Regenerate
     would offer the profile's targets and pass the one picked, which the
     user then has to have compiled and generated the catalog under.
-21. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
-    publisher, product or version in its properties, which antivirus
-    heuristics hold against a fresh unsigned binary. A resource naming
-    Datadorelix, dbt-edith and the version, in the `.exe` that
-    `scripts/build_windows.sh` cross-builds and in one `cargo install` builds
-    on Windows, needs no certificate; signing stays a later step (below). The
-    trap: a resource compiler, mingw-w64's `windres` or MSVC's `rc.exe`, or a
-    crate that finds one (0003), which the VM's `cargo install` has to find
-    too.
-22. **The update command names git by its path.** The command the status bar
+21. **The update command names git by its path.** The command the status bar
     types into the terminal to update dbt-edith runs in the project folder,
     and under Windows `cmd.exe`, which looks in the current folder first, a
     `git.exe` committed at the project's root would run on Enter. Likely
@@ -1962,8 +1960,8 @@ deliberate later step: an unsigned executable download brings its own friction
 on a managed Windows machine. Signing would come with it, a certificate 0085
 leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
 Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
-licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource comes first
-(item 21).
+licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource came first
+(0093, 1.33.0).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then

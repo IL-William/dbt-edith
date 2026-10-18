@@ -15,6 +15,12 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.33.0 - 2026-10-18
+
+- Name Datadorelix as the company, dbt-edith as the product and its version
+  in the Windows `.exe`'s properties, which an antivirus reads on an unsigned
+  file, and refuse a cross-built `.exe` without them (0093).
+
 ## 1.32.0 - 2026-10-18
 
 - Badge a column its model's SQL sets from a literal `generated` on the
