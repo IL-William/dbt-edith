@@ -1,10 +1,12 @@
 //! Working-tree status and the handful of git commands the UI can run.
 //!
-//! Two rules hold everywhere in this file:
+//! Three rules hold everywhere in this file:
 //!   - nothing here destroys work. No `-f`, no `--hard`, no `clean`, no
 //!     `push --force`. The worst any button can do is create a stash.
 //!   - nothing here can hang the server. Network commands run with terminal
 //!     prompts disabled and ssh in batch mode, and every command has a deadline.
+//!   - the git that runs is the one on the PATH, never one a repository
+//!     commits beside this binary (0094).
 
 use std::io::Read;
 use std::path::Path;
@@ -59,9 +61,26 @@ const NET_ENV: &[(&str, &str)] = &[
     ("GIT_SSH_COMMAND", "ssh -o BatchMode=yes"),
 ];
 
+/// The git on the PATH: never one beside this binary, which on Windows
+/// `Command` would find first (0094). Kept once found, as the PATH it came
+/// from does not change while dbt-edith runs; looked for again until then,
+/// so a git installed while it runs is found without a restart.
+fn program() -> Option<&'static Path> {
+    static GIT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    if let Some(git) = GIT.get() {
+        return Some(git);
+    }
+    let found = crate::program::on_path("git")?;
+    Some(GIT.get_or_init(|| found))
+}
+
 /// Runs git with a deadline, draining both pipes so a chatty hook cannot deadlock.
 pub fn run(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) -> GitRun {
-    let mut cmd = Command::new("git");
+    let Some(git) = program() else {
+        let stderr = "cannot run git: it is not on the PATH".to_string();
+        return GitRun { ok: false, code: -1, stdout: String::new(), stderr, blocking: Vec::new() };
+    };
+    let mut cmd = Command::new(git);
     cmd.arg("-C").arg(root).args(args);
     for (k, v) in env {
         cmd.env(k, v);
@@ -537,6 +556,36 @@ pub fn ls_remote_tags(dir: &Path, url: &str) -> Result<String, String> {
     Err(reason(&r))
 }
 
+/// git in English, so "not a git repository" is told from a refusal.
+const ENGLISH: &[(&str, &str)] = &[("LC_ALL", "C"), ("LANGUAGE", "")];
+
+/// Whether git tracks `rel`, a file or a folder below `dir`, in whichever
+/// repository holds `dir`: what came with a clone was put there by whoever
+/// wrote it, not by the user (0053, 0094). Case aside and as spelt, never as a
+/// pattern: macOS and Windows find a committed `Collin` under `collin`. One
+/// git call. Outside a repository the answer is no, there being nobody to
+/// ask; any other failure, past the deadline, git not on the PATH, or a
+/// repository git refuses (another account's, by `safe.directory`), is the
+/// first line git said, for the caller to judge.
+pub fn tracks(dir: &Path, rel: &str) -> Result<bool, String> {
+    let listed = run(dir, &["ls-files", "--", &format!(":(icase,literal){rel}")], ENGLISH, Duration::from_secs(10));
+    if listed.ok {
+        return Ok(!listed.stdout.trim().is_empty());
+    }
+    if listed.stderr.contains("not a git repository") {
+        return Ok(false);
+    }
+    Err(reason(&listed))
+}
+
+/// The index of the repository holding `dir`, which `git add` and
+/// `git rm --cached` rewrite while the files stay as they are: an answer of
+/// `tracks` may be kept while it is unchanged. None outside a repository.
+pub fn index_of(dir: &Path) -> Option<std::path::PathBuf> {
+    let at = run(dir, &["rev-parse", "--git-path", "index"], ENGLISH, Duration::from_secs(10));
+    at.ok.then(|| dir.join(at.stdout.trim()))
+}
+
 /// The first line git printed when a command failed, or its exit code.
 fn reason(r: &GitRun) -> String {
     let line = r.stderr.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
@@ -649,6 +698,38 @@ mod tests {
         write(dir, "README.md", "one\n");
         git(dir, &["add", "README.md"]);
         git(dir, &["commit", "-q", "-m", "first"]);
+    }
+
+    /// What came with a clone, asked case aside and as spelt, from a folder
+    /// below the repository's root, with the index that answered (0094). On
+    /// main the exact pathspec missed a committed `Collin` that macOS and
+    /// Windows find under `collin`.
+    #[test]
+    fn a_tracked_path_is_told_case_aside_and_never_as_a_pattern() {
+        let dir = scratch("tracks");
+        git(&dir, &["init", "-q", "-b", "main"]);
+        write(&dir, "bin/Collin", "x");
+        write(&dir, "bin/weird", "x");
+        write(&dir, "venvs/shipped/pyvenv.cfg", "x");
+        git(&dir, &["add", "bin/Collin", "bin/weird", "venvs/shipped"]);
+        let bin = dir.join("bin");
+        assert_eq!(tracks(&bin, "collin"), Ok(true));
+        let index = index_of(&bin).map(|p| p.canonicalize().unwrap());
+        assert_eq!(index, Some(dir.join(".git").join("index").canonicalize().unwrap()));
+        assert_eq!(tracks(&bin, "COLLIN.EXE"), Ok(false));
+        assert_eq!(tracks(&bin, "we*d"), Ok(false), "a star is a star, not `weird`");
+        assert_eq!(tracks(&bin, "weird"), Ok(true));
+        assert_eq!(tracks(&dir, "venvs/shipped"), Ok(true), "a folder, by what is under it");
+        assert_eq!(tracks(&dir, "venvs/mine"), Ok(false));
+
+        // Outside a repository: no, and no index to keep the answer against.
+        let loose = scratch("tracks-loose");
+        assert_eq!(tracks(&loose, "collin"), Ok(false));
+        assert_eq!(index_of(&loose), None);
+        // A folder git cannot enter is no answer at all, never a no.
+        assert!(tracks(&loose.join("missing"), "collin").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&loose);
     }
 
     fn changes(v: &[FileChange]) -> Vec<(String, String)> {

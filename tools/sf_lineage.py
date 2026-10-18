@@ -70,7 +70,73 @@ def profiles_path(profiles_dir: str | None) -> Path:
         found = Path("profiles.yml")
     else:
         found = Path.home() / ".dbt" / "profiles.yml"
+    held(found)
     return found.resolve()
+
+
+def held(found: Path) -> None:
+    """A profiles.yml in a folder of the project, which runs this script, is a
+    file of the repository, and a link it commits there may name any file of
+    yours: one leading out of the project is not read, as dbt-edith does not
+    open it, judged by the same rule as its files::confined (0094). One
+    outside the project is yours, and its links are followed as dbt follows
+    them."""
+    project = Path.cwd().resolve()
+    inside = lambda p: p == project or project in p.parents  # noqa: E731
+    try:
+        folder = found.parent.resolve(strict=True)
+    except OSError:
+        return
+    if not inside(folder):
+        return
+    rel = folder.relative_to(project) / found.name
+    at = project / rel
+    landed = at.resolve() if at.exists() else landing(project, rel)
+    if landed is None or not inside(landed):
+        die("profiles.yml in the project links to a file outside it, so it is not read. "
+            "dbt still follows the link: start dbt-edith with DBT_PROFILES_DIR set to the folder it links to")
+
+
+# The links a path not there yet may pass through, as dbt-edith's MAX_LINKS.
+MAX_LINKS = 8
+
+
+def landing(project: Path, rel: Path):
+    """Where a write to rel, a path under the project not there yet, would
+    land, or None when it is refused: name by name, every link on the way
+    followed, eight at most, each `..` taken against the folder reached, and
+    none after a name that is not there, which the system would take against
+    folders made in the meantime. files::landing in dbt-edith, line for line,
+    so the two agree on every profile."""
+    real, new, links = project, [], 0
+    rest = list(rel.parts)
+    while rest:
+        part = rest.pop(0)
+        if part in ("", "."):
+            continue
+        if Path(part).anchor == part:
+            real = Path(part)
+        elif part == "..":
+            if new:
+                return None
+            real = real.parent
+        elif new:
+            new.append(part)
+        elif (real / part).is_symlink():
+            links += 1
+            if links > MAX_LINKS:
+                return None
+            target = Path(os.readlink(real / part))
+            if target.is_absolute():
+                real = Path(target.anchor)
+                rest = list(target.parts[1:]) + rest
+            else:
+                rest = list(target.parts) + rest
+        elif os.path.lexists(real / part):
+            real = real / part
+        else:
+            new.append(part)
+    return real.resolve().joinpath(*new)
 
 
 def profile_outputs(profile: str, profiles_dir: str | None):
@@ -85,6 +151,10 @@ def profile_outputs(profile: str, profiles_dir: str | None):
         die(f"no profiles.yml at {path}")
 
     doc = yaml.safe_load(path.read_text()) or {}
+    # Anything but a mapping is no profile, and the message below would list
+    # it: a string's characters, a list's items, whatever the file holds.
+    if not isinstance(doc, dict):
+        die(f"{path} is not a dbt profile: it holds no profile names")
     if profile not in doc:
         die(f"profile {profile!r} not in {path} (found: {', '.join(k for k in doc if k != 'config')})")
     return doc[profile], path

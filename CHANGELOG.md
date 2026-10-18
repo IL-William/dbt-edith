@@ -15,6 +15,26 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.29.1 - 2026-10-18
+
+- Pass over a collin that git tracks, beside dbt-edith or on the `PATH`, whatever
+  the case of its name, since it came with a repository, and say under Collin
+  in the column lineage menu which one runs instead, or in the Columns tab
+  that none does, and why; in a repository git will not read, pass it over
+  too, with git's reason (0094).
+- Start git, the browser's `cmd` and a Python found by name from the `PATH`
+  alone, never from the folder dbt-edith sits in, where Windows looks first.
+- Keep `profiles.yml` a link when saving it from the page: the file the link
+  points at takes the change, its mode kept, rather than a plain file taking
+  the link's place.
+- Refuse to open a `profiles.yml` in the project that links to a file outside
+  it, and say why on its button, rather than serve whatever file it names; the
+  Snowflake script refuses it too, and never lists what a profile that is no
+  mapping holds in its error.
+- Refuse a link through a folder that is not there and back, a folder link on
+  the way included, and on Windows a path segment naming a drive, such as
+  `C:x`, as paths that leave the project.
+
 ## 1.29.0 - 2026-10-18
 
 - Show a test in the Catalog by what it checks: the generic, its model and

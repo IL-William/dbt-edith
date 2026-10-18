@@ -1,6 +1,6 @@
 # 0017. The dbt profile is reachable, and it alone
 
-Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048, 0049 and 0063 · Supersedes 0012
+Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048, 0049, 0063 and 0094 · Supersedes 0012
 
 **Trigger:** read before opening, reading or writing anything outside the
 project.
@@ -41,6 +41,8 @@ finds the profile where dbt looks for it, and it is reachable on every project.*
 *Amended by [0063](0063-jobs-are-read-from-folders-you-name.md): the YAML
 files under the job folders the user names are read too, and only what was
 parsed from them leaves.*
+*Amended by [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md):
+the write goes through a link to the file it names, and the link stays.*
 
 ## Rejected
 

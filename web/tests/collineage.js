@@ -129,6 +129,29 @@ check('...and says it is running', pending.tools[1].sub, 'running');
 check('a collin cache is picked, not installed, even with collin gone',
       lineageTools(found, '', false, true, { found: false }).tools[1].install, false);
 
+// A collin git tracks came with a repository and is not run (0094): the entry
+// still installs, and its tooltip, the menu and the Columns tab say why.
+var shipped = { found: false, state: 'idle', refused: 'C:\\shop\\collin.exe' };
+var passed = lineageTools(onlySnow, 'column_lineage.snowflake.json', false, true, shipped);
+check('a collin git tracks leaves the entry installing', passed.tools[1].install + ' / ' + passed.tools[1].sub, 'true / install');
+check('...and its tooltip names the file and why',
+      passed.tools[1].title.indexOf('Not run: git tracks C:\\shop\\collin.exe, so it came with a repository.') === 0, true);
+check('...and still says the click installs', passed.tools[1].title.indexOf('installs it into the terminal') > 0, true);
+check('the Columns tab says it was not run, not that collin is missing',
+      collinHint('collin', shipped).text,
+      'Not run: git tracks C:\\shop\\collin.exe, so it came with a repository. Keep your own collin in a folder git does not track.');
+check('another collin running: the menu says which, then what was skipped',
+      collinRefusedNote({ found: true, refused: '/p/collin', path: '/home/me/.cargo/bin/collin' }),
+      'Using /home/me/.cargo/bin/collin. Skipped /p/collin: git tracks /p/collin, so it came with a repository.');
+check('git could not answer: the reason, and never taken for the user\'s own',
+      collinHint('collin', { found: false, refused: 'C:\\shop\\collin.exe', refused_why: 'detected dubious ownership' }).text,
+      'Not run: C:\\shop\\collin.exe sits in a repository git could not answer for (detected dubious ownership). '
+        + 'Keep your own collin in a folder git does not track.');
+check('...and the Columns tab says what the running one says',
+      collinHint('collin', { found: true, refused: '/p/collin', stale: true }).text,
+      'older than the manifest: the next column click runs collin again');
+check('nothing refused, nothing said', collinRefusedNote({ found: true }), '');
+
 var noCacheYet = lineagePickLabel({ cll_edges: 0, cll_file: '' }, 'collin', false, null, { state: 'running' });
 check('the button names Collin while its first run goes on',
       noCacheYet.name + ' / ' + noCacheYet.state + ' / ' + noCacheYet.tone, 'Collin / running / busy');

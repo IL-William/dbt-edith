@@ -9,9 +9,11 @@
 //! into its own folder under dbt-edith's config directory, and the one picked
 //! for the project is the one that runs (0060).
 //!
-//! Three rules hold here:
+//! Four rules hold here:
 //!   - nothing runs at startup. A run follows picking Collin, clicking a column
 //!     while its cache is older than the manifest, or the Regenerate button.
+//!   - a collin git tracks never runs, beside dbt-edith or on the PATH: it came
+//!     with a repository, not from the user (0094).
 //!   - one run at a time. A request arriving during a run waits for that run
 //!     rather than starting a second over the same files.
 //!   - the cache is written under a temporary name and renamed, so the watcher
@@ -59,17 +61,143 @@ fn exe_name() -> &'static str {
     }
 }
 
-/// collin beside dbt-edith first, so a copy shipped with it wins over an older
-/// one installed long ago, then the first on the PATH.
-pub fn locate() -> Option<PathBuf> {
-    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
-    locate_in(beside.as_deref(), std::env::var_os("PATH"))
+/// Why a collin found was passed over.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Refusal {
+    /// git tracks it: it came with a repository.
+    Tracked,
+    /// It sits in a repository and git could not say, for the reason given:
+    /// a repository git refuses, another account's by `safe.directory`, its
+    /// deadline, or no git on the PATH. Not knowing is not taken for the
+    /// user's own (0094).
+    Unsure(String),
 }
 
-fn locate_in(beside: Option<&Path>, path_var: Option<OsString>) -> Option<PathBuf> {
+/// What the search for collin found: the one that runs, and the first one it
+/// passed over and why, so the menu can say why that one did not run (0094).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Located {
+    pub bin: Option<PathBuf>,
+    pub refused: Option<(PathBuf, Refusal)>,
+}
+
+/// collin beside dbt-edith first, so a copy shipped with it wins over an older
+/// one installed long ago, then the first on the PATH. A collin git tracks is
+/// passed over wherever it is: a dbt-edith copied into a project would
+/// otherwise run the one the repository commits beside it on the first pick,
+/// where the user's own copy, untracked, still runs (0094).
+pub fn locate() -> Located {
+    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    locate_in(beside.as_deref(), std::env::var_os("PATH"), refusal)
+}
+
+fn locate_in(beside: Option<&Path>, path_var: Option<OsString>, refusal: impl Fn(&Path) -> Option<Refusal>) -> Located {
     let name = exe_name();
-    let dirs = beside.map(Path::to_path_buf).into_iter().chain(path_var.iter().flat_map(std::env::split_paths));
-    dirs.map(|d| d.join(name)).find(|p| p.is_file())
+    // A relative entry of the PATH is skipped, as `program::on_path` skips
+    // it: the current folder would decide what it names, and the `.git` above
+    // it would be out of sight of `in_repository`.
+    let on_path = path_var.iter().flat_map(std::env::split_paths).filter(|d| d.is_absolute());
+    let dirs = beside.map(Path::to_path_buf).into_iter().chain(on_path);
+    let mut found = Located::default();
+    for bin in dirs.map(|d| d.join(name)).filter(|p| p.is_file()) {
+        match refusal(&bin) {
+            None => {
+                found.bin = Some(bin);
+                break;
+            }
+            Some(why) => {
+                found.refused.get_or_insert((bin, why));
+            }
+        }
+    }
+    found
+}
+
+/// A file's size and modification time, which change when it is written.
+type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
+
+fn stamp(path: &Path) -> Stamp {
+    std::fs::metadata(path).ok().map(|m| (m.len(), m.modified().ok()))
+}
+
+/// What was said of one collin, and what it was said against.
+#[derive(Clone)]
+struct Seen {
+    file: Stamp,
+    /// The index that answered and its stamp then; None outside a repository.
+    index: Option<(PathBuf, Stamp)>,
+    /// Set when git gave no answer: that is kept a few seconds only, so the
+    /// menu does not start git on every opening, nor keep a refusal git may
+    /// lift.
+    until: Option<Instant>,
+    refusal: Option<Refusal>,
+}
+
+/// How long an answer git could not give is kept: a few seconds, so a
+/// refusal git lifts, `safe.directory` set, is seen soon.
+const UNSURE_FOR: Duration = Duration::from_secs(5);
+
+/// The same after git ran out of time, which cost its whole deadline: on a
+/// share where git hangs, asking again every few seconds would hold every
+/// opening of the menu that long.
+const TIMED_OUT_FOR: Duration = Duration::from_secs(60);
+
+/// Until when an answer git could not give is kept, by why it failed.
+fn unsure_until(why: &str) -> Instant {
+    Instant::now() + if why.contains("took longer than") { TIMED_OUT_FOR } else { UNSURE_FOR }
+}
+
+/// Whether a folder sits in what looks like a repository: a `.git` in it or
+/// above it, which is what git itself looks for.
+fn in_repository(dir: &Path) -> bool {
+    dir.ancestors().any(|d| d.join(".git").exists())
+}
+
+/// Why this collin must not run, or None when it is the user's own. Asked of
+/// git in the file's own folder (`git::tracks`): one that arrived with a
+/// clone was put there by whoever wrote the repository, as 0053 says of a
+/// venv. Outside a repository nobody is asked for more. Inside one, an answer
+/// git could not give refuses it, the failure named, rather than run what may
+/// be the repository's. The menu asks on every opening, so an answer is kept
+/// while neither the file nor the index that gave it has changed (`git add`
+/// and `git rm --cached` rewrite the index), and a failure for a few seconds.
+fn refusal(bin: &Path) -> Option<Refusal> {
+    static SEEN: std::sync::OnceLock<Mutex<std::collections::HashMap<PathBuf, Seen>>> = std::sync::OnceLock::new();
+    let seen = SEEN.get_or_init(Default::default);
+    let file = stamp(bin);
+    let known = seen.lock().ok().and_then(|s| s.get(bin).cloned());
+    if let Some(k) = known {
+        let fresh = match (&k.until, &k.index) {
+            (Some(until), _) => Instant::now() < *until,
+            (None, Some((path, then))) => stamp(path) == *then,
+            (None, None) => true,
+        };
+        if k.file == file && fresh {
+            return k.refusal;
+        }
+    }
+    let (Some(dir), Some(name)) = (bin.parent(), bin.file_name().and_then(|n| n.to_str())) else { return None };
+    let repository = in_repository(dir);
+    let (refusal, index, until) = match crate::git::tracks(dir, name) {
+        Ok(tracked) if !repository => (tracked.then_some(Refusal::Tracked), None, None),
+        Ok(tracked) => match crate::git::index_of(dir) {
+            Some(index) => {
+                let then = stamp(&index);
+                (tracked.then_some(Refusal::Tracked), Some((index, then)), None)
+            }
+            // A `.git` git calls no repository, one pointing nowhere say:
+            // its no is not an answer.
+            None => (Some(Refusal::Unsure("git reads no repository from this .git".into())), None, Some(Instant::now() + UNSURE_FOR)),
+        },
+        Err(why) => {
+            let until = unsure_until(&why);
+            (repository.then_some(Refusal::Unsure(why)), None, Some(until))
+        }
+    };
+    if let Ok(mut s) = seen.lock() {
+        s.insert(bin.to_path_buf(), Seen { file, index, until, refusal: refusal.clone() });
+    }
+    refusal
 }
 
 /// What `collin --version` says after `collin `, `0.2.0 (a142ee5)`, or None
@@ -187,11 +315,12 @@ pub fn install_command(dir: &Path, version: &str) -> Option<String> {
 }
 
 /// The collin that runs: the version picked for the project when it is
-/// installed, else the one beside dbt-edith or on the PATH.
-pub fn chosen_bin(installs: &[Install], chosen: Option<&str>) -> Option<PathBuf> {
+/// installed, else the one beside dbt-edith or on the PATH that `locate`
+/// found.
+pub fn chosen_bin(installs: &[Install], chosen: Option<&str>, default: Option<&Path>) -> Option<PathBuf> {
     match chosen.and_then(|v| installs.iter().find(|i| i.version == v)) {
         Some(install) => Some(install.bin.clone()),
-        None => locate(),
+        None => default.map(Path::to_path_buf),
     }
 }
 
@@ -752,10 +881,102 @@ mod tests {
         std::fs::create_dir_all(&on_path).unwrap();
         std::fs::write(on_path.join(exe_name()), "").unwrap();
         let path_var = std::env::join_paths([d.join("missing"), on_path.clone()]).unwrap();
-        assert_eq!(locate_in(Some(&beside), Some(path_var.clone())), Some(on_path.join(exe_name())));
+        let own = |_: &Path| None;
+        assert_eq!(locate_in(Some(&beside), Some(path_var.clone()), own).bin, Some(on_path.join(exe_name())));
         std::fs::write(beside.join(exe_name()), "").unwrap();
-        assert_eq!(locate_in(Some(&beside), Some(path_var)), Some(beside.join(exe_name())));
-        assert_eq!(locate_in(None, None), None);
+        assert_eq!(
+            locate_in(Some(&beside), Some(path_var), own),
+            Located { bin: Some(beside.join(exe_name())), refused: None }
+        );
+        assert_eq!(locate_in(None, None, own), Located::default());
+        // A relative entry names a folder the current one decides: skipped,
+        // as `program::on_path` skips it.
+        std::fs::remove_file(beside.join(exe_name())).unwrap();
+        let relative = std::env::join_paths([Path::new("bin"), Path::new(".")]).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(locate_in(Some(&beside), Some(relative), |_: &Path| None).bin, None, "from {}", cwd.display());
+    }
+
+    /// A git that ran out of time cost its whole deadline, so its silence is
+    /// kept a minute; any other failure a few seconds.
+    #[test]
+    fn a_timed_out_answer_is_kept_longer() {
+        let left = |why: &str| unsure_until(why).saturating_duration_since(Instant::now());
+        assert!(left("git took longer than 10s and was stopped") > Duration::from_secs(50));
+        assert!(left("fatal: detected dubious ownership in repository") <= UNSURE_FOR);
+    }
+
+    /// A dbt-edith copied into a project sits beside whatever the repository
+    /// commits there. The collin git tracks is passed over and named; the
+    /// user's own copy, untracked, still runs (0094). On main the tracked one
+    /// was the one found.
+    #[test]
+    fn a_collin_git_tracks_is_passed_over_and_named() {
+        let d = dir("tracked");
+        let (project, on_path) = (d.join("project"), d.join("bin"));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&on_path).unwrap();
+        let git = |args: &[&str]| crate::git::run(&project, args, &[], Duration::from_secs(20));
+        assert!(git(&["init", "-q"]).ok);
+        let shipped = project.join(exe_name());
+        executable(&shipped, "#!/bin/sh\ntouch \"$(dirname \"$0\")/shipped-ran\"\n");
+        assert!(git(&["add", exe_name()]).ok);
+        let path_var = std::env::join_paths([on_path.clone()]).unwrap();
+        let tracked = Some((shipped.clone(), Refusal::Tracked));
+
+        let none_else = locate_in(Some(&project), Some(path_var.clone()), refusal);
+        assert_eq!(none_else, Located { bin: None, refused: tracked.clone() });
+        let installed = on_path.join(exe_name());
+        std::fs::write(&installed, "").unwrap();
+        let found = locate_in(Some(&project), Some(path_var.clone()), refusal);
+        assert_eq!(found, Located { bin: Some(installed.clone()), refused: tracked.clone() }, "the next one runs");
+        assert!(!project.join("shipped-ran").exists(), "asking git runs nothing of the repository's");
+
+        // Untracked, the same file is the user's again, though nothing about
+        // it changed: the answer was kept against the index, which did.
+        assert!(git(&["rm", "-q", "--cached", exe_name()]).ok);
+        assert_eq!(locate_in(Some(&project), Some(path_var.clone()), refusal), Located { bin: Some(shipped.clone()), refused: None });
+        assert!(git(&["add", exe_name()]).ok);
+        assert_eq!(locate_in(Some(&project), Some(path_var.clone()), refusal).refused, tracked, "and tracked again");
+
+        // Committed as `Collin`, where the file system finds it under
+        // `collin`, as macOS and Windows do: git is asked case aside.
+        assert!(git(&["rm", "-q", "--cached", exe_name()]).ok);
+        std::fs::remove_file(&shipped).unwrap();
+        let upper = project.join(exe_name().to_uppercase());
+        executable(&upper, "#!/bin/sh\n");
+        assert!(git(&["add", &exe_name().to_uppercase()]).ok);
+        if shipped.is_file() {
+            let found = locate_in(Some(&project), Some(path_var), refusal);
+            assert_eq!(found.refused, Some((shipped, Refusal::Tracked)), "{found:?}");
+        }
+
+        // Outside a repository there is nobody to ask, and nothing is passed over.
+        assert_eq!(refusal(&installed), None);
+    }
+
+    /// In a repository git cannot answer for, another account's say, not
+    /// knowing is not taken for the user's own: the collin is passed over
+    /// with git's reason. Outside one, there is nothing to doubt. On the first
+    /// round of this change a failure ran it.
+    #[test]
+    fn a_collin_git_cannot_answer_for_is_passed_over_in_a_repository() {
+        let d = dir("unsure");
+        let project = d.join("project");
+        std::fs::create_dir_all(project.join("bin")).unwrap();
+        // A `.git` git refuses: not a repository it can read, nor nothing.
+        std::fs::write(project.join(".git"), "gitdir: elsewhere\n").unwrap();
+        let bin = project.join("bin").join(exe_name());
+        executable(&bin, "#!/bin/sh\n");
+        assert!(in_repository(&project.join("bin")));
+        match refusal(&bin) {
+            Some(Refusal::Unsure(why)) => assert!(!why.is_empty()),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(locate_in(Some(&project.join("bin")), None, refusal).bin, None);
+        let loose = d.join("loose");
+        std::fs::create_dir_all(&loose).unwrap();
+        assert!(!in_repository(&loose));
     }
 
     #[test]
@@ -845,8 +1066,10 @@ mod tests {
         let found: Vec<String> = installed(&d).into_iter().map(|i| i.version).collect();
         assert_eq!(found, ["0.10.0", "0.3.0"], "by number, not by name; one still building is not there yet");
         assert!(installed(&d.join("missing")).is_empty());
-        let picked = chosen_bin(&installed(&d), Some("0.3.0"));
+        let picked = chosen_bin(&installed(&d), Some("0.3.0"), None);
         assert_eq!(picked, Some(d.join("0.3.0").join("bin").join(exe_name())));
+        let default = d.join("default");
+        assert_eq!(chosen_bin(&installed(&d), Some("0.9.9"), Some(&default)), Some(default), "one not installed falls back");
     }
 
     #[test]

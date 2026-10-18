@@ -191,8 +191,7 @@ fn committed(root: &Path, venv: &Path) -> bool {
     if rel.is_empty() {
         return false;
     }
-    let listed = crate::git::run(root, &["ls-files", "--", &rel], &[], std::time::Duration::from_secs(10));
-    listed.ok && !listed.stdout.trim().is_empty()
+    crate::git::tracks(root, &rel) == Ok(true)
 }
 
 /// The interpreter inside a virtual environment.
