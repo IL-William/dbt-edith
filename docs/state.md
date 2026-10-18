@@ -823,6 +823,11 @@ against the index; a path not there yet is walked link by link, a folder's
 included; and git, `cmd` and a bare `python` are found on the `PATH` alone,
 never beside the binary, where Windows looks first.
 
+A model thousands of columns wide loads at once (1.29.2). Its column
+lineage, its catalog and its column tests were each matched to its columns
+one name at a time, over every column; one lower-cased index of the node's
+columns per merge now serves the page and `--column` (0088) alike.
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it
@@ -1758,20 +1763,14 @@ repository: retake them when a change alters what one shows.
     target it was compiled for, so the page cannot fill it in: Regenerate
     would offer the profile's targets and pass the one picked, which the
     user then has to have compiled and generated the catalog under.
-21. **Merging a cache, quadratic in a model's width.** `merge_col_lineage`
-    looks each wanted column up among the node's columns by lower-casing
-    every one of them, so a model fed 20 000 columns spends tens of seconds
-    merging, where real widths cost nothing. The page and `--column` (0088)
-    share it. The likely answer: one lower-cased index of the node's columns
-    per merge.
-22. **Saying when the starts fill the cap.** Past 3 000 nodes a selection
+21. **Saying when the starts fill the cap.** Past 3 000 nodes a selection
     draws what is nearest its start (0087). When the starts alone take most
     of the cap, as `source:*+` can on a large project, the canvas shows them
     with few of their children, each with a `+N`, and the warning says only
     that the canvas is cut. The order stays, chosen again on 2026-10-16; the
     warning should say that the starts take most of what is drawn, and that
     Draw all or a narrower selection draws their children.
-23. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
+22. **A `generated` badge from collin's roots.** collin 0.8.0 writes `roots`
     (its own 0045): a column built from no column, a literal's value with it
     when there is one. The canvas badges such a column `raw`, as it does a
     source's own column and a column whose lineage collin lost. Read, `roots`
@@ -1787,7 +1786,7 @@ repository: retake them when a change alters what one shows.
 
     `collin_run::WANTS` still asks for 0.1.0, so nothing offers the update
     that brings `roots`.
-24. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
+23. **A VERSIONINFO resource in the Windows binary.** The `.exe` names no
     publisher, product or version in its properties, which antivirus
     heuristics hold against a fresh unsigned binary. A resource naming
     Datadorelix, dbt-edith and the version, in the `.exe` that
@@ -1796,7 +1795,7 @@ repository: retake them when a change alters what one shows.
     trap: a resource compiler, mingw-w64's `windres` or MSVC's `rc.exe`, or a
     crate that finds one (0003), which the VM's `cargo install` has to find
     too.
-25. **The update command names git by its path.** The command the status bar
+24. **The update command names git by its path.** The command the status bar
     types into the terminal to update dbt-edith runs in the project folder,
     and under Windows `cmd.exe`, which looks in the current folder first, a
     `git.exe` committed at the project's root would run on Enter. Likely
@@ -1967,7 +1966,7 @@ on a managed Windows machine. Signing would come with it, a certificate 0085
 leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
 Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
 licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource comes first
-(item 24).
+(item 23).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then
