@@ -4585,7 +4585,8 @@ function collinModelSaid(note) {
   if (note.parse_error) {
     return `collin could not read this model's SQL: ${note.parse_error}. Its edges are matched by column name.`;
   }
-  const file = note.sql_file && `target/${note.sql_file}`;
+  // Under the target directory, unless collin was handed a folder of its own.
+  const file = note.sql_file && (note.sql_file.startsWith('compiled/') ? `target/${note.sql_file}` : note.sql_file);
   if (note.set_aside) {
     return `collin set aside this model's compiled file, ${file}: it reads a table the manifest does not give this model, `
       + 'so it was compiled for another target or before a ref moved. Its edges are matched by column name.';
@@ -5186,7 +5187,8 @@ function collinEntryText(kind, e) {
     case 'parse_failed':
       return e.detail || '';
     case 'compiled_elsewhere':
-      return e.detail ? `target/${e.detail}` : '';
+      // Under the target directory, unless collin was handed a folder of its own.
+      return e.detail ? (e.detail.startsWith('compiled/') ? `target/${e.detail}` : e.detail) : '';
     case 'catalog_elsewhere':
       return e.detail ? `the catalog describes ${e.detail}` : '';
     case 'thin':

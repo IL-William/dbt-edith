@@ -11,13 +11,17 @@
 //!
 //! Four rules hold here:
 //!   - nothing runs at startup. A run follows picking Collin, clicking a column
-//!     while its cache is older than the manifest, or the Regenerate button.
+//!     while its cache is older than the manifest, the Regenerate button, or
+//!     `--column` asked with `--run-collin` on the command line (0099).
 //!   - a collin git tracks never runs, beside dbt-edith or on the PATH: it came
 //!     with a repository, not from the user (0094).
-//!   - one run at a time. A request arriving during a run waits for that run
-//!     rather than starting a second over the same files.
-//!   - the cache is written under a temporary name and renamed, so the watcher
-//!     never loads half a file, and a failed run leaves the old cache standing.
+//!   - one run at a time in the page. A request arriving during a run waits
+//!     for that run rather than starting a second over the same files. The
+//!     command line's run is another process, which the page cannot wait for.
+//!   - the cache is written under a temporary name of this process's own and
+//!     renamed, so the watcher never loads half a file, a run from another
+//!     process never writes over this one's, and a failed run leaves the old
+//!     cache standing.
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -55,6 +59,16 @@ pub const WANTS_TEXT: &str = "0.8.0";
 pub const REPORT: &str = "collin.report.json";
 
 const TAIL_LINES: usize = 20;
+
+/// How long a run may take, from the page or the command line, before it is
+/// stopped: ten minutes, far past what a run takes.
+pub const DEADLINE: Duration = Duration::from_secs(600);
+
+/// The first collin that reads `--compiled` (0099). Asked of the collin found
+/// only when the folder is named, so a user who never names one is never sent
+/// to it.
+pub const COMPILED_SINCE: (u32, u32, u32) = (0, 9, 0);
+pub const COMPILED_SINCE_TEXT: &str = "0.9.0";
 
 fn exe_name() -> &'static str {
     if cfg!(windows) {
@@ -385,6 +399,12 @@ pub struct Job {
     pub project: PathBuf,
     pub manifest: PathBuf,
     pub catalog: PathBuf,
+    /// The folder dbt compiled into, when the user named one; collin's own
+    /// default, `compiled/` beside the manifest, otherwise.
+    pub compiled: Option<PathBuf>,
+    /// collin's `--indirect`: its filter, join key and dedup key edges, which
+    /// it writes only when told. The page never asks for them.
+    pub indirect: bool,
     pub out: PathBuf,
     pub report: PathBuf,
 }
@@ -743,21 +763,37 @@ fn explain(log: &[String]) -> Option<String> {
         .or_else(|| log.last().cloned())
 }
 
-/// `path` with `.tmp` after its name, where a run writes before the rename.
+/// `path` with this process's id and `.tmp` after its name, where a run
+/// writes before the rename. The id keeps the page and a `--run-collin`
+/// started beside it out of each other's files, the one removing the other's
+/// half-written cache as it starts; the last rename wins. A run killed with
+/// its process leaves its file, which discovery never offers, `.json` not
+/// ending it.
 fn tmp_of(path: &Path) -> PathBuf {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    path.with_file_name(format!("{name}.tmp"))
+    path.with_file_name(format!("{name}.{}.tmp", std::process::id()))
 }
 
-fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String>)> {
+/// One run, its last lines when it succeeds, or why it failed and its last
+/// lines. The command line calls this directly; the page goes through
+/// `Runner::generate`, which keeps to one run at a time.
+pub fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String>)> {
     let tmp = tmp_of(&job.out);
     // The report too: written in place, a failed run left a new report
     // beside the old cache, describing edges nobody could see.
     let report_tmp = tmp_of(&job.report);
     let _ = std::fs::remove_file(&tmp);
     let _ = std::fs::remove_file(&report_tmp);
-    let mut child = Command::new(&job.bin)
-        .arg("generate")
+    let mut command = Command::new(&job.bin);
+    command.arg("generate");
+    // Only when named: a collin before 0.9.0 refuses the flag.
+    if let Some(dir) = &job.compiled {
+        command.arg("--compiled").arg(dir);
+    }
+    if job.indirect {
+        command.arg("--indirect");
+    }
+    let mut child = command
         .arg("--project")
         .arg(&job.project)
         .arg("--manifest")
@@ -834,7 +870,7 @@ fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String
 }
 
 #[cfg(all(test, unix))]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
@@ -850,7 +886,7 @@ mod tests {
     /// can fork while the file is open: the child holds the write descriptor
     /// until it execs, and running the script in that moment fails on Linux
     /// with "Text file busy". `cp` writes it from a process of its own.
-    fn executable(path: &Path, script: &str) {
+    pub(crate) fn executable(path: &Path, script: &str) {
         let draft = path.with_extension("draft");
         std::fs::write(&draft, script).unwrap();
         let _ = std::fs::remove_file(path);
@@ -877,6 +913,8 @@ mod tests {
             project: dir.to_path_buf(),
             manifest: dir.join("manifest.json"),
             catalog: dir.join("catalog.json"),
+            compiled: None,
+            indirect: false,
             out: dir.join("column_lineage.collin.json"),
             report: dir.join(REPORT),
         }
@@ -1016,7 +1054,7 @@ mod tests {
         assert_eq!(status.state, "done", "{status:?}");
         assert_eq!(status.log, vec!["  12 models in 40 ms".to_string()]);
         assert!(d.join("column_lineage.collin.json").is_file());
-        assert!(!d.join("column_lineage.collin.json.tmp").exists());
+        assert!(!tmp_of(&d.join("column_lineage.collin.json")).exists());
     }
 
     #[tokio::test]
@@ -1027,7 +1065,7 @@ mod tests {
         let status = Runner::new(Duration::from_secs(10)).generate(job(&d, bin), || async {}).await;
         assert_eq!((status.state, status.error.as_str()), ("failed", "no manifest at target/manifest.json"));
         assert_eq!(std::fs::read_to_string(d.join("column_lineage.collin.json")).unwrap(), "old");
-        assert!(!d.join("column_lineage.collin.json.tmp").exists());
+        assert!(!tmp_of(&d.join("column_lineage.collin.json")).exists());
 
         let silent = fake(&d, "exit 0");
         let status = Runner::new(Duration::from_secs(10)).generate(job(&d, silent), || async {}).await;
@@ -1043,7 +1081,7 @@ mod tests {
         let runner = Runner::new(Duration::from_secs(10));
         assert_eq!(runner.generate(job(&d, failing), || async {}).await.state, "failed");
         assert_eq!(std::fs::read_to_string(&report).unwrap(), "old", "a failed run leaves the report of the cache on screen");
-        assert!(!d.join("collin.report.json.tmp").exists());
+        assert!(!tmp_of(&d.join(REPORT)).exists());
 
         let writing = fake(&d, "echo new > \"$report\"\necho '{}' > \"$out\"");
         let done = runner.generate(job(&d, writing), || async {}).await;

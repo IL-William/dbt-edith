@@ -279,12 +279,12 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
 
-It reads a cache already written and writes none: collin is never started and
-Snowflake never asked. `--column-tool collin`, `fusion` or `snowflake` picks a
-tool's newest cache, `--column-lineage path` a file. Otherwise collin's or
-Fusion's newest cache answers, since Snowflake's holds only the columns
-fetched so far from the page; without either, the cache the page loads with
-nothing picked.
+Without `--run-collin` it reads a cache already written and writes none:
+collin is never started and Snowflake never asked. `--column-tool collin`,
+`fusion` or `snowflake` picks a tool's newest cache, `--column-lineage path` a
+file. Otherwise collin's or Fusion's newest cache answers, since Snowflake's
+holds only the columns fetched so far from the page; without either, the cache
+the page loads with nothing picked.
 
 stderr says what the answer is worth, a refusal included: the manifest and the
 freshness badge's verdict, as for `--select`, then the cache, who wrote it, for
@@ -312,8 +312,51 @@ report from the same run says whether it set compiled files aside as compiled
 for another target, or found catalog entries describing another table: either
 means the three did not come from one target.
 
+### From a manifest alone
+
+`--run-collin` runs collin over the manifest first, then answers from the
+cache it wrote, so the lineage of any project can be asked from what dbt left
+of it, a CI run's artifacts included, with nothing set up in the page and no
+project around them
+([0099](../decisions/0099-a-column-may-run-collin-first-when-asked.md)):
+
+```
+dbt-edith --manifest artifacts/manifest.json --column stg_payments.amount --down all --output json --run-collin
+dbt-edith --manifest artifacts/manifest.json --column orders.amount --up all --run-collin --compiled sql/compiled
+```
+
+collin reads the manifest as it stands, for whichever target it was compiled
+for, with `--catalog` else the `catalog.json` beside the manifest, and the
+compiled SQL of the models the manifest has none for from `--compiled`, the
+folder dbt compiled into, one folder per package (`target/compiled`), else
+from `compiled/` beside the manifest. `--compiled` needs collin 0.9.0 or
+later, and a folder that is not there is refused before collin runs, as is a
+`--catalog` named and not there. With
+`--indirect`, collin is told to write its indirect edges too, which it does
+only when asked, so that the answer has some to cross. The cache and the
+report go beside the manifest, under the names the page's Regenerate writes,
+so the page shows that run too; a failed run leaves the cache that was there.
+A model the manifest does not have is refused before collin runs, so a
+mistyped name never rewrites the cache.
+
+collin runs each time the flag is given. Ask once with it, then without it:
+the cache it wrote answers from then on, until the manifest changes. stdout
+carries the answer alone; stderr says which collin wrote which file, in how
+long and how many models it read the SQL of, and collin's own lines when it
+fails. A collin older than the version this dbt-edith expects still runs, and
+stderr says so with the update command. When collin found no compiled file for
+some of the models the manifest has no SQL for, stderr says how many and where
+it looked: their edges are matched by name, and the cache the page reads is
+now that one. collin is the one found beside dbt-edith or on the `PATH`, never
+one git tracks, and not the version picked in the page, whose settings the
+command line does not read.
+
+Model lineage needs no cache: `--select` answers from the same manifest
+([selection.md](selection.md#from-the-command-line)), and `--output json`
+gives each node's parents.
+
 | Exit | Meaning |
 | --- | --- |
 | 0 | answered, a stale cache included, which stderr says |
 | 1 | refused: no node of that name, two of it, which wants the unique_id, or no such column, with the columns that have edges |
-| 2 | nothing was asked: no manifest, no cache, which stderr says how to write, an unreadable one, a file that is not a cache, or a wrong flag |
+| 2 | nothing was asked: no manifest, no cache, which stderr says how to write, an unreadable one, a file that is not a cache, a wrong flag, or `--run-collin` with no collin to run, one too old for `--compiled`, a `--compiled` folder or a `--catalog` that is not there, or a run that wrote no cache |

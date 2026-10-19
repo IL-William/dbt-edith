@@ -65,7 +65,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   relation's Snowsight menu, with Snowflake's features on for the project,
   under their own credentials (0002, 0016, 0031, 0048, 0051). collin, which
   parses the compiled SQL and reaches nothing, is started only once Collin is
-  picked, a column is clicked or Regenerate pressed, never at startup (0042).
+  picked, a column is clicked or Regenerate pressed, never at startup (0042),
+  and from the command line only when `--column` is asked with `--run-collin`
+  (0099).
 - **Never return or log a `.env` value**, beyond the three things allowed to
   leave: resolved locations, `DBT_TARGET` (0012, 0017), and a resolved
   `env_var()` in the hover card, which passes two guards first (0019).
@@ -177,7 +179,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
-| start collin, change when it runs or where it is looked for, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md), [0098](docs/decisions/0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) |
+| start collin, change when it runs or where it is looked for, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md), [0098](docs/decisions/0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md), [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | add a panel, or move a view between the dock and a panel | [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
@@ -223,6 +225,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change how a selection or the lineage resolves, or touch the Jaffle Shop or Shopify fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md), [0056](docs/decisions/0056-selections-and-the-lineage-are-checked-on-shopify-too.md) |
 | iterate a HashMap into anything a route returns, or change the order nodes are numbered in | [0055](docs/decisions/0055-the-same-manifest-answers-the-same-on-every-start.md) |
 | change what `--select` prints or exits with, or add a flag that answers without serving | [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
+| change what `--column` reads, or let the command line write lineage | [0088](docs/decisions/0088-a-column-is-answered-on-the-command-line-from-the-cache-already-written.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |

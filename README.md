@@ -165,7 +165,7 @@ Anything about Snowflake is in [docs/features/snowflake.md](docs/features/snowfl
 dbt-edith [PROJECT]                       dbt project root, default the current directory
          [-p, --port 4321]               tries up to 20 ports from there, then gives up
          [--manifest path/manifest.json] default <project>/target/manifest.json
-         [--catalog path/catalog.json]   default <project>/target/catalog.json
+         [--catalog path/catalog.json]   default <project>/target/catalog.json, beside the manifest for --run-collin
          [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              the terminal's shell, default $SHELL -l, Git Bash on Windows
          [--no-open]                     do not open a browser at startup
@@ -178,13 +178,15 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--stop-at window,aggregate]    roles --column does not walk past downstream
          [--indirect]                    --column crosses collin's indirect edges too, left out by default
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
+         [--run-collin]                  run collin over the manifest first, and answer --column from its cache
+         [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
          [--output name|json]            what those three print, default one name per line
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 
-A relative path in `--manifest`, `--catalog` or `--column-lineage` is relative
-to where you run the command, not to the project. `dbt-edith --help` prints the
-same list.
+A relative path in `--manifest`, `--catalog`, `--column-lineage` or
+`--compiled` is relative to where you run the command, not to the project.
+`dbt-edith --help` prints the same list.
 
 ## Changing dbt-edith
 

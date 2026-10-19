@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-18.
+belongs here. Last updated 2026-10-19.
 
 ## Shipped
 
@@ -1478,6 +1478,29 @@ a Jaffle copy that sets literals and reads tables no node owns. Since
 1.34.1, `collin_run::WANTS` asks for collin 0.8.0, so "Update collin" brings
 roots to an older one.
 
+A column from a manifest alone (0099, 1.35.0): `--run-collin` runs collin over
+the manifest before `--column` answers, and `--compiled DIR` hands it the
+folder dbt compiled into, so the column lineage of a project can be asked from
+its artifacts, with nothing set up in the page and no project around them.
+collin writes beside the manifest under the names the page's Regenerate uses,
+through the page's own runner function, with every path made whole since
+collin runs in the project. collin 0.9.0 reads `--compiled`, and its own
+defaults now follow the manifest too (dbt-collin's 0046); an older collin is
+never handed the folder. On collin's Jaffle Shop manifest with its
+`compiled_code` taken out, as a `parse` leaves it, copied alone into a folder,
+its compiled SQL in another, asked from a third:
+`--column stg_payments.amount --down all --run-collin --compiled ../sql/compiled`
+ran collin 0.9.0 in 50 ms, read the SQL of 5 of 5 models and gave 31 edges,
+all parsed, then three models and seven columns with their roles; the same
+question without the flag answered from that cache. A model the manifest does
+not have, or a `--compiled` folder that is not there, is refused before collin
+runs, and a run that found no compiled file for some models says how many on
+stderr. On a copy of a large project's artifacts, asked from another
+folder: the cache it wrote equals the one collin 0.8.0 writes with the page's
+own arguments, and so does the answer; with the `compiled_code` taken out,
+`--compiled` read every model's file, and without it stderr said none was
+found. Not driven in the page, nor on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1845,12 +1868,13 @@ roots to an older one.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-20. **A target for Regenerate.** The page runs collin without `--target`, so
-    its caches say "target not recorded", and `--column` (0088) cannot say
-    which target its answer describes. The manifest does not record the
-    target it was compiled for, so the page cannot fill it in: Regenerate
-    would offer the profile's targets and pass the one picked, which the
-    user then has to have compiled and generated the catalog under.
+20. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+    without `--target`, so their caches say "target not recorded", and
+    `--column` (0088) cannot say which target its answer describes. The
+    manifest does not record the target it was compiled for, so the page
+    cannot fill it in: Regenerate would offer the profile's targets and pass
+    the one picked, which the user then has to have compiled and generated
+    the catalog under.
 21. **The update command names git by its path.** The command the status bar
     types into the terminal to update dbt-edith runs in the project folder,
     and under Windows `cmd.exe`, which looks in the current folder first, a
@@ -1984,9 +2008,16 @@ written in its pull request or left by its review, unranked:
   - the startup line and the Catalog's notes give one dbt's catalog command,
     Fusion's `dbt compile --write-catalog` in some and `dbt docs generate` in
     others, each wrong for the other dbt;
-  - collin's own `--help` names `column_lineage.json` as `--out`'s default,
-    where it writes `column_lineage.collin.json`; the printed steps pass
-    `--out` and `--report` to write the names the page's own run writes.
+  - the printed steps pass `--out` and `--report` to write the names the
+    page's own run writes, which collin before 0.9.0 does not, its `--help`
+    naming `column_lineage.json` besides;
+  - `--run-collin` (0099) runs the collin beside dbt-edith or on the `PATH`,
+    not the version the page picked for the project (0060), and runs it every
+    time it is given: nothing says a cache it wrote earlier read another
+    catalog or another folder of SQL than the one in front of the caller;
+  - a report `--run-collin --compiled` wrote is summed up in the page as read
+    from `target/compiled/`, until the page runs collin again; a model's own
+    note names the file where it is.
 - **Edith's menu under the pointer (0086):**
   - the status bar's pill opens it on a click only, and a menu the pointer
     opened takes no arrow keys;

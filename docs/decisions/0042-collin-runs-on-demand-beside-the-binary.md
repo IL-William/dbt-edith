@@ -1,6 +1,6 @@
 # 0042. collin runs on demand, as an executable found beside the binary
 
-Date: 2026-10-06 · Status: accepted, amended by 0060 and 0094 · Amends 0023 and 0031
+Date: 2026-10-06 · Status: accepted, amended by 0060, 0094 and 0099 · Amends 0023 and 0031
 
 **Trigger:** read before starting collin from the server, changing when it runs,
 or bundling any column lineage producer with dbt-edith.
@@ -26,6 +26,9 @@ project in about five seconds on 3341 models. It cannot answer one column.
   column is clicked while that is still so, before drawing it; and on the
   Columns tab's Regenerate button. One run at a time: a request arriving during
   a run waits for it.
+  *Amended by [0099](0099-a-column-may-run-collin-first-when-asked.md): and
+  from the command line, once per question, when `--column` is asked with
+  `--run-collin`.*
 - **It writes under a temporary name and is renamed into place**, so the watcher
   never loads half a cache and a failed run leaves the last one on screen. Its
   report goes to `target/collin.report.json`, a name discovery does not offer.
