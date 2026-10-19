@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.34.1 - 2026-10-19
+
+- Offer collin 0.8.0, the first to list the roots the `generated` badge is
+  read from, as "Update collin" to any older one, the old repository's 0.2.0
+  included, and stop the Columns tab calling a version installed by its tag
+  older, since no update reaches it (0096, 0098).
+
 ## 1.34.0 - 2026-10-18
 
 - Draw collin's indirect edges, `filter`, `join_key` and `dedup_key`, thin

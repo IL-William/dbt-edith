@@ -288,21 +288,28 @@ check('an unparsed compile flags no column as missing from it', [...unparsed.key
 print('\n--- updating collin ---');
 check('no collin, no update row', collinUpdateRow({ found: false }, 'collin'), null);
 check('another tool picked, no update row', collinUpdateRow({ found: true, outdated: true }, 'snowflake'), null);
-var old = collinUpdateRow({ found: true, outdated: true, wants: '0.2.0', update: 'cargo install --force x', install: 'cargo install x' }, 'collin');
+var old = collinUpdateRow({ found: true, outdated: true, wants: '0.8.0', update: 'cargo install --force x', install: 'cargo install x' }, 'collin');
 check('a collin with no version is offered the update, forced, as urgent', old.label + ' / ' + old.sub + ' / ' + old.command + ' / ' + old.urgent,
-      'Update collin / needs 0.2.0 / cargo install --force x / true');
-check('...and told why', old.title.indexOf('gives no version, so it is older than 0.2.0') > 0, true);
-var older = collinUpdateRow({ found: true, outdated: true, version: '0.1.5 (abc)', wants: '0.2.0', update: 'u', install: 'i' }, 'collin');
-check('an older version names both', older.sub + ' / ' + (older.title.indexOf('is 0.1.5 (abc).') > 0), '0.1.5, needs 0.2.0 / true');
-var current = collinUpdateRow({ found: true, outdated: false, version: '0.2.0 (756b126)', wants: '0.2.0', update: 'u', install: 'i' }, 'collin');
+      'Update collin / needs 0.8.0 / cargo install --force x / true');
+check('...and told why, against the version wanted', old.title.indexOf('gives no version, so it is older than 0.8.0.') > 0, true);
+var older = collinUpdateRow({ found: true, outdated: true, version: '0.2.0 (a142ee5)', wants: '0.8.0', update: 'u', install: 'i' }, 'collin');
+check('an older version names both', older.sub + ' / ' + (older.title.indexOf('is 0.2.0 (a142ee5).') > 0), '0.2.0, needs 0.8.0 / true');
+var current = collinUpdateRow({ found: true, outdated: false, version: '0.8.0 (86decf5)', wants: '0.8.0', update: 'u', install: 'i' }, 'collin');
 check('a recent collin is offered a check, not forced, and not urgent', current.label + ' / ' + current.sub + ' / ' + current.command + ' / ' + current.urgent,
-      'Check for a newer collin / 0.2.0 / i / false');
+      'Check for a newer collin / 0.8.0 / i / false');
 check('an old collin is said in the Columns tab before anything else',
-      collinHint('collin', { found: true, outdated: true, version: '', wants: '0.2.0', stale: true }).text,
-      'this collin gives no version, so it is older than 0.2.0: the column lineage menu updates it');
+      collinHint('collin', { found: true, outdated: true, version: '', wants: '0.8.0', stale: true }).text,
+      'this collin gives no version, so it is older than 0.8.0: the column lineage menu updates it');
 check('...or its version when it gives one',
-      collinHint('collin', { found: true, outdated: true, version: '0.1.5 (abc)', wants: '0.2.0' }).text,
-      'collin 0.1.5 is older than 0.2.0: the column lineage menu updates it');
+      collinHint('collin', { found: true, outdated: true, version: '0.2.0 (a142ee5)', wants: '0.8.0' }).text,
+      'collin 0.2.0 is older than 0.8.0: the column lineage menu updates it');
+// A version installed by its tag, older than the one wanted, picked to
+// compare: the server does not call it outdated, since no update reaches it.
+var pinnedOld = { found: true, outdated: false, version: '0.4.0 (93ace96)', wants: '0.8.0', update: 'u', install: 'i',
+  versions: [{ version: '0.2.0', origin: 'default', runs: false }, { version: '0.4.0', origin: 'installed', runs: true }] };
+check('an older version installed by its tag is offered no update row', collinUpdateRow(pinnedOld, 'collin'), null);
+check('...and the Columns tab promises none: it says how far to trust what is drawn',
+      collinHint('collin', pinnedOld).text, 'alpha, can be wrong');
 
 print('\n--- what the Columns tab says over one model ---');
 check('a model not in the report says nothing', collinModelNote(undefined), null);
@@ -482,7 +489,7 @@ check('...nor before a report exists', collinReportRow({ found: true }, 'collin'
 print('\n--- collin versions side by side ---');
 var one = { found: true, versions: [{ version: '0.4.0', origin: 'default', runs: true }] };
 check('one collin and nothing picked: no version rows', collinVersionRows(one, 'collin').length, 0);
-var two = { found: true, version: '0.3.0 (abc)', wants: '0.1.0', can_install: true, chosen: '0.3.0',
+var two = { found: true, version: '0.3.0 (abc)', wants: '0.8.0', can_install: true, chosen: '0.3.0',
   versions: [{ version: '0.4.0', origin: 'default', runs: false }, { version: '0.3.0', origin: 'installed', runs: true }] };
 var rows = collinVersionRows(two, 'collin');
 check('each collin is a row, the one that runs says so',

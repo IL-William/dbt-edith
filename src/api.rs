@@ -563,8 +563,11 @@ struct CollinBody {
     /// nothing: a collin from before `--version`.
     #[serde(skip_serializing_if = "String::is_empty")]
     version: String,
-    /// The oldest collin this dbt-edith accepts, and whether the one found is
-    /// older, in which case the update entry offers `update`.
+    /// The oldest collin this dbt-edith accepts, and whether the one that runs
+    /// is older and is the default one, which `update` reaches: then the update
+    /// entry offers it and the Columns tab says so. A version installed by its
+    /// tag is never called older, whatever its number: no update reaches it,
+    /// and the hint would promise one the menu does not offer (0060, 0098).
     wants: &'static str,
     outdated: bool,
     update: &'static str,
@@ -619,6 +622,9 @@ struct CollinNow {
     version: Option<String>,
     stale: bool,
     versions: Vec<CollinVersion>,
+    /// The one that runs is offered the update: the default one, older than
+    /// `WANTS` (0098).
+    outdated: bool,
     /// A collin passed over because git tracks it (0094).
     refused: Option<(PathBuf, collin_run::Refusal)>,
 }
@@ -640,6 +646,7 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         for i in &installs {
             versions.push(CollinVersion { version: i.version.clone(), origin: "installed", runs: bin.as_ref() == Some(&i.bin) });
         }
+        let outdated = collin_run::update_offered(bin.as_deref(), &installs, version.as_deref());
         let out = collin::path_for(&shared.target_dir, "collin");
         let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let found = collin::discover_cached(&shared.target_dir, &shared.cll_headers);
@@ -648,9 +655,9 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         // version, or a collin that gives none, is judged by its time alone.
         let other = matches!((&wrote, short(version.clone())), (Some(w), now) if !now.is_empty() && *w != now);
         let stale = collin_run::stale(&out, &shared.manifest_path) || other;
-        CollinNow { bin, version, stale, versions, refused }
+        CollinNow { bin, version, stale, versions, outdated, refused }
     });
-    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), refused: None })
+    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), outdated: false, refused: None })
 }
 
 #[derive(serde::Serialize)]
@@ -693,7 +700,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
             found,
             stale: now.stale,
             install: collin_run::INSTALL,
-            outdated: found && collin_run::outdated(now.version.as_deref()),
+            outdated: now.outdated,
             version: now.version.unwrap_or_default(),
             wants: collin_run::WANTS_TEXT,
             update: collin_run::UPDATE,
@@ -4214,6 +4221,9 @@ mod tests {
         assert!(picked.contains(r#""chosen":"0.3.0""#), "{picked}");
         assert!(picked.contains(r#"{"version":"0.3.0","origin":"installed","runs":true}"#), "{picked}");
         assert!(picked.contains(r#""stale":true"#), "a cache 0.2.0 wrote is stale under 0.3.0: {picked}");
+        // 0.3.0 is older than WANTS, and no update reaches it: called older,
+        // the Columns tab would promise an update the menu does not offer.
+        assert!(picked.contains(r#""outdated":false"#), "a version installed by its tag is not called older: {picked}");
         assert_eq!(st.collin_chosen.lock().unwrap().as_deref(), Some("0.3.0"));
         cache("collin 0.3.0");
         let meta = response_of(port, get("/api/meta", &h)).await;

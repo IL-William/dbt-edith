@@ -4518,6 +4518,8 @@ function collinHint(tool, cl, kinds) {
   if (cl.state === 'failed') return { text: `collin: ${cl.error || 'the run failed'}`, tone: 'failed' };
   if (!cl.found && cl.refused) return { text: collinRefusedNote(cl), tone: 'hint' };
   if (!cl.found) return { text: 'collin is not installed: the column lineage menu installs it', tone: 'hint' };
+  // Never set while a version installed by its tag runs, whatever its number:
+  // no update reaches it, so this would promise one the menu lacks (0098).
   if (cl.outdated) {
     const v = shortVersion(cl.version);
     return { text: `${v ? `collin ${v} is` : 'this collin gives no version, so it is'} older than ${cl.wants}: `
@@ -4702,10 +4704,10 @@ function collinUpdateRow(cl, tool) {
   if ((cl.versions || []).some((v) => v.runs && v.origin === 'installed')) return null;
   const v = shortVersion(cl.version);
   if (cl.outdated) {
-    // "needs 0.2.0" over "before 0.2.0 → 0.2.0", which read as a range.
+    // "needs 0.8.0" over "before 0.8.0 → 0.8.0", which read as a range.
     return { label: 'Update collin', urgent: true, sub: v ? `${v}, needs ${cl.wants}` : `needs ${cl.wants}`, command: cl.update,
       title: `This dbt-edith expects collin ${cl.wants} or later, and the one found `
-        + (v ? `is ${cl.version}.` : 'gives no version, so it is older than 0.2.0.')
+        + (v ? `is ${cl.version}.` : `gives no version, so it is older than ${cl.wants}.`)
         + '\nClick to type the command that updates it into the terminal.' };
   }
   return { label: 'Check for a newer collin', urgent: false, sub: v, command: cl.install,
