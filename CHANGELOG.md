@@ -15,6 +15,13 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 ## Unreleased
 
+## 1.35.0 - 2026-10-19
+
+- Answer `--column` from a manifest alone with `--run-collin`, which runs
+  collin over the manifest first and writes its cache beside it, and
+  `--compiled DIR`, the folder of compiled SQL it reads, with collin 0.9.0;
+  with `--indirect`, collin writes the indirect edges too (0099).
+
 ## 1.34.1 - 2026-10-19
 
 - Offer collin 0.8.0, the first to list the roots the `generated` badge is

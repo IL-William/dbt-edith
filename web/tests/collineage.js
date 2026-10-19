@@ -237,6 +237,10 @@ check('a model read from a file, with another fault, says both',
       "This model's table is behind its compiled SQL: collin read the columns both have and matched the others by name."
       + ' collin read its SQL from target/compiled/shop/models/b.sql, as the manifest has none:'
       + ' that file can be older than the manifest.');
+check('a file from a folder collin was handed is named where it is',
+      collinModelNote({ provenance: 'parsed', sql_file: '/ci/sql/compiled/shop/models/c.sql' }),
+      'collin read its SQL from /ci/sql/compiled/shop/models/c.sql, as the manifest has none:'
+      + ' that file can be older than the manifest.');
 check('a model read from a file, nothing else to say',
       collinModelNote({ provenance: 'parsed', sql_file: 'compiled/shop/models/c.sql' }).indexOf('collin read its SQL from') === 0, true);
 check('a parse error comes first, a file or not',
@@ -458,6 +462,8 @@ check('columns cut short say how many were left out',
       collinEntryText('columns_missing', { items: ['a', 'b'], of: 30 }), 'a, b and 28 more');
 check('a column read from a CTE names it', collinEntryText('unbacked_read', { items: ['k'], detail: 'base' }), 'k, from base');
 check('a phantom names the CTE it came through', collinEntryText('phantom', { items: ['f'], detail: 'joined' }), 'f, through joined');
+check('a set aside compile from a folder collin was handed names it where it is',
+      collinEntryText('compiled_elsewhere', { detail: '/ci/sql/compiled/p/models/a.sql' }), '/ci/sql/compiled/p/models/a.sql');
 check('a set aside compile names its file', collinEntryText('compiled_elsewhere', { detail: 'compiled/p/models/a.sql' }),
       'target/compiled/p/models/a.sql');
 check('a thin compile gives its counts', collinEntryText('thin', { detail: '4 of 40' }), '4 of 40 columns');

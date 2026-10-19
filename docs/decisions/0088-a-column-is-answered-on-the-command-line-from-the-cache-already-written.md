@@ -1,6 +1,6 @@
 # 0088. A column is answered on the command line, from the cache already written
 
-Date: 2026-10-15 · Status: accepted · Follows 0057 and 0083
+Date: 2026-10-15 · Status: accepted, amended by 0099 · Follows 0057 and 0083
 
 **Trigger:** read before letting anything but the page walk the column lineage,
 or before letting a command line produce one.
@@ -32,6 +32,9 @@ and its stops, is this binary's (0083), and so is the manifest a name like
   `--column-tool`'s, else collin's or Fusion's newest, since Snowflake's
   holds only the columns fetched from the page, else the one the page loads
   with nothing picked.
+  *Amended by [0099](0099-a-column-may-run-collin-first-when-asked.md):
+  unless `--run-collin` asks, and then collin runs once over the manifest as
+  it stands and its cache answers.*
 - **A cache older than the manifest still answers**, and stderr says so with
   the steps that would write one, the target written `<TARGET>`: which target
   it must describe is the user's to say, since the manifest, the catalog and

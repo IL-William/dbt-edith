@@ -1061,6 +1061,8 @@ async fn collin_job(st: &Arc<AppState>) -> Option<collin_run::Job> {
         project: st.root.clone(),
         manifest: st.manifest_path.clone(),
         catalog: st.catalog_path.clone(),
+        compiled: None,
+        indirect: false,
         out: collin::path_for(&st.target_dir, "collin"),
         report: st.target_dir.join(collin_run::REPORT),
     })

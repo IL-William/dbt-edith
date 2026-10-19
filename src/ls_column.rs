@@ -2,7 +2,9 @@
 //! cache already beside the manifest, printed, and the process ends (0088).
 //!
 //! Invariants: the walk is the canvas's own, `Graph::column_lineage`, so the
-//! command line and the page cannot disagree. Nothing writes lineage here:
+//! command line and the page cannot disagree. Nothing writes lineage here
+//! unless `--run-collin` asks: then collin runs once over the manifest as it
+//! stands, before the answer, as the page's Regenerate does (0099). Otherwise
 //! collin is never started and Snowflake never asked, whatever the cache's
 //! age. A cache older than the manifest still answers, and stderr says so with
 //! the steps that would write a new one, the target left for the user to
@@ -52,6 +54,18 @@ pub struct Ask {
     /// `--indirect`: cross collin's indirect edges, which the answer leaves
     /// out by default, as the canvas does (0097).
     pub indirect: bool,
+    /// `--run-collin`: collin writes the cache that answers, first.
+    pub produce: Option<Produce>,
+}
+
+/// What `--run-collin` hands collin besides the manifest: the catalog and the
+/// folder of compiled SQL the user named, each found beside the manifest
+/// otherwise, where dbt writes them, and `--indirect`, since an answer asked
+/// to cross indirect edges has none unless collin writes them.
+pub struct Produce {
+    pub catalog: Option<PathBuf>,
+    pub compiled: Option<PathBuf>,
+    pub indirect: bool,
 }
 
 /// `--up` and `--down`: a number of levels, or `all`.
@@ -69,14 +83,33 @@ pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -
         Err(code) => return code,
     };
     let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
-    // A file named outright needs no listing, which reads every cache.
-    let found = if ask.cache.is_some() { Vec::new() } else { collin::discover(&target_dir) };
     let mut err = io::stderr().lock();
-    let cache = match cache_for(&target_dir, &graph, ask, &found) {
+    // The model is the manifest's to name: a question naming none is refused
+    // before collin spends a run, and rewrites the cache, for nothing.
+    if ask.produce.is_some() {
+        if let Err(why) = model_of(&graph, &ask.column) {
+            let _ = writeln!(err, "error: {why}");
+            return REFUSED;
+        }
+    }
+    // Only where the flag would be taken: it names its own cache, so clap
+    // refuses it beside one named another way.
+    let offer_run = ask.produce.is_none() && ask.tool.is_none() && ask.cache.is_none();
+    let written = match &ask.produce {
+        Some(p) => match produce(&root, &manifest_path, &target_dir, p, collin_run::locate(), &mut err) {
+            Ok(Some(cache)) => Some(cache),
+            _ => return CANNOT_RUN,
+        },
+        None => None,
+    };
+    // A file named outright, or the one just written, needs no listing, which
+    // reads every cache.
+    let found = if ask.cache.is_some() || written.is_some() { Vec::new() } else { collin::discover(&target_dir) };
+    let cache = match written.map_or_else(|| cache_for(&target_dir, &graph, ask, &found), Ok) {
         Ok(path) => path,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
-            let _ = regenerate(&root, &graph, &target_dir, ask.tool.map_or("", Tool::name), &mut err);
+            let _ = regenerate(&root, &graph, &target_dir, ask.tool.map_or("", Tool::name), offer_run, &mut err);
             return CANNOT_RUN;
         }
     };
@@ -103,7 +136,7 @@ pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -
     // After the answer, as for `--select`: the freshness walk is most of the
     // time on a large project. A refusal says which cache it looked in too.
     let _ = ls::provenance(&root, &graph, &mut err);
-    let _ = cache_lines(&root, &graph, &cache, &manifest_path, &producer, &mut err);
+    let _ = cache_lines(&root, &graph, &cache, &manifest_path, &producer, offer_run, &mut err);
     code
 }
 
@@ -162,6 +195,149 @@ fn cache_for(target_dir: &Path, graph: &Graph, ask: &Ask, found: &[Available]) -
         Ok(path)
     } else {
         Err(format!("no column lineage cache in {}", target_dir.display()))
+    }
+}
+
+/// Runs collin over the manifest as it stands, before the answer, as the
+/// page's Regenerate does: the cache and the report go beside the manifest
+/// under the names the page's run writes, so the page then shows this run.
+/// collin's own lines reach stderr only when it fails, stdout being the
+/// answer's alone. The cache written, or None once stderr says why there is
+/// none; an `Err` is only ever a failed write.
+fn produce(
+    root: &Path,
+    manifest: &Path,
+    folder: &Path,
+    p: &Produce,
+    collin: collin_run::Located,
+    err: &mut impl Write,
+) -> io::Result<Option<PathBuf>> {
+    // Named and not there, the folder would read no file, and every model it
+    // was named for would come out matched by name over the page's cache.
+    if let Some(dir) = p.compiled.as_deref().filter(|d| !d.is_dir()) {
+        writeln!(err, "error: --compiled {}: not a folder", printable(&dir.display().to_string()))?;
+        return Ok(None);
+    }
+    // The same for a catalog named: collin would run without one, and every
+    // model's columns would go unconfirmed. The one beside the manifest may
+    // be missing, as dbt leaves none without `docs generate`.
+    if let Some(file) = p.catalog.as_deref().filter(|f| !f.is_file()) {
+        writeln!(err, "error: --catalog {}: not a file", printable(&file.display().to_string()))?;
+        return Ok(None);
+    }
+    passed_over(&collin, err)?;
+    let Some(bin) = collin.bin else {
+        writeln!(err, "error: --run-collin found no collin to run: {}", collin_run::INSTALL)?;
+        return Ok(None);
+    };
+    let version = collin_run::version(&bin);
+    let named = version.as_deref().map_or_else(|| "a collin that gives no version".to_string(), |v| format!("collin {v}"));
+    let knows_compiled = version.as_deref().and_then(collin_run::semver).is_some_and(|v| v >= collin_run::COMPILED_SINCE);
+    if p.compiled.is_some() && !knows_compiled {
+        writeln!(
+            err,
+            "error: --compiled needs collin {} or later, and {} is {}: {}",
+            collin_run::COMPILED_SINCE_TEXT,
+            printable(&bin.display().to_string()),
+            printable(&named),
+            collin_run::UPDATE
+        )?;
+        return Ok(None);
+    }
+    // It still runs, as the page runs a collin it offers to update: the
+    // answer is what that collin reads, and its edges may lack what a newer
+    // one writes, the roots of 0096 among them.
+    if collin_run::outdated(version.as_deref()) {
+        writeln!(
+            err,
+            "warning: {} is older than collin {}, which dbt-edith wants: {}",
+            printable(&named),
+            collin_run::WANTS_TEXT,
+            collin_run::UPDATE
+        )?;
+    }
+    let out = collin::path_for(folder, "collin");
+    let report = folder.join(collin_run::REPORT);
+    // collin runs in the project, and these paths are the command line's,
+    // relative to where it was typed.
+    let whole = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let job = collin_run::Job {
+        bin,
+        project: root.to_path_buf(),
+        manifest: whole(manifest),
+        catalog: whole(&p.catalog.clone().unwrap_or_else(|| folder.join("catalog.json"))),
+        compiled: p.compiled.as_deref().map(whole),
+        indirect: p.indirect,
+        out: whole(&out),
+        report: whole(&report),
+    };
+    let started = std::time::Instant::now();
+    match collin_run::run(&job, collin_run::DEADLINE) {
+        Ok(_) => {
+            let read = collin_run::read_report(&report).map_or_else(String::new, |r| {
+                // As the page counts it: a file set aside is parsed, but
+                // none of its edges was read from it.
+                let read = r.summary.parsed.saturating_sub(r.summary.set_aside);
+                format!(", read the SQL of {read} of {} models", r.summary.models)
+            });
+            let ms = started.elapsed().as_millis();
+            writeln!(err, "{} wrote {} in {ms} ms{read}", printable(&named), printable(&out.display().to_string()))?;
+            unread(&report, p.compiled.is_some(), err)?;
+            Ok(Some(out))
+        }
+        Err((why, log)) => {
+            writeln!(err, "error: collin wrote no cache: {}", printable(&why))?;
+            // The line `why` was taken from, with collin's prefix or as is.
+            let said = format!("collin: {why}");
+            for line in log.iter().filter(|l| **l != said && **l != why) {
+                writeln!(err, "  {}", printable(line))?;
+            }
+            Ok(None)
+        }
+    }
+}
+
+/// The models collin found no compiled file for, the manifest having no SQL
+/// for them, said after a run: their edges are matched by name, which the
+/// answer does not show, and the run has just replaced the cache the page
+/// read. A folder of SQL missed is the likeliest reason.
+fn unread(report: &Path, named: bool, err: &mut impl Write) -> io::Result<()> {
+    let Some(value) = std::fs::read(report).ok().and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok()) else {
+        return Ok(());
+    };
+    // collin's reason for a model with neither, since 0.1.0 (its 0033).
+    let missing = |m: &&serde_json::Value| m["parse_error"] == "no compiled_code and no compiled file";
+    let none = value["models"].as_array().map_or(0, |models| models.iter().filter(missing).count());
+    if none == 0 {
+        return Ok(());
+    }
+    let folder = printable(value["compiled_files"].as_str().unwrap_or("compiled/ beside the manifest"));
+    let then = if named {
+        "check that it is the folder dbt compiled into, the one holding a folder per package"
+    } else {
+        "--compiled DIR names the folder dbt compiled into"
+    };
+    writeln!(
+        err,
+        "warning: collin found no compiled file in {folder} for {none} of the models the manifest has no SQL for: \
+         their edges are matched by name; {then}"
+    )
+}
+
+/// The collin passed over and why, when the one found first is not the one
+/// that runs: one a repository brought never runs (0094).
+fn passed_over(collin: &collin_run::Located, err: &mut impl Write) -> io::Result<()> {
+    match &collin.refused {
+        Some((at, collin_run::Refusal::Tracked)) => {
+            writeln!(err, "  {} is not run: git tracks it, so it came with a repository", printable(&at.display().to_string()))
+        }
+        Some((at, collin_run::Refusal::Unsure(why))) => writeln!(
+            err,
+            "  {} is not run: it sits in a repository and git could not say whether it tracks it ({})",
+            printable(&at.display().to_string()),
+            printable(why)
+        ),
+        None => Ok(()),
     }
 }
 
@@ -232,14 +408,20 @@ fn roles(kinds: &[String]) -> String {
 /// column is what follows the last dot, the node what `--output name` prints
 /// for it, or its unique_id.
 fn focus(graph: &Graph, spec: &str) -> Result<ColRef, String> {
-    let Some((node, column)) = spec.trim().rsplit_once('.').filter(|(n, c)| !n.is_empty() && !c.is_empty()) else {
-        return Err(format!("{spec}: write the column as model.column"));
-    };
-    let idx = node_named(graph, node)?;
+    let (idx, node, column) = model_of(graph, spec)?;
     match graph.col_slot(idx, column) {
         Some(col) => Ok(ColRef { node: idx, col }),
         None => Err(format!("{node} has no column {column}: {}", columns_with_lineage(graph, idx))),
     }
+}
+
+/// The node `model.column` names, with the name and the column as written:
+/// the manifest alone answers this half, before any cache is read.
+fn model_of<'a>(graph: &Graph, spec: &'a str) -> Result<(u32, &'a str, &'a str), String> {
+    let Some((node, column)) = spec.trim().rsplit_once('.').filter(|(n, c)| !n.is_empty() && !c.is_empty()) else {
+        return Err(format!("{spec}: write the column as model.column"));
+    };
+    Ok((node_named(graph, node)?, node, column))
 }
 
 /// The node a name stands for: its unique_id, else the one model, seed,
@@ -426,7 +608,15 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
 /// Which cache answered and what it is worth: its tool, its target, its age
 /// against the manifest's, and for collin whether its report found the
 /// manifest, the catalog and the compiled SQL from more than one target.
-fn cache_lines(root: &Path, graph: &Graph, cache: &Path, manifest: &Path, producer: &str, err: &mut impl Write) -> io::Result<()> {
+fn cache_lines(
+    root: &Path,
+    graph: &Graph,
+    cache: &Path,
+    manifest: &Path,
+    producer: &str,
+    offer_run: bool,
+    err: &mut impl Write,
+) -> io::Result<()> {
     let m = &graph.meta;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     let from = match (producer, m.cll_source.as_str()) {
@@ -458,7 +648,7 @@ fn cache_lines(root: &Path, graph: &Graph, cache: &Path, manifest: &Path, produc
     }
     if collin_run::stale(cache, manifest) {
         writeln!(err, "warning: the column lineage is older than the manifest: a column added, renamed or moved since may be missing or wrong")?;
-        regenerate(root, graph, &files::folder_of(manifest).unwrap_or_else(|| root.join("target")), tool, err)?;
+        regenerate(root, graph, &files::folder_of(manifest).unwrap_or_else(|| root.join("target")), tool, offer_run, err)?;
     }
     if tool == "collin" {
         if let Some(line) = alignment(cache) {
@@ -482,7 +672,7 @@ fn alignment(cache: &Path) -> Option<String> {
     let set_aside = read.summary.set_aside;
     let elsewhere = read.overview.findings.iter().find(|f| f.kind == "catalog_elsewhere").map_or(0, |f| f.entries.len());
     Some(if set_aside == 0 && elsewhere == 0 {
-        format!("collin's report ({}): no compiled file and no catalog entry from another target", report.display())
+        format!("collin's report ({}): no compiled file set aside and no catalog entry from another target", report.display())
     } else {
         format!(
             "warning: collin's report ({}) set aside {set_aside} compiled files compiled for another target and {elsewhere} catalog entries describing another table: \
@@ -497,7 +687,7 @@ fn alignment(cache: &Path) -> Option<String> {
 /// collin's run must come from one target under its own environment, and
 /// nothing here can tell which one they mean. `folder` is where the manifest
 /// was read, which dbt and collin are pointed at when it is not their default.
-fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, err: &mut impl Write) -> io::Result<()> {
+fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: bool, err: &mut impl Write) -> io::Result<()> {
     match tool {
         "snowflake" => {
             return writeln!(
@@ -546,6 +736,14 @@ fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, err: &mut i
         writeln!(err, "    dbt docs generate --target <TARGET>{to_dbt}                  # dbt-core, which compiles too")?;
     }
     writeln!(err, "    collin generate --project . --target <TARGET>{to_collin}")?;
+    // The manifest's own target, whichever it is, which a question about what
+    // the artifacts say needs and one about a chosen target does not.
+    if offer_run {
+        writeln!(
+            err,
+            "  or, to answer from this manifest as it stands, with the catalog and the compiled SQL beside it: the same --column with --run-collin"
+        )?;
+    }
     if let Some(names) = targets(root).filter(|n| !n.is_empty()) {
         let names: Vec<String> = names.iter().map(|n| printable(n)).collect();
         writeln!(err, "  targets in the profile: {}", names.join(", "))?;
@@ -564,18 +762,7 @@ fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, err: &mut i
         writeln!(err, "  .env files: {}", envs.join(", "))?;
     }
     let collin = collin_run::locate();
-    match &collin.refused {
-        Some((at, collin_run::Refusal::Tracked)) => {
-            writeln!(err, "  {} is not run: git tracks it, so it came with a repository", printable(&at.display().to_string()))?
-        }
-        Some((at, collin_run::Refusal::Unsure(why))) => writeln!(
-            err,
-            "  {} is not run: it sits in a repository and git could not say whether it tracks it ({})",
-            printable(&at.display().to_string()),
-            printable(why)
-        )?,
-        None => {}
-    }
+    passed_over(&collin, err)?;
     if collin.bin.is_none() {
         writeln!(err, "  collin is not installed: {}", collin_run::INSTALL)?;
     }
@@ -684,7 +871,7 @@ mod tests {
     }
 
     fn ask(column: &str, up: u32, down: u32) -> Ask {
-        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false }
+        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None }
     }
 
     fn run_on(g: &Graph, a: &Ask, output: Output) -> (String, String, i32) {
@@ -951,7 +1138,7 @@ mod tests {
             1,
         );
         let mut err = Vec::new();
-        cache_lines(&dir, &g, &cache, &manifest, "", &mut err).unwrap();
+        cache_lines(&dir, &g, &cache, &manifest, "", true, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("1 edge ends name nothing in the manifest"), "{said}");
         assert!(said.contains("holds only the columns fetched so far"), "{said}");
@@ -967,7 +1154,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("target")).unwrap();
         let mut g = graph();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "collin", &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "collin", true, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("ask the user which target"), "{said}");
         assert!(said.contains(".env.odd,") && !said.contains('\u{1b}') && !said.contains("title"), "{said}");
@@ -978,21 +1165,28 @@ mod tests {
             "{said}"
         );
         assert!(said.contains(".env.preprod (DBT_TARGET=preprod)") && !said.contains("hunter2"), "{said}");
+        assert!(said.contains("the same --column with --run-collin"), "{said}");
+        // Beside --column-tool or --column-lineage, which clap refuses with
+        // it, the flag is not offered.
+        let mut err = Vec::new();
+        regenerate(&dir, &g, &dir.join("target"), "collin", false, &mut err).unwrap();
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.contains("collin generate --project .") && !said.contains("--run-collin"), "{said}");
         // A manifest dbt Fusion wrote gets Fusion's command, whose
         // `docs generate` writes no catalog unless told.
         g.meta.dbt_version = "2.0.8".into();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "collin", &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "collin", true, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("dbt compile --target <TARGET> --write-catalog") && !said.contains("docs generate"), "{said}");
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "snowflake", &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "snowflake", true, &mut err).unwrap();
         assert!(String::from_utf8(err).unwrap().contains("never asks the warehouse"));
         // A manifest read from another folder: dbt and collin are sent there,
         // or the steps would leave its cache as stale as it was.
         std::fs::create_dir_all(dir.join("target-qa")).unwrap();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target-qa"), "collin", &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target-qa"), "collin", true, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("--write-catalog --target-path target-qa"), "{said}");
         assert!(
@@ -1001,9 +1195,172 @@ mod tests {
         );
         std::fs::create_dir_all(dir.join("target qa")).unwrap();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target qa"), "collin", &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target qa"), "collin", true, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("--target-path \"target qa\"") && said.contains("--out \"target qa/column_lineage.collin.json\""), "{said}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A stand-in for collin: `--version` says `version`; otherwise it keeps
+    /// its arguments in `args` beside it, finds `--out` and `--report`, and
+    /// runs `body` with them in `$out` and `$report`.
+    #[cfg(unix)]
+    fn stand_in(dir: &Path, version: &str, body: &str) -> collin_run::Located {
+        let bin = dir.join(format!("collin-{version}"));
+        let script = format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin {version}' && exit 0\n\
+             echo \"$@\" > \"$(dirname \"$0\")/args\"\nout=''\nreport=''\n\
+             while [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; [ \"$1\" = --report ] && report=\"$2\"; shift; done\n{body}\n"
+        );
+        collin_run::tests::executable(&bin, &script);
+        collin_run::Located { bin: Some(bin), ..Default::default() }
+    }
+
+    #[cfg(unix)]
+    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.9.0","edges":[]}' > "$out"
+echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
+
+    #[cfg(unix)]
+    #[test]
+    fn run_collin_writes_beside_the_manifest_what_answers() {
+        let dir = scratch("produce");
+        let folder = dir.join("artifacts");
+        std::fs::create_dir_all(&folder).unwrap();
+        let manifest = folder.join("manifest.json");
+        std::fs::write(&manifest, "{}").unwrap();
+        std::fs::create_dir_all(dir.join("sql")).unwrap();
+        let p = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
+        let mut err = Vec::new();
+        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", WRITES), &mut err).unwrap();
+        // The names the page's own run writes, so the page shows this run.
+        assert_eq!(got, Some(folder.join("column_lineage.collin.json")));
+        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.9.0");
+        assert!(folder.join(collin_run::REPORT).is_file());
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.starts_with("collin 0.9.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
+        assert!(!said.contains("warning"), "every model had its SQL, from a collin not older than WANTS: {said}");
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        let named = |flag: &str, path: PathBuf| format!("{flag} {}", path.display());
+        assert!(args.starts_with(&format!("generate {}", named("--compiled", dir.join("sql")))), "{args}");
+        assert!(args.contains(&named("--manifest", manifest.clone())), "{args}");
+        assert!(args.contains(&named("--catalog", folder.join("catalog.json"))), "the catalog beside the manifest: {args}");
+        assert!(!args.contains("--indirect"), "{args}");
+
+        // A catalog named is the one handed over, and no folder is unless
+        // named; an answer crossing indirect edges has collin write them.
+        std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
+        let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None, indirect: true };
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", WRITES), &mut Vec::new()).unwrap().unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
+        assert!(args.contains(" --indirect "), "{args}");
+
+        // A collin older than WANTS still runs, and says what updating brings.
+        let mut err = Vec::new();
+        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None, indirect: false }, stand_in(&dir, "0.0.9", WRITES), &mut err)
+            .unwrap()
+            .unwrap();
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.contains("collin 0.0.9 is older than collin") && said.contains(collin_run::UPDATE), "{said}");
+
+        // A file set aside counts as parsed in collin's report, but none of
+        // its edges was read from it, so it is not counted as read, as in the
+        // page.
+        let aside = r#"echo '{"version":1,"source":"collin","edges":[]}' > "$out"
+echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
+        let mut err = Vec::new();
+        let p = Produce { catalog: None, compiled: None, indirect: false };
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", aside), &mut err).unwrap().unwrap();
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
+
+        // Models collin found no file for are said, since their edges are
+        // name matches now in the page's cache too, with the way to a folder.
+        let unread = r#"echo '{"version":1,"source":"collin","edges":[]}' > "$out"
+echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","models":[
+  {"unique_id":"model.jaffle_shop.orders","parse_error":"no compiled_code and no compiled file"},
+  {"unique_id":"model.jaffle_shop.customers","parse_error":"no compiled_code and no compiled file"},
+  {"unique_id":"model.jaffle_shop.stg_orders","parse_error":"a python model, not SQL"}]}' > "$report""#;
+        let warned = |p: &Produce| {
+            let mut err = Vec::new();
+            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.9.0", unread), &mut err).unwrap().unwrap();
+            String::from_utf8(err).unwrap()
+        };
+        let said = warned(&Produce { catalog: None, compiled: None, indirect: false });
+        assert!(said.contains("found no compiled file in /ci/target/compiled for 2 of the models"), "{said}");
+        assert!(said.contains("--compiled DIR names the folder dbt compiled into"), "{said}");
+        let said = warned(&Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false });
+        assert!(said.contains("for 2 of the models") && said.contains("check that it is the folder"), "{said}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn run_collin_refuses_a_model_the_manifest_lacks_before_running() {
+        let dir = scratch("produce-model");
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        let manifest = serde_json::json!({
+            "metadata": {"dbt_version": "1.11.8", "project_name": "jaffle_shop"},
+            "nodes": {"model.jaffle_shop.orders": {
+                "name": "orders", "resource_type": "model", "package_name": "jaffle_shop",
+                "original_file_path": "models/orders.sql", "fqn": ["jaffle_shop", "orders"]}},
+            "sources": {}
+        });
+        std::fs::write(dir.join("target").join("manifest.json"), manifest.to_string()).unwrap();
+        let mut a = ask("nope.amount", 0, 1);
+        a.produce = Some(Produce { catalog: None, compiled: None, indirect: false });
+        assert_eq!(run(&dir, None, &a, Output::Name), REFUSED);
+        assert!(!dir.join("target").join("column_lineage.collin.json").exists(), "collin never ran");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_collin_says_why_no_cache_was_written() {
+        let dir = scratch("produce-not");
+        let manifest = dir.join("manifest.json");
+        std::fs::write(&manifest, "{}").unwrap();
+        let cache = dir.join("column_lineage.collin.json");
+        std::fs::write(&cache, r#"{"version":1,"source":"collin","producer":"collin 0.8.0","edges":[]}"#).unwrap();
+        let both = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
+        let said = |p: &Produce, collin: collin_run::Located| {
+            let mut err = Vec::new();
+            let got = produce(&dir, &manifest, &dir, p, collin, &mut err).unwrap();
+            (got, String::from_utf8(err).unwrap())
+        };
+
+        // A folder that is not there is refused before collin is asked
+        // anything: run, it would replace the cache with name matches. So is
+        // a catalog named and not there, which would leave every column
+        // unconfirmed.
+        let (got, err) = said(&both, stand_in(&dir, "0.9.0", WRITES));
+        assert_eq!(got, None);
+        assert!(err.contains("error: --compiled") && err.contains("not a folder"), "{err}");
+        let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None, indirect: false };
+        let (got, err) = said(&no_catalog, stand_in(&dir, "0.9.0", WRITES));
+        assert_eq!(got, None);
+        assert!(err.contains("error: --catalog") && err.contains("not a file"), "{err}");
+        assert!(!dir.join("args").exists(), "it never ran");
+        assert_eq!(load(&cache).unwrap().producer, "collin 0.8.0");
+        std::fs::create_dir_all(dir.join("sql")).unwrap();
+
+        // A collin from before --compiled is never handed the folder.
+        let (got, err) = said(&both, stand_in(&dir, "0.8.0", WRITES));
+        assert_eq!(got, None);
+        assert!(err.contains("--compiled needs collin 0.9.0 or later") && err.contains(collin_run::UPDATE), "{err}");
+        assert!(!dir.join("args").exists(), "it never ran");
+
+        // A failed run says collin's own lines and leaves the cache as it was.
+        let (got, err) = said(&both, stand_in(&dir, "0.9.0", "echo 'collin: no manifest at x' >&2; exit 1"));
+        assert_eq!(got, None);
+        assert!(err.contains("error: collin wrote no cache: no manifest at x"), "{err}");
+        assert_eq!(err.matches("no manifest at x").count(), 1, "collin's line is said once: {err}");
+        let (_, err) = said(&both, stand_in(&dir, "0.9.0", "echo 'thread main panicked at boom' >&2; exit 101"));
+        assert_eq!(err.matches("panicked at boom").count(), 1, "a line without collin's prefix too: {err}");
+        assert_eq!(load(&cache).unwrap().producer, "collin 0.8.0");
+
+        let (got, err) = said(&both, collin_run::Located::default());
+        assert_eq!(got, None);
+        assert!(err.contains("found no collin to run") && err.contains(collin_run::INSTALL), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1023,7 +1380,7 @@ mod tests {
         let said = alignment(&cache).unwrap();
         assert!(said.contains("set aside 1 compiled files") && said.contains("1 catalog entries"), "{said}");
         std::fs::write(dir.join("column_lineage.report.json"), r#"{"totals":{"models":2,"parsed":2},"models":[]}"#).unwrap();
-        assert!(alignment(&cache).unwrap().contains("no compiled file and no catalog entry from another target"));
+        assert!(alignment(&cache).unwrap().contains("no compiled file set aside and no catalog entry from another target"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

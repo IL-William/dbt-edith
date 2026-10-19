@@ -61,7 +61,7 @@ struct Args {
     #[arg(long)]
     manifest: Option<PathBuf>,
 
-    /// Path to catalog.json (default: <project>/target/catalog.json)
+    /// Path to catalog.json (default: <project>/target/catalog.json; for --run-collin, catalog.json beside the manifest)
     #[arg(long)]
     catalog: Option<PathBuf>,
 
@@ -117,6 +117,14 @@ struct Args {
     #[arg(long, value_enum, value_name = "TOOL", requires = "column", conflicts_with = "column_lineage")]
     column_tool: Option<ls_column::Tool>,
 
+    /// Run collin over the manifest first, and answer --column from the cache it writes beside the manifest
+    #[arg(long, requires = "column", conflicts_with_all = ["column_lineage", "column_tool"])]
+    run_collin: bool,
+
+    /// The folder dbt compiled into, one folder per package, that --run-collin reads a model's SQL from when the manifest has none (default: compiled/ beside the manifest; needs collin 0.9.0)
+    #[arg(long, value_name = "DIR", requires = "run_collin")]
+    compiled: Option<PathBuf>,
+
     /// What --select, --selector and --column print: one name per line, or one JSON object per node, per model for --column
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
@@ -144,6 +152,11 @@ async fn main() -> anyhow::Result<()> {
             tool: args.column_tool,
             cache: args.column_lineage,
             indirect: args.indirect,
+            produce: args.run_collin.then(|| ls_column::Produce {
+                catalog: args.catalog,
+                compiled: args.compiled,
+                indirect: args.indirect,
+            }),
         };
         std::process::exit(ls_column::run(&args.project, args.manifest.as_deref(), &ask, args.output));
     }
@@ -268,7 +281,7 @@ async fn main() -> anyhow::Result<()> {
         shell: shell.clone(),
         sidecar: sidecar::Sidecar::new(live, Default::default()),
         // Nothing runs here: collin is found and started only once asked (0042).
-        collin: collin_run::Runner::new(std::time::Duration::from_secs(600)),
+        collin: collin_run::Runner::new(collin_run::DEADLINE),
         collin_report: Default::default(),
         collin_version: Default::default(),
         collin_installs: config_dir.as_deref().map(collin_run::installs_dir),
