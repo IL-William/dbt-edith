@@ -34,6 +34,9 @@ dbt-edith
 - **[Column lineage](docs/features/column-lineage.md)**, parsed from the
   compiled SQL by collin, or fetched from Snowflake on click, and answered on
   the command line by `--column`.
+- **[Command line](docs/features/command-line.md)**: a node's card, the
+  project's shape, a selection or a column, answered without a server, for
+  scripts and agents.
 - **[Jobs and Reports](docs/features/jobs-and-reports.md)**: which Airflow DAG
   or dbt Cloud job runs a model, which models no scheduled job runs, and what
   the last dbt command did.
@@ -165,7 +168,7 @@ Anything about Snowflake is in [docs/features/snowflake.md](docs/features/snowfl
 dbt-edith [PROJECT]                       dbt project root, default the current directory
          [-p, --port 4321]               tries up to 20 ports from there, then gives up
          [--manifest path/manifest.json] default <project>/target/manifest.json
-         [--catalog path/catalog.json]   default <project>/target/catalog.json, beside the manifest for --run-collin
+         [--catalog path/catalog.json]   default <project>/target/catalog.json, beside the manifest for --run-collin, --describe and --overview
          [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              the terminal's shell, default $SHELL -l, Git Bash on Windows
          [--no-open]                     do not open a browser at startup
@@ -180,7 +183,11 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
          [--run-collin]                  run collin over the manifest first, and answer --column from its cache
          [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
-         [--output name|json]            what those three print, default one name per line
+         [--describe name[,name...]]     print a node's card as the Catalog shows it and exit, without serving
+         [--sql]                         --describe prints the node's own SQL file after its card
+         [--overview]                    print what the project holds, by kind, materialization and folder, and exit
+         [--depth N]                     how many folder levels --overview lists, default 3
+         [--output name|json|compact]    what those modes print, default one name per line
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 

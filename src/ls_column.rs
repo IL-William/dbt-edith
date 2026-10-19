@@ -22,6 +22,16 @@ use std::path::{Path, PathBuf};
 /// for the walk's signed depths.
 pub const ALL: u32 = i32::MAX as u32;
 
+/// The header `--output compact` prints first (0102), so the answer says what
+/// its columns are. The `generated` texts and the `more_up` and `more_down`
+/// counts are not in it: they are JSON's, and a compact line is for reading
+/// a column's reach, not for deciding whether the walk was cut.
+const COMPACT_HEADER: &str = "depth\tcolumn\tfrom\ttests";
+
+/// What a column's model may be: the nodes with columns. An exposure or an
+/// analysis has none, so one of the same name is no rival.
+const NAMED: [Kind; 4] = [Kind::Model, Kind::Seed, Kind::Snapshot, Kind::Source];
+
 /// The tool whose cache answers, as the column lineage menu names them.
 #[derive(clap::ValueEnum, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
@@ -364,6 +374,14 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
     // `--select` prints a whole selection.
     let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut, ask.indirect);
     let models = reached(graph, &lineage, ask);
+    if output == Output::Compact && !models.is_empty() {
+        writeln!(out, "{COMPACT_HEADER}")?;
+    }
+    // By the column's own depth and not its model's, which is the nearest of
+    // its columns: a model reached at two levels would otherwise hold back
+    // the shallower columns of the next one, and the lines would not read the
+    // way the data flows.
+    let mut compact: Vec<(i32, String, String, String, String)> = Vec::new();
     for m in &models {
         match output {
             Output::Name => {
@@ -375,7 +393,18 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
                 serde_json::to_writer(&mut *out, m)?;
                 writeln!(out)?;
             }
+            Output::Compact => {
+                for (column, r) in &m.columns {
+                    let from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
+                    let tests: Vec<String> = r.tests.iter().map(|t| ls::field(t)).collect();
+                    compact.push((r.depth, ls::field(&m.label), ls::field(column), from.join(","), tests.join(",")));
+                }
+            }
         }
+    }
+    compact.sort();
+    for (depth, label, column, from, tests) in &compact {
+        writeln!(out, "{depth}\t{label}.{column}\t{from}\t{tests}")?;
     }
     if !lineage.stopped_at.is_empty() {
         let at: Vec<&str> = lineage.stopped_at.iter().map(|r| if r.is_empty() { "unknown" } else { r }).collect();
@@ -421,45 +450,7 @@ fn model_of<'a>(graph: &Graph, spec: &'a str) -> Result<(u32, &'a str, &'a str),
     let Some((node, column)) = spec.trim().rsplit_once('.').filter(|(n, c)| !n.is_empty() && !c.is_empty()) else {
         return Err(format!("{spec}: write the column as model.column"));
     };
-    Ok((node_named(graph, node)?, node, column))
-}
-
-/// The node a name stands for: its unique_id, else the one model, seed,
-/// snapshot or source of that name, an enabled one over a disabled twin. An
-/// exposure or an analysis has no columns, so one of the same name is no
-/// rival.
-fn node_named(graph: &Graph, name: &str) -> Result<u32, String> {
-    if let Some(&i) = graph.index.get(name) {
-        return Ok(i);
-    }
-    let named = |exact: bool| -> Vec<u32> {
-        (0..graph.nodes.len() as u32)
-            .filter(|&i| {
-                let n = &graph.nodes[i as usize];
-                matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Source)
-                    && if exact { n.name == name } else { n.name.eq_ignore_ascii_case(name) }
-            })
-            .collect()
-    };
-    let mut hits = named(true);
-    if hits.is_empty() {
-        hits = named(false);
-    }
-    if hits.len() > 1 {
-        let enabled: Vec<u32> = hits.iter().copied().filter(|&i| !graph.nodes[i as usize].disabled).collect();
-        if enabled.len() == 1 {
-            hits = enabled;
-        }
-    }
-    match hits.as_slice() {
-        [one] => Ok(*one),
-        [] => Err(format!("no model, seed, snapshot or source is named {name}")),
-        many => {
-            let mut ids: Vec<&str> = many.iter().map(|&i| graph.nodes[i as usize].id.as_str()).collect();
-            ids.sort_unstable();
-            Err(format!("{name} names {} nodes: write the unique_id of one, {}", ids.len(), ids.join(", ")))
-        }
-    }
+    Ok((ls::node_named(graph, node, &NAMED)?, node, column))
 }
 
 /// What to say when a column is not found: the ones the cache does have
@@ -568,7 +559,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
             label: label(o),
             unique_id: &n.id,
             name: &n.name,
-            resource_type: n.id.split('.').next().unwrap_or(""),
+            resource_type: n.resource_type(),
             package_name: &n.package,
             original_file_path: &n.file,
             materialized: &n.materialized,
@@ -618,7 +609,7 @@ fn cache_lines(
     err: &mut impl Write,
 ) -> io::Result<()> {
     let m = &graph.meta;
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let now = ls::now_secs();
     let from = match (producer, m.cll_source.as_str()) {
         ("", "") => "an unnamed producer".to_string(),
         ("", source) => source.to_string(),
@@ -810,6 +801,12 @@ mod tests {
     /// the last in another package, one edge with no role, and an exposure
     /// named `orders` too.
     fn graph() -> Graph {
+        graph_with(&[])
+    }
+
+    /// `graph()` with more edges, each `(from, from column, to, to column,
+    /// role)` between unique_ids.
+    fn graph_with(more: &[(&str, &str, &str, &str, &str)]) -> Graph {
         let model = |name: &str, package: &str, file: &str, materialized: &str| {
             json!({ "name": name, "resource_type": "model", "package_name": package,
                     "original_file_path": file, "config": { "materialized": materialized } })
@@ -862,7 +859,10 @@ mod tests {
                     edge("model.shop.orders", "order_amount", "model.shop.customer_ltv", "avg_basket", "aggregate"),
                     edge("model.shop.customer_ltv", "lifetime_value", "model.audit.audit_orders", "ltv", "window"),
                     edge("model.shop.customer_ltv", "avg_basket", "model.audit.audit_orders", "basket", ""),
-                ],
+                ]
+                .into_iter()
+                .chain(more.iter().map(|&(from, from_col, to, to_col, kind)| edge(from, from_col, to, to_col, kind)))
+                .collect(),
                 ..Default::default()
             },
             1,
@@ -991,6 +991,52 @@ mod tests {
                 "audit_orders.ltv",
             ]
         );
+    }
+
+    #[test]
+    fn compact_is_one_line_per_column_under_a_header() {
+        let (out, _, code) = run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Compact);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(
+            out,
+            "depth\tcolumn\tfrom\ttests\n\
+             -1\traw.orders.amount\t\t\n\
+             0\tstg_orders.amount\traw.orders.amount:passthrough\t\n\
+             1\torders.order_amount\tstg_orders.amount:rename\tnot_null_orders_order_amount\n\
+             2\tcustomer_ltv.avg_basket\torders.order_amount:aggregate\t\n\
+             2\tcustomer_ltv.lifetime_value\torders.order_amount:aggregate\t\n\
+             3\taudit_orders.basket\tcustomer_ltv.avg_basket:unknown\t\n\
+             3\taudit_orders.ltv\tcustomer_ltv.lifetime_value:window\t\n"
+        );
+    }
+
+    #[test]
+    fn compact_lines_read_by_the_depth_of_the_column_and_not_of_its_model() {
+        // customer_ltv is reached at two levels, so its model is as near as
+        // the first and its last column is two away, past a column of orders.
+        let g = graph_with(&[("model.shop.stg_orders", "amount", "model.shop.customer_ltv", "amount", "passthrough")]);
+        let (out, _, _) = run_on(&g, &ask("stg_orders.amount", 0, ALL), Output::Compact);
+        assert_eq!(
+            out,
+            "depth\tcolumn\tfrom\ttests\n\
+             0\tstg_orders.amount\t\t\n\
+             1\tcustomer_ltv.amount\tstg_orders.amount:passthrough\t\n\
+             1\torders.order_amount\tstg_orders.amount:rename\tnot_null_orders_order_amount\n\
+             2\tcustomer_ltv.avg_basket\torders.order_amount:aggregate\t\n\
+             2\tcustomer_ltv.lifetime_value\torders.order_amount:aggregate\t\n\
+             3\taudit_orders.basket\tcustomer_ltv.avg_basket:unknown\t\n\
+             3\taudit_orders.ltv\tcustomer_ltv.lifetime_value:window\t\n"
+        );
+    }
+
+    #[test]
+    fn a_tab_inside_a_name_keeps_the_four_fields() {
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].name = "or\tders\u{1b}".into();
+        let (out, _, _) = run_on(&g, &ask("stg_orders.amount", 0, 1), Output::Compact);
+        assert!(out.lines().all(|l| l.split('\t').count() == 4), "{out:?}");
+        assert!(out.contains("\n1\tor ders .order_amount\t"), "{out:?}");
     }
 
     #[test]

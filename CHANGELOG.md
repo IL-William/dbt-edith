@@ -13,6 +13,22 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.37.0 - 2026-10-19
+
+- Describe a node on the command line with `--describe`, several at once, as
+  its Catalog card: relation, columns with types and tests, parents, children,
+  tests and reach, the SQL with `--sql`, text or JSON (0102).
+- Print the project's shape with `--overview`: counts by kind, materialization
+  and folder, macros, selectors, tags and the caches beside the manifest,
+  `--depth` levels down (0102).
+- Print a selection or a column compact with `--output compact`,
+  tab-separated under a header, without what the name and the path already say
+  (0102).
+- Refuse a flag of another mode beside `--select`, `--selector` or `--column`,
+  `-s orders --up 1` say, with exit 2, where it was dropped without a word.
+- Name a `--column` model as `name.vN` for a version of it or `package.name`,
+  and say the nearest names when none matches.
+
 ## 1.36.0 - 2026-10-19
 
 - Open every setting from one gear in the top bar, in a panel of its own, a

@@ -93,6 +93,12 @@ impl Macros {
         self.list.len()
     }
 
+    /// How many macros one package defines: the project's own, among the
+    /// hundreds dbt and its adapter bring, is what an overview tells apart.
+    pub fn count_of(&self, package: &str) -> usize {
+        self.by_package.get(package).map_or(0, HashMap::len)
+    }
+
     /// Whether the manifest named the root project. dbt-core wrote the name
     /// from 1.6 on; before, `load_base` takes it from `dbt_project.yml`.
     pub fn has_root(&self) -> bool {

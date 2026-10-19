@@ -9,9 +9,10 @@
 //! badge already asks.
 
 use crate::collin::iso_utc;
-use crate::graph::{Graph, Node};
+use crate::graph::{Graph, Kind, Node};
 use crate::select::{self, Resolved, SelectError, Tests};
 use crate::{api, files, freshness, git};
+use std::collections::HashSet;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -28,7 +29,15 @@ pub enum Output {
     Name,
     /// One JSON object per line, as `dbt ls --output json` prints them.
     Json,
+    /// One tab-separated line per node, or per column for --column, under a
+    /// header line, without what the name and the path already say.
+    Compact,
 }
+
+/// The header `--output compact` prints first, so the answer says what its
+/// columns are. Tabs separate them, and a tab inside a field is written as a
+/// space (`field`), so `cut -f` reads every line the same way.
+pub const COMPACT_HEADER: &str = "name\tkind\tmaterialized\tpath\ttags\tparents";
 
 /// The selection was answered, even by nothing.
 pub const ANSWERED: i32 = 0;
@@ -69,6 +78,40 @@ pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Outpu
 /// code once the reason it cannot be read is on stderr. `--column` opens the
 /// project the same way.
 pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, PathBuf, Graph), i32> {
+    open_with(project, manifest, |root, path| api::load_manifest(root, path))
+}
+
+/// `open`, with the catalog merged in when there is one, for an answer that
+/// shows a node's columns as the Catalog does: the catalog named, else the
+/// one beside the manifest (0102).
+pub(crate) fn open_with_catalog(
+    project: &Path,
+    manifest: Option<&Path>,
+    catalog: Option<&Path>,
+) -> Result<(PathBuf, PathBuf, Graph), i32> {
+    // Asked for by name and not there, it would be left out of the answer
+    // without a word, and the card would show the types of the YAML as if the
+    // catalog had none to give.
+    if let Some(named) = catalog.filter(|c| !c.is_file()) {
+        eprintln!("error: no catalog at {}", named.display());
+        return Err(CANNOT_RUN);
+    }
+    open_with(project, manifest, |root, path| api::load_base(root, path, &catalog_path(root, path, catalog)))
+}
+
+/// The catalog that is merged: the one named, else the one beside the
+/// manifest, where `dbt docs generate` writes it with the manifest it read.
+pub(crate) fn catalog_path(root: &Path, manifest: &Path, named: Option<&Path>) -> PathBuf {
+    named
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| files::folder_of(manifest).unwrap_or_else(|| root.join("target")).join("catalog.json"))
+}
+
+fn open_with(
+    project: &Path,
+    manifest: Option<&Path>,
+    load: impl FnOnce(&Path, &Path) -> anyhow::Result<Graph>,
+) -> Result<(PathBuf, PathBuf, Graph), i32> {
     let root = match project.canonicalize() {
         Ok(p) => files::plain(p),
         Err(e) => {
@@ -81,7 +124,7 @@ pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, 
         eprintln!("error: no manifest at {}: run dbt parse, or pass --manifest", manifest_path.display());
         return Err(CANNOT_RUN);
     }
-    match api::load_manifest(&root, &manifest_path) {
+    match load(&root, &manifest_path) {
         Ok(graph) => Ok((root, manifest_path, graph)),
         Err(e) => {
             eprintln!("error: cannot read {}: {e}", manifest_path.display());
@@ -104,6 +147,10 @@ fn answer(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, er
     // dbt sorts by name. The id breaks a tie, so two nodes of one name come
     // out the same way on every run (0055).
     nodes.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    if output == Output::Compact && !nodes.is_empty() {
+        writeln!(out, "{COMPACT_HEADER}")?;
+    }
+    let shared = if output == Output::Compact { shared_names(graph) } else { HashSet::new() };
     for n in &nodes {
         match output {
             Output::Name => writeln!(out, "{}", n.name)?,
@@ -111,6 +158,7 @@ fn answer(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, er
                 serde_json::to_writer(&mut *out, &Listed::of(graph, n))?;
                 writeln!(out)?;
             }
+            Output::Compact => writeln!(out, "{}", compact_line(graph, n, &shared))?,
         }
     }
     for w in &resolved.warnings {
@@ -194,7 +242,7 @@ impl<'a> Listed<'a> {
         Listed {
             unique_id: &n.id,
             name: &n.name,
-            resource_type: n.id.split('.').next().unwrap_or(""),
+            resource_type: n.resource_type(),
             package_name: &n.package,
             original_file_path: &n.file,
             fqn: if n.fqn.is_empty() { Vec::new() } else { n.fqn.split('.').collect() },
@@ -206,14 +254,212 @@ impl<'a> Listed<'a> {
     }
 }
 
+/// A node of an installed package whose files have not been looked for or not
+/// found under the project: its `original_file_path` is the one inside the
+/// package, which read as the project's would be another file, or none
+/// (`Graph::place_packages`).
+pub(crate) fn unplaced(graph: &Graph, n: &Node) -> bool {
+    let root = graph.macros.root();
+    !root.is_empty() && !n.package.is_empty() && n.package != root && n.place.is_empty()
+}
+
+/// Where a node's file is, or would be, for a line with no column for the
+/// package: the place under the project once found, else for an installed
+/// package's node the folder `dbt deps` puts that package in, so the path
+/// says whose file it is.
+pub(crate) fn path_of(graph: &Graph, n: &Node) -> String {
+    if unplaced(graph, n) {
+        format!("dbt_packages/{}/{}", n.package, n.file)
+    } else {
+        n.on_disk().to_string()
+    }
+}
+
+/// How many names `did you mean` offers.
+const SUGGESTED: usize = 5;
+
+/// The seconds since the epoch, for the age of a file.
+pub(crate) fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// The node a name stands for, for the modes that take one by its name
+/// (`--describe`, and `--column` for its model): the unique_id; else, among
+/// `kinds` (any node when empty), the nodes of that name, exact before
+/// case-insensitive; else the nodes whose unique_id ends in `.name`, which is
+/// how a versioned model (`dim.v2`) or a package's node (`shop.orders`) is
+/// written. Then an enabled node over a disabled twin and, when any kind may
+/// answer, a model, seed, snapshot or source over a test or an exposure that
+/// shares the name. Each narrowing is taken when it leaves at least one node,
+/// so they combine; what still names several is refused, because a guess
+/// between them would be an answer that changes with the next edit of the
+/// project.
+pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u32, String> {
+    if let Some(&i) = graph.index.get(name) {
+        return Ok(i);
+    }
+    // A versioned model's name is the model's, and its version only in the
+    // unique_id: `model.shop.dim.v2` is named `dim`.
+    let found = |by_id: bool, exact: bool| -> Vec<u32> {
+        (0..graph.nodes.len() as u32)
+            .filter(|&i| {
+                let n = &graph.nodes[i as usize];
+                (kinds.is_empty() || kinds.contains(&n.kind))
+                    && match (by_id, exact) {
+                        (false, true) => n.name == name,
+                        (false, false) => n.name.eq_ignore_ascii_case(name),
+                        (true, exact) => ends_with_name(&n.id, name, exact),
+                    }
+            })
+            .collect()
+    };
+    // Only a dotted name can be the end of a unique_id, since its parts are
+    // dotted: a bare `v2` or `payments` must not reach a version or a source
+    // by its table alone. A dotted name may be both a source's and the end of
+    // a package model's unique_id, so the two are pooled and several refused,
+    // rather than one of them guessed.
+    let dotted = name.contains('.');
+    let mut hits = Vec::new();
+    for exact in [true, false] {
+        hits = found(false, exact);
+        if dotted {
+            for i in found(true, exact) {
+                if !hits.contains(&i) {
+                    hits.push(i);
+                }
+            }
+        }
+        if !hits.is_empty() {
+            break;
+        }
+    }
+    fn enabled(n: &Node) -> bool {
+        !n.disabled
+    }
+    fn written(n: &Node) -> bool {
+        matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Source)
+    }
+    // Kinds that were asked for are already the ones that may answer.
+    let narrowings: &[fn(&Node) -> bool] = if kinds.is_empty() { &[enabled, written] } else { &[enabled] };
+    for keep in narrowings {
+        let kept: Vec<u32> = hits.iter().copied().filter(|&i| keep(&graph.nodes[i as usize])).collect();
+        if !kept.is_empty() {
+            hits = kept;
+        }
+    }
+    match hits.as_slice() {
+        [one] => Ok(*one),
+        [] => {
+            // The nodes a person writes first when any may answer, because the
+            // name of a generic test contains those of its model and its
+            // column, and would fill the list; a name that only a test could
+            // be meant by is offered the tests.
+            let mut near_ids = if kinds.is_empty() {
+                let written = [Kind::Model, Kind::Source, Kind::Seed, Kind::Snapshot, Kind::Exposure, Kind::Analysis];
+                graph.search(name, &written, SUGGESTED)
+            } else {
+                graph.search(name, kinds, SUGGESTED)
+            };
+            if near_ids.is_empty() && kinds.is_empty() {
+                near_ids = graph.search(name, &[], SUGGESTED);
+            }
+            let mut near: Vec<&str> = Vec::new();
+            for i in near_ids {
+                let found = graph.nodes[i as usize].name.as_str();
+                if !near.contains(&found) {
+                    near.push(found);
+                }
+            }
+            let none = if kinds.is_empty() { format!("no node named {name}") } else { format!("no {} is named {name}", kind_words(kinds)) };
+            if near.is_empty() {
+                Err(none)
+            } else {
+                Err(format!("{none}; did you mean {}", near.join(", ")))
+            }
+        }
+        many => {
+            let mut ids: Vec<&str> = many.iter().map(|&i| graph.nodes[i as usize].id.as_str()).collect();
+            ids.sort_unstable();
+            Err(format!("{name} names {} nodes: write the unique_id of one, {}", ids.len(), ids.join(", ")))
+        }
+    }
+}
+
+/// Whether a unique_id ends in `.name`: the part after a dot, never a piece of
+/// a word.
+fn ends_with_name(id: &str, name: &str, exact: bool) -> bool {
+    let (id, name) = (id.as_bytes(), name.as_bytes());
+    let Some(at) = id.len().checked_sub(name.len() + 1) else { return false };
+    id[at] == b'.' && if exact { &id[at + 1..] == name } else { id[at + 1..].eq_ignore_ascii_case(name) }
+}
+
+/// `model, seed, snapshot or source`, for a refusal that names what was looked
+/// among.
+fn kind_words(kinds: &[Kind]) -> String {
+    let words: Vec<&str> = kinds
+        .iter()
+        .map(|k| match k {
+            Kind::Model => "model",
+            Kind::Source => "source",
+            Kind::Seed => "seed",
+            Kind::Snapshot => "snapshot",
+            Kind::Test => "test",
+            Kind::Exposure => "exposure",
+            Kind::Analysis => "analysis",
+            Kind::Operation => "operation",
+            Kind::Other => "node",
+        })
+        .collect();
+    match words.split_last() {
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// The names more than one node of the graph carries, as two models of one
+/// name in two packages do.
+fn shared_names(graph: &Graph) -> HashSet<&str> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    // A disabled twin is never listed, so it makes no name ambiguous.
+    graph.nodes.iter().filter(|n| !n.disabled).map(|n| n.name.as_str()).filter(|&name| !seen.insert(name)).collect()
+}
+
+/// A text in one field of a compact line: any tab, newline or other control
+/// character is a space, so the line keeps its columns and no escape sequence
+/// of the project's reaches the terminal.
+pub(crate) fn field(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
+}
+
+/// One node of a `--output compact` answer: the columns of `COMPACT_HEADER`.
+/// The parents by the name `--output name` prints, so a line's last column
+/// names other lines of the same answer, and nothing a reader can derive: no
+/// unique_id, which is the kind and the name, no fqn, which is the path, no
+/// package, which the path says. Half an answer's bytes were those (0102). A
+/// name two nodes share would join them in one entry, so it is written as the
+/// unique_id, in both columns.
+fn compact_line(graph: &Graph, n: &Node, shared: &HashSet<&str>) -> String {
+    let label = |n: &Node| field(if shared.contains(n.name.as_str()) { &n.id } else { &n.name });
+    let mut parents: Vec<String> = n.parents.iter().map(|&p| label(&graph.nodes[p as usize])).collect();
+    parents.sort_unstable();
+    parents.dedup();
+    format!(
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        label(n),
+        field(n.resource_type()),
+        field(&n.materialized),
+        field(&path_of(graph, n)),
+        n.tags.iter().map(|t| field(t)).collect::<Vec<_>>().join(","),
+        parents.join(","),
+    )
+}
+
 /// Which manifest answered and whether the project moved since, because the
 /// answer is the manifest's and not the working tree's.
 pub(crate) fn provenance(root: &Path, graph: &Graph, err: &mut impl Write) -> io::Result<()> {
     let m = &graph.meta;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = now_secs();
     let by = if m.dbt_version.is_empty() { String::new() } else { format!(" by dbt {}", m.dbt_version) };
     writeln!(
         err,
@@ -275,7 +521,12 @@ mod tests {
     /// disabled model, a source table and a model sharing a name, and two
     /// named selectors, one of them unresolvable here.
     fn graph() -> Graph {
-        let raw: RawManifest = serde_json::from_value(json!({
+        graph_with(|_| {})
+    }
+
+    /// `graph()` with the manifest's JSON edited first.
+    fn graph_with(edit: impl FnOnce(&mut serde_json::Value)) -> Graph {
+        let mut manifest = json!({
             "metadata": { "dbt_version": "1.12.5", "project_name": "shop" },
             "nodes": {
                 "model.shop.stg_orders": {
@@ -329,8 +580,9 @@ mod tests {
                 "marts": { "name": "marts", "definition": { "method": "path", "value": "models/marts" } },
                 "ci": { "name": "ci", "definition": { "method": "state", "value": "modified" } },
             },
-        }))
-        .unwrap();
+        });
+        edit(&mut manifest);
+        let raw: RawManifest = serde_json::from_value(manifest).unwrap();
         Graph::build(raw, Path::new("manifest.json"), 0, 0)
     }
 
@@ -340,9 +592,12 @@ mod tests {
 
     /// stdout, stderr and the exit code of one query.
     fn ask(query: &Query, output: Output) -> (String, String, i32) {
-        let g = graph();
+        ask_on(&graph(), query, output)
+    }
+
+    fn ask_on(g: &Graph, query: &Query, output: Output) -> (String, String, i32) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = answer(&g, query, output, &mut out, &mut err).unwrap();
+        let code = answer(g, query, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -398,6 +653,149 @@ mod tests {
         assert_eq!(v["resource_type"], "source");
         assert_eq!(v["name"], "raw.orders");
         assert!(v.get("depends_on").is_none(), "{v}");
+    }
+
+    #[test]
+    fn compact_is_one_tab_separated_line_per_node_under_a_header() {
+        let (out, _, code) = ask(&line("+orders+", ""), Output::Compact);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(
+            out,
+            "name\tkind\tmaterialized\tpath\ttags\tparents\n\
+             customers\tmodel\ttable\tmodels/marts/customers.sql\t\t\n\
+             not_null_orders_id\ttest\t\tmodels/marts/schema.yml\t\torders\n\
+             orders\tmodel\ttable\tmodels/marts/orders.sql\t\tcustomers,stg_orders\n\
+             raw.orders\tsource\tsource\tmodels/staging/sources.yml\t\t\n\
+             stg_orders\tmodel\tview\tmodels/staging/stg_orders.sql\tnightly\traw.orders\n"
+        );
+        // Nothing matched: no header either, so an empty answer stays empty.
+        let (out, _, _) = ask(&line("tag:nowhere", ""), Output::Compact);
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn compact_paths_say_whose_file_an_installed_packages_node_is() {
+        let mut g = graph();
+        let at = g.index["model.shop.customers"] as usize;
+        g.nodes[at].package = "audit".into();
+        // Not looked for on disk: where `dbt deps` would have put it.
+        let line = |g: &Graph| compact_line(g, &g.nodes[at], &shared_names(g));
+        assert!(line(&g).contains("\tdbt_packages/audit/models/marts/customers.sql\t"));
+        // Looked for and found: where it is.
+        g.nodes[at].place = "dbt_modules/audit/models/marts/customers.sql".into();
+        assert!(line(&g).contains("\tdbt_modules/audit/models/marts/customers.sql\t"));
+    }
+
+    #[test]
+    fn compact_writes_the_unique_id_of_a_name_two_nodes_share() {
+        // The same name in two packages, both parents of `orders`: a name
+        // alone would join them in one entry of the last column.
+        let g = graph_with(|m| {
+            m["nodes"]["model.audit.customers"] = json!({
+                "name": "customers", "resource_type": "model", "package_name": "audit",
+                "original_file_path": "models/customers.sql", "config": { "materialized": "table" },
+            });
+            m["parent_map"]["model.shop.orders"] = json!(["model.shop.stg_orders", "model.shop.customers", "model.audit.customers"]);
+        });
+        let (out, _, code) = ask_on(&g, &line("+orders", "resource_type:test"), Output::Compact);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(
+            out,
+            "name\tkind\tmaterialized\tpath\ttags\tparents\n\
+             model.audit.customers\tmodel\ttable\tdbt_packages/audit/models/customers.sql\t\t\n\
+             model.shop.customers\tmodel\ttable\tmodels/marts/customers.sql\t\t\n\
+             orders\tmodel\ttable\tmodels/marts/orders.sql\t\tmodel.audit.customers,model.shop.customers,stg_orders\n\
+             raw.orders\tsource\tsource\tmodels/staging/sources.yml\t\t\n\
+             stg_orders\tmodel\tview\tmodels/staging/stg_orders.sql\tnightly\traw.orders\n"
+        );
+    }
+
+    #[test]
+    fn a_tab_or_a_newline_inside_a_field_keeps_the_columns() {
+        let mut g = graph();
+        let at = g.index["model.shop.stg_orders"] as usize;
+        g.nodes[at].name = "stg\torders".into();
+        g.nodes[at].tags = vec!["a\tb".into(), "c\nd\u{1b}[0m".into()];
+        g.nodes[at].file = "models/stg\torders.sql".into();
+        let row = compact_line(&g, &g.nodes[at], &shared_names(&g));
+        assert_eq!(row.split('\t').count(), 6, "{row:?}");
+        assert_eq!(row, "stg orders\tmodel\tview\tmodels/stg orders.sql\ta b,c d [0m\traw.orders");
+    }
+
+    #[test]
+    fn a_name_is_looked_for_among_the_kinds_asked_and_refused_in_their_words() {
+        const FOUR: [Kind; 4] = [Kind::Model, Kind::Seed, Kind::Snapshot, Kind::Source];
+        // An exposure of the model's name: a rival to any node, none to a
+        // model among models.
+        let g = graph_with(|m| {
+            m["exposures"] = json!({
+                "exposure.shop.orders": { "name": "orders", "resource_type": "exposure", "package_name": "shop",
+                    "original_file_path": "models/exposures.yml" },
+            });
+        });
+        let id = |name: &str, kinds: &[Kind]| node_named(&g, name, kinds).map(|i| g.nodes[i as usize].id.clone());
+        assert_eq!(id("orders", &FOUR).unwrap(), "model.shop.orders");
+        assert_eq!(id("orders", &[]).unwrap(), "model.shop.orders", "a model over an exposure when any may answer");
+        assert_eq!(id("orders", &[Kind::Exposure]).unwrap(), "exposure.shop.orders");
+        assert_eq!(id("exposure.shop.orders", &FOUR).unwrap(), "exposure.shop.orders", "a unique_id is a node, whatever kind");
+        assert_eq!(id("ORDERS", &FOUR).unwrap(), "model.shop.orders");
+        assert_eq!(id("shop.stg_orders", &FOUR).unwrap(), "model.shop.stg_orders");
+
+        assert_eq!(id("nope", &[]).unwrap_err(), "no node named nope");
+        assert_eq!(id("nope", &FOUR).unwrap_err(), "no model, seed, snapshot or source is named nope");
+        assert_eq!(id("nope", &[Kind::Model]).unwrap_err(), "no model is named nope");
+        // The names near it are of the kinds asked: a test only for any node.
+        assert_eq!(id("not_null_orders", &[]).unwrap_err(), "no node named not_null_orders; did you mean not_null_orders_id");
+        assert_eq!(id("not_null_orders", &FOUR).unwrap_err(), "no model, seed, snapshot or source is named not_null_orders");
+        assert!(
+            id("order", &FOUR).unwrap_err().starts_with("no model, seed, snapshot or source is named order; did you mean orders, "),
+            "{:?}",
+            id("order", &FOUR)
+        );
+    }
+
+    #[test]
+    fn a_dotted_name_reaches_the_end_of_a_unique_id_and_a_bare_one_does_not() {
+        // A version of a model, and a source and a package's model that one
+        // dotted name could mean.
+        let g = graph_with(|m| {
+            m["nodes"]["model.shop.dim.v2"] = json!({
+                "name": "dim", "resource_type": "model", "package_name": "shop",
+                "original_file_path": "models/marts/dim_v2.sql", "config": { "materialized": "table" },
+            });
+            m["nodes"]["model.raw.payments"] = json!({
+                "name": "payments", "resource_type": "model", "package_name": "raw",
+                "original_file_path": "models/payments.sql", "config": { "materialized": "view" },
+            });
+            m["sources"]["source.shop.raw.payments"] = json!({
+                "name": "payments", "resource_type": "source", "package_name": "shop",
+                "source_name": "raw", "identifier": "payments", "original_file_path": "models/staging/sources.yml",
+            });
+        });
+        let id = |name: &str| node_named(&g, name, &[]).map(|i| g.nodes[i as usize].id.clone());
+        assert_eq!(id("dim.v2").unwrap(), "model.shop.dim.v2");
+        assert!(id("v2").unwrap_err().starts_with("no node named v2"), "a bare word is no end of a unique_id");
+        assert_eq!(id("payments").unwrap(), "model.raw.payments", "by name, never by a source's table alone");
+        assert_eq!(
+            id("raw.payments").unwrap_err(),
+            "raw.payments names 2 nodes: write the unique_id of one, model.raw.payments, source.shop.raw.payments"
+        );
+    }
+
+    #[test]
+    fn a_catalog_named_and_not_a_file_is_refused_before_anything_is_read() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-ls-catalog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::write(dir.join("target/manifest.json"), r#"{"metadata":{"project_name":"shop"},"nodes":{}}"#).unwrap();
+        std::fs::write(dir.join("catalog.json"), r#"{"nodes":{}}"#).unwrap();
+        let open = |catalog: Option<&Path>| open_with_catalog(&dir, None, catalog).err();
+        // The manifest reads, so what refuses below is the catalog alone.
+        assert_eq!(open(None), None);
+        assert_eq!(open(Some(&dir.join("catalog.json"))), None);
+        assert_eq!(open(Some(&dir.join("nowhere.json"))), Some(CANNOT_RUN));
+        assert_eq!(open(Some(&dir)), Some(CANNOT_RUN), "a folder is not a catalog");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

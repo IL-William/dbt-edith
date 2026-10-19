@@ -148,7 +148,9 @@ joining whenever one of its parents is selected, and
 object per node, with dbt's key names (`unique_id`, `resource_type`,
 `original_file_path`, `fqn`, `materialized`, `tags` and the rest) and
 `depends_on.nodes`, the node's parents, which is what tells the edges between
-two sets.
+two sets. `--output compact` prints a tab-separated line per node under a
+header instead, a fraction of the JSON's size: see
+[command-line.md](command-line.md#a-selection).
 
 stdout carries the answer and nothing else. stderr says what it is worth: the
 manifest that answered, when it was written and by which dbt, then the verdict
