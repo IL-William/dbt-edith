@@ -1234,6 +1234,11 @@ impl Graph {
                             next.push(nb);
                             continue;
                         }
+                        // Drawn already: the cap turned nothing away, even
+                        // when it is full.
+                        if depth.contains_key(&nb) {
+                            continue;
+                        }
                         // On to the next neighbour rather than out: a stop among
                         // them is still taken back. Nothing more is added, so
                         // without a cut the answer is the one it always was.
@@ -1241,13 +1246,11 @@ impl Graph {
                             truncated = true;
                             continue;
                         }
-                        if let std::collections::hash_map::Entry::Vacant(v) = depth.entry(nb) {
-                            v.insert(if upstream { -step } else { step });
-                            if !upstream {
-                                walked.insert(nb, step);
-                            }
-                            next.push(nb);
+                        depth.insert(nb, if upstream { -step } else { step });
+                        if !upstream {
+                            walked.insert(nb, step);
                         }
+                        next.push(nb);
                     }
                 }
                 if !upstream && !cut.is_empty() && !truncated {
@@ -1563,18 +1566,17 @@ impl Graph {
                     let node = &self.nodes[cur as usize];
                     let neighbours = if upstream { &node.parents } else { &node.children };
                     for &nb in neighbours {
-                        if !self.nodes[nb as usize].kind.is_graph_node() {
+                        // Drawn already: the cap turned nothing away, even
+                        // when it is full.
+                        if !self.nodes[nb as usize].kind.is_graph_node() || depth.contains_key(&nb) {
                             continue;
                         }
                         if depth.len() >= max_nodes {
                             truncated = true;
                             break;
                         }
-                        let d = if upstream { -step } else { step };
-                        if let std::collections::hash_map::Entry::Vacant(e) = depth.entry(nb) {
-                            e.insert(d);
-                            next.push(nb);
-                        }
+                        depth.insert(nb, if upstream { -step } else { step });
+                        next.push(nb);
                     }
                 }
                 if next.is_empty() || truncated {
@@ -2768,12 +2770,13 @@ mod tests {
         assert!(!roomy.truncated && roomy.stopped_at.is_empty());
         assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
 
-        // The same, the stop met after a neighbour the cap turns away: the
-        // walk goes on to it rather than out.
+        // The same, the stop met after a neighbour the cap turns away, b,
+        // which sorts before it: the walk goes on to the stop rather than out.
         g.merge_col_lineage(
             cache(vec![
                 link("f", "a", "rename"),
                 link("f", "s", "window"),
+                link("a", "b", "rename"),
                 link("a", "f", "rename"),
                 link("a", "s", "rename"),
                 link("s", "a", "filter"),
@@ -2782,8 +2785,13 @@ mod tests {
         );
         let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], true);
         let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], true);
-        assert!(roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
-        assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "after a neighbour turned away");
+        assert!(!roomy.truncated && roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
+        assert!(full.truncated, "b is turned away");
+        assert_eq!(
+            (full.edges.len(), &full.stopped_at),
+            (roomy.edges.len() - 1, &roomy.stopped_at),
+            "every edge but the one to b, after a neighbour turned away"
+        );
 
         g.merge_col_lineage(
             cache(vec![
@@ -2800,6 +2808,43 @@ mod tests {
         assert!(three.stopped_at.is_empty(), "p is reached around the window: not a stop");
         let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], false);
         assert_eq!(drawn(&four), [d("a", 1), d("b", 2), d("f", 0), d("p", 1), d("t", 4)]);
+
+        // A diamond: p is met from a, then from b with the cap full of it.
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "a", "rename"),
+                link("f", "b", "rename"),
+                link("a", "p", "rename"),
+                link("b", "p", "rename"),
+            ]),
+            5,
+        );
+        for (focus, up, down) in [("f", 0, 2), ("p", 2, 0)] {
+            let whole = g.column_lineage(at(&g, focus), up, down, 4, &[], false);
+            assert_eq!((whole.nodes.len(), whole.truncated), (4, false), "{focus} {up}+{down}, every column drawn");
+            let cut = g.column_lineage(at(&g, focus), up, down, 3, &[], false);
+            assert_eq!((cut.nodes.len(), cut.truncated), (3, true), "{focus} {up}+{down}");
+        }
+
+        // The same diamond and a stop past it: p is met twice with the cap
+        // full, and the walk still goes on to s, around the window, so s is
+        // no stop, as without the cap.
+        g.merge_col_lineage(
+            cache(vec![
+                link("f", "a", "rename"),
+                link("f", "b", "rename"),
+                link("f", "s", "window"),
+                link("a", "p", "rename"),
+                link("b", "p", "rename"),
+                link("p", "s", "rename"),
+            ]),
+            6,
+        );
+        let roomy = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
+        let full = g.column_lineage(at(&g, "f"), 0, 3, 5, &["window"], false);
+        assert!(roomy.stopped_at.is_empty() && !roomy.truncated);
+        assert!(!full.truncated && full.stopped_at.is_empty(), "nothing cut, nothing stopped");
+        assert_eq!((drawn(&full), full.edges.len()), (drawn(&roomy), roomy.edges.len()));
     }
 
     /// A diamond and, apart from it, a pair that touches nothing: enough to
@@ -3297,6 +3342,21 @@ mod tests {
         let up = g.lineage(g.index["model.shop.s"], 3, 0, false, 100);
         for (name, want) in [("s", 0), ("r", -1), ("q", -2), ("p", -2)] {
             assert_eq!(by_name(&up, name).depth, want, "{name} upstream");
+        }
+    }
+
+    /// The diamond's far corner is met twice, the second time with the cap
+    /// already full of it: a walk that holds every node says nothing was cut.
+    #[test]
+    fn a_cap_that_holds_the_whole_walk_cuts_nothing() {
+        let g = shapes();
+        let a = g.index["model.shop.a"];
+        let d = g.index["model.shop.d"];
+        for (focus, up, down) in [(a, 0, 2), (d, 2, 0)] {
+            let whole = g.lineage(focus, up, down, false, 4);
+            assert_eq!((whole.nodes.len(), whole.truncated), (4, false), "{up}+{down}");
+            let cut = g.lineage(focus, up, down, false, 3);
+            assert_eq!((cut.nodes.len(), cut.truncated), (3, true), "{up}+{down}");
         }
     }
 

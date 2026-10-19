@@ -865,7 +865,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 22 and 23).
+items 21 and 22).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -1887,13 +1887,7 @@ quarter of the JSON's bytes. Not driven on the VM.
     Pasted into `--select`, it picks every version; in `ref()`, the latest.
     Reading `version` and `latest_version` from the manifest would name each
     one apart, as dbt's `name.v1` does.
-18. **A column walk said cut when nothing was.** `column_lineage` sets
-    `truncated` once the node cap is reached, before it checks whether the
-    next neighbour is already drawn. A walk that holds every column can still
-    say it was cut. Checking for a drawn neighbour before the cap changes that
-    flag alone. The property tests run on #49 found it, on main as well as
-    with the stops (0083).
-19. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+18. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -1904,35 +1898,49 @@ quarter of the JSON's bytes. Not driven on the VM.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-20. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+19. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-21. **The update command names git by its path.** The command the status bar
-    types into the terminal to update dbt-edith runs in the project folder,
-    and under Windows `cmd.exe`, which looks in the current folder first, a
-    `git.exe` committed at the project's root would run on Enter. Likely
-    answer: type the absolute path `program::on_path` finds for git into that
-    command (0094). The trap: the command is shown and copied as typed, so a
-    long path makes it harder to read, and Git Bash wants it in its own form.
+20. **A typed command and an empty entry of `PATH`.** Every command the page
+    types runs in the project folder, in the terminal's shell: the update,
+    Run again, Recompile, `dbt ls`, the selector command, collin's install
+    line, and the freshness badge's `dbt parse`, which presses Enter itself
+    (0025).
+    - **Where the current folder is not looked in.** `cmd.exe` looks there
+      first, but gets no update command (`update::shell_kind`). PowerShell
+      never runs a program from it unless it is named `.\`.
+    - **Where it is.** bash and zsh look there through an empty entry of
+      `PATH`, a leading or trailing `:` or a `::`, or through a `.`. With
+      one, a `git`, `cargo` or `dbt` committed at the project's root runs in
+      place of the one meant: checked on a Mac, with a planted `git` and a
+      leading `:`. `program::on_path` already skips such an entry for what
+      the server starts (0094); what the page types follows the shell.
+    - **Possible answers.** Say so at startup and in Edith's menu when the
+      `PATH` handed to the terminal holds one, and have the badge type its
+      `dbt parse` without pressing Enter then. Or type each program by the
+      path `on_path` finds: every command gets longer to read, and Git Bash
+      wants its own form of a path.
+    - **Not known.** Whether Git Bash turns an empty entry of the Windows
+      `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
 
-Items 22 to 24 are the rest of the plan chosen with the panels' mechanism
+Items 21 to 23 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-22. **A model's lineage seen whole.** The dock's lineage of the model in
+21. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-23. **git seen whole.** The side-by-side diff and the commit in a panel, the
+22. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-24. **Boxes without their text far out, then the cap again.** Past 3 000
+23. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-25. **An MCP server over these answers.** A stdio JSON-RPC facade on
+24. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
@@ -2024,7 +2032,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 24);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 23);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;

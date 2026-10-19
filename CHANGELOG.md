@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.37.1 - 2026-10-19
+
+- Stop calling a lineage `truncated` when its cap holds every box it
+  reaches. A box met a second time once the cap was full set it, in model
+  and column mode alike, and in column mode left a column the walk reaches
+  around a stop under `stopped downstream at`.
+
 ## 1.37.0 - 2026-10-19
 
 - Describe a node on the command line with `--describe`, several at once, as
