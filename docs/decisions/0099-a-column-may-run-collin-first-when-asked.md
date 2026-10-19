@@ -34,8 +34,8 @@ wants answered.
   run first, a typo would rewrite the page's cache for nothing.
 - **It runs every time it is asked.** Freshness is judged by time alone (0042),
   and a cache newer than the manifest may come from another catalog or another
-  folder of SQL: a caller asking twice in a row pays collin twice, in seconds
-  on the largest project measured, and asks the second time without the flag.
+  folder of SQL: a caller asking twice in a row pays collin twice, and asks
+  the second time without the flag.
 - **It writes what the page's Regenerate writes**: `column_lineage.collin.json`
   and `collin.report.json` beside the manifest, under a temporary name and
   renamed, so the page then shows this run and a failed run leaves the old

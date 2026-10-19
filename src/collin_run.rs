@@ -61,7 +61,7 @@ pub const REPORT: &str = "collin.report.json";
 const TAIL_LINES: usize = 20;
 
 /// How long a run may take, from the page or the command line, before it is
-/// stopped: far past the seconds the largest project measured takes.
+/// stopped: ten minutes, far past what a run takes.
 pub const DEADLINE: Duration = Duration::from_secs(600);
 
 /// The first collin that reads `--compiled` (0099). Asked of the collin found

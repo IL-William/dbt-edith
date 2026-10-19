@@ -339,17 +339,17 @@ so the page shows that run too; a failed run leaves the cache that was there.
 A model the manifest does not have is refused before collin runs, so a
 mistyped name never rewrites the cache.
 
-collin runs each time the flag is given, a few seconds on the largest
-project. Ask once with it, then without it: the cache it wrote answers from
-then on, until the manifest changes. stdout carries the answer alone; stderr
-says which collin wrote which file, in how long and how many models it read
-the SQL of, and collin's own lines when it fails. A collin older than the
-version this dbt-edith expects still runs, and stderr says so with the update
-command. When collin found no compiled file for some of the models the
-manifest has no SQL for, stderr says how many and where it looked: their edges
-are matched by name, and the cache the page reads is now that one. collin is
-the one found beside dbt-edith or on the `PATH`, never one git tracks, and not
-the version picked in the page, whose settings the command line does not read.
+collin runs each time the flag is given. Ask once with it, then without it:
+the cache it wrote answers from then on, until the manifest changes. stdout
+carries the answer alone; stderr says which collin wrote which file, in how
+long and how many models it read the SQL of, and collin's own lines when it
+fails. A collin older than the version this dbt-edith expects still runs, and
+stderr says so with the update command. When collin found no compiled file for
+some of the models the manifest has no SQL for, stderr says how many and where
+it looked: their edges are matched by name, and the cache the page reads is
+now that one. collin is the one found beside dbt-edith or on the `PATH`, never
+one git tracks, and not the version picked in the page, whose settings the
+command line does not read.
 
 Model lineage needs no cache: `--select` answers from the same manifest
 ([selection.md](selection.md#from-the-command-line)), and `--output json`
