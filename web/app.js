@@ -432,17 +432,46 @@ function scanVars(text) {
     // \b matches after a dot too, so dbt_utils.var('x') would otherwise count.
     if (text[m.index - 1] === '.') continue;
     // The whole call, not just the name inside the quotes the way scanCalls
-    // marks a ref(). A ref's name is the thing you click, so a tight target is
-    // right there; a variable has nothing to click, and `var('x')` reads as one
-    // word, so anything less than the whole of it is a target you have to aim at.
+    // marks a ref(). `var('x')` reads as one word, so anything less than the
+    // whole of it is a target you have to aim at, for its card and, a var(),
+    // for the click that opens its line.
+    const name = m.index + m[0].indexOf(m[2]) + 1;
     found.push({
       kind: m[1],
       name: m[3],
       fallback: m[4] === undefined ? '' : m[4].trim(),
       ranges: [[m.index, m.index + m[0].length]],
+      // The name inside the quotes, which no other link may claim.
+      nameAt: [name, name + m[3].length],
     });
   }
   return found;
+}
+
+/* Which link a click or a pause lands on, from the classes CodeMirror puts on
+   the span under the pointer. A var()'s default can hold a ref() or a macro
+   call, `var('t', ref('stg_payments'))`, whose span carries both marks'
+   classes: the inner, tighter link wins, as a click did before a var() could
+   be clicked; the hover now follows the click. 'env' is an env_var(), which
+   has its card and nothing to open. */
+function linkUnder(cl) {
+  if (!cl) return '';
+  if (cl.contains('cm-macrolink')) return 'macro';
+  if (cl.contains('cm-dirlink')) return 'dir';
+  if (cl.contains('cm-reflink')) return 'ref';
+  if (cl.contains('cm-varlink')) return cl.contains('env') ? 'env' : 'var';
+  return '';
+}
+
+/* The vocabulary's hits, a parent's name wherever it is written, less those
+   inside a var()'s or an env_var()'s own name: `var('orders')` beside
+   `ref('orders')` is the var, whose card and click are its own. A ref()
+   written as a var's default is a call, not a vocabulary hit, and keeps its
+   link. */
+function outsideVarNames(text, hits) {
+  const names = scanVars(text).map((v) => v.nameAt);
+  const inside = ([from, to]) => names.some(([a, b]) => from >= a && to <= b);
+  return hits.map((h) => ({ ...h, ranges: h.ranges.filter((r) => !inside(r)) })).filter((h) => h.ranges.length);
 }
 
 /* The line under a variable's value, saying where the value came from. Pure, so
@@ -1022,7 +1051,7 @@ async function markRefs(doc, path) {
   }
   const vocab = new Set(Object.keys(known).filter((n) => !n.includes('.')));
   // Declared first, so a name that is both keeps the click that stays put.
-  const hits = [...declared, ...calls, ...scanVocabulary(text, vocab)];
+  const hits = [...declared, ...calls, ...outsideVarNames(text, scanVocabulary(text, vocab))];
   const isCall = new Set(calls), isDeclared = new Set(declared);
 
   const seen = new Set();
@@ -1062,7 +1091,10 @@ function markVars(doc) {
   const text = maskJinjaComments(doc.getValue());
   for (const hit of scanVars(text)) {
     for (const [from, to] of hit.ranges) {
-      const mark = doc.markText(doc.posFromIndex(from), doc.posFromIndex(to), { className: 'cm-varlink' });
+      // A var() opens its line on a click; an env_var() has only its card.
+      const mark = doc.markText(doc.posFromIndex(from), doc.posFromIndex(to), {
+        className: hit.kind === 'var' ? 'cm-varlink' : 'cm-varlink env',
+      });
       mark.varTarget = hit;
     }
   }
@@ -1145,20 +1177,26 @@ const dirRoots = (roots, block) => (roots || {})[block] || [];
 function wireRefClicks(cm) {
   cm.getWrapperElement().addEventListener('mousedown', (e) => {
     if (e.button !== 0 || e.altKey) return;              // alt-click still places the cursor
-    const cl = e.target.classList;
-    if (!cl || !(cl.contains('cm-reflink') || cl.contains('cm-macrolink') || cl.contains('cm-dirlink'))) return;
+    const kind = linkUnder(e.target.classList);
+    if (!kind || kind === 'env') return;
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const marks = cm.findMarksAt(pos);
-    const macro = cl.contains('cm-macrolink') && marks.find((mk) => mk.macroTarget);
+    const macro = kind === 'macro' && marks.find((mk) => mk.macroTarget);
     if (macro) {
       e.preventDefault();
       openMacro(macro.macroTarget);
       return;
     }
-    const folder = cl.contains('cm-dirlink') && marks.find((mk) => mk.dirTarget);
+    const folder = kind === 'dir' && marks.find((mk) => mk.dirTarget);
     if (folder) {
       e.preventDefault();
       openConfigPath(folder.dirTarget);
+      return;
+    }
+    const v = kind === 'var' && marks.find((mk) => mk.varTarget && mk.varTarget.kind === 'var');
+    if (v) {
+      e.preventDefault();
+      openVarDef(v.varTarget);
       return;
     }
     const mark = marks.find((mk) => mk.refTarget);
@@ -1193,6 +1231,43 @@ async function openMacro(t) {
   revealInTree(t.file);
   const at = macroDefLine(f.doc.getValue(), t.name);
   if (at) gotoPos(at.line, at.ch);
+}
+
+/* A project var's definition in dbt_project.yml, at its key, lit as a test's
+   line is. The server says whether the block defines it, as the card does, so
+   a var it would not find there opens nothing, and the line is the buffer's
+   (varLanding). A tab of the file with unsaved edits is what is on screen and
+   the server reads the disk, so the buffer alone decides then: a key added
+   there is found, one renamed or deleted is not. The place to come back to is
+   taken before any wait, as the click left it. */
+async function openVarDef(t) {
+  const from = here();
+  const file = 'dbt_project.yml';
+  const kept = S.open.get(file);
+  let row = null;
+  if (kept && kept.dirty && kept.doc) {
+    if (!varDefLine(kept.doc.getValue(), t.name)) return toast(`${t.name} is not in the vars: block of the unsaved ${file}`);
+  } else {
+    let body;
+    try { body = await fetchVars(''); } catch { return toast(`could not read ${file}`, 'err'); }
+    row = (body.vars || []).find((v) => v.name === t.name);
+    if (!row) return toast(`${t.name} is not in the vars: block of ${file}`);
+    // Another file opened during the wait: the click's place is gone, and
+    // following it now would pin a preview nobody asked to keep.
+    if ((here() || {}).key !== (from || {}).key) return;
+  }
+  pushJump({ at: from });
+  await openFile(file, { focusLineage: false, preview: true });
+  const f = S.open.get(file);
+  if (S.active !== file || !f || !f.doc) return;             // it could not be opened
+  revealInTree(file);
+  const at = varLanding(f.doc.getValue(), t.name, f.dirty ? null : row);
+  if (!at) return;
+  gotoPos(at.line, at.ch);
+  // In the upper third rather than at an edge, the vars around it in view.
+  const third = S.cm.getScrollInfo().clientHeight / 3;
+  S.cm.scrollIntoView({ from: { line: at.line, ch: 0 }, to: { line: at.line, ch: 0 } }, third);
+  flashLines(at.line, at.line);
 }
 
 /* A generic test opened where it is declared (0041): its properties file, at
@@ -1267,25 +1342,21 @@ async function openConfigPath(t) {
 function wireHovers(cm) {
   const wrap = cm.getWrapperElement();
   wrap.addEventListener('mousemove', (e) => {
-    const cl = e.target.classList;
-    if (!cl) return hoverLeave();
-    const isVar = cl.contains('cm-varlink');
-    const isMacro = cl.contains('cm-macrolink');
-    const isDir = cl.contains('cm-dirlink');
-    if (!isVar && !isMacro && !isDir && !cl.contains('cm-reflink')) return hoverLeave();
+    const kind = linkUnder(e.target.classList);
+    if (!kind) return hoverLeave();
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const at = () => cm.charCoords(pos, 'window');
-    if (isDir) {
+    if (kind === 'dir') {
       const dm = cm.findMarksAt(pos).find((mk) => mk.dirTarget);
       if (!dm) return hoverLeave();
       return hoverEnter('dir:' + dirKey(dm.dirTarget), at, (el) => fillDirCard(el, dm.dirTarget));
     }
-    if (isMacro) {
+    if (kind === 'macro') {
       const mm = cm.findMarksAt(pos).find((mk) => mk.macroTarget);
       if (!mm) return hoverLeave();
       return hoverEnter('macro:' + mm.macroTarget.id, at, (el) => fillMacroCard(el, mm.macroTarget));
     }
-    if (isVar) {
+    if (kind === 'var' || kind === 'env') {
       const vm = cm.findMarksAt(pos).find((mk) => mk.varTarget);
       if (!vm) return hoverLeave();
       return hoverEnter(`${vm.varTarget.kind}:${vm.varTarget.name}`, at, (el) => fillVarCard(el, vm.varTarget));
@@ -2564,9 +2635,9 @@ function here() {
 /* Called before a jump, never after: afterwards the place left is gone. `pin`
    is off only for a move that is browsing rather than following a link, one
    click on a lineage box, which must leave the tabs as one click in the tree
-   does. */
-function pushJump({ pin = true } = {}) {
-  const at = here();
+   does. `at` is a place taken earlier by a caller that waits before it knows
+   whether it jumps, so a move during the wait is not the one kept. */
+function pushJump({ pin = true, at = here() } = {}) {
   if (!at) return;
   S.back.push(at);
   if (S.back.length > JUMPS) S.back.shift();
@@ -2807,6 +2878,28 @@ function yamlOutline(text) {
     if (leaf && (value[0] === '|' || value[0] === '>')) block = col;
   }
   return closeRanges(nodes, lines.length - 1);
+}
+
+/* Where a project var is defined: its key right under the top-level `vars:`,
+   read from the buffer, since the line the server gives was read from the
+   disk and an unsaved edit above it moves it. A var under a package's scope
+   is not looked for, as the card does not show one (0018). The last of two
+   keys of one name, which is the one YAML keeps and the card reads. */
+function varDefLine(text, name) {
+  const nodes = yamlOutline(text);
+  const block = nodes.findIndex((n) => n.parent === -1 && n.label === 'vars');
+  if (block < 0) return null;
+  const hits = nodes.filter((n) => n.parent === block && n.label === name);
+  const hit = hits[hits.length - 1];
+  return hit ? { line: hit.line, ch: hit.col } : null;
+}
+
+/* Where a click on a var() lands: its key in the buffer, else the line the
+   server read from the disk, `row`, when the buffer holds a key outline cannot
+   place. `row` is null for a buffer with unsaved edits, which the disk no
+   longer describes: a key renamed or deleted there lands nowhere. */
+function varLanding(text, name, row) {
+  return varDefLine(text, name) || (row ? { line: row.line - 1, ch: 0 } : null);
 }
 
 /* ATX headings, and none inside a fenced block: that is what a reader navigates

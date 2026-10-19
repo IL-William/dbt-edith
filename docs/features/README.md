@@ -29,6 +29,7 @@ pull request.
 | --- | --- |
 | click a `ref()` / `source()` / `source_model` name | jump to that model's file |
 | click a macro call, `{{ hub() }}` or `{{ dbt_utils.star() }}` | open the file that defines it, at its `{% macro %}` line |
+| click a `var('x')` | open `dbt_project.yml` at the line that defines it |
 | click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
 | click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
 | the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
