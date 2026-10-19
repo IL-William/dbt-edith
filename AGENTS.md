@@ -227,6 +227,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | iterate a HashMap into anything a route returns, or change the order nodes are numbered in | [0055](docs/decisions/0055-the-same-manifest-answers-the-same-on-every-start.md) |
 | change what `--select` prints or exits with, or add a flag that answers without serving | [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
 | change what `--column` reads, or let the command line write lineage | [0088](docs/decisions/0088-a-column-is-answered-on-the-command-line-from-the-cache-already-written.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md) |
+| change what `--describe` or `--overview` prints, what `--output compact` leaves out, or let the command line read a file of the project | [0102](docs/decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
@@ -264,6 +265,7 @@ src/run_results.rs    the last dbt command's results, read from run_results.json
 src/select.rs         dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs      the named selectors of selectors.yml, as the manifest recorded them
 src/ls.rs             --select and --selector: one selection printed, and no server
+src/describe.rs       --describe and --overview: a node's card and the project's shape printed, and no server
 src/jobs.rs           the orchestrator's jobs, read from the folders named, and the nodes each step acts on
 src/command.rs        a dbt command line, read into what it runs and what it selects
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree

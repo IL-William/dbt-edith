@@ -256,12 +256,14 @@ dbt-edith path/to/project --column stg_orders.order_id --down 2 --stop-at window
 ```
 
 The column is `model.column`, `source_name.table.column`, or a unique_id and
-its column. `--up` and `--down` take a number of levels or `all`; with neither,
-only the column itself is printed. `--stop-at` stops the walk downstream at
-the roles named, as the stop at menu does on the canvas. `--indirect` crosses
-collin's indirect edges too, which the answer leaves out by default, as the
-canvas does with its indirect button off (0097). The walk is the canvas's
-own, with no cap.
+its column. The model is named as `--describe` names a node
+([command-line.md](command-line.md#which-node)), among models, seeds,
+snapshots and sources. `--up` and `--down` take a number of levels or `all`;
+with neither, only the column itself is printed. `--stop-at` stops the walk
+downstream at the roles named, as the stop at menu does on the canvas.
+`--indirect` crosses collin's indirect edges too, which the answer leaves out
+by default, as the canvas does with its indirect button off (0097). The walk is
+the canvas's own, with no cap.
 
 `--output name` prints `model.column`, one per line, upstream first, then the
 column, then downstream. `--output json` prints one line per model reached,
@@ -280,6 +282,10 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | `generated` | on a column its model's SQL sets from no column, the values it is set to, `["current_timestamp()"]`, one per branch of a union, `[]` when collin could not tell (0096) |
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
+
+`--output compact` prints a tab-separated line per column reached, under a
+header, without these last two keys: see
+[command-line.md](command-line.md#a-column).
 
 Without `--run-collin` it reads a cache already written and writes none:
 collin is never started and Snowflake never asked. `--column-tool collin`,

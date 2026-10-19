@@ -1,0 +1,40 @@
+# 0102. A node and the project are described on the command line
+
+Date: 2026-10-19 · Status: accepted · Follows 0057 and 0088
+
+**Trigger:** read before adding to what the command line prints of a node or
+the project, or before letting it read a file of the project.
+
+## Context
+
+0057 and 0088 gave an agent a selection and a column in one command each, and
+nothing on what a node is or on the project's shape: its description, columns
+with types and tests, where it is built, how an incremental model merges, its
+SQL. So it read files. And `--select`'s JSON spent half its bytes on what the
+name and the path already say: the unique_id is the kind and the name.
+
+## Decision
+
+- **`--describe NAMES` and `--overview` answer from the graph the Catalog is
+  painted from**, the catalog merged in, so the page and the command line cannot
+  disagree. Text by default, since a card is read, JSON on demand. Several names
+  in a call, each resolved as `--column` resolves a model's, a test or an
+  exposure now a node that can be named too.
+- **`--output compact` drops what can be derived**: a tab-separated line per
+  node or per column under a header, which `cut -f` reads.
+- **`--sql` is the one file read**: the node's own, through the read the page
+  uses, confined to the project root. Still nothing served, stored or run.
+
+## Rejected
+
+- **An MCP server**: a protocol and a long-lived process, where one command
+  answers. It may wrap these later.
+- **Full cards from `--select`**: one card per node is the JSON's size again.
+- **`raw_code` from the manifest for `--sql`**: it is deserialized for every
+  node, the bulk of the manifest, for one answer.
+- **A skill here**: the caller's work (0057); the recipes page is its text.
+
+## Consequences
+
+A stale manifest answers stale, and only stderr says so. A card is the
+manifest's view: a column only the warehouse has shows when a catalog is there.

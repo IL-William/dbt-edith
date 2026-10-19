@@ -570,6 +570,13 @@ impl Node {
         if self.place.is_empty() { &self.file } else { &self.place }
     }
 
+    /// dbt's own name for the kind, the unique_id's first part: a unit test
+    /// or a semantic model is named for what it is, though the graph files it
+    /// as other.
+    pub fn resource_type(&self) -> &str {
+        self.id.split('.').next().unwrap_or("")
+    }
+
     /// An incremental model: the one node a strategy applies to. A folder's
     /// `+incremental_strategy` reaches its views too, unused.
     pub fn is_incremental(&self) -> bool {
@@ -1681,7 +1688,7 @@ impl Graph {
         }
     }
 
-    fn by_name_then_id(&self, a: u32, b: u32) -> std::cmp::Ordering {
+    pub(crate) fn by_name_then_id(&self, a: u32, b: u32) -> std::cmp::Ordering {
         let (x, y) = (&self.nodes[a as usize], &self.nodes[b as usize]);
         (&x.name, &x.id).cmp(&(&y.name, &y.id))
     }

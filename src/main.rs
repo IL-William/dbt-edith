@@ -9,6 +9,7 @@ mod collin_report;
 mod collin_run;
 mod command;
 mod compiled;
+mod describe;
 mod envs;
 mod files;
 mod freshness;
@@ -61,7 +62,7 @@ struct Args {
     #[arg(long)]
     manifest: Option<PathBuf>,
 
-    /// Path to catalog.json (default: <project>/target/catalog.json; for --run-collin, catalog.json beside the manifest)
+    /// Path to catalog.json (default: <project>/target/catalog.json; for --run-collin, --describe and --overview, catalog.json beside the manifest)
     #[arg(long)]
     catalog: Option<PathBuf>,
 
@@ -125,14 +126,62 @@ struct Args {
     #[arg(long, value_name = "DIR", requires = "run_collin")]
     compiled: Option<PathBuf>,
 
-    /// What --select, --selector and --column print: one name per line, or one JSON object per node, per model for --column
+    /// Print one node's card, as the Catalog shows it, and exit, without serving: a model, source (source_name.table), seed, snapshot, test or exposure by name, or any node by unique_id; several, comma-separated
+    #[arg(long, value_name = "NAMES", value_delimiter = ',', conflicts_with_all = ["select", "selector", "column"])]
+    describe: Vec<String>,
+
+    /// --describe prints the node's own SQL file after its card
+    #[arg(long, requires = "describe")]
+    sql: bool,
+
+    /// Print what the project holds, by kind, materialization and folder, and exit, without serving
+    #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
+    overview: bool,
+
+    /// How many folder levels --overview lists (default 3)
+    #[arg(long, value_name = "N", requires = "overview")]
+    depth: Option<usize>,
+
+    /// What --select, --selector, --column, --describe and --overview print: one name per line, one JSON object per node (per model for --column, one for --overview), or compact tab-separated lines; --describe and --overview print a text card unless json
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
+}
+
+/// The first flag that is set beside a mode it does not belong to, as a
+/// sentence. clap's `requires` is not enforced when the flag it requires
+/// conflicts with one that is present, so `--overview --sql` parses, and the
+/// flag would be dropped without a word.
+fn stray(args: &Args) -> Option<String> {
+    let flags = [
+        (args.sql, "--sql", "--describe", !args.describe.is_empty()),
+        (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
+        (args.depth.is_some(), "--depth", "--overview", args.overview),
+        (args.up.is_some(), "--up", "--column", args.column.is_some()),
+        (args.down.is_some(), "--down", "--column", args.column.is_some()),
+        (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
+        (args.indirect, "--indirect", "--column", args.column.is_some()),
+        (args.column_tool.is_some(), "--column-tool", "--column", args.column.is_some()),
+        (args.run_collin, "--run-collin", "--column", args.column.is_some()),
+        (args.compiled.is_some(), "--compiled", "--run-collin", args.run_collin),
+        // A cache may be named for the page as for `--column`; the two modes
+        // that read none would drop it without a word.
+        (
+            args.column_lineage.is_some(),
+            "--column-lineage",
+            "--column, or the page",
+            args.column.is_some() || (args.describe.is_empty() && !args.overview && args.select.is_none() && args.selector.is_none()),
+        ),
+    ];
+    flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"))
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if let Some(sentence) = stray(&args) {
+        eprintln!("error: {sentence}");
+        std::process::exit(ls::CANNOT_RUN);
+    }
     // Answered before anything a server needs: no port, no key, no settings
     // read or written, no catalog, no watcher (0057).
     let query = match (args.select, args.selector) {
@@ -142,6 +191,27 @@ async fn main() -> anyhow::Result<()> {
     };
     if let Some(query) = query {
         std::process::exit(ls::run(&args.project, args.manifest.as_deref(), &query, args.output));
+    }
+    if !args.describe.is_empty() {
+        std::process::exit(describe::run_describe(
+            &args.project,
+            args.manifest.as_deref(),
+            args.catalog.as_deref(),
+            &args.describe,
+            args.sql,
+            args.output,
+        ));
+    }
+    if args.overview {
+        std::process::exit(describe::run_overview(
+            &args.project,
+            args.manifest.as_deref(),
+            args.catalog.as_deref(),
+            // Not clap's `default_value_t`: a flag with a default is always set,
+            // and `stray` could not tell it was asked for.
+            args.depth.unwrap_or(3),
+            args.output,
+        ));
     }
     if let Some(column) = args.column {
         let ask = ls_column::Ask {
@@ -390,4 +460,60 @@ fn open_browser(url: &str) {
         c
     };
     let _ = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asked(line: &str) -> Args {
+        match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+            Ok(args) => args,
+            Err(e) => panic!("{line}: {e}"),
+        }
+    }
+
+    #[test]
+    fn a_flag_of_another_mode_is_named_and_not_dropped() {
+        for (line, flag) in [
+            ("--overview --sql", "--sql goes with --describe"),
+            ("--describe orders --depth 2", "--depth goes with --overview"),
+            ("--describe orders --exclude resource_type:test", "--exclude goes with --select"),
+            ("--describe orders --up 1", "--up goes with --column"),
+            ("--overview --indirect", "--indirect goes with --column"),
+            ("--describe orders --run-collin", "--run-collin goes with --column"),
+            ("--select orders --down 1", "--down goes with --column"),
+            ("--overview --stop-at window", "--stop-at goes with --column"),
+            ("--column a.b --column-lineage c.json --compiled x", "--compiled goes with --run-collin"),
+            ("--column a.b --column-tool collin --compiled x", "--compiled goes with --run-collin"),
+            ("--overview --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+            ("--describe orders --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+            ("-s orders --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+        ] {
+            assert_eq!(stray(&asked(line)).as_deref(), Some(flag), "{line}");
+        }
+    }
+
+    #[test]
+    fn the_flags_of_a_mode_beside_it_are_no_stray() {
+        for line in [
+            "--describe orders --sql",
+            "--overview --depth 2",
+            "-s a --exclude b",
+            "--column a.b --up 1",
+            "--column a.b --down all --stop-at window --indirect --column-tool collin",
+            "--column a.b --run-collin --compiled compiled",
+            "--column a.b --column-lineage c.json",
+            "--column-lineage c.json",
+            "--overview",
+            "",
+        ] {
+            assert_eq!(stray(&asked(line)), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_flag_with_no_mode_at_all_is_refused_by_clap() {
+        assert!(Args::try_parse_from(["dbt-edith", "--sql"]).is_err());
+    }
 }

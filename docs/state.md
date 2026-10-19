@@ -1519,6 +1519,21 @@ own arguments, and so does the answer; with the `compiled_code` taken out,
 `--compiled` read every model's file, and without it stderr said none was
 found. Not driven in the page, nor on the VM.
 
+A node and the project on the command line (0102, 1.37.0): `--describe`
+prints a node's card, what the Catalog shows of it, with `--sql` for its own
+file; `--overview` prints what the project holds, by kind, materialization and
+folder, with the caches beside the manifest; `--output compact` prints a
+selection or a column as tab-separated lines under a header, without what the
+name and the path already say. Both new modes read the graph the Catalog is
+painted from, the catalog merged in, and `--describe` names its nodes the way
+`--column` does. `docs/features/command-line.md` is the page, with the recipes
+an agent follows. Checked with `cargo test` on an invented graph (every card, the JSON
+keys, the rules of a name, `--sql` against a temporary project, the overview at
+two depths) and by running them on Jaffle Shop parsed, compiled, seeded and
+documented with dbt 1.11, with collin's cache beside the manifest, the flags'
+conflicts and an unknown name. On Jaffle Shop a compact answer is about a
+quarter of the JSON's bytes. Not driven on the VM.
+
 ## Deferred, in the order they were chosen
 
 1. **A used-by count per macro.** The links have shipped (0028); the
@@ -1917,6 +1932,11 @@ of its own, and each panel updates the tour, its page under
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
+25. **An MCP server over these answers.** A stdio JSON-RPC facade on
+    `--describe`, `--overview`, `--select` and `--column`, which needs no
+    dependency. Deferred because a skill that calls the command costs fewer
+    tokens than tools described in every context, and nobody has asked yet
+    (0057, 0102).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
