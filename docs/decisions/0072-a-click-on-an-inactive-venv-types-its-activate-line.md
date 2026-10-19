@@ -1,6 +1,6 @@
 # 0072. A click on an inactive venv types its activate line
 
-Date: 2026-10-13 · Status: accepted · Amends 0050, 0069
+Date: 2026-10-13 · Status: accepted, amended by 0100 · Amends 0050, 0069
 
 **Trigger:** read before making the status bar type anything in the terminal,
 or changing where a venv's activate line is made.
@@ -23,6 +23,9 @@ switches between them this way, and the bar names only one of the two.
   again on the click, for one made in the terminal since startup. An active
   venv offers nothing, and the pill is a button only while it offers
   something.
+  *Amended by [0100](0100-the-settings-open-in-a-panel-of-their-own.md): the
+  pill opens the settings' Project section, whose Python block has a button
+  per venv offered, typing its line; the rest stands.*
 - **The server makes the line**, with `pty::activation`, the function behind
   the line each terminal gets at startup (0050): the script each shell
   sources, its quoting, and the `C:/` spelling Git Bash takes. Each venv in

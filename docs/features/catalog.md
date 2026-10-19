@@ -91,12 +91,13 @@ and neither is a pair of literal quotes that dbt drops.
 
 ## Environments
 
-The `env` pill in the status bar evaluates the *resolved* column against one of
-the project's `.env` files, so a model's location can be read for DEV, QA or
-UAT without running dbt. Built stays tied to the manifest's own target. The same
-switch sits in the header of the resolved column, and the pill takes a colour
-per environment family (DEV, CI, QA, STG, UAT, PROD) so the one in use shows at
-a glance.
+The `env` pill in the status bar says which of the project's `.env` files the
+*resolved* column is evaluated against, so a model's location can be read for
+DEV, QA or UAT without running dbt. Built stays tied to the manifest's own
+target. The file is picked in the menu in the header of the resolved column, or
+in the Project section of the settings, which the pill opens; the pill takes a
+colour per environment family (DEV, CI, QA, STG, UAT, PROD) so the one in use
+shows at a glance.
 
 - **Detection.** Every `.env` and `.env.*` file in the project root is offered,
   named after its suffix: `.env.uat` is UAT. A `DBT_TARGET` that disagrees with
@@ -117,7 +118,8 @@ a glance.
   variable value is ever sent to the browser except resolved locations and
   `DBT_TARGET`.
 
-*Manage environments* renames or hides files. It also reports, per file, how
+The same section, which *Manage environments* in the menu opens, renames or
+hides files. It also reports, per file, how
 often that file reproduces what dbt parsed: the file dbt actually had loaded
 scores 100%, which makes it easy to spot which environment a manifest came from.
 

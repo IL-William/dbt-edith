@@ -1,6 +1,6 @@
 # 0049. The profile is found where dbt looks, whatever the warehouse
 
-Date: 2026-10-08 · Status: accepted, amended by 0094 · Amends 0017 and 0031
+Date: 2026-10-08 · Status: accepted, amended by 0094 and 0100 · Amends 0017 and 0031
 
 **Trigger:** read before changing which `profiles.yml` dbt-edith opens, or
 what decides whether it can be opened.
@@ -30,6 +30,9 @@ by every dbt command typed in the terminal, whatever its warehouse.
   there. Its icon is a user and a plug, since the file says who dbt connects
   as and how; a key would read as the `.env` secrets, which never leave the
   server.
+  *Amended by [0100](0100-the-settings-open-in-a-panel-of-their-own.md): the
+  profile is opened from the settings' Project section, and the gear carries
+  the dot.*
 
 ## Rejected
 

@@ -42,8 +42,10 @@ check('  or the package it comes from, when the project has no model of its own'
     .text.indexOf('This project has no model of its own, so it opens `b`, a model of the package `pkg` with 1 parent and 1 child') === 0, true);
 check('  in the singular for one child',
   step(tourSteps(ctx({ model: { id: 'x', name: 'x', file: 'x.sql', parents: 3, children: 1 } })), 'welcome').text.indexOf('3 parents and 1 child') >= 0, true);
-check('the manifest step, right after the welcome, rings the freshness badge and says everything comes from it',
-  [step(all, 'manifest').target, /^Everything here is read from `manifest.json`/.test(step(all, 'manifest').text)], ['#fresh-badge', true]);
+check('the manifest step, right after the welcome, rings the freshness badge and its reload, and says everything comes from it',
+  [step(all, 'manifest').target, /^Everything here is read from `manifest.json`/.test(step(all, 'manifest').text)], ['#manifest-pill', true]);
+check('  that the arrows at its end read it again',
+  /The arrows at its end read the file again at once\.$/.test(step(all, 'manifest').text), true);
 check('  what its dot says, and that a click types dbt parse',
   [/green, none has; amber, your own saved edits; red, a pull/.test(step(all, 'manifest').text),
     /A click types `dbt parse` in the terminal, leaving Enter to you/.test(step(all, 'manifest').text)], [true, true]);
@@ -64,10 +66,13 @@ check('no report: the button is dimmed until one, and opens on the coverage mean
   [true, true]);
 check('  reports: named', step(tourSteps(ctx({ reports: ['Last run', 'Job coverage'] })), 'reports').text
   .indexOf('Reports on the whole project: Last run, Job coverage.') === 0, true);
-check('no column lineage, Snowflake off: where its switch is', /snowflake button in the top bar/.test(step(all, 'columns').text), true);
+check('no column lineage, Snowflake off: where its switch is', /in the Snowflake section\.$/.test(step(all, 'columns').text), true);
 check('  Snowflake on: what it does, and no switch to find',
   [/fetches a column/.test(step(tourSteps(ctx({ snowflake: true })), 'columns').text),
-    /snowflake button/.test(step(tourSteps(ctx({ snowflake: true })), 'columns').text)], [true, false]);
+    /Snowflake section/.test(step(tourSteps(ctx({ snowflake: true })), 'columns').text)], [true, false]);
+check('  rung in the settings, behind the gear, where every setting is',
+  [step(all, 'columns').target, /behind the gear in the top bar/.test(step(all, 'columns').text)],
+  ['#settings-view [data-live=columns]', true]);
 check('  a tool on screen: named, and how to use it',
   step(tourSteps(ctx({ cll: 'Collin' })), 'columns').text.indexOf('On screen: Collin. A click on a column') === 0, true);
 

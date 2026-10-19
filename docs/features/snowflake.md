@@ -5,8 +5,8 @@ column lineage is in [column-lineage.md](column-lineage.md).
 
 ## The switch
 
-**Snowflake's features are a setting of the project**, a switch in the menu
-behind the snowflake in the top bar. They are marked alpha: none of them has yet been
+**Snowflake's features are a setting of the project**, a switch in the
+Snowflake section of the settings, behind the gear in the top bar. They are marked alpha: none of them has yet been
 checked against a real warehouse. Until you choose, they follow the manifest:
 on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
 nor are the caches it wrote, and the server refuses every Snowflake route.
@@ -91,7 +91,7 @@ queries ([0048](../decisions/0048-the-query-history-is-read-live-and-never-kept.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
-| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the menu behind the snowflake in the top bar |
+| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the Snowflake section of the settings, behind the gear in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |
 | Snowsight says a relation's object does not exist | the *resolved* relation is the config before the `generate_*_name` macros, or a source that is a view was asked for as a table | open the *built* relation instead, or the object from its schema's page |

@@ -1,6 +1,6 @@
 # 0079. An update is looked for hourly through the Paris night, and on demand
 
-Date: 2026-10-14 · Status: accepted, amended by 0086 and 0095 · Amends 0068
+Date: 2026-10-14 · Status: accepted, amended by 0086, 0095 and 0100 · Amends 0068
 
 **Trigger:** read before changing when dbt-edith looks for a newer release,
 what Edith's menu shows, or what a look that got no answer says.
@@ -45,7 +45,9 @@ as up to date, as never asked, and as GitHub out of reach.
   and is kept nowhere, as before.
 - **Edith, at the top left, opens a menu**: the version and build stamp of the
   binary serving the page, a newer release with its notes and its command as
-  the pill's menu had them (the pill now opens this same menu), when the last
+  the pill's menu had them (the pill now opens this same menu; *amended by
+  [0100](0100-the-settings-open-in-a-panel-of-their-own.md): the pill opens
+  the settings' Updates section, which draws it on the page*), when the last
   answer came and what it said, what git said when a later look got none, when
   the next look is due, in the machine's own time as the page reads it, and a
   button that asks GitHub at once, whatever is kept. Its tooltip names the

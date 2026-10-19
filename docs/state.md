@@ -45,16 +45,16 @@ refusing an unsupported method by name and by a button that types the
 equivalent `dbt ls` into the terminal for you to compare. Measured on a
 109 MB manifest: one term with a `+` resolves 265 nodes in well under 10 ms.
 
-Manifest freshness: a dot beside Reload manifest says whether
-the lineage on screen still matches the files dbt would parse, and clicking it
-runs `dbt parse` in the terminal. Freshness is measured in file times rather
-than in commits (0025), because committing changes no file and pulling an old
-commit changes several. git is asked one question only, per file already known
-to be newer: is it dirty? That separates the user's own unsaved work (amber)
-from a checkout or a pull they have not re-parsed since (red). How far the
-branch trails the default one rides beside the dot in its own segment and never
-colours it. `api::watch_remote` fetches every ten minutes so that count means
-something, read only and deadlined like the rest of 0007.
+Manifest freshness: a dot in the top bar's manifest pill, which ends in its
+reload, says whether the lineage on screen still matches the files dbt would
+parse, and clicking it runs `dbt parse` in the terminal. Freshness is measured
+in file times rather than in commits (0025), because committing changes no file
+and pulling an old commit changes several. git is asked one question only, per
+file already known to be newer: is it dirty? That separates the user's own
+unsaved work (amber) from a checkout or a pull they have not re-parsed since
+(red). How far the branch trails the default one rides beside the dot in its
+own segment and never colours it. `api::watch_remote` fetches every ten minutes
+so that count means something, read only and deadlined like the rest of 0007.
 
 Compiled and Run tabs: the two files dbt leaves per node
 under `target/` get a tab each, where one tab used to probe `compiled/` then
@@ -864,8 +864,26 @@ opened from the sidebar roll the panel up and give the dock back the lineage
 it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
-along (0092). Settings, a model's lineage and git are to open the same way
-(Deferred, items 22 to 24).
+along (0092). A model's lineage and git are to open the same way (Deferred,
+items 22 and 23).
+
+The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
+of the column lineage menu, the snowflake and the profile's button, rolls the
+settings down, a section at a time from a rail, as the reports: Project, with
+the profile, the environments and Python, Column lineage, Snowflake,
+Orchestration, Updates, and Help and tour. The rail names the column lineage on
+screen, says whether Snowflake is on and whether a newer release is out, and
+the gear and the Project row carry the amber dot the profile's button had when
+dbt would find no profile. The status bar's `env` and venv pills open Project,
+the update pill Updates; a venv is activated from its button there, the click
+on the pill no longer typing the line. The environments' table and the job
+sources are forms in their section rather than dialogs, kept as they were left
+until the panel rolls up, and a clean read of the sources goes on to the
+coverage, or to the Jobs tab under the panel. The sections draw the menus' own
+rows, so the Columns tab's column lineage menu, the Catalog's environment menu
+and Edith's menu stay and offer the same. The tour's Column lineage step rings
+the section. On Jaffle Shop the top bar now breaks under about 860px, where it
+broke under about 1050px.
 
 A cut canvas says when its starts fill it (1.31.0). When what a selection
 names takes half the canvas or more, as `source:*+` can, the warning under
@@ -1820,7 +1838,10 @@ found. Not driven in the page, nor on the VM.
     not break, since `#statusbar > *` is `nowrap`; nothing in `#topbar` is.
     - **The likely answer:** `nowrap` on the bar's items, and the project's
       name shrinking with an ellipsis, its full name in the tooltip. The
-      settings panel (item 22) takes three buttons out of the bar first.
+      settings panel (0100) took three buttons out of the bar, and Reload
+      manifest became the arrows at the end of the manifest's pill: on Jaffle
+      Shop it now breaks under about 770px rather than 1050px, where the
+      chips, Search and the manifest's pill take a second line.
     - **How to check it:** item 10's two measures, at several widths, with
       Snowflake's features on and off.
 13. **The README's options, held to `--help`.** The README writes its options
@@ -1883,25 +1904,16 @@ found. Not driven in the page, nor on the VM.
     command (0094). The trap: the command is shown and copied as typed, so a
     long path makes it harder to read, and Git Bash wants it in its own form.
 
-Items 22 to 25 are the rest of the plan chosen with the panels' mechanism
-(0091) and Custom selection (0092). Each is a pull request of its own, and
-each panel updates the tour, its page under [features/](features/) and the
-README's pictures (0082):
+Items 22 to 24 are the rest of the plan chosen with the panels' mechanism
+(0091), Custom selection (0092) and the settings (0100). Each is a pull request
+of its own, and each panel updates the tour, its page under
+[features/](features/) and the README's pictures (0082):
 
-22. **The settings in a panel.** One gear in the top bar in place of the
-    snowflake, the profile button and the column lineage picker, opening a
-    panel with a section each: the project (its profile, `.env` and Python),
-    the column lineage, Snowflake, the orchestration, its sources form inline
-    rather than in a dialog, the updates, and help with the tour. The status
-    bar's `.env`, Python and update pills open their own section. It takes
-    three buttons out of the top bar, which is most of item 12. The trap: a
-    step of the tour rings the column lineage menu where it sits now, and
-    `scripts/walk_tour.py` checks that ring, so the step moves with it.
-23. **A model's lineage seen whole.** The dock's lineage of the model in
+22. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-24. **git seen whole.** The side-by-side diff and the commit in a panel, the
+23. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-25. **Boxes without their text far out, then the cap again.** Past 3 000
+24. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
@@ -1992,7 +2004,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 25);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 24);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;
@@ -2281,7 +2293,8 @@ both that route and the cross-compile.
   The watcher reloads `manifest.json` server-side whenever dbt rewrites it, and
   nothing is pushed: `refreshFreshness` comparing `manifest_at` with `S.meta` is
   the one place the page catches up. Anything that has to follow a parse hangs
-  off that, or off the Reload manifest button, and needs both.
+  off that, or off the manifest's reload, the arrows ending its pill, and
+  needs both.
 - **Release binaries embed the frontend** (0005). A frontend fix that appears to
   do nothing usually means the release binary was not rebuilt. The build stamp
   in the status bar settles it: compare it with `git describe` in the clone.
@@ -2488,6 +2501,24 @@ both that route and the cross-compile.
   the card the dock had; `selectPanelUp` clears `selectTimer` and bumps
   `S.selectAsk`, so neither a keystroke's run nor an answer on its way lands
   after it.
+- **The settings draw from the page's state, and a form is kept (0100).** A
+  block of a section with `data-live` is drawn again by `paintSettingsLive`,
+  which `repaintSettings` calls once for every change made in one go:
+  `paintSourceButton`, `applyLineage`, `paintUpdate`, `paintVenv` and
+  `paintEnvSelect` call it, so a new piece of state a section shows needs its
+  painter to call it too. `redrawIfChanged` draws a block, and the rail, into
+  a detached copy first and replaces it only when the markup differs: a
+  state a row's listener reads must show in the row, as `S.featuresBusy`
+  does in Snowflake's `aria-busy`, or a redraw that skips keeps a listener on
+  the old state. The focus comes back by `data-key`, so a control in a live
+  block, and each rail row, carries one. Project and Orchestration hold forms: their body
+  is kept in `S.settingsKept` while the panel is down, and dropped by the
+  panel's `closed` hook, but for the tour's, which `save` and `reopen` carry
+  across; a form that failed to read is not kept. Their live blocks are drawn
+  again on every showing, their inputs never. The `closed` hook is told
+  whether the close gives the focus back, which is when the settings give
+  Reports back if they came down over it. A section draws the menus' own rows, `fillSourceMenu`, `envRow` and
+  `paintUpdateMenu`, then `unmenu` takes the menu roles off them.
 - **`activate()` rolls the panel up, and `settleTabs` passes `keepPanel`**,
   so closing a tab from the sidebar while one is down leaves it there.
   `showDock` leaves it alone: a column's lineage brings the canvas forward

@@ -45,15 +45,15 @@ pull request.
 | `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
-| the column lineage menu in the top bar | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
-| the snowflake in the top bar | Snowflake's features on or off for the project, and where its jobs are read from |
-| the user and plug in the top bar | the dbt profile, opened in the editor; violet when there is one, grey with an amber dot when dbt would find none |
+| the gear in the top bar | the settings, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber dot on it when dbt would find no profile |
+| the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
+| the `env`, venv or update pill in the status bar | its section of the settings: Project, or Updates |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
 | Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
-| the dot beside Reload manifest | how stale the lineage is, and one click to re-parse |
+| the manifest's pill, right of the top bar | how stale the lineage is and one click to re-parse; its arrows read `manifest.json` again |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |

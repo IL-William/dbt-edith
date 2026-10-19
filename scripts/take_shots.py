@@ -220,12 +220,19 @@ class Shots:
         self.js("document.querySelector('#jobs-body details > summary').click()")
         self.take("jobs")
 
-        # Column lineage, from collin, picked in the top bar.
+        # Column lineage, from collin, picked in the settings.
         self.dock_to(170)
-        self.click("#cll-pick-host .cllpick")
-        self.until("[...document.querySelectorAll('button')].some((b) => b.textContent.startsWith('Collin'))", "the menu")
-        self.js("[...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Collin')).click()")
-        self.until("/\\d+ col edges/.test(document.querySelector('#cll-pick-host').textContent)", "collin's run", 120)
+        self.click("#settings-btn")
+        self.until("document.querySelector('#settings').classList.contains('open')", "the settings")
+        self.js("[...document.querySelectorAll('#settings-nav button')].find((b) => b.textContent.startsWith('Column lineage')).click()")
+        collin = "[...document.querySelectorAll('#settings-view [data-live=columns] button')].find((b) => b.textContent.startsWith('Collin'))"
+        self.until(f"!!{collin}", "the Column lineage section")
+        self.js(f"{collin}.click()")
+        self.until("/\\d+ col edges/.test(document.querySelector('#settings-view .cllnow').textContent)", "collin's run", 120)
+        self.click("#settings-btn")
+        # Rolled up, not rolling: the panel still covers the dock's edge while
+        # it goes, and a drag started on it selects its text instead.
+        self.until("getComputedStyle(document.querySelector('#settings')).visibility === 'hidden'", "the settings to roll up")
 
         # The Catalog, its Columns tab with what collin found.
         self.dock_to(400)
