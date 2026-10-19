@@ -57,6 +57,7 @@ $JSC web/tests/keys.js        # key names on each platform, and the shortcut lis
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
 $JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
+$JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 ```
 

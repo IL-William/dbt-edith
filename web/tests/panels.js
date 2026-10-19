@@ -152,7 +152,7 @@ function escapesGraphFind() { return false; }
 eval(src.slice(src.indexOf('function keyCombo'), src.indexOf('function toggleShortcuts')));
 eval(src.slice(src.indexOf('let popup = null;'), src.indexOf('/* `anchor`\'s menu opens under the pointer'))
   .replace(/^(const|let) /gm, 'var '));
-eval(src.slice(src.indexOf('function closePopup(anchor)'), src.indexOf('/* Settings for this project.')));
+eval(src.slice(src.indexOf('function closePopup(anchor)'), src.indexOf('/* A snowflake drawn here')));
 eval(src.slice(src.indexOf('function tourKey(e)'), src.indexOf('function tourStep(by)')));
 var wire = src.slice(src.indexOf('function wireKeys'), src.indexOf('  // What Cmd+F searches when nothing has the focus'));
 eval(wire + '}');
@@ -195,3 +195,54 @@ openPopup(menuAnchor, fakeMenu(), null, false);
 press('Escape');
 check('a menu a click opened: Escape closes it, and only it', [popup, S.panel], [null, 'reports']);
 closePanel();
+
+print('\n--- the settings keep a form for the tour ---');
+S.settingsSection = 'jobs';
+S.settingsKept = { jobs: 'the form, half filled' };
+S.settingsFrom = 'reports';
+var settingsSaved = PANELS.settings.save();
+S.panel = 'other';
+PANELS.settings.closed({});
+check('rolled up, a form left half filled goes with it', S.settingsKept, {});
+var settingsOpened = [];
+function openSettings(section) { settingsOpened.push(section); S.settingsFrom = ''; }
+PANELS.settings.reopen(settingsSaved);
+check('the tour puts it back as it was left, on its section, over what it was over',
+  [S.settingsKept, settingsOpened, S.settingsFrom], [{ jobs: 'the form, half filled' }, ['jobs'], 'reports']);
+
+print('\n--- the settings down over Reports give it back ---');
+fakeEl('settings');
+function paintSettingsButton() {}
+// Answered at once, so what comes after the index is checked here.
+function loadReportsIndex() { log.push('index'); return { then: function (f) { f(); } }; }
+function showReportSection(key) { log.push('section ' + key + ', panel ' + S.panel); }
+S.reportsSection = 'jobs';
+openPanel('reports');
+S.settingsFrom = 'reports';
+openPanel('settings');
+log = [];
+press('Escape');
+check('Escape: Reports down again at once, its section drawn afresh once the index is read',
+  [S.panel, log.filter(function (l) { return l === 'index' || l.indexOf('section') === 0; })], ['reports', ['index', 'section jobs, panel reports']]);
+check('  and what is under it inert all along', covers(), [true, true, true]);
+S.settingsFrom = 'reports';
+openPanel('settings');
+closePanel();
+check('rolled up by a file opened or the tour: nothing comes back', S.panel, '');
+S.settingsFrom = 'reports';
+openPanel('settings');
+openPanel('other');
+check('giving way to another panel: that one stays', S.panel, 'other');
+closePanel();
+S.settingsFrom = '';
+openPanel('settings');
+press('Escape');
+check('down over nothing: nothing comes back', S.panel, '');
+S.panel = '';
+S.settingsFrom = 'reports';
+log = [];
+loadReportsIndex = function () { log.push('index'); return { then: function (f) { S.panel = 'other'; f(); } }; };
+PANELS.settings.closed({ restore: true });
+check('another panel down by the time the index is read: its section is not drawn over it',
+  log.filter(function (l) { return l.indexOf('section') === 0; }), []);
+S.panel = '';

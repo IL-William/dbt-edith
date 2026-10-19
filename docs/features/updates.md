@@ -6,7 +6,8 @@ It asks GitHub, through git, which releases there are, every hour from midnight
 to 09:00 Paris time and then not until the next midnight, so the first start of
 your day knows what came out overnight, wherever you are. When one is newer, a
 pill after the version in the status bar says so and a dot marks Edith at the
-top left. Resting the pointer on Edith opens a menu, as a click on either does:
+top left. Resting the pointer on Edith opens a menu, as a click does, and the
+pill opens the same in the Updates section of the settings:
 the version and build you run, every release since yours by the title of the
 pull request that released it, each linked to its notes, and, for a binary
 installed or built from a clone on that machine, the pull of `main` and the

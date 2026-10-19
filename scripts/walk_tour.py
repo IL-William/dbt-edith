@@ -15,7 +15,8 @@ cannot see:
   - the tour is offered once, beside the ? button, and not after a reload;
   - every step rings the element it is about, with its card on screen, and
     the page under it shows what the step says: the model's file, its
-    lineage, the Custom selection, the Catalog, the Jobs tab;
+    lineage, the Custom selection, the Catalog, the settings on their
+    Column lineage section, the Jobs tab;
   - Back sets a step up as Next does;
   - it runs nothing: the terminal never starts, and no setting is written,
     the configuration directory holding the offer's file and nothing else;
@@ -276,7 +277,7 @@ ESCAPE = ("Escape", "Escape", 27)
 # What each step rings, by its title, and what the page under it must show.
 STEPS = [
     ("A tour of dbt-edith", None, None),
-    ("manifest.json, and how fresh it is", "#fresh-badge",
+    ("manifest.json, and how fresh it is", "#manifest-pill",
      "document.querySelector('#fresh-badge .lbl')?.textContent.startsWith('manifest ')"),
     (f"{MODEL}, in the editor", "#editor-pane",
      f"document.querySelector('#tabbar .ftab.active')?.textContent.includes('{MODEL}.sql')"),
@@ -297,8 +298,9 @@ STEPS = [
      f"!document.querySelector('#dock-catalog').classList.contains('hidden')"
      f" && document.querySelector('.cat-title')?.textContent.includes('{MODEL}')"
      " && document.querySelector('#graph-mode .active').dataset.mode === 'model'"),
-    ("Column lineage", "#cll-pick-host .cllpick",
-     "document.querySelector('.cat-tabs .ctab.active')?.textContent.startsWith('Columns')"),
+    ("Column lineage", "#settings-view [data-live=columns]",
+     "document.querySelector('#settings').classList.contains('open')"
+     " && [...document.querySelectorAll('#settings-view [data-live=columns] .lbl')].some((l) => l.textContent === 'Collin')"),
     ("Jobs", "#dock-jobs",
      "!document.querySelector('#dock-jobs').classList.contains('hidden') && !!document.querySelector('#jobs-body .jobs-none')"),
     ("Reports", "#reports-btn",
@@ -319,6 +321,7 @@ STATE = """(() => ({
   jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
   reports: document.querySelector('#reports-btn').className,
   panel: document.querySelector('#reports').classList.contains('open'),
+  settings: document.querySelector('#settings').classList.contains('open'),
 }))()"""
 
 # The model and the depth of the last lineage drawn, as the page asked for it.

@@ -1,6 +1,6 @@
 # 0031. Column lineage is picked by tool, and Snowflake sits behind its own setting
 
-Date: 2026-09-29 · Status: accepted, amended by 0049 · Amends 0016, 0017 and 0021
+Date: 2026-09-29 · Status: accepted, amended by 0049 and 0100 · Amends 0016, 0017 and 0021
 
 **Trigger:** read before adding a source of column lineage, adding anything
 that only makes sense on Snowflake, or changing what the top bar's column
@@ -28,7 +28,10 @@ More features that only mean something on Snowflake are coming.
   file it lacks in its tooltip. Every other file, an older one of a tool's
   included, stays pickable under "other caches", as 0021 requires.
 - **It lives in the top bar**, where the read-only chip was, and again in the
-  Columns tab. Each tool has its own colour, on its own attribute rather than
+  Columns tab.
+  *Amended by [0100](0100-the-settings-open-in-a-panel-of-their-own.md): it
+  lives in the settings' Column lineage section, and still in the Columns
+  tab.* Each tool has its own colour, on its own attribute rather than
   the environments' `data-tone`, and the tool is always named beside it.
 - **Picking Snowflake is the switch.** One request, `POST /api/collineage/source`,
   sets which cache the graph holds and whether a click fetches, so the two

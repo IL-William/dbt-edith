@@ -103,6 +103,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0097](0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) | An indirect edge is hidden by default, drawn dashed when shown | changing how an edge of a role is drawn or walked, what the legend groups, or which edges a column's badge or counts read |
 | [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) | collin is wanted at 0.8.0, and a version installed by tag is never called older | raising `WANTS`, or changing what the menu and the Columns tab say about the version of the collin that runs |
 | [0099](0099-a-column-may-run-collin-first-when-asked.md) | A column may run collin first, when the command line asks | letting the command line start a program, changing what `--run-collin` hands collin or where it writes, or making `--column` produce lineage unasked |
+| [0100](0100-the-settings-open-in-a-panel-of-their-own.md) | The settings open in a panel of their own | adding a setting, moving one between the settings and another place, or changing what the gear, a status bar pill or a section of the settings opens |
 
 ## Keeping these honest
 

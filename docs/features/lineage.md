@@ -30,9 +30,10 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ## Is the lineage still true?
 
-Beside **Reload manifest** sits a dot and the manifest's age. The dot answers
-one question: does the manifest still match the files dbt would parse right
-now?
+At the right of the top bar a pill gives the manifest's age and a dot, and
+ends in circling arrows that read `manifest.json` again at once, for the rare
+time the poll has not. The dot answers one question: does the manifest still
+match the files dbt would parse right now?
 
 | | |
 | --- | --- |

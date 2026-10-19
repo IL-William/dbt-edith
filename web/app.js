@@ -97,6 +97,11 @@ const S = {
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
   reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
+  settingsSection: '',        // the section of the settings on screen, or last on screen this session (0100)
+  settingsKept: {},           // per section holding a form, its body as it was left, until the panel rolls up
+  settingsFrom: '',           // the panel the settings took the place of, '' for none
+  settingsRepaint: false,     // a redraw of the section on screen is on its way, for every change made meanwhile
+  featuresBusy: false,        // Snowflake's switch was flipped and the server has not answered yet
   runSeen: undefined,         // the last run's file time when its section was last shown, for the news
   jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
   jobsReveal: null,           // { id, key, index } the step a Catalog chip asked the Jobs tab to show, { id, maybe } for the unresolved
@@ -4444,7 +4449,6 @@ async function loadSidecar() {
    say how the start ended. */
 function paintSidecar(was) {
   paintSourceButton();
-  paintProfileButton();
   const sc = S.sidecar;
   const now = sc ? sc.state : '';
   if (now !== was && S.node) renderCatalog(S.node);
@@ -4875,8 +4879,8 @@ function featureNote(f, adapter) {
   return `${now} because the manifest's adapter is ${adapter}`;
 }
 
-/* The column lineage menu's button. There are two, in the top bar and in the
-   Columns tab, so it is a class and every copy is painted at once. */
+/* The column lineage menu's button, in the Columns tab. A class, so that every
+   copy is painted at once; the settings list the same choices (0100). */
 function sourceMenu() {
   const b = document.createElement('button');
   b.type = 'button';
@@ -4892,29 +4896,45 @@ function sourceMenu() {
 
 function paintSourceButton(only) {
   const label = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
-  const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
   for (const b of only ? [only] : $$('.cllpick')) {
-    b.dataset.tool = label.tool;
-    b.dataset.tone = label.tone;
-    b.title = label.title;
-    b.textContent = '';
-    b.append(span('tooldot', ''), span('tname', label.name));
-    if (label.badge) b.append(span('alpha', label.badge));
-    if (label.detail) b.append(span('tdetail', ` · ${label.detail}`));
-    if (label.state) b.append(span('tstate', ` · ${label.state}`));
-    b.append(span('caret', ' ▾'));
+    fillSourceLabel(b, label);
+    b.append(Object.assign(document.createElement('span'), { className: 'caret', textContent: ' ▾' }));
   }
+  // The settings' Column lineage section says the same, a script starting or
+  // collin running included.
+  if (!only) repaintSettings();
+}
+
+/* What the column lineage on screen is, from lineagePickLabel: on the menu's
+   button, and atop the settings' Column lineage section. */
+function fillSourceLabel(el, label) {
+  const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
+  el.dataset.tool = label.tool;
+  el.dataset.tone = label.tone;
+  el.title = label.title;
+  el.textContent = '';
+  el.append(span('tooldot', ''), span('tname', label.name));
+  if (label.badge) el.append(span('alpha', label.badge));
+  if (label.detail) el.append(span('tdetail', ` · ${label.detail}`));
+  if (label.state) el.append(span('tstate', ` · ${label.state}`));
 }
 
 async function openSourceMenu(anchor) {
   if (closePopup(anchor)) return;
   // Asked again, so a cache written since the page loaded is offered too.
   try { applyLineage(await api.get('/api/meta')); } catch { /* what the page last knew still stands */ }
-  const snowflake = !!(S.features && S.features.snowflake);
-  const { tools, others } = lineageTools(S.cllSources || [], S.cllActive, sidecarOn(), snowflake, S.collin);
   const menu = document.createElement('div');
   menu.className = 'envmenu cllmenu';
   menu.setAttribute('role', 'menu');
+  fillSourceMenu(menu, closePopup);
+  openPopup(anchor, menu);
+}
+
+/* The menu's rows, in the menu or in the settings' Column lineage section:
+   `done` runs before a pick, the menu closing on it. */
+function fillSourceMenu(menu, done) {
+  const snowflake = !!(S.features && S.features.snowflake);
+  const { tools, others } = lineageTools(S.cllSources || [], S.cllActive, sidecarOn(), snowflake, S.collin);
   const add = ({ label, sub, tool, on, disabled, title, badge, pick, action, urgent }) => {
     const item = document.createElement('button');
     item.type = 'button';
@@ -4924,6 +4944,8 @@ async function openSourceMenu(anchor) {
     item.setAttribute('role', action ? 'menuitem' : 'menuitemradio');
     if (!action) item.setAttribute('aria-checked', String(on));
     item.dataset.tool = tool;
+    // Where the focus comes back to once the settings draw the rows again.
+    item.dataset.key = `${tool}:${label}`;
     if (on) item.classList.add('on');
     if (action) item.classList.add('subaction');
     if (urgent) item.dataset.urgent = 'true';
@@ -4942,7 +4964,7 @@ async function openSourceMenu(anchor) {
     if (sub) item.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
     item.addEventListener('click', () => {
       if (disabled) return;
-      closePopup();
+      done();
       pick();
     });
     menu.appendChild(item);
@@ -4996,10 +5018,9 @@ async function openSourceMenu(anchor) {
   }
   if (!snowflake) {
     menu.appendChild(Object.assign(document.createElement('div'), {
-      className: 'menunote', textContent: 'Snowflake is off for this project: the settings menu turns it on.',
+      className: 'menunote', textContent: 'Snowflake is off for this project: the Snowflake section of the settings turns it on.',
     }));
   }
-  openPopup(anchor, menu);
 }
 
 /* One request switches the graph's column lineage and whether a click fetches
@@ -5685,24 +5706,15 @@ function profileLink() {
   return a;
 }
 
-/* The profile is a fact about the project, whatever its warehouse, so it has
-   a button in the top bar (0049). A missing one keeps it, marked: it is why dbt
-   would fail, and where it should be is the question the user would ask. */
-function paintProfileButton() {
-  const b = $('#profile-btn');
-  const p = S.profiles;
-  b.classList.toggle('hidden', !p);
-  if (!p) return;
-  // A refused one is drawn as a missing one, grey with its dot: there is
-  // nothing here to open, and the tooltip says why (0094).
-  b.dataset.found = String(!!p.found && !p.refused);
-  if (p.refused) {
-    b.title = `profiles.yml: not opened\n${p.path}\n${p.refused}.`;
-    return;
-  }
-  b.title = p.found
-    ? `profiles.yml\n${p.path}\nThe dbt profile: click to open it here.`
-    : `profiles.yml: none\nNo dbt profile at ${p.path}, where dbt looks for one.`;
+/* What is wrong with the profile, '' while there is one to open, or nowhere
+   to look for one. A missing one is why dbt would fail, and where it should be
+   is the question the user would ask: the gear carries a dot for it, and the
+   settings say where dbt looks (0049, 0100). A refused one has nothing to open
+   either, and says why (0094). */
+function profileWarning(p) {
+  if (!p) return '';
+  if (p.refused) return `profiles.yml not opened: ${p.refused}`;
+  return p.found ? '' : `no profiles.yml at ${p.path}, where dbt looks for one`;
 }
 
 /* An icon drawn here rather than shipped, one stroked path per shape, its
@@ -5744,17 +5756,21 @@ function applyLineage(info) {
   paintSidecar(was);
   paintCollin(collinWas);
   paintSettingsButton();
+  repaintSettings();
   paintHistoryTab();
 }
 
-/* The button keeps Snowflake's colour whether the features are on or off:
-   it is where they are found, and a grey one was easy to miss. Off, it is only
-   muted, and its tooltip says which. */
+/* The gear: lit while its panel is down, with a dot while the profile is
+   missing or refused (0100). */
 function paintSettingsButton() {
-  const on = !!(S.features && S.features.snowflake);
   const b = $('#settings-btn');
-  b.dataset.on = String(on);
-  b.title = `Settings for this project. Snowflake features: ${on ? 'on' : 'off'} (alpha); where its jobs are read from`;
+  const open = panelOpen('settings');
+  const warn = profileWarning(S.profiles);
+  b.classList.toggle('on', open);
+  b.setAttribute('aria-expanded', String(open));
+  b.dataset.warn = String(!!warn);
+  b.title = ['Settings: the project\'s profile, environments and Python, column lineage, Snowflake, '
+    + 'orchestration, updates, and help', warn].filter(Boolean).join('\n');
 }
 
 /* After the graph's column lineage changed: the Columns tab's counts, and the
@@ -5913,17 +5929,6 @@ function closePopup(anchor) {
   return same;
 }
 
-/* Settings for this project. One family of features so far, Snowflake's, with
-   more to come: each is a row, kept per project (0011, 0031). */
-function openSettingsMenu(anchor) {
-  if (closePopup(anchor)) return;
-  const menu = document.createElement('div');
-  menu.className = 'envmenu setmenu';
-  menu.setAttribute('role', 'menu');
-  paintSettingsMenu(menu);
-  openPopup(anchor, menu);
-}
-
 /* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
    their marks are for uses they approve in writing, and this repository is
    public (0014). The name in text, and the colour, say which product it is. */
@@ -6021,19 +6026,18 @@ function snowflakeIcon() {
   return svg;
 }
 
-/* One row per family of features: its name, a switch, what it covers and why
-   it is on or off. Snowflake's is marked alpha, since none of it has been
-   seen against a real warehouse yet (docs/state.md, Waiting on a human). */
-function paintSettingsMenu(menu) {
+/* Snowflake's features, in their section of the settings: a switch, what it
+   covers and why it is on or off, kept per project (0011, 0031). Marked alpha,
+   since none of it has been seen against a real warehouse yet (docs/state.md,
+   Waiting on a human). */
+function paintSetSnowflake(box) {
   const f = S.features || { snowflake: false, snowflake_set: false };
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  menu.textContent = '';
-  menu.append(el('div', 'menuhead', 'Settings for this project'));
-
   const row = el('div', 'setrow');
   row.dataset.tool = 'snowflake';
   const toggle = el('button', 'switch');
   toggle.type = 'button';
+  toggle.dataset.key = 'snowflake';
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-checked', String(!!f.snowflake));
   toggle.setAttribute('aria-label', 'Snowflake features');
@@ -6042,39 +6046,32 @@ function paintSettingsMenu(menu) {
   row.append(snowflakeIcon(), el('span', 'setlbl', 'Snowflake features'), el('span', 'alpha', 'alpha'), toggle);
   // The whole row is the target, the name included, and the switch is what
   // the keyboard reaches. A second click while the first is on its way is
-  // dropped, or the two would race to the server.
-  let busy = false;
+  // dropped, or the two would race to the server, whichever row a redraw
+  // has put in its place meanwhile. The answer draws the section again, the
+  // focus staying on the switch.
+  if (S.featuresBusy) row.setAttribute('aria-busy', 'true');
   row.addEventListener('click', async () => {
-    if (busy) return;
-    busy = true;
-    row.setAttribute('aria-busy', 'true');
-    await setFeatures({ snowflake: !f.snowflake });
-    paintSettingsMenu(menu);
-    const again = menu.querySelector('.switch');
-    if (again) again.focus();
+    if (S.featuresBusy) return;
+    S.featuresBusy = true;
+    repaintSettings();
+    try { await setFeatures({ snowflake: !f.snowflake }); } finally {
+      S.featuresBusy = false;
+      repaintSettings();
+    }
   });
 
-  const note = (text) => el('div', 'menunote', text);
+  const note = (text) => el('p', 'setnote', text);
   const warn = el('div', 'alphawarn');
   warn.append(el('b', '', 'Alpha.'), document.createTextNode(
     ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
     + 'Expect rough edges, and check what they show against Snowflake itself.'));
-  menu.append(row,
+  box.replaceChildren(row,
+    note(featureNote(f, S.meta && S.meta.adapter)),
     note('Column lineage from Snowflake, fetched on click; the Query history tab, read from Snowflake '
       + 'when it opens; a Snowsight menu beside each relation in the Catalog; and Clone into my schema, '
       + 'under a model\'s location, which writes the statements that copy it and its direct parents '
       + 'from an environment into your schema, for you to run.'),
-    note(featureNote(f, S.meta && S.meta.adapter)),
     warn);
-
-  // The jobs' folders are a list, edited in a form of their own (0063).
-  const jobs = el('div', 'setrow');
-  jobs.dataset.tool = 'jobs';
-  jobs.append(jobsIcon(), el('span', 'setlbl', 'Orchestration'), el('span', 'setmore', 'Sources…'));
-  jobs.addEventListener('click', () => { closePopup(); openJobSources(); });
-  menu.append(document.createElement('hr'), jobs,
-    note('Which Airflow DAGs or dbt Cloud jobs run each model, in the Jobs tab, read from their YAML '
-      + 'wherever it lives, often in another repository.'));
 }
 
 /* A clock, for the jobs that run on one. */
@@ -6312,7 +6309,7 @@ async function loadHistory({ more = false } = {}) {
     S.history = { ...was, busy: '', error: e };
   }
   renderHistory();
-  // The script may have just started for this, which the top bar shows.
+  // The script may have just started for this, which the settings show.
   loadSidecar();
 }
 
@@ -7716,7 +7713,7 @@ function artifactBar(info, name, isTest) {
   };
 }
 
-/* What the badge beside Reload manifest shows, and what its hover card says.
+/* What the badge before the manifest's reload shows, and what its hover card says.
    The dot's colour answers one question only, the one that decides whether the
    lineage on screen can be trusted: does this manifest still match the files
    dbt would parse? Drift from the default branch is reported in its own
@@ -8623,17 +8620,26 @@ function browseJobSource(box, from, { use, cancel, kept, keep }) {
   go(from || '');
 }
 
-/* The sources, edited in a modal that stays open while a read leaves
-   something to correct: saving reads them at once, and what was read is the
-   answer to whether the keys are right. A clean read closes it on the
+/* The sources are edited in the settings' Orchestration section (0100), from
+   every button that says Sources… or Add a source. */
+function openJobSources({ add = false } = {}) {
+  openSettings('jobs', { add: add === true });
+}
+
+/* The form, in that section, which stays as it was left while a read leaves
+   something to correct: saving reads the sources at once, and what was read
+   is the answer to whether the keys are right. A clean read goes on to the
    coverage (jobsSaveCloses), since a form that only repaints the same line
    looked like a save that did nothing. `add` opens it on a new source, its
    picker open, for the buttons that say so. */
-async function openJobSources({ add = false } = {}) {
-  closePopup();
+async function jobSourcesForm(box, { add = false } = {}) {
+  box.replaceChildren(jel('p', 'setnote', 'Reading the sources…'));
   let summary;
-  try { summary = await api.get('/api/jobs?look=true'); }
-  catch (e) { return toast('jobs: ' + e.message, 'err'); }
+  try { summary = await api.get('/api/jobs?look=true'); } catch (e) {
+    // Not kept: the section asks again the next time it is shown.
+    if (S.settingsKept.jobs && S.settingsKept.jobs.contains(box)) delete S.settingsKept.jobs;
+    return box.replaceChildren(jel('div', 'jobs-warn', 'jobs: ' + e.message));
+  }
   forgetCatalogJobs();
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
@@ -8642,14 +8648,12 @@ async function openJobSources({ add = false } = {}) {
   // kept, so that drawing the cards again leaves it as it was without asking
   // the server again.
   const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, browsing: true, browsed: null });
-  if (add === true) forms.push(fresh('airflow'));
+  if (add) forms.push(fresh('airflow'));
   let reads = summary.sources;
   const body = jel('div', 'jobsrc');
   const list = jel('div', 'jobsrc-list');
   const foot = jel('div', 'jobsrc-foot');
   const saved = jel('p', 'muted', '');
-  let closeForm = () => {};
-  let open = true;
 
   const input = (value, placeholder, onInput, cls = '') => {
     const i = jel('input', cls);
@@ -8734,14 +8738,23 @@ async function openJobSources({ add = false } = {}) {
       const answer = await api.send('/api/jobs/sources', 'PUT', sent);
       reads = answer.sources;
       forgetCatalogJobs();
-      // Closed while it read: a toast is all that is left to say what it did.
-      if (!open) {
+      // Kept while the panel is down, or by the tour that rolled it up, to
+      // put back as it was left.
+      const tourKept = S.tour && S.tour.saved && S.tour.saved.panelSaved && S.tour.saved.panelSaved.kept;
+      const store = [S.settingsKept, tourKept].find((k) => k && k.jobs && k.jobs.contains(box));
+      const kept = !!store;
+      const route = jobsSaveRoute({ kept, shown: box.isConnected,
+        clean: jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults)) });
+      if (route === 'gone') {
+        // A form read cleanly behind another section is done with: its
+        // section reads the sources afresh when it is shown again.
+        if (kept) delete store.jobs;
         toast(...jobsSaveToast(answer));
         if (S.dock === 'jobs') loadJobs();
         if (panelOpen('reports') && S.reportsSection === 'jobs') return showReportSection('jobs');
         return loadReportsIndex();
       }
-      if (jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults))) return closeForm(answer);
+      if (route === 'read') return jobSourcesRead(answer);
       saved.textContent = answer.saved
         ? 'Saved for this project, outside it. Only YAML files are read, never through a symlink.'
         : 'No config directory is available, so these sources last until dbt-edith stops.';
@@ -8756,23 +8769,38 @@ async function openJobSources({ add = false } = {}) {
   });
   foot.append(addAirflow, addCloud, jel('div', 'grow'), save);
   body.append(
-    jel('p', 'muted', 'Folders or files holding your jobs, relative to the project or absolute. '
-      + 'An Airflow key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
+    jel('p', 'setnote', 'Read from their YAML wherever it lives, often in another repository, for the Jobs tab and the '
+      + 'job coverage in Reports. Folders or files holding your jobs, relative to the project or absolute. An Airflow '
+      + 'key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
     list, foot, saved);
   paint();
-  const answer = await modal({ title: 'Orchestration', body, actions: [{ id: null, label: 'Close' }], wide: true,
-    onOpen: (close) => { closeForm = close; } });
-  open = false;
-  if (S.dock === 'jobs') loadJobs();
-  if (answer) {
-    toast(...jobsSaveToast(answer));
-    // The Jobs tab already answers for the model it shows, and Reports would
-    // roll down over it; anywhere else the answer is the coverage.
-    if (S.dock === 'jobs' && jobsNode() && !S.panel) return loadReportsIndex();
-    return openReports('jobs');
-  }
-  if (panelOpen('reports') && S.reportsSection === 'jobs') showReportSection('jobs');
+  box.replaceChildren(body);
 }
+
+/* Where a save goes once the server has answered. `gone`: the form rolled
+   up with the panel while it read, or was put aside behind another section
+   and read cleanly, so a toast says what it did. `read`: on screen and read
+   cleanly, so it moves on (jobSourcesRead). `paint`: the form stays, saying
+   what each source read. */
+function jobsSaveRoute({ kept, shown, clean }) {
+  if (!kept || (clean && !shown)) return 'gone';
+  return clean ? 'read' : 'paint';
+}
+
+/* A clean read: the form is done, and the answer is in the Jobs tab of the
+   model under the panel, or else in the coverage. The settings roll up onto
+   the Jobs tab, or give their place to the coverage, which is where they
+   came from when a Sources… there opened them. The Jobs tab reads its
+   sources again either way, shown now or once the coverage rolls up. */
+function jobSourcesRead(answer) {
+  toast(...jobsSaveToast(answer));
+  delete S.settingsKept.jobs;
+  const back = S.settingsFrom !== 'reports' && S.dock === 'jobs' && jobsNode();
+  if (back) closePanel({ restore: true });
+  if (S.dock === 'jobs') loadJobs();
+  return back ? loadReportsIndex() : openReports('jobs');
+}
+
 
 // ----------------------------------------------------------------- panels --
 /* What rolls down over the editor and the dock, the sidebar staying beside
@@ -8798,6 +8826,30 @@ const PANELS = {
     // Its line is the tour's to put back, with the selector box's history.
     save: () => ({}),
     reopen: () => openSelection(),
+  },
+  settings: {
+    el: '#settings',
+    paint: () => paintSettingsButton(),
+    // A form left half filled goes with the panel, as it went with its
+    // dialog, but for the tour's, which puts it back as it was left. Rolled
+    // down over Reports, by a Sources… there or the gear, a close from the
+    // keyboard or its own buttons gives Reports back, as the dialog left it
+    // down under it.
+    closed: ({ restore } = {}) => {
+      S.settingsKept = {};
+      if (!restore || S.settingsFrom !== 'reports' || S.panel) return;
+      // Down at once, as it was left, so nothing under it takes a key while
+      // the index is read again; its section is drawn afresh then, unless
+      // another panel has taken its place meanwhile.
+      openPanel('reports');
+      loadReportsIndex().then(() => { if (panelOpen('reports')) showReportSection(S.reportsSection); });
+    },
+    save: () => ({ section: S.settingsSection, kept: S.settingsKept, from: S.settingsFrom }),
+    reopen: (saved) => {
+      S.settingsKept = saved.kept || {};
+      openSettings(saved.section);
+      S.settingsFrom = saved.from || '';
+    },
   },
 };
 
@@ -8833,7 +8885,8 @@ function openPanel(name) {
    panel came down, for a close from the keyboard or from its own buttons; a
    file opened from it is where the reader goes next instead. `next` is the
    panel taking its place: what is under them stays inert, and the hooks run
-   with it already down, so nothing under it counts as seen in between. */
+   with it already down, so nothing under it counts as seen in between. The
+   `closed` hook is told whether the close was one that gives the focus back. */
 function closePanel({ restore = false, next = '' } = {}) {
   const name = S.panel;
   if (!name) return;
@@ -8848,7 +8901,7 @@ function closePanel({ restore = false, next = '' } = {}) {
   if (el.contains(document.activeElement)) document.activeElement.blur();
   if (restore && back && back.focus && document.body.contains(back) && !el.contains(back)) back.focus();
   p.paint();
-  p.closed();
+  p.closed({ restore });
 }
 
 // ---------------------------------------------------------------- reports --
@@ -9359,6 +9412,335 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
   else if (dock && dock !== 'catalog' && dock !== 'jobs' && S.dock !== dock) showDock(dock);
 }
 
+// --------------------------------------------------------------- settings --
+/* Every setting, in one panel rolled down from the gear in the top bar, a
+   section at a time, as the reports are (0100): the project's profile,
+   environments and Python, the column lineage, Snowflake, the orchestration,
+   the updates, and help. The status bar's pills open their own section. A
+   section is drawn from what the page knows, and drawn again when that
+   changes, but a form being filled stays as it was left, through another
+   section and back, until the panel rolls up. settingsSections and
+   settingsSection are what web/tests/settings.js slices. */
+
+/* The sections, in the rail's order, from what `c` says the page knows: what
+   each row says beside its name, the column lineage on screen, Snowflake on
+   or off, a newer release, and the profile's dot when it is missing. */
+function settingsSections(c) {
+  return [
+    { key: 'project', label: 'Project', warn: c.profile || '',
+      title: 'The dbt profile, the .env files the Catalog resolves locations with, and the Python the terminal runs' },
+    { key: 'columns', label: 'Column lineage', tool: c.cllTool || '', hint: c.cll || '',
+      title: 'Where the edges between columns come from. A click on a column in Catalog > Columns follows it from model to model.' },
+    { key: 'snowflake', label: 'Snowflake', tool: 'snowflake', hint: c.snowflake ? 'on' : 'off',
+      title: 'Column lineage from Snowflake, the Query history tab, Snowsight links and Clone into my schema, for this project' },
+    { key: 'jobs', label: 'Orchestration', tool: 'jobs',
+      title: 'Where the Airflow DAGs or dbt Cloud jobs that run each model are read from' },
+    { key: 'updates', label: 'Updates', hint: c.update || '',
+      title: 'Which build serves this page, a newer release, and how to install it' },
+    { key: 'help', label: 'Help and tour',
+      title: 'The tour, every shortcut, and dbt-edith on GitHub' },
+  ];
+}
+
+/* The section to open on: the one asked for, else the one last shown, else
+   the project. */
+function settingsSection(asked, last) {
+  const keys = settingsSections({}).map((sec) => sec.key);
+  if (keys.includes(asked)) return asked;
+  return keys.includes(last) ? last : 'project';
+}
+
+/* What the rail says, from the page's state. */
+function settingsNow() {
+  const pick = lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin);
+  const o = updateOffer(S.update);
+  return {
+    profile: profileWarning(S.profiles),
+    cllTool: pick.tool,
+    cll: pick.tool ? pick.name : 'none',
+    snowflake: !!(S.features && S.features.snowflake),
+    update: o ? (o.installed ? 'restart' : 'newer') : '',
+  };
+}
+
+/* Rolls the settings down on the section asked for, else the one last shown.
+   `add` opens Orchestration on a new source, its picker open, in place of a
+   form left there. */
+function openSettings(section, { add = false } = {}) {
+  const key = settingsSection(section, S.settingsSection);
+  if (!panelOpen('settings')) S.settingsFrom = S.panel;
+  openPanel('settings');
+  showSettingsSection(key, { add });
+}
+
+function toggleSettings() {
+  if (panelOpen('settings')) closePanel({ restore: true });
+  else openSettings();
+}
+
+/* A glyph per section, as the menus they replace drew them. */
+function settingsIcon(sec) {
+  const wrap = jel('span', 'seticon');
+  if ('tool' in sec) wrap.dataset.tool = sec.tool;
+  const draw = { project: profileIcon, snowflake: snowflakeIcon, jobs: jobsIcon }[sec.key];
+  if (draw) wrap.append(draw());
+  else if (sec.key === 'columns') wrap.append(jel('span', 'tooldot'));
+  else if (sec.key === 'updates') wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 2.5v8M4.75 7.25L8 10.5l3.25-3.25M2.5 13.5h11']));
+  else wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 1.8a6.2 6.2 0 1 1 0 12.4a6.2 6.2 0 1 1 0-12.4z',
+    'M6.1 6.2a1.9 1.9 0 1 1 2.7 1.7c-.5.25-.8.6-.8 1.1v.6', 'M8 11.3v.2']));
+  return wrap;
+}
+
+function paintSettingsNav(nav = $('#settings-nav')) {
+  nav.replaceChildren(...settingsSections(settingsNow()).map((sec) => {
+    const row = jel('button', 'reports-navrow');
+    row.type = 'button';
+    row.dataset.key = sec.key;
+    row.title = sec.title;
+    if (sec.key === S.settingsSection) row.setAttribute('aria-current', 'true');
+    row.append(settingsIcon(sec), jel('span', '', sec.label));
+    if (sec.warn) {
+      const dot = jel('span', 'setwarn');
+      dot.title = sec.warn;
+      row.append(dot);
+    } else if (sec.hint) {
+      row.append(jel('span', 'rhint', sec.hint));
+    }
+    row.addEventListener('click', () => showSettingsSection(sec.key));
+    return row;
+  }));
+}
+
+/* Draws one section, or puts back the one kept with its form as it was left. */
+function showSettingsSection(key, { add = false } = {}) {
+  S.settingsSection = key;
+  redrawIfChanged($('#settings-nav'), paintSettingsNav);
+  if (add) delete S.settingsKept.jobs;
+  const sec = settingsSections(settingsNow()).find((x) => x.key === key);
+  let body = S.settingsKept[key];
+  if (!body) {
+    body = jel('div', 'reportbody setbody');
+    body.append(jel('p', 'setlead', sec.title));
+    drawSettingsSection(key, body, { add });
+    if (key === 'project' || key === 'jobs') S.settingsKept[key] = body;
+  }
+  const head = jel('div', 'diff-head');
+  const row = jel('div', 'diff-title');
+  const close = jel('button', 'icon', '×');
+  close.title = `Close the settings (${keyLabel('Escape', IS_MAC)})`;
+  close.setAttribute('aria-label', 'Close the settings');
+  close.addEventListener('click', () => closePanel({ restore: true }));
+  row.append(settingsIcon(sec), jel('b', '', sec.label), jel('div', 'grow'), close);
+  head.append(row);
+  $('#settings-view').replaceChildren(head, body);
+  paintSettingsLive();
+  // Read again each time, kept or not, for a venv made in the terminal
+  // since: the venv pill read it on every click.
+  if (key === 'project') api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {});
+}
+
+/* A block of a section under its heading. A live one is drawn again by
+   paintSettingsLive whenever what it shows changes. */
+function setBlock(body, title, live = '', className = '') {
+  const block = jel('section', 'setblock');
+  if (title) block.append(jel('h3', '', title));
+  const box = jel('div', ('setbox ' + className).trim());
+  if (live) box.dataset.live = live;
+  block.append(box);
+  body.append(block);
+  return box;
+}
+
+function drawSettingsSection(key, body, { add }) {
+  switch (key) {
+    case 'project': {
+      setBlock(body, 'dbt profile', 'profile');
+      drawSetEnvs(setBlock(body, 'Environments'));
+      setBlock(body, 'Python', 'python');
+      break;
+    }
+    case 'columns':
+      setBlock(body, 'On screen', 'cllnow', 'cllnow');
+      setBlock(body, 'Where it comes from', 'columns', 'envmenu inpanel cllmenu');
+      // Asked again, so a cache written since the page loaded is offered too.
+      api.get('/api/meta').then(applyLineage).catch(() => {});
+      break;
+    case 'snowflake':
+      setBlock(body, '', 'snowflake', 'envmenu inpanel');
+      break;
+    case 'jobs':
+      jobSourcesForm(setBlock(body, ''), { add });
+      break;
+    case 'updates':
+      setBlock(body, '', 'updates', 'envmenu updmenu inpanel');
+      freshenUpdate();
+      break;
+    case 'help':
+      drawSetHelp(body);
+      break;
+  }
+}
+
+function paintSettingsBlock(box) {
+  switch (box.dataset.live) {
+    case 'profile': return paintSetProfile(box);
+    case 'envpick': return paintSetEnvPick(box);
+    case 'python': return paintSetPython(box);
+    case 'cllnow': return fillSourceLabel(box, lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin));
+    case 'columns':
+      box.replaceChildren();
+      fillSourceMenu(box, () => {});
+      return unmenu(box);
+    case 'snowflake': return paintSetSnowflake(box);
+    case 'updates':
+      paintUpdateMenu(box);
+      return unmenu(box);
+  }
+}
+
+/* Draws `box` again with `paint`, unless it would come out the same: then
+   what is there stays, with its listeners, its tooltip, and a click half
+   made on it, which a poll answering every second and a half would
+   otherwise lose. The box's own attributes count, a block's tooltip being
+   one. Drawn again, the focus goes back to the control with the same key. */
+function redrawIfChanged(box, paint) {
+  const probe = box.cloneNode(false);
+  paint(probe);
+  if (probe.outerHTML === box.outerHTML) return;
+  const had = box.contains(document.activeElement) ? document.activeElement.dataset.key : '';
+  paint(box);
+  const back = had && [...box.querySelectorAll('[data-key]')].find((e) => e.dataset.key === had);
+  if (back) back.focus({ preventScroll: true });
+}
+
+/* The rail and every live block of the section on screen, drawn again from
+   what the page knows where that changed. */
+function paintSettingsLive() {
+  if (!panelOpen('settings')) return;
+  redrawIfChanged($('#settings-nav'), paintSettingsNav);
+  for (const box of $$('#settings-view [data-live]')) redrawIfChanged(box, paintSettingsBlock);
+}
+
+/* For whatever changes what a section shows: one redraw for every call a
+   change makes, once it has made them. */
+function repaintSettings() {
+  if (!panelOpen('settings') || S.settingsRepaint) return;
+  S.settingsRepaint = true;
+  Promise.resolve().then(() => {
+    S.settingsRepaint = false;
+    paintSettingsLive();
+  });
+}
+
+/* A menu's rows, drawn in a section, are buttons on a page: a screen reader
+   is told which is picked, not that a menu is open. */
+function unmenu(box) {
+  for (const e of box.querySelectorAll('[role^=menuitem]')) {
+    const checked = e.getAttribute('aria-checked');
+    e.removeAttribute('role');
+    e.removeAttribute('aria-checked');
+    if (checked !== null) e.setAttribute('aria-pressed', checked);
+  }
+  box.removeAttribute('role');
+}
+
+/* Where dbt looks for the profile, and the button that opens it (0049). */
+function paintSetProfile(box) {
+  const p = S.profiles;
+  const where = 'dbt looks for it in DBT_PROFILES_DIR, then in the project, then in .dbt in your home folder';
+  if (!p) return box.replaceChildren(jel('p', 'setnote warn', `Nowhere to look for one: ${where}, and there is no home folder. `
+    + 'Set DBT_PROFILES_DIR before starting dbt-edith.'));
+  const line = jel('div', 'setline');
+  line.append(jel('code', 'setpath', p.path));
+  if (p.found && !p.refused) {
+    const open = jel('button', 'btn sm', 'Open profiles.yml');
+    open.dataset.key = 'profile';
+    // Its tab rolls the panel up, as any file opened does.
+    open.addEventListener('click', openProfiles);
+    line.append(open);
+  }
+  const said = p.refused ? `Not opened: ${p.refused}.`
+    : p.found ? 'Who dbt connects as, and how, read by every dbt command in the terminal. Its passwords and keys never '
+      + 'reach this page: the editor shows a placeholder in their place, and leaving it keeps the value.'
+      : `None there: ${where}, and a dbt command that connects fails until there is one.`;
+  box.replaceChildren(line, jel('p', profileWarning(p) ? 'setnote warn' : 'setnote', said));
+}
+
+/* The environments, once the .env files are read again, as the dialog this
+   replaces read them, for a file added or edited since: which one resolves
+   the Catalog's locations, then what each is named and whether it is
+   offered. A save has read them already. */
+async function drawSetEnvs(box, { read = true } = {}) {
+  box.replaceChildren(jel('p', 'setnote', 'Reading the .env files…'));
+  if (read || !S.envs) await loadEnvs();
+  if (!S.envs) return box.replaceChildren(jel('p', 'setnote warn', 'The .env files could not be read.'));
+  if (!envsInUse()) {
+    return box.replaceChildren(jel('p', 'setnote', 'No location config reads an env var, so no .env file changes '
+      + 'what the Catalog shows.'));
+  }
+  const pick = jel('div', 'envmenu inpanel');
+  pick.dataset.live = 'envpick';
+  paintSetEnvPick(pick);
+  box.replaceChildren(jel('p', 'setnote', 'Which .env file the Catalog\'s Location resolves database, schema and alias '
+    + 'with, its env vars in place of the ones dbt had when it parsed, as the env pill in the status bar says.'),
+  pick, envManageForm(() => drawSetEnvs(box, { read: false })));
+}
+
+function paintSetEnvPick(box) {
+  box.replaceChildren(...(envsInUse() ? envChoices().map((c) => envRow(c, () => selectEnv(c.file))) : []));
+  unmenu(box);
+}
+
+/* The venv the status bar names, why, and the line that activates each one
+   a click can offer (0072). */
+function paintSetPython(box) {
+  const { text, title, state, offer } = venvStatus(S.venv || {}, S.termVenv);
+  const pill = jel('span', 'venvpill', text);
+  pill.dataset.state = state;
+  const line = jel('div', 'setline');
+  line.append(pill);
+  box.replaceChildren(line, ...title.split('\n').filter(Boolean).map((l) => jel('p', 'setnote', l)));
+  if (!offer.length) return;
+  const bar = jel('div', 'setactions');
+  for (const e of offer) {
+    const b = jel('button', 'btn sm', `Activate ${e.name} in the terminal`);
+    b.dataset.key = 'venv:' + e.path;
+    b.title = [e.activation, e.dbt && 'dbt: ' + e.dbt].filter(Boolean).join('\n');
+    b.addEventListener('click', () => sendToTerminal(e.activation));
+    bar.append(b);
+  }
+  box.append(bar, jel('p', 'setnote', 'Each types the line that activates it, and leaves Enter to you.'));
+}
+
+/* The tour, the shortcut list and GitHub, each one click away. */
+function drawSetHelp(body) {
+  const tour = setBlock(body, 'The tour');
+  const go = jel('button', 'btn sm primary', 'Give me a tour');
+  go.type = 'button';
+  go.addEventListener('click', startTour);
+  tour.append(jel('p', 'setnote', 'It opens a model of this project and points at what each part of the page does with '
+    + 'it. It runs nothing and changes no setting, and puts the page back as it was when it ends.'), go);
+  const keys = setBlock(body, 'Shortcuts');
+  const list = jel('button', 'btn sm', 'Every shortcut');
+  list.type = 'button';
+  list.addEventListener('click', toggleShortcuts);
+  keys.append(jel('p', 'setnote', `Also behind ${keyLabel('?', IS_MAC)} outside a text box, and ${keyLabel('F1', IS_MAC)} `
+    + 'from anywhere.'), list);
+  const gh = setBlock(body, 'dbt-edith on GitHub');
+  const links = githubLinks(S.repo, S.version, S.build, S.os);
+  const bar = jel('div', 'setactions');
+  for (const [href, label, title] of [[links.issue, 'Raise an issue or a request', 'A new issue on GitHub, your version already in it'],
+    [links.star, 'Give dbt-edith a star', 'The repository on GitHub, whose Star button is at the top right']]) {
+    const a = jel('a', 'btn sm', label);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = title;
+    bar.append(a);
+  }
+  gh.append(bar, jel('p', 'setnote', 'Both open GitHub in a new tab; an issue or a star needs a GitHub account.'));
+}
+
 // -------------------------------------------------------------- hover card --
 /* One floating card, shared by the lineage boxes and the editor's marks. It is
    hoverable, so its text can be read and selected, but holds no focusable
@@ -9805,21 +10187,22 @@ function paintEnvSelect() {
   if (!envsInUse()) { pill.classList.add('hidden'); return; }
   const visible = S.envs.files.filter((f) => !f.hidden);
   if (S.env && !visible.some((f) => f.file === S.env)) S.env = '';
-  fillEnvPill(pill, 'env');
+  fillEnvPill(pill, 'env', { menu: false });
   pill.classList.remove('hidden');
+  repaintSettings();
 }
 
-/* A button showing the environment in use, coloured by envTone. */
-function fillEnvPill(el, prefix) {
+/* A button showing the environment in use, coloured by envTone. The Catalog's
+   opens the menu, with a caret; the status bar's opens the settings (0100). */
+function fillEnvPill(el, prefix, { menu = true } = {}) {
   const name = S.env ? envDisplayName(S.env) : 'manifest';
   el.textContent = '';
   el.dataset.tone = S.env ? envTone(name) : 'manifest';
   if (prefix) el.append(Object.assign(document.createElement('span'), { className: 'envpill-k', textContent: prefix }));
-  el.append(document.createTextNode(name),
-    Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
-  el.title = S.env
-    ? `Catalog locations are resolved with ${S.env}. Click to change.`
-    : 'Catalog locations are shown as dbt parsed them. Click to pick an environment.';
+  el.append(document.createTextNode(name));
+  if (menu) el.append(Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
+  const now = S.env ? `Catalog locations are resolved with ${S.env}.` : 'Catalog locations are shown as dbt parsed them.';
+  el.title = `${now} ${menu ? 'Click to pick an environment.' : 'Click to pick one in the settings.'}`;
 }
 
 function selectEnv(file) {
@@ -9843,6 +10226,44 @@ function closeEnvMenu({ refocus = false } = {}) {
   if (refocus && anchor.isConnected) anchor.focus();
 }
 
+/* What an environment pick offers: the files shown, then the config as dbt
+   parsed it. The menu and the settings' Project section list the same. */
+function envChoices() {
+  return S.envs.files.filter((e) => !e.hidden).map((f) => ({
+    label: f.name + (f.target_mismatch ? ' ⚠' : ''),
+    sub: f.file,
+    tone: envTone(f.name),
+    current: S.env === f.file,
+    title: f.target_mismatch ? `DBT_TARGET in ${f.file} is ${f.target}, which does not match the name` : '',
+    file: f.file,
+  })).concat([{
+    label: 'manifest', sub: 'as dbt parsed it', tone: 'manifest', current: !S.env,
+    title: 'the config with the env vars dbt had loaded when it parsed this manifest', file: '',
+  }]);
+}
+
+/* One row of it, coloured by envTone. */
+function envRow({ label, sub = '', tone = '', current = false, title = '' }, pick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.setAttribute('role', 'menuitemradio');
+  b.setAttribute('aria-checked', String(current));
+  b.dataset.key = 'env:' + label;
+  if (current) b.classList.add('on');
+  if (title) b.title = title;
+  const check = Object.assign(document.createElement('span'), { className: 'check', textContent: current ? '✓' : '' });
+  b.append(check);
+  if (tone) {
+    const d = Object.assign(document.createElement('span'), { className: 'envdot' });
+    d.dataset.tone = tone;
+    b.append(d);
+  }
+  b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
+  if (sub) b.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
+  b.addEventListener('click', pick);
+  return b;
+}
+
 function openEnvMenu(anchor) {
   const reopen = envMenu && envMenu.anchor === anchor;
   closeEnvMenu();
@@ -9851,43 +10272,10 @@ function openEnvMenu(anchor) {
   const el = document.createElement('div');
   el.className = 'envmenu';
   el.setAttribute('role', 'menu');
-  const item = ({ label, sub = '', tone = '', current = false, title = '', pick }) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.setAttribute('role', 'menuitemradio');
-    b.setAttribute('aria-checked', String(current));
-    if (current) b.classList.add('on');
-    if (title) b.title = title;
-    const check = Object.assign(document.createElement('span'), { className: 'check', textContent: current ? '✓' : '' });
-    b.append(check);
-    if (tone) {
-      const d = Object.assign(document.createElement('span'), { className: 'envdot' });
-      d.dataset.tone = tone;
-      b.append(d);
-    }
-    b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
-    if (sub) b.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
-    b.addEventListener('click', () => { closeEnvMenu(); pick(); });
-    el.appendChild(b);
-    return b;
-  };
-  for (const f of S.envs.files.filter((e) => !e.hidden)) {
-    item({
-      label: f.name + (f.target_mismatch ? ' ⚠' : ''),
-      sub: f.file,
-      tone: envTone(f.name),
-      current: S.env === f.file,
-      title: f.target_mismatch ? `DBT_TARGET in ${f.file} is ${f.target}, which does not match the name` : '',
-      pick: () => selectEnv(f.file),
-    });
-  }
-  item({
-    label: 'manifest', sub: 'as dbt parsed it', tone: 'manifest', current: !S.env,
-    title: 'the config with the env vars dbt had loaded when it parsed this manifest',
-    pick: () => selectEnv(''),
-  });
+  const item = (c, pick) => el.appendChild(envRow(c, () => { closeEnvMenu(); pick(); }));
+  for (const c of envChoices()) item(c, () => selectEnv(c.file));
   el.appendChild(document.createElement('hr'));
-  item({ label: 'Manage environments...', pick: openEnvPanel });
+  item({ label: 'Manage environments...' }, () => openSettings('project'));
   document.body.appendChild(el);
 
   const at = anchor.getBoundingClientRect();
@@ -10052,12 +10440,12 @@ async function openSelectorMenu(anchor) {
   filter.focus();
 }
 
-/* The Manage panel. Only real overrides are stored: a name equal to the
-   automatic one, or a visibility equal to what detection would decide, is sent
-   as "automatic" so later detection changes still apply. */
-async function openEnvPanel() {
-  await loadEnvs();
-  if (!S.envs) return toast('environments are unavailable', 'err');
+/* What each .env file is named and whether the menu shows it, in the
+   settings' Project section (0100), from the envs last read. Only real
+   overrides are stored: a name equal to the automatic one, or a visibility
+   equal to what detection would decide, is sent as "automatic" so later
+   detection changes still apply. `saved` runs once a save is read back. */
+function envManageForm(saved) {
   const refs = S.envs.referenced;
   const nodesFor = (v) => (refs.find((r) => r.var === v) || { nodes: 0 }).nodes;
 
@@ -10069,7 +10457,7 @@ async function openEnvPanel() {
   for (const [label, tip] of [
     ['file', ''],
     ['name', 'leave empty for the automatic name, the uppercased file suffix'],
-    ['shown', 'hidden files do not appear in the status bar menu'],
+    ['shown', 'a hidden file is not offered, here or in the Catalog\'s environment menu'],
     ['DBT_TARGET', 'read from the file as a cross-check against the name'],
     ['variables', `how many of the ${refs.length} variables your location config reads this file defines`],
     ['matches manifest', 'how often this file reproduces what dbt parsed. The file dbt had loaded scores 100%.'],
@@ -10132,33 +10520,42 @@ async function openEnvPanel() {
     inputs.push({ f, name, shown });
   }
   body.appendChild(table);
-  body.appendChild(Object.assign(document.createElement('p'), {
-    className: 'muted',
+  const foot = document.createElement('div');
+  foot.className = 'setactions';
+  foot.append(Object.assign(document.createElement('span'), {
+    className: 'setnote',
     textContent: S.envs.persist
       ? `Saved in ${S.envs.settings_path}, outside the project.`
       : 'No config directory is available, so these settings cannot be saved.',
   }));
+  body.appendChild(foot);
+  if (!S.envs.persist) return body;
 
-  const actions = [{ id: null, label: 'Cancel' }];
-  if (S.envs.persist) actions.push({ id: 'save', label: 'Save', style: 'primary' });
-  if (await modal({ title: 'Environments', body, actions, wide: true }) !== 'save') return;
-
-  const envs = {};
-  for (const { f, name, shown } of inputs) {
-    const typed = name.value.trim();
-    const hidden = !shown.checked;
-    envs[f.file] = {
-      name: typed && typed !== f.auto_name ? typed : null,
-      hidden: hidden === !!f.auto_hidden_reason ? null : hidden,
-    };
-  }
-  try {
-    await api.send('/api/envs', 'PUT', { envs });
-    await loadEnvs();
-    toast('environments saved', 'ok');
-  } catch (e) {
-    toast('could not save: ' + e.message, 'err');
-  }
+  const save = Object.assign(document.createElement('button'), { type: 'button', className: 'btn sm primary', textContent: 'Save' });
+  foot.prepend(save);
+  save.addEventListener('click', async () => {
+    const envs = {};
+    for (const { f, name, shown } of inputs) {
+      const typed = name.value.trim();
+      const hidden = !shown.checked;
+      envs[f.file] = {
+        name: typed && typed !== f.auto_name ? typed : null,
+        hidden: hidden === !!f.auto_hidden_reason ? null : hidden,
+      };
+    }
+    save.disabled = true;
+    try {
+      await api.send('/api/envs', 'PUT', { envs });
+      await loadEnvs();
+      toast('environments saved', 'ok');
+      saved();
+    } catch (e) {
+      toast('could not save: ' + e.message, 'err');
+    } finally {
+      save.disabled = false;
+    }
+  });
+  return body;
 }
 
 /* One row per location key, across the stages dbt goes through. `envFile`
@@ -10497,7 +10894,7 @@ async function openSnowsightMenu(anchor, relation, materialized) {
   if (!popup || popup.el !== menu) return;
   paintSnowsightMenu(menu, relation, materialized, { error });
   // Placed again for its new size. The script may have started for this, which
-  // the top bar shows once the menu is gone: repainting the Catalog now would
+  // the settings show once the menu is gone: repainting the Catalog now would
   // close it.
   openPopup(anchor, menu, loadSidecar);
 }
@@ -12266,8 +12663,9 @@ function wireSplitters() {
    (0074). Each step points at a part of the page and says what it is for,
    on a model the server picks with parents and children. It runs nothing and
    changes no setting: it opens a file as a preview, moves the lineage and the
-   dock, draws a Custom selection in its panel, and puts them back as they were
-   when it ends. The pure part runs from tourSteps to tourPlace, which
+   dock, draws a Custom selection in its panel, rolls the settings down on
+   their Column lineage section, and puts them back as they were when it
+   ends. The pure part runs from tourSteps to tourPlace, which
    web/tests/tour.js slices. */
 
 /* The steps, from what the page knows when the tour starts: `model` from
@@ -12304,8 +12702,8 @@ function tourSteps(c) {
   const read = 'Everything here is read from `manifest.json`, which only dbt writes: the lineage, the Catalog, every '
     + 'selection, what each job runs.';
   const parse = 'A click types `dbt parse` in the terminal, leaving Enter to you, and the page reads the new '
-    + 'manifest on its own.';
-  steps.push({ key: 'manifest', target: '#fresh-badge', title: 'manifest.json, and how fresh it is',
+    + 'manifest on its own. The arrows at its end read the file again at once.';
+  steps.push({ key: 'manifest', target: '#manifest-pill', title: 'manifest.json, and how fresh it is',
     text: c.manifest
       ? `${read} So the page is as true as the last \`dbt parse\`. This says how old the manifest is, and its dot `
         + 'whether a file dbt reads changed since: green, none has; amber, your own saved edits; red, a pull, a '
@@ -12339,15 +12737,18 @@ function tourSteps(c) {
         + 'in each environment, the steps of your jobs that run it once the Jobs tab has a source, and its columns '
         + 'under Columns. Its upstream and downstream counts move the lineage, as a box does.' });
   }
+  // In the settings, behind the gear, where every setting is (0100); the
+  // Columns tab's menu picks the same.
   const columns = c.cll
-    ? `On screen: ${c.cll}. A click on a column in Catalog > Columns follows it from model to model, and this menu `
-      + 'picks where the edges come from.'
-    : 'None yet: this menu picks where a column\'s lineage comes from. Collin reads the compiled SQL, and picking '
-      + 'it runs it, or offers the command that installs it'
+    ? `On screen: ${c.cll}. A click on a column in Catalog > Columns follows it from model to model, and this `
+      + 'section of the settings, behind the gear in the top bar, picks where the edges come from, as the menu in '
+      + 'that tab does.'
+    : 'None yet: this section of the settings, behind the gear in the top bar, picks where a column\'s lineage comes '
+      + 'from. Collin reads the compiled SQL, and picking it runs it, or offers the command that installs it'
       + (c.snowflake ? '; Snowflake fetches a column\'s lineage when you click it.' : '.')
       + ' Then a click on a column in Catalog > Columns follows it from model to model.'
-      + (c.snowflake ? '' : ' Snowflake joins the list once its features are on, from the snowflake button in the top bar.');
-  steps.push({ key: 'columns', target: '#cll-pick-host .cllpick', title: 'Column lineage', text: columns });
+      + (c.snowflake ? '' : ' Snowflake joins the list once its features are on, in the Snowflake section.');
+  steps.push({ key: 'columns', target: '#settings-view [data-live=columns]', title: 'Column lineage', text: columns });
   if (m) {
     steps.push({ key: 'jobs', target: '#dock-jobs', title: 'Jobs',
       text: c.jobs
@@ -12421,7 +12822,7 @@ async function startTour() {
     select: $('#select-input').value, history: S.selectHistory.slice(), catTab: S.catTab,
     up: $('#up').value, down: $('#down').value,
     node: S.node, catalog: [...$('#catalog').childNodes], back: document.activeElement,
-    panel, panelSaved, panelReturn,
+    panel, panelSaved, panelReturn, settingsSection: S.settingsSection,
   };
   buildTour(t);
   // The index too, so the Reports step says what the button shows even when
@@ -12576,6 +12977,8 @@ async function tourEnter(key, t, live) {
     }
     if (canvas && live() && (S.graphMode !== 'model' || S.focus !== m.id)) await focusNode(m.id);
   };
+  // The settings are down for their own step only.
+  if (key !== 'columns' && panelOpen('settings')) closePanel();
   const selection = async () => {
     showDock('lineage');
     if (S.graphMode === 'select' && $('#select-input').value === `+${m.name}+`) return;
@@ -12604,11 +13007,9 @@ async function tourEnter(key, t, live) {
       showDock('catalog');
       break;
     case 'columns':
-      if (!m) break;
+      // Over the model the steps around it show, which Back comes back to.
       await onModel();
-      if (!live()) break;
-      if (S.catTab !== 'columns') showCatalogTab(S.node, 'columns');
-      showDock('catalog');
+      if (live()) openSettings('columns');
       break;
     case 'jobs':
       await onModel();
@@ -12682,7 +13083,7 @@ function paintTour() {
    lineage and the Catalog, as a place to start from. Any other gets back its
    tabs in their order, a preview the tour's took the place of included, the
    tab in front, the canvas, the node the dock's tabs speak of, the Catalog,
-   and the Reports panel if it was down. */
+   and the panel that was down, if one was. */
 async function endTour() {
   const t = S.tour;
   if (!t || t.ending) return;
@@ -12702,7 +13103,11 @@ async function endTour() {
   }
   await t.chain;
   closeCrumbMenu();
+  // Down for the Column lineage step: what was down before the tour comes
+  // back last, and the gear opens on the section it last showed.
+  if (panelOpen('settings')) closePanel();
   const s = t.saved;
+  S.settingsSection = s.settingsSection;
   const m = t.model;
   if (s.active) {
     if (m && !s.order.includes(m.file) && S.open.has(m.file) && !S.open.get(m.file).dirty) dropTab(m.file);
@@ -12879,7 +13284,7 @@ function shortcutSheet(os) {
       [['Mod+Alt+R'], 'Open or close the reports'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
     ] },
-    { title: 'Reports', keys: [
+    { title: 'Reports and settings', keys: [
       [['Escape'], 'Close them, from inside'],
       [['Mod+Alt+X', 'Alt+W'], 'Close them too, rather than the tab under them'],
     ] },
@@ -13177,7 +13582,12 @@ function wireKeys() {
     box.classList.toggle('collapsed');
     $('#oe-caret').textContent = box.classList.contains('collapsed') ? '\u25b8' : '\u25be';
   });
-  $('#reload-btn').addEventListener('click', async () => {
+  // Its arrows turn until the server has read the file, and a second click
+  // meanwhile reads it no sooner.
+  $('#reload-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (btn.getAttribute('aria-busy') === 'true') return;
+    btn.setAttribute('aria-busy', 'true');
     try {
       const meta = await api.send('/api/reload', 'POST', {});
       applyMeta(meta);
@@ -13185,6 +13595,7 @@ function wireKeys() {
       if (!await followActive()) rerender();
       refreshFreshness();
     } catch (e) { toast('reload failed: ' + e.message, 'err'); }
+    finally { btn.removeAttribute('aria-busy'); }
   });
   // The badge says the manifest is behind; the command that fixes that is the
   // one thing the user would type next. dbt still runs in their terminal, under
@@ -13253,7 +13664,7 @@ function applyMeta(meta) {
 }
 
 /* A whole /api/meta answer: the graph's facts, then where its column lineage
-   comes from, which the menu in the top bar names in place of a count. */
+   comes from, which the settings' rail names in place of a count. */
 function applyInfo(info) {
   applyMeta(info.meta);
   applyLineage(info);
@@ -13414,10 +13825,14 @@ function openUpdateMenu(anchor, hover = false) {
   S.updateMenu = menu;
   paintUpdateMenu(menu);
   openPopup(anchor, menu, null, hover);
-  // An update installed by hand since the last answer says so on opening,
-  // the answer drawn only if it changed anything. Not more than twice a
-  // minute, since the pointer opens it too (0086), nor while a look is on
-  // its way, whose answer is the newer one.
+  freshenUpdate();
+}
+
+/* An update installed by hand since the last answer says so on opening the
+   menu or the settings' Updates section, the answer drawn only if it changed
+   anything. Not more than twice a minute, since the pointer opens the menu
+   too (0086), nor while a look is on its way, whose answer is the newer one. */
+function freshenUpdate() {
   const u = S.update;
   if (u && !u.off && !u.checking && !S.lookPosted && Date.now() - S.updateAt > 30 * 1000) refreshUpdate();
 }
@@ -13544,6 +13959,7 @@ function paintUpdate() {
     paintUpdateMenu(S.updateMenu);
     if (popup && popup.el === S.updateMenu) placePopup(popup.anchor, S.updateMenu);
   }
+  repaintSettings();
 }
 
 /* Asked at boot, then every few seconds while a look is on its way, then
@@ -13711,17 +14127,8 @@ async function boot() {
   paintMode();
   $('#editor-host').style.display = 'none';
 
-  $('#cll-pick-host').append(sourceMenu());
-  $('#settings-btn').append(snowflakeIcon());
-  $('#profile-btn').append(profileIcon());
-  $('#profile-btn').addEventListener('click', () => {
-    const p = S.profiles;
-    if (p && p.refused) toast(p.refused, 'err');
-    else if (p && p.found) openProfiles();
-    else if (p) toast(`no profiles.yml at ${p.path}`, 'err');
-  });
   paintTestsToggle(false);
-  $('#settings-btn').addEventListener('click', (e) => openSettingsMenu(e.currentTarget));
+  $('#settings-btn').addEventListener('click', toggleSettings);
   const info = await api.get('/api/meta');
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
@@ -13735,7 +14142,7 @@ async function boot() {
   S.os = info.os || '';
   build.textContent = 'v' + (info.version || '?');
   build.title = `dbt-edith ${info.version || '?'}\n${info.build || 'no build stamp'}`;
-  $('#status-update').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
+  $('#status-update').addEventListener('click', () => openSettings('updates'));
   $('#brand').addEventListener('click', (e) => openUpdateMenu(e.currentTarget));
   openOnHover($('#brand'), (hover) => openUpdateMenu($('#brand'), hover));
   $('#github-btn').addEventListener('click', (e) => openGithubMenu(e.currentTarget));
@@ -13743,11 +14150,9 @@ async function boot() {
   refreshUpdate();
   S.venv = info.venv || {};
   paintVenv();
-  // The second click of a double click would type the line twice, or close the
-  // menu the first one opened.
-  $('#status-venv').addEventListener('click', (e) => { if (e.detail < 2) openVenvMenu(e.currentTarget); });
+  $('#status-venv').addEventListener('click', () => openSettings('project'));
   document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
-  $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
+  $('#status-env').addEventListener('click', () => openSettings('project'));
   loadEnvs();
   await loadDir($('#tree'), '', 0);
   refreshGit();
@@ -13774,51 +14179,17 @@ function heardVenv(data) {
   api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {});
 }
 
+/* The pill opens the project's settings, where each venv a click can offer
+   has the button that types its activate line (0072, 0100). */
 function paintVenv() {
-  const { text, title, state, offer, line } = venvStatus(S.venv || {}, S.termVenv);
+  const { text, title, state, offer } = venvStatus(S.venv || {}, S.termVenv);
   const el = $('#status-venv');
   el.textContent = text;
-  el.title = !offer.length ? title : title + '\n' + (line
-    ? 'click to type the line that activates it in the terminal'
-    : 'click to pick one to activate in the terminal');
+  el.title = title + '\n' + (offer.length
+    ? 'click to activate it in the terminal, from the project\'s settings'
+    : 'click for the project\'s settings');
   el.dataset.state = state;
-  el.classList.toggle('act', offer.length > 0);
-  // A button only while a click does something: green or grey, it is a status.
-  el.tabIndex = offer.length ? 0 : -1;
-  el.setAttribute('aria-disabled', String(!offer.length));
-  if (offer.length && !line) el.setAttribute('aria-haspopup', 'menu');
-  else el.removeAttribute('aria-haspopup');
-}
-
-/* A click on an inactive venv types the line that activates it, and Enter
-   stays the user's (0071, 0072). The project's venvs are read again first,
-   for one made in the terminal since startup. */
-function openVenvMenu(anchor) {
-  if (closePopup(anchor) || !venvStatus(S.venv || {}, S.termVenv).offer.length) return;
-  api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {}).then(() => {
-    const { offer, line } = venvStatus(S.venv || {}, S.termVenv);
-    if (line) return sendToTerminal(line);
-    if (offer.length) openPopup(anchor, venvMenu(offer));
-  });
-}
-
-/* The venvs a click offers when it does not type one at once. None is marked:
-   none is active, and the first is only the one the bar names. */
-function venvMenu(offer) {
-  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  const menu = el('div', 'envmenu');
-  menu.setAttribute('role', 'menu');
-  menu.append(el('div', 'menuhead', 'Activate in the terminal'));
-  for (const e of offer) {
-    const b = el('button', '');
-    b.type = 'button';
-    b.setAttribute('role', 'menuitem');
-    b.title = [e.activation, e.dbt && 'dbt: ' + e.dbt].filter(Boolean).join('\n');
-    b.append(el('span', 'lbl', e.name), el('span', 'sub', e.dbt ? e.dbt.split(', ')[0] : e.python ? 'py ' + e.python : ''));
-    b.addEventListener('click', () => { closePopup(); sendToTerminal(e.activation); });
-    menu.append(b);
-  }
-  return menu;
+  repaintSettings();
 }
 
 /* One spelling per folder, to tell whether the venv the terminal names is one

@@ -125,7 +125,7 @@ impl AppState {
 }
 
 /// Why a Snowflake route answers nothing (0031).
-const SNOWFLAKE_OFF: &str = "Snowflake features are off for this project: switch them on in the settings menu";
+const SNOWFLAKE_OFF: &str = "Snowflake features are off for this project: switch them on in the Snowflake section of the settings";
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "web/"]
@@ -667,7 +667,7 @@ struct Features {
     snowflake_set: bool,
 }
 
-/// What the page needs to paint the lineage menu and the settings menu. Every
+/// What the page needs to paint the column lineage list and the settings. Every
 /// route that changes either answers with it, so the page never paints half of
 /// a change.
 async fn meta_body(st: &Arc<AppState>) -> MetaBody {

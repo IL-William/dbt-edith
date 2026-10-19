@@ -1,11 +1,13 @@
 # Column lineage
 
-Edges between columns, from one of three tools picked in the top bar.
+Edges between columns, from one of three tools picked in the settings.
 
 ## Column lineage
 
-Column-level edges come from one of three tools, picked in the menu in the top
-bar, next to the model counts. The same menu sits in Catalog > Columns.
+Column-level edges come from one of three tools, picked in the settings'
+Column lineage section, behind the gear in the top bar, which says above the
+list which one is on screen. The same choices sit in a menu in Catalog >
+Columns, and the settings' rail names the tool on screen beside the section.
 
 | | Tool | Where its edges come from |
 | --- | --- | --- |
@@ -139,7 +141,7 @@ groups; the badge then counts the models they name (0062).
 Snowflake is in the menu only while Snowflake's features are on for the
 project, see [snowflake.md](snowflake.md).
 
-The script reads the dbt profile that the user and plug in the top bar open
+The script reads the dbt profile that the settings' Project section opens
 (see [Explorer](explorer-and-search.md#explorer)), once, when it starts, so saving the profile there
 restarts it. When Snowflake refuses the connection, the message points at that
 file rather than leaving you with an error code.

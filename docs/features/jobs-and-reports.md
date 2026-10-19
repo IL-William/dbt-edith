@@ -63,10 +63,11 @@ news on the Reports button counts only the models surely not scheduled
 and the Jobs tab lists its jobs. Coming back finds the list as you left it,
 folds and scroll.
 
-Point dbt-edith at the jobs with **Sources…** in the tab, **Add a source** in
-the Job coverage section of Reports, or **Orchestration** in the menu behind
-the snowflake in the top bar: one or more folders or files, absolute or
-relative to the project, each an Airflow or a dbt Cloud source. **Browse…**
+Point dbt-edith at the jobs in the Orchestration section of the settings,
+behind the gear in the top bar, which **Sources…** and **Add a source**, in
+the tab and in the Job coverage section of Reports, open too: one or more
+folders or files, absolute or relative to the project, each an Airflow or a
+dbt Cloud source. **Browse…**
 beside a path, open already on a source being added, lists one folder at a
 time, its folders and YAML files only: a click opens a folder or picks a file,
 and **Use** writes it from the project when it sits within two folders above
@@ -76,7 +77,8 @@ Saving reads them at once. When every source found jobs, no file was refused
 and the sources were saved, the form closes on what it found: the Jobs tab when
 it is showing a model, Job coverage otherwise. Anything else keeps it open on
 what went wrong, file by file, with the line of anything it could not read, and
-so do edits made while it read. They are read again only when something moved:
+so do edits made while it read. Opened from Job coverage, Escape or the × goes
+back to it. They are read again only when something moved:
 when the manifest is reloaded, or when the Jobs tab or the sources form opens
 and a job file was added, removed or changed since. A click inside the tab reads
 nothing, so a `git pull` in the jobs repository shows the next time the tab is

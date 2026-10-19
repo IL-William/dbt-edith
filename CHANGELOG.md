@@ -13,7 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
-## Unreleased
+## 1.36.0 - 2026-10-19
+
+- Open every setting from one gear in the top bar, in a panel of its own, a
+  section at a time: the project's profile, `.env` files and Python, the
+  column lineage, Snowflake, the job sources, updates, and help with the
+  tour, in place of the column lineage menu, the snowflake and the profile's
+  button; the status bar's `env`, venv and update pills open their section,
+  and the environments and the job sources are edited there rather than in a
+  dialog (0100).
+- Reload the manifest from circling arrows at the end of its freshness pill,
+  in place of the Reload manifest button, turning until it is read.
 
 ## 1.35.0 - 2026-10-19
 

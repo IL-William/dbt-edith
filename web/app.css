@@ -108,14 +108,14 @@ kbd {
 .tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
 .btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
-.cllpick .tname { color: var(--tool); font-weight: 600; }
-.cllpick .tdetail, .cllpick .caret { color: var(--fg-dim); }
+.cllpick .tname, .cllnow .tname { color: var(--tool); font-weight: 600; }
+.cllpick .tdetail, .cllpick .caret, .cllnow .tdetail { color: var(--fg-dim); }
 .cllpick .caret { font-size: 11px; line-height: 1; }
 .btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
-.cllpick[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
-.cllpick[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
-.cllpick[data-tone=busy] .tstate { color: var(--warn); }
-.cllpick[data-tone=failed] .tstate { color: var(--bad); }
+.cllpick[data-tool=""] .tname, .cllnow[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
+.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.cllpick[data-tone=busy] .tstate, .cllnow[data-tone=busy] .tstate { color: var(--warn); }
+.cllpick[data-tone=failed] .tstate, .cllnow[data-tone=failed] .tstate { color: var(--bad); }
 .btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
 .envmenu [data-tool] .check { color: var(--tool); }
 .envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
@@ -130,8 +130,7 @@ kbd {
   flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: #10151c;
   font: 600 9.5px/14px var(--ui); letter-spacing: .5px; text-transform: uppercase;
 }
-.envmenu.setmenu { width: 360px; max-width: calc(100vw - 8px); }
-.setmenu .menunote { padding-left: 32px; max-width: none; }
+/* Snowflake's switch, in its section of the settings (0100). */
 .setrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
 .setrow:hover { background: var(--bg-3); }
 .setrow[aria-busy=true] { cursor: progress; }
@@ -218,8 +217,10 @@ kbd {
 .venvpill[data-state=on] { color: var(--ok); border-color: rgba(78, 199, 141, .55); background: rgba(78, 199, 141, .12); }
 .venvpill[data-state=on]::before { background: currentColor; }
 .venvpill[data-state=off] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
-.venvpill.act { cursor: pointer; }
-.venvpill.act:hover { background: rgba(224, 163, 75, .2); }
+/* The status bar's opens the project's settings (0100); the copy in them is
+   only its state. */
+#status-venv { cursor: pointer; }
+#status-venv:hover { filter: brightness(1.2); }
 /* A build twenty releases behind lists them all: on a short window the menu
    scrolls rather than run past it, its button out of reach. */
 .envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; }
@@ -287,6 +288,23 @@ kbd {
 .freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
 .freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
 .freshbadge .drift:empty { display: none; }
+/* The reload, the pill's last segment: a glyph behind a divider, so it reads
+   as acting on the manifest the badge describes. Alone, rounded all round,
+   until the first freshness answer shows the badge. Its arrows turn while the
+   server reads the file, which takes seconds on a large project. */
+.manifestpill { display: inline-flex; align-items: stretch; flex: 0 0 auto; }
+.manifestpill .freshbadge { border-radius: 10px 0 0 10px; border-right: 0; }
+.reloadbtn {
+  display: inline-flex; align-items: center; padding: 0 8px 0 7px; color: var(--fg-dim); cursor: pointer;
+  background: var(--bg-3); border: 1px solid var(--line); border-radius: 0 10px 10px 0;
+}
+.freshbadge.hidden + .reloadbtn { border-radius: 10px; padding: 4px 7px; }
+.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: #26303e; border-color: #3a475a; }
+.reloadbtn:focus-visible, .freshbadge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.reloadbtn[aria-busy=true] { cursor: progress; }
+.reloadbtn[aria-busy=true] svg { animation: reload-turn .9s linear infinite; }
+@keyframes reload-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reloadbtn[aria-busy=true] svg { animation: none; opacity: .5; } }
 /* The Reports button, and what is new in them on it: each section's news in
    its own colour, collin's as collin's, so it reads as the tool's. */
 /* A glyph alone until the pointer or the focus is on it, or the panel is down:
@@ -716,6 +734,35 @@ kbd {
   }
 }
 .reports-view .diff-head { padding: 6px 12px 5px; }
+/* The settings (0100): a section at a time, its blocks one under the other at
+   a reading width, the menus it took the place of drawn on the page. */
+.setlead { margin: 0; font-size: 12px; color: var(--fg-dim); max-width: 760px; }
+.setblock { max-width: 760px; margin-top: 18px; }
+.setblock > h3 {
+  margin: 0 0 6px; font-size: 10.5px; letter-spacing: .9px; text-transform: uppercase;
+  color: var(--fg-dim); font-weight: 600;
+}
+.setnote { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
+.setnote.warn { color: var(--warn); }
+.setline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
+.setpath { font: 11.5px var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+.setactions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
+.setactions a.btn { text-decoration: none; color: var(--fg); }
+.envmenu.inpanel {
+  position: static; z-index: auto; width: auto; min-width: 0; max-width: 560px; max-height: none;
+  overflow: visible; padding: 0; background: none; border: 0; box-shadow: none;
+}
+.envmenu.inpanel .menunote { max-width: none; }
+.cllnow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.seticon {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 17px;
+  color: var(--fg-dim);
+}
+.seticon .sficon { width: 14px; height: 14px; }
+.seticon .profileicon { width: 16px; height: 13px; }
+.seticon[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.setglyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.setwarn { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: 0 0 auto; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
 .rnew[data-tone=bad] { color: var(--bad); border-color: var(--bad); }
 .rnew[data-tone=warn] { color: var(--warn); border-color: var(--warn); }
@@ -1208,7 +1255,7 @@ kbd {
   margin: 0; padding: 8px 10px; font: 11px/1.5 var(--mono); color: #c2ccd9;
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; overflow: auto;
 }
-/* The sources form, in the modal. */
+/* The sources form, in the settings' Orchestration section (0100). */
 .jobsrc p { margin: 0 0 10px; font-size: 11.5px; }
 .jobsrc-card { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin-bottom: 10px; }
 .jobsrc-top { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -1403,6 +1450,7 @@ kbd {
   border-radius: 4px; padding: 2px 6px; font: 11.5px var(--mono);
 }
 .envpanel input[type=text]:focus { border-color: var(--accent-dim); outline: none; }
+.envpanel .loc td.k { white-space: nowrap; word-break: normal; }
 .envpanel p { margin: 10px 0 0; font-size: 11px; }
 .kvline { display: grid; grid-template-columns: 130px 1fr; gap: 3px 12px; font-size: 12px; }
 .kvline dt { color: var(--fg-dim); }
@@ -1552,30 +1600,14 @@ kbd {
 .ghmenu a.menulink:hover .ghglyph, .ghmenu a.menulink:focus .ghglyph { color: var(--fg); }
 /* Under the labels, past the 14px glyph and its gap. */
 .ghmenu .menunote { padding-left: 30px; }
-/* Where Snowflake's features are found, so it keeps their colour on or off,
-   and a ring of it, where the grey gear it replaced was easy to miss. */
-#settings-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  border-color: rgba(41, 181, 232, .45); background: rgba(41, 181, 232, .08);
-}
-#settings-btn:hover { border-color: var(--tool); background: rgba(41, 181, 232, .18); }
-#settings-btn .sficon { width: 15px; height: 15px; stroke-width: 1.5; }
-/* Off: muted, never grey, so it can still be found. */
-#settings-btn[data-on=false] { border-color: rgba(41, 181, 232, .25); background: transparent; }
-#settings-btn[data-on=false] .sficon { opacity: .7; filter: saturate(.45); }
-#settings-btn[data-on=false]:hover .sficon { opacity: 1; filter: none; }
-/* The dbt profile, in the violet of dbt's own YAML while there is one to open. Missing, it
-   is grey and dimmed and carries a dot, so the button stays where the user
-   looks for it and says something is wrong. */
-#profile-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; }
-.profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-#profile-btn[data-found=true] { color: var(--dbt-yaml); border-color: rgba(155, 135, 245, .5); background: rgba(155, 135, 245, .1); }
-#profile-btn[data-found=true]:hover { border-color: var(--dbt-yaml); background: rgba(155, 135, 245, .2); }
-#profile-btn[data-found=false] .profileicon { opacity: .5; }
-#profile-btn[data-found=false]::after {
-  content: ''; position: absolute; top: 0; right: 0;
+/* The gear (0100), with the Reports button's look, and a dot while the
+   profile is missing: the button that said so is gone into the settings. */
+#settings-btn { position: relative; }
+#settings-btn[data-warn=true]::after {
+  content: ''; position: absolute; top: 1px; right: 1px;
   width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
 }
+.profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
   position: fixed; inset: 0; z-index: 72; background: #0009;

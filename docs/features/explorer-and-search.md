@@ -27,12 +27,12 @@ one asks the server nothing. The second reopens the tree down to the file being
 edited, and is greyed when the open tab is the dbt profile, which lives outside
 the project.
 
-That profile is not in the tree, unless the project holds one: the violet
-button beside the snowflake in the top bar, a user and a plug, opens it
-instead. dbt-edith looks for it where dbt does, in `DBT_PROFILES_DIR` as
-dbt-edith was started with it, then in the project, then in `~/.dbt`, and the
-button's tooltip names the file it found. Grey, with an amber dot, it names
-where dbt would read one and found none. It is the one file outside the project
+That profile is not in the tree, unless the project holds one: the Project
+section of the settings, behind the gear in the top bar, opens it instead.
+dbt-edith looks for it where dbt does, in `DBT_PROFILES_DIR` as dbt-edith was
+started with it, then in the project, then in `~/.dbt`, and the section names
+the file it found. When there is none, it names where dbt would read one, and
+the gear and the section's row carry an amber dot. It is the one file outside the project
 dbt-edith opens, and saving it writes that file in place: dbt-edith never
 creates one (0017, 0049). A profile that is a link, `~/.dbt/profiles.yml`
 pointing into a dotfiles repository say, stays a link: the save writes the
@@ -89,5 +89,5 @@ over, binaries and anything over 2 MB, are counted in the status line rather
 than quietly dropped.
 
 `.env` files are never opened by it (0020). Searching for a variable's name
-finds where it is used, never where it is set; the Manage environments panel
-answers that other question, by name.
+finds where it is used, never where it is set; the environments in the
+settings' Project section answer that other question, by name.
