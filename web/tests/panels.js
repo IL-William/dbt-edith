@@ -1,7 +1,9 @@
 // What every panel over the editor and the dock shares (0091): one down at a
-// time, what is under it inert while it is, the focus given back to where it
-// was before the first, and the hooks of a panel giving way run with the next
-// one already down, so nothing under them counts as seen in between.
+// time, what is under it inert while it is, the sidebar too under a wide one
+// (0101), the focus given back to where it was before the first, and the
+// hooks of a panel giving way run with the next one already down, so nothing
+// under them counts as seen in between. Escape closes what a panel opened
+// inside itself before the panel.
 // Run from the repository root: jsc web/tests/panels.js
 var src = read('web/app.js');
 
@@ -49,7 +51,7 @@ function paintReportsButton() { log.push('paint reports ' + S.panel); }
 function fillCatalogJobs() { log.push('jobs, panel ' + JSON.stringify(S.panel)); }
 function openReports(section) { log.push('reopen reports ' + section); }
 
-['editor-pane', 'gutter-dock', 'dock', 'reports', 'other'].forEach(function (id) { fakeEl(id); });
+['editor-pane', 'gutter-dock', 'dock', 'sidebar', 'gutter-side', 'reports', 'other', 'wide'].forEach(function (id) { fakeEl(id); });
 var editorButton = fakeEl('editor-button', els['#editor-pane']);
 var popupButton = fakeEl('popup-button');
 var inReports = fakeEl('in-reports', els['#reports']);
@@ -66,7 +68,16 @@ PANELS.other = {
   save: function () { return { mine: 1 }; },
   reopen: function () {},
 };
+// A wide one, as the Custom selection's: over the sidebar too, and with
+// something of its own that Escape closes first, as the selection's card.
+var inside = false;
+PANELS.wide = {
+  el: '#wide', wide: true,
+  paint: function () {}, closed: function () {}, save: function () { return {}; }, reopen: function () {},
+  escape: function () { var was = inside; inside = false; return was; },
+};
 var covers = function () { return ['#editor-pane', '#gutter-dock', '#dock'].map(function (s) { return els[s].inert; }); };
+var side = function () { return ['#sidebar', '#gutter-side'].map(function (s) { return els[s].inert; }); };
 
 print('--- one panel ---');
 editorButton.focus();
@@ -74,7 +85,7 @@ log = [];
 openPanel('reports');
 check('down: named, open, shown to a reader, focused', [S.panel, panelOpen('reports'), els['#reports'].classList.contains('open'),
   els['#reports'].attrs['aria-hidden'], document.activeElement === els['#reports']], ['reports', true, true, 'false', true]);
-check('what it covers is inert', covers(), [true, true, true]);
+check('what it covers is inert, and the sidebar is not', [covers(), side()], [[true, true, true], [false, false]]);
 check('the hover card and a popup close first, then its button is painted', log, ['hovercard', 'popup', 'paint reports reports']);
 log = [];
 openPanel('reports');
@@ -105,6 +116,16 @@ check('the first one\'s hooks run with the second already down', log,
 check('what they cover stayed inert', covers(), [true, true, true]);
 closePanel({ restore: true });
 check('Escape gives back the focus from before the first', document.activeElement === editorButton, true);
+
+print('\n--- a wide panel ---');
+openPanel('wide');
+check('down: the sidebar and its gutter inert as well', [covers(), side()], [[true, true, true], [true, true]]);
+openPanel('reports');
+check('the reports in its place: the sidebar usable again, the rest not', [covers(), side()], [[true, true, true], [false, false]]);
+openPanel('wide');
+check('and wide again: the sidebar inert again', side(), [true, true]);
+closePanel();
+check('up: nothing inert', [covers(), side()], [[false, false, false], [false, false]]);
 
 print('\n--- what the tour keeps ---');
 S.reportsSection = 'collin';
@@ -246,3 +267,17 @@ PANELS.settings.closed({ restore: true });
 check('another panel down by the time the index is read: its section is not drawn over it',
   log.filter(function (l) { return l.indexOf('section') === 0; }), []);
 S.panel = '';
+
+openPanel('wide');
+inside = true;
+press('Escape');
+check('what the panel opened inside itself closes first, and only it', [inside, S.panel], [false, 'wide']);
+press('Escape');
+check('then Escape rolls the panel up', S.panel, '');
+// The panel's own listener, which the focus inside it reaches, calls the same.
+inside = true;
+openPanel('wide');
+escapePanel();
+check('the same from the panel\'s own Escape', [inside, S.panel], [false, 'wide']);
+escapePanel();
+check('and the second one rolls it up', S.panel, '');

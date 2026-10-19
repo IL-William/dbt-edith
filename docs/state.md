@@ -1855,8 +1855,11 @@ quarter of the JSON's bytes. Not driven on the VM.
       name shrinking with an ellipsis, its full name in the tooltip. The
       settings panel (0100) took three buttons out of the bar, and Reload
       manifest became the arrows at the end of the manifest's pill: on Jaffle
-      Shop it now breaks under about 770px rather than 1050px, where the
-      chips, Search and the manifest's pill take a second line.
+      Shop it broke under about 780px rather than 1050px, where the chips,
+      Search and the manifest's pill take a second line. The Custom selection
+      button (0101) brings that about 50px sooner, to about 830px, and to
+      about 930px while its panel is down, its name unfolded beside its
+      glyph, as Reports' and the gear's are while theirs are.
     - **How to check it:** item 10's two measures, at several widths, with
       Snowflake's features on and off.
 13. **The README's options, held to `--help`.** The README writes its options

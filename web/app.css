@@ -316,7 +316,7 @@ kbd {
   max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap;
   transition: max-width .18s ease-out, opacity .18s ease-out, margin-left .18s ease-out;
 }
-.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { max-width: 80px; opacity: 1; margin-left: 6px; }
+.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { max-width: 120px; opacity: 1; margin-left: 6px; }
 .reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
 /* No report has anything yet: dimmed rather than hidden, so it can be found (0075). */
 /* .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
@@ -374,7 +374,9 @@ kbd {
 }
 #folder-levels-box.open { display: flex; }
 
-#body { flex: 1; display: flex; min-height: 0; }
+/* Relative, for the Custom selection's panel, which covers the sidebar as
+   well as the editor and the dock (0101). */
+#body { flex: 1; display: flex; min-height: 0; position: relative; }
 
 /* --------------------------------------------------------------- sidebar -- */
 #sidebar {
@@ -701,20 +703,29 @@ kbd {
 .reports-navrow.empty .tooldot { background: none; box-shadow: inset 0 0 0 1.5px var(--tool); }
 .reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Custom selection in its panel (0092): the dock's canvas at the window's
-   height, its tools in the head, and the Catalog of the box clicked beside
-   it, as wide as a card is read. */
-.selpanel-main { flex: 1; min-width: 0; display: flex; flex-direction: column; container: selmain / inline-size; }
+/* Custom selection in its panel (0092), over the whole window (0101): its
+   head across the top, the dock's canvas under it, and the Catalog of the box
+   clicked beside the canvas once one is, as wide as a card is read. */
+.selpanel { flex-direction: column; container: selmain / inline-size; }
 .selpanel-head {
   flex: none; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 12px;
   background: var(--bg-2); border-bottom: 1px solid var(--line);
 }
 .selpanel-title { font: 12px var(--ui); color: var(--fg); white-space: nowrap; }
-.selpanel-canvas { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.selpanel-body { flex: 1; min-height: 0; display: flex; }
+.selpanel-canvas { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* As wide as its edge was last dragged to, which selCardWidth() holds
+   between the same bounds, and the canvas always keeps some. */
 .selpanel-card {
-  flex: 0 0 clamp(280px, 36%, 420px); min-width: 0; display: flex; flex-direction: column;
+  flex: 0 0 var(--selcard-w, clamp(280px, 30%, 420px)); min-width: 280px; max-width: calc(100% - 320px);
+  display: flex; flex-direction: column; position: relative;
   background: var(--bg-2); border-left: 1px solid var(--line);
 }
+.selpanel-grip { position: absolute; top: 0; bottom: 0; left: -3px; width: 5px; z-index: 2; cursor: col-resize; }
+.selpanel-grip:hover, .selpanel-grip.drag { background: var(--accent); }
+/* Its × in the corner, the Catalog's head keeping clear of it. */
+.selpanel-cardx { position: absolute; top: 6px; right: 6px; z-index: 1; }
+.selpanel-card .cat-head { padding-right: 34px; }
 /* Narrower, the selector row takes a second line rather than crush its box,
    and the head's tools keep their glyph alone, named by their tooltip and
    still read out, as the dock's do when its row runs out. */

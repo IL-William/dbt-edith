@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.38.0 - 2026-10-19
+
+- Open Custom selection from a button in the top bar as well, over the whole
+  window with the sidebar, the card of a box only once it is clicked, closed
+  by its × or Escape and resized by dragging its edge (0101).
+
 ## 1.37.2 - 2026-10-19
 
 - Stamp a build with `git describe` only when its source is the top of its
