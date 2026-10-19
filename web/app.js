@@ -14008,9 +14008,9 @@ function watchInstall() {
    from a link, so that row opens the repository, at its Star button. Pure, for
    web/tests/github.js.
    The build goes in only in the shape a build of this repository gives it.
-   build.rs asks git, which looks up from the source: a copy of it built inside
-   another repository, or a tag of the user's own, would name that instead,
-   and an issue is public. Anything else keeps only its date. */
+   build.rs describes only from a release's tag, at the top of a repository,
+   but a build from before it did would name another repository's tag or the
+   user's own, and an issue is public. Anything else keeps only its date. */
 function githubLinks(repo, version, build, os) {
   const system = { macos: 'macOS', windows: 'Windows', linux: 'Linux' }[os] || os || 'an unknown system';
   const stamp = /^((v\d+\.\d+\.\d+(-\d+-g[0-9a-f]+)?|[0-9a-f]{7,40})(-dirty)?, )?built \d{4}-\d{2}-\d{2}$/.test(build || '')

@@ -136,8 +136,33 @@ fn version_rc() -> String {
 /// The nearest tag, how far past it, the short commit, and whether the tree was
 /// dirty. None when there is no `.git`, or no git on PATH, which is not an
 /// error: the date alone still answers "is this the binary I just built".
+///
+/// None too when this folder is not the top of the repository git finds. Git
+/// looks up from here, so a copy of the source inside another repository, or
+/// under a home folder kept in git, would carry that repository's tag. The
+/// prefix is asked rather than the top's path compared with this one, which
+/// git spells `C:/...` on Windows and through no symlink. An exported
+/// `GIT_DIR` would name another repository whatever the folder, so neither
+/// command sees it.
+///
+/// Only a release's tag is described from (0045): a tag of the user's own in
+/// the clone would otherwise stand in for the release, in `--version`, the
+/// status bar and an issue's body. Past the release, the count and the commit
+/// still tell two builds apart.
 fn git_describe() -> Option<String> {
-    let out = Command::new("git").args(["describe", "--tags", "--always", "--dirty"]).output().ok()?;
+    let git = || {
+        let mut c = Command::new("git");
+        c.env_remove("GIT_DIR").env_remove("GIT_WORK_TREE");
+        c
+    };
+    let prefix = git().args(["rev-parse", "--show-prefix"]).output().ok()?;
+    if !prefix.status.success() || !String::from_utf8_lossy(&prefix.stdout).trim().is_empty() {
+        return None;
+    }
+    let out = git()
+        .args(["describe", "--tags", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--always", "--dirty"])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
