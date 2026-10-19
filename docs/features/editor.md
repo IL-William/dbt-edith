@@ -95,7 +95,13 @@ This is the one thing dbt's own artifacts cannot tell you: the manifest holds no
 is itself `{{ env_var(...) }}` is resolved under the environment selected in the
 status bar, and the card says whether the value came from that file or from the
 default written in the call. Any line of the block it could not read is reported
-with its line number rather than quietly skipped.
+with its line number rather than quietly skipped. A click on a `var('x')` opens
+`dbt_project.yml` at its key, lit for a moment, the way a click on a `ref()`
+opens the model; a var the block does not define says so instead. With unsaved
+edits in `dbt_project.yml`, the click follows the tab rather than the disk, and
+a `ref()` written as a var's default still opens its model. An
+`env_var('X')` keeps the help cursor: its value comes from a `.env` or the
+environment, and there is no line of the project to open.
 
 Two things are never shown, both refused on the server rather than hidden in the
 page: a `DBT_ENV_SECRET_*`, which dbt itself marks as never renderable, and any
@@ -150,11 +156,11 @@ with the keys of the machine you are on.
 A single click in the file tree opens a **preview** tab, shown in italics and
 reused by the next single click, so browsing the project does not pile up tabs.
 Double-clicking, or editing the file, pins it, and so does following a link out
-of it, a `ref()`, a macro call or a `Cmd/Ctrl + K` result, so that Back has it
-to return to; the link's target opens as the preview in its turn. The **Open
-editors** panel at the top of the sidebar lists every open file with its own
-close and save buttons, plus save-all and close-all in its header. Closing a
-tab never touches the file on disk.
+of it, a `ref()`, a macro call, a `var()` or a `Cmd/Ctrl + K` result, so that
+Back has it to return to; the link's target opens as the preview in its turn.
+The **Open editors** panel at the top of the sidebar lists every open file
+with its own close and save buttons, plus save-all and close-all in its
+header. Closing a tab never touches the file on disk.
 
 A tab follows its file when something else rewrites it: a `git pull` in the
 terminal, a checkout, dbt, another editor. With nothing unsaved, it shows the

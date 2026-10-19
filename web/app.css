@@ -1346,8 +1346,13 @@ kbd {
 .cm-reflink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
 .cm-reflink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
 
-.cm-varlink { border-bottom: 1px dotted var(--seed); cursor: help; border-radius: 2px; }
-.cm-varlink:hover { color: var(--seed) !important; border-bottom-style: solid; background: #16281f; }
+/* A var() opens its line in dbt_project.yml; an env_var() has nothing to open,
+   its value being read from a .env or the environment, so it keeps the help
+   cursor. */
+.cm-varlink { border-bottom: 1px dotted var(--seed); cursor: pointer; border-radius: 2px; }
+.cm-varlink.env:not(.cm-reflink):not(.cm-macrolink) { cursor: help; }
+/* A ref() or a macro call written as a var's default lights as the link it is. */
+.cm-varlink:not(.cm-reflink):not(.cm-macrolink):hover { color: var(--seed) !important; border-bottom-style: solid; background: #16281f; }
 
 /* A folder key in dbt_project.yml: dotted like a var rather than like a ref,
    because the click lands in the tree and not on a node. Dashed when no folder

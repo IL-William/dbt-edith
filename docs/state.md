@@ -22,7 +22,7 @@ description, columns and counts; a `var()` or `env_var()` shows its value,
 resolved under the selected environment. Project vars come from a hand-written
 scanner over `dbt_project.yml` (0018), because the manifest does not carry them.
 Showing a resolved value needed the .env boundary widened, which 0019 does,
-under two guards.
+under two guards. A click on a `var()` opens `dbt_project.yml` at its key.
 
 Breadcrumb bar: the row under the tabs shows the file's path
 and, inside a `.yml` or a `.md`, where the cursor sits in the document. Every
@@ -865,7 +865,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 20 and 21).
+items 19 and 20).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -1551,17 +1551,14 @@ quarter of the JSON's bytes. Not driven on the VM.
    A history across commands is not planned: dbt rewrites the file each time,
    and this tool keeps nothing of the project's. Per-node freshness would
    read the same mtimes 0025 already walks.
-3. **A var's definition line, clickable.** The card names
-   `dbt_project.yml:<line>`. The scanner this was waiting for now exists:
-   `yamlOutline` plus `gotoPos` in `web/app.js` is most of the work.
-4. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
+3. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
-5. **Which jobs test a model.** The Jobs tab resolves test steps with tests in
+4. **Which jobs test a model.** The Jobs tab resolves test steps with tests in
    the universe, as dbt does, and lists them on a test node; what is left is
    showing, on a model, the steps that run its tests, through
    `graph.host_of`. Left out of 1.9.0 because a model with 48 tests would list
    one step 48 times unless they are grouped by step first.
-6. **A dbt section in Reports.** What the project holds, counted:
+5. **A dbt section in Reports.** What the project holds, counted:
    - models by materialization;
    - tests, generic and singular, and how many are `severity: warn`;
    - sources, seeds, snapshots and exposures;
@@ -1572,7 +1569,7 @@ quarter of the JSON's bytes. Not driven on the VM.
    that the top bar shows, and `graph.macros` has the macros. So the section
    reads no file and costs the index nothing (0064). The section opens the
    lists behind each count, as the coverage does.
-7. **dbt's own warnings, from `logs/dbt.log`.** No artifact carries them:
+6. **dbt's own warnings, from `logs/dbt.log`.** No artifact carries them:
    `manifest.json` has no field for them, `run_results.json` only says how each
    node's run or test ended, and a dbt Fusion 2.0 preview `run_results.json` of
    a compile lists no result at all.
@@ -1590,7 +1587,7 @@ quarter of the JSON's bytes. Not driven on the VM.
        10 MB (`dbt.log.1`, `dbt.log.2`).
      - Its folder can be moved with `--log-path` or `DBT_LOG_PATH`.
      - A manifest copied from another machine comes without its log.
-8. **Warnings worked out here, without a run.** They hold for dbt-core and
+7. **Warnings worked out here, without a run.** They hold for dbt-core and
    Fusion alike, and when no log is there.
    - **First, the one asked for:** config paths in `dbt_project.yml` that apply
      to no resource, dbt's own `UnusedResourceConfigPath`. The keys are
@@ -1606,7 +1603,7 @@ quarter of the JSON's bytes. Not driven on the VM.
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-9. **A Run button on a node's file.** It sits at the end of the breadcrumb
+8. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
     only a selection types its command, so looking never touches the
@@ -1735,7 +1732,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
-10. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+9. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
@@ -1822,7 +1819,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       (`/api/collineage` answers 404): run collin on it first, or put a long
       name in the chip from the page, since its text is all its width depends
       on.
-11. **What is new since the version you had.** An update usually skips
+10. **What is new since the version you had.** An update usually skips
     several releases, and the update pill's What changed (0068) opens one
     release's notes, on GitHub, which the VM cannot always reach.
     - **Where it starts from:** `tour.json` keeps the newest version that
@@ -1846,7 +1843,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       - the first tour's steps predate the field, and stay out of every tour
         of what is new.
 
-12. **The top bar on a narrow window.** Under about 1000px its chips break
+11. **The top bar on a narrow window.** Under about 1000px its chips break
     onto two or three lines ("5 / models", "Search / ⌘K", "Reload /
     manifest"), and under about 850px the bar runs past the window. The
     GitHub mark (1.25.0) brings both about 26px sooner. The status bar does
@@ -1860,31 +1857,31 @@ quarter of the JSON's bytes. Not driven on the VM.
       button (0101) brings that about 50px sooner, to about 830px, and to
       about 930px while its panel is down, its name unfolded beside its
       glyph, as Reports' and the gear's are while theirs are.
-    - **How to check it:** item 10's two measures, at several widths, with
+    - **How to check it:** item 9's two measures, at several widths, with
       Snowflake's features on and off.
-13. **The README's options, held to `--help`.** The README writes its options
+12. **The README's options, held to `--help`.** The README writes its options
     by hand, and they have drifted once already: `--help` says `--shell`
     starts `$SHELL`, while `src/pty.rs` and the README say `$SHELL -l`. Fix
     the help text, then add a test that compares the README's block with what
     clap prints, so neither can move alone.
-14. **An issue template.** The GitHub menu opens an issue whose body is a
+13. **An issue template.** The GitHub menu opens an issue whose body is a
     version and a system, in English, with no template. A report then often
     comes without the steps that lead to the bug. Templates under
     `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
     what showed.
-15. **The levels box, over what is under it.** By folder's levels box (0080)
+14. **The levels box, over what is under it.** By folder's levels box (0080)
     opens while the pointer rests on the toggle, so a touch screen cannot
     reach it at all.
     - **What it covers while open:** the count beside the Custom selection
       field, and the left of the lineage's find bar (0081).
     - **Possible answers:** open it on a click too, or place it where it
       covers no tool.
-16. **Model versions.** The graph does not read a model's `version`, so v1
+15. **Model versions.** The graph does not read a model's `version`, so v1
     and v2 of a model show the same name, and the Catalog copies that name.
     Pasted into `--select`, it picks every version; in `ref()`, the latest.
     Reading `version` and `latest_version` from the manifest would name each
     one apart, as dbt's `name.v1` does.
-17. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+16. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -1895,14 +1892,14 @@ quarter of the JSON's bytes. Not driven on the VM.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-18. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+17. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-19. **A typed command and an empty entry of `PATH`.** Every command the page
+18. **A typed command and an empty entry of `PATH`.** Every command the page
     types runs in the project folder, in the terminal's shell: the update,
     Run again, Recompile, `dbt ls`, the selector command, collin's install
     line, and the freshness badge's `dbt parse`, which presses Enter itself
@@ -1924,20 +1921,20 @@ quarter of the JSON's bytes. Not driven on the VM.
     - **Not known.** Whether Git Bash turns an empty entry of the Windows
       `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
 
-Items 20 to 22 are the rest of the plan chosen with the panels' mechanism
+Items 19 to 21 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-20. **A model's lineage seen whole.** The dock's lineage of the model in
+19. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-21. **git seen whole.** The side-by-side diff and the commit in a panel, the
+20. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-22. **Boxes without their text far out, then the cap again.** Past 3 000
+21. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-23. **An MCP server over these answers.** A stdio JSON-RPC facade on
+22. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
@@ -2029,7 +2026,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 22);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 21);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;
