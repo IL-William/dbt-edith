@@ -1,6 +1,6 @@
 # 0091. What speaks of the whole project opens in a panel
 
-Date: 2026-10-16 · Status: accepted · Amends 0064
+Date: 2026-10-16 · Status: accepted, amended by 0101 · Amends 0064
 
 **Trigger:** read before adding a panel over the editor and the dock, moving
 a view between the dock and a panel, or changing what opens, closes or covers
@@ -31,6 +31,10 @@ would decide it a little differently.
   was. Escape also reaches it once the focus has fallen back to the page,
   unless a menu was open as it came in: a menu the pointer opened lets the
   key go on once closed (0086), and that Escape was the menu's.
+  *Amended by [0101](0101-custom-selection-opens-over-the-whole-window.md):
+  a panel marked `wide`, the Custom selection's, covers the sidebar as well,
+  and an `escape` hook closes what a panel opened inside itself before the
+  panel.*
 - **One panel at a time.** Opening one rolls up the one that was down, what
   is under them staying inert in between, and the first one's hooks run with
   the second already down, so nothing under them counts as seen. The focus a

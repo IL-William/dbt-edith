@@ -104,6 +104,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) | collin is wanted at 0.8.0, and a version installed by tag is never called older | raising `WANTS`, or changing what the menu and the Columns tab say about the version of the collin that runs |
 | [0099](0099-a-column-may-run-collin-first-when-asked.md) | A column may run collin first, when the command line asks | letting the command line start a program, changing what `--run-collin` hands collin or where it writes, or making `--column` produce lineage unasked |
 | [0100](0100-the-settings-open-in-a-panel-of-their-own.md) | The settings open in a panel of their own | adding a setting, moving one between the settings and another place, or changing what the gear, a status bar pill or a section of the settings opens |
+| [0101](0101-custom-selection-opens-over-the-whole-window.md) | Custom selection opens over the whole window, its card on a click | changing what a panel covers, where the Custom selection is opened from, or when its card shows |
 | [0102](0102-a-node-and-the-project-are-described-on-the-command-line.md) | A node and the project are described on the command line | adding to what `--describe` or `--overview` prints, changing what `--output compact` leaves out, or letting the command line read a file of the project |
 
 ## Keeping these honest

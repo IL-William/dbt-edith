@@ -60,8 +60,8 @@ pull request.
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |
 | double-click a lineage node | re-centre the lineage on it and open its file, pinned |
 | `+N` badge on a node | pull in one more level of parents or children |
-| the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a panel over the editor and the dock |
-| click a box in the Custom selection's panel | show its card beside the canvas; a double-click opens its file and rolls the panel up |
+| the Custom selection button in the top bar or above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a panel over the whole window |
+| click a box in the Custom selection's panel | open its card beside the canvas, its left edge dragged to resize it, closed again by its × or Escape; a double-click opens its file and rolls the panel up |
 | wheel / drag | zoom and pan the lineage; a drag that starts on a box pans too, and opens nothing |
 | Export above the graph | save what the canvas shows as one HTML file anyone can open |
 | Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |

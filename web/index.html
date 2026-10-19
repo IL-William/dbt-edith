@@ -18,6 +18,16 @@
   <span id="project" class="muted">loading…</span>
   <span id="counts" class="chips"></span>
   <div class="grow"></div>
+  <!-- Custom selection, over the whole window (0101). Two boxes, one feeding
+       the other, inside the corners of a frame: nodes picked out. Its name
+       unfolds on hover, as the Reports button's does. -->
+  <button id="select-btn" class="btn reportsbtn" type="button" aria-controls="select-panel" aria-expanded="false"
+          title="Custom selection: any set of nodes a dbt selector names, drawn over the whole window">
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 5V2.75a1 1 0 0 1 1-1H5M11 1.75h2.25a1 1 0 0 1 1 1V5M14.25 11v2.25a1 1 0 0 1-1 1H11M5 14.25H2.75a1 1 0 0 1-1-1V11"/>
+         <rect x="4.75" y="4.75" width="3" height="3" rx=".5"/><rect x="8.25" y="8.25" width="3" height="3" rx=".5"/><path d="M7.75 6.25h2v2"/></svg>
+    <span class="rlabel">Custom selection</span>
+  </button>
   <!-- Dimmed while no report has anything to show (0075); reportsNews() says what is new in them.
        A sheet with a bar chart on it, drawn here like the other glyphs: its name unfolds on hover. -->
   <button id="reports-btn" class="btn reportsbtn dim" type="button" aria-controls="reports" aria-expanded="false">
@@ -179,7 +189,7 @@
                     title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
             <button class="segbtn" data-mode="select" aria-controls="select-panel" aria-expanded="false"
-                    title="Any set of nodes you describe, drawn together over the editor and the dock: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
+                    title="Any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
@@ -276,22 +286,28 @@
       <nav id="settings-nav" class="reports-nav" aria-label="Settings"></nav>
       <div id="settings-view" class="reports-view"></div>
     </section>
-    <!-- Custom selection at the window's height (0092). It holds nothing of its
-         own: selectPanelDown() brings the dock's canvas up into it, the selector
-         bar over it and the canvas's tools, and the Catalog beside it. -->
-    <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Custom selection" aria-hidden="true">
-      <div class="selpanel-main">
-        <div class="selpanel-head">
-          <span class="selpanel-title">Custom selection</span>
-          <div class="grow"></div>
-          <span id="selpanel-tools" class="tools"></span>
-          <button class="icon" id="selpanel-close" type="button" aria-label="Close the selection">×</button>
-        </div>
-        <div id="selpanel-canvas" class="selpanel-canvas"></div>
-      </div>
-      <aside id="selpanel-card" class="selpanel-card" aria-label="The box clicked"></aside>
-    </section>
   </main>
+
+  <!-- Custom selection over the whole window, the sidebar too (0092, 0101). It
+       holds nothing of its own: selectPanelDown() brings the dock's canvas up
+       into it, the selector bar over it and the canvas's tools, and the
+       Catalog into the card, which a box clicked opens. -->
+  <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Custom selection" aria-hidden="true">
+    <div class="selpanel-head">
+      <span class="selpanel-title">Custom selection</span>
+      <div class="grow"></div>
+      <span id="selpanel-tools" class="tools"></span>
+      <button class="icon" id="selpanel-close" type="button" aria-label="Close the selection">×</button>
+    </div>
+    <div class="selpanel-body">
+      <div id="selpanel-canvas" class="selpanel-canvas"></div>
+      <aside id="selpanel-card" class="selpanel-card hidden" aria-label="The box clicked">
+        <!-- Its left edge, dragged to make the card wider or narrower, as the gutters are. -->
+        <div class="selpanel-grip" id="selpanel-grip"></div>
+        <button class="icon selpanel-cardx" id="selpanel-card-close" type="button" aria-label="Close the card">×</button>
+      </aside>
+    </div>
+  </section>
 </div>
 
 <footer id="statusbar">

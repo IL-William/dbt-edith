@@ -39,6 +39,7 @@ const S = {
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
+  cardAsk: 0,                 // bumped per box clicked and per card closed, so only the latest box's Catalog shows (0101)
   selectRaise: null,          // {expr, tests, max} a click asked to draw past the cap, for that line only
   selectBack: null,           // while the selection's panel is down: where what it took from the dock goes back, and the mode
   selectHistory: [],          // expressions typed this session, newest first
@@ -3953,12 +3954,12 @@ function canvasOptions() {
    for it (0024): the terminal button is how you check that against dbt itself. */
 let selectTimer = null;
 
-/* Custom selection at the window's height, in a panel of its own (0092). The
-   canvas is one: the dock's lineage pane, the selector bar over it, comes up
-   into the panel while it is down, with the canvas's own tools and, beside it,
-   the Catalog for the box clicked. All of it goes back to the dock as the
-   panel rolls up. Moved rather than copied, so the canvas keeps its
-   listeners, its find bar and its folder names. */
+/* Custom selection over the whole window, in a panel of its own (0092,
+   0101). The canvas is one: the dock's lineage pane, the selector bar over
+   it, comes up into the panel while it is down, with the canvas's own tools
+   and the Catalog, in a card beside the canvas once a box is clicked. All of
+   it goes back to the dock as the panel rolls up. Moved rather than copied,
+   so the canvas keeps its listeners, its find bar and its folder names. */
 const SELECT_MOVES = [
   ['#dock-lineage', '#selpanel-canvas'],
   ['#with-tests', '#selpanel-tools'], ['#folder-tool', '#selpanel-tools'],
@@ -3977,10 +3978,12 @@ function selectPanelDown() {
   });
   S.selectBack = { mode: S.graphMode, colFocus: S.colFocus, node: S.node, card: [...$('#catalog').childNodes], places };
   for (const [sel, to] of SELECT_MOVES) $(to).appendChild($(sel));
-  // The card starts empty: the dock's model, which the selection may not
-  // even hold, would read as a box clicked.
+  // The card starts closed, and the canvas at the panel's width: the dock's
+  // model, which the selection may not even hold, would read as a box clicked.
+  S.cardAsk++;
   S.node = null;
-  $('#catalog').replaceChildren(jel('p', 'muted pad', 'Click a box to read its card here.'));
+  $('#catalog').replaceChildren();
+  $('#selpanel-card').classList.add('hidden');
   $('#dock-lineage').classList.remove('hidden');
   openPanel('select');
   setTimeout(() => Lineage.fit(), 30);
@@ -3999,10 +4002,12 @@ function selectPanelUp() {
   if (!back) return;
   S.selectBack = null;
   clearTimeout(selectTimer);
+  clearTimeout(selCardWait);
   S.selectAsk++;
   for (const p of back.places.slice().reverse()) p.parent.insertBefore(p.el, p.next);
   $('#dock-lineage').classList.toggle('hidden', S.dock !== 'lineage');
   if (S.graphMode !== 'select') return;
+  S.cardAsk++;
   S.node = back.node;
   $('#catalog').replaceChildren(...back.card);
   if (back.mode === 'column' && back.colFocus) focusColumn(back.colFocus.id, back.colFocus.column);
@@ -4019,11 +4024,101 @@ function blankLineage() {
   $('#lineage-status').textContent = '';
 }
 
-/* The way in: the dock's Custom selection button, and the tour. */
+/* The card beside the selection's canvas, open from a click on a box until
+   its ×, Escape or a drawing without that box (0101). Opening it narrows the
+   canvas, which moves the box clicked back into sight if the card now covers
+   it; closing it puts the box out of the light too, as no box is clicked. */
+const selCardOpen = () => panelOpen('select') && !$('#selpanel-card').classList.contains('hidden');
+
+/* The double-click a desktop counts by default, Windows' and macOS's: the
+   page cannot read the one set. */
+const DOUBLE_CLICK_MS = 500;
+let selCardWait = null;
+// False once the hand pans or zooms the canvas while a card waits, as
+// Lineage's onMove says: moving it along then would jump it under the hand.
+// A press alone, on a box, a chip or the background, leaves it true.
+let selCardStill = true;
+
+/* A double-click opens the box's file instead, and its first click must
+   leave the box under the pointer for the second: a box the card would cover,
+   or the canvas has to move to show, waits until a double-click is past. The
+   card is tried and taken back in one go, which no frame ever shows. A card
+   that waited asks for its jobs once shown: its Catalog may have landed while
+   it was hidden, when nothing of it counted as seen. */
+function openSelCard(id) {
+  clearTimeout(selCardWait);
+  const card = $('#selpanel-card');
+  const shut = card.classList.contains('hidden');
+  card.classList.remove('hidden');
+  if (!Lineage.overrun(id)) return Lineage.placeHeads();
+  if (shut) card.classList.add('hidden');
+  selCardStill = true;
+  // Another click, the card closed or the panel rolled up clears it first.
+  selCardWait = setTimeout(() => {
+    if (!panelOpen('select')) return;
+    card.classList.remove('hidden');
+    if (selCardStill) Lineage.reveal(id);
+    else Lineage.placeHeads();
+    fillCatalogJobs($('#catalog .cat-jobs'));
+  }, DOUBLE_CLICK_MS);
+}
+
+/* The Catalog of a box clicked. Another click, the card closed or the panel
+   going down or up since has taken its place, and the late answer is dropped:
+   it would put back a box no longer clicked, in the card or the dock. */
+function catalogFor(id) {
+  const ask = ++S.cardAsk;
+  return nodeDetail({ id }).then((n) => { if (ask === S.cardAsk) renderCatalog(n); });
+}
+
+/* Closed, it is emptied too: opened again on another box, it would show the
+   last one's name and file until that box's answer, and keep them if none
+   came. A card still waiting out a double-click is emptied the same way, and
+   its answer dropped. The focus inside it goes to the panel, not to the page.
+   True only when a card was showing, for Escape to stop there. */
+function closeSelCard() {
+  clearTimeout(selCardWait);
+  if (!panelOpen('select')) return false;
+  const card = $('#selpanel-card');
+  const shown = !card.classList.contains('hidden');
+  const hadFocus = shown && card.contains(document.activeElement);
+  S.cardAsk++;
+  $('#catalog').replaceChildren();
+  S.node = null;
+  if (!shown) return false;
+  card.classList.add('hidden');
+  Lineage.select(null);
+  Lineage.placeHeads();
+  if (hadFocus) $('#select-panel').focus({ preventScroll: true });
+  return true;
+}
+
+/* The card's width for its edge dragged to `x`, in a row from `left` to
+   `right`: 280px at least, and the canvas left 320px, as the stylesheet
+   holds it too, so a drag past either end stops there. */
+function selCardWidth(x, left, right) {
+  return Math.round(Math.max(280, Math.min(right - left - 320, right - x)));
+}
+
+/* The way in: the top bar's button, the dock's, and the tour. */
 function openSelection() {
   const run = runSelection();
   $('#select-input').focus();
   return run;
+}
+
+function toggleSelection() {
+  if (panelOpen('select')) closePanel({ restore: true });
+  else openSelection();
+}
+
+/* The top bar's button lit while the panel is down, as the Reports one is,
+   and both buttons saying whether it is. */
+function paintSelectButtons() {
+  const open = panelOpen('select');
+  $('#select-btn').classList.toggle('on', open);
+  $('#select-btn').setAttribute('aria-expanded', String(open));
+  $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(open));
 }
 
 async function runSelection() {
@@ -4044,6 +4139,7 @@ async function runSelection() {
   if (!raise) S.selectRaise = null;
   if (!expr) {
     S.selectSub = null;
+    closeSelCard();
     Lineage.clear();
     emptyHint('Type a dbt selector, for example my_model+');
     $('#select-sum').textContent = '';
@@ -4079,7 +4175,13 @@ async function runSelection() {
       drawn = Lineage.render(sub, canvasOptions());
       paintLegend(sub);
       paintTestsCount(sub);
+      // The card stays with its box while the box is still drawn, lit as it
+      // was; a drawing without it closes the card.
+      const card = selCardOpen() && S.node && S.node.id;
+      if (card && sub.nodes.some((n) => n.id === card)) Lineage.select(card);
+      else closeSelCard();
     } else {
+      closeSelCard();
       Lineage.clear();
       emptyHint(selectEmptyText(sub));
     }
@@ -8821,7 +8923,11 @@ const PANELS = {
   },
   select: {
     el: '#select-panel',
-    paint: () => $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(panelOpen('select'))),
+    // Over the sidebar too: a selection is read across the whole window (0101).
+    wide: true,
+    paint: () => paintSelectButtons(),
+    // Its card closes first, as it opened inside the panel.
+    escape: () => closeSelCard(),
     closed: () => selectPanelUp(),
     // Its line is the tour's to put back, with the selector box's history.
     save: () => ({}),
@@ -8854,8 +8960,16 @@ const PANELS = {
 };
 
 /* Inert while a panel is down, so nothing under it takes a key or a Tab: the
-   editor and the terminal would otherwise go on typing under it. */
+   editor and the terminal would otherwise go on typing under it. A wide
+   panel covers the sidebar too, and only it does (0101). */
 const PANEL_COVERS = ['#editor-pane', '#gutter-dock', '#dock'];
+const PANEL_WIDE = ['#sidebar', '#gutter-side'];
+
+/* What panel `name` covers made inert and the rest not, none for ''. */
+function coverFor(name) {
+  for (const id of PANEL_COVERS) $(id).inert = !!name;
+  for (const id of PANEL_WIDE) $(id).inert = !!name && !!PANELS[name].wide;
+}
 
 const panelOpen = (name) => S.panel === name;
 
@@ -8872,7 +8986,7 @@ function openPanel(name) {
   if (S.panel) closePanel({ next: name });
   S.panel = name;
   S.panelReturn = back;
-  for (const id of PANEL_COVERS) $(id).inert = true;
+  coverFor(name);
   const p = PANELS[name];
   const el = $(p.el);
   el.classList.add('open');
@@ -8895,13 +9009,20 @@ function closePanel({ restore = false, next = '' } = {}) {
   S.panel = next;
   el.classList.remove('open');
   el.setAttribute('aria-hidden', 'true');
-  if (!next) for (const id of PANEL_COVERS) $(id).inert = false;
+  coverFor(next);
   const back = S.panelReturn;
   S.panelReturn = null;
   if (el.contains(document.activeElement)) document.activeElement.blur();
   if (restore && back && back.focus && document.body.contains(back) && !el.contains(back)) back.focus();
   p.paint();
   p.closed({ restore });
+}
+
+/* Escape in a panel: what it opened inside itself closes first, the
+   selection's card, and the panel only with nothing such left open. */
+function escapePanel() {
+  const p = PANELS[S.panel];
+  if (!(p.escape && p.escape())) closePanel({ restore: true });
 }
 
 // ---------------------------------------------------------------- reports --
@@ -11556,7 +11677,7 @@ function catalogJobs(body, n) {
   fillCatalogJobs(box);
 }
 
-const catalogSeen = () => panelOpen('select') || (S.dock === 'catalog' && !S.panel);
+const catalogSeen = () => selCardOpen() || (S.dock === 'catalog' && !S.panel);
 
 async function fillCatalogJobs(box) {
   if (!box || box.dataset.asked) return;
@@ -12630,7 +12751,9 @@ function foldDockTabs() {
 
 // -------------------------------------------------------------- splitters --
 function wireSplitters() {
-  const drag = (gutter, onMove) => {
+  // `refit` fits the canvas to its new size once let go; the selection's card
+  // does not ask for it, as the reader may have zoomed into the part beside it.
+  const drag = (gutter, onMove, { refit = true } = {}) => {
     gutter.addEventListener('mousedown', (e) => {
       e.preventDefault();
       gutter.classList.add('drag');
@@ -12641,7 +12764,7 @@ function wireSplitters() {
         window.removeEventListener('mouseup', up);
         S.cm && S.cm.refresh();
         if (S.fit && !$('#dock-terminal').classList.contains('hidden')) { try { S.fit.fit(); } catch {} }
-        Lineage.fit();
+        if (refit) Lineage.fit();
       };
       window.addEventListener('mousemove', move);
       window.addEventListener('mouseup', up);
@@ -12656,6 +12779,20 @@ function wireSplitters() {
     const pct = Math.min(85, Math.max(10, ((body.bottom - e.clientY) / body.height) * 100));
     document.documentElement.style.setProperty('--dock-h', pct + '%');
   });
+  // On the card rather than the page, and once a frame: each width lays the
+  // canvas and the card out again, and the band names are placed again.
+  let gripAt = null;
+  drag($('#selpanel-grip'), (e) => {
+    if (gripAt === null) {
+      requestAnimationFrame(() => {
+        const card = $('#selpanel-card'), body = card.parentNode.getBoundingClientRect();
+        card.style.setProperty('--selcard-w', selCardWidth(gripAt, body.left, body.right) + 'px');
+        gripAt = null;
+        Lineage.placeHeads();
+      });
+    }
+    gripAt = e.clientX;
+  }, { refit: false });
 }
 
 // ------------------------------------------------------------------ tour --
@@ -12725,9 +12862,9 @@ function tourSteps(c) {
     steps.push({ key: 'select', target: '#select-bar', title: 'Custom selection',
       text: 'Any set of nodes, written the way dbt reads a selection: names, `tag:`, `path:`, `+` and `@`, or a named '
         + `selector from \`selectors.yml\`. This one, \`+${m.name}+\`, is everything it is built from and everything `
-        + 'built from it. It opens over the editor and the dock, to be read at the window\'s height: a click on a box '
-        + 'shows its card beside the canvas, a double-click opens its file. dbt ls types the same selection into the '
-        + 'terminal, for you to check against dbt itself.' });
+        + 'built from it. It opens over the whole window, from its button in the top bar or in the lineage\'s bar: '
+        + 'a click on a box opens its card beside the canvas, a double-click opens its file. dbt ls types the same '
+        + 'selection into the terminal, for you to check against dbt itself.' });
     steps.push({ key: 'share', target: ['#export-btn', '#image-btn', '#select-copy'], title: 'Export, or copy as an image',
       text: 'Whatever the canvas shows, this selection included. Export saves it as one HTML file that opens offline, '
         + 'zooms without blurring and prints on one page. Copy image puts the same picture on the clipboard as a PNG, '
@@ -13518,7 +13655,7 @@ function wireKeys() {
       // back to the page, a filter emptied by Escape blurring itself, say,
       // the key reaches only here, and the panel is still what is in front.
       e.preventDefault();
-      closePanel({ restore: true });
+      escapePanel();
     }
   });
   // What Cmd+F searches when nothing has the focus: the pane last used, never a
@@ -13602,8 +13739,11 @@ function wireKeys() {
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
   $('#reports-btn').addEventListener('click', toggleReports);
+  $('#select-btn').addEventListener('click', toggleSelection);
   $('#selpanel-close').title = `Close the selection (${keyLabel('Escape', IS_MAC)})`;
   $('#selpanel-close').addEventListener('click', () => closePanel({ restore: true }));
+  $('#selpanel-card-close').title = `Close the card (${keyLabel('Escape', IS_MAC)})`;
+  $('#selpanel-card-close').addEventListener('click', () => closeSelCard());
   // On each panel rather than the document: a dialog over it answers its own
   // Escape there, and must not take the panel with it.
   for (const p of Object.values(PANELS)) {
@@ -13614,7 +13754,7 @@ function wireKeys() {
       if (escapesGraphFind(e)) return;
       e.preventDefault();
       e.stopPropagation();
-      closePanel({ restore: true });
+      escapePanel();
     });
   }
   // Keyed on the state, so a card being read is not rebuilt under the pointer
@@ -14060,14 +14200,18 @@ async function boot() {
       const { node: nodeId, column } = splitColId(n.id);
       highlightColumn(column, nodeId);
       if (column) S.catTab = 'columns';
-      nodeDetail({ id: nodeId }).then(renderCatalog).catch(() => {});
-      // In the selection's panel the Catalog beside the canvas is the answer:
-      // a file opened would roll the panel up (0092).
+      // In the selection's panel the Catalog is the answer, in the card a
+      // click opens beside the canvas: a file opened would roll the panel up
+      // (0092, 0101).
+      if (panelOpen('select')) openSelCard(n.id);
+      catalogFor(nodeId).catch(() => {});
       if (panelOpen('select')) return;
       // A column's box opens its model's file too: following a column from
       // model to model is reading each one in turn.
       previewBox(n);
     },
+    // A pan or a zoom while a card waits: it opens where the canvas is left.
+    onMove: () => { selCardStill = false; },
     onHover: (n, g, said) => {
       const { node: nodeId, column } = splitColId(n.id);
       // In column mode the box already says everything, but for the value a

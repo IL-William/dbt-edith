@@ -1621,6 +1621,7 @@ const Lineage = (() => {
       view.y = my - (my - view.y) * (k / view.k);
       view.k = k;
       apply();
+      handlers.onMove && handlers.onMove();
     }, { passive: false });
 
     // A press becomes a pan past the slop. The box a pan starts on moves
@@ -1663,6 +1664,9 @@ const Lineage = (() => {
       view.x += e.clientX - drag.lx; view.y += e.clientY - drag.ly;
       drag.lx = e.clientX; drag.ly = e.clientY;
       apply();
+      // The hand moved the canvas, which a press alone does not: a wheel zoom
+      // above says so too.
+      handlers.onMove && handlers.onMove();
     });
     // Only the left button's release ends a pan: another button's leaves it
     // going, and its own click to come. In the capture phase, so nothing below
@@ -2165,6 +2169,26 @@ const Lineage = (() => {
     apply();
   }
 
+  /* How far node `id` runs past the right of the canvas, a margin included:
+     0 for a box in sight, one not drawn, or one wider than the canvas, which
+     no move along would bring whole into it. */
+  function overrun(id) {
+    const v = indexOf(id), b = v < 0 ? null : place[v];
+    const r = svg.getBoundingClientRect();
+    if (!b || !r.width) return 0;
+    const pad = 24, left = view.x + b.x * view.k, right = view.x + (b.x + b.w) * view.k;
+    return Math.max(0, Math.min(right - (r.width - pad), left - pad));
+  }
+
+  /* Node `id` moved back into sight when the canvas has narrowed under it,
+     as the selection's card opening beside it does: the view moves along by
+     as little as that takes. The band names are placed again either way, the
+     canvas being narrower. */
+  function reveal(id) {
+    view.x -= overrun(id);
+    apply();
+  }
+
   /* Makes node v the current match and brings it to the middle. A test
      folded away is opened first with `open`, which only a step asks for, as
      a click on its chip or its group's row would. Typing leaves it folded
@@ -2382,7 +2406,7 @@ const Lineage = (() => {
   };
 
   return {
-    init, render, fit, select, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
+    init, render, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
     testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, isRowKind, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked,
   };
