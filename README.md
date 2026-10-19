@@ -135,9 +135,10 @@ found, then opens a browser:
 
 Those lines say which manifest, shell and Python environment were picked up,
 which is where most setup mistakes show first. The version carries the build it
-came from, from `git describe`, so two installs of one release are still told
-apart; the status bar shows it at the bottom right of the page, and
-`dbt-edith --version` prints it without starting anything.
+came from, from `git describe` in the clone it was built in, so two installs
+of one release are still told apart; the status bar shows it at the bottom
+right of the page, and `dbt-edith --version` prints it without starting
+anything.
 
 Opening the link swaps its key for a cookie and takes it out of the address
 bar, so bookmarks and new tabs work until the browser closes. Every launch

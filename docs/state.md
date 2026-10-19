@@ -865,7 +865,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 21 and 22).
+items 20 and 21).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -1864,30 +1864,24 @@ quarter of the JSON's bytes. Not driven on the VM.
     starts `$SHELL`, while `src/pty.rs` and the README say `$SHELL -l`. Fix
     the help text, then add a test that compares the README's block with what
     clap prints, so neither can move alone.
-14. **The build stamp of a copy inside another repository.** `build.rs` runs
-    `git describe` from the crate's folder, and git walks up from there. A copy
-    built inside another repository therefore shows that repository's tag in
-    the status bar and in `--version`. The GitHub menu's issue already drops
-    a stamp that is not dbt-edith's (1.25.0). The fix: describe only when
-    `git rev-parse --show-toplevel` is the crate's folder.
-15. **An issue template.** The GitHub menu opens an issue whose body is a
+14. **An issue template.** The GitHub menu opens an issue whose body is a
     version and a system, in English, with no template. A report then often
     comes without the steps that lead to the bug. Templates under
     `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
     what showed.
-16. **The levels box, over what is under it.** By folder's levels box (0080)
+15. **The levels box, over what is under it.** By folder's levels box (0080)
     opens while the pointer rests on the toggle, so a touch screen cannot
     reach it at all.
     - **What it covers while open:** the count beside the Custom selection
       field, and the left of the lineage's find bar (0081).
     - **Possible answers:** open it on a click too, or place it where it
       covers no tool.
-17. **Model versions.** The graph does not read a model's `version`, so v1
+16. **Model versions.** The graph does not read a model's `version`, so v1
     and v2 of a model show the same name, and the Catalog copies that name.
     Pasted into `--select`, it picks every version; in `ref()`, the latest.
     Reading `version` and `latest_version` from the manifest would name each
     one apart, as dbt's `name.v1` does.
-18. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+17. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -1898,14 +1892,14 @@ quarter of the JSON's bytes. Not driven on the VM.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-19. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+18. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-20. **A typed command and an empty entry of `PATH`.** Every command the page
+19. **A typed command and an empty entry of `PATH`.** Every command the page
     types runs in the project folder, in the terminal's shell: the update,
     Run again, Recompile, `dbt ls`, the selector command, collin's install
     line, and the freshness badge's `dbt parse`, which presses Enter itself
@@ -1927,20 +1921,20 @@ quarter of the JSON's bytes. Not driven on the VM.
     - **Not known.** Whether Git Bash turns an empty entry of the Windows
       `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
 
-Items 21 to 23 are the rest of the plan chosen with the panels' mechanism
+Items 20 to 22 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-21. **A model's lineage seen whole.** The dock's lineage of the model in
+20. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-22. **git seen whole.** The side-by-side diff and the commit in a panel, the
+21. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-23. **Boxes without their text far out, then the cap again.** Past 3 000
+22. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-24. **An MCP server over these answers.** A stdio JSON-RPC facade on
+23. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
@@ -2032,7 +2026,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 23);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 22);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;

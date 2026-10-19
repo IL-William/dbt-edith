@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.37.2 - 2026-10-19
+
+- Stamp a build with `git describe` only when its source is the top of its
+  repository, and only from a release's tag, so a copy built inside another
+  repository, or under a home folder kept in git, no longer shows that
+  repository's tag in `--version` and the status bar, only its date, and a
+  tag of your own in the clone no longer stands in for the release.
+
 ## 1.37.1 - 2026-10-19
 
 - Stop calling a lineage `truncated` when its cap holds every box it
