@@ -1,6 +1,6 @@
 # 0043. collin is updated by the command that installs it, and its version decides how
 
-Date: 2026-10-06 · Status: accepted, amended by 0060 · Amends 0042
+Date: 2026-10-06 · Status: accepted, amended by 0060 and 0098 · Amends 0042
 
 **Trigger:** read before raising the collin version dbt-edith accepts, or
 changing what the menu offers once collin is installed.
@@ -23,6 +23,8 @@ to, and dbt-edith could not tell an old collin from a new one: collin had no
   seconds. Older than `WANTS`, or no answer: the menu offers "Update collin",
   the install command with `--force`, so a collin installed from a path or
   copied beside the binary is replaced, and the Columns tab says so first.
+  *Amended by [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md):
+  never while a version installed by its tag runs, whatever its number.*
 - **Otherwise the menu offers "Check for a newer collin"**, the plain command,
   and cargo decides.
 - **Either is a line indented under Collin, shown while Collin is the tool

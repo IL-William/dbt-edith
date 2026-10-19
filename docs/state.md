@@ -575,8 +575,9 @@ button and the menu, and Catalog > Columns gives the share of its edges matched
 by column name rather than read from the SQL, or, from collin's report, how
 many models it read the SQL of, with the reason over each model it could not
 read. The menu offers "Update collin" to a collin that gives no version, or one
-below 0.1.0, where collin's numbers restarted (0047), and "Check for a newer
-collin" otherwise (0043); both type
+below 0.8.0, the first to list the columns a literal sets (0096, 0098), and
+"Check for a newer collin" to any other (0043); a version installed by its tag
+gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
 share was 100% while its manifest, written by Fusion's `parse`, carried no
 `compiled_code`, before collin read `target/compiled/` (below). Not yet tried on the VM, where cargo may not
@@ -1473,9 +1474,9 @@ model's column with nothing feeding it that is no root has no badge; a cache
 without roots badges as before and answers as main did, byte for byte. The
 legend lists every badge drawn, with or without a role on an edge. Checked
 against main on Jaffle Shop and on Shopify v1.10.0, and in headless Chrome on
-a Jaffle copy that sets literals and reads tables no node owns. Left:
-`collin_run::WANTS` still asks for collin 0.1.0, so nothing offers the update
-that brings roots.
+a Jaffle copy that sets literals and reads tables no node owns. Since
+1.34.1, `collin_run::WANTS` asks for collin 0.8.0, so "Update collin" brings
+roots to an older one.
 
 ## Deferred, in the order they were chosen
 

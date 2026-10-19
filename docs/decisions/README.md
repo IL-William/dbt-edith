@@ -101,6 +101,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0095](0095-the-update-says-when-it-is-installed-and-brings-its-tags.md) | The update says when it is installed, and brings its tags | changing what the update types, what Edith's menu offers once it has run, or how the build stamp names a release |
 | [0096](0096-a-column-a-literal-sets-is-generated-not-raw.md) | A column a literal sets is generated, not raw | changing what a column box's badge says, or reading a field of collin's cache other than its edges |
 | [0097](0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) | An indirect edge is hidden by default, drawn dashed when shown | changing how an edge of a role is drawn or walked, what the legend groups, or which edges a column's badge or counts read |
+| [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) | collin is wanted at 0.8.0, and a version installed by tag is never called older | raising `WANTS`, or changing what the menu and the Columns tab say about the version of the collin that runs |
 
 ## Keeping these honest
 

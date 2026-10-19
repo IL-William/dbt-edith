@@ -41,11 +41,14 @@ const REPO: &str = "https://github.com/IL-William/dbt-collin";
 pub const UPDATE: &str = "cargo install --locked --force --git https://github.com/IL-William/dbt-collin collin-cli";
 
 /// The oldest collin this dbt-edith accepts. Raised when dbt-edith relies on
-/// something a later collin does. collin's numbers restarted at 0.1.0 with its
-/// repository, and every collin since answers `--version`, as the old 0.2.0
-/// did and nothing before it, so one that does not is older (0043, 0047).
-pub const WANTS: (u32, u32, u32) = (0, 1, 0);
-pub const WANTS_TEXT: &str = "0.1.0";
+/// something a later collin does: 0.8.0 is the first to list its roots, the
+/// columns a literal sets, which the `generated` badge is read from (0096).
+/// collin's numbers restarted at 0.1.0 with its repository, so the old
+/// repository's 0.2.0, which writes no roots, is older again (0047). Every
+/// collin since answers `--version`, as that 0.2.0 did and nothing before it,
+/// so one that does not is older too (0043, 0098).
+pub const WANTS: (u32, u32, u32) = (0, 8, 0);
+pub const WANTS_TEXT: &str = "0.8.0";
 
 /// Where collin's coverage report goes. Not `column_lineage*.json`: discovery
 /// would offer it as a cache.
@@ -322,6 +325,16 @@ pub fn chosen_bin(installs: &[Install], chosen: Option<&str>, default: Option<&P
         Some(install) => Some(install.bin.clone()),
         None => default.map(Path::to_path_buf),
     }
+}
+
+/// Whether the collin that runs is called older than `WANTS`: then the menu
+/// offers "Update collin" and the Columns tab says so first. Only the default
+/// one can be, since it is the one the update reaches. A version installed by
+/// its tag never is, whatever its number: its tag has nothing newer, so the
+/// hint would promise an update the menu does not offer (0060, 0098). No
+/// collin running, nothing to update.
+pub fn update_offered(runs: Option<&Path>, installs: &[Install], version: Option<&str>) -> bool {
+    runs.is_some_and(|bin| !installs.iter().any(|i| i.bin == bin)) && outdated(version)
 }
 
 /// `collin 0.4.0`, a cache's producer, to `0.4.0`.
@@ -1073,6 +1086,24 @@ mod tests {
     }
 
     #[test]
+    fn only_the_default_collin_is_called_older() {
+        let default = PathBuf::from("/usr/local/bin/collin");
+        let pinned = |v: &str| Install { version: v.to_string(), bin: PathBuf::from(format!("/cfg/collin/{v}/bin/collin")) };
+        let old = Some("0.2.0 (a142ee5)");
+        assert!(update_offered(Some(&default), &[], old), "an older default is offered the update");
+        let same = pinned("0.2.0");
+        assert!(
+            !update_offered(Some(&same.bin), &[same.clone()], old),
+            "the same version installed by its tag and picked is not: no update reaches it"
+        );
+        let beside = [pinned("0.4.0")];
+        assert!(update_offered(Some(&default), &beside, old), "a version installed beside a default that runs changes nothing");
+        assert!(!update_offered(Some(&beside[0].bin), &beside, Some("0.4.0")), "nor is an older one picked to compare");
+        assert!(!update_offered(Some(&default), &beside, Some("0.8.0 (86decf5)")), "a default at WANTS is not");
+        assert!(!update_offered(None, &[], None), "no collin running has nothing to update");
+    }
+
+    #[test]
     fn a_version_installs_at_its_tag_into_its_own_folder() {
         let dir = Path::new("/home/me/.config/dbt-edith/collin");
         assert_eq!(
@@ -1287,10 +1318,14 @@ mod tests {
     #[test]
     fn a_version_is_read_from_collin_and_compared_with_the_one_wanted() {
         let d = dir("version");
-        let new = fake(&d, "echo 'collin 0.1.0 (de9f2cd)'");
-        assert_eq!(version(&new).as_deref(), Some("0.1.0 (de9f2cd)"));
+        let new = fake(&d, "echo 'collin 0.8.0 (86decf5)'");
+        assert_eq!(version(&new).as_deref(), Some("0.8.0 (86decf5)"));
         assert!(!outdated(version(&new).as_deref()));
-        assert!(!outdated(Some("0.2.0 (a142ee5)")), "the 0.2.0 of collin's old repository");
+        assert!(outdated(Some("0.7.0 (77cbad3)")), "0.7.0 lists no roots, which the generated badge needs");
+        assert!(
+            outdated(Some("0.2.0 (a142ee5)")),
+            "the 0.2.0 of collin's old repository writes no roots either: once WANTS passed 0.2.0 it is offered the update (0047)"
+        );
         let old = d.join("old");
         executable(&old, "#!/bin/sh\necho 'unknown command \"--version\"' >&2\nexit 2\n");
         assert_eq!(version(&old), None, "a collin from before --version has none");
@@ -1299,6 +1334,7 @@ mod tests {
         assert!(!outdated(Some("0.10.0 (abc)")), "compared as numbers, not text");
         assert!(!outdated(Some("1.0.0")));
         assert!(outdated(Some("garbage")));
+        assert_eq!(semver(WANTS_TEXT), Some(WANTS), "the menu names the version the comparison uses");
     }
 
     #[test]

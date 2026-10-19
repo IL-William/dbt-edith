@@ -1,6 +1,6 @@
 # 0047. collin's numbers restart at 0.1.0
 
-Date: 2026-10-07 · Status: accepted
+Date: 2026-10-07 · Status: accepted, amended by 0098
 
 **Trigger:** read before changing `WANTS` in `src/collin_run.rs`, or what the
 menu decides from the version collin gives.
@@ -20,9 +20,13 @@ update that reinstalls the same version.
   repository answers `--version`, and so did the old repository's 0.2.0, the
   last it published; no collin before that answers at all. A collin giving no
   version is still the one to update, which is the line 0043 drew.
+  *Amended by [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md):
+  collin 0.8.0 or later, the first to list the roots 0096 reads.*
 - **The old 0.2.0 passes.** It reads compiled files and writes the report this
   dbt-edith reads, as the new 0.1.0 does, so nothing tells them apart that
   matters here.
+  *Amended by [0098](0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md):
+  it writes no roots, and is offered "Update collin".*
 
 ## Rejected
 
