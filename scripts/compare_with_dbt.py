@@ -15,8 +15,8 @@ dbt-duckdb importable by the Python running the script. Without them it skips
 itself, exit 2, because check.sh must need nothing installed (0013); CI
 installs them and runs it for two versions of dbt-core. DBT names a dbt
 executable to run instead, one process per answer, which is how dbt Fusion is
-compared. dbt-edith is target/debug/dbt-edith, built here first, or whatever
-DBT_EDITH names.
+compared. dbt-edith is built here first and run from where cargo put it, or
+is whatever DBT_EDITH names.
 
 Fetching Shopify needs git and the network, for GitHub and dbt's hub. Without
 them that project is skipped, and the run ends with exit 2 even when Jaffle
@@ -180,6 +180,21 @@ JOB_STEPS = 15
 def skip(reason):
     print(f"SKIPPED: {reason}")
     sys.exit(2)
+
+
+def edith_binary():
+    """The dbt-edith DBT_EDITH names, or the one built here, found where cargo
+    says it put it, as walk_tour.edith_binary does: importing that script
+    would skip this one wherever Chrome is missing, CI included."""
+    if os.environ.get("DBT_EDITH"):
+        return os.environ["DBT_EDITH"]
+    out = subprocess.run(["cargo", "build", "--quiet", "--message-format=json-render-diagnostics"],
+                         cwd=ROOT, check=True, stdout=subprocess.PIPE, encoding="utf-8").stdout
+    for line in out.splitlines():
+        msg = json.loads(line)
+        if msg.get("reason") == "compiler-artifact" and msg["target"]["name"] == "dbt-edith" and msg.get("executable"):
+            return Path(msg["executable"])
+    sys.exit("cargo build named no dbt-edith executable")
 
 
 class Unavailable(Exception):
@@ -513,10 +528,7 @@ def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
     every_model = "--every-model" in sys.argv[1:]
-    binary = os.environ.get("DBT_EDITH")
-    if not binary:
-        subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
-        binary = ROOT / "target" / "debug" / ("dbt-edith.exe" if os.name == "nt" else "dbt-edith")
+    binary = edith_binary()
 
     tally = Tally()
     skipped = None

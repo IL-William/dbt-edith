@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-16.
+belongs here. Last updated 2026-10-18.
 
 ## Shipped
 
@@ -808,6 +808,28 @@ config directory, and makes its repository only where nothing was. A selector
 name from a job file was typed with its control characters. Each has a test
 beside it, the link ones on Unix (0090).
 
+The update says when it is installed (0095, 1.28.1). The first update run from
+Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
+running it. The update is now a button named after the release, `Update to
+1.28.0`, with what to do right under it: it types the command into the
+terminal, Enter there runs it, and dbt-edith then has to be stopped where it
+was started and started again. Once another binary is in place, the menu says
+`Installed: restart dbt-edith to run it` where the button was, and the pill
+`restart to update`. No version is named for it, since the file's time says
+another binary is there, not which. The command fetches the tags in a step of
+their own before the pull, whose failure stops nothing, so the build stamp
+names the release it built.
+
+A test in the Catalog reads as a test (1.29.0). It was drawn as a model: Mat.
+type `test`, no columns, a location table for a relation dbt never builds for
+it, and "No description in the YAML." It has Preview alone now, which opens on
+what it checks, as its hover card says it: the generic or `singular`, the node
+whose YAML declares it, its column, its severity, `warn` in amber, and the
+models it reads. A config section lists the keys it moved off dbt's defaults,
+among `store_failures`, `store_failures_as`, `where`, `limit`, `fail_calc`,
+`warn_if` and `error_if`, and the relation its failing rows are stored in when
+it keeps them.
+
 What a repository brings is held to it (0094, 1.29.1). Three findings of that
 review waited a day. A collin git tracks is passed over, beside the binary or
 on `PATH`, and the column lineage menu says which one and why: a
@@ -828,6 +850,22 @@ lineage, its catalog and its column tests were each matched to its columns
 one name at a time, over every column; one lower-cased index of the node's
 columns per merge now serves the page and `--column` (0088) alike.
 
+Custom selection in a panel (0091, 0092, 1.30.0). What the Reports panel
+decided on its own, what goes inert under it, where the focus goes back, what
+Escape closes, is one mechanism now, `PANELS` with `openPanel` and
+`closePanel`, one panel down at a time: what follows the file in front stays
+in the dock, what speaks of the whole project or wants the window's height
+opens in a panel (0091). Custom selection is the first to use it. Its button
+opens a panel over the editor and the dock, the sidebar beside it, the canvas
+at the window's height, and a card beside the canvas, the Catalog's, which a
+click on a box fills without opening its file. Escape, the × and a file
+opened from the sidebar roll the panel up and give the dock back the lineage
+it had; a double-click opens the box's file, rolls the panel up, and the dock
+draws that model's lineage. The dock's canvas is moved into
+the panel rather than copied, so its find, folded tests and legend pick come
+along (0092). Settings, a model's lineage and git are to open the same way
+(Deferred, items 22 to 24).
+
 A cut canvas says when its starts fill it (1.31.0). When what a selection
 names takes half the canvas or more, as `source:*+` can, the warning under
 the box counts them and says that Draw all, or a narrower selection, draws
@@ -839,6 +877,24 @@ through mingw-w64's `windres`, which antivirus heuristics read on an unsigned
 file. Without `windres` the build warns and goes on;
 `scripts/build_windows.sh`, which makes the VM's `.exe`, refuses one without
 it. MSVC gets none.
+
+Indirect edges hidden by default (0097, 1.34.0). collin's `--indirect` writes
+`filter`, `join_key` and `dedup_key` edges, from the column that decided which
+rows a model keeps to every column of that model, and the column lineage drew
+them as value edges and read them for the badge: on a Jaffle Shop copy that
+filters `stg_orders` and sets a literal, a solid line ran from
+`raw_orders.status`, the column of `where status is not null`, into
+`stg_orders.loaded_at`, which the literal sets. The walk now crosses none of
+them, upstream or down, and the status line, copied into an export, says
+`indirect edges hidden`. An `indirect` button beside stop at, shown only when
+the cache holds such edges, walks them and draws them thin, in short dashes
+and a teal of their own, under one `indirect` entry in the legend. No badge
+reads them, and a column's card says what keeps its rows apart from where its
+value comes from, `rows kept by: raw_orders.status (filter)`, button on or
+off. Stop at, the Catalog's Lineage cell, which reads `indirect only` for a
+column only they reach or leave, and `--column`, unless `--indirect` asks,
+leave them out by default. A cache without them answers as before, byte for
+byte.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -1638,7 +1694,10 @@ that brings roots.
         five on a model it draws fewer of them (0035), so the label can be
         longer than the boxes on screen suggest;
       - the column chip in Columns mode, which carries a column's name and
-        has no width limit.
+        has no width limit;
+      - the indirect button in Columns mode, there when the cache holds
+        indirect edges (0097): with it, Fit, Export and Copy image fold to
+        their glyphs at 1440px.
 
       On Jaffle Shop, with Snowflake's features and the tests on and the
       sidebar at its default width, the tools broke from a 1470px window
@@ -1736,7 +1795,8 @@ that brings roots.
     GitHub mark (1.25.0) brings both about 26px sooner. The status bar does
     not break, since `#statusbar > *` is `nowrap`; nothing in `#topbar` is.
     - **The likely answer:** `nowrap` on the bar's items, and the project's
-      name shrinking with an ellipsis, its full name in the tooltip.
+      name shrinking with an ellipsis, its full name in the tooltip. The
+      settings panel (item 22) takes three buttons out of the bar first.
     - **How to check it:** item 10's two measures, at several widths, with
       Snowflake's features on and off.
 13. **The README's options, held to `--help`.** The README writes its options
@@ -1797,6 +1857,29 @@ that brings roots.
     answer: type the absolute path `program::on_path` finds for git into that
     command (0094). The trap: the command is shown and copied as typed, so a
     long path makes it harder to read, and Git Bash wants it in its own form.
+
+Items 22 to 25 are the rest of the plan chosen with the panels' mechanism
+(0091) and Custom selection (0092). Each is a pull request of its own, and
+each panel updates the tour, its page under [features/](features/) and the
+README's pictures (0082):
+
+22. **The settings in a panel.** One gear in the top bar in place of the
+    snowflake, the profile button and the column lineage picker, opening a
+    panel with a section each: the project (its profile, `.env` and Python),
+    the column lineage, Snowflake, the orchestration, its sources form inline
+    rather than in a dialog, the updates, and help with the tour. The status
+    bar's `.env`, Python and update pills open their own section. It takes
+    three buttons out of the top bar, which is most of item 12. The trap: a
+    step of the tour rings the column lineage menu where it sits now, and
+    `scripts/walk_tour.py` checks that ring, so the step moves with it.
+23. **A model's lineage seen whole.** The dock's lineage of the model in
+    front, opened in a panel at the window's height, as Custom selection is.
+24. **git seen whole.** The side-by-side diff and the commit in a panel, the
+    git panel of the sidebar staying the way in.
+25. **Boxes without their text far out, then the cap again.** Past 3 000
+    boxes zoom and pan slow down (0087). Drawing a box without its text when
+    it is too small to read would let the selection draw more before it is
+    capped.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -1884,8 +1967,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down; boxes drawn without text when
-    far out would let the default rise;
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 25);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;
@@ -1923,10 +2005,71 @@ written in its pull request or left by its review, unranked:
   the first collin on `PATH` and prints no version, so a stale one puts an
   older report in `collin-report.png`, which happened twice on 2026-10-15.
 
+Left by the ten pull requests merged on 2026-10-18, each a known limit
+written in its pull request, unranked:
+
+- **The update (0095):**
+  - the first update from a release before 1.28.1 still shows the old menu,
+    and a stamp naming the old release, since the running one types the
+    command; a `git fetch --tags --force` in the clone puts the stamp right;
+  - an update left half done, the `.exe` renamed and cargo stopped, still
+    shows the button, and the command run again stops on the rename.
+- **A test in the Catalog (1.29.0):**
+  - dbt fills `store_failures_as: table` once `store_failures` is true, so
+    that line shows though nobody wrote it;
+  - a `--store-failures` given on the command line is not in the manifest,
+    and is not shown.
+- **What a repository brings (0094):**
+  - the link tests run on Unix only, and the `C:x` refusal is tested through
+    `resolve` on Windows only;
+  - a collin copied over one git tracks is still the tracked path, and is
+    skipped;
+  - your own collin in a repository git refuses to read is passed over until
+    `safe.directory` allows it;
+  - two menu requests while git is slow each start their own git, at most
+    once a minute;
+  - a relative entry of `PATH` is skipped, so a git reachable only through
+    one is not used;
+  - a `profiles.yml` linking to a monorepo's shared one needs
+    `DBT_PROFILES_DIR` before the project opens here;
+  - a save still breaks a hard link, and a link swapped between the check and
+    the write is not caught.
+- **Wide models (1.29.2):** the cache merge still crosses its edges once per
+  role, and the Catalog's table of a model thousands of columns wide was not
+  measured.
+- **The cut canvas's note (1.31.0):**
+  - the line is cut on a narrow bar, after "draws the re…" at 1400px, its
+    whole text in the tooltip;
+  - the count says how many starts are drawn, not how many stand alone.
+- **The `generated` badge (0096):**
+  - an exported page has no hover card, so the value is in the box's label
+    only;
+  - collin gives no value for a literal selected beside a table no node owns,
+    and the card says it gave none;
+  - a filter on a table no node owns, into a column whose lineage is lost, is
+    checked by the Rust test only.
+- **The `.exe`'s properties (0093):**
+  - the MSVC route builds without the resource and warns on every build;
+  - the file is still unsigned, with no icon and no application manifest;
+  - the fourth version number is always 0, and the build stamp is not in the
+    properties;
+  - the copyright's year is written in `build.rs`;
+  - until a Windows build finds `windres`, every change of `PATH` rebuilds the
+    crate.
+- **Indirect edges (0097):**
+  - shown, stop at lists the three indirect roles one by one;
+  - `--column --indirect` lists an indirect edge in `from` with its role, and
+    `--output name` prints that column with none;
+  - a card opens on nearly every column, button on or off, since join keys
+    reach every column of a model that joins;
+  - collin draws value edges from the right side of an `EXCEPT`, which only
+    takes rows away, and the button cannot hide them: collin's to fix.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
-the store for, and filtering the column lineage by edge kind, which waits on
-seeing how dense a real graph is. Both were listed in the README's "Not there
+the store for, and filtering the column lineage by any edge kind, beyond stop
+at's roles (0083) and the indirect button (0097), which waits on seeing how
+dense a real graph is. Both were listed in the README's "Not there
 yet" and nowhere else for a while, which is how that section came to
 disagree with this one.
 
@@ -2019,7 +2162,7 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The releases since 2026-10-14 on the VM (1.18.0 to 1.28.1).** None was
+- **The releases since 2026-10-14 on the VM (1.18.0 to 1.34.0).** None was
   opened on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
   next `.exe`:
   - the config menu on a CRLF `dbt_project.yml` (1.18.1);
@@ -2041,7 +2184,31 @@ both that route and the cross-compile.
     of the steps it prints;
   - the update button and its Installed line, the tags fetched before the
     pull (1.28.1): the update to it is typed by the release before, so only
-    the update after it shows them, and a stamp naming its release (0095).
+    the update after it shows them, and a stamp naming its release (0095);
+  - a test in the Catalog (1.29.0);
+  - your own collin only, and the profile's links kept (1.29.1);
+  - models thousands of columns wide (1.29.2);
+  - Custom selection in a panel (1.30.0);
+  - the cut canvas's note (1.31.0);
+  - the `generated` badge (1.32.0), which wants collin 0.8.0 there;
+  - the `.exe`'s properties (1.33.0), in its Details tab or
+    `(Get-Item dbt-edith.exe).VersionInfo`, and whether WinLibs's `windres`
+    answers by its bare name;
+  - indirect edges (1.34.0), on a cache collin wrote with `--indirect`.
+- **The GitHub menu's issue from someone else's account.** Pull requests
+  are for collaborators only and issues open to all. The settings read right
+  through the API, but nobody has yet opened an issue from Raise an issue
+  with an account that is not a collaborator.
+- **Choices the ten pull requests of 2026-10-18 left open.**
+  - The `.exe`'s FileDescription, "dbt-edith, a browser IDE for dbt
+    projects", is the name Task Manager shows for the process (#65); it
+    could be `dbt-edith` alone. And the MSVC route's warning on every build
+    could become a search for `rc.exe`.
+  - A `collin.exe` copied over a file git tracks is refused too (0094), so
+    the VM's collin has to sit in a folder git does not track.
+  - The cut canvas's note says "the rest of their lineage" rather than
+    "their children", a selection growing upstream too, and shows once the
+    starts take half of what is drawn (1.31.0).
 - **A binary built before 0015 has no guard.** Anyone running one
   needs `cargo build --release` again, the old one being vulnerable to the
   three attacks 0015 describes.
@@ -2346,5 +2513,5 @@ when run again alone:
 
 A fourth is skipped rather than failed: since 1.26.0, "crossing the name opens
 nothing" in `scripts/walk_menu.py` needs two pointer moves within 100 ms, and
-after three slow tries it is not made, with a NOTE under "menu ok" while
-check.sh stays green.
+after three slow tries it is not made, with a NOTE under "menu ok", and
+check.sh passes, its last line naming "a timing check of Edith's menu".

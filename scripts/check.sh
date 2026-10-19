@@ -12,6 +12,10 @@ cd "$(dirname "$0")/.."
 JSC=${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc}
 failed=0
 pass=0
+# A part that cannot run here skips itself and the run still passes, so the
+# last line names each one: "all good" alone read as if everything had run.
+skipped=""
+skip() { skipped="${skipped:+$skipped, }$1"; }
 
 echo "== cargo test =="
 # --locked: the lockfile is what every install builds (0085), so a test that
@@ -49,6 +53,7 @@ if cargo audit --version > /dev/null 2>&1; then
   fi
 else
   echo "SKIPPED: no cargo-audit. Install it with: cargo install cargo-audit --locked"
+  skip "cargo audit"
 fi
 
 echo
@@ -58,11 +63,12 @@ echo "== vendored libraries =="
 # the hashes are still checked and only the advisories are skipped.
 if ! command -v python3 > /dev/null 2>&1; then
   echo "SKIPPED: no python3"
+  skip "vendored libraries"
 else
   python3 scripts/audit_vendored.py
   case $? in
     0) echo "vendored ok" ;;
-    2) echo "vendored files ok; SKIPPED the advisories: OSV unreachable" ;;
+    2) echo "vendored files ok; SKIPPED the advisories: OSV unreachable"; skip "OSV advisories" ;;
     *) echo "VENDORED FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
@@ -73,6 +79,7 @@ echo "== snowflake script =="
 # warehouse and nothing installed, only a Python recent enough for the script.
 if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' > /dev/null 2>&1; then
   echo "SKIPPED: no python3 at 3.10 or later"
+  skip "snowflake script"
 else
   out=$(python3 tools/test_sf_lineage.py 2>&1)
   if [ $? -eq 0 ]; then
@@ -95,11 +102,17 @@ echo "== dbt itself =="
 py=${DBT_PYTHON:-python3}
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
+  skip "dbt itself"
 else
   out=$("$py" scripts/compare_with_dbt.py 2>&1)
   case $? in
     0) echo "dbt ok ($(printf '%s\n' "$out" | head -1 | cut -d, -f1): $(printf '%s\n' "$out" | tail -1))" ;;
-    2) printf '%s\n' "$out" | tail -1 ;;
+    # Exit 2 also means Shopify alone was skipped, Jaffle Shop having agreed.
+    2) printf '%s\n' "$out" | tail -1
+       case $(printf '%s\n' "$out" | tail -1) in
+         "SKIPPED: Shopify"*) skip "Shopify against dbt" ;;
+         *) skip "dbt itself" ;;
+       esac ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DBT COMPARISON FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
@@ -111,11 +124,12 @@ echo "== the tour in Chrome =="
 # Chrome, and skips itself without either.
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
+  skip "the tour"
 else
   out=$("$py" scripts/walk_tour.py 2>&1)
   case $? in
     0) echo "tour ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
-    2) printf '%s\n' "$out" | tail -1 ;;
+    2) printf '%s\n' "$out" | tail -1; skip "the tour" ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "TOUR FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
@@ -126,11 +140,12 @@ echo "== the depth boxes in Chrome =="
 # on the same Jaffle Shop, and skipped the same way.
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
+  skip "the depth boxes"
 else
   out=$("$py" scripts/walk_depth.py 2>&1)
   case $? in
     0) echo "depth ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
-    2) printf '%s\n' "$out" | tail -1 ;;
+    2) printf '%s\n' "$out" | tail -1; skip "the depth boxes" ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DEPTH FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
@@ -141,12 +156,14 @@ echo "== Edith's menu in Chrome =="
 # a real pointer the same way, and skipped the same way.
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
+  skip "Edith's menu"
 else
   out=$("$py" scripts/walk_menu.py 2>&1)
   case $? in
     # A NOTE is a check the machine was too slow to make, which a count alone would hide.
-    0) echo "menu ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)"; printf '%s\n' "$out" | grep '^NOTE' || true ;;
-    2) printf '%s\n' "$out" | tail -1 ;;
+    0) echo "menu ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)"
+       if printf '%s\n' "$out" | grep '^NOTE'; then skip "a timing check of Edith's menu"; fi ;;
+    2) printf '%s\n' "$out" | tail -1; skip "Edith's menu" ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "MENU FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
@@ -155,6 +172,7 @@ echo
 echo "== browser tests =="
 if [ ! -x "$JSC" ] && ! command -v "$JSC" > /dev/null 2>&1; then
   echo "SKIPPED: no JavaScript shell at $JSC. Set JSC to one to run these."
+  skip "browser tests and the frontend parse"
 else
   # A harness slices web/app.js between two function names. A rename that breaks
   # a slice shows up here as an error, not as a quietly empty test file.
@@ -195,9 +213,11 @@ else
 fi
 
 echo
-if [ "$failed" -eq 0 ]; then
+if [ "$failed" -eq 0 ] && [ -z "$skipped" ]; then
   echo "all good: $pass browser assertions, plus the Rust suite"
+elif [ "$failed" -eq 0 ]; then
+  echo "passed, but skipped: $skipped ($pass browser assertions, plus the Rust suite)"
 else
-  echo "$failed check(s) failed"
+  echo "$failed check(s) failed${skipped:+, and skipped: $skipped}"
 fi
 exit $((failed > 0))

@@ -269,10 +269,7 @@ def main():
         os.environ["VIRTUAL_ENV"] = sys.prefix
         path.insert(0, str(Path(sys.prefix) / "bin"))
     os.environ["PATH"] = os.pathsep.join(path + [os.environ.get("PATH", "")])
-    binary = os.environ.get("DBT_EDITH")
-    if not binary:
-        subprocess.run(["cargo", "build", "--quiet"], cwd=wt.ROOT, check=True)
-        binary = wt.ROOT / "target" / "debug" / ("dbt-edith.exe" if os.name == "nt" else "dbt-edith")
+    binary = wt.edith_binary()
     with tempfile.TemporaryDirectory(prefix="dbt-edith-shots-") as tmp:
         work = Path(tmp)
         out = work / "shots"

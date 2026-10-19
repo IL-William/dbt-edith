@@ -28,7 +28,6 @@ Exit 0 when the menu behaves, 1 when it does not, 2 when skipped.
 
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -233,10 +232,7 @@ class Walk:
 def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
-    binary = os.environ.get("DBT_EDITH")
-    if not binary:
-        subprocess.run(["cargo", "build", "--quiet"], cwd=W.ROOT, check=True)
-        binary = W.ROOT / "target" / "debug" / ("dbt-edith.exe" if os.name == "nt" else "dbt-edith")
+    binary = W.edith_binary()
     with tempfile.TemporaryDirectory(prefix="dbt-edith-menu-") as tmp:
         work = Path(tmp)
         project = work / "jaffle_shop"

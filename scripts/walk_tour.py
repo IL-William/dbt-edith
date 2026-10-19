@@ -60,6 +60,22 @@ def skip(reason):
     sys.exit(2)
 
 
+def edith_binary():
+    """The dbt-edith DBT_EDITH names, or the one built here, found where cargo
+    says it put it: CARGO_TARGET_DIR or a cargo config moves it out of
+    target/, and a path written here would run whatever older build was left
+    there."""
+    if os.environ.get("DBT_EDITH"):
+        return os.environ["DBT_EDITH"]
+    out = subprocess.run(["cargo", "build", "--quiet", "--message-format=json-render-diagnostics"],
+                         cwd=ROOT, check=True, stdout=subprocess.PIPE, encoding="utf-8").stdout
+    for line in out.splitlines():
+        msg = json.loads(line)
+        if msg.get("reason") == "compiler-artifact" and msg["target"]["name"] == "dbt-edith" and msg.get("executable"):
+            return Path(msg["executable"])
+    sys.exit("cargo build named no dbt-edith executable")
+
+
 EXECUTABLE = os.environ.get("DBT")
 if not EXECUTABLE:
     try:
@@ -611,10 +627,7 @@ def main():
     if "--shots" in sys.argv:
         shots = Path(sys.argv[sys.argv.index("--shots") + 1]).resolve()
         shots.mkdir(parents=True, exist_ok=True)
-    binary = os.environ.get("DBT_EDITH")
-    if not binary:
-        subprocess.run(["cargo", "build", "--quiet"], cwd=ROOT, check=True)
-        binary = ROOT / "target" / "debug" / ("dbt-edith.exe" if os.name == "nt" else "dbt-edith")
+    binary = edith_binary()
     with tempfile.TemporaryDirectory(prefix="dbt-edith-tour-") as tmp:
         work = Path(tmp)
         # Named as the project is, so the tree's root reads jaffle_shop.
