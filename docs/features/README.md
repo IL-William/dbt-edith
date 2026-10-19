@@ -54,6 +54,7 @@ pull request.
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
 | Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
+| the first line of a macro's card, `used by 9 models` | every node reaching the macro, in the Reports panel |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
 | the manifest's pill, right of the top bar | how stale the lineage is and one click to re-parse; its arrows read `manifest.json` again |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |

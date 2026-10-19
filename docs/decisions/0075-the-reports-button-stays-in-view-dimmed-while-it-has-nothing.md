@@ -1,6 +1,6 @@
 # 0075. The Reports button stays in view, dimmed while it has nothing
 
-Date: 2026-10-13 · Status: accepted · Amends 0064, 0070 and 0074
+Date: 2026-10-13 · Status: accepted, amended by 0105 · Amends 0064, 0070 and 0074
 
 **Trigger:** read before hiding the Reports button, or changing what it shows
 or says while no report has anything.
@@ -24,6 +24,9 @@ guided tour (0074) had to show the button for its own step.
 - **Its tooltip then says what will fill it**: the last dbt run from
   `target/run_results.json`, collin's report, and the job coverage once the
   Jobs tab has a source, which is added from it.
+  *Amended by [0105](0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md):
+  and a macro of the project no node reaches that nothing explains, whose
+  Macros section lights it.*
 - **A click opens the panel on the empty coverage**, as `Mod+Alt+R` already
   did, which is where a source is added (0070). The sections listed, and
   which one the panel opens on, are 0064's and 0070's as before.

@@ -12,6 +12,7 @@
 
 use crate::collin::RawColLineage;
 use crate::incremental::{Incremental, Key, Shown};
+use crate::macro_use::{self, MacroUse};
 use crate::macros::Macros;
 use crate::selectors::Selectors;
 use crate::manifest::{RawCatalog, RawManifest, RawNode};
@@ -617,6 +618,9 @@ pub struct Graph {
     pub by_name: HashMap<String, u32>,
     /// Macro calls in the editor resolve here, never against the nodes.
     pub macros: Macros,
+    /// Which nodes reach each of those macros, themselves or through others
+    /// (0105).
+    pub macro_use: MacroUse,
     /// `--selector NAME` resolves here, against the nodes above (0032).
     pub selectors: Selectors,
     pub catalog_mtime: u64,
@@ -714,13 +718,52 @@ impl Node {
     }
 }
 
+/// What a raw node says of the macros it runs, taken before the node is
+/// consumed: those it lists, its SQL and its hooks', and a snapshot's
+/// strategy.
+struct Calls {
+    listed: Vec<String>,
+    code: String,
+    snapshot: Option<String>,
+}
+
+impl Calls {
+    fn take(node: &mut RawNode) -> Calls {
+        let mut code = node.raw_code.take().unwrap_or_default();
+        for hooks in [node.config.pre_hook.take(), node.config.post_hook.take()].into_iter().flatten() {
+            let list = match hooks {
+                serde_json::Value::Array(list) => list,
+                one => vec![one],
+            };
+            for hook in list {
+                if let Some(sql) = hook.as_str().or_else(|| hook.get("sql").and_then(|s| s.as_str())) {
+                    code.push('\n');
+                    code.push_str(sql);
+                }
+            }
+        }
+        Calls {
+            listed: std::mem::take(&mut node.depends_on.macros),
+            code,
+            snapshot: node.config.strategy.take().and_then(|v| v.as_str().map(str::to_string)),
+        }
+    }
+}
+
 impl Graph {
-    pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
+    pub fn build(mut raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
         let config_fqns = std::sync::Arc::new(crate::unused_paths::Fqns::of(&raw));
         let unit_tests = raw
             .unit_tests
             .into_iter()
             .map(|(id, u)| (id, UnitTest { name: u.name, file: u.original_file_path.replace('\\', "/") }))
+            .collect();
+        // What each macro calls, taken before `Macros::build` consumes them.
+        let macro_calls: Vec<(String, Vec<String>)> = raw
+            .macros
+            .iter_mut()
+            .filter_map(|(id, m)| m.depends_on.take().map(|d| (id.clone(), d.macros)))
+            .filter(|(_, calls)| !calls.is_empty())
             .collect();
         let macros = Macros::build(raw.macros, &raw.metadata.project_name);
         let selectors = Selectors::build(raw.selectors);
@@ -878,19 +921,64 @@ impl Graph {
             });
         };
 
-        // `depends_on` is captured before the raw nodes are consumed.
+        // `depends_on` is captured before the raw nodes are consumed, the
+        // macros of an enabled node only, since a disabled one never runs:
+        // those it lists, those its SQL calls in a branch dbt did not
+        // render, and the strategy macro dbt runs for it by name (0105).
         let mut deps: Vec<(String, Vec<String>)> = Vec::new();
-        for (id, node) in raw.nodes {
+        let mut listed: Vec<(u32, Vec<String>)> = Vec::new();
+        let mut written: Vec<(u32, Vec<u32>)> = Vec::new();
+        let mut runs: HashMap<String, usize> = HashMap::new();
+        let mut calls_of = |id: &str, node: Calls, nodes: &[Node], index: &HashMap<String, u32>| {
+            let Some(&i) = index.get(id).filter(|&&i| !nodes[i as usize].disabled) else { return };
+            let n = &nodes[i as usize];
+            let found: Vec<u32> = macro_use::jinja_calls(&node.code)
+                .into_iter()
+                .filter_map(|call| macros.resolve(call, &n.package))
+                .filter_map(|m| macros.position(&m.id))
+                .collect();
+            if !found.is_empty() {
+                written.push((i, found));
+            }
+            if !node.listed.is_empty() {
+                listed.push((i, node.listed));
+            }
+            let strategy = match n.kind {
+                Kind::Snapshot => node.snapshot.as_deref(),
+                _ if n.is_incremental() => Some(n.strategy.as_str()).filter(|s| !s.is_empty()),
+                _ => None,
+            };
+            // A snapshot's strategy may name its package, `kit.custom`, which
+            // dbt's `strategy_dispatch` accepts: that package's macro, kept
+            // under its name unless it is the project's own.
+            if let Some(s) = strategy {
+                let snapshot = n.kind == Kind::Snapshot;
+                let key = match s.rsplit_once('.').filter(|_| snapshot) {
+                    Some((package, s)) if package != macros.root() => {
+                        format!("{package}.{}", macro_use::strategy_macro(true, s))
+                    }
+                    Some((_, s)) => macro_use::strategy_macro(true, s),
+                    None => macro_use::strategy_macro(snapshot, s),
+                };
+                *runs.entry(key).or_insert(0) += 1;
+            }
+        };
+        for (id, mut node) in raw.nodes {
             deps.push((id.clone(), node.depends_on.nodes.clone()));
-            push(id, node, false, &mut nodes, &mut index);
+            let calls = Calls::take(&mut node);
+            push(id.clone(), node, false, &mut nodes, &mut index);
+            calls_of(&id, calls, &nodes, &index);
         }
         for (id, node) in raw.sources {
             push(id, node, false, &mut nodes, &mut index);
         }
-        for (id, node) in raw.exposures {
+        for (id, mut node) in raw.exposures {
             deps.push((id.clone(), node.depends_on.nodes.clone()));
-            push(id, node, false, &mut nodes, &mut index);
+            let calls = Calls::take(&mut node);
+            push(id.clone(), node, false, &mut nodes, &mut index);
+            calls_of(&id, calls, &nodes, &index);
         }
+        let macro_use = MacroUse::build(&macros, nodes.len(), listed, written, macro_calls, runs);
         for (id, mut variants) in raw.disabled {
             if variants.is_empty() {
                 continue;
@@ -1090,6 +1178,7 @@ impl Graph {
             by_file,
             by_name,
             macros,
+            macro_use,
             selectors,
             catalog_mtime: 0,
             cll: None,

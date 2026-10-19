@@ -865,7 +865,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 18 and 19).
+items 17 and 18).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -934,6 +934,18 @@ implicit method matches a version by `orders.v2` or `orders_v2` and never by
 `v2` alone, and `version:` is read. A Jaffle Shop copy with a model in three
 versions agrees with `dbt ls` on each, where main disagreed on every
 selection that reached one.
+
+Who calls a macro (0105, 1.42.0). A macro's card says how many nodes reach it,
+by kind, `used by 9 models, 40 tests`, through the macros calling it too,
+since dbt records each one's own calls only, and from each node's SQL and
+hooks where dbt recorded no call; the palette row says the total, and a click
+on the card's line opens Reports' Macros section on that macro, every node
+reaching it listed. That section lists the project's macros no node reaches,
+never as unused: each is grouped under why it may still run, from a
+run-operation or another package's call to a dispatch variant for another
+adapter, a materialization or strategy macro dbt runs, or a call dbt makes
+itself, walked down from what it runs. Only what nothing explains lights the
+Reports button.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -1556,29 +1568,21 @@ quarter of the JSON's bytes. Not driven on the VM.
 
 ## Deferred, in the order they were chosen
 
-1. **A used-by count per macro.** The links have shipped (0028); the
-   count is what is left of the macro layer. The interesting part is reporting
-   macros with no inbound reference without claiming they are dead: a macro can
-   be called from YAML, from a selector, or by another package. Most of the
-   count is already in the manifest: every node and every macro carries
-   `depends_on.macros`, which named one project macro for all 300 models
-   calling it (0028). Hooks are the gap: their operation nodes list what they
-   call under dbt-core and nothing under Fusion.
-2. **Run status on the canvas.** The last run is read since 1.11.0, in
+1. **Run status on the canvas.** The last run is read since 1.11.0, in
    Reports (0065); what is left is its status as the box stroke in the graph,
    which waits on seeing whether the section is used, and has to say when the
    run is for another target or older than the manifest, as the section does.
    A history across commands is not planned: dbt rewrites the file each time,
    and this tool keeps nothing of the project's. Per-node freshness would
    read the same mtimes 0025 already walks.
-3. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
+2. **Symbols in SQL.** CTE names and `{% macro %}` blocks in the breadcrumb,
    which needs SQL strings and comments masked first, for the reason 0022 gives.
-4. **Which jobs test a model.** The Jobs tab resolves test steps with tests in
+3. **Which jobs test a model.** The Jobs tab resolves test steps with tests in
    the universe, as dbt does, and lists them on a test node; what is left is
    showing, on a model, the steps that run its tests, through
    `graph.host_of`. Left out of 1.9.0 because a model with 48 tests would list
    one step 48 times unless they are grouped by step first.
-5. **A dbt section in Reports.** What the project holds, counted:
+4. **A dbt section in Reports.** What the project holds, counted:
    - models by materialization;
    - tests, generic and singular, and how many are `severity: warn`;
    - sources, seeds, snapshots and exposures;
@@ -1589,7 +1593,7 @@ quarter of the JSON's bytes. Not driven on the VM.
    that the top bar shows, and `graph.macros` has the macros. So the section
    reads no file and costs the index nothing (0064). The section opens the
    lists behind each count, as the coverage does.
-6. **dbt's own warnings, from `logs/dbt.log`.** No artifact carries them:
+5. **dbt's own warnings, from `logs/dbt.log`.** No artifact carries them:
    `manifest.json` has no field for them, `run_results.json` only says how each
    node's run or test ended, and a dbt Fusion 2.0 preview `run_results.json` of
    a compile lists no result at all.
@@ -1607,7 +1611,7 @@ quarter of the JSON's bytes. Not driven on the VM.
        10 MB (`dbt.log.1`, `dbt.log.2`).
      - Its folder can be moved with `--log-path` or `DBT_LOG_PATH`.
      - A manifest copied from another machine comes without its log.
-7. **More warnings worked out here, without a run.** They hold for dbt-core
+6. **More warnings worked out here, without a run.** They hold for dbt-core
    and Fusion alike, and when no log is there. The Warnings section of Reports
    lists the first, the config paths of `dbt_project.yml` that apply to no
    resource (0103); each of these would join it, checked against dbt the same
@@ -1621,7 +1625,7 @@ quarter of the JSON's bytes. Not driven on the VM.
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-8. **A Run button on a node's file.** It sits at the end of the breadcrumb
+7. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
     only a selection types its command, so looking never touches the
@@ -1750,7 +1754,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       - The Run tab's "Run again" types `dbt run` for every node but a test.
         For a seed or a snapshot that runs nothing, so the tab takes this
         menu's commands too.
-9. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
+8. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
@@ -1837,7 +1841,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       (`/api/collineage` answers 404): run collin on it first, or put a long
       name in the chip from the page, since its text is all its width depends
       on.
-10. **What is new since the version you had.** An update usually skips
+9. **What is new since the version you had.** An update usually skips
     several releases, and the update pill's What changed (0068) opens one
     release's notes, on GitHub, which the VM cannot always reach.
     - **Where it starts from:** `tour.json` keeps the newest version that
@@ -1861,7 +1865,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       - the first tour's steps predate the field, and stay out of every tour
         of what is new.
 
-11. **The top bar on a narrow window.** Under about 1000px its chips break
+10. **The top bar on a narrow window.** Under about 1000px its chips break
     onto two or three lines ("5 / models", "Search / ⌘K", "Reload /
     manifest"), and under about 850px the bar runs past the window. The
     GitHub mark (1.25.0) brings both about 26px sooner. The status bar does
@@ -1875,26 +1879,26 @@ quarter of the JSON's bytes. Not driven on the VM.
       button (0101) brings that about 50px sooner, to about 830px, and to
       about 930px while its panel is down, its name unfolded beside its
       glyph, as Reports' and the gear's are while theirs are.
-    - **How to check it:** item 9's two measures, at several widths, with
+    - **How to check it:** item 8's two measures, at several widths, with
       Snowflake's features on and off.
-12. **The README's options, held to `--help`.** The README writes its options
+11. **The README's options, held to `--help`.** The README writes its options
     by hand, and they have drifted once already: `--help` says `--shell`
     starts `$SHELL`, while `src/pty.rs` and the README say `$SHELL -l`. Fix
     the help text, then add a test that compares the README's block with what
     clap prints, so neither can move alone.
-13. **An issue template.** The GitHub menu opens an issue whose body is a
+12. **An issue template.** The GitHub menu opens an issue whose body is a
     version and a system, in English, with no template. A report then often
     comes without the steps that lead to the bug. Templates under
     `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
     what showed.
-14. **The levels box, over what is under it.** By folder's levels box (0080)
+13. **The levels box, over what is under it.** By folder's levels box (0080)
     opens while the pointer rests on the toggle, so a touch screen cannot
     reach it at all.
     - **What it covers while open:** the count beside the Custom selection
       field, and the left of the lineage's find bar (0081).
     - **Possible answers:** open it on a click too, or place it where it
       covers no tool.
-15. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+14. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -1905,14 +1909,14 @@ quarter of the JSON's bytes. Not driven on the VM.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-16. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+15. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-17. **A typed command and an empty entry of `PATH`.** Every command the page
+16. **A typed command and an empty entry of `PATH`.** Every command the page
     types runs in the project folder, in the terminal's shell: the update,
     Run again, Recompile, `dbt ls`, the selector command, collin's install
     line, and the freshness badge's `dbt parse`, which presses Enter itself
@@ -1934,20 +1938,20 @@ quarter of the JSON's bytes. Not driven on the VM.
     - **Not known.** Whether Git Bash turns an empty entry of the Windows
       `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
 
-Items 18 to 20 are the rest of the plan chosen with the panels' mechanism
+Items 17 to 19 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-18. **A model's lineage seen whole.** The dock's lineage of the model in
+17. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-19. **git seen whole.** The side-by-side diff and the commit in a panel, the
+18. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-20. **Boxes without their text far out, then the cap again.** Past 3 000
+19. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-21. **An MCP server over these answers.** A stdio JSON-RPC facade on
+20. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
@@ -2039,7 +2043,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 20);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 19);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;

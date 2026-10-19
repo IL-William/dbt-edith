@@ -134,7 +134,8 @@ the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
 the last dbt command's results once dbt has written them, the warnings dbt
 would give as it parses once there is one, collin's report once collin has
-written one, and the coverage of your jobs once the Jobs tab has a source.
+written one, the coverage of your jobs once the Jobs tab has a source, and the
+project's macros while one is reached by no node and nothing explains it.
 The sidebar stays, and anything that shows a file or a dock tab rolls the
 panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
@@ -183,3 +184,31 @@ key reached through a YAML alias is marked at the alias, and keys sharing a
 line share one mark, whose card lists each. A `dbt_project.yml`
 this cannot read, a key written twice for one, lists the section to say at
 which line (0103).
+
+**Macros** lists the project's own macros that no node reaches, from what the
+manifest records each node and each macro calling, and from each node's SQL
+and hooks, for the calls dbt did not record: a branch on `execute`,
+`is_incremental()` or `target.name`, a `{% call %}` body, and, under dbt
+Fusion, every hook. None is ever called unused: the manifest keeps no trace
+of `dbt run-operation`, of another package's call, nor of what dbt runs
+itself. So each is grouped under the likeliest reason it may still run,
+what is left unexplained first: nothing in the manifest calls it, called
+only by macros no node reaches either, a generic test no enabled test uses;
+then a variant `adapter.dispatch` did not pick for the manifest's adapter;
+run by dbt for the nodes that name it, a materialization or a strategy macro,
+with how many nodes do; or called by dbt itself, by its name, as
+`generate_schema_name` or a macro of dbt's own the project overrides, or from
+what dbt runs, its own macros included, which is how a dispatch variant dbt
+picked reads; not dbt's cross-database helpers nor its generic tests, which
+run only when something calls them, nor a project's `default` materialization
+where the adapter has its own. Each name opens the macro at its line. The
+click on a macro's card, `used by 9 models`, opens this section on that
+macro, at its top, listed then without lighting the button:
+every node reaching it, by kind, with the macro it comes through when it does
+not call it itself, or a note when dbt recorded no call, then the macros
+calling it. Under dbt Fusion, which lists a macro reached through another as
+a direct call, fewer nodes read as reached through other macros. The section
+is listed, and lights the button, only while one of the first three reasons
+holds, or a materialization or strategy macro no node names, and the panel
+then opens on it rather than on an empty coverage; it carries no chip, since
+the count would never go (0105).

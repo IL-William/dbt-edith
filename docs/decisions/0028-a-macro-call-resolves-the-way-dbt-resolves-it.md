@@ -1,6 +1,6 @@
 # 0028. A macro call resolves by name, the way dbt resolves it
 
-Date: 2026-09-23 · Status: accepted, amended by 0076 and 0084
+Date: 2026-09-23 · Status: accepted, amended by 0076, 0084 and 0105
 
 **Trigger:** read before linking anything to a macro, or changing which macro a
 call in the editor reaches.
@@ -55,3 +55,7 @@ named in YAML (`- dbt_utils.accepted_range:`), and materializations.
 an incremental model's strategy follows `adapter.dispatch` and the
 materialization, the way dbt does, and reads the bodies of the few macros
 involved. Calls in the editor still stop at the dispatcher.*
+
+*Amended by [0105](0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md):
+`depends_on.macros` is read after all, to count the nodes reaching a macro,
+which is what it says; a call is still linked by name.*

@@ -23,6 +23,15 @@ check('a key this page does not know is left out', keys(reportsSections({ later:
 check('each in its tool\'s colour', reportsSections({ collin: { at: 5 } })[0].tool, 'collin');
 check('an index read twice is not marked empty by the first', empty(reportsSections({}).concat(reportsSections({ jobs: { sources: 1, at: 3 } }))),
       ['jobs:empty', 'jobs']);
+check('the macros while one of the project\'s is reached by no node and nothing explains it (0105)',
+      empty(reportsSections({ macros: { unexplained: 2, at: 3 } })), ['jobs:empty', 'macros']);
+check('or once a card asked for a macro\'s callers, empty: a click lights nothing',
+      empty(reportsSections({}, 'macro.shop.cents')), ['jobs:empty', 'macros:empty']);
+check('and lit by the macros alone when one is unexplained',
+      empty(reportsSections({ macros: { unexplained: 1, at: 3 } }, 'macro.shop.cents')), ['jobs:empty', 'macros']);
+check('last, after the coverage', keys(reportsSections({ macros: { unexplained: 1, at: 3 }, run: { at: 9 }, jobs: { sources: 1, at: 3 } })),
+      ['run', 'jobs', 'macros']);
+check('not before either', keys(reportsSections({}, '')), ['jobs']);
 
 print('\n--- what is new ---');
 check('nothing from collin, nothing new', reportsNews(null), []);
@@ -41,6 +50,8 @@ check('nowhere when there is nothing', reportsDefaultSection([], reportsNews(bad
 check('not on the empty coverage read last, when another section has something',
       reportsDefaultSection(reportsSections({ collin: { at: 5 } }), [], 'jobs'), 'collin');
 check('on the empty coverage when it is all there is', reportsDefaultSection(reportsSections({}), [], ''), 'jobs');
+check('on the macros, not an empty coverage, once they have something (0070)',
+      reportsDefaultSection(reportsSections({ macros: { unexplained: 1, at: 3 } }), [], ''), 'macros');
 
 print('\n--- the button\'s tooltip ---');
 check('names what the reports hold and the key',
@@ -52,8 +63,8 @@ check('says the key even with nothing to show', reportsButtonTitle([], [], 'Ctrl
 check('  and then what will fill them',
       reportsButtonTitle(reportsSections({}), [], '⌥⌘R').split('\n').slice(1),
       ['Nothing yet: the last dbt run fills one, from target/run_results.json, a config path of dbt_project.yml '
-        + 'that applies to nothing another, collin\'s report another, and the job coverage once the Jobs tab has a source, '
-        + 'which is added here.']);
+        + 'that applies to nothing another, collin\'s report another, the job coverage once the Jobs tab has a source, '
+        + 'which is added here, and a macro of the project no node reaches that nothing explains.']);
 check('and leaves out a section with nothing in it yet',
       reportsButtonTitle(reportsSections({ collin: { at: 5 } }), [], '⌥⌘R'), 'Reports on the whole project: collin\'s report (⌥⌘R)');
 
@@ -189,3 +200,20 @@ print('\n--- commands that build nothing ---');
 });
 check('a clone is a run', runNotes({ command: 'clone', kinds: [{ kind: 'model', ran: 2, of: 2, statuses: { ok: 2 } }], unknown: { of: 0 } }).length, 0);
 check('kinds dbt writes besides nodes read as headings', [runKindPlural('sql_operation', true), runKindPlural('macro', true)], ['Sql operations', 'Macros']);
+
+print('\n--- the warnings and the macros in one panel (0103, 0105) ---');
+check('both listed, the warnings first and the macros after the coverage',
+      keys(reportsSections({ macros: { unexplained: 1, at: 3 }, warnings: { at: 4, manifest_at: 3, unused: 2 }, run: { at: 9 } })),
+      ['run', 'warnings', 'jobs', 'macros']);
+check('the macros alone with something, the warnings out',
+      empty(reportsSections({ macros: { unexplained: 1, at: 3 } })), ['jobs:empty', 'macros']);
+check('a card\'s focus lists them empty beside the warnings, which are not empty',
+      empty(reportsSections({ warnings: { at: 4, manifest_at: 3, unused: 2 } }, 'macro.shop.cents')), ['warnings', 'jobs:empty', 'macros:empty']);
+check('opens on the warnings, not on a macros section a click listed',
+      reportsDefaultSection(reportsSections({ warnings: { at: 4, manifest_at: 3, unused: 2 } }, 'macro.shop.cents'), [], 'macros'), 'warnings');
+check('on the first with something over every section, the coverage\'s emptiness passed',
+      reportsDefaultSection(reportsSections({ macros: { unexplained: 1, at: 3 } }, 'macro.shop.cents'), [], ''), 'macros');
+check('on the first there is when all are empty, a focus listing the macros last',
+      reportsDefaultSection(reportsSections({}, 'macro.shop.cents'), [], 'macros'), 'jobs');
+check('the tooltip names both', reportsButtonTitle(reportsSections({ macros: { unexplained: 1, at: 3 }, warnings: { unused: 1 } }), [], 'K').split('\n')[0],
+      'Reports on the whole project: Warnings, Macros (K)');

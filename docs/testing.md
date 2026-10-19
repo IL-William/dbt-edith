@@ -52,6 +52,7 @@ $JSC web/tests/layout.js      # where each box sits, and how a long edge gets th
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
 $JSC web/tests/macros.js      # macro calls, and the names a properties file declares
+$JSC web/tests/macrouse.js    # who calls a macro, on its card, its palette row and in Reports
 $JSC web/tests/find.js        # find in a file: matches, steps, the count, the column filter
 $JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the order, a folded test
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
