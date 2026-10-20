@@ -210,13 +210,23 @@ check('an image takes the tight frame, badges included', [tightOne.x, tightOne.y
 
 print('\n--- zooming ---');
 var vb = [0, 0, 1000, 500];
-var z = zoomViewBox(vb, 250, 100, 2, 120, 4000);
+var z = zoomViewBox(vb, 250, 100, 2, 1, 3, 120, 4000);
 check('twice as close', [z[2], z[3]], [500, 250]);
 check('the point under the pointer stays put', [(250 - z[0]) / z[2], (100 - z[1]) / z[3]], [0.25, 0.2]);
-var close = zoomViewBox(vb, 500, 250, 1000, 120, 4000);
-ok('no closer than the floor', Math.abs(close[2] - 120) < 1e-9);
+var close = zoomViewBox(vb, 500, 250, 1000, 1, 3, 120, 4000);
+ok('no closer than the width floor', Math.abs(close[2] - 120) < 1e-9);
 ok('and the ratio kept', Math.abs(close[2] / close[3] - 2) < 1e-9);
-check('no further than the ceiling', zoomViewBox(vb, 500, 250, 0.0001, 120, 4000)[2], 4000);
+check('no further than the ceiling', zoomViewBox(vb, 500, 250, 0.0001, 1, 3, 120, 4000)[2], 4000);
+var tall = [0, 0, 600, 20000];
+var tallClose = zoomViewBox(tall, 300, 10000, 1e6, 0.05, 3, 120, 2400);
+ok('a tall frame stops at the scale cap, not at a width', Math.abs(0.05 * (tall[2] / tallClose[2]) - 3) < 1e-9);
+ok('and keeps its ratio', Math.abs(tallClose[2] / tallClose[3] - 600 / 20000) < 1e-9);
+var wide = zoomViewBox([0, 0, 1000, 560], 500, 280, 1000, 1.4, 3, 120, 4000);
+ok('a wide frame still reaches the width floor, past the scale cap', Math.abs(wide[2] - 120) < 1e-9);
+var past = zoomViewBox([0, 0, 100, 50], 50, 25, 1000, 5, 3, 120, 400);
+check('a view past both limits cannot zoom in', [past[2], past[3]], [100, 50]);
+var out = zoomViewBox([0, 0, 100, 50], 50, 25, 0.5, 5, 3, 120, 400);
+check('but can zoom out', [out[2], out[3]], [200, 100]);
 
 print('\n--- the image ---');
 check('a small graph is pasted twice as sharp', pngScale(1000, 560), 2);
