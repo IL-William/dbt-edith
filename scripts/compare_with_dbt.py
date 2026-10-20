@@ -105,6 +105,20 @@ EXPRESSIONS = [
     "config.incremental_strategy:delete+insert",
     "config.unique_key:order_id",
     "config.unique_key:customer_id+",
+    # On the versioned model JAFFLE_VERSIONS adds (0104): its name takes every
+    # version, a version is named with a dot or an underscore, and a ref()
+    # naming none reaches the latest.
+    "customer_totals",
+    "customer_totals.v1",
+    "customer_totals_v3",
+    "jaffle_shop.customer_totals.v2",
+    "customer_totals.v1+",
+    "+totals_latest",
+    "version:latest",
+    "version:prerelease",
+    "version:old",
+    "version:none",
+    "customer_totals --exclude version:old",
 ]
 
 # Added to the copy of Jaffle Shop, never to the fixture, whose screenshots and
@@ -183,6 +197,28 @@ JAFFLE_UNUSED_FILES = {
     "models/staging/units.yml": "unit_tests:\n  - name: orders_keep_their_id\n    model: stg_orders\n    given:\n"
                                 "      - input: ref('raw_orders')\n        rows:\n          - {id: 1, user_id: 1}\n"
                                 "    expect:\n      rows:\n        - {order_id: 1}\n",
+}
+
+# Added to the copy too, for the same reason: a model in three versions, the
+# second the latest and the third a prerelease, each with a test, a model
+# reading it by its bare name, which is the latest, and one reading v1.
+JAFFLE_VERSIONS = {
+    "models/customer_totals_v1.sql": "select customer_id, number_of_orders from {{ ref('customers') }}\n",
+    "models/customer_totals_v2.sql": "select customer_id, number_of_orders, total_order_amount from {{ ref('customers') }}\n",
+    "models/customer_totals_v3.sql": "select customer_id, total_order_amount from {{ ref('customers') }}\n",
+    "models/totals_latest.sql": "select * from {{ ref('customer_totals') }}\n",
+    "models/totals_old.sql": "select * from {{ ref('customer_totals', v=1) }}\n",
+    "models/versions.yml": "version: 2\n\nmodels:\n"
+                           "  - name: customer_totals\n"
+                           "    latest_version: 2\n"
+                           "    columns:\n"
+                           "      - name: customer_id\n"
+                           "        data_tests:\n"
+                           "          - not_null\n"
+                           "    versions:\n"
+                           "      - v: 1\n"
+                           "      - v: 2\n"
+                           "      - v: 3\n",
 }
 
 # What Shopify has and Jaffle Shop does not: a package under a root project,
@@ -467,6 +503,14 @@ class Dbt:
         return sorted(self.invoke(["ls", "--output", "name"] + args) or [])
 
 
+def search_name(node):
+    """The name `dbt ls` prints for a model, and selects it alone by:
+    `name.v2` for a versioned one, whose bare name takes every version."""
+    if node.get("version") is None:
+        return node["name"]
+    return f"{node['name']}.v{node['version']}"
+
+
 def typed_args(line):
     select, _, exclude = line.partition(" --exclude ")
     return ["--select", select] + (["--exclude", exclude] if exclude else [])
@@ -618,7 +662,7 @@ def compare_project(tally, binary, project, work, expressions, every_model, jobs
             box = "with tests" if with_tests else "without tests"
             agreed = 0
             for unique_id in sampled:
-                name = parsed["nodes"][unique_id]["name"]
+                name = search_name(parsed["nodes"][unique_id])
                 theirs = oracle.ls(["--select", f"{up}+{name}+{down}"])
                 if not with_tests:
                     theirs = [n for n in theirs if n not in tests]
@@ -673,7 +717,7 @@ def main():
         print("== Jaffle Shop")
         jaffle = work / "jaffle" / "project"
         shutil.copytree(JAFFLE, jaffle)
-        for name, sql in JAFFLE_INCREMENTAL.items():
+        for name, sql in {**JAFFLE_INCREMENTAL, **JAFFLE_VERSIONS}.items():
             (jaffle / name).write_text(sql)
         compared = compare_project(tally, binary, jaffle, jaffle.parent, EXPRESSIONS, every_model, jobs=True)
         # Fewer than this means the fixture or the listing broke, not that all is well.

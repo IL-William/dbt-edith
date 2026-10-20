@@ -39,6 +39,7 @@ $JSC web/tests/clone.js       # Clone into my schema: what each node is copied a
 $JSC web/tests/jinja.js       # Jinja colouring, and SQL never shown the Jinja
 $JSC web/tests/hovercard.js   # where a hover card lands beside its anchor
 $JSC web/tests/vars.js        # var() / env_var() scanning, and where a value came from
+$JSC web/tests/refs.js        # ref() / source() scanning, a version's included, and the Catalog's version chip
 $JSC web/tests/grep.js        # what a search result says, and where the match falls
 $JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls, named selectors
 $JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outline

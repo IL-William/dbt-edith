@@ -17,7 +17,10 @@ bare, lists, `satellites:`, `stage_tables:`) without linking every column that
 happens to share a model name. Jinja comments are skipped. Disabled models are
 amber and still open; a name in `ref()` that no manifest node matches is red,
 which makes it a genuine dangling-reference signal. Alt-click places the cursor
-instead of navigating.
+instead of navigating. A versioned model's `ref('orders', v=1)`, or
+`version=1`, links to that version, and `ref('orders')` to the latest, as dbt
+reads both. An unquoted version counts only as a number; `v=my_var` is not known before
+dbt renders it, and `v=True` names no version, so the link goes to the latest.
 
 In a properties file the names that declare nodes are links as well: each
 table under `sources:`, and each entry under `models:`, `seeds:`,

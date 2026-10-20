@@ -11,6 +11,11 @@ Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file. The column count
 opens the Columns tab.
+Each version of a versioned model is a node of its own, named as `dbt ls`
+names it, `orders.v2`, which is also what the name's copy glyph copies: a
+`--select` takes that one version. Beside the name, a chip says where it stands:
+`latest`, the one a `ref()` naming no version reaches, or `old` or
+`prerelease`, with the latest named.
 An incremental model adds Strategy and Unique key beside the materialization,
 the strategy as its box reads it, and a snapshot its Unique key. The key takes
 one column per line, three at most, then `+N more, in Columns`, and each name

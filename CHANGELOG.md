@@ -13,6 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.41.0 - 2026-10-20
+
+- Name each version of a model apart, `orders.v2`, as `dbt ls` does: on the
+  lineage, in the Catalog, which says beside it whether it is the latest, in
+  search, `--select`, `--describe` and `--column`. `orders.v2` and
+  `orders_v2` select that version and `orders` every one, `version:` selects
+  the latest, the prereleases, the old ones or the models with none, and a
+  `ref()` with no version links to the latest. The Jobs tab's head and the
+  Compiled bar name a source by its source and table, `crm.customers`, and a
+  generic test by its name without its hash (0104).
+
 ## 1.40.0 - 2026-10-20
 
 - List the config paths of `dbt_project.yml` that apply to no resource, which

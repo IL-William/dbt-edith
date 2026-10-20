@@ -1424,6 +1424,13 @@ struct Ref<'a> {
     /// parents too, so its own name is not that node.
     #[serde(skip_serializing_if = "str::is_empty")]
     host: &'a str,
+    /// A versioned model's name without its version, which a `ref()` naming
+    /// none writes, and whether it is the version that `ref()` reaches: the
+    /// editor links that name to the parent it means (0104).
+    #[serde(skip_serializing_if = "str::is_empty")]
+    base: &'a str,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    latest: bool,
     /// An incremental parent's strategy: the hover card on a `ref()` paints
     /// from the parent listed here before `/api/node` answers for it.
     #[serde(flatten)]
@@ -1484,6 +1491,16 @@ struct Location<'a> {
 struct NodeDetail<'a> {
     id: &'a str,
     name: &'a str,
+    /// A versioned model's version and its model's latest, as `name.v<version>`
+    /// writes them, so the Catalog can say which one a `ref()` reaches (0104).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    version: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    latest_version: String,
+    /// `latest`, `old` or `prerelease`, as `version:` selects it, or nothing
+    /// for a version dbt's comparison places in none of them.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    version_state: &'static str,
     kind: Kind,
     file: &'a str,
     yml: &'a str,
@@ -1569,6 +1586,8 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
             test_name: &t.test_name,
             column: &t.column,
             host: graph.host_of(t).map(|h| h.name.as_str()).unwrap_or(""),
+            base: if t.version.is_some() { t.base_name() } else { "" },
+            latest: t.version.as_ref().is_some_and(|v| v.is_latest()),
             incremental: t.strategy_facts(),
             unique_key: t.box_key(),
         }
@@ -1576,6 +1595,14 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
     Json(NodeDetail {
         id: &n.id,
         name: &n.name,
+        version: n.version.as_ref().map(|v| v.text()).unwrap_or_default(),
+        latest_version: n.version.as_ref().map(|v| v.latest_text()).unwrap_or_default(),
+        version_state: match n.version.as_deref() {
+            Some(v) if v.is_latest() => "latest",
+            Some(v) if v.is_old() => "old",
+            Some(v) if v.is_prerelease() => "prerelease",
+            _ => "",
+        },
         kind: n.kind,
         file: n.on_disk(),
         yml: &n.yml,
@@ -1655,6 +1682,10 @@ struct ResolveBody {
 #[derive(serde::Serialize)]
 struct Resolved<'a> {
     name: &'a str,
+    /// The name as the editor sent it, where it differs from the node's: a
+    /// versioned model's bare name answers with its latest, `orders.v2`.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    asked: &'a str,
     id: &'a str,
     file: &'a str,
     kind: Kind,
@@ -1681,6 +1712,7 @@ async fn resolve(State(st): State<Arc<AppState>>, Json(body): Json<ResolveBody>)
             let n = &graph.nodes[i as usize];
             Some(Resolved {
                 name: &n.name,
+                asked: if *name == n.name { "" } else { name.as_str() },
                 id: &n.id,
                 file: n.on_disk(),
                 kind: n.kind,
@@ -4953,6 +4985,57 @@ mod tests {
 
         let foreign = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", "https://evil.example")], body);
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A versioned model's routes: the resolve route answers a bare name with
+    /// the latest and says the name it was asked, the node route says where a
+    /// version stands, and a parent carries its bare name (0104).
+    #[tokio::test]
+    async fn a_version_is_resolved_and_described_by_its_routes() {
+        let root = temp_project("versions-routes");
+        let (port, st, server) = serve(&root).await;
+        let version = |v: i64| {
+            serde_json::json!({ "name": "totals", "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/totals_v{v}.sql"), "fqn": ["demo", "totals", format!("v{v}")],
+                "version": v, "latest_version": 2 })
+        };
+        let plain = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/{name}.sql"), "fqn": ["demo", name] })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.demo.totals.v1": version(1), "model.demo.totals.v2": version(2),
+                "model.demo.uses_old": plain("uses_old"), "model.demo.uses_latest": plain("uses_latest"),
+            },
+            "parent_map": {
+                "model.demo.uses_old": ["model.demo.totals.v1"],
+                "model.demo.uses_latest": ["model.demo.totals.v2"],
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://{host}");
+        let h = [("Host", host.as_str())];
+
+        let body = r#"{"names":["totals","totals.v1","uses_old"]}"#;
+        let answer = response_of(port, with_json("POST", "/api/resolve", &[("Host", &host), ("Origin", &own)], body)).await;
+        assert!(answer.contains(r#""name":"totals.v2","asked":"totals","id":"model.demo.totals.v2""#), "{answer}");
+        assert!(answer.contains(r#""name":"totals.v1","id":"#), "no `asked` where the names agree: {answer}");
+        assert!(answer.contains(r#""name":"uses_old","id":"#), "{answer}");
+
+        let old = response_of(port, get("/api/node?id=model.demo.totals.v1", &h)).await;
+        assert!(old.contains(r#""name":"totals.v1","version":"1","latest_version":"2","version_state":"old""#), "{old}");
+        let plain_node = response_of(port, get("/api/node?id=model.demo.uses_old", &h)).await;
+        assert!(!plain_node.contains(r#""version""#), "{plain_node}");
+        assert!(plain_node.contains(r#""name":"totals.v1","kind":"model","file":"models/totals_v1.sql","materialized":"","disabled":false,"base":"totals""#), "{plain_node}");
+        assert!(!plain_node.contains(r#""latest":true"#), "{plain_node}");
+        let latest = response_of(port, get("/api/node?id=model.demo.uses_latest", &h)).await;
+        assert!(latest.contains(r#""base":"totals","latest":true"#), "{latest}");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

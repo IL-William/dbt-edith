@@ -95,6 +95,12 @@ pub struct RawNode {
     /// name. The implicit selector method matches on it (0024).
     #[serde(default)]
     pub fqn: Vec<String>,
+    /// A versioned model's version, and the one a `ref()` naming no version
+    /// reaches. A number or a string, as dbt allows either (0104).
+    #[serde(default)]
+    pub version: Option<serde_json::Value>,
+    #[serde(default)]
+    pub latest_version: Option<serde_json::Value>,
     #[serde(default)]
     pub patch_path: Option<String>,
     #[serde(default)]

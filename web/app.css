@@ -1337,6 +1337,10 @@ kbd {
 }
 .row.off .nm, .pres.off .p1 { color: var(--warn); opacity: .8; }
 .tagchip { font: 10px var(--mono); background: var(--accent-dim); border-radius: 9px; padding: 1px 7px; }
+.verchip {
+  font: 10px var(--mono); color: var(--fg-dim); border: 1px solid var(--line);
+  border-radius: 9px; padding: 1px 7px; margin-left: 8px; white-space: nowrap;
+}
 
 /* ------------------------------------------------------------ ref links -- */
 /* A macro call links the same way a ref() does, to its definition, so it

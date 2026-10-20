@@ -27,7 +27,7 @@ const MAX_TERMS: usize = 64;
 /// The methods this build understands, in the order the error message lists
 /// them. `config.*` keys are spelled out because naming the key is the whole
 /// difficulty of that method.
-const KNOWN: &str = "fqn, tag, path, file, package, resource_type, source, exposure, \
+const KNOWN: &str = "fqn, tag, path, file, package, resource_type, source, exposure, version, \
                      config.materialized, config.schema, config.database, config.alias, \
                      config.incremental_strategy, config.unique_key";
 
@@ -52,8 +52,14 @@ pub enum Method {
     ResourceType,
     Source,
     Exposure,
+    /// `latest`, `prerelease`, `old` or `none`, against a model's versions.
+    Version,
     Config(ConfigKey),
 }
+
+/// What `version:` takes. dbt refuses any other value once it runs, where the
+/// box refuses it as it is typed.
+const VERSION_KINDS: [&str; 4] = ["latest", "prerelease", "old", "none"];
 
 /// How far a `+` reaches. `None` is dbt's bare `+`: no limit.
 pub type Depth = Option<u32>;
@@ -166,6 +172,7 @@ pub enum SelectError {
     EmptyTerm { pos: usize },
     BadDepth { term: String, pos: usize },
     BadSource { value: String, pos: usize },
+    BadVersion { value: String, pos: usize },
     MissingSelector { pos: usize },
     SelectorAlone { pos: usize },
     UnknownSelector { name: String },
@@ -184,6 +191,7 @@ impl SelectError {
             SelectError::EmptyTerm { .. } => "empty_term",
             SelectError::BadDepth { .. } => "bad_depth",
             SelectError::BadSource { .. } => "bad_source",
+            SelectError::BadVersion { .. } => "bad_version",
             SelectError::MissingSelector { .. } => "missing_selector",
             SelectError::SelectorAlone { .. } => "selector_alone",
             SelectError::UnknownSelector { .. } => "unknown_selector",
@@ -199,6 +207,7 @@ impl SelectError {
             | SelectError::EmptyTerm { pos }
             | SelectError::BadDepth { pos, .. }
             | SelectError::BadSource { pos, .. }
+            | SelectError::BadVersion { pos, .. }
             | SelectError::MissingSelector { pos }
             | SelectError::SelectorAlone { pos } => Some(*pos),
             _ => None,
@@ -232,6 +241,9 @@ impl std::fmt::Display for SelectError {
                 f,
                 "`source:{value}`: expected source, source.table or package.source.table"
             ),
+            SelectError::BadVersion { value, .. } => {
+                write!(f, "`version:{value}`: expected latest, prerelease, old or none")
+            }
             SelectError::MissingSelector { .. } => {
                 write!(f, "`--selector` needs the name of a selector from selectors.yml")
             }
@@ -320,6 +332,7 @@ fn method_by_name(name: &str) -> Option<Method> {
         "resource_type" => Method::ResourceType,
         "source" => Method::Source,
         "exposure" => Method::Exposure,
+        "version" => Method::Version,
         "config.materialized" => Method::Config(ConfigKey::Materialized),
         "config.schema" => Method::Config(ConfigKey::Schema),
         "config.database" => Method::Config(ConfigKey::Database),
@@ -333,15 +346,35 @@ fn method_by_name(name: &str) -> Option<Method> {
 /// dbt's `is_selected_node`: the leaf on its own, or a dotted prefix of the
 /// fqn, where the first part carrying a wildcard matches everything left.
 ///
+/// A versioned model's fqn ends in its version, `v2`, which `tag` names. Its
+/// leaf is then the part before, and the two last parts joined with a `_`
+/// match the selector's two last joined the same way, so `orders`,
+/// `orders_v2` and `orders.v2` reach it while `v2` alone does not (0104).
+///
 /// The fqn is stored joined, so splitting it here is exactly dbt's "dots in
 /// model names act as namespace separators" flattening, for free.
-fn is_selected_node(fqn: &str, selector: &str) -> bool {
+fn is_selected_node(fqn: &str, selector: &str, tag: Option<&str>) -> bool {
     let parts: Vec<&str> = fqn.split('.').filter(|p| !p.is_empty()).collect();
     if parts.is_empty() {
         return false;
     }
-    if parts[parts.len() - 1] == selector {
-        return true;
+    match tag {
+        // Cut at the tag rather than at the last dot, since a version such as
+        // `1.5` keeps its own dot in one part of dbt's fqn.
+        Some(tag) => {
+            let name = fqn.strip_suffix(tag).and_then(|f| f.strip_suffix('.')).map(|f| f.rsplit('.').next().unwrap_or(f));
+            if let Some(name) = name {
+                let wanted: Vec<&str> = selector.split('.').collect();
+                if name == selector || format!("{name}_{tag}") == wanted[wanted.len().saturating_sub(2)..].join("_") {
+                    return true;
+                }
+            }
+        }
+        None => {
+            if parts[parts.len() - 1] == selector {
+                return true;
+            }
+        }
     }
     let wanted: Vec<&str> = selector.split('.').collect();
     if parts.len() < wanted.len() {
@@ -360,14 +393,19 @@ fn is_selected_node(fqn: &str, selector: &str) -> bool {
 
 /// dbt's `QualifiedNameSelectorMethod`: the fqn as it stands, and again without
 /// its package, so `staging.stg_customers` matches whatever package it sits in.
-fn fqn_match(selector: &str, fqn: &str) -> bool {
-    if is_selected_node(fqn, selector) {
+fn fqn_match(selector: &str, fqn: &str, tag: Option<&str>) -> bool {
+    if is_selected_node(fqn, selector, tag) {
         return true;
     }
     match fqn.split_once('.') {
-        Some((_, unscoped)) => is_selected_node(unscoped, selector),
+        Some((_, unscoped)) => is_selected_node(unscoped, selector, tag),
         None => false,
     }
+}
+
+/// The last part of a versioned model's fqn, `v2`, as dbt writes it there.
+fn version_tag(node: &Node) -> Option<String> {
+    node.version.as_ref().map(|v| format!("v{}", v.text()))
 }
 
 /// Backslashes folded to slashes and any trailing slash dropped, so a selector
@@ -444,7 +482,20 @@ fn matches(term: &Term, node: &Node) -> bool {
     match term.method {
         // dbt's fqn method walks every node but the sources, so neither a bare
         // name nor `*` ever selects one: `source:` is the only way to them.
-        Method::Fqn => node.kind != Kind::Source && fqn_match(v, &node.fqn),
+        Method::Fqn => node.kind != Kind::Source && fqn_match(v, &node.fqn, version_tag(node).as_deref()),
+        // A model alone: dbt's method asks every node whether it is one, so
+        // `version:none` takes no seed or snapshot.
+        Method::Version => {
+            node.kind == Kind::Model
+                && match (v, node.version.as_deref()) {
+                    ("none", version) => version.is_none(),
+                    (_, None) => false,
+                    ("latest", Some(version)) => version.is_latest(),
+                    ("prerelease", Some(version)) => version.is_prerelease(),
+                    ("old", Some(version)) => version.is_old(),
+                    _ => false,
+                }
+        }
         Method::Path => path_match(v, &node.file),
         Method::File => file_match(v, &node.file),
         Method::Tag => node.tags.iter().any(|t| glob(v, t)),
@@ -639,6 +690,9 @@ fn parse_term(raw: &str, pos: usize) -> Result<Term, SelectError> {
             return Err(SelectError::BadSource { value: value.to_string(), pos });
         }
     }
+    if method == Method::Version && !VERSION_KINDS.contains(&value) {
+        return Err(SelectError::BadVersion { value: value.to_string(), pos });
+    }
     Ok(Term {
         method,
         value: value.to_string(),
@@ -672,6 +726,9 @@ pub(crate) fn criterion(
     }
     if m == Method::Source && value.split('.').count() > 3 {
         return Err(SelectError::BadSource { value: value.to_string(), pos: 0 });
+    }
+    if m == Method::Version && !VERSION_KINDS.contains(&value) {
+        return Err(SelectError::BadVersion { value: value.to_string(), pos: 0 });
     }
     let depth = |d: Depth| d.map(|n| n.to_string()).unwrap_or_default();
     let mut raw = String::new();
@@ -996,7 +1053,7 @@ fn why_empty(graph: &Graph, term: &Term, tests: Tests) -> String {
         return format!("`{}` matches only tests; switch tests on to see them", term.raw);
     }
     if term.method == Method::Fqn
-        && graph.nodes.iter().any(|n| n.kind == Kind::Source && !n.disabled && fqn_match(&term.value, &n.fqn))
+        && graph.nodes.iter().any(|n| n.kind == Kind::Source && !n.disabled && fqn_match(&term.value, &n.fqn, None))
     {
         return format!("`{}` matches only sources, which dbt selects with `source:` alone", term.raw);
     }
@@ -1514,16 +1571,47 @@ mod tests {
     #[test]
     fn an_fqn_matches_by_leaf_by_prefix_and_without_its_package() {
         let fqn = "shop.staging.crm.stg_customers";
-        assert!(fqn_match("stg_customers", fqn), "the leaf on its own");
-        assert!(fqn_match("shop.staging.crm.stg_customers", fqn), "the whole thing");
-        assert!(fqn_match("shop.staging", fqn), "a prefix takes what is under it");
-        assert!(fqn_match("shop.staging.*", fqn));
-        assert!(fqn_match("*.staging.*", fqn));
+        assert!(fqn_match("stg_customers", fqn, None), "the leaf on its own");
+        assert!(fqn_match("shop.staging.crm.stg_customers", fqn, None), "the whole thing");
+        assert!(fqn_match("shop.staging", fqn, None), "a prefix takes what is under it");
+        assert!(fqn_match("shop.staging.*", fqn, None));
+        assert!(fqn_match("*.staging.*", fqn, None));
         // dbt tries the fqn again without its package, so a path that skips the
         // package still matches. Dropping this would fail selectors that work.
-        assert!(fqn_match("staging.crm.stg_customers", fqn), "unscoped by package");
-        assert!(!fqn_match("crm", fqn), "a middle part alone is not a prefix");
-        assert!(!fqn_match("stg_customer", fqn));
+        assert!(fqn_match("staging.crm.stg_customers", fqn, None), "unscoped by package");
+        assert!(!fqn_match("crm", fqn, None), "a middle part alone is not a prefix");
+        assert!(!fqn_match("stg_customer", fqn, None));
+    }
+
+    /// What `dbt ls` 1.12 and Fusion 2.0 both select, on a versioned model
+    /// whose fqn ends in `v1` (0104): the model's own name reaches every
+    /// version, the version alone none, and the last two parts joined by a
+    /// `_` are matched against the selector's two last, whatever comes first.
+    #[test]
+    fn a_versioned_model_is_matched_by_its_name_and_its_version() {
+        let fqn = "shop.customer_totals.v1";
+        let m = |sel: &str| fqn_match(sel, fqn, Some("v1"));
+        for sel in [
+            "customer_totals",
+            "customer_totals.v1",
+            "customer_totals_v1",
+            "shop.customer_totals.v1",
+            "shop.customer_totals",
+            "customer_totals.*",
+            "x.customer_totals.v1",
+            "customer.totals_v1",
+        ] {
+            assert!(m(sel), "{sel}");
+        }
+        for sel in ["v1", "customer_totals.v2", "customer_totals_v2", "customer_totals_v", "shop.v1"] {
+            assert!(!m(sel), "{sel}");
+        }
+        assert!(fqn_match("v1", fqn, None), "unversioned, the leaf is the last part");
+        // A version with a dot of its own keeps it inside its tag, where the
+        // prefix rule splits it like any part: dbt's own answers, each one.
+        let dotted = |sel: &str| fqn_match(sel, "shop.orders.v1.5", Some("v1.5"));
+        assert!(dotted("orders") && dotted("orders.v1.5") && dotted("orders.v1"));
+        assert!(!dotted("orders_v1.5") && !dotted("orders_v1_5") && !dotted("5"));
     }
 
     #[test]
@@ -1736,11 +1824,118 @@ mod tests {
         assert!(matches!(err("--wat a"), SelectError::UnknownFlag { .. }));
         assert!(matches!(err("99999999999+a"), SelectError::BadDepth { .. }));
         assert!(matches!(err("source:a.b.c.d"), SelectError::BadSource { .. }));
+        assert!(matches!(err("version:newest"), SelectError::BadVersion { .. }));
+        assert!(matches!(criterion("version", "Latest", false, None, None), Err(SelectError::BadVersion { .. })));
         assert!(matches!(err(&"x".repeat(MAX_LEN + 1)), SelectError::TooLong { .. }));
         let many = (0..MAX_TERMS + 1).map(|i| format!("m{i}")).collect::<Vec<_>>().join(" ");
         assert!(matches!(err(&many), SelectError::TooManyTerms { .. }));
         // Every error has a token the frontend can branch on without parsing prose.
         assert_eq!(err("state:modified").code(), "unknown_method");
+    }
+
+    /// Versioned models as dbt-core 1.12 parses them, with what `dbt ls`
+    /// answered on the same shapes: three versions with the second the
+    /// latest, a version 0, which Python's truth leaves out of `old`, and a
+    /// string version, compared as text with a number.
+    fn versioned() -> Graph {
+        let model = |name: &str, v: serde_json::Value, latest: serde_json::Value| {
+            let tag = match &v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/{name}_v{tag}.sql"),
+                "fqn": ["shop", name, format!("v{tag}")],
+                "version": v, "latest_version": latest,
+            })
+        };
+        let plain = |name: &str| serde_json::json!({
+            "name": name, "resource_type": "model", "package_name": "shop",
+            "original_file_path": format!("models/{name}.sql"), "fqn": ["shop", name],
+        });
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.totals.v1": model("totals", 1.into(), 2.into()),
+                "model.shop.totals.v2": model("totals", 2.into(), 2.into()),
+                "model.shop.totals.v3": model("totals", 3.into(), 2.into()),
+                "model.shop.zero.v0": model("zero", 0.into(), 1.into()),
+                "model.shop.zero.v1": model("zero", 1.into(), 1.into()),
+                "model.shop.named.vbeta": model("named", "beta".into(), 10.into()),
+                "model.shop.named.v10": model("named", 10.into(), 10.into()),
+                "model.shop.uses_latest": plain("uses_latest"),
+                "model.shop.uses_old": plain("uses_old"),
+                "seed.shop.codes": {
+                    "name": "codes", "resource_type": "seed", "package_name": "shop",
+                    "original_file_path": "seeds/codes.csv", "fqn": ["shop", "codes"],
+                },
+                "test.shop.not_null_totals_v2_id": {
+                    "name": "not_null_totals_v2_id", "resource_type": "test", "package_name": "shop",
+                    "original_file_path": "models/totals.yml",
+                    "fqn": ["shop", "not_null_totals_v2_id"],
+                    "column_name": "id", "attached_node": "model.shop.totals.v2",
+                },
+            },
+            "parent_map": {
+                "model.shop.uses_latest": ["model.shop.totals.v2"],
+                "model.shop.uses_old": ["model.shop.totals.v1"],
+                "test.shop.not_null_totals_v2_id": ["model.shop.totals.v2"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    #[test]
+    fn a_version_is_selected_the_way_dbt_selects_it() {
+        let g = versioned();
+        let pick = |line: &str| {
+            let (_, res) = select(&g, line, "", Tests::Eager).expect(line);
+            let mut out: Vec<&str> = res.nodes.iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+            out.sort_unstable();
+            out
+        };
+        assert_eq!(pick("totals"), ["not_null_totals_v2_id", "totals.v1", "totals.v2", "totals.v3"], "every version");
+        assert_eq!(pick("totals.v1"), ["totals.v1"]);
+        assert_eq!(pick("totals_v3"), ["totals.v3"]);
+        assert_eq!(pick("totals.v1+"), ["totals.v1", "uses_old"]);
+        assert!(pick("v1").is_empty(), "a version alone names no model");
+        assert_eq!(pick("version:latest"), ["named.v10", "not_null_totals_v2_id", "totals.v2", "zero.v1"]);
+        assert_eq!(pick("version:old"), ["totals.v1"], "a version 0 is no version to Python");
+        assert_eq!(pick("version:prerelease"), ["named.vbeta", "totals.v3"], "`10` sorts before `beta` as text");
+        assert_eq!(pick("version:none"), ["uses_latest", "uses_old"], "models alone, no seed");
+    }
+
+    /// An unversioned `foo_v2` beside a versioned `foo`: each form reaches
+    /// what dbt's own `is_selected_node` says it reaches, and no more.
+    #[test]
+    fn a_version_and_a_model_named_like_it_are_told_apart() {
+        let model = |name: &str, fqn: serde_json::Value, version: Option<i64>| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/{name}.sql"), "fqn": fqn,
+                "version": version, "latest_version": version.map(|_| 2) })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.foo.v1": model("foo", serde_json::json!(["shop", "foo", "v1"]), Some(1)),
+                "model.shop.foo.v2": model("foo", serde_json::json!(["shop", "foo", "v2"]), Some(2)),
+                "model.shop.foo_v2": model("foo_v2", serde_json::json!(["shop", "foo_v2"]), None),
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let pick = |line: &str| {
+            let (_, res) = select(&g, line, "", Tests::Excluded).expect(line);
+            let mut out: Vec<&str> = res.nodes.iter().map(|&i| g.nodes[i as usize].name.as_str()).collect();
+            out.sort_unstable();
+            out
+        };
+        assert_eq!(pick("foo"), ["foo.v1", "foo.v2"]);
+        assert_eq!(pick("foo_v2"), ["foo.v2", "foo_v2"], "both, as dbt answers");
+        assert_eq!(pick("foo.v2"), ["foo.v2"]);
+        assert_eq!(pick("shop.foo_v2"), ["foo_v2"]);
+        assert_eq!(pick("foo_v*"), ["foo_v2"]);
+        assert_eq!(pick("foo*"), ["foo.v1", "foo.v2", "foo_v2"]);
     }
 
     #[test]
