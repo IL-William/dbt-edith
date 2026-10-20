@@ -103,6 +103,7 @@ const S = {
   settingsFrom: '',           // the panel the settings took the place of, '' for none
   settingsRepaint: false,     // a redraw of the section on screen is on its way, for every change made meanwhile
   featuresBusy: false,        // Snowflake's switch was flipped and the server has not answered yet
+  macroFocus: '',             // the macro whose callers a card asked the Macros section for (0105)
   runSeen: undefined,         // the last run's file time when its section was last shown, for the news
   jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
   warningsSeen: undefined,    // how many config paths applied to nothing when the warnings were last shown
@@ -9341,10 +9342,12 @@ function escapePanel() {
 /* The sections there are, in the order they are worked through, each only
    while it has something to show: the warnings once a config path applies to
    nothing, collin's report once a run wrote one, the coverage of the jobs
-   once a source is named. Before that the coverage is
-   listed all the same, `empty`, as the place a source is added from (0070),
-   but it is not opened on for itself, and the button stays dimmed (0075). */
-function reportsSections(index) {
+   once a source is named, the macros while one of the project's is reached by
+   no node and nothing explains it, and, empty, once a macro's card asked for
+   its callers, `focus` (0105). Before that the coverage is listed all the
+   same, `empty`, as the place a source is added from (0070), but it is not
+   opened on for itself, and the button stays dimmed (0075). */
+function reportsSections(index, focus) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
       title: 'What the last dbt command ran and how each node ended, from target/run_results.json' },
@@ -9354,9 +9357,15 @@ function reportsSections(index) {
       title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
       title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
+    { key: 'macros', label: 'Macros', tool: 'dbt',
+      title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
   ];
-  return all.filter((sec) => sec.key === 'jobs' || !!(index && index[sec.key]))
-    .map((sec) => (index && index[sec.key] ? sec : Object.assign(sec, { empty: true })));
+  const has = (key) => !!(index && index[key]);
+  // A card's focus lists the macros all the same, `empty` unless one lights
+  // the button: what lights it is the user's rule, not a click (0105).
+  const listed = (key) => key === 'jobs' || has(key) || (key === 'macros' && !!focus);
+  return all.filter((sec) => listed(sec.key))
+    .map((sec) => (has(sec.key) ? sec : Object.assign(sec, { empty: true })));
 }
 
 /* What is new in the reports since each was last shown, in the sections'
@@ -9542,14 +9551,16 @@ function runEntryText(e) {
 }
 
 /* The section the panel opens on: one with news, then the one read last this
-   session unless it is empty, then the first there is, which is empty only
-   when every section is. */
+   session unless it is empty, then the first that is not, and the first there
+   is, the empty coverage, only when every one is (0070, 0075): the macros come
+   after the coverage, so the first listed is not always the one to open on. */
 function reportsDefaultSection(sections, news, last) {
   const has = (key) => sections.some((sec) => sec.key === key);
   const fresh = (news || []).find((n) => has(n.key));
   if (fresh) return fresh.key;
   if (last && sections.some((sec) => sec.key === last && !sec.empty)) return last;
-  return sections.length ? sections[0].key : '';
+  const full = sections.find((sec) => !sec.empty);
+  return full ? full.key : sections.length ? sections[0].key : '';
 }
 
 /* The button's tooltip: what the reports hold, then what is new in them, or
@@ -9558,8 +9569,8 @@ function reportsDefaultSection(sections, news, last) {
 function reportsButtonTitle(sections, news, key) {
   const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
   const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, a config path of dbt_project.yml '
-    + 'that applies to nothing another, collin\'s report another, and the job coverage once the Jobs tab has a source, '
-    + 'which is added here.';
+    + 'that applies to nothing another, collin\'s report another, the job coverage once the Jobs tab has a source, '
+    + 'which is added here, and a macro of the project no node reaches that nothing explains.';
   return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
     .concat(names ? (news || []).map((n) => n.title) : [none]).join('\n');
 }
@@ -9609,7 +9620,7 @@ function reportsNow() {
   if (S.warningsSeen === undefined) S.warningsSeen = 0;
   if (unused < S.warningsSeen) S.warningsSeen = unused;
   const run = runBadge(S.reports && S.reports.run, S.runSeen);
-  return { sections: reportsSections(S.reports),
+  return { sections: reportsSections(S.reports, S.macroFocus),
     news: reportsNews(collinBadge(S.collin, S.collinSeen), run, jobsBadge(jobs, S.jobsSeen),
       warningsBadge(warnings, S.warningsSeen, S.fresh)) };
 }
@@ -9663,12 +9674,13 @@ function paintReportsNav() {
   $('#reports-nav').replaceChildren(...sections.map((sec) => {
     const row = jel('button', 'reports-navrow' + (sec.empty ? ' empty' : ''));
     row.type = 'button';
-    row.title = sec.empty ? 'No source named yet: add the folders your jobs are in' : sec.title;
+    const sourceless = sec.empty && sec.key === 'jobs';
+    row.title = sourceless ? 'No source named yet: add the folders your jobs are in' : sec.title;
     if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
     row.append(dot, jel('span', '', sec.label));
-    if (sec.empty) row.append(jel('span', 'rhint', 'add a source'));
+    if (sourceless) row.append(jel('span', 'rhint', 'add a source'));
     // The rail is narrow: the count alone, the words being on the button.
     const n = news.find((x) => x.key === sec.key);
     if (n) row.append(newsChip(Object.assign({}, n, { text: n.short })));
@@ -9756,7 +9768,8 @@ async function showReportSection(key) {
   const shown = (S.reports && S.reports[key]) || null;
   const again = () => showReportSection(key);
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
-    : key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
+    : key === 'collin' ? await collinSection(again)
+      : key === 'macros' ? await macrosSection(again) : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
   view.replaceChildren(...drawn);
@@ -9910,6 +9923,84 @@ async function collinSection(again) {
   try { view = await api.get('/api/collineage/report'); }
   catch (e) { return [head(''), jel('div', 'compiled-empty', e.message)]; }
   return [head(collinReportAbout(view)), collinReportBody(view)];
+}
+
+/* The project's macros no node reaches, grouped by why each may still run,
+   and above them, once a card asked, every node reaching one macro (0105).
+   Each name opens its file: a node's, or a macro's at its line. */
+async function macrosSection(again) {
+  const head = (about) => reportHead({ title: 'Macros', tool: 'dbt', about, again });
+  let r;
+  try { r = await api.get('/api/reports/macros' + (S.macroFocus ? '?focus=' + encodeURIComponent(S.macroFocus) : '')); }
+  catch (e) { return [head(''), jel('div', 'compiled-empty', e.message)]; }
+  const none = r.unreached.length;
+  const about = [`${counted(r.own, 'macro', 'macros')} in ${r.project}`,
+    none ? `${none} with no reference found` : 'every one reached by a node'].join(' · ');
+  const body = jel('div', 'reportbody');
+  const macroLink = (m) => {
+    if (!m.file) return jel('span', 'rrel', m.call);
+    const a = jel('a', 'filelink', m.call);
+    a.title = m.file;
+    a.addEventListener('click', (ev) => { ev.preventDefault(); closePanel(); openMacro({ file: m.file, name: m.name }); });
+    return a;
+  };
+  if (r.focus) {
+    const f = r.focus;
+    const use = macroUseText(f.used, r.adapter);
+    const d = jel('details', 'reportfinding macrofocus');
+    d.open = true;
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', f.call), jel('span', 'rcount', use.head));
+    d.append(sum);
+    const where = jel('p', 'rlever', 'defined in ');
+    where.append(macroLink(Object.assign({}, f, { call: f.file || f.call })));
+    d.append(where);
+    for (const n of use.notes) d.append(jel('p', 'rlever', n));
+    const ul = jel('ul', 'rentries');
+    for (const u of f.users) {
+      const li = jel('li', '');
+      const name = jel(u.file ? 'a' : 'span', u.file ? 'filelink' : 'rrel', u.name);
+      name.title = u.id;
+      if (u.file) name.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(u.id); });
+      li.append(name, jel('span', 'muted', ` · ${useKind(u.kind, 1)}${userHow(u)}`));
+      ul.append(li);
+    }
+    if (f.users_of > f.users.length) ul.append(jel('li', 'muted', `and ${f.users_of - f.users.length} more`));
+    for (const c of f.callers) {
+      const li = jel('li', '');
+      li.append(macroLink(c), jel('span', 'muted', ' · macro calling it'));
+      ul.append(li);
+    }
+    d.append(ul);
+    body.append(d);
+  }
+  if (!none) body.append(jel('p', 'runnote', `Every macro of ${r.project} is reached by a node, itself or through other macros.`));
+  for (const g of macroGroups(r.unreached)) {
+    const d = jel('details', 'reportfinding');
+    d.open = g.items.length <= 30;
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', g.title), jel('span', 'rcount', String(g.items.length)));
+    const ul = jel('ul', 'rentries');
+    for (const m of g.items) {
+      const li = jel('li', '');
+      li.append(macroLink(m));
+      if (m.extra) li.append(jel('span', 'muted', ' · ' + m.extra));
+      ul.append(li);
+    }
+    d.append(sum, jel('p', 'rlever', g.why === 'dispatch' ? `${g.lever} ${r.adapter || 'an adapter it does not name'}.` : g.lever), ul);
+    body.append(d);
+  }
+  return [head(about), body];
+}
+
+/* A macro card's first line: the Reports panel, on the nodes reaching it. */
+function openMacroUse(id) {
+  S.macroFocus = id;
+  // The new focus is drawn at the top: the place kept from browsing the list
+  // before would leave it out of view.
+  if (S.reportsDrawn === 'macros') S.reportsDrawn = '';
+  delete S.reportsPlace.macros;
+  openReports('macros');
 }
 
 async function jobsCoverageSection(again) {
@@ -10647,6 +10738,104 @@ function fillUnusedCard(el, paths, stale) {
   el.append(Object.assign(document.createElement('div'), { className: 'hc-counts', textContent: 'click: the Warnings report' }));
 }
 
+/* What a macro's callers are called, one and several. A hook is an
+   operation node to dbt, and reads as what it was written as. */
+const USE_KINDS = {
+  model: ['model', 'models'], snapshot: ['snapshot', 'snapshots'], seed: ['seed', 'seeds'], test: ['test', 'tests'],
+  analysis: ['analysis', 'analyses'], operation: ['hook', 'hooks'], exposure: ['exposure', 'exposures'],
+  source: ['source', 'sources'], other: ['node', 'nodes'],
+};
+const useKind = (kind, n) => (USE_KINDS[kind] || USE_KINDS.other)[n === 1 ? 0 : 1];
+const counted = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/* What dbt runs a macro for, in the card's words: `run` names the config key
+   and the value the nodes carry (0105). */
+function runSaid(run) {
+  const what = { materialized: ['model materialized', 'models materialized'],
+    incremental_strategy: ['incremental model with strategy', 'incremental models with strategy'],
+    strategy: ['snapshot with strategy', 'snapshots with strategy'] }[run.key] || ['node named', 'nodes named'];
+  return { each: `${what[0]} ${run.name}`, count: `${counted(run.nodes, what[0], what[1])} ${run.name}` };
+}
+
+/* What a macro's card, its palette row and its report entry say of who calls
+   it, from the `used` the server sends with it (0105): `head` the line a
+   click on the card opens the list from, `notes` the lines under it, `short`
+   the palette's. A macro no node reaches has no reference found, never
+   unused, and the likeliest reason it may still run: a run-operation or
+   another package's call, which leave the manifest no trace, or dbt running
+   it itself. */
+function macroUseText(used, adapter) {
+  const u = used || {};
+  const by = u.by || [];
+  const total = by.reduce((sum, k) => sum + k.n, 0);
+  const callers = (u.callers || []).join(', ') + ((u.callers_of || 0) > (u.callers || []).length
+    ? ` and ${u.callers_of - u.callers.length} more` : '');
+  const notes = [];
+  if (total) {
+    if (u.through) notes.push(u.through === total ? 'all of them through other macros' : `${u.through} of them through other macros`);
+    if (u.written) {
+      notes.push(`${u.written === total ? 'all of them' : `${u.written} of them`} only where dbt recorded no call, read from their SQL`);
+    }
+    if (callers) notes.push(`called by ${callers}`);
+    return { head: 'used by ' + by.map((k) => `${k.n} ${useKind(k.kind, k.n)}`).join(', '), notes, short: `used by ${total}` };
+  }
+  const ran = u.run && runSaid(u.run);
+  const why = {
+    dbt: u.from ? `called by ${u.from}, which dbt runs itself` : 'dbt calls it itself by its name, and records no call',
+    run: ran && `dbt runs it for each ${ran.each}, and ${u.run.nodes ? counted(u.run.nodes, 'is', 'are') : 'none is'}`,
+    dispatch: `a variant adapter.dispatch did not pick for ${adapter || 'the adapter'}, the one this manifest was parsed for`,
+    test: 'a generic test no enabled test uses',
+    macros: `called only by ${callers}, which no node reaches either`,
+    none: 'nothing in the manifest calls it: dbt run-operation or another package may',
+  }[u.why];
+  return { head: 'no reference found', notes: why ? [why] : [], short: 'no reference found' };
+}
+
+/* The report's groups of macros no node reaches, in the order the server
+   sends them (0105), each with what its title cannot say. */
+const MACRO_GROUPS = {
+  none: ['Nothing in the manifest calls them',
+    'dbt run-operation or another package may still call them: neither call is in the manifest, nor in any node\'s SQL or hooks.'],
+  macros: ['Called only by macros no node reaches', 'Each is called by the macros named beside it, and no node reaches those either.'],
+  test: ['Generic tests no test uses', 'No enabled test is built from them.'],
+  dispatch: ['Dispatch variants not picked',
+    'adapter.dispatch picks one variant per adapter: not another adapter\'s, nor a default the adapter\'s own shadows. This manifest was parsed for'],
+  run: ['Run by dbt for the nodes that name them',
+    'dbt runs a materialization for each model of its name, and a strategy macro for each model or snapshot naming the strategy, and records no call.'],
+  dbt: ['Called by dbt itself',
+    'dbt calls these itself and records no call: by their name, as generate_schema_name or a macro of its own the project overrides, or from what it runs, its own macros included.'],
+};
+
+function macroGroups(unreached) {
+  const groups = [];
+  for (const m of unreached || []) {
+    const why = (m.used && m.used.why) || 'none';
+    let g = groups[groups.length - 1];
+    if (!g || g.why !== why) {
+      const [title, lever] = MACRO_GROUPS[why] || MACRO_GROUPS.none;
+      g = { why, title, lever, items: [] };
+      groups.push(g);
+    }
+    const u = m.used || {};
+    const extra = why === 'macros' ? `called by ${(u.callers || []).join(', ')}`
+      + ((u.callers_of || 0) > (u.callers || []).length ? ` and ${u.callers_of - u.callers.length} more` : '')
+      : why === 'run' && u.run ? runSaid(u.run).count
+        : why === 'dbt' && u.from ? `called by ${u.from}` : '';
+    g.items.push({ id: m.id, name: m.name, call: m.call, file: m.file || '', extra });
+  }
+  return groups;
+}
+
+/* How a node in a macro's list reaches it, after its kind: through a macro,
+   read from its SQL where dbt recorded no call, or both. */
+function userHow(u) {
+  if (u.how === 'written') return ` · ${u.via ? `through ${u.via}, ` : ''}read from its SQL, dbt recorded no call`;
+  return u.via ? ` · through ${u.via}` : '';
+}
+
+/* A macro's card says who calls it, and its first line opens the list in the
+   Reports panel: a list of hundreds belongs there, not in a card, which holds
+   no focusable control. */
 function fillMacroCard(el, t) {
   hoverCardBody(el, { title: t.name, sub: `macro · ${t.package}`, crumb: t.file });
   el.append(Object.assign(document.createElement('div'), {
@@ -10656,6 +10845,14 @@ function fillMacroCard(el, t) {
   if (t.args && t.args.length) {
     el.append(Object.assign(document.createElement('div'), { className: 'hc-counts', textContent: 'arguments: ' + t.args.join(', ') }));
   }
+  if (!t.used) return;
+  const use = macroUseText(t.used, S.meta && S.meta.adapter);
+  const head = Object.assign(document.createElement('div'), {
+    className: 'hc-counts hc-link' + (t.used.why ? ' muted' : ''), textContent: use.head, title: 'Open the list in Reports',
+  });
+  head.addEventListener('click', () => { closeHoverCard(); openMacroUse(t.id); });
+  el.append(head);
+  for (const n of use.notes) el.append(Object.assign(document.createElement('div'), { className: 'hc-note muted', textContent: n }));
 }
 
 /* The freshness card. Built from `freshnessBadge`, which decides every word:
@@ -12950,7 +13147,10 @@ function showPalette(hits, q) {
     const p2 = document.createElement('span');
     p2.className = 'p2';
     p2.textContent = h.sub;
-    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path), p1, p2);
+    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path), p1);
+    // Who calls a macro, the row's count, the card and the report saying more.
+    if (h.kind === 'macro' && h.macro.used) r.append(jel('span', 'puse', macroUseText(h.macro.used).short));
+    r.append(p2);
     r.addEventListener('click', () => choosePalette(i));
     box.appendChild(r);
   });
@@ -13339,8 +13539,9 @@ function tourSteps(c) {
       ? `Reports on the whole project: ${c.reports.join(', ')}. A chip on the button says what is new in them `
         + `since you last looked, and ${reportsKey} opens them from anywhere.`
       : 'Reports on the whole project, dimmed until one has something to show: the last dbt run, from '
-        + '`run_results.json`, the config paths of dbt_project.yml that apply to nothing, collin\'s findings, and '
-        + 'the job coverage once the Jobs tab has a source. Meanwhile '
+        + '`run_results.json`, the config paths of dbt_project.yml that apply to nothing, collin\'s findings, '
+        + 'the job coverage once the Jobs tab has a source, and a macro of the project no node reaches that nothing '
+        + 'explains. Meanwhile '
         + `it opens on the coverage, where a source is added, and ${reportsKey} opens it from anywhere.` });
   steps.push({ key: 'terminal', target: '#dock [data-dock=terminal]', title: 'Terminal',
     text: 'A shell in the project folder, where dbt runs: this page never runs it. A button that offers a dbt '
@@ -14235,6 +14436,9 @@ function applyMeta(meta) {
   // And which nodes each job's selection reaches.
   if (S.dock === 'jobs') loadJobs();
   if (moved) forgetCatalogJobs();
+  // A macro a card asked about may be gone, or its callers changed: the
+  // Macros section is listed again for what the new manifest leaves (0105).
+  if (moved) S.macroFocus = '';
   // And the coverage the reports would show, which the index stamps with it.
   loadReportsIndex();
   // A first manifest may have a model to show the tour on (0078).

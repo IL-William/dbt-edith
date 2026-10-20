@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.42.0 - 2026-10-20
+
+- Say on a macro's card and in `Cmd/Ctrl + K` how many nodes call it, through
+  other macros too, open the list from the card, and list in Reports the
+  project's macros no node reaches, with why each may still run (0105).
+
 ## 1.41.0 - 2026-10-20
 
 - Name each version of a model apart, `orders.v2`, as `dbt ls` does: on the

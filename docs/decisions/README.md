@@ -108,6 +108,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0102](0102-a-node-and-the-project-are-described-on-the-command-line.md) | A node and the project are described on the command line | adding to what `--describe` or `--overview` prints, changing what `--output compact` leaves out, or letting the command line read a file of the project |
 | [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) | A config path is unused when no fqn of its kind begins it | showing a warning dbt gives as it parses, judging whether a key of `dbt_project.yml` applies to anything, or letting the Reports index read a file |
 | [0104](0104-a-versioned-model-is-named-by-its-version.md) | A versioned model is named by its version | changing what a node is named, what a model's bare name reaches, or how the implicit method matches a name |
+| [0105](0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md) | A macro is counted by the nodes reaching it, and never called unused | changing what a macro's card, its palette row or the Macros section says about who calls it, or reading `depends_on.macros` |
 
 ## Keeping these honest
 

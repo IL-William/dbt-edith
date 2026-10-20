@@ -134,6 +134,11 @@ pub struct RawNode {
     pub columns: HashMap<String, RawColumn>,
     #[serde(default)]
     pub depends_on: RawDependsOn,
+    /// The node's SQL as written, read for the macro calls dbt did not
+    /// record because it never rendered them when it parsed (0105), and
+    /// kept by nothing once read.
+    #[serde(default)]
+    pub raw_code: Option<String>,
     /// Where dbt wrote this node's compiled SQL, project-relative. The only
     /// thing that knows the file name of a generic test: dbt truncates a long
     /// generated name and appends a hash, which nothing here could reconstruct.
@@ -168,6 +173,15 @@ pub struct RawConfig {
     pub enabled: Option<bool>,
     #[serde(default)]
     pub incremental_strategy: Option<String>,
+    /// A snapshot's strategy, which names the macro dbt runs for it (0105).
+    #[serde(default)]
+    pub strategy: Option<serde_json::Value>,
+    /// The hooks' SQL, read for the macro calls dbt Fusion does not record
+    /// (0105): a list of `{ sql }`, or of plain strings.
+    #[serde(default, rename = "pre-hook")]
+    pub pre_hook: Option<serde_json::Value>,
+    #[serde(default, rename = "post-hook")]
+    pub post_hook: Option<serde_json::Value>,
     #[serde(default)]
     pub unique_key: Option<serde_json::Value>,
     #[serde(default)]
@@ -224,6 +238,18 @@ pub struct RawColumn {
 pub struct RawDependsOn {
     #[serde(default)]
     pub nodes: Vec<String>,
+    /// The macros it calls, as dbt recorded them: its own calls, not those of
+    /// the macros it calls, with `adapter.dispatch` already resolved for the
+    /// manifest's adapter. Counted per macro by `src/macro_use.rs` (0105).
+    #[serde(default, deserialize_with = "listed")]
+    pub macros: Vec<String>,
+}
+
+/// A list that may be null, read as empty: a field read here for the first
+/// time must not cost the whole manifest when some dbt writes null for it.
+fn listed<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let list: Option<Vec<String>> = serde::Deserialize::deserialize(d)?;
+    Ok(list.unwrap_or_default())
 }
 
 /// A macro, with `macro_sql` only for the few that say which incremental
@@ -248,6 +274,9 @@ pub struct RawMacro {
     pub arguments: Option<Vec<RawMacroArg>>,
     #[serde(default, deserialize_with = "strategy_body")]
     pub macro_sql: Option<String>,
+    /// The macros this one calls (`RawDependsOn::macros`).
+    #[serde(default)]
+    pub depends_on: Option<RawDependsOn>,
 }
 
 /// What a body mentions when it can bear on an incremental model's strategy

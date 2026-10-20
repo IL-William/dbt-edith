@@ -115,6 +115,17 @@ impl Macros {
         &self.root
     }
 
+    /// Where the macro of unique_id `id`, `macro.<package>.<name>`, sits in
+    /// the list, which `at` reads back.
+    pub(crate) fn position(&self, id: &str) -> Option<u32> {
+        let (package, name) = id.strip_prefix("macro.")?.split_once('.')?;
+        self.by_package.get(package)?.get(name).copied()
+    }
+
+    pub(crate) fn at(&self, i: u32) -> &Macro {
+        &self.list[i as usize]
+    }
+
     pub(crate) fn get(&self, package: &str, name: &str) -> Option<&Macro> {
         let &i = self.by_package.get(package)?.get(name)?;
         Some(&self.list[i as usize])

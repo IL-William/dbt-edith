@@ -89,7 +89,15 @@ passing, without leaving the file or the graph. Panning, zooming, scrolling,
 clicking or typing dismisses it, and a click on a `ref()` still navigates.
 On a macro, the card names the package it came from and its file, which is how
 to tell the project's `hub` from automate_dv's, with the description and
-arguments its YAML documents.
+arguments its YAML documents. It then says who calls it, from what the manifest
+records each node and macro calling, and from each node's SQL and hooks where
+dbt recorded no call: `used by 9 models, 40 tests`, how many of them only
+through other macros, how many only where dbt recorded no call, and the macros
+calling it. A click on that line opens the list in Reports. A macro no node
+reaches says `no reference found`, never unused, and why it may still run:
+`dbt run-operation` or another package, a dispatch variant not picked for the
+manifest's adapter, a materialization or a strategy macro dbt runs for the
+nodes that name it, or dbt calling it itself (0105).
 
 Pausing on a `var('x')` or an `env_var('X')` shows what that variable is worth.
 This is the one thing dbt's own artifacts cannot tell you: the manifest holds no

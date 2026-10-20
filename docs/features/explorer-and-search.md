@@ -66,7 +66,9 @@ line that defines it, so one of twenty in a `utils.sql` is one search away. Only
 a macro whose file is in the project is listed, so dbt's own are not. A file
 named after a macro gives way to the macro, as a model's `.sql` does to the
 model. A generic test or a materialization is a macro too, under the name dbt
-gives it: `test_<name>`, `materialization_<name>_<adapter>`.
+gives it: `test_<name>`, `materialization_<name>_<adapter>`. Each row
+says how many nodes reach the macro, `used by 12`, or `no reference found`,
+which its card and the Macros section of Reports explain (0105).
 
 The index is a directory walk, redone every 20 seconds, so a new file or a
 branch switch shows up without any invalidation logic. `target`, `logs`, `.git`

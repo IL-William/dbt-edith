@@ -168,6 +168,10 @@ kbd {
 .hc-head .offchip { margin-left: auto; }
 .hc-sub { margin-top: 2px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .hc-crumb { margin-top: 1px; font: 10.5px var(--mono); color: #6f7d90; word-break: break-all; }
+/* A macro's callers: the one line of a card a click acts on, opening the
+   list in Reports (0105). */
+.hc-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.hc-link:hover { color: var(--accent); }
 .hc-desc { margin-top: 7px; line-height: 1.45; }
 .hc-counts { margin-top: 7px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .hc-cols { margin-top: 7px; border-top: 1px solid var(--line); padding-top: 6px; }
@@ -1621,6 +1625,7 @@ kbd {
 .pres.on { background: var(--accent-dim); }
 .pres .p1 { font-size: 13px; }
 .pres .p2 { font: 11px var(--mono); color: var(--fg-dim); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pres .puse { font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
 
 /* ------------------------------------------------------------- shortcuts -- */
 .keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }

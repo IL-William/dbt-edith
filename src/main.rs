@@ -19,6 +19,7 @@ mod incremental;
 mod jobs;
 mod ls;
 mod ls_column;
+mod macro_use;
 mod macros;
 mod manifest;
 mod profiles;

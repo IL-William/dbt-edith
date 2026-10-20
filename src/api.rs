@@ -8,6 +8,7 @@ use crate::files::{self, mtime_secs};
 use crate::freshness;
 use crate::git::{self, GitInfo};
 use crate::graph::{ColRef, Graph, Kind, Place};
+use crate::macro_use::call_of;
 use crate::manifest::{RawCatalog, RawManifest};
 use crate::pty::{FromPty, PtySession, ShellSpec};
 use crate::select;
@@ -253,6 +254,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/reports", get(reports_index))
         .route("/api/reports/run", get(last_run_report))
         .route("/api/reports/warnings", get(warnings_report))
+        .route("/api/reports/macros", get(macros_report))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
@@ -945,11 +947,20 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     } else {
         None
     };
+    // The macros section is listed only while some macro of the project is
+    // reached by no node and nothing explains it, from summaries worked out
+    // once per macro (0105).
+    let unexplained = {
+        let graph = st.graph.read().await;
+        let unreached = graph.macro_use.unreached(&graph.macros);
+        unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count()
+    };
     Json(ReportsIndex {
         run,
         warnings,
         collin: (report > 0).then_some(Stamp { at: report }),
         jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at, counts }),
+        macros: (unexplained > 0).then_some(MacrosIndex { unexplained, at: manifest_at }),
     })
     .into_response()
 }
@@ -976,6 +987,141 @@ async fn warnings_report(State(st): State<Arc<AppState>>) -> Response {
         Some(report) => Json(report).into_response(),
         None => (StatusCode::NOT_FOUND, "nothing to hold dbt_project.yml against: no manifest, or no dbt_project.yml this can read").into_response(),
     }
+}
+
+/// The project's macros no node reaches, for the Reports panel, and when one
+/// is asked for by `focus`, from its card, every node reaching it (0105).
+async fn macros_report(State(st): State<Arc<AppState>>, Query(q): Query<MacrosReportQuery>) -> Response {
+    let graph = st.graph.read().await.clone();
+    let root = st.root.clone();
+    // A stat or two per macro listed, to give it a file to open.
+    let report = tokio::task::spawn_blocking(move || {
+        let (macros, uses) = (&graph.macros, &graph.macro_use);
+        let entry = |at: u32| {
+            let m = macros.at(at);
+            let file = macros.place(&root, m).unwrap_or_default();
+            MacroEntry { id: m.id.clone(), name: m.name.clone(), call: call_of(macros, at), file }
+        };
+        let focus = (!q.focus.is_empty()).then(|| macros.position(&q.focus)).flatten().map(|at| {
+            let usage = uses.usage(at);
+            let node = |i: u32, how: &'static str, via: Option<u32>| {
+                let n = &graph.nodes[i as usize];
+                MacroUser {
+                    rank: crate::macro_use::kind_rank(n.kind),
+                    id: n.id.clone(),
+                    name: n.name.clone(),
+                    kind: n.kind.as_str(),
+                    file: n.file.clone(),
+                    how,
+                    via: via.map(|v| call_of(macros, v)).unwrap_or_default(),
+                }
+            };
+            let mut users: Vec<MacroUser> = usage
+                .direct
+                .iter()
+                .map(|&i| node(i, "", None))
+                .chain(usage.written.iter().map(|&(i, via)| node(i, "written", via)))
+                .chain(usage.through.iter().map(|&(i, via)| node(i, "", Some(via))))
+                .collect();
+            users.sort_by(|a, b| (a.rank, &a.name, &a.id).cmp(&(b.rank, &b.name, &b.id)));
+            let users_of = users.len();
+            users.truncate(MAX_MACRO_USERS);
+            MacroFocus {
+                entry: entry(at),
+                used: macro_used(&graph, at),
+                users,
+                users_of,
+                callers: usage.callers.iter().map(|&c| entry(c)).collect(),
+            }
+        });
+        let mut unreached: Vec<Unreached> = uses
+            .unreached(macros)
+            .into_iter()
+            .map(|at| Unreached { entry: entry(at), used: macro_used(&graph, at) })
+            .collect();
+        // Grouped as the section shows them, what is left unexplained first,
+        // by name within each group.
+        unreached.sort_by(|a, b| (a.used.why, &a.entry.call).cmp(&(b.used.why, &b.entry.call)));
+        MacrosReport {
+            project: macros.root().to_string(),
+            adapter: graph.meta.adapter.clone(),
+            own: (0..macros.len() as u32).filter(|&m| macros.at(m).package == macros.root()).count(),
+            focus,
+            unreached,
+        }
+    })
+    .await;
+    match report {
+        Ok(r) => Json(r).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// More nodes than a list in a report is read through: a project macro a
+/// generic test is built from can be listed by thousands.
+const MAX_MACRO_USERS: usize = 2_000;
+
+#[derive(Deserialize)]
+struct MacrosReportQuery {
+    #[serde(default)]
+    focus: String,
+}
+
+#[derive(serde::Serialize)]
+struct MacrosReport {
+    project: String,
+    adapter: String,
+    /// How many macros the root project defines.
+    own: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focus: Option<MacroFocus>,
+    unreached: Vec<Unreached>,
+}
+
+/// A macro to open: its file is empty when it is not in the project.
+#[derive(serde::Serialize)]
+struct MacroEntry {
+    id: String,
+    /// Its name alone, which its `{% macro %}` line is found by.
+    name: String,
+    call: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    file: String,
+}
+
+#[derive(serde::Serialize)]
+struct MacroFocus {
+    #[serde(flatten)]
+    entry: MacroEntry,
+    used: crate::macro_use::Summary,
+    users: Vec<MacroUser>,
+    users_of: usize,
+    callers: Vec<MacroEntry>,
+}
+
+#[derive(serde::Serialize)]
+struct MacroUser {
+    /// Where its kind sorts, models first.
+    #[serde(skip)]
+    rank: usize,
+    id: String,
+    name: String,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    file: String,
+    /// `written` when its SQL calls the macro in a branch dbt did not record.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    how: &'static str,
+    /// The macro it reaches this one through, empty when it calls it itself.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    via: String,
+}
+
+#[derive(serde::Serialize)]
+struct Unreached {
+    #[serde(flatten)]
+    entry: MacroEntry,
+    used: crate::macro_use::Summary,
 }
 
 /// The last run's counts, through the cache the section reads too, so one
@@ -1031,6 +1177,16 @@ struct ReportsIndex {
     collin: Option<Stamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jobs: Option<JobsIndex>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    macros: Option<MacrosIndex>,
+}
+
+/// How many of the project's macros no node reaches and nothing explains,
+/// against the manifest they were counted in (0105).
+#[derive(serde::Serialize)]
+struct MacrosIndex {
+    unexplained: usize,
+    at: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -1749,6 +1905,15 @@ struct MacroLink {
     description: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     args: Vec<String>,
+    /// Who calls it, for the card and the palette row (0105).
+    used: crate::macro_use::Summary,
+}
+
+/// What a macro's card and its palette row say of who calls it (0105),
+/// worked out once per macro and kept with the graph: a search or a link
+/// asks again on every key.
+fn macro_used(graph: &Graph, at: u32) -> crate::macro_use::Summary {
+    graph.macro_use.summary(&graph.macros, &graph.nodes, &graph.meta.adapter, at).clone()
 }
 
 /// More distinct calls than any file holds: past it, the request is not an
@@ -1782,6 +1947,7 @@ async fn resolve_macros(State(st): State<Arc<AppState>>, Json(b): Json<MacroCall
                     file,
                     description: m.description.clone(),
                     args: m.args.clone(),
+                    used: macros.position(&m.id).map(|at| macro_used(&graph, at)).unwrap_or_default(),
                 })
             })
             .collect::<Vec<_>>()
@@ -1815,13 +1981,14 @@ async fn search_macros(State(st): State<Arc<AppState>>, Query(q): Query<MacroSea
             .find(&root, &q.q, limit)
             .into_iter()
             .map(|(m, file)| MacroLink {
-                call: if m.package == macros.root() { m.name.clone() } else { format!("{}.{}", m.package, m.name) },
+                call: macros.position(&m.id).map(|at| call_of(macros, at)).unwrap_or_else(|| m.name.clone()),
                 id: m.id.clone(),
                 name: m.name.clone(),
                 package: m.package.clone(),
                 file,
                 description: m.description.clone(),
                 args: m.args.clone(),
+                used: macros.position(&m.id).map(|at| macro_used(&graph, at)).unwrap_or_default(),
             })
             .collect::<Vec<_>>()
     })
@@ -5075,6 +5242,116 @@ mod tests {
         assert_eq!(hits[0]["file"], "dbt_packages/dbt_utils/macros/sql/star.sql");
         let empty = response_of(port, get("/api/macros/search?q=", &[("Host", &host)])).await;
         assert!(empty.ends_with("[]"), "{empty}");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A macro's callers ride on its link and its palette row, counted through
+    /// the macros that call it; the Reports index lists the macros section
+    /// only while one of the project's is reached by no node, and the section
+    /// says why each may still run (0105).
+    #[tokio::test]
+    async fn a_macro_says_who_calls_it_and_the_report_lists_those_no_node_reaches() {
+        let root = temp_project("macro-use");
+        for f in ["macros/money.sql", "macros/ops.sql"] {
+            std::fs::create_dir_all(root.join(f).parent().unwrap()).unwrap();
+            std::fs::write(root.join(f), "{% macro x() %}{% endmacro %}\n").unwrap();
+        }
+        let (port, st, server) = serve(&root).await;
+        let mac = |name: &str, file: &str, calls: &[&str]| {
+            serde_json::json!({ "name": name, "package_name": "demo", "original_file_path": file,
+                "depends_on": { "macros": calls } })
+        };
+        let model = |name: &str, calls: &[&str]| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                "depends_on": { "macros": calls } })
+        };
+        let manifest = |with_models: bool| -> RawManifest {
+            let nodes = if with_models {
+                serde_json::json!({
+                    "model.demo.orders": model("orders", &["macro.demo.cents"]),
+                    "model.demo.payments": model("payments", &["macro.demo.round_amount"]),
+                    "model.demo.refunds": model("refunds", &["macro.demo.round_amount"]),
+                    "model.demo.late": { "name": "late", "resource_type": "model", "package_name": "demo",
+                        "raw_code": "select 1 {% if execute %}{{ watermark() }}{% endif %}" },
+                })
+            } else {
+                serde_json::json!({})
+            };
+            serde_json::from_value(serde_json::json!({
+                "metadata": { "project_name": "demo", "adapter_type": "duckdb" },
+                "nodes": nodes,
+                "macros": {
+                    "macro.demo.cents": mac("cents", "macros/money.sql", &[]),
+                    "macro.demo.round_amount": mac("round_amount", "macros/money.sql", &["macro.demo.cents"]),
+                    "macro.demo.grant_select": mac("grant_select", "macros/ops.sql", &[]),
+                    "macro.demo.default__cents": mac("default__cents", "macros/money.sql", &[]),
+                    "macro.demo.watermark": mac("watermark", "macros/money.sql", &[]),
+                },
+            }))
+            .unwrap()
+        };
+        let path = root.join("target").join("manifest.json");
+        *st.graph.write().await = Arc::new(Graph::build(manifest(true), &path, 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://{host}");
+        let h = [("Host", host.as_str())];
+        let json = |answer: &str| -> serde_json::Value { serde_json::from_str(past_head(answer)).unwrap() };
+
+        let body = r#"{"file":"models/orders.sql","calls":["cents","grant_select"]}"#;
+        let resolve = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", &own)], body);
+        let links = json(&response_of(port, resolve).await);
+        assert_eq!(links[0]["used"], serde_json::json!({ "by": [{ "kind": "model", "n": 3 }], "through": 2,
+            "callers": ["round_amount"], "callers_of": 1 }));
+        assert_eq!(links[1]["used"], serde_json::json!({ "why": "none" }), "no reference found, never unused");
+
+        let hits = json(&response_of(port, get("/api/macros/search?q=round", &h)).await);
+        assert_eq!(hits[0]["used"]["by"][0]["n"], 2);
+
+        let index = json(&response_of(port, get("/api/reports", &h)).await);
+        // grant_select: default__cents is a variant dispatch did not pick.
+        assert_eq!(index["macros"]["unexplained"], 1);
+
+        // A call dbt did not render, `{% if execute %}`, is read from the SQL.
+        let late = json(&response_of(port, get("/api/reports/macros?focus=macro.demo.watermark", &h)).await);
+        assert_eq!(late["focus"]["used"], serde_json::json!({ "by": [{ "kind": "model", "n": 1 }], "written": 1 }));
+        assert_eq!(late["focus"]["users"][0]["how"], "written");
+
+        let report = json(&response_of(port, get("/api/reports/macros?focus=macro.demo.cents", &h)).await);
+        assert_eq!(report["own"], 5);
+        assert_eq!(report["adapter"], "duckdb");
+        let focus = &report["focus"];
+        assert_eq!(focus["call"], "cents");
+        assert_eq!(focus["file"], "macros/money.sql");
+        let users: Vec<(String, String)> = focus["users"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| (u["name"].as_str().unwrap().into(), u["via"].as_str().unwrap_or("").into()))
+            .collect();
+        let want = [("orders", ""), ("payments", "round_amount"), ("refunds", "round_amount")];
+        assert_eq!(users, want.map(|(n, v)| (n.to_string(), v.to_string())));
+        let unreached: Vec<(&str, &str)> = report["unreached"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| (u["call"].as_str().unwrap(), u["used"]["why"].as_str().unwrap()))
+            .collect();
+        assert_eq!(unreached, [("grant_select", "none"), ("default__cents", "dispatch")], "grouped by why");
+        let unknown = json(&response_of(port, get("/api/reports/macros?focus=macro.demo.nowhere", &h)).await);
+        assert!(unknown.get("focus").is_none());
+        assert!(status_of(port, keyless(get("/api/reports/macros", &h))).await.ends_with("401 Unauthorized"));
+
+        // Every macro reached or explained: nothing to light the button for.
+        let mut all = manifest(true);
+        all.nodes.get_mut("model.demo.orders").unwrap().depends_on.macros = vec!["macro.demo.grant_select".into()];
+        *st.graph.write().await = Arc::new(Graph::build(all, &path, 0, 0));
+        assert!(json(&response_of(port, get("/api/reports", &h)).await).get("macros").is_none());
+        // And a manifest of no node: cents only round_amount calls, round_amount,
+        // grant_select and watermark, the dispatch variant aside.
+        *st.graph.write().await = Arc::new(Graph::build(manifest(false), &path, 0, 0));
+        assert_eq!(json(&response_of(port, get("/api/reports", &h)).await)["macros"]["unexplained"], 4);
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

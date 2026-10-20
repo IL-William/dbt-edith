@@ -217,6 +217,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the folder bands, how deep they go, or the order the folders go in | [0029](docs/decisions/0029-the-canvas-may-be-drawn-by-folder.md), [0080](docs/decisions/0080-a-band-may-be-cut-by-its-sub-folders.md) |
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | change what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands | [0084](docs/decisions/0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) |
+| say who calls a macro, or that nothing does, or read `depends_on.macros` | [0105](docs/decisions/0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | change what a column box's badge says, or read a field of collin's cache other than its edges | [0096](docs/decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md), [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) |
@@ -276,6 +277,7 @@ src/clone.rs          which nodes a clone into your schema copies: the model, it
 src/sidecar.rs        the Snowflake script: started once Snowflake is picked or the history read, one request at a time
 src/compiled.rs       the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs         macros from the manifest, and which one a call in the editor reaches
+src/macro_use.rs      which nodes reach each macro, through the macros calling it, and why one no node reaches may still run
 src/incremental.rs    which incremental strategy dbt runs for a model, read from those macros
 src/freshness.rs      whether manifest.json still matches the files dbt would parse
 src/envs.rs           .env parsing and location resolution per environment
