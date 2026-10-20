@@ -147,7 +147,6 @@ PNG goes through a data URL; a blob URL failed without a word. And a clip counts
 characters while a box holds pixels, so a name written out whole is measured on
 the canvas, measured again once shrunk, since small sizes do not scale in
 proportion, and pinned to that length for readers whose fonts run wider.
-Not yet opened in Firefox, Safari, or Edge on the VM.
 
 Columns from the edges: a box's column was the server's BFS
 distance from the focus, so a model reached by a short path and a long one sat
@@ -165,7 +164,7 @@ box 199 to none, 14 to 21 columns, about a millisecond. With its tests ticked,
 400 boxes: 359 edges pointing left to none, 1 700 crossings to 477, and 9 038 px
 tall to 8 126. Brandes and Kopf alone drew that one at 15 615 px, found only by
 running the real payload, which is why the switch exists. Seen in headless
-Chrome on that payload; not yet on the VM.
+Chrome on that payload.
 
 Macro links, and the names a properties file declares: a
 macro call inside Jinja opens the file that defines it at its `{% macro %}`
@@ -192,13 +191,12 @@ project macro opened on its line in a file named after something else; 22 of
 its model and none of its columns; the four macro calls in `dbt_project.yml`,
 hooks and the query comment, linked, `env_var` left to its card.
 Not linked, deliberately: `adapter.dispatch` targets, generic tests named in
-YAML, and packages under a custom `packages-install-path`. Not yet opened on
-the VM.
+YAML, and packages under a custom `packages-install-path`.
 
 `Cmd/Ctrl + K` finds a macro by its name, a package's as `package.name`, and
 opens it on its definition, a generic test's and a materialization's included
 (0084). Only the macros placed in the project are listed, ranked by how the
-name matches before whose it is. Not yet opened on the VM.
+name matches before whose it is.
 
 Folder bands: the by folder toggle beside tests gives each
 folder its own run of columns (0029), at the first level where the drawn models
@@ -222,7 +220,7 @@ window, because at the zoom that fits a graph the canvas's own text cannot be
 read; a name gives way under 40 px of room, which on a tall graph is most bands
 until you zoom in. Driven in headless Chrome on that project, in model and
 selection mode, with the export and the image; column mode only by the harness,
-the project's column cache holding two edges. Not yet opened on the VM.
+the project's column cache holding two edges.
 
 Sub-folder bands (0080): the levels box, opened under the by folder toggle by
 the pointer or the keyboard and closed a moment after they leave, cuts each
@@ -235,7 +233,7 @@ and the models filed beside them get a run of their own, placed by their edges.
 At one level the canvas draws as before. Driven in headless Chrome on a large
 real project, in selection mode at one to three levels, with the export, and
 the box's opening and closing by pointer, click and arrow key; column mode only
-by the harness. Not yet opened on the VM.
+by the harness.
 
 Find, the column filter and the shortcut list (0030):
 `Cmd/Ctrl + F` used to open the browser's find, which sees only the thirty or so
@@ -256,9 +254,7 @@ by `?`, `F1` and the button. Then all of it again as Edge on Windows, with
 `navigator.platform` at `Win32`, which is what turns CodeMirror to Ctrl: every
 key with Ctrl, plus `F3`, `Ctrl + G`, `Alt + W` from a QWERTY and an AZERTY
 keyboard, and AltGr+4 typing `{` rather than firing anything. That emulates
-the page, not the browser: not yet opened on the VM, where Edge itself has to
-leave `Ctrl + F`, `F3` and `F1` to the page, as Chromium does for any key it
-does not reserve.
+the page, not the browser.
 
 Column lineage by tool (0031): the read-only chip in the top
 bar is now a menu of Fusion, Collin and Snowflake, each in its own colour, and
@@ -283,7 +279,7 @@ it, the script's `starting` then `failed` in both buttons, and Escape. Startup
 checked with the setting unset on a `snowflake` and a `postgres` adapter, and a
 Snowflake `--column-lineage` refused while off. The 18 825 node project holds
 only a legacy `column_lineage.json` whose source is Snowflake, which the menu
-files under Snowflake. Not yet opened on the VM.
+files under Snowflake.
 
 Switching tools no longer reads the manifest. Merging a cache adds the columns
 it knows and the YAML does not, and never removes them, so switching used to
@@ -332,7 +328,6 @@ shows it; the first version showed it on all 85, which taught nothing. All 86, 8
 HTTP in 2.5 s in a debug build, 26 ms for the median one and 144 ms for the
 largest. Driven in headless Chrome on the preview.196 manifest: the menu and
 its filter, tests off and on, a refused selector, a pasted `dbt ls --selector`.
-Not yet opened on the VM.
 
 Checked against dbt itself (0033): `scripts/compare_with_dbt.py`
 resolves the 16 named selectors of a Jaffle Shop copy in `tests/fixtures/`, and
@@ -357,7 +352,7 @@ under its model with the other models it reads coming in from the left. The
 staircase graph in `layout.js` hung its sinks under their models once they
 did, so its sinks are models now. Every line into a test is dotted and grey,
 dash and dot when turned, `.edge.test` sitting before `.edge.hi` so a selected
-one still turns accent. Not yet opened on the VM.
+one still turns accent.
 
 Tests folded past five (0035): a hanging test costs 26 px, and
 the most tested node of that project carries 134, about 3 500 px of pile. Under
@@ -368,7 +363,7 @@ models reached last of their tests, now takes one test per model a turn, in
 model mode and in Custom selection alike. In `layout.js`, 150 models of 20 tests
 each lay out 1 978 px tall with five and a chip under each. Driven in headless
 Chrome on that project: the node with 17 tests shows five and `+12 more tests`,
-opens to seventeen by click and folds again by keyboard. Not yet on the VM.
+opens to seventeen by click and folds again by keyboard.
 
 Folder keys in `dbt_project.yml` (0036): a key under
 `models:`, or under its five path-valued siblings, opens the folder it
@@ -388,7 +383,7 @@ under `dbt_packages/`. The card only calls a config dead when the freshness
 badge says the manifest matches the project, since on a branch the folder is
 usually newer than the parse. Driven in headless Chrome on that
 project and on a copy of Jaffle Shop with no manifest at all, which is the case
-the disk answers and the manifest could not. Not yet on the VM.
+the disk answers and the manifest could not.
 
 A header above the tree: the project's name and two buttons,
 one collapsing every folder and one reopening the tree down to the file being
@@ -400,7 +395,7 @@ The reveal reuses `revealInTree`, and both share `projectPath`, pulled out of
 `Alt + Shift + W` closes every tab, and `closeAll` now removes a diff tab's
 MergeView host and hides the diff pane, which only `closeFile` did: closing a
 diff that way left its two documents in the page. The tab bar also scrolls to
-the active tab, which it never did while the bar overflowed. Not yet on the VM.
+the active tab, which it never did while the bar overflowed.
 
 A tab's own menu and a way back: right-click a tab for Close,
 Close others, Close to the right and Close saved, the app's first context menu;
@@ -435,7 +430,7 @@ left a diff's MergeView in the page. Driven in headless Chrome on the 18 889 nod
 project: three palette jumps walk back and forward with the chevrons greying at
 each end, a ref() click returns to its own line, Close to the right leaves
 exactly the tabs to the left, and two edited files draw one confirmation naming
-both. Not yet on the VM.
+both.
 
 The keys reaching a file (0038): a model, seed, snapshot,
 analysis or singular test has `dbt_project.yml` at the end of its breadcrumb,
@@ -454,7 +449,7 @@ deepest key lists five levels and opens `dbt_project.yml` on the fifth; a
 `dbt_artifacts` model lists `models:` and the key naming the package; a
 singular test lists the `data_tests:` levels and never a model's. 6 to 17 ms
 from the click to the menu, in a debug build. On a copy of Jaffle Shop with no
-manifest, the same. Not yet on the VM.
+manifest, the same.
 
 A way back out of a preview tab: following a link out of a
 preview tab pins it, where the link's target, opened as a preview, used to take
@@ -467,7 +462,7 @@ reopen tabs closed on purpose, and could not for a diff or the profile. A chain
 of links now leaves a pinned tab per step, the target alone staying a preview.
 Driven in headless Chrome on the 18 825 node project: two `ref()` followed out
 of a preview tab, then Back twice, lands on the first model at the line of its
-`ref()`. Not yet on the VM.
+`ref()`.
 
 Trying that, the user asked for the lineage to behave as the tree does: one
 click on a box opens its file as the preview, leaving the canvas where it is,
@@ -517,7 +512,7 @@ the 18 889 node project with a copy of its manifest missing one model: the
 canvas named the file and the stale manifest, then drew it 6.6 s after the full
 manifest was written back, and 2 s after Reload manifest. Over a kept canvas:
 the line named the model drawn, a macro file opened after it hid the line, and
-the file's own lineage replaced both 8 s after the parse. Not yet on the VM.
+the file's own lineage replaced both 8 s after the parse.
 
 Tests grouped by generic (0040): a hanging test said dbt's
 generated name, about 50 characters clipped to 25, in the grey every test had.
@@ -542,7 +537,7 @@ alone under its closed group; the legend names three kinds of test; an exported
 picture holds the same labels. In jsc, 150 models of 30 tests each lay out in
 a few milliseconds. The character budget a row gets was measured there too, at
 5.1 to 5.4 px a character for an identifier, against the 6.8 the old clip at 25
-assumed. Not yet on the VM, whose system font is Segoe UI.
+assumed.
 
 A test opens at its line (0041): opening a generic test
 opened its properties file at the top. The manifest records no line for a
@@ -561,7 +556,6 @@ and focuses the editor, a Catalog chip and a Preview double click land on their
 line, and a singular test opens its file at the top. A model's tests are often
 spread over several files there; one click on a test of another file replaces
 the preview tab, as one click on a box does, so Back skips it.
-Not yet on the VM.
 
 collin run from dbt-edith (0042): Collin's cache used to be
 written by hand, `collin generate` in a terminal and a pick afterwards. Picking
@@ -580,8 +574,7 @@ below 0.8.0, the first to list the columns a literal sets (0096, 0098), and
 gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
 share was 100% while its manifest, written by Fusion's `parse`, carried no
-`compiled_code`, before collin read `target/compiled/` (below). Not yet tried on the VM, where cargo may not
-reach GitHub and copying `collin.exe` beside the binary is the fallback.
+`compiled_code`, before collin read `target/compiled/` (below).
 
 A column's box opens its model's file: one click on
 a model's box gave the file's preview and two clicks the pinned tab, for model boxes only. A
@@ -605,8 +598,7 @@ normalised without it, so no saved setting moves. The same report said nothing
 could be copied or pasted there (0044). Driven in headless Chrome posing as
 Windows: a double-clicked word reaches the clipboard on Ctrl+C with no `^C` to
 the shell, a second Ctrl+C interrupts, and Ctrl+V types the clipboard, where
-main's `app.js` sent `^C` and `^V`. The `.exe` cross-compiles; neither fix has
-run on the VM yet.
+main's `app.js` sent `^C` and `^V`. The `.exe` cross-compiles.
 
 SQL from `target/compiled/`: collin reads
 a model's compiled file when the manifest has no `compiled_code`, and sets the
@@ -691,7 +683,7 @@ first. So each new terminal now types the activate script of the venv
 dbt-edith was started in (0050), once the line editor reads on Unix and at once
 on Windows. Measured on macOS against `zsh -l` and its real `~/.zshrc`: the
 line showed once, after the prompt, and ran within 0.6 s. The `.exe`
-cross-compiles; the activation has not run on the VM yet.
+cross-compiles.
 
 The profile on every project: the top bar showed
 `profiles.yml` only once the Snowflake script had run with Snowflake's
@@ -703,7 +695,6 @@ when there is no file there. Driven in headless Chrome on the 18 825 node
 project with an invented home: the button opens the profile in a tab with
 Snowflake's features off and still shows once they are on, and
 `DBT_PROFILES_DIR` pointed at an empty directory greys it.
-Not yet on the VM.
 
 The config button: the `dbt_project.yml` segment at the end
 of a model's breadcrumb (0038) became a round button in the same violet, a file
@@ -711,7 +702,7 @@ with an arrow coming into it, its name in the tooltip. Drawing it showed the
 Catalog's `.crumb` rule giving every breadcrumb segment a margin that lifted it
 3.5px and cut the top off a hover; the bar now scopes that away. Driven in
 headless Chrome on a model of the 18 825 node project: the button sits whole in
-the bar and opens the menu of keys. Not yet on the VM.
+the bar and opens the menu of keys.
 
 Query history (0048): with Snowflake's features on, a dock
 tab lists the queries the connected Snowflake user ran in the last seven days,
@@ -734,8 +725,8 @@ fake connector answering 45 invented queries: the tab only with the features
 on, 20 rows then 32 under the target's role, all roles, the greyed targets and
 their reasons, a statement cut at 10 000 characters, a refused connection
 naming `profiles.yml`, and no link without an organization. Not the deferred
-**Run history** below, which reads `run_results.json`. Not yet on the VM, nor
-against any warehouse.
+**Run history** below, which reads `run_results.json`. Not yet against any
+warehouse.
 
 Snowsight from the Catalog (0051): with Snowflake's features on, each relation
 in the Location table, resolved and built, has a Snowsight menu beside its Copy
@@ -780,7 +771,7 @@ Chrome agree once ordering is set aside, as two runs of `main` do, and every
 write agrees on an invented project. That comparison caught two regressions
 before merging, both fixed: the venv tooltip named `dbt-autofix` for a Fusion
 venv, and the temporary file's name, one per process, failed two writes at
-once. Not yet on the VM, where a restart now means opening the new link.
+once.
 
 Supply-chain pass of 2026-10-15 (0085). The README's `cargo install --path .`
 built the newest versions cargo could pick, not the lockfile CI audits, twenty
@@ -1075,7 +1066,7 @@ deleted upstream to a rebase stopped on a conflict and a linked worktree,
 answer as on `main`. Rejected: cancelling a search a newer one replaces, since
 a second tab would then be shown a partial answer as a whole one, and keeping
 the files' contents in memory, which still pays a stat per file to know they
-are current. Not yet on the VM.
+are current.
 
 The Jobs tab (1.9.0, 0063): which Airflow DAGs and dbt Cloud jobs run the node
 in focus, read from YAML in folders named in the settings, outside the project,
@@ -1108,8 +1099,7 @@ dbt-core's `dbt ls` step for step in `scripts/compare_with_dbt.py`. The walk
 first skipped any folder named `target` or `logs`, which on that repository is
 a layer of eight DAGs, without a word; only `node_modules` and `__pycache__` are
 skipped now. Every replayed read request answers as on `main`. Driven in
-headless Chrome on that project. Not yet on the VM, nor on a real
-dbt-jobs-as-code repository.
+headless Chrome on that project. Not yet on a real dbt-jobs-as-code repository.
 
 Reports (1.10.0, 0064): what speaks of the whole project sat in two places,
 collin's report in an editor tab behind a badge, and Coverage in a view of the
@@ -1137,7 +1127,7 @@ its "5 to investigate" on the button, the panel opening on it, and the news
 gone once shown. On a large real project, against `main`, every replayed
 read request answers the same bytes but where two starts of one build differ
 as well, both sections are drawn in under a second, and the coverage gives
-the figures it gave in 1.9.0. Not yet on the VM.
+the figures it gave in 1.9.0.
 
 Last run (1.11.0, 0065): whether the last build went through was the
 terminal's to say. A section of Reports now reads `target/run_results.json`
@@ -1191,7 +1181,7 @@ closing, undo after a reload changing nothing, typing during a slowed save
 kept, a double save asking nothing, Save all saying a declined file was left
 rather than failed, a file turned binary marked and read once, and a CRLF file
 neither reloaded by a new stamp over the same text nor marked edited by a real
-change. Not yet on the VM.
+change.
 
 Update offer (1.12.0, 0068): a release was found by looking at GitHub. Once a
 day, in the background, git now lists dbt-edith's tags (`ls-remote`), the
@@ -1207,7 +1197,7 @@ without a command is told why. Driven in headless Chrome on Jaffle Shop
 with a release build: a start with an empty config directory asked GitHub,
 found 1.11.0 and showed nothing; with 1.12.0 kept for the day, the startup
 banner named it, the pill and its menu showed, and the command landed in the
-terminal unrun. Not yet on the VM.
+terminal unrun.
 
 Update looks through the Paris night (1.18.0, 0079), from a report on the VM: a
 start showed no update with several out, an older answer still standing under
@@ -1225,7 +1215,7 @@ newer releases put a dot on the name, the pill in the status bar and one row
 per release in the menu, and a proxy git could not reach put git's line in the
 menu beside the older answer. Pull request titles are held to fifty characters
 from here, one idea in the user's words, so each fits its row (AGENTS.md, and
-CI's naming check). Not yet on the VM.
+CI's naming check).
 
 The venv the terminal activated (1.12.1, 0069), from a report on the VM: once
 a project's own script had switched Git Bash to its Fusion venv, the prompt
@@ -1240,8 +1230,7 @@ nothing has `GET /api/venv` read the project's venvs again.
 Checked by a real bash on a terminal in the Rust tests, and by headless Chrome
 on a large real project with `/bin/bash` as the shell: activate, deactivate,
 activate the other, exit, each shown at the next prompt; started inside a venv,
-the typed activation reported as the terminal's; zsh unchanged. Not yet on the
-VM, where ConPTY carries the sequence.
+the typed activation reported as the terminal's; zsh unchanged.
 
 Picking a job source (1.13.0, 0070): a source's path was typed by hand, and a
 typo was found only by saving. **Browse…** beside each path opens a picker
@@ -1261,8 +1250,7 @@ it is not opened on while another section has something. Driven in headless Chro
 orchestration repository beside it: Reports to Add a source, the picker on the
 project, up one folder, three folders down, Escape closing the picker and not
 the form, a path typed into the picker, and Use writing
-`../<repository>/dags/...`. Not yet on the VM, where the drives above `C:\`
-are reached by typing one.
+`../<repository>/dags/...`.
 
 A pan from a box opens nothing (1.13.2), after panning was reported from the
 VM as going wrong with the folder bands on. Dragging the canvas from a box
@@ -1293,8 +1281,7 @@ leaves it going, and the left release after either opens nothing; a Ctrl+click
 whose release a context menu takes leaves nothing following the pointer; two
 quick pans fit nothing; a click right after a pan re-centres nothing, while a
 double click of its own does; a zoom or a fit during a pan stands. Ten of
-them fail on `main`. Whether that is all that was seen on the VM is not known
-yet.
+them fail on `main`.
 
 The venv in the status bar, coloured and clickable (1.14.0, 0072), asked for on
 the VM, where a `deactivate` left the bar's grey text barely changed. The bar
@@ -1317,8 +1304,7 @@ Enter, amber again after `deactivate`; a folder named with a Ctrl+U and a
 carriage return read with no line and not offered; a venv made after startup in
 the menu on the next click; the named venv without a script, the other listed
 and not typed; one venv, typed at once; Enter on the focused pill opens the
-menu, and Escape gives it the focus back. Not yet on the VM, where the line is
-Git Bash's `C:/` spelling.
+menu, and Escape gives it the focus back.
 
 The terminal's line keys (1.14.1), after Ctrl+Left, Ctrl+Right and Home were
 reported from the VM as doing nothing in Git Bash, where VS Code's terminal
@@ -1382,7 +1368,7 @@ once, the unresolved and refused chips, a node no job runs, nothing asked while
 the Catalog is hidden or under Reports or drawn again, and one request after a
 look or a save. On a large real project with its orchestration repository,
 before the review: the order, a chip lighting its step, a node no job runs,
-and nothing asked while the Catalog is hidden. Not yet on the VM.
+and nothing asked while the Catalog is hidden.
 
 A guided tour, Give me a tour at the top of the shortcut list, and offered once
 per machine by a card under the `?` button (0074), by the first page with a
@@ -1502,7 +1488,7 @@ that some fold under a chip and a closed group: model mode, tests off and on,
 Custom selection drawn by folder, bands cut two and three levels deep on a copy
 moved into invented sub-folders, Escape, Cmd+F again, Cmd+G from the canvas,
 and the Catalog's filter still answering there. Column mode only by the
-harness, Jaffle Shop having no column lineage. Not yet opened on the VM.
+harness, Jaffle Shop having no column lineage.
 
 Pictures in the README: the editor with a hover card, the lineage of the
 whole project by folder, the Catalog's columns, one column's lineage from
@@ -1549,7 +1535,7 @@ stderr. On a copy of a large project's artifacts, asked from another
 folder: the cache it wrote equals the one collin 0.8.0 writes with the page's
 own arguments, and so does the answer; with the `compiled_code` taken out,
 `--compiled` read every model's file, and without it stderr said none was
-found. Not driven in the page, nor on the VM.
+found. Not driven in the page.
 
 A node and the project on the command line (0102, 1.37.0): `--describe`
 prints a node's card, what the Catalog shows of it, with `--sql` for its own
@@ -1564,9 +1550,13 @@ keys, the rules of a name, `--sql` against a temporary project, the overview at
 two depths) and by running them on Jaffle Shop parsed, compiled, seeded and
 documented with dbt 1.11, with collin's cache beside the manifest, the flags'
 conflicts and an unknown name. On Jaffle Shop a compact answer is about a
-quarter of the JSON's bytes. Not driven on the VM.
+quarter of the JSON's bytes.
 
 ## Deferred, in the order they were chosen
+
+Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
+0103 name items by the numbers they had when written, and decisions are never
+edited, so find an item by its title.
 
 1. **Run status on the canvas.** The last run is read since 1.11.0, in
    Reports (0065); what is left is its status as the box stroke in the graph,
@@ -1956,6 +1946,14 @@ of its own, and each panel updates the tour, its page under
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
     (0057, 0102).
+21. **From the command line, for an agent.** Ideas for `--describe`,
+    `--overview`, `--column` and `--sql` (0102), unranked:
+    - one compact line per column of every selected node;
+    - a card of the columns alone;
+    - a shorter `--overview` JSON, with `--depth 1` first;
+    - a macro nameable by `--describe`, which takes nodes only;
+    - the compiled SQL reachable from `--sql`, which prints the node's own
+      file.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -2087,6 +2085,8 @@ written in its pull request or left by its review, unranked:
 - **`scripts/take_shots.py` (0082):** without `COLLIN`, which wins, it takes
   the first collin on `PATH` and prints no version, so a stale one puts an
   older report in `collin-report.png`, which happened twice on 2026-10-15.
+  `COLLIN` is not checked either. The script should refuse a collin older
+  than `collin_run::WANTS`, or at least print the version it takes.
 
 Left by the ten pull requests merged on 2026-10-18, each a known limit
 written in its pull request, unranked:
@@ -2147,6 +2147,73 @@ written in its pull request, unranked:
     reach every column of a model that joins;
   - collin draws value edges from the right side of an `EXCEPT`, which only
     takes rows away, and the button cannot hide them: collin's to fix.
+
+Left by the pull requests of 2026-10-19 and 2026-10-20 (#79 to #87, 1.36.0 to
+1.42.0), each a known limit, unranked:
+
+- **Custom selection over the whole window (0101):**
+  - once the panel is under about 600px wide the canvas gets less than 320px,
+    the card's 280px minimum winning over the canvas's;
+  - the wait for a double-click is a fixed 500 ms (`DOUBLE_CLICK_MS`), so a
+    slower system double-click can still get the card between its two clicks;
+  - a redraw while a card waits drops it, even when its box is still drawn;
+  - a find (Cmd/Ctrl + F) or a fit during the wait does not count as a move,
+    which only a pan or a wheel zoom does, so the card's catch-up can still
+    shift the canvas;
+  - `S.cardAsk` guards `catalogFor` only, not the `renderCatalog` of
+    `focusNode`;
+  - the card's width lasts the session only.
+- **The command line (0102):**
+  - a catalog older than the manifest is never flagged: only the manifest's
+    freshness is checked;
+  - every `--describe` walks `place_packages` over every package node, for the
+    one node it prints;
+  - `--output compact` on `--column` carries no column type.
+- **The build stamp (1.37.2):** a worktree or a submodule is not stamped again
+  by an incremental build after a commit or a tag, since `build.rs` watches
+  `.git/HEAD` and `.git/refs` only when `.git` is a folder. `cargo install`
+  always stamps again.
+- **The Warnings (0103):**
+  - if the one index read after a parse fails, the chip stays hidden and the
+    marks grey until the next index read; asking again in `refreshFreshness`
+    while the freshness answer's `manifest_at` is newer than the warnings'
+    would close it;
+  - a key inside a multi-line flow mapping is marked on the line
+    `yamlOutline` gives it, which takes the place of the server's
+    (`unusedLines`);
+  - `dbt deps` adding a package is not seen by the freshness walk, which
+    leaves `dbt_packages/` out;
+  - `src/yaml.rs` now gives the items of a multi-line flow list a line of
+    their own, which `src/jobs.rs` reports for a step, and 0063 does not say
+    so.
+- **Versioned models (0104):**
+  - a package-qualified versioned name such as `shop.dimv` is not looked up
+    by `--describe` or `--column`, and `shop.totals` answers a source of that
+    name beside package shop's versioned `totals`, which it does not reach;
+  - `--column totals.c1` resolves to `totals.v2` with no note on stderr;
+  - the editor and `/api/resolve` pick a versioned name by the order of the
+    manifest across packages (`graph.by_name`), where the command line
+    refuses several.
+- **Who calls a macro (0105):**
+  - materializations tied between packages all count as run, where dbt runs
+    one of them, the later in `manifest.macros` order;
+  - a `dbt.x(` call and a method call `a.y(` in dbt's own macros
+    (`string_literal`, `escape_single_quotes`, `replace`, `get`, `split`)
+    make a project macro of that name read as called by dbt;
+  - dbt Fusion records a macro reached through another as a direct call, so
+    the count "through other macros" differs between the two engines.
+- **The selection engine against dbt-core (0024, 0056):** dbt-core 1.12.6
+  added a rule to `is_selected_node`: a wildcard with no dot, such as
+  `stg_*`, also matches the leaf alone (`fqn[-2]` for a versioned model).
+  1.12.5 and 1.11 lack it, and `src/select.rs` matches nothing there. CI's
+  1.12 leg resolves to 1.12.6, so a wildcard expression added to
+  `scripts/compare_with_dbt.py` needs an expectation that depends on the
+  version.
+- **Reports:** the first opening after Snowflake's features are switched on
+  waits noticeably on `/api/reports`, on `main` before #79 as well. The cause
+  was not looked for.
+- **Plurals:** the hover card, the lineage's footer and the Catalog write "1
+  columns", "1 tests", "1 edges", "1 nodes" and "1 models upstream".
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
@@ -2225,18 +2292,10 @@ both that route and the cross-compile.
   apart, which take 165, 250 and 230 ms on a Mac. The plan was to cache the per-node
   environment resolution only if it exceeded 10 ms, and it measures well under
   that on a Mac.
-- **The update look on the VM (0079).** Whether git reaches GitHub from the
-  VM at all, through its proxy: Edith's menu now says when GitHub last
-  answered, or the line git printed when it could not.
 - **The update on Windows (0068).** Whether the running `dbt-edith.exe`
   renames to `.exe.old` while it runs, under Git Bash and under PowerShell,
   and whether `cargo install` then puts the new one in place. The PowerShell
   form has run on no machine yet: the Mac has none.
-- **The terminal's line keys on the VM (0073).** Whether Ctrl+Left, Ctrl+Right,
-  Home and End now move in Git Bash there; whether they stay xterm.js's in
-  `git log` and in PowerShell typed at the prompt, which says whether bash's
-  prompt OSC crosses ConPTY; and, for the cause, what `cat -v` there prints
-  for them from a build before 1.14.1.
 - **Three choices left open on 2026-10-14.**
   - The Catalog's upstream and downstream lists put the depth back to 1, as
     any move from outside the canvas does, though they list the canvas's own
@@ -2245,39 +2304,9 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The releases since 2026-10-14 on the VM (1.18.0 to 1.34.0).** None was
-  opened on Windows yet. A release embeds `web/`, so each fix reaches the VM with the
-  next `.exe`:
-  - the config menu on a CRLF `dbt_project.yml` (1.18.1);
-  - the lineage depth back at 1 (1.18.4);
-  - schedules not read (1.19.0);
-  - the copy glyph in the Catalog (1.20.0);
-  - sub-folder bands, whose levels box opens on hover (1.21.0);
-  - find on the lineage (1.22.0);
-  - the column stops (1.23.0);
-  - macros in Cmd/Ctrl + K (1.24.0);
-  - the GitHub menu (1.25.0);
-  - the six gaps of the security review (1.25.1);
-  - Copy image told from Copy names (1.25.2);
-  - Edith's menu under the pointer (1.26.0);
-  - the column counts (1.26.1);
-  - the selection cap and Draw all (1.27.0), with a source's tables grown by
-    one step, the case reported from the VM;
-  - `--column` (1.28.0): its `.env` discovery, Windows paths and the quoting
-    of the steps it prints;
-  - the update button and its Installed line, the tags fetched before the
-    pull (1.28.1): the update to it is typed by the release before, so only
-    the update after it shows them, and a stamp naming its release (0095);
-  - a test in the Catalog (1.29.0);
-  - your own collin only, and the profile's links kept (1.29.1);
-  - models thousands of columns wide (1.29.2);
-  - Custom selection in a panel (1.30.0);
-  - the cut canvas's note (1.31.0);
-  - the `generated` badge (1.32.0), which wants collin 0.8.0 there;
-  - the `.exe`'s properties (1.33.0), in its Details tab or
-    `(Get-Item dbt-edith.exe).VersionInfo`, and whether WinLibs's `windres`
-    answers by its bare name;
-  - indirect edges (1.34.0), on a cache collin wrote with `--indirect`.
+- **The choice left open in Deferred item 16.** Whether to say at startup and
+  in Edith's menu that the terminal's `PATH` holds an empty entry, or to type
+  each program by the path `program::on_path` finds.
 - **The GitHub menu's issue from someone else's account.** Pull requests
   are for collaborators only and issues open to all. The settings read right
   through the API, but nobody has yet opened an issue from Raise an issue
@@ -2604,16 +2633,24 @@ not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not
 in CI: they need `jsc`, which ships with macOS (0013). Nor are the Chrome
 walks `scripts/check.sh` runs, the tour, the depth boxes and Edith's menu.
 
-Three checks depend on timing, and can fail on a loaded machine, then pass
+Several checks depend on timing, and can fail on a loaded machine, then pass
 when run again alone:
 
-- the 250 ms layout in `web/tests/layout.js`;
+- the 250 ms layout in `web/tests/layout.js`, where 3150 nodes are laid out
+  (in the group of tests folding under a chip);
 - `git::a_quick_command_is_not_held_back`;
+- `scripts/walk_depth.py`, which times out on a wait for the lineage to settle;
 - since 1.25.0, the ring around `#keys-btn` in `scripts/walk_tour.py`, drawn
-  2.6px right of the button. The likely cause is that the freshness badge's
-  age gains a digit during the measure, and moves the buttons to its left.
+  2.6px right of the button. The ring is placed while the ? button still
+  shifts. The likely cause is that the age on the manifest's pill gains a
+  digit during the measure, and moves the buttons to its left. It fails on
+  `main` too, so it is not a branch's doing.
 
-A fourth is skipped rather than failed: since 1.26.0, "crossing the name opens
+`scripts/walk_menu.py` fails now and then in its cleanup, not in a check: the
+temporary Chrome profile it removes is still written to, and the removal
+stops on `OSError` 66, directory not empty. Run it again.
+
+Another is skipped rather than failed: since 1.26.0, "crossing the name opens
 nothing" in `scripts/walk_menu.py` needs two pointer moves within 100 ms, and
 after three slow tries it is not made, with a NOTE under "menu ok", and
 check.sh passes, its last line naming "a timing check of Edith's menu".
