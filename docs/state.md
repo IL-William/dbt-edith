@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-19.
+belongs here. Last updated 2026-10-20.
 
 ## Shipped
 
@@ -938,6 +938,33 @@ run-operation or another package's call to a dispatch variant for another
 adapter, a materialization or strategy macro dbt runs, or a call dbt makes
 itself, walked down from what it runs. Only what nothing explains lights the
 Reports button.
+
+An exported lineage zooms as close as the canvas does (1.42.1). The wheel of
+the `.html` export stopped when the view was 120 units wide, which on a tall
+graph left the boxes too small to read, since the scale on screen follows the
+height. `zoomViewBox` now stops at the closer of that floor and the canvas's own
+scale of 3, read once per wheel step; a wide graph stops where it did. In
+headless Chrome, a frame 600 wide and 20 000 high stopped at 0.17 px per unit on
+`main` and goes to 3.0; one 1 000 by 560 stops at 10.2 on both.
+
+The Halloween look (0106 to 0108, 1.43.0). A pumpkin in the top bar dresses the
+page in orange and black, off until pressed and kept per machine in
+`look.json` (0106). The Theme section of the settings picks the look, the
+random apparitions, the sound and the style of the boxes, a tombstone, a coffin
+or a grimoire. Their art is drawn up to 400 boxes, a plainer version of the
+style past it (0107); the edges become silk with dewdrops and the selected box
+grows a web (0108). A ghost, a witch, the zombie switches and the apparitions
+come with it, their sounds made in the browser and muted by default. An export
+or a copied image is the same with the look on or off, which
+`scripts/walk_export.py` checks in Chrome for the three styles.
+
+collin is given the project for a manifest lying in it (0109, 1.43.1).
+`--project` used to go to every run, and collin 0.10.0 reads a seed's header
+through it, so `dbt-edith --manifest /artifacts/manifest.json` started in
+another project's folder would have given that manifest this folder's seeds.
+`collin_run::manifest_in_project` compares the two paths, resolved and a
+component at a time, in the page's Regenerate and in `--run-collin` alike, and
+the flag goes only when the manifest is under the folder. `WANTS` is 0.10.0.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -1945,9 +1972,12 @@ of its own, and each panel updates the tour, its page under
     capped.
 20. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
-    dependency. Deferred because a skill that calls the command costs fewer
-    tokens than tools described in every context, and nobody has asked yet
-    (0057, 0102).
+    dependency. Asked for on 2026-10-20, for Copilot and Claude Code: one tool
+    taking a command line, rather than one per mode, and `column` allowed to
+    run collin on demand (0099). A plan exists; nothing is decided or written.
+    It would supersede the MCP lines of 0057, 0099 and 0102, which deferred it
+    because a skill that calls the command costs fewer tokens than tools
+    described in every context.
 21. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
     - one compact line per column of every selected node;
@@ -2217,6 +2247,42 @@ Left by the pull requests of 2026-10-19 and 2026-10-20 (#79 to #87, 1.36.0 to
 - **Plurals:** the hover card, the lineage's footer and the Catalog write "1
   columns", "1 tests", "1 edges", "1 nodes" and "1 models upstream".
 
+Left by the pull requests of 2026-10-20 (#89 to #91, 1.42.1 to 1.43.1), each a
+known limit, unranked:
+
+- **The export's zoom (1.42.1):**
+  - `web/tests/export.js` tests `zoomViewBox` directly, not the call site
+    (`m.a, 3`) nor `lineage.js`'s `Math.min(3,` cap, so the two 3s can drift
+    apart;
+  - the CHANGELOG says "tall graph", but the cap also bites on a squarish graph
+    in a short window;
+  - a wide export still zooms closer than the canvas, on purpose, down to the
+    120-unit floor;
+  - only the wheel zooms an export: no key, and a pinch is not checked.
+- **The Halloween look (0106 to 0108):**
+  - `web/tests/halloween.js` is mostly source-text checks; behaviour is covered
+    by `scripts/walk_export.py`, which needs a dbt venv;
+  - the audio unlock on a key or a click is tested through the source only;
+  - the box art stops at 400 boxes, a number measured in headless Chrome only;
+  - the clipped corners of a tombstone or a coffin take no click;
+  - in find, a match that is also selected or focused shows the match ring
+    only;
+  - in column mode the AGGREGATE badges nearly touch the box above, with the
+    look off as well, and the hover card's anchor was not checked on a column
+    box with a role tag;
+  - a tab left open from before the upgrade sends three fields to `/api/look`,
+    gets a 422 and loses that save without a word.
+- **collin's project (0109):**
+  - a relative `--manifest` or `--catalog`, given when dbt-edith is started
+    outside the project folder, is resolved by collin from the project folder,
+    so the page's Regenerate fails (`src/main.rs:244-245`,
+    `src/api.rs:1269-1273`); `--run-collin` makes its paths absolute first;
+  - a refinement could pass `--project` also when the manifest's
+    `metadata.project_name` equals the project's name: a CI manifest of the
+    same project kept outside the checkout loses its seed headers today;
+  - the `collin_run` test module is unix-only and the CI has no Windows job, so
+    the Windows spelling of `files::plain` is not run there.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by any edge kind, beyond stop
@@ -2306,6 +2372,9 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
+- **The Halloween look's sounds (1.43.0).** The ghost's wail and the eyes'
+  whisper, made in the browser, have never been listened to: the checks ran the
+  apparitions, not a speaker.
 - **The choice left open in Deferred item 16.** Whether to say at startup and
   in Edith's menu that the terminal's `PATH` holds an empty entry, or to type
   each program by the path `program::on_path` finds.
