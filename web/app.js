@@ -7638,10 +7638,15 @@ main { position: relative; flex: 1 1 0; min-height: 0; }
 /* One zoom step around a point, as a new viewBox. The point stays where it
    was on screen: with preserveAspectRatio meet, a box scaled evenly keeps its
    letterbox. Clamped through the factor, never width and height apart, so the
-   ratio survives the clamp. */
-function zoomViewBox(vb, ux, uy, f, minW, maxW) {
+   ratio survives the clamp. Zooming in stops at whichever of two limits lets
+   the view come closer: a width of `minW`, which binds on a wide frame, and
+   the on-screen scale `s` (px per user unit) at `maxS`, which a tall frame
+   needs because its height sets the scale and a floor on the width alone
+   stops far short of readable. A view already past both may still zoom out, it is never forced
+   out. */
+function zoomViewBox(vb, ux, uy, f, s, maxS, minW, maxW) {
   const [x, y, w, h] = vb;
-  const k = Math.min(Math.max(f, w / maxW), w / minW);
+  const k = Math.min(Math.max(f, w / maxW), Math.max(1, maxS / s, w / minW));
   return [ux - (ux - x) / k, uy - (uy - y) / k, w / k, h / k];
 }
 
@@ -7660,17 +7665,18 @@ function exportViewer(zoomViewBox) {
   const home = svg.getAttribute('viewBox').split(/[\s,]+/).map(Number);
   let view = home.slice();
   const show = (v) => { view = v; svg.setAttribute('viewBox', v.join(' ')); };
-  // The inner group's matrix is the viewBox mapping itself. Engines have not
-  // always agreed on whether the outer svg's includes it.
-  const toUser = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(layer.getScreenCTM().inverse());
 
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
     // Some mice report lines in Firefox, not pixels, and a notch would then
     // barely move the zoom.
     const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    const p = toUser(e);
-    show(zoomViewBox(view, p.x, p.y, Math.exp(-dy * 0.0015), 120, home[2] * 4));
+    // The inner group's matrix is the viewBox mapping itself. Engines have not
+    // always agreed on whether the outer svg's includes it.
+    const m = layer.getScreenCTM();
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    // 3 px per unit is the canvas's own closest zoom (the wheel in lineage.js).
+    show(zoomViewBox(view, p.x, p.y, Math.exp(-dy * 0.0015), m.a, 3, 120, home[2] * 4));
   }, { passive: false });
 
   let picked = null;

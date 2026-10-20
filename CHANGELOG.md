@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.42.1 - 2026-10-20
+
+- Zoom an exported lineage in as close as the canvas does on a tall graph: it
+  stopped so far out that the boxes stayed too small to read.
+
 ## 1.42.0 - 2026-10-20
 
 - Say on a macro's card and in `Cmd/Ctrl + K` how many nodes call it, through

@@ -211,8 +211,9 @@ room even then, these three keep theirs alone too, each named by its tooltip.
 **Export** saves what the canvas shows as one HTML file named after it,
 `lineage-<what it shows>-<date>.html`, for a ticket or a message.
 Anyone opens it in a browser with nothing installed and no network. The wheel
-zooms without blurring, a drag pans, `0` fits it back, and a click on a box
-lights its edges. **Nodes** lists every box with its full name and file, and a
+zooms without blurring, at least as close as the canvas does, however tall the
+graph; a drag pans, `0` fits it back, and a click on a box lights its edges.
+**Nodes** lists every box with its full name and file, and a
 name too long for its box is written whole in the box too, smaller, rather than
 cut short as it is on screen.
 
