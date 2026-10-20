@@ -109,6 +109,9 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) | A config path is unused when no fqn of its kind begins it | showing a warning dbt gives as it parses, judging whether a key of `dbt_project.yml` applies to anything, or letting the Reports index read a file |
 | [0104](0104-a-versioned-model-is-named-by-its-version.md) | A versioned model is named by its version | changing what a node is named, what a model's bare name reaches, or how the implicit method matches a name |
 | [0105](0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md) | A macro is counted by the nodes reaching it, and never called unused | changing what a macro's card, its palette row or the Macros section says about who calls it, or reading `depends_on.macros` |
+| [0106](0106-the-halloween-look-is-kept-per-machine-and-never-exported.md) | The Halloween look is kept per machine and never exported | changing the Halloween look, its switch or its sounds, what `look.json` holds, or what an export or Copy image carries of the page's colours |
+| [0107](0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) | The box art is drawn under a count and never exported | changing what the Halloween look draws on a lineage box, how many boxes it draws it on, `Lineage.setSkin`, or what `Lineage.snapshot()` measures and copies |
+| [0108](0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md) | The silk has dewdrops and the selected box grows a web | changing what the Halloween look draws on an edge, the web on the selected box, or what `select()` moves in the canvas |
 
 ## Keeping these honest
 

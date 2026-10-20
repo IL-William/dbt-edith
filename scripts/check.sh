@@ -169,6 +169,23 @@ else
 fi
 
 echo
+echo "== an export with the Halloween look on, in Chrome =="
+# What Lineage.snapshot() writes of a canvas drawn with each box style, against
+# the same canvas without the look (0107), driven the same way, and skipped the
+# same way.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+  skip "the export with the look on"
+else
+  out=$("$py" scripts/walk_export.py 2>&1)
+  case $? in
+    0) echo "export ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
+    2) printf '%s\n' "$out" | tail -1; skip "the export with the look on" ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "EXPORT FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
 echo "== browser tests =="
 if [ ! -x "$JSC" ] && ! command -v "$JSC" > /dev/null 2>&1; then
   echo "SKIPPED: no JavaScript shell at $JSC. Set JSC to one to run these."

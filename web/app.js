@@ -19,6 +19,8 @@ const S = {
   shellName: '',              // /api/meta's name for the terminal's shell, bash or zsh, '' until it answers (0073)
   termPrompt: undefined,      // true at bash's prompt, false once Enter hands its line on, undefined unheard (0073)
   venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
+  look: { halloween: false, sound: false, apparitions: true, boxes: 'tombstone' },  // /api/look: the Halloween look, its sounds and its apparitions, kept per machine (0106)
+  hw: { ghostTimer: 0, eyesTimer: 0, flyTimer: 0, audio: null, witchX: undefined, running: false, saving: Promise.resolve(), sides: new Map() },  // what the look has running
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
@@ -6418,6 +6420,7 @@ function paintSetSnowflake(box) {
   toggle.setAttribute('aria-label', 'Snowflake features');
   toggle.title = f.snowflake ? 'Switch Snowflake\'s features off for this project' : 'Switch Snowflake\'s features on for this project';
   toggle.append(el('span', 'knob'));
+  walkSwitch(toggle, 'snowflake', !!f.snowflake, box.isConnected);
   row.append(snowflakeIcon(), el('span', 'setlbl', 'Snowflake features'), el('span', 'alpha', 'alpha'), toggle);
   // The whole row is the target, the name included, and the switch is what
   // the keyboard reaches. A second click while the first is on its way is
@@ -10052,7 +10055,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 /* Every setting, in one panel rolled down from the gear in the top bar, a
    section at a time, as the reports are (0100): the project's profile,
    environments and Python, the column lineage, Snowflake, the orchestration,
-   the updates, and help. The status bar's pills open their own section. A
+   the updates, the theme, and help. The status bar's pills open their own section. A
    section is drawn from what the page knows, and drawn again when that
    changes, but a form being filled stays as it was left, through another
    section and back, until the panel rolls up. settingsSections and
@@ -10073,6 +10076,8 @@ function settingsSections(c) {
       title: 'Where the Airflow DAGs or dbt Cloud jobs that run each model are read from' },
     { key: 'updates', label: 'Updates', hint: c.update || '',
       title: 'Which build serves this page, a newer release, and how to install it' },
+    { key: 'theme', label: 'Theme', hint: c.look ? 'on' : '',
+      title: 'The Halloween look, the style of the lineage\'s boxes, and the apparitions and sounds that come with it. All apply once the look is on.' },
     { key: 'help', label: 'Help and tour',
       title: 'The tour, every shortcut, and dbt-edith on GitHub' },
   ];
@@ -10096,6 +10101,7 @@ function settingsNow() {
     cll: pick.tool ? pick.name : 'none',
     snowflake: !!(S.features && S.features.snowflake),
     update: o ? (o.installed ? 'restart' : 'newer') : '',
+    look: !!S.look.halloween,
   };
 }
 
@@ -10119,6 +10125,11 @@ function settingsIcon(sec) {
   const wrap = jel('span', 'seticon');
   if ('tool' in sec) wrap.dataset.tool = sec.tool;
   const draw = { project: profileIcon, snowflake: snowflakeIcon, jobs: jobsIcon }[sec.key];
+  if (sec.key === 'theme') {
+    wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 4.4C5 2.8 1.4 4.8 1.4 8.8c0 3 2.4 5.2 6.6 5.2s6.6-2.2 6.6-5.2C14.6 4.8 11 2.8 8 4.4Z',
+      'M8 4.4c0-1.2.3-2 1.2-2.7', 'M5.2 11.4l1.1.9L8 11.4l1.7.9 1.1-.9']));
+    return wrap;
+  }
   if (draw) wrap.append(draw());
   else if (sec.key === 'columns') wrap.append(jel('span', 'tooldot'));
   else if (sec.key === 'updates') wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 2.5v8M4.75 7.25L8 10.5l3.25-3.25M2.5 13.5h11']));
@@ -10211,6 +10222,9 @@ function drawSettingsSection(key, body, { add }) {
       setBlock(body, '', 'updates', 'envmenu updmenu inpanel');
       freshenUpdate();
       break;
+    case 'theme':
+      setBlock(body, '', 'theme', 'envmenu inpanel');
+      break;
     case 'help':
       drawSetHelp(body);
       break;
@@ -10228,6 +10242,7 @@ function paintSettingsBlock(box) {
       fillSourceMenu(box, () => {});
       return unmenu(box);
     case 'snowflake': return paintSetSnowflake(box);
+    case 'theme': return paintSetTheme(box);
     case 'updates':
       paintUpdateMenu(box);
       return unmenu(box);
@@ -13291,7 +13306,9 @@ function wireTabs() {
   // The row's width moves with the window, the sidebar and the dock. Only the
   // row is observed for size: the fold never changes it, so the observer
   // never loops on its own change.
-  new ResizeObserver(() => foldDockTabs()).observe($('#dock > .tabs'));
+  // The witch is placed again after the fold, which moves the tabs she stands over.
+  const refold = () => { foldDockTabs(); placeWitch(false); };
+  new ResizeObserver(refold).observe($('#dock > .tabs'));
   // What the tools hold moves too, the eye's count, the column chip, a mode,
   // and it changes while another tab is open, when the tools are hidden and a
   // hidden element reports no resize. So it is watched as markup. A change of
@@ -13300,7 +13317,7 @@ function wireTabs() {
   // measure, which would call it again.
   const tools = $('#lineage-tools');
   const watch = new MutationObserver((records) => {
-    if (records.some((r) => r.target !== tools || r.type !== 'attributes')) foldDockTabs();
+    if (records.some((r) => r.target !== tools || r.type !== 'attributes')) refold();
   });
   watch.observe(tools, { subtree: true, childList: true, characterData: true, attributes: true });
   watch.observe($('#history-tab'), { attributes: true, attributeFilter: ['class'] });
@@ -13346,6 +13363,7 @@ function showDock(which, { look = true } = {}) {
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
+  placeWitch(true);
   if (which === 'terminal') { initTerm(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);
   // The tour waits on it, to point at the tab once it is filled.
@@ -13375,7 +13393,8 @@ function foldDockTabs() {
   row.classList.remove('folded');
   tools.classList.remove('hidden', 'iconic');
   const fit = () => {
-    const h = row.getBoundingClientRect().height;
+    // Without the strip the Halloween look adds over the tabs, whose room the witch has.
+    const h = row.getBoundingClientRect().height - parseFloat(getComputedStyle(row).paddingTop);
     return row.scrollWidth <= row.clientWidth
       && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
   };
@@ -13390,6 +13409,362 @@ function foldDockTabs() {
     else if (about) t.title = about;
     else t.removeAttribute('title');
   });
+}
+
+/* The Halloween look (0106): a class on the body that every rule of the theme
+   hangs from, so exportCanvasCss() and the snapshot never carry it. Kept per
+   machine by /api/look; a failed answer leaves the state as it is and says
+   nothing, the look being a nicety.
+   The pure parts run from isNightHour to placeWitch, which
+   web/tests/halloween.js slices. */
+
+/* After dark by the browser's own clock, the user's timezone: 20h to 6h59. */
+function isNightHour(h) { return h >= 20 || h < 7; }
+
+/* The style of the lineage boxes, from what /api/look said: one of the three,
+   the tombstone for anything else, as for a server that does not say. */
+function hwBoxes(v) { return v === 'coffin' || v === 'grimoire' ? v : 'tombstone'; }
+
+/* How long to wait for the next apparition, in ms, from a range in minutes
+   and r in [0, 1) (Math.random()). */
+function nextApparitionDelay(min, max, r) {
+  const t = Math.min(1, Math.max(0, r));
+  return Math.round((min + (max - min) * t) * 60 * 1000);
+}
+
+/* Which way the witch flies from one place to the next: 1 right, -1 left, 0
+   when she has not moved or has nowhere she came from, so she keeps facing the
+   way she did. */
+function witchFacing(fromX, toX) {
+  if (!(fromX >= 0) || !(toX >= 0)) return 0;
+  return toX > fromX ? 1 : toX < fromX ? -1 : 0;
+}
+
+/* Whether a switch drawn again walks: it has been seen on the other side, and
+   the look is on. A switch seen for the first time just stands. */
+function switchWalks(prev, now, themed) {
+  return !!themed && prev !== undefined && prev !== now;
+}
+
+/* Over the open dock tab. Out of the flow (position: absolute), clamped to the
+   row, so the fold, which asks whether the row overflows, never sees her.
+   `animate` is off for a resize or for the first place she is put. */
+function placeWitch(animate) {
+  const w = $('#hw-witch');
+  if (!w || !S.look.halloween) return;
+  const row = $('#dock > .tabs');
+  const tab = row.querySelector('.tab.active');
+  if (!tab) return;
+  const r = row.getBoundingClientRect();
+  const t = tab.getBoundingClientRect();
+  if (!r.width || !t.width) return;
+  const half = w.offsetWidth / 2;
+  const x = Math.round(Math.max(0, Math.min(r.width - w.offsetWidth, t.left - r.left + t.width / 2 - half)));
+  const first = S.hw.witchX === undefined;
+  const facing = witchFacing(S.hw.witchX, x);
+  const fly = animate && !first && facing !== 0;
+  // Turned only by a flight: a resize that nudges her a few pixels is no journey.
+  if (fly) w.classList.toggle('back', facing < 0);
+  w.style.transition = fly ? '' : 'none';
+  w.style.transform = `translateX(${x}px)`;
+  if (!fly) { void w.offsetWidth; w.style.transition = ''; }
+  S.hw.witchX = x;
+  clearTimeout(S.hw.flyTimer);
+  w.classList.toggle('flying', fly);
+  if (fly) S.hw.flyTimer = setTimeout(() => w.classList.remove('flying'), 650);
+}
+
+function paintNight() {
+  document.body.classList.toggle('hw-night', !!S.look.halloween && isNightHour(new Date().getHours()));
+}
+
+/* The look as S.look says it: the body's class, the buttons, and the timers
+   of the apparitions, which only run while the look and its apparitions are
+   both on. The sound's context is suspended unless the look and its sound are
+   both on. */
+function applyLook() {
+  const on = !!S.look.halloween;
+  const was = document.body.classList.contains('halloween');
+  document.body.classList.toggle('halloween', on);
+  // The box style's class only while the look is on, so that look off costs the page nothing.
+  for (const b of ['tombstone', 'coffin', 'grimoire']) document.body.classList.toggle('hw-boxes-' + b, on && b === hwBoxes(S.look.boxes));
+  paintNight();
+  // The boxes' art, drawn by the lineage itself, which keeps it through its own redraws.
+  Lineage.setSkin(on ? hwBoxes(S.look.boxes) : null);
+  const pumpkin = $('#look-btn');
+  pumpkin.setAttribute('aria-pressed', String(on));
+  pumpkin.title = on ? 'Halloween look: on. Click for the usual one' : 'Halloween look';
+  const speaker = $('#look-sound');
+  speaker.classList.toggle('hidden', !on);
+  speaker.setAttribute('aria-pressed', String(!!S.look.sound));
+  speaker.title = S.look.sound ? 'Ghost sounds: on' : 'Ghost sounds: off';
+  // Whatever its state: a resume still on its way would otherwise end running.
+  if (S.hw.audio && !(on && S.look.sound)) S.hw.audio.suspend().catch(() => {});
+  if (on !== was) {
+    S.hw.witchX = undefined;
+    if (on) placeWitch(false);
+  }
+  // The timers follow what is wanted, so a switch flipped in the settings
+  // that changes nothing about them leaves them running.
+  const want = on && S.look.apparitions !== false;
+  if (want && !S.hw.running) startApparitions();
+  else if (!want && S.hw.running) stopApparitions();
+}
+
+/* One chain, so two quick choices reach the server in the order they were
+   made and the last one is what is kept. */
+function saveLook() {
+  const body = { halloween: !!S.look.halloween, sound: !!S.look.sound, apparitions: S.look.apparitions !== false, boxes: hwBoxes(S.look.boxes) };
+  S.hw.saving = S.hw.saving.then(() => api.send('/api/look', 'POST', body)).then(() => {}, () => {});
+}
+
+function loadLook() {
+  api.get('/api/look').then((r) => {
+    S.look = { halloween: !!(r && r.halloween), sound: !!(r && r.sound), apparitions: !r || r.apparitions !== false, boxes: hwBoxes(r && r.boxes) };
+    applyLook();
+    repaintSettings();
+  }).catch(() => {});
+}
+
+/* A choice made by a click, in the top bar or in the settings: kept, drawn,
+   and its sound started here, since a browser lets no sound start but from a
+   click. */
+function setLook(patch) {
+  Object.assign(S.look, patch);
+  if (S.look.sound) hwAudio();
+  applyLook();
+  saveLook();
+  repaintSettings();
+}
+
+function wireLook() {
+  $('#look-btn').addEventListener('click', () => setLook({ halloween: !S.look.halloween }));
+  $('#look-sound').addEventListener('click', () => setLook({ sound: !S.look.sound }));
+  // A sound switched on in an earlier visit has had no click yet in this one.
+  // The first click or key of the visit: a browser lets a sound start from either.
+  const unlock = () => {
+    // Meta, Escape and the like are no gesture to a browser: stay listening for one that is.
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    document.removeEventListener('pointerdown', unlock, true);
+    document.removeEventListener('keydown', unlock, true);
+    if (S.look.sound) hwAudio();
+  };
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+}
+
+/* A switch that walks. A section is drawn again whenever what it shows
+   changes, which makes a new switch already on its new side, so the knob is
+   walked from the side it was last seen on by an animation of its own: the
+   markup, aria-checked included, always says the real state, and is the same
+   for the probe redrawIfChanged compares with, so a walk is never cut short by
+   a redraw. Only the real box is told apart from that probe, which must
+   neither walk nor remember. */
+function walkSwitch(toggle, key, now, real) {
+  if (!real) return;
+  const prev = S.hw.sides.get(key);
+  S.hw.sides.set(key, now);
+  if (!switchWalks(prev, now, S.look.halloween) || hwReduced()) return;
+  const there = 'translateX(15px) scaleX(-1)';
+  const knob = toggle.firstChild;
+  // A frame later: an animation on a node not yet in the page starts too early.
+  requestAnimationFrame(() => {
+    if (!knob.isConnected || !knob.animate) return;
+    const opts = { duration: 300, easing: 'ease-out' };
+    knob.animate([{ transform: now ? 'none' : there }, { transform: now ? there : 'none' }], opts);
+    knob.animate([{ top: '-2px' }, { top: '-5px', offset: 0.4 }, { top: '-2px' }], opts);
+    // The sprite's poses (stand, then the two strides) stepped through, one per fifth of the walk.
+    const stride = ['0px', '-20px', '-40px', '-20px', '-40px', '0px'].map((y) => ({ backgroundPositionY: y, easing: 'steps(1, end)' }));
+    knob.animate(stride, opts);
+  });
+}
+
+/* The Theme section: the look, its apparitions and its sound, each a switch
+   row, drawn as Snowflake's is. They mirror the pumpkin and the speaker. */
+function paintSetTheme(box) {
+  const real = box.isConnected;
+  const rows = [
+    ['halloween', 'Halloween look', 'Orange and black, with a ghost, a witch, zombies and boxes of a style of their own.', !!S.look.halloween],
+    ['apparitions', 'Random apparitions', 'A ghost crossing the page and a pair of eyes in the dark, now and then.', S.look.apparitions !== false],
+    ['sound', 'Sound', 'A ghost\'s wail and the eyes\' whisper, made in the browser. Muted until you switch it on.', !!S.look.sound],
+  ].map(([key, label, about, on]) => {
+    const row = jel('div', 'setrow');
+    // The switch's track takes its colour from --tool, whatever the look: a section sets one.
+    row.dataset.tool = 'theme';
+    const toggle = jel('button', 'switch');
+    toggle.type = 'button';
+    toggle.dataset.key = 'look-' + key;
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-checked', String(on));
+    toggle.setAttribute('aria-label', label);
+    toggle.append(jel('span', 'knob'));
+    walkSwitch(toggle, 'look-' + key, on, real);
+    const text = jel('div', 'setcol');
+    text.append(jel('span', 'setlbl', label), jel('p', 'setnote', about));
+    row.append(text, toggle);
+    row.addEventListener('click', () => setLook({ [key]: !on }));
+    return row;
+  });
+  // The lineage's boxes, one of three: a pure CSS switch, so the canvas is not drawn again.
+  const styles = [
+    ['tombstone', 'Tombstone', 'M3 14V7a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v7Z'],
+    ['coffin', 'Coffin', 'M5.5 1.5h5L13 5l-2 9.5H5L3 5Z'],
+    ['grimoire', 'Grimoire', 'M3 2.5h9.5v11H3ZM5.5 2.5v11'],
+  ];
+  const pick = jel('div', 'setrow setpick');
+  const text = jel('div', 'setcol');
+  text.append(jel('span', 'setlbl', 'Box style'), jel('p', 'setnote', 'How the lineage draws its boxes: a headstone, a coffin or a spellbook.'));
+  const seg = jel('span', 'seg');
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Box style');
+  for (const [value, label, d] of styles) {
+    const b = jel('button', 'segbtn' + (hwBoxes(S.look.boxes) === value ? ' active' : ''));
+    b.type = 'button';
+    b.dataset.key = 'look-boxes-' + value;
+    b.setAttribute('aria-pressed', String(hwBoxes(S.look.boxes) === value));
+    b.append(strokeIcon('0 0 16 16', 'hwicon', [d]), jel('span', '', label));
+    b.addEventListener('click', () => setLook({ boxes: value }));
+    seg.append(b);
+  }
+  pick.append(text, seg);
+  rows.splice(1, 0, pick);
+  box.replaceChildren(...rows);
+  if (!S.look.halloween) box.append(jel('p', 'setnote', 'Apparitions and sound apply once the look is on.'));
+}
+
+function hwAudio() {
+  if (!S.look.halloween || !S.look.sound) return null;
+  if (!S.hw.audio) {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    try { S.hw.audio = new C(); } catch { return null; }
+  }
+  if (S.hw.audio.state === 'suspended') {
+    S.hw.audio.resume().then(() => {
+      if (!S.look.halloween || !S.look.sound) S.hw.audio.suspend().catch(() => {});
+    }, () => {});
+  }
+  return S.hw.audio;
+}
+
+/* The context if a sound may play now: asked for, and running (a context that
+   no click has started stays silent rather than queueing sounds for later). */
+function hwAudioReady() {
+  const ctx = S.hw.audio;
+  return S.look.halloween && S.look.sound && ctx && ctx.state === 'running' ? ctx : null;
+}
+
+/* A ghost's "wooo": a sine gliding down under a slow vibrato, through a
+   lowpass, rising and fading over about three seconds. */
+function hwSoundGhost() {
+  const ctx = hwAudioReady();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const lfo = ctx.createOscillator();
+  const depth = ctx.createGain();
+  const low = ctx.createBiquadFilter();
+  const amp = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(260, now);
+  osc.frequency.exponentialRampToValueAtTime(150, now + 2.8);
+  lfo.frequency.value = 5;
+  depth.gain.value = 9;
+  low.type = 'lowpass';
+  low.frequency.value = 700;
+  amp.gain.setValueAtTime(0.0001, now);
+  amp.gain.exponentialRampToValueAtTime(0.14, now + 0.8);
+  amp.gain.exponentialRampToValueAtTime(0.0001, now + 3);
+  lfo.connect(depth).connect(osc.frequency);
+  osc.connect(low).connect(amp).connect(ctx.destination);
+  osc.start(now); lfo.start(now);
+  osc.stop(now + 3.1); lfo.stop(now + 3.1);
+}
+
+/* The eyes' creak: filtered noise whose band slides up, with a breath of a
+   whisper behind it. */
+function hwSoundEyes() {
+  const ctx = hwAudioReady();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const len = Math.floor(ctx.sampleRate * 1.6);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const band = ctx.createBiquadFilter();
+  const amp = ctx.createGain();
+  band.type = 'bandpass';
+  band.Q.value = 9;
+  band.frequency.setValueAtTime(260, now);
+  band.frequency.exponentialRampToValueAtTime(900, now + 1.4);
+  amp.gain.setValueAtTime(0.0001, now);
+  amp.gain.exponentialRampToValueAtTime(0.16, now + 0.5);
+  amp.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
+  src.connect(band).connect(amp).connect(ctx.destination);
+  src.start(now);
+}
+
+const HW_GHOST = '<svg viewBox="0 0 84 90"><use href="#hw-s-cross"/></svg>';
+
+function hwReduced() { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+
+/* A ghost drifting across the window, left to right or back, at a random
+   height. Skipped for someone who asked for no motion. */
+function showGhost() {
+  const layer = $('#hw-layer');
+  if (!layer || hwReduced()) return;
+  const g = document.createElement('div');
+  g.className = 'hw-cross' + (Math.random() < 0.5 ? ' rtl' : '');
+  g.style.top = `${10 + Math.random() * 70}vh`;
+  g.innerHTML = HW_GHOST;
+  g.addEventListener('animationend', (e) => { if (e.target === g) g.remove(); });
+  layer.appendChild(g);
+  hwSoundGhost();
+}
+
+/* A pair of eyes in the dark, blinking twice. */
+function showEyes() {
+  const layer = $('#hw-layer');
+  if (!layer) return;
+  const e = document.createElement('div');
+  e.className = 'hw-eyes';
+  e.style.left = `${8 + Math.random() * 80}vw`;
+  e.style.top = `${15 + Math.random() * 70}vh`;
+  // Open and shut, both drawn: the blink swaps one for the other, so the lid is a drawing and not a squashed scale.
+  e.innerHTML = '<svg class="open" viewBox="0 0 40 16"><use href="#hw-s-eyes"/></svg><svg class="shut" viewBox="0 0 40 16"><use href="#hw-s-eyes-shut"/></svg>';
+  e.addEventListener('animationend', () => e.remove());
+  layer.appendChild(e);
+  hwSoundEyes();
+}
+
+/* Each kind comes back at a random time of its own range, a turn skipped
+   while the tab is hidden (nobody to see it) and the next one set as usual. */
+function scheduleApparition(kind) {
+  const [min, max, show] = kind === 'ghost' ? [4, 9, showGhost] : [15, 20, showEyes];
+  S.hw[kind + 'Timer'] = setTimeout(() => {
+    if (!S.hw.running) return;
+    // The next one is set first, so a drawing that fails ends nothing.
+    scheduleApparition(kind);
+    if (document.hidden) return;
+    try { show(); } catch { /* a missing layer or audio, not worth a word */ }
+  }, nextApparitionDelay(min, max, Math.random()));
+}
+
+function startApparitions() {
+  stopApparitions();
+  S.hw.running = true;
+  scheduleApparition('ghost');
+  scheduleApparition('eyes');
+}
+
+function stopApparitions() {
+  S.hw.running = false;
+  clearTimeout(S.hw.ghostTimer);
+  clearTimeout(S.hw.eyesTimer);
+  const layer = $('#hw-layer');
+  if (layer) layer.replaceChildren();
 }
 
 // -------------------------------------------------------------- splitters --
@@ -14862,15 +15237,18 @@ async function boot() {
     onMove: () => { selCardStill = false; },
     onHover: (n, g, said) => {
       const { node: nodeId, column } = splitColId(n.id);
+      // The group, as it always was, unless it holds the selected box's web, which would move the card: then
+      // the rect. Chosen when the card is placed, which waits a moment, so a click in between is covered.
+      const at = { getBoundingClientRect: () => (g.querySelector('.hw-web') ? g.querySelector('rect.box') || g : g).getBoundingClientRect() };
       // In column mode the box already says everything, but for the value a
       // generated column is set to (0096) and what keeps its rows (0097),
       // which have no room on it.
       if (column) {
         const rows = (said && said.rows) || '';
-        if (Array.isArray(n.generated) || rows) hoverEnter('col:' + n.id, () => g.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
+        if (Array.isArray(n.generated) || rows) hoverEnter('col:' + n.id, () => at.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
         return;
       }
-      hoverEnter('node:' + nodeId, () => g.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));
+      hoverEnter('node:' + nodeId, () => at.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));
     },
     onHoverOut: hoverLeave,
     onHoverClose: closeHoverCard,
@@ -14921,6 +15299,8 @@ async function boot() {
 
   paintTestsToggle(false);
   $('#settings-btn').addEventListener('click', toggleSettings);
+  wireLook();
+  loadLook();
   const info = await api.get('/api/meta');
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
@@ -14952,7 +15332,7 @@ async function boot() {
   // Each round costs the server a git status and a walk of the model folders,
   // for a page nobody sees while its tab is hidden. It waits there instead, and
   // catches up the moment the tab is shown again.
-  const poll = () => { if (!document.hidden) { refreshGit(); refreshFreshness(); refreshOpenFiles(); } };
+  const poll = () => { paintNight(); if (!document.hidden) { refreshGit(); refreshFreshness(); refreshOpenFiles(); } };
   setInterval(poll, 5000);
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());

@@ -11,9 +11,210 @@
 </head>
 <body>
 
+<!-- The fills of the Halloween look's three box styles, used by app.css (0106). Out here and not in
+     the canvas, so Lineage.snapshot() and an export never hold them; zero size, not display: none,
+     which would stop the gradients from drawing. The first three gradients are the plain look of a big
+     selection, one each: a pattern or a second rect per box made its pan several times slower. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="hw-stone" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#8a8f95"/><stop offset=".035" stop-color="#6a6e74"/><stop offset="1" stop-color="#3d4146"/>
+    </linearGradient>
+    <linearGradient id="hw-wood" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#b98a58"/><stop offset=".03" stop-color="#b98a58"/><stop offset=".03" stop-color="#6a452a"/>
+      <stop offset=".5" stop-color="#4a2d1b"/><stop offset=".95" stop-color="#2e1c10"/><stop offset=".95" stop-color="#8a603c"/><stop offset="1" stop-color="#8a603c"/>
+    </linearGradient>
+    <linearGradient id="hw-leather" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#3a2050"/><stop offset=".04" stop-color="#231230"/><stop offset=".1" stop-color="#231230"/>
+      <stop offset=".1" stop-color="#d4af37"/><stop offset=".112" stop-color="#d4af37"/><stop offset=".112" stop-color="#3b1f4a"/>
+      <stop offset=".955" stop-color="#3b1f4a"/><stop offset=".955" stop-color="#d4af37"/><stop offset=".965" stop-color="#d4af37"/>
+      <stop offset=".965" stop-color="#efe3c0"/><stop offset=".985" stop-color="#d9cba0"/><stop offset="1" stop-color="#bfae80"/>
+    </linearGradient>
+
+    <!-- The art of the box styles: parts of 100, 62, 30 or 10 px that Lineage.setSkin() lays on a box with <use>, the kind
+         colour coming in as currentColor from the group. Shapes and outlines are paths it writes per box. -->
+    <linearGradient id="hw-a-stone" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6e7278"/><stop offset=".18" stop-color="#666a70"/><stop offset=".2" stop-color="#6b6f75"/><stop offset=".23" stop-color="#60646a"/><stop offset=".46" stop-color="#5a5e64"/><stop offset=".48" stop-color="#60646a"/><stop offset=".51" stop-color="#565a60"/><stop offset=".73" stop-color="#4b4f55"/><stop offset=".75" stop-color="#52565c"/><stop offset=".78" stop-color="#484c51"/><stop offset="1" stop-color="#3d4146"/></linearGradient>
+    <linearGradient id="hw-a-wood" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5a3a24"/><stop offset="1" stop-color="#2e1c10"/></linearGradient>
+    <linearGradient id="hw-a-leather" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3b1f4a"/><stop offset="1" stop-color="#24122e"/></linearGradient>
+    <linearGradient id="hw-a-gold" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f3dc75"/><stop offset=".5" stop-color="#d4af37"/><stop offset="1" stop-color="#8f6f16"/></linearGradient>
+    <linearGradient id="hw-a-goldv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f0d56a"/><stop offset=".55" stop-color="#d4af37"/><stop offset="1" stop-color="#9a7a1c"/></linearGradient>
+    <linearGradient id="hw-a-spine" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#12081a" stop-opacity=".7"/><stop offset=".4" stop-color="#7a4a96" stop-opacity=".35"/><stop offset="1" stop-color="#12081a" stop-opacity=".6"/></linearGradient>
+    <linearGradient id="hw-a-page" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#000" stop-opacity=".22"/><stop offset=".35" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+    <symbol id="hw-tomb-cross" viewBox="0 0 24 28"><path d="M-1.6,-7h3.2v4.6h4.4v3.2h-4.4v10h-3.2v-10h-4.4v-3.2h4.4z" fill="#d6d9dc" opacity=".35" transform="translate(12.6,10.8)"/><path d="M-1.6,-7h3.2v4.6h4.4v3.2h-4.4v10h-3.2v-10h-4.4v-3.2h4.4z" fill="#2a2d31" opacity=".8" transform="translate(12,10)"/></symbol>
+    <symbol id="hw-tomb-fringe-l" viewBox="0 0 108 8" preserveAspectRatio="none"><path d="M3,8 L3,5.9 L7,4.6 L11,5.8 L15,2.3 L19,4.1 L23,4.1 L27,5.1 L31,4.8 L35,3.2 L39,5.2 L43,3.8 L47,5.6 L51,2.5 L55,4.3 L59,4.2 L63,5.8 L67,5.1 L71,2.8 L75,3.9 L79,3.2 L83,6.4 L87,3.9 L91,4.8 L95,3.2 L99,4.7 L103,4.8 L107,3.4 L107,8 Z" fill="currentColor"/></symbol>
+    <symbol id="hw-tomb-right" viewBox="0 0 100 48" preserveAspectRatio="none"><path d="M3,48 L3,44.8 L7,43.4 L11,44.4 L15,43.4 L19,46.5 L23,44.0 L27,44.4 L31,42.3 L35,44.3 L39,45.5 L43,44.9 L47,44.8 L51,42.4 L55,45.1 L59,43.7 L63,45.4 L67,43.2 L71,44.5 L75,45.0 L79,44.6 L83,44.6 L87,42.1 L91,44.9 L95,44.2 L95,48 Z" fill="currentColor"/><path d="M99,27L92.5,31.5 95,35 88,39 90,43 83.5,46.5" fill="none" stroke="#d0d4d8" stroke-width=".7" opacity=".4" stroke-linejoin="round" stroke-linecap="round" transform="translate(.8,.7)"/><path d="M99,27L92.5,31.5 95,35 88,39 90,43 83.5,46.5M92.5,31.5L87,30" fill="none" stroke="#1d2024" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="hw-coffin-left" viewBox="0 0 62 48"><circle cx="14" cy="20" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/><circle cx="14" cy="28" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/><circle cx="57" cy="8.5" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/><circle cx="57" cy="39.5" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/><path d="M34.5,8.5h7v7h8.5v7h-8.5v16h-7v-16h-8.5v-7h8.5z" fill="#1a0e06" opacity=".6" transform="translate(.8,1)"/><path d="M34.5,8.5h7v7h8.5v7h-8.5v16h-7v-16h-8.5v-7h8.5z" fill="url(#hw-a-gold)" stroke="#8a6a12" stroke-width=".5"/><path d="M35.4,9.4h5.2v7h8.5M35.4,38v-16" fill="none" stroke="#fff3b0" stroke-width=".5" opacity=".55"/><circle cx="38" cy="19" r="3.5" fill="#2a1608"/><circle cx="38" cy="19" r="2.9" fill="currentColor"/><circle cx="37.1" cy="18.1" r=".9" fill="#fff" opacity=".55"/></symbol>
+    <symbol id="hw-coffin-right" viewBox="0 0 30 48"><circle cx="2" cy="17.4" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/><circle cx="2" cy="30.6" r="1.1" fill="url(#hw-a-gold)" stroke="#2a1608" stroke-width=".3"/></symbol>
+    <symbol id="hw-grim-left" viewBox="0 0 62 48"><rect x="1.6" y="1" width="25.4" height="46" fill="url(#hw-a-spine)"/><rect x="1.6" y="6" width="25.4" height="3.4" fill="url(#hw-a-goldv)"/><rect x="1.6" y="9.4" width="25.4" height="1" fill="#000" opacity=".3"/><rect x="1.6" y="22.3" width="25.4" height="3.4" fill="url(#hw-a-goldv)"/><rect x="1.6" y="25.7" width="25.4" height="1" fill="#000" opacity=".3"/><rect x="1.6" y="38.6" width="25.4" height="3.4" fill="url(#hw-a-goldv)"/><rect x="1.6" y="42.0" width="25.4" height="1" fill="#000" opacity=".3"/><rect x="27" y="1" width="1.4" height="46" fill="#000" opacity=".45"/><rect x="28.4" y="1" width="1" height="46" fill="#a77ac0" opacity=".25"/><g transform="translate(46,24)"><polygon points="0,-8 6.5,-2.5 0,8.5 -6.5,-2.5" fill="#d4af37" transform="scale(1.18)" opacity=".95"/><polygon points="0,-6.4 5,-2 0,6.8 -5,-2" fill="currentColor"/><polygon points="0,-6.4 5,-2 -5,-2" fill="#fff" opacity=".35"/><polygon points="0,6.8 5,-2 1.8,-2" fill="#000" opacity=".25"/></g></symbol>
+    <symbol id="hw-grim-right" viewBox="0 0 7 48"><rect x="0" y="1.4" width="7" height="45.2" rx="1" fill="#f1e5c3" stroke="#a89468" stroke-width=".6"/><rect x="0" y="1.4" width="7" height="45.2" rx="1" fill="url(#hw-a-page)"/><path d="M0.70,4V44" stroke="#bda878" stroke-width=".45"/><path d="M1.90,4V44" stroke="#bda878" stroke-width=".45"/><path d="M3.10,4V44" stroke="#bda878" stroke-width=".45"/><path d="M4.30,4V44" stroke="#bda878" stroke-width=".45"/><path d="M5.50,4V44" stroke="#bda878" stroke-width=".45"/></symbol>
+    <!-- The web grown on the box selected (0108), cloned by Lineage.select(): its origin is the box's top right corner. -->
+    <g id="hw-web-src" class="hw-web"><path class="rad" pathLength="1" d="M0,0L0,-34"/><path class="rad" pathLength="1" d="M0,0L13,-31.4"/><path class="rad" pathLength="1" d="M0,0L24,-24"/><path class="rad" pathLength="1" d="M0,0L31.4,-13"/><path class="rad" pathLength="1" d="M0,0L34,0"/><path class="arc a0" pathLength="1" d="M0,-11Q1.9,-9.7 4.2,-10.2Q5.5,-8.2 7.8,-7.8Q8.2,-5.5 10.2,-4.2Q9.7,-1.9 11,0"/><path class="arc a1" pathLength="1" d="M0,-21Q3.7,-18.5 8,-19.4Q10.5,-15.7 14.8,-14.8Q15.7,-10.5 19.4,-8Q18.5,-3.7 21,0"/><path class="arc a2" pathLength="1" d="M0,-31Q5.4,-27.4 11.9,-28.6Q15.5,-23.2 21.9,-21.9Q23.2,-15.5 28.6,-11.9Q27.4,-5.4 31,0"/><path class="drop" pathLength="1" d="M19.9,-23.7V-14.7"/><g class="spider" transform="translate(19.9,-11.7)"><g stroke="#9a86d4" stroke-width=".6" fill="none"><path d="M0,0q-2.2,-2.4 -3.6,-1.6"/><path d="M0,0q-2.2,-2.4 -3.6,0"/><path d="M0,0q-2.2,-2.4 -3.6,1.6"/><path d="M0,0q-2.2,-2.4 -3.6,3"/><path d="M0,0q2.2,-2.4 3.6,-1.6"/><path d="M0,0q2.2,-2.4 3.6,0"/><path d="M0,0q2.2,-2.4 3.6,1.6"/><path d="M0,0q2.2,-2.4 3.6,3"/></g><circle r="2.1" fill="#7a62b8"/><circle cy="-2.1" r="1.3" fill="#7a62b8"/><circle cx=".4" cy="-2.3" r=".45" fill="#ff7a1a"/></g></g>
+  </defs>
+</svg>
+
+<!-- The Halloween look's characters: the ghosts, the pumpkin, the witch and the eyes, drawn once here and
+     laid with <use> by the top bar, the dock and the apparitions (0106). Apart from the box art's defs above,
+     and outside the canvas, so no snapshot or export holds them. The zombie is a sprite in app.css. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="hw-g-ghost" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".55" stop-color="#f3eff6"/><stop offset="1" stop-color="#cbc3e6"/></linearGradient>
+    <linearGradient id="hw-g-ghost-side" x1="0" x2="1" y1="0" y2="0"><stop offset=".55" stop-color="#7d70b0" stop-opacity="0"/><stop offset="1" stop-color="#7d70b0" stop-opacity=".38"/></linearGradient>
+    <linearGradient id="hw-g-ghost-warm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fffbe9"/><stop offset=".5" stop-color="#ffe8b8"/><stop offset="1" stop-color="#ffbf70"/></linearGradient>
+    <radialGradient id="hw-g-ghost-core" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff6c8" stop-opacity=".95"/><stop offset="1" stop-color="#ffd37a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="hw-g-mouth" cx=".5" cy=".3" r=".8"><stop offset="0" stop-color="#4a3d6a"/><stop offset="1" stop-color="#1a1330"/></radialGradient>
+    <radialGradient id="hw-g-pump-on" cx=".5" cy=".65" r=".7"><stop offset="0" stop-color="#ffa73a"/><stop offset=".55" stop-color="#f27412"/><stop offset="1" stop-color="#c24208"/></radialGradient>
+    <radialGradient id="hw-g-pump-on-side" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#ff9a2a"/><stop offset="1" stop-color="#b8420a"/></radialGradient>
+    <radialGradient id="hw-g-pump-off" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#c9772c"/><stop offset=".6" stop-color="#9b5420"/><stop offset="1" stop-color="#6e3512"/></radialGradient>
+    <radialGradient id="hw-g-pump-off-side" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#a65f25"/><stop offset="1" stop-color="#5c2d10"/></radialGradient>
+    <linearGradient id="hw-g-flame" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff3a6"/><stop offset="1" stop-color="#ffb52a"/></linearGradient>
+    <linearGradient id="hw-g-stem" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#4f7a2c"/><stop offset="1" stop-color="#7fae48"/></linearGradient>
+    <linearGradient id="hw-g-stem-off" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#3f5a2a"/><stop offset="1" stop-color="#587a3a"/></linearGradient>
+    <linearGradient id="hw-g-hat" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4a3774"/><stop offset=".6" stop-color="#2a1d45"/><stop offset="1" stop-color="#1c1330"/></linearGradient>
+    <linearGradient id="hw-g-cape" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#3d2c63"/><stop offset="1" stop-color="#1c1330"/></linearGradient>
+    <linearGradient id="hw-g-skin" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#b9e384"/><stop offset="1" stop-color="#7ead4c"/></linearGradient>
+    <linearGradient id="hw-g-hair" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#ff9a2e"/><stop offset="1" stop-color="#ff6a14"/></linearGradient>
+    <linearGradient id="hw-g-wood" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#b98050"/><stop offset="1" stop-color="#7a4a22"/></linearGradient>
+    <linearGradient id="hw-g-straw" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#c58f35"/><stop offset="1" stop-color="#f0c561"/></linearGradient>
+    <radialGradient id="hw-g-eye" cx=".5" cy=".5" r=".6"><stop offset="0" stop-color="#fff6b0"/><stop offset=".55" stop-color="#ffd24a"/><stop offset="1" stop-color="#ff9d12"/></radialGradient>
+    <linearGradient id="hw-g-cross-v" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#ebe6f7"/><stop offset="1" stop-color="#b9aedf" stop-opacity=".22"/></linearGradient>
+    <linearGradient id="hw-g-cross-side" x1="0" x2="1" y1="0" y2="0"><stop offset=".5" stop-color="#7d70b0" stop-opacity="0"/><stop offset="1" stop-color="#7d70b0" stop-opacity=".34"/></linearGradient>
+    <filter id="hw-f-eye" x="-40%" y="-80%" width="180%" height="260%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <!-- Ghost: sheet body, 4-lobe wavy hem, one flat shape + soft gradient + side shade -->
+  <path id="hw-p-ghost" d="M12 1.2C6.8 1.2 3 5.1 3 10.4V23.2Q5.1 29.4 7.4 23.8Q9.6 28.8 12 23.6Q14.3 29.2 16.5 23.8Q19 28.6 21 23.2V10.4C21 5.1 17.2 1.2 12 1.2Z"/>
+  <symbol id="hw-s-ghost" viewBox="0 0 24 28" overflow="visible">
+    <use href="#hw-p-ghost" fill="url(#hw-g-ghost)"/>
+    <use href="#hw-p-ghost" fill="url(#hw-g-ghost-side)"/>
+    <ellipse cx="7.6" cy="5.2" rx="2.6" ry="1.5" fill="#fff" opacity=".7" transform="rotate(-35 7.6 5.2)"/>
+    <g fill="#2a2230">
+      <ellipse cx="8.9" cy="10.2" rx="1.55" ry="2.25" transform="rotate(-6 8.9 10.2)"/>
+      <ellipse cx="15.1" cy="10.2" rx="1.55" ry="2.25" transform="rotate(6 15.1 10.2)"/>
+      <ellipse cx="12" cy="15.9" rx="1.25" ry="1.75"/>
+    </g>
+    <g fill="#fff"><circle cx="9.5" cy="9.3" r=".6"/><circle cx="15.7" cy="9.3" r=".6"/></g>
+    <g fill="#f3a9b8" opacity=".55"><ellipse cx="6.6" cy="14" rx="1.3" ry=".8"/><ellipse cx="17.4" cy="14" rx="1.3" ry=".8"/></g>
+  </symbol>
+  <symbol id="hw-s-ghost-warm" viewBox="0 0 24 28" overflow="visible">
+    <use href="#hw-p-ghost" fill="url(#hw-g-ghost-warm)"/>
+    <ellipse cx="12" cy="16" rx="8" ry="8.5" fill="url(#hw-g-ghost-core)"/>
+    <use href="#hw-p-ghost" fill="url(#hw-g-ghost-side)" opacity=".5"/>
+    <ellipse cx="7.6" cy="5.2" rx="2.6" ry="1.5" fill="#fff" opacity=".8" transform="rotate(-35 7.6 5.2)"/>
+    <g fill="#3a2410">
+      <ellipse cx="8.9" cy="10.2" rx="1.55" ry="2.25" transform="rotate(-6 8.9 10.2)"/>
+      <ellipse cx="15.1" cy="10.2" rx="1.55" ry="2.25" transform="rotate(6 15.1 10.2)"/>
+      <ellipse cx="12" cy="15.9" rx="1.25" ry="1.75"/>
+    </g>
+    <g fill="#fff"><circle cx="9.5" cy="9.3" r=".6"/><circle cx="15.7" cy="9.3" r=".6"/></g>
+    <g fill="#ff8a3a" opacity=".5"><ellipse cx="6.6" cy="14" rx="1.3" ry=".8"/><ellipse cx="17.4" cy="14" rx="1.3" ry=".8"/></g>
+  </symbol>
+  <!-- Crossing ghost: comma-shaped body, tail fading into wisps, reaching arms, hollow eyes, wailing mouth. Faces right. -->
+  <path id="hw-p-cross" d="M42 5C28 5 20 15 20 29L19 58Q18 70 10 82Q26 78 30 64Q29 78 35 88Q44 78 46 64Q47 74 54 80Q60 70 61 58C64 48 63 40 62 29C62 15 56 5 42 5Z"/>
+  <symbol id="hw-s-cross" viewBox="0 0 84 90" overflow="visible">
+    <g transform="rotate(7 42 44)">
+      <path d="M25 38C13 41 6 32 7 19C7 16 12 16 12 19.5C12.4 27 17 30 25 30Z" fill="#bdb2e0"/><circle cx="9.5" cy="17.4" r="3.4" fill="#bdb2e0"/>
+      <path d="M59 38C71 41 78 32 77 19C77 16 72 16 72 19.5C71.6 27 67 30 59 30Z" fill="#e4def5"/><circle cx="74.5" cy="17.4" r="3.4" fill="#e4def5"/>
+      <use href="#hw-p-cross" fill="url(#hw-g-cross-v)"/>
+      <use href="#hw-p-cross" fill="url(#hw-g-cross-side)"/>
+      <ellipse cx="33" cy="11" rx="8" ry="3" fill="#fff" opacity=".7" transform="rotate(-25 33 11)"/>
+      <ellipse cx="33.5" cy="27" rx="4" ry="6.6" fill="#1c1530" transform="rotate(5 33 27)"/><ellipse cx="34.3" cy="29.6" rx="1.4" ry="2.1" fill="#ffd9a0"/>
+      <ellipse cx="50" cy="27" rx="4" ry="6.6" fill="#1c1530" transform="rotate(-5 50 27)"/><ellipse cx="50.8" cy="29.6" rx="1.4" ry="2.1" fill="#ffd9a0"/>
+      <ellipse cx="42" cy="46" rx="4.6" ry="8" fill="url(#hw-g-mouth)"/>
+      <ellipse cx="42" cy="50.6" rx="2.6" ry="3" fill="#6a4f9a" opacity=".5"/>
+    </g>
+  </symbol>
+  <!-- Pumpkin (24 box): three-lobed body, curled stem, triangle eyes, nose, toothy grin -->
+  <symbol id="hw-s-pump-on" viewBox="0 0 24 24" overflow="visible">
+    <ellipse cx="7.4" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-on-side)"/>
+    <ellipse cx="16.6" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-on-side)"/>
+    <ellipse cx="12" cy="14.3" rx="6" ry="7.9" fill="url(#hw-g-pump-on)"/>
+    <path d="M9.2 7.7C7.8 11 7.8 17.5 9.4 21.2M14.8 7.7C16.2 11 16.2 17.5 14.6 21.2" fill="none" stroke="#a63a06" stroke-width=".7" opacity=".6" stroke-linecap="round"/>
+    <path d="M10.6 7.6C10.2 4.9 11.4 3.2 13.8 2.3L14.9 4C13.9 4.5 13.4 5.4 13.7 7.7Z" fill="url(#hw-g-stem)"/>
+    <path d="M14.4 3.4C16 2.6 17.4 3.2 17.6 4.7" fill="none" stroke="#6d9a3c" stroke-width=".9" stroke-linecap="round"/>
+    <g fill="url(#hw-g-flame)" stroke="#8a2c04" stroke-width=".55" stroke-linejoin="round">
+      <path d="M5.9 12.5L8.5 8.6L10.8 12.2Z"/>
+      <path d="M13.2 12.2L15.5 8.6L18.1 12.5Z"/>
+      <path d="M12 13L10.7 15.2H13.3Z"/>
+      <path d="M5 15.6L7.3 17.1L8.5 15.7L10 18.3L11.3 16.6H12.7L14 18.3L15.5 15.7L16.7 17.1L19 15.6Q12 23.2 5 15.6Z"/>
+    </g>
+  </symbol>
+  <symbol id="hw-s-pump-off" viewBox="0 0 24 24" overflow="visible">
+    <ellipse cx="7.4" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-off-side)"/>
+    <ellipse cx="16.6" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-off-side)"/>
+    <ellipse cx="12" cy="14.3" rx="6" ry="7.9" fill="url(#hw-g-pump-off)"/>
+    <path d="M9.2 7.7C7.8 11 7.8 17.5 9.4 21.2M14.8 7.7C16.2 11 16.2 17.5 14.6 21.2" fill="none" stroke="#3d1a08" stroke-width=".7" opacity=".6" stroke-linecap="round"/>
+    <path d="M10.6 7.6C10.2 4.9 11.4 3.2 13.8 2.3L14.9 4C13.9 4.5 13.4 5.4 13.7 7.7Z" fill="url(#hw-g-stem-off)"/>
+    <path d="M14.4 3.4C16 2.6 17.4 3.2 17.6 4.7" fill="none" stroke="#587a3a" stroke-width=".9" stroke-linecap="round"/>
+    <g fill="#24120a">
+      <path d="M5.9 12.5L8.5 8.6L10.8 12.2Z"/>
+      <path d="M13.2 12.2L15.5 8.6L18.1 12.5Z"/>
+      <path d="M12 13L10.7 15.2H13.3Z"/>
+      <path d="M5 15.6L7.3 17.1L8.5 15.7L10 18.3L11.3 16.6H12.7L14 18.3L15.5 15.7L16.7 17.1L19 15.6Q12 23.2 5 15.6Z"/>
+    </g>
+  </symbol>
+  <!-- Witch on a broom, facing right (40x30 box) -->
+  <symbol id="hw-s-witch" viewBox="0 0 40 30" overflow="visible">
+    <!-- hair streaming back -->
+    <path d="M24.2 9.2C20.6 8.4 17 9.6 12.4 8.2C14.6 10 15.4 10.6 13.2 12.2C17 12.2 15.8 13.8 12.6 15.4C18 15.6 21 14.4 24 12.8Z" fill="url(#hw-g-hair)"/>
+    <path d="M23.6 10C20 10 17.6 10.8 14.6 10.2" stroke="#ffc46a" stroke-width=".5" fill="none" stroke-linecap="round" opacity=".8"/>
+    <!-- broom -->
+    <path d="M11.6 21.6L2.2 18C0.3 21.6 0.6 25.2 2.8 28.4L11.6 25.4Z" fill="url(#hw-g-straw)"/>
+    <path d="M11 22.6L3.4 20M11 23.6L2.6 23M11 24.6L3.6 26.4" stroke="#8a6020" stroke-width=".55" stroke-linecap="round" fill="none"/>
+    <path d="M11.6 21.4L37.8 18.4" stroke="#6b3f1a" stroke-width="2.3" stroke-linecap="round" fill="none"/>
+    <path d="M11.6 24.6L37.4 19.6" stroke="url(#hw-g-wood)" stroke-width="0" fill="none"/>
+    <path d="M11.8 23.5L37.6 19.3" stroke="url(#hw-g-wood)" stroke-width="2.1" stroke-linecap="round" fill="none"/>
+    <path d="M13 23L36 19.4" stroke="#d9a371" stroke-width=".5" stroke-linecap="round" opacity=".7" fill="none" transform="translate(0 -.55)"/>
+    <path d="M10.6 21.4L12.6 25.6M13.4 21.1L15 25.2" stroke="#3b2210" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+    <!-- cat -->
+    <path d="M16.7 20.2C12.6 19.8 12 16.4 13.4 14.8" stroke="#140e1f" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+    <ellipse cx="18.1" cy="19" rx="3" ry="2.3" fill="#140e1f"/>
+    <circle cx="20.3" cy="16.4" r="1.9" fill="#140e1f"/>
+    <path d="M18.8 15.2L19 13.1L20.4 14.5ZM20.4 14.6L21.9 13.2L22 15.4Z" fill="#140e1f"/>
+    <circle cx="19.6" cy="16.2" r=".5" fill="#ffd45c"/><circle cx="21.2" cy="16.2" r=".5" fill="#ffd45c"/>
+    <!-- cape and dress, ragged hem flowing back -->
+    <path d="M25.2 12.6L29.8 13.4L29.9 19.4L27.4 21.6L25.9 20.2L23.6 22.6L21.8 20.4L19 22.4L21.6 17.4C22.6 15.6 23.6 14 25.2 12.6Z" fill="url(#hw-g-cape)"/>
+    <path d="M25.2 12.6C23.6 14 22.6 15.6 21.6 17.4" stroke="#6a52a2" stroke-width=".6" fill="none" stroke-linecap="round"/>
+    <!-- leg: striped stocking and pointed boot -->
+    <path d="M27.8 20.4L28.6 25" stroke="#2a1d45" stroke-width="2" stroke-linecap="round"/>
+    <path d="M27.8 20.4L28.6 25" stroke="#ff7a1a" stroke-width="2" stroke-dasharray="1.1 1.1" stroke-linecap="butt"/>
+    <path d="M27.4 24.8L31.4 26.2L31.2 27.6L27.6 27.4Z" fill="#140e1f"/>
+    <!-- arm to the handle -->
+    <path d="M28.6 14.8L32.4 18.6" stroke="#3d2c63" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="32.8" cy="18.9" r="1.3" fill="#8fc85a"/>
+    <!-- head -->
+    <circle cx="26.3" cy="10.4" r="3.3" fill="url(#hw-g-skin)"/>
+    <path d="M29.2 9.9L32.2 12.4L28.7 12.4Z" fill="#8fc85a"/>
+    <ellipse cx="27.7" cy="9.5" rx=".85" ry="1" fill="#2a1a12"/><circle cx="28" cy="9.3" r=".3" fill="#ffd45c"/>
+    <path d="M26.6 12.3Q27.8 12.9 28.6 12.3" stroke="#2f4a1c" stroke-width=".5" fill="none" stroke-linecap="round"/>
+    <circle cx="24.7" cy="12" r=".45" fill="#5d8a30"/>
+    <!-- hat: bent tip, orange band, gold buckle -->
+    <ellipse cx="25.4" cy="7" rx="6.6" ry="1.55" fill="#1c1330"/>
+    <path d="M20.7 6.6C21.8 4.4 21 2.6 17.6 .6C23 1.2 27.4 3.4 29.7 6.4Z" fill="url(#hw-g-hat)"/>
+    <path d="M20.9 5.3C24 5.8 27 5.7 29.3 5.2L29.7 6.5C27 7 23.6 7.1 20.6 6.6Z" fill="#ff7a1a"/>
+    <rect x="24.2" y="5.1" width="2.4" height="1.9" rx=".3" fill="#ffd45c"/><rect x="24.9" y="5.6" width="1" height=".9" fill="#2a1d45"/>
+    <path d="M22 4.6C21.4 3.4 20.4 2.2 19 1.4" stroke="#6a52a2" stroke-width=".5" fill="none" stroke-linecap="round" opacity=".8"/>
+  </symbol>
+  <!-- Eyes (40x16) -->
+  <symbol id="hw-s-eyes" viewBox="0 0 40 16" overflow="visible">
+    <g filter="url(#hw-f-eye)">
+      <path d="M2 7C6.5 3.6 13 4.4 18 10.2C12.6 14 6 13 2 7Z" fill="url(#hw-g-eye)"/>
+      <path d="M38 7C33.5 3.6 27 4.4 22 10.2C27.4 14 34 13 38 7Z" fill="url(#hw-g-eye)"/>
+    </g>
+    <g fill="#1a1008"><path d="M10.4 4.4C11.4 6 11.4 9.6 10.4 12.2C9.4 9.6 9.4 6 10.4 4.4Z" transform="rotate(14 10.4 8.3)"/><path d="M29.6 4.4C30.6 6 30.6 9.6 29.6 12.2C28.6 9.6 28.6 6 29.6 4.4Z" transform="rotate(-14 29.6 8.3)"/></g>
+    <g fill="#fff" opacity=".85"><circle cx="8.6" cy="6.6" r=".7"/><circle cx="31.4" cy="6.6" r=".7"/></g>
+    <g fill="none" stroke="#9a6a1c" stroke-width="1.5" stroke-linecap="round"><path d="M1 3.4Q9 1 18.6 7.4"/><path d="M39 3.4Q31 1 21.4 7.4"/></g>
+  </symbol>
+  <symbol id="hw-s-eyes-shut" viewBox="0 0 40 16" overflow="visible">
+    <g filter="url(#hw-f-eye)" fill="none" stroke="#ffc83a" stroke-width="1.5" stroke-linecap="round">
+      <path d="M2.4 9.2Q10.2 13.2 17.6 10"/><path d="M37.6 9.2Q29.8 13.2 22.4 10"/>
+    </g>
+    <g stroke="#e0a02a" stroke-width=".8" stroke-linecap="round"><path d="M5 10.4L3.6 12.2M9 11.8L8.4 13.8M13 11.9L13.4 13.8M16.6 10.6L18 12.2"/><path d="M35 10.4L36.4 12.2M31 11.8L31.6 13.8M27 11.9L26.6 13.8M23.4 10.6L22 12.2"/></g>
+    <g fill="none" stroke="#7a5214" stroke-width="1.5" stroke-linecap="round"><path d="M1 5.6Q9 4 18.6 8.4"/><path d="M39 5.6Q31 4 21.4 8.4"/></g>
+  </symbol>
+  </defs>
+</svg>
+
 <header id="topbar">
   <!-- Opens the menu of this build and of newer ones (0068, 0079), under the pointer too (0086). -->
-  <button id="brand" class="brand" type="button" aria-haspopup="menu"><b>Edith</b></button>
+  <button id="brand" class="brand" type="button" aria-haspopup="menu"><span class="hw-ghost" aria-hidden="true"><svg class="calm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost"/></svg><svg class="warm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost-warm"/></svg></span><b>Edith</b></button>
   <span class="sep"></span>
   <span id="project" class="muted">loading…</span>
   <span id="counts" class="chips"></span>
@@ -38,6 +239,18 @@
   </button>
   <button id="palette-btn" class="btn" title="Search models, macros and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
   <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
+  <!-- The Halloween look, off until pressed, and its sound, shown only while the look is on. Kept per machine (0106). -->
+  <button id="look-btn" class="btn keysbtn lookbtn" type="button" aria-pressed="false"
+          title="Halloween look" aria-label="Halloween look">
+    <svg class="pk-off" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#hw-s-pump-off"/></svg>
+    <svg class="pk-on" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#hw-s-pump-on"/></svg>
+  </button>
+  <button id="look-sound" class="btn keysbtn lookbtn hidden" type="button" aria-pressed="false"
+          title="Ghost sounds: off" aria-label="Ghost sounds">
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.4 6v4h2.6L8.6 13V3L5 6Z"/>
+         <path class="waves" d="M11 5.6a3.6 3.6 0 0 1 0 4.8M12.8 3.8a6 6 0 0 1 0 8.4"/><path class="mute" d="M11 6l3.6 4M14.6 6L11 10"/></svg>
+  </button>
   <!-- GitHub's own mark, as its brand rules let a button that links to a project use it:
        the shape untouched, in the grey of the glyphs beside it. Its menu is openGithubMenu(). -->
   <button id="github-btn" class="btn keysbtn" type="button" title="dbt-edith on GitHub"
@@ -173,6 +386,8 @@
            is bundled. The label sits in a span of its own so that foldDockTabs()
            can hide it and leave the glyph when the bar runs out of room. -->
       <div class="tabs">
+        <!-- The Halloween look's witch: out of the flow, so the fold measures only the tabs (0106). -->
+        <span id="hw-witch" class="hw-witch" aria-hidden="true"><svg viewBox="0 0 40 30"><use href="#hw-s-witch"/></svg></span>
         <button class="tab active" data-dock="lineage"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.25" y="5.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="1.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="9.75" width="4.5" height="4.5" rx="1"/><path d="M5.75 8C8 8 8 4 10.25 4M5.75 8C8 8 8 12 10.25 12"/></svg><span>Lineage</span></button>
         <button class="tab" data-dock="terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>Terminal</span></button>
         <button class="tab" data-dock="catalog"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5"/><path d="M1.75 6.25h12.5M1.75 9.75h12.5M6 6.25v7"/></svg><span>Catalog</span></button>
@@ -346,6 +561,9 @@
     <div id="modal-actions" class="modal-actions"></div>
   </div>
 </div>
+
+<!-- Where the Halloween look's apparitions cross the window; takes no click (0106). -->
+<div id="hw-layer" aria-hidden="true"></div>
 
 <script src="vendor/codemirror.js"></script>
 <script src="vendor/diff_match_patch.js"></script>
