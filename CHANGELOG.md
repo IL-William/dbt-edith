@@ -13,6 +13,24 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.43.0 - 2026-10-20
+
+- Dress the app for Halloween behind a pumpkin in the top bar, orange and black,
+  off until pressed and never in an export or a copied picture (0106).
+- Pick the look, the random apparitions, the sound and the style of the
+  lineage's boxes in a Theme section of the settings, kept on the machine
+  (0106).
+- Draw the lineage's boxes as tombstones, coffins or grimoires, with the full
+  art up to 400 boxes on the canvas and a plainer version of the same style
+  above it (0107).
+- Draw the edges as silk with dewdrops, and grow a small web, with a spider
+  that drops on its thread, on the box you select (0108).
+- Add a ghost on Edith's E, a witch flying over the dock's tabs, zombies on the
+  switches of the settings and a ghost and a pair of eyes that cross the page
+  now and then at random (0106).
+- Play the ghost's wail and the eyes' whisper, muted until you press the
+  speaker, synthesised in the browser so no file is shipped (0106).
+
 ## 1.42.1 - 2026-10-20
 
 - Zoom an exported lineage in as close as the canvas does on a tall graph: it

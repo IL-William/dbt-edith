@@ -22,6 +22,7 @@ pull request.
 | [snowflake.md](snowflake.md) | the Snowflake switch, Snowsight links, Clone into my schema, Query history |
 | [terminal-and-git.md](terminal-and-git.md) | the terminal, the Python environment, the Git tab |
 | [updates.md](updates.md) | how it learns a newer release is out, and what it offers |
+| [look.md](look.md) | the Halloween look, behind a pumpkin in the top bar: its box styles, silk edges, characters and sounds |
 
 ## Every action
 

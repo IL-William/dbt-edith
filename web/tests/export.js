@@ -294,6 +294,7 @@ var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\
 ok('the canvas rules are where this test looks for them', rules.length >= 17);
 ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
   && rules.some(function (l) { return /^\.band-name \{/.test(l); }));
+ok('and none of the Halloween look comes with them', copied.indexOf('halloween') < 0 && exportPageCss('landscape').indexOf('halloween') < 0);
 check('every one of them is copied as it is',
   rules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
 function rootVars(text) {
@@ -308,3 +309,14 @@ var used = (copied + exportPageCss('landscape')).match(/var\(--[\w-]+\)/g) || []
 var wrong = used.map(function (u) { return u.slice(6, -1); })
   .filter(function (v, n, a) { return a.indexOf(v) === n && fileVars[v] !== appVars[v]; });
 check('every variable used is defined, with the value app.css gives it', wrong, []);
+
+print('\n--- the Halloween look never reaches the picture (0107) ---');
+var linsrc = read('web/lineage.js');
+var snap = linsrc.slice(linsrc.indexOf('function snapshot(opts)'), linsrc.indexOf('function snapshotOf'));
+ok('the lines are measured as the usual look draws them: the box styles\' classes off the body, and back, with no paint between, and `halloween` kept so no animation starts again',
+  /classList\.remove\(c\)\)/.test(snap) && /try \{ return snapshotOf\(opts\); \} finally \{ was\.forEach\(\(c\) => body\.classList\.add\(c\)\); \}/.test(snap)
+  && /c\.startsWith\('hw-boxes-'\)/.test(snap) && !/'halloween'/.test(snap) && !/await|setTimeout|requestAnimationFrame/.test(snap));
+var body = linsrc.slice(linsrc.indexOf('function snapshotOf'), linsrc.indexOf('// clear() does not go through apply()'));
+ok('the clone drops the art, the dewdrops and the web, and the class, whose <use> would point at defs the file has not',
+  /querySelectorAll\('\.hw-art, \.hw-beads, \.hw-web'\)\.forEach\(\(x\) => x\.remove\(\)\)/.test(body) && /g\.classList\.remove\('hw-on'\)/.test(body));
+ok('and measures nothing in the art: the probes go in a box, which the snapshot reads unthemed', /host\.appendChild|\(small \? rider : host\)\.appendChild/.test(body));

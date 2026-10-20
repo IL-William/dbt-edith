@@ -1349,7 +1349,7 @@ const Lineage = (() => {
   let drag = null;
   // The legend entry picked, kept across redraws while the legend still lists
   // it, and what render() drew, by index, for paintPick() to light or fade.
-  let picked = null, nodeEls = [], edgeEls = [], groupEls = [];
+  let picked = null, nodeEls = [], edgeEls = [], beadEls = [], groupEls = [];
 
   const el = (name, attrs = {}) => {
     const n = document.createElementNS(NS, name);
@@ -1739,6 +1739,173 @@ const Lineage = (() => {
     return `${b.package ? `package ${b.name}` : `${b.key || '.'}/`}  ·  ${b.size} ${noun}${b.size === 1 ? '' : 's'} drawn`;
   }
 
+  /* The Halloween look's art (0107). Under a skin, a plain box (not a test
+     hanging under a model, nor a chip) gets one group on top of its rect: a
+     silhouette path and a trim path written here from the box's size, and a
+     few parts laid on it with <use>, symbols of index.html whose kind colour
+     comes in as currentColor from the group's inline style. Past ART_MAX plain
+     boxes none is drawn, and the look's plain CSS shows instead, which is what
+     keeps a pan of a big selection as cheap as without it. The names are cut
+     to the room the art leaves them, the same in every state of a skin.
+     artWanted, artBudget and artGeometry are what web/tests/halloween.js
+     slices. */
+  const ART_MAX = 400;
+  // The characters a name and its subtitle may have, for a model's box then a column's.
+  const ART_ROOM = {
+    tombstone: { name: [23, 21], sub: [40, 37] },
+    coffin: { name: [16, 15], sub: [32, 29] },
+    grimoire: { name: [19, 17], sub: [38, 34] },
+  };
+  const ART_POINTS = {
+    coffin: [[4, 17], [56, 2], [176, 12], [197, 19], [197, 29], [176, 36], [56, 46], [4, 31]],
+    // Only the head end's lid, round the cap and a little way along: further, its line would run through the subtitle.
+    lid: [[96, 8.5], [56.3, 5.2], [7.2, 19.4], [7.2, 28.6], [56.3, 42.8], [96, 39.4]],
+  };
+
+  function artWanted(count, sk, max) {
+    return !!sk && count > 0 && count <= max;
+  }
+
+  /* Whether an edge, by its classes, gets dewdrops: not one that is dashed to
+     mean something (a test, a back edge, an indirect one), where beads would
+     blur the dashes. */
+  function beadWanted(cls) {
+    return !/\b(back|test|indirect)\b/.test(cls);
+  }
+
+  /* Whether a box under a skin grows the web when it is selected: a plain
+     box, not a test hanging under a model. */
+  function webWanted(sk, rider) {
+    return !!sk && !rider;
+  }
+
+  function artBudget(sk, columnMode) {
+    const room = ART_ROOM[sk] || ART_ROOM.tombstone;
+    return { name: room.name[columnMode ? 1 : 0], sub: room.sub[columnMode ? 1 : 0] };
+  }
+
+  /* The shape of a box of `w` by `h`, its trim, and its parts, as the mockup
+     draws a 200 by 48 box: whatever sits at the left is scaled with the height
+     and stays at the left, whatever sits at the right stays at the right. */
+  function artGeometry(sk, w, h) {
+    const s = h / 48;
+    const n = (v) => +v.toFixed(2);
+    // `flat` parts are stretched with the box's width, their symbols keeping no aspect.
+    const part = (id, x, y, pw, ph, flat) => ({ id, x: n(x), y: n(y), w: n(flat ? pw : pw * s), h: n(ph * s) });
+    const poly = (pts, open) => 'M' + pts.map(([x, y]) => `${n(x <= 100 ? x * s : x + (w - 200))},${n(y * s)}`).join('L') + (open ? '' : 'Z');
+    if (sk === 'coffin') {
+      return {
+        shape: poly(ART_POINTS.coffin), trim: poly(ART_POINTS.lid, true),
+        parts: [part('hw-coffin-left', 0, 0, 62, 48), part('hw-coffin-right', w - 30 * s, 0, 30, 48)],
+      };
+    }
+    if (sk === 'grimoire') {
+      const cr = w - 8;
+      return {
+        // The silhouette takes in the pages, so a ring follows the whole book.
+        shape: `M3.5,1H${w - 4}Q${w - 1},1 ${w - 1},4V${h - 4}Q${w - 1},${h - 1} ${w - 4},${h - 1}H3.5Q1,${h - 1} 1,${n(h - 3.5)}V3.5Q1,1 3.5,1Z`,
+        trim: `M${n(31.5 * s)},${n(4.2 * s)}H${cr - 4}V${n(h - 4.2 * s)}H${n(31.5 * s)}ZM${n(34 * s)},${n(6.6 * s)}H${cr - 6.5}V${n(h - 6.6 * s)}H${n(34 * s)}Z`,
+        parts: [part('hw-grim-left', 0, 0, 62, 48), part('hw-grim-right', w - 8, 0, 7, 48)],
+      };
+    }
+    const r = n(20 * s);
+    return {
+      shape: `M1,${h}V${1 + r}Q1,1 ${1 + r},1H${w - 1 - r}Q${w - 1},1 ${w - 1},${1 + r}V${h}Z`,
+      trim: `M4.5,${h}V${n(r + 1.5)}Q4.5,4.5 ${n(r + 1.5)},4.5H${n(w - r - 1.5)}Q${w - 4.5},4.5 ${w - 4.5},${n(r + 1.5)}V${h}`,
+      parts: [part('hw-tomb-cross', 3 * s, 7 * s, 24, 28), part('hw-tomb-fringe-l', 0, h - 8 * s, 108, 8, true),
+        part('hw-tomb-right', w - 100, h - 48 * s, 100, 48, true)],
+    };
+  }
+
+  let skin = null, texted = false;
+
+  /* The art on every plain box drawn, or none: laid on, or taken off, without
+     drawing the canvas again, and again after each render(). Class hw-on on the
+     root says art is there, for the rules that then let the rects be only the
+     hit area. */
+  function paintArt() {
+    // Look off: nothing drawn, nothing to take off, and no walk of the canvas.
+    if (!root || !data || (!skin && !texted)) return;
+    const plain = [...root.querySelectorAll('.nd:not(.rider)')];
+    const on = artWanted(plain.length, skin, ART_MAX);
+    root.querySelectorAll('.hw-art, .hw-beads').forEach((a) => a.remove());
+    beadEls = [];
+    root.classList.toggle('hw-on', on);
+    if (on) paintBeads();
+    if (!on && !texted) return;
+    const columnMode = data.mode === 'column';
+    const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
+    const room = on ? artBudget(skin, columnMode) : null;
+    plain.forEach((nd) => {
+      const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
+      if (!n) return;
+      // The names are cut again, to the room the art leaves them, or the usual one.
+      if (t1) t1.textContent = clip(n.name, room ? room.name : columnMode ? 24 : 27);
+      if (t2) writeSub(t2, subtitleParts(n), room ? room.sub : columnMode ? 30 : 34, el);
+      if (!on) return;
+      const box = nd.querySelector('rect.box');
+      const w = +box.getAttribute('width'), h = +box.getAttribute('height'), geo = artGeometry(skin, w, h);
+      const g = el('g', { class: 'hw-art', 'pointer-events': 'none', style: `color:${nodeColor(n)}` });
+      g.appendChild(el('path', { class: 'hw-shape', d: geo.shape }));
+      g.appendChild(el('path', { class: 'hw-trim', d: geo.trim }));
+      geo.parts.forEach((p) => g.appendChild(el('use', { href: `#${p.id}`, x: p.x, y: p.y, width: p.w, height: p.h })));
+      nd.insertBefore(g, box.nextSibling);
+    });
+    texted = on;
+  }
+
+  /* Dewdrops on the strands, with the art: a second path per edge, in a layer of
+     its own between the edges and the boxes, so that select() moving the lit
+     edge to the end of its own layer leaves the pairing to data-a and data-b.
+     The same d, a dash that is a round cap and a gap, and the edge's own hue
+     lightened by the stylesheet. */
+  function paintBeads() {
+    const layer = el('g', { class: 'hw-beads', 'pointer-events': 'none' });
+    edgeEls.forEach((p, i) => {
+      if (!beadWanted(p.getAttribute('class'))) return;
+      const b = el('path', { class: 'hw-bead' + (p.classList.contains('hi') ? ' hi' : ''), d: p.getAttribute('d'), 'data-a': p.dataset.a, 'data-b': p.dataset.b });
+      if (p.style.getPropertyValue('--edge-col')) b.style.setProperty('--edge-col', p.style.getPropertyValue('--edge-col'));
+      layer.appendChild(b);
+      beadEls[i] = b;
+    });
+    root.insertBefore(layer, root.children[2] || null);
+  }
+
+  /* The web that grows on the box selected, one at a time and only under a
+     skin: threads, then arcs, then a spider on its own thread, drawn by CSS from
+     a template in index.html (cloned rather than <use>d, so that each new
+     selection starts the animation over). It is left to its end, not played
+     again, when the same box is selected once more, as a redraw does. */
+  let webFor = null;
+  function paintWeb(id) {
+    if (!root || (!skin && !webFor)) return;
+    root.querySelectorAll('.hw-web').forEach((w) => w.remove());
+    const nd = id && skin ? [...root.querySelectorAll('.nd')].find((g) => g.dataset.id === id) : null;
+    const tpl = document.getElementById('hw-web-src');
+    if (!nd || !tpl || !webWanted(skin, nd.classList.contains('rider'))) { webFor = null; return; }
+    const w = +nd.querySelector('rect.box').getAttribute('width');
+    const web = tpl.cloneNode(true);
+    web.removeAttribute('id');
+    web.setAttribute('transform', `translate(${w},0)`);
+    web.setAttribute('pointer-events', 'none');
+    if (webFor === id) web.classList.add('still');
+    webFor = id;
+    nd.appendChild(web);
+  }
+
+  function setSkin(name) {
+    const next = ART_ROOM[name] ? name : null;
+    // applyLook() asks on every click of the Theme section: nothing to draw again for the same skin.
+    if (next === skin) return;
+    skin = next;
+    webFor = null;
+    // Look off: the web goes with it, selected box or not, since paintWeb() has nothing to look for.
+    if (!next && root) root.querySelectorAll('.hw-web').forEach((w) => w.remove());
+    paintArt();
+    paintWeb(selected);
+    paintPick();
+  }
+
   /* Columns from the drawn edges, a lane in every column a long edge skips,
      and Brandes and Kopf for the heights where they cost little (0027). */
   function layout(d, folders, levels) {
@@ -1777,7 +1944,8 @@ const Lineage = (() => {
     drawn = L.bands || L.folded
       ? { folders: top, sub: bands.length - top, against: L.against || 0, folded: L.folded || 0 } : null;
     root.textContent = '';
-    nodeEls = []; edgeEls = []; groupEls = [];
+    texted = false;
+    nodeEls = []; edgeEls = []; beadEls = []; groupEls = [];
 
     const bandLayer = el('g', { class: 'bands' }), edgeLayer = el('g'), nodeLayer = el('g');
     root.appendChild(bandLayer); root.appendChild(edgeLayer); root.appendChild(nodeLayer);
@@ -1962,6 +2130,7 @@ const Lineage = (() => {
       nodeLayer.appendChild(g);
     });
 
+    paintArt();
     if (!opts.keepView) fit(); else apply();
     select(selected);
     if (finding) refind();
@@ -2062,6 +2231,8 @@ const Lineage = (() => {
       // on one line, and a sibling drawn after it would hide the highlight.
       if (hit) p.parentNode.appendChild(p);
     });
+    if (texted) root.querySelectorAll('.hw-bead').forEach((b) => b.classList.toggle('hi', b.dataset.a === id || b.dataset.b === id));
+    paintWeb(id);
   }
 
   /* A legend entry picked, or null for none: what it names stays lit and the
@@ -2077,6 +2248,7 @@ const Lineage = (() => {
     root.classList.toggle('picking', !!keep);
     nodeEls.forEach((g, i) => g.classList.toggle('kept', !!keep && keep.nodes.has(i)));
     edgeEls.forEach((p, i) => p.classList.toggle('kept', !!keep && keep.edges.has(i)));
+    beadEls.forEach((b, i) => b.classList.toggle('kept', !!keep && keep.edges.has(i)));
     // A row standing for folded tests is lit for any one of them it holds.
     groupEls.forEach(([c, g]) => g.classList.toggle('kept', !!keep && c.members.some((v) => keep.nodes.has(v))));
   }
@@ -2259,7 +2431,20 @@ const Lineage = (() => {
 
      `css` and `tight` are for the image path. Inlined into a page, a <style>
      inside the SVG would style the whole page, so the page brings its own. */
-  function snapshot({ css = '', scale = 1, tight = false } = {}) {
+  /* Measured on the canvas as the usual look draws it: the Halloween look's
+     fonts must not reach the file, whose lines are pinned to what they
+     measure. The rules that change a line's font all name a box style, a class
+     of the body, so those come off for the length of the call, with no paint in
+     between, and go back. `halloween` and the rest stay, or the animations that
+     run under them, the web and the ghost's glow, would start again. */
+  function snapshot(opts) {
+    const body = document.body;
+    const was = [...body.classList].filter((c) => c.startsWith('hw-boxes-'));
+    was.forEach((c) => body.classList.remove(c));
+    try { return snapshotOf(opts); } finally { was.forEach((c) => body.classList.add(c)); }
+  }
+
+  function snapshotOf({ css = '', scale = 1, tight = false } = {}) {
     if (!data || !bbox || !data.nodes.length) return null;
     const frame = tight ? frameOf(bbox, 0, 0) : frameOf(bbox);
     const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
@@ -2270,6 +2455,21 @@ const Lineage = (() => {
     // Nor what find is painting, which says nothing to a reader of the file.
     g.querySelectorAll('.hit, .hitcur').forEach((x) => x.classList.remove('hit', 'hitcur'));
     g.classList.remove('picking');
+    g.classList.remove('hw-on');
+    if (!g.getAttribute('class')) g.removeAttribute('class');
+    // The art is the page's own look: its <use> would point at defs the file does not have.
+    g.querySelectorAll('.hw-art, .hw-beads, .hw-web').forEach((x) => x.remove());
+    // The names the art cut short go back to the plain look's cuts before anything is
+    // measured, so that a themed canvas measures, and writes, what a plain one does.
+    if (texted) {
+      const colMode = data.mode === 'column';
+      g.querySelectorAll('.nd:not(.rider)').forEach((nd) => {
+        const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
+        if (!n) return;
+        if (t1) t1.textContent = clip(n.name, colMode ? 24 : 27);
+        if (t2) writeSub(t2, subtitleParts(n), colMode ? 30 : 34, el);
+      });
+    }
     g.querySelectorAll('.kept').forEach((x) => x.classList.remove('kept'));
 
     // Measured on the canvas itself, inside a box so the same rules apply: a
@@ -2399,7 +2599,7 @@ const Lineage = (() => {
     root && (root.textContent = '');
     heads && (heads.textContent = '');
     data = null; bbox = null; bands = []; drawn = null; under = new Map(); findBase = null;
-    nodeEls = []; edgeEls = []; groupEls = [];
+    nodeEls = []; edgeEls = []; beadEls = []; groupEls = [];
     root && root.classList.remove('picking');
     handlers.onHoverClose && handlers.onHoverClose();
     if (finding) refind();
@@ -2408,6 +2608,6 @@ const Lineage = (() => {
   return {
     init, render, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
     testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, isRowKind, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
-    legendKeeps, pick, picked: () => picked,
+    legendKeeps, pick, picked: () => picked, setSkin,
   };
 })();

@@ -102,6 +102,8 @@ pub struct AppState {
     pub update: crate::update::Update,
     /// Whether the guided tour was offered on this machine (0074).
     pub tour: crate::tour::Offer,
+    /// Whether the Halloween look is on, and its sound, on this machine (0106).
+    pub look: crate::look::Look,
 }
 
 impl AppState {
@@ -263,6 +265,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/update/check", post(check_update_now))
         .route("/api/tour", get(tour_model))
         .route("/api/tour/offer", post(claim_tour_offer))
+        .route("/api/look", get(read_look).post(write_look))
         .route("/api/features", post(set_features))
         .route("/api/profiles", get(read_profile).put(write_profile))
         .route("/api/dir", get(dir))
@@ -3121,6 +3124,39 @@ async fn claim_tour_offer(State(st): State<Arc<AppState>>) -> Response {
         .into_response()
 }
 
+/// The Halloween look as the page reads and sets it: every field wanted, so a
+/// request cannot reset one by leaving it out, and nothing else accepted.
+#[derive(serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LookBody {
+    halloween: bool,
+    sound: bool,
+    apparitions: bool,
+    boxes: crate::look::Boxes,
+}
+
+impl From<crate::look::Kept> for LookBody {
+    fn from(k: crate::look::Kept) -> Self {
+        LookBody { halloween: k.halloween, sound: k.sound, apparitions: k.apparitions, boxes: k.boxes }
+    }
+}
+
+/// The look kept on this machine, off and muted until it was switched on (0106).
+async fn read_look(State(st): State<Arc<AppState>>) -> Response {
+    let path = st.look.path.clone();
+    let kept = tokio::task::spawn_blocking(move || crate::look::Look { path }.read()).await.unwrap_or_default();
+    Json(LookBody::from(kept)).into_response()
+}
+
+/// Keeps the look the page chose and answers with it, kept or not: without a
+/// config directory the page still wears it for the session (0106).
+async fn write_look(State(st): State<Arc<AppState>>, Json(b): Json<LookBody>) -> Response {
+    let path = st.look.path.clone();
+    let kept = crate::look::Kept { halloween: b.halloween, sound: b.sound, apparitions: b.apparitions, boxes: b.boxes };
+    let kept = tokio::task::spawn_blocking(move || crate::look::Look { path }.write(kept)).await.unwrap_or(kept);
+    Json(LookBody::from(kept)).into_response()
+}
+
 /// A dbt profile is a few kilobytes; anything of this size is not one.
 const MAX_PROFILE_BYTES: u64 = 512 * 1024;
 
@@ -4356,6 +4392,7 @@ mod tests {
             update: crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere)),
             // Inside the test's own project, never the developer's config directory.
             tour: crate::tour::Offer { path: Some(root.join("config").join("tour.json")) },
+            look: crate::look::Look { path: Some(root.join("config").join("look.json")) },
         });
         let held = state.clone();
         let task = tokio::spawn(async move {
@@ -4754,6 +4791,46 @@ mod tests {
         let kept = crate::tour::load(&root.join("config").join("tour.json")).unwrap();
         assert!(kept.offered > 0 && kept.version == env!("CARGO_PKG_VERSION"), "{kept:?}");
         assert!(status_of(port, keyless(raw("POST", "/api/tour/offer", &offer))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The look is off and muted, apparitions on, until the page sets it, is kept per machine
+    /// as `look.json` holding those four fields, and is guarded like any route.
+    #[tokio::test]
+    async fn the_look_is_kept_and_answered_with_its_four_choices() {
+        let root = temp_project("look");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let post = [("Host", host.as_str()), ("Origin", own.as_str())];
+        let file = root.join("config").join("look.json");
+
+        let first = response_of(port, get("/api/look", &h)).await;
+        assert!(first.starts_with("HTTP/1.1 200"), "{first}");
+        assert_eq!(past_head(&first), r#"{"halloween":false,"sound":false,"apparitions":true,"boxes":"tombstone"}"#, "off and muted by default, apparitions on, tombstones");
+        assert!(!file.exists(), "reading keeps nothing");
+        let set = response_of(port, with_json("POST", "/api/look", &post, r#"{"halloween":true,"sound":false,"apparitions":false,"boxes":"coffin"}"#)).await;
+        assert_eq!(past_head(&set), r#"{"halloween":true,"sound":false,"apparitions":false,"boxes":"coffin"}"#, "{set}");
+        assert_eq!(past_head(&response_of(port, get("/api/look", &h)).await), r#"{"halloween":true,"sound":false,"apparitions":false,"boxes":"coffin"}"#);
+        assert_eq!(crate::look::Look { path: Some(file.clone()) }.read(), crate::look::Kept { halloween: true, sound: false, apparitions: false, boxes: crate::look::Boxes::Coffin });
+        let louder = response_of(port, with_json("POST", "/api/look", &post, r#"{"halloween":true,"sound":true,"apparitions":false,"boxes":"coffin"}"#)).await;
+        assert_eq!(past_head(&louder), r#"{"halloween":true,"sound":true,"apparitions":false,"boxes":"coffin"}"#);
+
+        let skull = r#"{"halloween":true,"sound":true,"apparitions":true,"boxes":"skull"}"#;
+        assert!(status_of(port, with_json("POST", "/api/look", &post, skull)).await.contains(" 422 "), "an unknown box style");
+        let old = r#"{"halloween":true,"sound":true,"apparitions":true}"#;
+        assert!(status_of(port, with_json("POST", "/api/look", &post, old)).await.contains(" 422 "), "boxes is wanted too");
+        let refused = status_of(port, with_json("POST", "/api/look", &post, r#"{"halloween":true,"sound":true,"apparitions":true,"boxes":"coffin","theme":"x"}"#)).await;
+        assert!(refused.contains(" 422 "), "{refused}");
+        assert!(status_of(port, with_json("POST", "/api/look", &post, r#"{"halloween":false,"sound":false,"apparitions":true}"#)).await.contains(" 422 "));
+        assert!(crate::look::Look { path: Some(file) }.read().sound, "a refused body changes nothing");
+        assert!(status_of(port, keyless(get("/api/look", &h))).await.ends_with("401 Unauthorized"));
+        let body = r#"{"halloween":false,"sound":false,"apparitions":false,"boxes":"coffin"}"#;
+        assert!(status_of(port, keyless(with_json("POST", "/api/look", &post, body))).await.ends_with("401 Unauthorized"));
+        let foreign = [("Host", host.as_str()), ("Origin", "https://evil.example")];
+        assert!(!status_of(port, with_json("POST", "/api/look", &foreign, body)).await.contains(" 200 "));
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

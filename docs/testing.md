@@ -47,7 +47,7 @@ $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their f
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, and the columns its key names
-$JSC web/tests/export.js      # an exported graph: its header, its file, its safety
+$JSC web/tests/export.js      # an exported graph: its header, its file, its safety, and none of the Halloween look
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
@@ -61,6 +61,7 @@ $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert
 $JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
+$JSC web/tests/halloween.js   # the Halloween look: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake
@@ -109,4 +110,12 @@ the pointer, what closes it, and what a click on it holds open:
 
 ```
 /tmp/dbt/bin/python scripts/walk_menu.py
+```
+
+An export of the lineage with the Halloween look on has to be the export of
+the same canvas with it off, for each of the three box styles, art and cut
+names included (0107):
+
+```
+/tmp/dbt/bin/python scripts/walk_export.py
 ```
