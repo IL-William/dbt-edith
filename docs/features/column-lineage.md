@@ -91,8 +91,9 @@ role, and the models where the most moved, each a link to it. A run older than
 the manifest says so (0061).
 
 Once collin is installed and Collin is the tool picked, a line under Collin in
-the menu offers to update it. This dbt-edith expects collin 0.8.0 or later,
-the first to list the roots the `generated` tag below is read from: an older
+the menu offers to update it. This dbt-edith expects collin 0.10.0 or later,
+the first to read a seed's columns from its CSV header, after 0.8.0, the first
+to list the roots the `generated` tag below is read from: an older
 one, the old repository's 0.2.0 included, or one that gives no version, gets
 "Update collin", which types the command above with `--force`, and the
 Columns tab says so first. A recent one gets "Check for a newer collin", the
@@ -100,7 +101,11 @@ command as it is, which rebuilds collin when GitHub has a newer commit and
 otherwise says it is already installed. While a version installed by tag
 runs, there is neither line, and nothing calls it older, whatever its number:
 no update reaches it, and the default one is picked back in the same menu
-(0098).
+(0098, 0109).
+
+collin is handed the project folder, where it looks for a seed's CSV, only when
+the manifest in use lies under it: a manifest named from another project's
+folder is read with its own seeds or none, never this folder's (0109).
 
 **Collin is alpha, and can be wrong.** Its button and its menu entry say so,
 and so does Catalog > Columns, with the share of its edges that were matched

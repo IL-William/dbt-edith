@@ -1,6 +1,6 @@
 # 0099. A column may run collin first, when the command line asks
 
-Date: 2026-10-19 · Status: accepted · Amends 0088 and 0042
+Date: 2026-10-19 · Status: accepted, amended by 0109 · Amends 0088 and 0042
 
 **Trigger:** read before letting the command line start a program, before
 changing what `--run-collin` hands collin or where it writes, or before
@@ -52,6 +52,8 @@ wants answered.
   cross indirect edges (0097), which collin writes only when told. Every path
   is made whole first: collin runs in the project, and the paths are relative
   to where the command was typed.
+  *Amended by [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md):
+  `--project <folder>` too, but only when the manifest lies under the folder.*
 - **`--compiled` needs collin 0.9.0**, the first to read it. A collin older
   than that is never started with the folder, and stderr gives the update
   command. `WANTS` is not raised for it: someone who never names a folder is
@@ -61,6 +63,8 @@ wants answered.
   a `--catalog` named and not there, which would leave every column
   unconfirmed. A collin older than `WANTS` still runs, as the page runs one it
   offers to update, and stderr says so with the update command.
+  *Amended by [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md):
+  `WANTS` is 0.10.0, so a collin that old is warned of whatever the flags.*
 - **stdout stays the answer's.** One line on stderr says which collin wrote
   which file, in how long, and how many models it read the SQL of; collin's
   own lines come only when it fails, with exit code 2. When collin found no

@@ -1280,7 +1280,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.9.0","edges":[]}' > "$out"
+    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.10.0","edges":[]}' > "$out"
 echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 
     #[cfg(unix)]
@@ -1294,13 +1294,13 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         std::fs::create_dir_all(dir.join("sql")).unwrap();
         let p = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
         let mut err = Vec::new();
-        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", WRITES), &mut err).unwrap();
+        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &mut err).unwrap();
         // The names the page's own run writes, so the page shows this run.
         assert_eq!(got, Some(folder.join("column_lineage.collin.json")));
-        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.9.0");
+        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.10.0");
         assert!(folder.join(collin_run::REPORT).is_file());
         let said = String::from_utf8(err).unwrap();
-        assert!(said.starts_with("collin 0.9.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
+        assert!(said.starts_with("collin 0.10.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
         assert!(!said.contains("warning"), "every model had its SQL, from a collin not older than WANTS: {said}");
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         let named = |flag: &str, path: PathBuf| format!("{flag} {}", path.display());
@@ -1308,15 +1308,26 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         assert!(args.contains(&named("--manifest", manifest.clone())), "{args}");
         assert!(args.contains(&named("--catalog", folder.join("catalog.json"))), "the catalog beside the manifest: {args}");
         assert!(!args.contains("--indirect"), "{args}");
+        assert!(args.contains(&named("--project", dir.clone())), "a manifest under the project gets it: {args}");
 
         // A catalog named is the one handed over, and no folder is unless
         // named; an answer crossing indirect edges has collin write them.
         std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
         let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None, indirect: true };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", WRITES), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
         assert!(args.contains(" --indirect "), "{args}");
+
+        // A manifest in a folder of its own, outside the project, is named
+        // alone: collin gets none of this project's seeds (0109).
+        let apart = scratch("produce-apart");
+        let other = apart.join("manifest.json");
+        std::fs::write(&other, "{}").unwrap();
+        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.10.0", WRITES), &mut Vec::new()).unwrap().unwrap();
+        let args = std::fs::read_to_string(dir.join("args")).unwrap();
+        assert!(!args.contains("--project") && args.contains(&named("--manifest", other.clone())), "{args}");
+        std::fs::remove_dir_all(&apart).unwrap();
 
         // A collin older than WANTS still runs, and says what updating brings.
         let mut err = Vec::new();
@@ -1333,7 +1344,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
         let mut err = Vec::new();
         let p = Produce { catalog: None, compiled: None, indirect: false };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.9.0", aside), &mut err).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", aside), &mut err).unwrap().unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
 
@@ -1346,7 +1357,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
   {"unique_id":"model.jaffle_shop.stg_orders","parse_error":"a python model, not SQL"}]}' > "$report""#;
         let warned = |p: &Produce| {
             let mut err = Vec::new();
-            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.9.0", unread), &mut err).unwrap().unwrap();
+            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.10.0", unread), &mut err).unwrap().unwrap();
             String::from_utf8(err).unwrap()
         };
         let said = warned(&Produce { catalog: None, compiled: None, indirect: false });
@@ -1395,11 +1406,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         // anything: run, it would replace the cache with name matches. So is
         // a catalog named and not there, which would leave every column
         // unconfirmed.
-        let (got, err) = said(&both, stand_in(&dir, "0.9.0", WRITES));
+        let (got, err) = said(&both, stand_in(&dir, "0.10.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --compiled") && err.contains("not a folder"), "{err}");
         let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None, indirect: false };
-        let (got, err) = said(&no_catalog, stand_in(&dir, "0.9.0", WRITES));
+        let (got, err) = said(&no_catalog, stand_in(&dir, "0.10.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --catalog") && err.contains("not a file"), "{err}");
         assert!(!dir.join("args").exists(), "it never ran");
@@ -1413,11 +1424,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         assert!(!dir.join("args").exists(), "it never ran");
 
         // A failed run says collin's own lines and leaves the cache as it was.
-        let (got, err) = said(&both, stand_in(&dir, "0.9.0", "echo 'collin: no manifest at x' >&2; exit 1"));
+        let (got, err) = said(&both, stand_in(&dir, "0.10.0", "echo 'collin: no manifest at x' >&2; exit 1"));
         assert_eq!(got, None);
         assert!(err.contains("error: collin wrote no cache: no manifest at x"), "{err}");
         assert_eq!(err.matches("no manifest at x").count(), 1, "collin's line is said once: {err}");
-        let (_, err) = said(&both, stand_in(&dir, "0.9.0", "echo 'thread main panicked at boom' >&2; exit 101"));
+        let (_, err) = said(&both, stand_in(&dir, "0.10.0", "echo 'thread main panicked at boom' >&2; exit 101"));
         assert_eq!(err.matches("panicked at boom").count(), 1, "a line without collin's prefix too: {err}");
         assert_eq!(load(&cache).unwrap().producer, "collin 0.8.0");
 
