@@ -136,6 +136,89 @@ fn test_settings(c: &crate::manifest::RawConfig) -> Box<[Setting]> {
         .collect()
 }
 
+/// A versioned model's version and the latest of its versions, kept as the
+/// manifest wrote them, a number or a string, because dbt compares them as
+/// it finds them (`UnparsedVersion`): `1` equals `1.0` and never `"1"` (0104).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Version {
+    pub own: serde_json::Value,
+    /// Absent from a manifest that names no latest, which dbt-core and Fusion
+    /// both fill in with the highest version.
+    pub latest: Option<serde_json::Value>,
+}
+
+/// Only a number or a string is a version: any other value is read as none.
+fn version_of(v: Option<serde_json::Value>) -> Option<serde_json::Value> {
+    v.filter(|v| v.is_number() || v.is_string())
+}
+
+/// A version as dbt writes it after the `v` of `name.v1`: `1`, `2.0`, `beta`.
+pub fn version_text(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Python's `==` between two versions: numbers by value, strings by text,
+/// and a number never equals a string.
+fn same_version(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a, b) {
+        (serde_json::Value::Number(x), serde_json::Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (serde_json::Value::String(x), serde_json::Value::String(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Python's truth of a version, which dbt tests before comparing two: a zero
+/// or an empty string counts as no version at all.
+fn truthy(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64() != Some(0.0),
+        serde_json::Value::String(s) => !s.is_empty(),
+        _ => false,
+    }
+}
+
+/// dbt's `UnparsedVersion.__lt__`: as numbers when both read as one, a string
+/// of digits included, and as text otherwise.
+pub fn version_before(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let float = |v: &serde_json::Value| match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    match (float(a), float(b)) {
+        (Some(x), Some(y)) => x < y,
+        _ => version_text(a) < version_text(b),
+    }
+}
+
+impl Version {
+    pub fn text(&self) -> String {
+        version_text(&self.own)
+    }
+
+    pub fn latest_text(&self) -> String {
+        self.latest.as_ref().map(version_text).unwrap_or_default()
+    }
+
+    /// dbt's `is_latest_version`, what `version:latest` selects.
+    pub fn is_latest(&self) -> bool {
+        self.latest.as_ref().is_some_and(|l| same_version(&self.own, l))
+    }
+
+    /// After the latest, which `version:prerelease` selects.
+    pub fn is_prerelease(&self) -> bool {
+        truthy(&self.own) && self.latest.as_ref().is_some_and(|l| truthy(l) && version_before(l, &self.own))
+    }
+
+    /// Before the latest, which `version:old` selects.
+    pub fn is_old(&self) -> bool {
+        truthy(&self.own) && self.latest.as_ref().is_some_and(|l| truthy(l) && version_before(&self.own, l))
+    }
+}
+
 #[derive(Clone)]
 pub struct Column {
     pub name: String,
@@ -174,6 +257,10 @@ pub struct Node {
     /// allocation per node instead of one per part, and the parts are recovered
     /// by splitting, which the matcher has to do anyway.
     pub fqn: String,
+    /// A versioned model's version: `name` then carries it after the model's
+    /// own name, `orders.v2`, as `dbt ls` prints it. None on every other node,
+    /// which pays a pointer for it.
+    pub version: Option<Box<Version>>,
     pub kind: Kind,
     /// `original_file_path`: relative to the project for its own nodes, to the
     /// package for an installed package's. Selection matches on it as dbt does.
@@ -567,6 +654,19 @@ fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u
     })
 }
 
+/// Whether `n` is a later version of its model than `prev`, as a `ref()` that
+/// names none reaches it: the version `latest_version` names, an enabled one
+/// first, else the higher. Shared with the name a command line takes, so both
+/// pick the same version of a package's model.
+pub(crate) fn newer_version(prev: &Node, n: &Node) -> bool {
+    let (Some(p), Some(v)) = (prev.version.as_ref(), n.version.as_ref()) else { return false };
+    let key = |v: &Version, n: &Node| (v.is_latest(), !n.disabled);
+    match key(p, prev).cmp(&key(v, n)) {
+        std::cmp::Ordering::Equal => version_before(&p.own, &v.own),
+        other => other.is_lt(),
+    }
+}
+
 impl Node {
     /// The file to show and open: in the package's folder for an installed
     /// package's node that was found there, `file` for every other.
@@ -579,6 +679,15 @@ impl Node {
     /// as other.
     pub fn resource_type(&self) -> &str {
         self.id.split('.').next().unwrap_or("")
+    }
+
+    /// The name without its version, the one every version of a model shares
+    /// and a `ref()` writes: `name` itself on any node but a versioned model.
+    pub fn base_name(&self) -> &str {
+        match &self.version {
+            Some(v) => self.name.strip_suffix(&format!(".v{}", v.text())).unwrap_or(&self.name),
+            None => &self.name,
+        }
     }
 
     /// An incremental model: the one node a strategy applies to. A folder's
@@ -633,8 +742,15 @@ impl Graph {
                 return;
             }
             let kind = Kind::parse(&raw_node.resource_type);
-            let name = match (&kind, &raw_node.source_name) {
-                (Kind::Source, Some(src)) => format!("{}.{}", src, raw_node.name),
+            // Only a model has versions; the manifest names one bare in `name`,
+            // and the versions of a model would read as one node without it.
+            let version = match (kind, version_of(raw_node.version)) {
+                (Kind::Model, Some(own)) => Some(Box::new(Version { own, latest: version_of(raw_node.latest_version) })),
+                _ => None,
+            };
+            let name = match (&kind, &raw_node.source_name, &version) {
+                (Kind::Source, Some(src), _) => format!("{}.{}", src, raw_node.name),
+                (_, _, Some(v)) => format!("{}.v{}", raw_node.name, v.text()),
                 _ => raw_node.name.clone(),
             };
             // Tests exist in their thousands; keep them skeletal.
@@ -676,6 +792,7 @@ impl Graph {
                 id,
                 name,
                 fqn: raw_node.fqn.join("."),
+                version,
                 kind,
                 yml: slashed(
                     raw_node
@@ -876,16 +993,42 @@ impl Graph {
         }
 
         let mut by_name: HashMap<String, u32> = HashMap::new();
+        // Enabled beats disabled, and a model beats anything else.
+        let rank = |n: &Node| (!n.disabled as u8) * 2 + (n.kind == Kind::Model) as u8;
         for (i, n) in nodes.iter().enumerate() {
             if n.kind == Kind::Test || n.kind == Kind::Operation {
                 continue;
             }
-            // Enabled beats disabled, and a model beats anything else.
-            let rank = |n: &Node| (!n.disabled as u8) * 2 + (n.kind == Kind::Model) as u8;
             match by_name.get(&n.name) {
                 Some(&prev) if rank(&nodes[prev as usize]) >= rank(n) => {}
                 _ => {
                     by_name.insert(n.name.clone(), i as u32);
+                }
+            }
+        }
+        // A `ref()` naming no version reaches the latest, as dbt's does: the
+        // version `latest_version` names, an enabled one first, or the highest
+        // where the manifest names none.
+        let mut newest: HashMap<&str, u32> = HashMap::new();
+        for (i, n) in nodes.iter().enumerate() {
+            if n.version.is_none() {
+                continue;
+            }
+            let newer = |prev: &Node| newer_version(prev, n);
+            match newest.get(n.base_name()) {
+                Some(&prev) if !newer(&nodes[prev as usize]) => {}
+                _ => {
+                    newest.insert(n.base_name(), i as u32);
+                }
+            }
+        }
+        let mut newest: Vec<(&str, u32)> = newest.into_iter().collect();
+        newest.sort_unstable();
+        for (base, i) in newest {
+            match by_name.get(base) {
+                Some(&prev) if rank(&nodes[prev as usize]) >= rank(&nodes[i as usize]) => {}
+                _ => {
+                    by_name.insert(base.to_string(), i);
                 }
             }
         }
@@ -3675,6 +3818,54 @@ mod tests {
         assert_eq!(shown("models/orders.sql"), Some("model.shop.orders"));
         assert_eq!(shown("tests/assert_positive.sql"), Some("test.shop.assert_positive"), "a test, when the file holds nothing else");
         assert_eq!(shown("models/nowhere.yml"), None);
+    }
+
+    /// Each version of a model is a node of its own, named as `dbt ls` names
+    /// it, and the bare name is what a `ref()` naming no version reaches: the
+    /// latest the manifest names, else the highest by dbt's comparison.
+    #[test]
+    fn each_version_is_named_apart_and_the_bare_name_is_the_latest() {
+        let model = |name: &str, v: serde_json::Value, latest: Option<i64>| {
+            let tag = match &v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            serde_json::json!({ "name": name, "resource_type": "model",
+                "original_file_path": format!("models/{name}_v{tag}.sql"),
+                "fqn": ["shop", name, format!("v{tag}")], "version": v, "latest_version": latest })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders.v1": model("orders", 1.into(), Some(2)),
+                "model.shop.orders.v2": model("orders", 2.into(), Some(2)),
+                "model.shop.orders.v3": model("orders", 3.into(), Some(2)),
+                // Neither names a latest: 10 is higher than 2 as a number.
+                "model.shop.wide.v2": model("wide", 2.into(), None),
+                "model.shop.wide.v10": model("wide", 10.into(), None),
+                "model.shop.spread.v2.0": model("spread", 2.0.into(), Some(2)),
+                "model.shop.plain": { "name": "plain", "resource_type": "model",
+                    "original_file_path": "models/plain.sql", "fqn": ["shop", "plain"], "version": null },
+                "seed.shop.codes": { "name": "codes", "resource_type": "seed",
+                    "original_file_path": "seeds/codes.csv", "version": 1 },
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        let node = |id: &str| &g.nodes[g.index[id] as usize];
+        let reached = |name: &str| g.by_name.get(name).map(|&i| g.nodes[i as usize].id.as_str());
+        assert_eq!(node("model.shop.orders.v1").name, "orders.v1");
+        assert_eq!(node("model.shop.orders.v1").base_name(), "orders");
+        assert_eq!(reached("orders"), Some("model.shop.orders.v2"));
+        assert_eq!(reached("orders.v3"), Some("model.shop.orders.v3"));
+        assert_eq!(reached("wide"), Some("model.shop.wide.v10"));
+        // 2.0 is written as dbt writes the float, and equals the latest 2.
+        assert_eq!(node("model.shop.spread.v2.0").name, "spread.v2.0");
+        assert!(node("model.shop.spread.v2.0").version.as_ref().unwrap().is_latest());
+        assert_eq!(reached("spread"), Some("model.shop.spread.v2.0"));
+        assert_eq!(node("model.shop.plain").name, "plain");
+        assert!(node("model.shop.plain").version.is_none());
+        assert_eq!(node("seed.shop.codes").name, "codes", "only a model has versions");
+        assert!(g.search("orders", &[], 10).len() == 3, "every version is found by the model's name");
     }
 
     #[test]

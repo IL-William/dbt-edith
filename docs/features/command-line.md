@@ -152,14 +152,18 @@ snapshots and sources only, where `--describe` takes any node, a test
 included:
 
 1. a unique_id, exactly;
-2. else the nodes whose name is exactly that and, for a name with a dot in
-   it, those whose unique_id ends with a dot and the name: `dim.v2` for a
-   version of a model, `shop.orders` for a package's; a source's
-   `raw.payments` and a package `raw`'s model `payments` are then two nodes,
-   refused rather than guessed;
+2. else the nodes whose name is exactly that, `dim.v2` for a version of a
+   model, together with, for a versioned model's bare name, `dim`, each
+   package's latest version of it, as a `ref()` reaches it (0104); and, for a
+   name with a dot in it, those whose unique_id ends with a dot and the name:
+   `shop.orders` for a package's; a source's `raw.payments` and a package
+   `raw`'s model `payments` are then two nodes, refused rather than guessed;
 3. else the same, case ignored;
 4. among several, the enabled ones, then, for `--describe`, a model, seed,
    snapshot or source over a test or an exposure; still several, refused.
+   A bare name that is the latest version in one package and a seed, a model
+   or a versioned model in another is therefore refused, as it is for any two
+   packages, and a disabled model of that name gives way to the versions.
 
 A refused name lists the unique_ids to write. A name that is no node is refused
 with the nearest names, `no node named order; did you mean orders,

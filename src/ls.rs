@@ -9,7 +9,7 @@
 //! badge already asks.
 
 use crate::collin::iso_utc;
-use crate::graph::{Graph, Kind, Node};
+use crate::graph::{newer_version, Graph, Kind, Node};
 use crate::select::{self, Resolved, SelectError, Tests};
 use crate::{api, files, freshness, git};
 use std::collections::HashSet;
@@ -202,12 +202,20 @@ fn refused(query: &Query, e: &SelectError, err: &mut impl Write) -> io::Result<(
 
 /// One node of a `--output json` answer. dbt's key names, so a script written
 /// against `dbt ls --output json` reads it, plus the parents, which `dbt ls`
-/// prints only in its full JSON and which are what tells an edge.
+/// prints only in its full JSON and which are what tells an edge. `name` is
+/// the one `--output name` prints, where dbt's JSON writes a source's table
+/// or a version's model bare, so a name read here can be selected by.
 #[derive(serde::Serialize)]
 struct Listed<'a> {
     unique_id: &'a str,
-    /// The name `--output name` prints: `source_name.table` for a source.
+    /// The name `--output name` prints: `source_name.table` for a source,
+    /// `name.v2` for a versioned model.
     name: &'a str,
+    /// A versioned model's, as the manifest writes them, a number or a string.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<&'a serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest_version: Option<&'a serde_json::Value>,
     /// The unique_id's first part, which is dbt's own resource type, unit
     /// tests and semantic models included.
     resource_type: &'a str,
@@ -242,6 +250,8 @@ impl<'a> Listed<'a> {
         Listed {
             unique_id: &n.id,
             name: &n.name,
+            version: n.version.as_ref().map(|v| &v.own),
+            latest_version: n.version.as_ref().and_then(|v| v.latest.as_ref()),
             resource_type: n.resource_type(),
             package_name: &n.package,
             original_file_path: &n.file,
@@ -285,21 +295,23 @@ pub(crate) fn now_secs() -> u64 {
 
 /// The node a name stands for, for the modes that take one by its name
 /// (`--describe`, and `--column` for its model): the unique_id; else, among
-/// `kinds` (any node when empty), the nodes of that name, exact before
+/// `kinds` (any node when empty), the nodes of that name together with each
+/// package's latest version of a model so named, exact before
 /// case-insensitive; else the nodes whose unique_id ends in `.name`, which is
 /// how a versioned model (`dim.v2`) or a package's node (`shop.orders`) is
-/// written. Then an enabled node over a disabled twin and, when any kind may
-/// answer, a model, seed, snapshot or source over a test or an exposure that
-/// shares the name. Each narrowing is taken when it leaves at least one node,
-/// so they combine; what still names several is refused, because a guess
-/// between them would be an answer that changes with the next edit of the
-/// project.
+/// written. Then an enabled node over a disabled twin and, when any kind
+/// may answer, a model, seed, snapshot or source over a test or an exposure
+/// that shares the name. Each narrowing is taken when it leaves at least one
+/// node, so they combine; what still names several is refused, because a
+/// guess between them would be an answer that changes with the next edit of
+/// the project.
 pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u32, String> {
     if let Some(&i) = graph.index.get(name) {
         return Ok(i);
     }
-    // A versioned model's name is the model's, and its version only in the
-    // unique_id: `model.shop.dim.v2` is named `dim`.
+    // A versioned model is named `dim.v2` where the manifest records its
+    // version (0104), and by the end of its unique_id alone where it records
+    // none.
     let found = |by_id: bool, exact: bool| -> Vec<u32> {
         (0..graph.nodes.len() as u32)
             .filter(|&i| {
@@ -313,6 +325,27 @@ pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u3
             })
             .collect()
     };
+    // A versioned model named without its version is its latest, as in a
+    // `ref()`, where each version's own name carries its version (0104). One
+    // per package, since a package is a namespace of its own; they are pooled
+    // with the nodes of that very name, so a twin in another package, a seed
+    // or a disabled model is weighed against them like any other and several
+    // are refused, never picked by the order of the manifest.
+    let latest = |exact: bool| -> Vec<u32> {
+        let mut newest: Vec<(&str, &str, u32)> = Vec::new();
+        for (i, n) in graph.nodes.iter().enumerate() {
+            let base = n.base_name();
+            if n.version.is_none() || !(if exact { base == name } else { base.eq_ignore_ascii_case(name) }) {
+                continue;
+            }
+            match newest.iter_mut().find(|(pkg, b, _)| *pkg == n.package && *b == base) {
+                Some(slot) if !newer_version(&graph.nodes[slot.2 as usize], n) => {}
+                Some(slot) => slot.2 = i as u32,
+                None => newest.push((&n.package, base, i as u32)),
+            }
+        }
+        newest.into_iter().map(|(_, _, i)| i).filter(|&i| kinds.is_empty() || kinds.contains(&graph.nodes[i as usize].kind)).collect()
+    };
     // Only a dotted name can be the end of a unique_id, since its parts are
     // dotted: a bare `v2` or `payments` must not reach a version or a source
     // by its table alone. A dotted name may be both a source's and the end of
@@ -322,6 +355,11 @@ pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u3
     let mut hits = Vec::new();
     for exact in [true, false] {
         hits = found(false, exact);
+        for i in latest(exact) {
+            if !hits.contains(&i) {
+                hits.push(i);
+            }
+        }
         if dotted {
             for i in found(true, exact) {
                 if !hits.contains(&i) {
@@ -655,6 +693,38 @@ mod tests {
         assert!(v.get("depends_on").is_none(), "{v}");
     }
 
+    /// A version is named as `--output name` names it, in either output, and
+    /// its JSON carries the manifest's two version keys, a number staying one;
+    /// an unversioned node carries neither (0104).
+    #[test]
+    fn a_version_is_listed_by_its_name_with_its_version_keys() {
+        let version = |v: i64| {
+            serde_json::json!({ "name": "totals", "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/totals_v{v}.sql"), "fqn": ["shop", "totals", format!("v{v}")],
+                "version": v, "latest_version": 2 })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.totals.v1": version(1), "model.shop.totals.v2": version(2),
+                "model.shop.plain": { "name": "plain", "resource_type": "model", "fqn": ["shop", "plain"] },
+            },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, Path::new("manifest.json"), 0, 0);
+        let run = |select: &str, output: Output| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            answer(&g, &line(select, ""), output, &mut out, &mut err).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        assert_eq!(run("totals", Output::Name), "totals.v1\ntotals.v2\n");
+        let listed: Vec<serde_json::Value> =
+            run("totals.v1 plain", Output::Json).lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+        assert_eq!(listed[0]["name"], "plain");
+        assert!(listed[0].get("version").is_none() && listed[0].get("latest_version").is_none(), "{}", listed[0]);
+        assert_eq!(listed[1]["name"], "totals.v1");
+        assert_eq!((&listed[1]["version"], &listed[1]["latest_version"]), (&serde_json::json!(1), &serde_json::json!(2)));
+    }
+
     #[test]
     fn compact_is_one_tab_separated_line_per_node_under_a_header() {
         let (out, _, code) = ask(&line("+orders+", ""), Output::Compact);
@@ -780,6 +850,60 @@ mod tests {
             id("raw.payments").unwrap_err(),
             "raw.payments names 2 nodes: write the unique_id of one, model.raw.payments, source.shop.raw.payments"
         );
+    }
+
+    /// The bare name of a versioned model is its latest version per package,
+    /// pooled with every other node of that name and judged by the same
+    /// narrowings, so it is refused where nothing on the command line says
+    /// which package (0104).
+    #[test]
+    fn a_bare_name_weighs_the_latest_version_of_each_package_with_the_other_nodes_of_it() {
+        let version = |pkg: &str, name: &str, v: i64, latest: i64| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": pkg,
+                "original_file_path": format!("models/{name}_v{v}.sql"), "fqn": [pkg, name, format!("v{v}")],
+                "version": v, "latest_version": latest })
+        };
+        let plain = |kind: &str, pkg: &str, name: &str, enabled: bool| {
+            serde_json::json!({ "name": name, "resource_type": kind, "package_name": pkg,
+                "original_file_path": format!("models/{name}.sql"), "fqn": [pkg, name], "config": { "enabled": enabled } })
+        };
+        let g = graph_with(|m| {
+            for (pkg, name) in [("shop", "solo"), ("shop", "dimv"), ("other", "dimv"), ("shop", "mixed"), ("shop", "sv"), ("shop", "totals")] {
+                for v in 1..=2 {
+                    m["nodes"][format!("model.{pkg}.{name}.v{v}")] = version(pkg, name, v, 2);
+                }
+            }
+            m["nodes"]["model.other.mixed"] = plain("model", "other", "mixed", true);
+            m["nodes"]["seed.other.sv"] = plain("seed", "other", "sv", true);
+            m["disabled"]["model.shop.totals"] = serde_json::json!([plain("model", "shop", "totals", false)]);
+            // The latest is the one the manifest names, not the highest.
+            for v in 1..=2 {
+                m["nodes"][format!("model.shop.held.v{v}")] = version("shop", "held", v, 1);
+            }
+        });
+        let id = |name: &str| node_named(&g, name, &[]).map(|i| g.nodes[i as usize].id.clone());
+        assert_eq!(id("solo").unwrap(), "model.shop.solo.v2");
+        assert_eq!(id("SoLo").unwrap(), "model.shop.solo.v2", "in any case, as a name of one node is");
+        assert_eq!(id("held").unwrap(), "model.shop.held.v1");
+        assert_eq!(id("solo.v1").unwrap(), "model.shop.solo.v1");
+        // A model of that name in another package, versioned or not, a seed
+        // beside it: not guessed between, in either case.
+        for name in ["dimv", "DIMV"] {
+            assert_eq!(
+                id(name).unwrap_err(),
+                format!("{name} names 2 nodes: write the unique_id of one, model.other.dimv.v2, model.shop.dimv.v2")
+            );
+        }
+        assert_eq!(
+            id("mixed").unwrap_err(),
+            "mixed names 2 nodes: write the unique_id of one, model.other.mixed, model.shop.mixed.v2"
+        );
+        assert_eq!(id("sv").unwrap_err(), "sv names 2 nodes: write the unique_id of one, model.shop.sv.v2, seed.other.sv");
+        // A disabled model of the name gives way to the enabled versions.
+        assert_eq!(id("totals").unwrap(), "model.shop.totals.v2");
+        assert_eq!(id("TOTALS").unwrap(), "model.shop.totals.v2");
+        // Among the kinds asked, the seed is not a rival.
+        assert_eq!(node_named(&g, "sv", &[Kind::Model]).map(|i| g.nodes[i as usize].id.clone()).unwrap(), "model.shop.sv.v2");
     }
 
     #[test]

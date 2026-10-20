@@ -107,6 +107,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0101](0101-custom-selection-opens-over-the-whole-window.md) | Custom selection opens over the whole window, its card on a click | changing what a panel covers, where the Custom selection is opened from, or when its card shows |
 | [0102](0102-a-node-and-the-project-are-described-on-the-command-line.md) | A node and the project are described on the command line | adding to what `--describe` or `--overview` prints, changing what `--output compact` leaves out, or letting the command line read a file of the project |
 | [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) | A config path is unused when no fqn of its kind begins it | showing a warning dbt gives as it parses, judging whether a key of `dbt_project.yml` applies to anything, or letting the Reports index read a file |
+| [0104](0104-a-versioned-model-is-named-by-its-version.md) | A versioned model is named by its version | changing what a node is named, what a model's bare name reaches, or how the implicit method matches a name |
 
 ## Keeping these honest
 

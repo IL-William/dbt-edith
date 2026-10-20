@@ -344,10 +344,17 @@ function dbtSqlMode(sql) {
 
 CodeMirror.defineMode('dbt-sql', (cfg) => dbtSqlMode(CodeMirror.getMode(cfg, 'text/x-sql')));
 
-/* ref('x') / ref('pkg','x') / source('src','table') -> clickable marks.
+/* ref('x') / ref('pkg','x') / source('src','table') -> clickable marks, and
+   ref('x', v=2) or version=2, which names one version of a model (0104).
    Marks live on the Doc, so they survive tab switches and are scanned once. */
-const REF_RE = /\b(ref|source)\s*\(\s*(['"])([^'"\n]+)\2\s*(?:,\s*(['"])([^'"\n]+)\4\s*)?\)/g;
+const REF_RE = /\b(ref|source)\s*\(\s*(['"])([^'"\n]+)\2\s*(?:,\s*(['"])([^'"\n]+)\4\s*)?(?:,\s*(?:v|version)\s*=\s*(?:(['"])([^'"\n]*)\6|([\w.]+))\s*)?\)/g;
 const TOKEN_RE = /[A-Za-z0-9_]+/g;
+// An unquoted version is one only as a number: `v=my_var` is not known before
+// dbt renders it, and `v=True` names no version (dbt builds `a.vTrue`), and
+// read as a name either made a version that is not there. `1.` is no number
+// to Jinja. A zero is false to dbt, so it names none.
+const NUMBER_LITERAL = /^\d+(?:\.\d+)?$/;
+const ZERO_LITERAL = /^0+(?:\.0*)?$/;
 
 /* Blanks out {# ... #} blocks, keeping both offsets and line breaks intact: dbt
    never evaluates what is inside them, so neither should the link scanner.
@@ -416,7 +423,13 @@ function scanCalls(text) {
       a2 = [m.index + o2 + 1, m.index + o2 + 1 + m[5].length];
     }
     if (isSource && !a2) continue;
-    const name = isSource ? `${m[3]}.${m[5]}` : (m[5] !== undefined ? m[5] : m[3]);
+    // A versioned model is named as dbt ls names it; no version is its latest,
+    // which the server resolves the bare name to. dbt tests the argument for
+    // truth, so a 0 or an empty string names no version either.
+    const version = m[7] !== undefined ? m[7] : m[8];
+    const named = m[7] !== undefined ? version !== '' : m[8] !== undefined && NUMBER_LITERAL.test(m[8]) && !ZERO_LITERAL.test(m[8]);
+    const model = (m[5] !== undefined ? m[5] : m[3]) + (named ? '.v' + version : '');
+    const name = isSource ? `${m[3]}.${m[5]}` : model;
     found.push({ name, ranges: isSource ? [a1, a2] : [a2 || a1] });
   }
   return found;
@@ -1086,6 +1099,29 @@ function definesMacros(text) {
   return new RegExp('\\{%[-+]?\\s*(' + [...JINJA_DEFINERS].join('|') + ')\\s').test(maskJinjaComments(text));
 }
 
+/* The names a file's parents are linked by: each one's own, and a versioned
+   model's bare name too, which a ref() naming no version writes and a macro's
+   argument may carry. It goes to the latest version among the parents, else
+   the first, and never over a parent of that very name (0104). */
+function parentNames(parents) {
+  const known = {};
+  for (const p of parents) known[p.name] = p;
+  for (const p of parents) {
+    if (!p.base) continue;
+    const held = known[p.base];
+    if (!held || (held.base && p.latest && !held.latest)) known[p.base] = p;
+  }
+  return known;
+}
+
+/* The rows /api/resolve answered, by the name each was asked for: a model's
+   bare name answers with its latest version's, `orders.v2`, and says so. */
+function byAsked(rows) {
+  const out = {};
+  for (const r of rows) out[r.asked || r.name] = r;
+  return out;
+}
+
 async function markRefs(doc, path) {
   doc.getAllMarks().forEach((mk) => { if (mk.refTarget) mk.clear(); });
   const text = maskJinjaComments(doc.getValue());
@@ -1101,15 +1137,14 @@ async function markRefs(doc, path) {
     try { parents = (await nodeDetail({ file: path })).parents; }
     catch { /* not a dbt node: ref() calls are still linked below */ }
   }
-  const known = {};
-  parents.forEach((p) => { known[p.name] = p; });
+  const known = parentNames(parents);
 
   const unknown = [...new Set([...calls, ...declared].map((c) => c.name))].filter((n) => !known[n]);
   const resolved = {};
   if (unknown.length) {
     try {
       const rows = await api.send('/api/resolve', 'POST', { names: unknown });
-      rows.forEach((r) => { resolved[r.name] = r; });
+      Object.assign(resolved, byAsked(rows));
     } catch { /* leave them unresolved */ }
   }
   // A declared name is linked where it is declared and nowhere else: in the
@@ -1121,7 +1156,8 @@ async function markRefs(doc, path) {
   // the table half is added to the vocabulary when no model already claims it.
   for (const [name, target] of Object.entries({ ...known })) {
     const dot = name.indexOf('.');
-    if (dot < 0) continue;
+    // A versioned model's `orders.v2` has no table half, and `v2` is no name.
+    if (dot < 0 || (target.kind && target.kind !== 'source')) continue;
     const table = name.slice(dot + 1);
     if (!known[table]) known[table] = target;
   }
@@ -7899,7 +7935,7 @@ async function loadArtifact(kind, id) {
     return;
   }
   const node = S.node && S.node.id === id ? S.node : null;
-  const name = node ? node.name : id.split('.').pop();
+  const name = nameOfId(id, node);
 
   let info;
   try { info = await api.get('/api/compiled?kind=' + kind + '&id=' + encodeURIComponent(id)); }
@@ -8169,6 +8205,24 @@ function sendToTerminal(cmd, run) {
 }
 
 // ---------------------------------------------------------------- catalog --
+/* What the Catalog says beside a versioned model's name: where it stands
+   against the latest, which a ref() naming no version reaches (0104). Null
+   for any other node. Pure, so the harness reads it without a DOM. */
+function versionChip(n) {
+  if (!n || !n.version) return null;
+  const base = n.name.endsWith('.v' + n.version) ? n.name.slice(0, -(n.version.length + 2)) : n.name;
+  const latest = n.latest_version ? 'v' + n.latest_version : '';
+  const reaches = latest ? `ref('${base}') reaches ${latest}` : `the manifest names no latest version of ${base}`;
+  if (n.version_state === 'latest') {
+    return { text: 'latest', title: `The latest version of ${base}: ${reaches}.` };
+  }
+  const state = n.version_state === 'old' ? 'old' : n.version_state === 'prerelease' ? 'prerelease' : 'version';
+  return {
+    text: latest ? `${state} · latest ${latest}` : state,
+    title: `${reaches}; ref('${base}', v=${n.version}) reaches this one.`,
+  };
+}
+
 function renderCatalog(n) {
   S.node = n;
   const host = $('#catalog');
@@ -8193,6 +8247,12 @@ function renderCatalog(n) {
     off.textContent = 'disabled';
     off.title = 'enabled: false, so dbt leaves this model out of the graph';
     title.appendChild(off);
+  }
+  const version = versionChip(n);
+  if (version) {
+    const chip = Object.assign(document.createElement('span'), { className: 'verchip', textContent: version.text });
+    chip.title = version.title;
+    title.appendChild(chip);
   }
   if (n.file) {
     const open = document.createElement('button');
@@ -8574,6 +8634,18 @@ function jobsExample(kind, keys, defaults) {
    moving the focus, for as long as the Catalog still shows it. */
 const jobsNode = () => (S.jobsFor && S.node && S.node.id === S.jobsFor ? S.jobsFor : S.focus);
 
+/* A node's name as its box shows it: the node's own when the page holds it,
+   else read off its unique_id, where what follows the package is the name of
+   a model, `orders.v2` for a version, or of a source, `crm.customers`. A
+   generic test's id ends in a hash, which is left off. Pure. */
+function nameOfId(id, node) {
+  if (node && node.id === id && node.name) return node.name;
+  const parts = String(id || '').split('.');
+  if (parts.length < 3) return parts[parts.length - 1] || '';
+  if (parts[0] === 'test' && parts.length > 3) return parts[2];
+  return parts.slice(2).join('.');
+}
+
 /* `look` asks the server to look at the job files first, and read them again
    if one moved: done when the tab is opened, never on a click inside it. Only
    the first request of a run carries it. A Catalog chip's step is taken here,
@@ -8635,7 +8707,7 @@ function jobsWhen(job) {
 function paintJobsHead() {
   const head = $('#jobs-head');
   const bar = jel('div', 'jobs-bar');
-  const about = jel('span', 'jobs-about', (jobsNode() || '').split('.').pop());
+  const about = jel('span', 'jobs-about', nameOfId(jobsNode(), S.node));
   bar.append(about, jel('div', 'grow'));
   if (S.reports && S.reports.jobs) {
     const coverage = jel('button', 'btn sm', 'Coverage in Reports');
@@ -8719,7 +8791,7 @@ function renderJobs(body, view, id, reveal) {
     out.push(jel('div', 'jobs-warn', `${view.refused} file${view.refused === 1 ? '' : 's'} could not be read and may hold more: Sources… says which.`));
   }
   if (!view.groups.length) {
-    out.push(jel('div', 'compiled-empty', `No step of the jobs read acts on ${id.split('.').pop()}.`));
+    out.push(jel('div', 'compiled-empty', `No step of the jobs read acts on ${nameOfId(id, S.node)}.`));
   }
   for (const g of jobsByStart(view.groups)) out.push(jobsCard(g));
   if (view.maybe && view.maybe.length) {

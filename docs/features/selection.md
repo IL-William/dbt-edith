@@ -37,11 +37,13 @@ understood, and the box rewrites itself to the part that was resolved.
 | | |
 | --- | --- |
 | `my_model` | by name, or by a dotted path into the fqn (`shop.staging.*`, `staging.my_model`) |
+| `my_model.v2`, `my_model_v2` | one version of a versioned model, whose name alone takes every version |
 | `+my_model`, `my_model+` | everything upstream, everything downstream |
 | `2+my_model`, `my_model+3` | as far as that many levels |
 | `@my_model` | it, its children, and every parent of those children |
 | `tag:`, `path:`, `file:`, `package:` | the usual dbt methods, with `*` and `?` wildcards |
 | `resource_type:`, `source:`, `exposure:` | by kind, by source, by exposure |
+| `version:` | `latest`, `prerelease`, `old` or `none`, against a model's versions |
 | `config.materialized:` | and `config.schema`, `config.database`, `config.alias`, `config.incremental_strategy`, `config.unique_key` |
 | `--selector name` | a named selector from `selectors.yml`, [below](#named-selectors) |
 
@@ -155,8 +157,11 @@ joining whenever one of its parents is selected, and
 object per node, with dbt's key names (`unique_id`, `resource_type`,
 `original_file_path`, `fqn`, `materialized`, `tags` and the rest) and
 `depends_on.nodes`, the node's parents, which is what tells the edges between
-two sets. `--output compact` prints a tab-separated line per node under a
-header instead, a fraction of the JSON's size: see
+two sets. Its `name` is the one `--output name` prints, `crm.customers` for a
+source and `orders.v2` for a version, where dbt's own JSON writes the name
+bare, and a version carries the manifest's `version` and `latest_version`.
+`--output compact` prints a tab-separated line per node under a header
+instead, a fraction of the JSON's size: see
 [command-line.md](command-line.md#a-selection).
 
 stdout carries the answer and nothing else. stderr says what it is worth: the

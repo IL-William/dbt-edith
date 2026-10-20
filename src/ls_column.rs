@@ -1105,6 +1105,23 @@ mod tests {
     }
 
     #[test]
+    fn a_versioned_model_is_named_by_its_version_or_reaches_its_latest() {
+        let version = |v: i64| {
+            json!({ "name": "totals", "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/totals_v{v}.sql"), "fqn": ["shop", "totals", format!("v{v}")],
+                "version": v, "latest_version": 2, "columns": { "id": { "name": "id" } } })
+        };
+        let raw: RawManifest = serde_json::from_value(json!({
+            "nodes": { "model.shop.totals.v1": version(1), "model.shop.totals.v2": version(2) },
+        }))
+        .unwrap();
+        let g = Graph::build(raw, Path::new("manifest.json"), 0, 0);
+        let at = |spec: &str| focus(&g, spec).map(|c| g.nodes[c.node as usize].id.clone());
+        assert_eq!(at("totals.v1.id").unwrap(), "model.shop.totals.v1");
+        assert_eq!(at("totals.id").unwrap(), "model.shop.totals.v2", "the latest, as a ref() reaches it");
+    }
+
+    #[test]
     fn no_walk_asked_says_how_to_ask() {
         let (out, err, _) = run_on(&graph(), &ask("orders.order_amount", 0, 0), Output::Name);
         assert_eq!(out, "orders.order_amount\n");

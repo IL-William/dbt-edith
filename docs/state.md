@@ -865,7 +865,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 19 and 20).
+items 18 and 19).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -921,6 +921,19 @@ manifest with dbt's own rule and listed in a Warnings section, each at its
 line and with why; the editor marks each key in a gutter of its own. dbt-core
 agrees path for path on Jaffle Shop, Shopify and a Jaffle Shop copy given
 such paths, in `scripts/compare_with_dbt.py`, and Fusion on that copy.
+
+Each version of a model is named apart (0104, 1.41.0). The graph read a
+node's `name` alone, which every version of a model shares, so v1 and v2 drew
+two boxes of one name and the Catalog copied a name `--select` reads as every
+version. A version is now named as `dbt ls` names it, `orders.v2`, on its box,
+in the Catalog, search, `--select`, `--describe` and `--column`, and the
+Catalog says beside it whether it is the latest, an old one or a prerelease.
+The bare name reaches the latest, as a `ref()` naming no version does, in the
+editor's links and on the command line; `ref('orders', v=1)` links to v1. The
+implicit method matches a version by `orders.v2` or `orders_v2` and never by
+`v2` alone, and `version:` is read. A Jaffle Shop copy with a model in three
+versions agrees with `dbt ls` on each, where main disagreed on every
+selection that reached one.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -1727,9 +1740,9 @@ quarter of the JSON's bytes. Not driven on the VM.
       true of every caller of `sendToTerminal` today, and nothing is built
       here to wait for the prompt.
     - **Also left.**
-      - A name shared by two packages selects both, and a versioned model's
-        name selects every version. The command then needs a narrower
-        selector, checked against dbt.
+      - A name shared by two packages selects both. The command then needs
+        a narrower selector, checked against dbt. A version's own name,
+        `orders.v2`, already selects it alone (0104).
       - A disabled node is selected by nothing, so its button is greyed,
         with the reason as its tooltip in place of what a click types. It is
         greyed through `aria-disabled` rather than `disabled`, which some
@@ -1881,12 +1894,7 @@ quarter of the JSON's bytes. Not driven on the VM.
       field, and the left of the lineage's find bar (0081).
     - **Possible answers:** open it on a click too, or place it where it
       covers no tool.
-15. **Model versions.** The graph does not read a model's `version`, so v1
-    and v2 of a model show the same name, and the Catalog copies that name.
-    Pasted into `--select`, it picks every version; in `ref()`, the latest.
-    Reading `version` and `latest_version` from the manifest would name each
-    one apart, as dbt's `name.v1` does.
-16. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+15. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -1897,14 +1905,14 @@ quarter of the JSON's bytes. Not driven on the VM.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-17. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+16. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-18. **A typed command and an empty entry of `PATH`.** Every command the page
+17. **A typed command and an empty entry of `PATH`.** Every command the page
     types runs in the project folder, in the terminal's shell: the update,
     Run again, Recompile, `dbt ls`, the selector command, collin's install
     line, and the freshness badge's `dbt parse`, which presses Enter itself
@@ -1926,20 +1934,20 @@ quarter of the JSON's bytes. Not driven on the VM.
     - **Not known.** Whether Git Bash turns an empty entry of the Windows
       `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
 
-Items 19 to 21 are the rest of the plan chosen with the panels' mechanism
+Items 18 to 20 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-19. **A model's lineage seen whole.** The dock's lineage of the model in
+18. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-20. **git seen whole.** The side-by-side diff and the commit in a panel, the
+19. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-21. **Boxes without their text far out, then the cap again.** Past 3 000
+20. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-22. **An MCP server over these answers.** A stdio JSON-RPC facade on
+21. **An MCP server over these answers.** A stdio JSON-RPC facade on
     `--describe`, `--overview`, `--select` and `--column`, which needs no
     dependency. Deferred because a skill that calls the command costs fewer
     tokens than tools described in every context, and nobody has asked yet
@@ -2031,7 +2039,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 21);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 20);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;

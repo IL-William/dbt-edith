@@ -225,6 +225,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a keyboard shortcut, or change what Cmd/Ctrl + F does | [0030](docs/decisions/0030-find-is-the-apps-own.md), [0037](docs/decisions/0037-option-alone-cannot-carry-a-shortcut.md) |
 | change what find on the lineage matches, the order it steps in, or where it moves the view | [0081](docs/decisions/0081-find-on-the-lineage-centres-the-box-it-finds.md), [0035](docs/decisions/0035-tests-fold-past-five.md) |
 | resolve a named selector, or change which tests a criterion brings along | [0032](docs/decisions/0032-named-selectors-from-the-manifest.md) |
+| change what a node is named, or what a versioned model's bare name reaches | [0104](docs/decisions/0104-a-versioned-model-is-named-by-its-version.md), [0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md) |
 | change how a selection or the lineage resolves, or touch the Jaffle Shop or Shopify fixture | [0033](docs/decisions/0033-selections-are-checked-against-dbt.md), [0056](docs/decisions/0056-selections-and-the-lineage-are-checked-on-shopify-too.md) |
 | iterate a HashMap into anything a route returns, or change the order nodes are numbered in | [0055](docs/decisions/0055-the-same-manifest-answers-the-same-on-every-start.md) |
 | change what `--select` prints or exits with, or add a flag that answers without serving | [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
