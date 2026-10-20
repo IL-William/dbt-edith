@@ -1,6 +1,6 @@
 # 0063. Jobs are read from folders you name, outside the project
 
-Date: 2026-10-11 · Status: accepted, amended by 0077 · Amends 0017 and 0018
+Date: 2026-10-11 · Status: accepted, amended by 0077 and 0103 · Amends 0017 and 0018
 
 **Trigger:** read before changing which job files are read, what leaves them,
 or how a job's dbt command is resolved.
@@ -32,6 +32,9 @@ the profile, and 0014 forbids building the reader around one client's layout.
 - **A YAML tree, written here** (`src/yaml.rs`). Anchors and `<<` merges are
   common in jobs-as-code files, and a line scanner like 0018's cannot follow
   them. A file is read whole or refused whole, at a line, with a fixed message.
+  *Amended by [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md):
+  `dbt_project.yml` is read with it too, and each value knows the line of its
+  key, or of the alias that names it.*
 - **The engine resolves, never dbt** (0024, 0032). Each step is resolved with
   the verb's resource types and tests in the universe. A flag this tool does
   not know, a `state:` method, or a template makes the step unresolved, with

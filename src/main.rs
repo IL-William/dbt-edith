@@ -32,6 +32,7 @@ mod selectors;
 mod settings;
 mod sidecar;
 mod tour;
+mod unused_paths;
 mod update;
 mod venv;
 mod yaml;

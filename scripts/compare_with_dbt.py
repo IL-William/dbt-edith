@@ -26,6 +26,11 @@ On Jaffle Shop, the invented jobs under tests/fixtures/jobs/ are read too,
 from outside the project copy, and each step's selection is compared with the
 `dbt ls` the step's button types (0063).
 
+On each project, the config paths of dbt_project.yml that apply to no
+resource, which dbt warns of as it parses, are compared with what the
+Warnings report works out without a run (0103). A third copy, of Jaffle Shop
+with such paths added, makes that comparison say something.
+
 The lineage of every model is compared with --every-model, which CI passes.
 Without it, a project with more than 40 models has every eighth compared,
 which keeps this step of check.sh to about twenty seconds here.
@@ -113,6 +118,73 @@ JAFFLE_INCREMENTAL = {
                                  "select * from {{ ref('orders') }}\n",
 }
 
+# Config paths that apply to nothing, and some that apply, written below the
+# fixture's last block, so the first lines continue `jaffle_shop:` under
+# `models:` (0103). Each is a shape dbt reads its own way: a folder under its
+# config's name, a quoted number, an anchor merged, an empty mapping, a key
+# holding nothing, a package not installed, a block with no resource of its
+# kind, and `tests:`, which dbt reads as `data_tests:`. The disabled model
+# keeps `snapshots:` used, as any disabled node does every block; the
+# exposure and the unit test alone keep their own paths used, whose fqns are
+# not a folder's. No config is written without its `+`: Fusion refuses one.
+JAFFLE_UNUSED = """    stagign: &shared
+      +materialized: view
+    legacy:
+      +enabled: false
+    '2023':
+      +tags: ['y']
+    marts:
+      core:
+        +tags: ['deep']
+    meta:
+      +tags: ['m']
+    empty: {}
+    merged:
+      <<: *shared
+  other_package:
+    +tags: ['pkg']
+
+snapshots:
+  +tags: ['snap']
+
+sources:
+  jaffle_shop:
+    shop:
+      +tags: ['src']
+    shopp:
+      +tags: ['typo']
+
+exposures:
+  jaffle_shop:
+    reports:
+      +tags: ['x']
+    weekly:
+      +tags: ['x']
+
+unit_tests:
+  +enabled: true
+  jaffle_shop:
+    staging:
+      +tags: ['x']
+
+tests:
+  jaffle_shop:
+    staging:
+      +tags: ['t']
+    nowhere:
+      +tags: ['t']
+"""
+JAFFLE_UNUSED_FILES = {
+    "models/legacy/old_orders.sql": "select 1 as id\n",
+    "models/2023/orders_2023.sql": "select 1 as id\n",
+    "models/shop.yml": "version: 2\nsources:\n  - name: shop\n    tables:\n      - name: raw_things\n"
+                       "exposures:\n  - name: weekly\n    type: dashboard\n    owner:\n      name: someone\n"
+                       "      email: someone@example.com\n    depends_on:\n      - ref('orders')\n",
+    "models/staging/units.yml": "unit_tests:\n  - name: orders_keep_their_id\n    model: stg_orders\n    given:\n"
+                                "      - input: ref('raw_orders')\n        rows:\n          - {id: 1, user_id: 1}\n"
+                                "    expect:\n      rows:\n        - {order_id: 1}\n",
+}
+
 # What Shopify has and Jaffle Shop does not: a package under a root project,
 # sources, ephemeral and incremental models, folders three deep, and disabled
 # models and sources. `*` and the fqn prefixes are what showed that the fqn
@@ -197,6 +269,22 @@ def edith_binary():
     sys.exit("cargo build named no dbt-edith executable")
 
 
+def unused_in_output(text):
+    """The paths dbt lists under its UnusedResourceConfigPath warning, as
+    dbt-core and Fusion both print it: one `- path` line each."""
+    lines = re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines()
+    for i, line in enumerate(lines):
+        if "unused configuration paths:" in line:
+            found = []
+            for item in lines[i + 1:]:
+                m = re.match(r"\s*- (\S+)\s*$", item)
+                if not m:
+                    break
+                found.append(m.group(1))
+            return found
+    return []
+
+
 class Unavailable(Exception):
     """A project that cannot be had here: no git, or no network."""
 
@@ -278,6 +366,13 @@ class Edith:
             return None, body["error"]
         return sorted(body.get("names", [])), None
 
+    def unused_paths(self):
+        """The Warnings report's paths, as dbt writes them in its warning."""
+        body = self.get("/api/reports/warnings")
+        if "unused" not in body:
+            return [f"error: {body}"]
+        return sorted(".".join([u["block"]] + u["chain"]) for u in body["unused"])
+
     def lineage(self, unique_id, up, down, tests):
         """The names the canvas draws around a model, or a reason it cannot say."""
         query = {"id": unique_id, "up": up, "down": down, "tests": int(tests), "max": 3000}
@@ -314,9 +409,16 @@ class Dbt:
     process, or through the executable DBT names."""
 
     def __init__(self, project, work):
-        self.runner = None if EXECUTABLE else dbtRunner()
+        # The paths dbt's parse warned of, heard through its events, which
+        # reach a callback whatever the log level.
+        self.unused = []
+        self.runner = None if EXECUTABLE else dbtRunner(callbacks=[self.heard])
         self.where = ["--project-dir", str(project), "--profiles-dir", str(project)]
         self.common = self.where + ["--target-path", str(work / "target"), "--log-path", str(work / "logs")]
+
+    def heard(self, event):
+        if event.info.name == "UnusedResourceConfigPath":
+            self.unused = list(event.data.unused_config_paths)
 
     def version(self):
         if EXECUTABLE:
@@ -350,10 +452,16 @@ class Dbt:
     def parse(self):
         """Parses, then hands the manifest to every later call in this process.
         Each `ls` would parse again otherwise: a second for Shopify, against a
-        tenth of one, and the lineage asks a thousand times."""
+        tenth of one, and the lineage asks a thousand times. An executable
+        parses unquiet, since its warning is read off what it prints."""
+        if EXECUTABLE:
+            run = subprocess.run([EXECUTABLE, "parse"] + self.common, capture_output=True, text=True)
+            if run.returncode != 0:
+                raise RuntimeError(f"dbt parse failed: {(run.stdout + run.stderr)[-2000:]}")
+            self.unused = unused_in_output(run.stdout + run.stderr)
+            return
         manifest = self.invoke(["parse"])
-        if not EXECUTABLE:
-            self.runner = dbtRunner(manifest=manifest)
+        self.runner = dbtRunner(manifest=manifest)
 
     def ls(self, args):
         return sorted(self.invoke(["ls", "--output", "name"] + args) or [])
@@ -462,6 +570,7 @@ def compare_project(tally, binary, project, work, expressions, every_model, jobs
     edith = Edith(binary, project, manifest, work)
     asked = agreed = 0
     try:
+        tally.check("config paths dbt_project.yml applies to nothing", edith.unused_paths(), sorted(oracle.unused))
         listed = edith.get("/api/selectors")["selectors"]
         if sorted(s["name"] for s in listed) != recorded:
             tally.fail("/api/selectors lists what the manifest records")
@@ -524,6 +633,31 @@ def compare_project(tally, binary, project, work, expressions, every_model, jobs
     return tally.compared - before
 
 
+def compare_unused(tally, binary, work):
+    """Jaffle Shop with JAFFLE_UNUSED added: dbt's warning, path for path."""
+    project = work / "project"
+    shutil.copytree(JAFFLE, project)
+    for name, text in JAFFLE_UNUSED_FILES.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(text)
+    written = (project / "dbt_project.yml").read_text()
+    tops = [line.split(":")[0] for line in written.splitlines() if re.match(r"[A-Za-z]", line)]
+    if tops[-1] != "models" or not written.endswith("\n"):
+        tally.fail("the fixture's dbt_project.yml no longer ends with its models: block")
+        return
+    (project / "dbt_project.yml").write_text(written + JAFFLE_UNUSED)
+    oracle = Dbt(project, work)
+    oracle.parse()
+    # Fewer than this means dbt read the fixture otherwise, not that all agrees.
+    if len(oracle.unused) < 8:
+        tally.fail(f"dbt warned of {len(oracle.unused)} unused config paths, not the 8 or more JAFFLE_UNUSED has")
+    edith = Edith(binary, project, work / "target" / "manifest.json", work)
+    try:
+        tally.check("config paths dbt_project.yml applies to nothing", edith.unused_paths(), sorted(oracle.unused))
+    finally:
+        edith.stop()
+
+
 def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
@@ -545,6 +679,9 @@ def main():
         # Fewer than this means the fixture or the listing broke, not that all is well.
         if compared < len(EXPRESSIONS) + 10:
             tally.fail(f"only {compared} answers compared on Jaffle Shop")
+
+        print("== Jaffle Shop, with config paths that apply to nothing")
+        compare_unused(tally, binary, work / "unused")
 
         print(f"== Shopify {SHOPIFY_TAG} ({SHOPIFY_COMMIT[:7]})")
         try:

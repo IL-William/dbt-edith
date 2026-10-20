@@ -51,8 +51,9 @@ check('says the key even with nothing to show', reportsButtonTitle([], [], 'Ctrl
 // Dimmed rather than hidden, the button has to say what will fill it (0075).
 check('  and then what will fill them',
       reportsButtonTitle(reportsSections({}), [], '⌥⌘R').split('\n').slice(1),
-      ['Nothing yet: the last dbt run fills one, from target/run_results.json, collin\'s report another, '
-        + 'and the job coverage once the Jobs tab has a source, which is added here.']);
+      ['Nothing yet: the last dbt run fills one, from target/run_results.json, a config path of dbt_project.yml '
+        + 'that applies to nothing another, collin\'s report another, and the job coverage once the Jobs tab has a source, '
+        + 'which is added here.']);
 check('and leaves out a section with nothing in it yet',
       reportsButtonTitle(reportsSections({ collin: { at: 5 } }), [], '⌥⌘R'), 'Reports on the whole project: collin\'s report (⌥⌘R)');
 
@@ -130,6 +131,56 @@ check('the coverage\'s in the warning colour', three[2].tone, 'warn');
 check('several at once: their counts alone', reportsChipTexts(three), ['3', '3', '+2']);
 check('one alone: its words', reportsChipTexts([three[2]]), ['2 more unscheduled']);
 check('none: nothing', reportsChipTexts([]), []);
+
+print('\n--- the warnings (0103) ---');
+check('listed while a config path applies to nothing, after the run', keys(reportsSections({ collin: { at: 5 }, warnings: { at: 4, manifest_at: 3, unused: 2 }, run: { at: 9 } })),
+      ['run', 'warnings', 'collin', 'jobs']);
+check('in dbt\'s colour', reportsSections({ warnings: { at: 4, manifest_at: 3, unused: 2 } })[0].tool, 'dbt');
+var warned = warningsBadge({ at: 3, manifest_at: 4, unused: 3 }, 0, { state: 'fresh' });
+check('news from the first look, since dbt says it only as it parses', [warned.text, warned.short], ['3 unused paths', '3']);
+check('...in full in the tooltip', warned.title,
+      'dbt_project.yml has 3 config paths that apply to no resource, which dbt warns of as it parses.');
+check('one path', warningsBadge({ unused: 1 }, 0).text, '1 unused path');
+check('no news once seen', warningsBadge({ unused: 3 }, 3), null);
+var rose = warningsBadge({ unused: 5 }, 3);
+check('then only what was added', [rose.text, rose.short], ['2 unused paths', '+2']);
+check('...said against the last look', rose.title,
+      'dbt_project.yml has 5 config paths that apply to no resource, 2 more than when you last looked, which dbt warns of as it parses.');
+check('none in the index, none on the button', warningsBadge(undefined, 0), null);
+check('none while dbt_project.yml is newer than the manifest', warningsBadge({ at: 5, manifest_at: 4, unused: 3 }, 0, { state: 'fresh' }), null);
+check('none while other files are', warningsBadge({ at: 3, manifest_at: 4, unused: 3 }, 0, { state: 'edited' }), null);
+check('...the manifest behind, the marks grey too', [warningsStale({ at: 5, manifest_at: 4 }, null), warningsStale({ at: 3, manifest_at: 4 }, { state: 'stale' }),
+      warningsStale({ at: 3, manifest_at: 4 }, { state: 'fresh' }), warningsStale(null, { state: 'stale' })], [true, true, false, false]);
+check('...and when the freshness answer names a newer manifest than the index was read with, before the index arrives',
+      [warningsStale({ at: 3, manifest_at: 4 }, { state: 'fresh', manifest_at: 6 }), warningsStale({ at: 3, manifest_at: 4 }, { state: 'fresh', manifest_at: 4 }),
+      warningsStale({ at: 3, manifest_at: 4 }, { state: 'missing' })], [true, false, true]);
+check('...so no chip in that gap', warningsBadge({ at: 3, manifest_at: 4, unused: 3 }, 0, { state: 'fresh', manifest_at: 6 }), null);
+check('a file that could not be read is listed with no chip', [keys(reportsSections({ warnings: { at: 3, manifest_at: 4, unused: 0, unread: true } })),
+      warningsBadge({ at: 3, manifest_at: 4, unused: 0, unread: true }, 0, { state: 'fresh' })], [['warnings', 'jobs'], null]);
+var four = reportsNews(badge, runBadge(run, 0), more, warned);
+check('the warnings\' news after the run\'s, in the sections\' order', four.map(function (n) { return n.key + ':' + (n.tone || n.tool); }),
+      ['run:bad', 'warnings:dbt', 'collin:collin', 'jobs:warn']);
+check('the panel opens on them when the run has none', reportsDefaultSection(reportsSections({ warnings: { unused: 3 }, collin: { at: 5 } }),
+      reportsNews(badge, null, null, warned), ''), 'warnings');
+check('stale once dbt_project.yml is saved again', reportsStale({ at: 4, manifest_at: 3, unused: 3 }, { warnings: { at: 6, manifest_at: 3, unused: 3 } }, 'warnings'), true);
+check('or a new manifest is read', reportsStale({ at: 4, manifest_at: 3, unused: 3 }, { warnings: { at: 4, manifest_at: 8, unused: 3 } }, 'warnings'), true);
+check('or the last path is gone', reportsStale({ at: 4, manifest_at: 3, unused: 3 }, {}, 'warnings'), true);
+
+function notes(r, fresh) { return warningsNotes(r, fresh).map(function (n) { return n.tone + ': ' + n.text; }); }
+check('nothing to distrust, nothing said', notes({ at: 3, manifest_at: 4, unused: [{}], checked: 9 }, { state: 'fresh' }), []);
+check('a project file newer than the manifest',
+      notes({ at: 5, manifest_at: 4, unused: [{}], checked: 9 }, { state: 'fresh' }),
+      ['warn: dbt_project.yml was saved after the manifest was written: a key added or moved since may name '
+        + 'nodes the manifest does not hold yet, until dbt parses again.']);
+check('other files newer than the manifest',
+      notes({ at: 3, manifest_at: 4, unused: [{}], checked: 9 }, { state: 'edited' }),
+      ['warn: Files changed since the manifest was written: a folder added since is in no manifest, '
+        + 'so its key reads unused until dbt parses again.']);
+check('a file that could not be read, and nothing else',
+      notes({ at: 5, manifest_at: 4, unused: [], checked: 0, unread: { line: 12, message: 'a tag such as !!str' } }, { state: 'edited' }),
+      ['warn: dbt_project.yml could not be read here, at line 12: a tag such as !!str. Nothing is worked out from it until it can be.']);
+check('every path used', notes({ at: 3, manifest_at: 4, unused: [], checked: 9 }, null),
+      [': Each of the 9 config paths of dbt_project.yml applies to a resource.']);
 
 print('\n--- commands that build nothing ---');
 ['compile', 'show', 'docs generate', 'run-operation'].forEach(function (c) {

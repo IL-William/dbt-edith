@@ -105,6 +105,9 @@ const S = {
   featuresBusy: false,        // Snowflake's switch was flipped and the server has not answered yet
   runSeen: undefined,         // the last run's file time when its section was last shown, for the news
   jobsSeen: undefined,        // how many models no scheduled job ran when the coverage was last shown
+  warningsSeen: undefined,    // how many config paths applied to nothing when the warnings were last shown
+  unusedKey: undefined,       // the warnings' index entry the gutter of dbt_project.yml was last marked for
+  unused: null,               // { key, report }: /api/reports/warnings as read for that entry
   jobsReveal: null,           // { id, key, index } the step a Catalog chip asked the Jobs tab to show, { id, maybe } for the unresolved
   jobsFor: null,              // the node a Catalog chip opened the Jobs tab on, when not the focus, while the Catalog shows it
   catJobs: new Map(),         // per node, the jobs answer its Catalog section drew, until the jobs may have changed
@@ -821,6 +824,79 @@ function missingKeyNote(t) {
   return `No such folder under ${roots}. dbt reports a config path that matches nothing as a warning when it parses the project.`;
 }
 
+/* A config path that applies to no resource, as dbt writes it in its warning:
+   the block by its own name, `data_tests` for one written `tests:`, then the
+   keys below it (0103). */
+function unusedSays(u) {
+  return [u.block].concat(u.chain).join('.');
+}
+
+/* The kind of node each block's paths are used by. */
+const BLOCK_NODES = {
+  models: 'model', seeds: 'seed', snapshots: 'snapshot', sources: 'source', data_tests: 'data test',
+  unit_tests: 'unit test', metrics: 'metric', semantic_models: 'semantic model', saved_queries: 'saved query',
+  exposures: 'exposure', functions: 'function',
+};
+
+/* Why dbt warns of a path: no fqn of its kind begins with its keys, nor the
+   fqn of any disabled node, which dbt counts for every block. A key named
+   after a config is most likely that config without its `+`, which dbt reads
+   as a folder (0039). */
+function unusedWhy(u) {
+  const kind = BLOCK_NODES[u.block] || 'node';
+  const notes = [u.chain.length
+    ? `No ${kind}'s fqn begins with these keys, nor any disabled node's, so what the last one sets applies to nothing.`
+    : `The manifest holds no ${kind} and no disabled node, so what ${u.written || u.block}: sets applies to nothing.`];
+  const last = u.chain[u.chain.length - 1];
+  if (last && DBT_CONFIGS.has(last)) notes.push(`Without its +, dbt reads ${last}: as a folder; written +${last}:, it is the config.`);
+  if (u.written) notes.push(`dbt reads ${u.written}: as ${u.block}:, its name since dbt 1.8.`);
+  return notes.join(' ');
+}
+
+/* The line, from 0, that each path's last key sits on in the editor's text,
+   found by its chain of keys rather than taken from the file the server read:
+   an edit not saved yet moves a key, and a key taken out takes its mark with
+   it. A path the text does not spell out, merged in from an anchor, is put
+   at the server's line only when `saved` says the text is the file's. Nothing
+   under a list item is a path. */
+function unusedLines(text, unused, saved) {
+  const nodes = yamlOutline(text);
+  const at = new Map();
+  nodes.forEach((n, i) => {
+    const labels = [];
+    for (let j = i; j >= 0; j = nodes[j].parent) {
+      const p = nodes[j].parent;
+      if (p >= 0 && nodes[p].kind === 'seq') return;
+      labels.unshift(nodes[j].label);
+    }
+    const key = JSON.stringify(labels);
+    if (!at.has(key)) at.set(key, n.line);
+  });
+  return (unused || []).flatMap((u) => {
+    const line = at.get(JSON.stringify([u.written || u.block].concat(u.chain)));
+    if (line !== undefined) return [{ line, u }];
+    return saved && u.line > 0 ? [{ line: u.line - 1, u }] : [];
+  });
+}
+
+/* The paths grouped by the line they are marked on, since a gutter keeps one
+   mark per line: an alias and a path inside what it names, or two keys of one
+   flow mapping, share a line and so a mark, whose card names each of them. */
+function unusedByLine(marks) {
+  const by = new Map();
+  for (const { line, u } of marks) {
+    if (!by.has(line)) by.set(line, []);
+    by.get(line).push(u);
+  }
+  return Array.from(by, ([line, paths]) => ({ line, paths }));
+}
+
+/* What the pointer is on, for the hover card: the grey of a stale mark is in it,
+   as the card then carries a note a fresh one does not. */
+function unusedHoverKey(paths, stale) {
+  return 'unused:' + (stale ? 'stale:' : '') + paths.map(unusedSays).join(' | ');
+}
+
 /* Calls inside Jinja, as the dotted name before a `(`: `hub`, `automate_dv.hub`.
    Only inside a block, since outside one `coalesce(` is SQL, and a project
    macro named like a SQL function would otherwise link every use of it.
@@ -1174,6 +1250,59 @@ const dirKey = (k) => JSON.stringify([k.block, k.chain]);
 /* Where the server looked, which is what a key that found nothing can say. */
 const dirRoots = (roots, block) => (roots || {})[block] || [];
 
+/* The keys of dbt_project.yml that dbt would warn of, each marked in a gutter
+   of its own (0103). The paths are the server's, read from the file on disk
+   against the manifest, and read again only when the Reports index says their
+   count or their files moved; the lines are the text's own (unusedLines). The
+   gutter is there only while the file in front has a mark. */
+async function markUnusedPaths(doc, path) {
+  if (path !== 'dbt_project.yml') return;
+  const scan = doc.unusedScan = (doc.unusedScan || 0) + 1;
+  const entry = S.reports && S.reports.warnings;
+  const key = JSON.stringify(entry || null);
+  let report = null;
+  if (entry) {
+    if (S.unused && S.unused.key === key) report = S.unused.report;
+    else {
+      try { report = await api.get('/api/reports/warnings'); }
+      catch { return; }
+      S.unused = { key, report };
+    }
+  }
+  if (doc.unusedScan !== scan) return;
+  const f = S.open.get(path);
+  const marks = report ? unusedLines(doc.getValue(), report.unused, !!f && !f.dirty) : [];
+  // Grey while the manifest is behind, as the chip is gone then.
+  const stale = warningsStale(report, S.fresh);
+  // A card still waiting to open would measure the element this removes.
+  if (hoverKey.startsWith('unused:')) closeHoverCard();
+  doc.clearGutter('cfgwarn');
+  for (const { line, paths } of unusedByLine(marks)) {
+    // The hover card says why (wireHovers), so no native tooltip says it again.
+    const el = jel('div', 'cfgwarn-mark' + (stale ? ' stale' : ''), '!');
+    el.unusedPaths = paths;
+    el.unusedStale = stale;
+    el.setAttribute('aria-label', `dbt warns that ${paths.map(unusedSays).join(' and ')} ${paths.length > 1 ? 'apply' : 'applies'} to no resource`);
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); openReports('warnings'); });
+    doc.setGutterMarker(line, 'cfgwarn', el);
+  }
+  doc.unusedMarks = marks.length;
+  if (S.cm && S.cm.getDoc() === doc) paintWarnGutter();
+}
+
+function remarkUnusedPaths() {
+  const f = S.open.get('dbt_project.yml');
+  if (f && f.doc) markUnusedPaths(f.doc, 'dbt_project.yml');
+}
+
+/* The gutter of those marks, shown beside the line numbers only for a file
+   that has one, so every other file keeps its width. */
+function paintWarnGutter() {
+  const want = !!S.cm.getDoc().unusedMarks;
+  if (want === (S.cm.getOption('gutters') || []).includes('cfgwarn')) return;
+  S.cm.setOption('gutters', want ? ['cfgwarn', 'CodeMirror-linenumbers'] : []);
+}
+
 function wireRefClicks(cm) {
   cm.getWrapperElement().addEventListener('mousedown', (e) => {
     if (e.button !== 0 || e.altKey) return;              // alt-click still places the cursor
@@ -1342,7 +1471,13 @@ async function openConfigPath(t) {
 function wireHovers(cm) {
   const wrap = cm.getWrapperElement();
   wrap.addEventListener('mousemove', (e) => {
-    const kind = linkUnder(e.target.classList);
+    const cl = e.target.classList;
+    if (cl && cl.contains('cfgwarn-mark')) {
+      const mark = e.target;
+      return hoverEnter(unusedHoverKey(mark.unusedPaths, mark.unusedStale), () => mark.getBoundingClientRect(),
+        (el) => fillUnusedCard(el, mark.unusedPaths, mark.unusedStale));
+    }
+    const kind = linkUnder(cl);
     if (!kind) return hoverLeave();
     const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, 'window');
     const at = () => cm.charCoords(pos, 'window');
@@ -2018,6 +2153,7 @@ function markLinks(doc, path) {
   markVars(doc);
   markMacros(doc, path);
   markProjectDirs(doc, path);
+  markUnusedPaths(doc, path);
 }
 
 /* A diff tab holds no CodeMirror Doc: it owns a MergeView of HEAD against the
@@ -2198,6 +2334,7 @@ function activate(path, focusLineage = true, keepPanel = false) {
     $('#diff-host').classList.add('hidden');
     $('#editor-host').style.display = '';
     S.cm.swapDoc(f.doc);
+    paintWarnGutter();
     S.cm.refresh();
   }
   renderTabs();
@@ -3459,8 +3596,14 @@ async function refreshFreshness() {
     const key = JSON.stringify(f);
     if (key === S.freshKey) return;
     S.freshKey = key;
+    const was = S.fresh && S.fresh.state;
     S.fresh = f;
     paintFreshness(f);
+    // The warnings wait for a manifest that matches the project (0103).
+    if (was !== f.state) {
+      paintReportsButton();
+      remarkUnusedPaths();
+    }
     // A run that writes a report moves this stamp, and the index is read again
     // only then. The first answer is only noted: boot has just read it.
     if (S.reportsAt !== undefined && f.reports_at !== S.reportsAt) loadReportsIndex();
@@ -9124,14 +9267,17 @@ function escapePanel() {
    loadReportsIndex, which web/tests/reports.js slices. */
 
 /* The sections there are, in the order they are worked through, each only
-   while it has something to show: collin's report once a run wrote one, the
-   coverage of the jobs once a source is named. Before that the coverage is
+   while it has something to show: the warnings once a config path applies to
+   nothing, collin's report once a run wrote one, the coverage of the jobs
+   once a source is named. Before that the coverage is
    listed all the same, `empty`, as the place a source is added from (0070),
    but it is not opened on for itself, and the button stays dimmed (0075). */
 function reportsSections(index) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
       title: 'What the last dbt command ran and how each node ended, from target/run_results.json' },
+    { key: 'warnings', label: 'Warnings', tool: 'dbt',
+      title: 'What dbt warns of as it parses, worked out without a run: config paths of dbt_project.yml that apply to no resource' },
     { key: 'collin', label: "collin's report", tool: 'collin',
       title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
@@ -9142,12 +9288,13 @@ function reportsSections(index) {
 }
 
 /* What is new in the reports since each was last shown, in the sections'
-   order: what runBadge says of the last run, collinBadge of collin's,
-   jobsBadge of the coverage. The button carries it, and nothing opens by
-   itself (0059). */
-function reportsNews(collin, run, jobs) {
+   order: what runBadge says of the last run, warningsBadge of the warnings,
+   collinBadge of collin's, jobsBadge of the coverage. The button carries it,
+   and nothing opens by itself (0059). */
+function reportsNews(collin, run, jobs, warnings) {
   const news = [];
   if (run) news.push({ key: 'run', tone: 'bad', text: run.text, short: run.short, title: run.title });
+  if (warnings) news.push({ key: 'warnings', tool: 'dbt', text: warnings.text, short: warnings.short, title: warnings.title });
   if (collin) news.push({ key: 'collin', tool: 'collin', text: collin.text, short: collin.short, title: collin.title });
   if (jobs) news.push({ key: 'jobs', tone: 'warn', text: jobs.text, short: jobs.short, title: jobs.title });
   return news;
@@ -9171,6 +9318,53 @@ function jobsBadge(jobs, seen) {
   return { text: `${n} more unscheduled`, short: `+${n}`,
     title: `${n} more model${n > 1 ? 's' : ''}, seed${n > 1 ? 's' : ''} or snapshot${n > 1 ? 's' : ''} than when you last looked `
       + `${n > 1 ? 'are' : 'is'} run by no scheduled job: ${jobs.never} in no job, ${jobs.unscheduled || 0} only in unscheduled jobs.` };
+}
+
+/* Whether the manifest is behind what the warnings hold it against:
+   dbt_project.yml saved after it, or other files, by the freshness badge.
+   A folder added since the last parse is in no manifest, so a key naming it
+   reads unused though dbt will not warn of it (0103). Just after a parse the
+   freshness answer is ahead of the index: a manifest newer than the one the
+   index was read with makes the warnings behind until the index is read again. */
+function warningsStale(w, fresh) {
+  return !!w && (w.at > w.manifest_at || !!(fresh && ((fresh.state && fresh.state !== 'fresh') || fresh.manifest_at > w.manifest_at)));
+}
+
+/* How many config paths of dbt_project.yml apply to nothing beyond what the
+   section showed last (0103). A page starts from none seen: dbt says this
+   only once, as it parses, so a path stays news until the section has been
+   looked at, and a count that falls lowers what was seen with it. None while
+   the manifest is behind: the count may be the manifest's age, not the
+   project's. */
+function warningsBadge(w, seen, fresh) {
+  if (!w || typeof w.unused !== 'number' || w.unused <= (seen || 0) || warningsStale(w, fresh)) return null;
+  const n = w.unused - (seen || 0);
+  const more = seen ? `, ${n} more than when you last looked` : '';
+  return { text: `${n} unused path${n > 1 ? 's' : ''}`, short: seen ? `+${n}` : String(n),
+    title: `dbt_project.yml has ${w.unused} config path${w.unused > 1 ? 's' : ''} that apply to no resource${more}, `
+      + 'which dbt warns of as it parses.' };
+}
+
+/* What a reader has to know before trusting the warnings: a file that could
+   not be read, then a manifest older than what it is held against, since a
+   folder added after the last parse is in no manifest and its key reads
+   unused until dbt parses again (0103). `fresh` is the freshness badge's. */
+function warningsNotes(r, fresh) {
+  const out = [];
+  if (r.unread) {
+    out.push({ tone: 'warn', text: `dbt_project.yml could not be read here, at line ${r.unread.line}: ${r.unread.message}. `
+      + 'Nothing is worked out from it until it can be.' });
+  } else if (r.at > r.manifest_at) {
+    out.push({ tone: 'warn', text: 'dbt_project.yml was saved after the manifest was written: a key added or moved since may name '
+      + 'nodes the manifest does not hold yet, until dbt parses again.' });
+  } else if (fresh && fresh.state && fresh.state !== 'fresh') {
+    out.push({ tone: 'warn', text: 'Files changed since the manifest was written: a folder added since is in no manifest, '
+      + 'so its key reads unused until dbt parses again.' });
+  }
+  if (!r.unread && !(r.unused || []).length) {
+    out.push({ tone: '', text: `Each of the ${r.checked} config paths of dbt_project.yml applies to a resource.` });
+  }
+  return out;
 }
 
 /* What the last run leaves on the button until its section is shown: its
@@ -9291,8 +9485,9 @@ function reportsDefaultSection(sections, news, last) {
    rather than hidden (0075). */
 function reportsButtonTitle(sections, news, key) {
   const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
-  const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, collin\'s report another, '
-    + 'and the job coverage once the Jobs tab has a source, which is added here.';
+  const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, a config path of dbt_project.yml '
+    + 'that applies to nothing another, collin\'s report another, and the job coverage once the Jobs tab has a source, '
+    + 'which is added here.';
   return [`Reports on the whole project${names ? ': ' + names : ''} (${key})`]
     .concat(names ? (news || []).map((n) => n.title) : [none]).join('\n');
 }
@@ -9308,6 +9503,13 @@ function reportsStale(shown, index, key) {
 async function loadReportsIndex() {
   try { S.reports = await api.get('/api/reports'); }
   catch { return; }   // what the button said still stands: a poll never interrupts
+  // The gutter of dbt_project.yml follows the same count, read again only
+  // when it moved (0103).
+  const unused = JSON.stringify(S.reports.warnings || null);
+  if (unused !== S.unusedKey) {
+    S.unusedKey = unused;
+    remarkUnusedPaths();
+  }
   paintReportsButton();
   if (S.dock === 'jobs') paintJobsHead();
   if (panelOpen('reports')) paintReportsNav();
@@ -9330,9 +9532,14 @@ function reportsNow() {
     const now = jobs.never + (jobs.unscheduled || 0);
     if (S.jobsSeen === undefined || now < S.jobsSeen) S.jobsSeen = now;
   }
+  const warnings = S.reports && S.reports.warnings;
+  const unused = warnings ? warnings.unused : 0;
+  if (S.warningsSeen === undefined) S.warningsSeen = 0;
+  if (unused < S.warningsSeen) S.warningsSeen = unused;
   const run = runBadge(S.reports && S.reports.run, S.runSeen);
   return { sections: reportsSections(S.reports),
-    news: reportsNews(collinBadge(S.collin, S.collinSeen), run, jobsBadge(jobs, S.jobsSeen)) };
+    news: reportsNews(collinBadge(S.collin, S.collinSeen), run, jobsBadge(jobs, S.jobsSeen),
+      warningsBadge(warnings, S.warningsSeen, S.fresh)) };
 }
 
 function paintReportsButton() {
@@ -9476,7 +9683,7 @@ async function showReportSection(key) {
   }
   const shown = (S.reports && S.reports[key]) || null;
   const again = () => showReportSection(key);
-  const drawn = key === 'run' ? await runSection(again)
+  const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again) : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
@@ -9485,6 +9692,7 @@ async function showReportSection(key) {
   restoreReportPlace(view, S.reportsPlace[key]);
   if (key === 'collin' && S.collin) S.collinSeen = S.collin.run || 0;
   if (key === 'run' && shown) S.runSeen = shown.at;
+  if (key === 'warnings') S.warningsSeen = shown ? shown.unused : 0;
   // The coverage is counted by the index only once the jobs were read, which
   // this section has just done: read again, so the counts it shows are seen.
   if (key === 'jobs') {
@@ -9577,6 +9785,51 @@ function openRunEntry(e) {
     return;
   }
   openFromReport(e.id, { dock: e.kind === 'model' || e.kind === 'snapshot' ? 'run' : '' });
+}
+
+async function warningsSection(again) {
+  const about = 'dbt_project.yml against the manifest, as dbt warns when it parses, without a run';
+  let r;
+  try { r = await api.get('/api/reports/warnings'); }
+  catch (e) { return [reportHead({ title: 'Warnings', tool: 'dbt', about, again }), jel('div', 'compiled-empty', e.message)]; }
+  const body = jel('div', 'reportbody');
+  for (const n of warningsNotes(r, S.fresh)) {
+    const p = jel('p', 'runnote', n.text);
+    if (n.tone) p.dataset.tone = n.tone;
+    body.append(p);
+  }
+  if (r.unused.length) {
+    const d = jel('details', 'reportfinding');
+    d.open = true;
+    d.dataset.tone = 'warn';
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', 'Config paths that apply to no resource'), jel('span', 'rcount', String(r.unused.length)));
+    const lever = jel('div', 'rlever', 'dbt applies a key of dbt_project.yml to every node whose fqn its keys begin, and no fqn '
+      + 'begins these: what they set reaches nothing. dbt says so once, as it parses (UnusedResourceConfigPath); this is the '
+      + 'same list, read off the manifest.');
+    const ul = jel('ul', 'rentries');
+    for (const u of r.unused) ul.append(unusedRow(u));
+    d.append(sum, lever, ul);
+    body.append(d);
+  }
+  return [reportHead({ title: 'Warnings', tool: 'dbt', about, again }), body];
+}
+
+/* One path: its line opens dbt_project.yml there, then the path as dbt
+   writes it, then why. The line is the open text's when the file is open,
+   which an edit not saved yet may have moved. */
+function unusedRow(u) {
+  const li = jel('li', 'unusedrow');
+  const at = jel('a', 'filelink', `dbt_project.yml:${u.line}`);
+  at.title = 'Open dbt_project.yml at this key';
+  at.addEventListener('click', (e) => {
+    e.preventDefault();
+    const f = S.open.get('dbt_project.yml');
+    const found = f && f.doc ? unusedLines(f.doc.getValue(), [u], !f.dirty)[0] : null;
+    openProjectAt(found ? found.line : u.line - 1, 0);
+  });
+  li.append(at, jel('span', 'rrel', ' ' + unusedSays(u)), jel('div', 'rwhy', unusedWhy(u)));
+  return li;
 }
 
 async function collinSection(again) {
@@ -10301,6 +10554,25 @@ function fillDirCard(el, t) {
       textContent: 'also under: ' + t.also.join(', '),
     }));
   }
+}
+
+/* The keys dbt would warn of on a line, from its mark in the gutter (0103),
+   each with its reason. As for a folder with nothing under it, a manifest
+   behind the project makes a folder added since the last parse the likelier
+   reason. */
+function fillUnusedCard(el, paths, stale) {
+  const many = paths.length > 1;
+  hoverCardBody(el, { title: paths.map(unusedSays).join(', '),
+    sub: `${many ? 'apply' : 'applies'} to no resource, dbt warns as it parses` });
+  for (const u of paths) {
+    el.append(Object.assign(document.createElement('div'), { className: 'hc-desc muted',
+      textContent: many ? `${unusedSays(u)}: ${unusedWhy(u)}` : unusedWhy(u) }));
+  }
+  if (stale) {
+    el.append(Object.assign(document.createElement('div'), { className: 'hc-note warn',
+      textContent: 'The manifest no longer matches the project: a folder added since the last parse is the likelier reason.' }));
+  }
+  el.append(Object.assign(document.createElement('div'), { className: 'hc-counts', textContent: 'click: the Warnings report' }));
 }
 
 function fillMacroCard(el, t) {
@@ -12995,7 +13267,8 @@ function tourSteps(c) {
       ? `Reports on the whole project: ${c.reports.join(', ')}. A chip on the button says what is new in them `
         + `since you last looked, and ${reportsKey} opens them from anywhere.`
       : 'Reports on the whole project, dimmed until one has something to show: the last dbt run, from '
-        + '`run_results.json`, collin\'s findings, and the job coverage once the Jobs tab has a source. Meanwhile '
+        + '`run_results.json`, the config paths of dbt_project.yml that apply to nothing, collin\'s findings, and '
+        + 'the job coverage once the Jobs tab has a source. Meanwhile '
         + `it opens on the coverage, where a source is added, and ${reportsKey} opens it from anywhere.` });
   steps.push({ key: 'terminal', target: '#dock [data-dock=terminal]', title: 'Terminal',
     text: 'A shell in the project folder, where dbt runs: this page never runs it. A button that offers a dbt '

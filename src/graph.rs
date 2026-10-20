@@ -538,6 +538,10 @@ pub struct Graph {
     /// Unit tests by id: their name and YAML file. Not nodes: no lineage,
     /// selection or search answers with one, only the last run names them.
     pub unit_tests: BTreeMap<String, UnitTest>,
+    /// Every fqn of the manifest, disabled nodes and the kinds left out of
+    /// `nodes` included, which is what a path of `dbt_project.yml` is used by
+    /// (0103). Shared, since a merged cache copies the graph.
+    pub config_fqns: std::sync::Arc<crate::unused_paths::Fqns>,
 }
 
 #[derive(Clone)]
@@ -603,6 +607,7 @@ impl Node {
 
 impl Graph {
     pub fn build(raw: RawManifest, manifest_path: &std::path::Path, mtime: u64, load_ms: u128) -> Graph {
+        let config_fqns = std::sync::Arc::new(crate::unused_paths::Fqns::of(&raw));
         let unit_tests = raw
             .unit_tests
             .into_iter()
@@ -946,6 +951,7 @@ impl Graph {
             catalog_mtime: 0,
             cll: None,
             unit_tests,
+            config_fqns,
         }
     }
 

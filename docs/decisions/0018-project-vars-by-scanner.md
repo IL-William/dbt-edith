@@ -1,6 +1,6 @@
 # 0018. The `vars:` block is read by a scanner, not a YAML parser
 
-Date: 2026-09-18 · Status: accepted, amended by 0063 and 0076
+Date: 2026-09-18 · Status: accepted, amended by 0063, 0076 and 0103
 
 **Trigger:** read before reading a `.yml` file from the server, or before
 reaching for a YAML parser.
@@ -50,3 +50,8 @@ tree by `src/yaml.rs`. The `vars:` block keeps its scanner.*
 the scanner reads `dispatch:` too, a sequence of mappings, for the order
 dbt's own macros are searched in. A shape it does not know makes the whole
 block unreadable.*
+
+*Amended by [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md):
+the config blocks of `dbt_project.yml`, whose anchors and merges dbt
+follows, are read into a tree by `src/yaml.rs` to find the paths that apply
+to nothing. `vars:` and `dispatch:` keep the scanner.*

@@ -4,7 +4,9 @@
 //! and `<<` merges, and a value a job inherits through one is as much the
 //! job's as a value written in place, which a line scanner such as
 //! `src/project.rs` cannot follow (0018). Everything else here is the everyday
-//! block YAML those files and Airflow's are written in.
+//! block YAML those files and Airflow's are written in. The config blocks of
+//! `dbt_project.yml` are read with it too, since dbt follows their anchors
+//! and merges as well (0103).
 //!
 //! Invariant: a document is read whole or refused whole, at a line, with a
 //! fixed message that carries no text from the file. A construct this reader
@@ -35,6 +37,13 @@ pub struct Node {
     /// Where the value starts, from 1. A value reached through an alias keeps
     /// the line of its anchor.
     pub line: usize,
+    /// The line of the key the value is written under, from 1, or 0 under
+    /// none: the document, a list item. A mapping starts on the line after its
+    /// key. A value an alias names, and everything inside it, list items
+    /// too, take the line that names the alias: the keys are written at the
+    /// anchor, under another path, and the alias is where a reader looks for
+    /// this one.
+    pub key_line: usize,
     pub value: Value,
 }
 
@@ -74,6 +83,17 @@ impl Node {
 
     pub fn is_null(&self) -> bool {
         self.value == Value::Null
+    }
+
+    /// Gives this value and everything inside it the line of the alias that
+    /// names it.
+    fn named_at(&mut self, line: usize) {
+        self.key_line = line;
+        match &mut self.value {
+            Value::Seq(items) => items.iter_mut().for_each(|n| n.named_at(line)),
+            Value::Map(entries) => entries.iter_mut().for_each(|(_, n)| n.named_at(line)),
+            _ => {}
+        }
     }
 
     fn size(&self) -> usize {
@@ -173,7 +193,7 @@ impl Parser {
                 let indent = l.indent;
                 self.block(indent, -1)?
             }
-            _ => Node { line: 1, value: Value::Null },
+            _ => Node { line: 1, key_line: 0, value: Value::Null },
         };
         self.skip_blank();
         if let Some(l) = self.lines.get(self.at) {
@@ -238,7 +258,8 @@ impl Parser {
                 return fail(no, "a line that is neither a key nor a list item");
             };
             self.at += 1;
-            let value = self.inline(rest, no, indent as isize, true)?;
+            let mut value = self.inline(rest, no, indent as isize, true)?;
+            value.key_line = no;
             if key == "<<" {
                 merges.push((no, value));
                 continue;
@@ -267,7 +288,7 @@ impl Parser {
                 }
             }
         }
-        Ok(Node { line: first, value: Value::Map(entries) })
+        Ok(Node { line: first, key_line: 0, value: Value::Map(entries) })
     }
 
     fn seq(&mut self, indent: usize) -> R<Node> {
@@ -321,7 +342,7 @@ impl Parser {
                 items.push(self.inline(rest, no, indent as isize, false)?);
             }
         }
-        Ok(Node { line: first, value: Value::Seq(items) })
+        Ok(Node { line: first, key_line: 0, value: Value::Seq(items) })
     }
 
     /// A value written after `key:`, after `- `, or alone on its line, which
@@ -339,13 +360,14 @@ impl Parser {
             if !tail.is_empty() && !tail.starts_with('#') {
                 return fail(no, "text after an alias");
             }
-            let Some(found) = self.anchors.get(&r[..end]).cloned() else {
+            let Some(mut found) = self.anchors.get(&r[..end]).cloned() else {
                 return fail(no, "an alias to an anchor not defined above it");
             };
             self.values += found.size();
             if self.values > MAX_VALUES {
                 return fail(no, "aliases that expand past the size this reader takes");
             }
+            found.named_at(no);
             return Ok(found);
         } else if s.starts_with('!') {
             return fail(no, "a tag such as !!str");
@@ -364,7 +386,7 @@ impl Parser {
                     if !rest.is_empty() && !rest.starts_with('#') {
                         return fail(no, "text after a closing quote");
                     }
-                    Node { line: no, value: Value::Str(value) }
+                    Node { line: no, key_line: 0, value: Value::Str(value) }
                 }
                 Err(message) => return fail(no, message),
             }
@@ -399,7 +421,7 @@ impl Parser {
                 let indent = l.indent;
                 self.seq(indent)
             }
-            _ => Ok(Node { line: no, value: Value::Null }),
+            _ => Ok(Node { line: no, key_line: 0, value: Value::Null }),
         }
     }
 
@@ -438,7 +460,7 @@ impl Parser {
             "" | "~" | "null" | "Null" | "NULL" => Value::Null,
             _ => Value::Str(out),
         };
-        Ok(Node { line: no, value })
+        Ok(Node { line: no, key_line: 0, value })
     }
 
     fn block_scalar(&mut self, header: &str, no: usize, parent: isize) -> R<Node> {
@@ -511,11 +533,14 @@ impl Parser {
                 _ => out.push('\n'),
             }
         }
-        Ok(Node { line: no, value: Value::Str(out) })
+        Ok(Node { line: no, key_line: 0, value: Value::Str(out) })
     }
 
     fn flow(&mut self, s: &str, no: usize, parent: isize) -> R<Node> {
         let mut text = s.to_string();
+        // Where each line the collection runs on to starts in `text`, so a
+        // key keeps its own line.
+        let mut breaks: Vec<(usize, usize)> = Vec::new();
         let end = loop {
             match flow_end(&text) {
                 Ok(Some(end)) => break end,
@@ -529,6 +554,7 @@ impl Parser {
                         return fail(l.no, TAB);
                     }
                     text.push(' ');
+                    breaks.push((text.len(), l.no));
                     text.push_str(strip_quoted_comment(l.text.trim()));
                     self.at += 1;
                 }
@@ -539,7 +565,7 @@ impl Parser {
         if !rest.is_empty() && !rest.starts_with('#') {
             return fail(no, "text after a closing ] or }");
         }
-        let mut f = Flow { s: &text[..end], i: 0, line: no, anchors: &self.anchors, values: &mut self.values };
+        let mut f = Flow { s: &text[..end], i: 0, line: no, breaks: &breaks, anchors: &self.anchors, values: &mut self.values };
         let node = f.value().or_else(|m| fail(no, m))?;
         self.values += 1;
         Ok(node)
@@ -732,7 +758,9 @@ fn flow_end(s: &str) -> Result<Option<usize>, &'static str> {
 struct Flow<'s> {
     s: &'s str,
     i: usize,
+    /// The line the collection opens on, and where each later one starts.
     line: usize,
+    breaks: &'s [(usize, usize)],
     /// `<<: [*a, *b]` is how a merge of several is usually written.
     anchors: &'s HashMap<String, Node>,
     values: &'s mut usize,
@@ -748,9 +776,13 @@ impl Flow<'_> {
         }
     }
 
+    fn line_here(&self) -> usize {
+        self.breaks.iter().rev().find(|(at, _)| *at <= self.i).map_or(self.line, |(_, no)| *no)
+    }
+
     fn value(&mut self) -> Result<Node, &'static str> {
         self.ws();
-        let line = self.line;
+        let line = self.line_here();
         match self.peek() {
             Some('[') => {
                 self.i += 1;
@@ -773,7 +805,7 @@ impl Flow<'_> {
                         _ => return Err("a missing comma inside [ ]"),
                     }
                 }
-                Ok(Node { line, value: Value::Seq(items) })
+                Ok(Node { line, key_line: 0, value: Value::Seq(items) })
             }
             Some('{') => {
                 self.i += 1;
@@ -784,6 +816,7 @@ impl Flow<'_> {
                         self.i += 1;
                         break;
                     }
+                    let key_line = self.line_here();
                     let key = match self.scalar()? {
                         Value::Str(k) => k,
                         _ => return Err("a key with no name inside { }"),
@@ -794,10 +827,11 @@ impl Flow<'_> {
                     }
                     self.i += 1;
                     self.ws();
-                    let value = match self.peek() {
-                        Some(',') | Some('}') => Node { line, value: Value::Null },
+                    let mut value = match self.peek() {
+                        Some(',') | Some('}') => Node { line, key_line: 0, value: Value::Null },
                         _ => self.value()?,
                     };
+                    value.key_line = key_line;
                     if entries.iter().any(|(k, _)| *k == key) {
                         return Err("a key that appears twice in one mapping");
                     }
@@ -812,22 +846,23 @@ impl Flow<'_> {
                         _ => return Err("a missing comma inside { }"),
                     }
                 }
-                Ok(Node { line, value: Value::Map(entries) })
+                Ok(Node { line, key_line: 0, value: Value::Map(entries) })
             }
             Some('*') => {
                 let rest = &self.s[self.i + 1..];
                 let end = rest.find(|c: char| c.is_whitespace() || matches!(c, ',' | ']' | '}')).unwrap_or(rest.len());
-                let found = self.anchors.get(&rest[..end]).cloned().ok_or("an alias to an anchor not defined above it")?;
+                let mut found = self.anchors.get(&rest[..end]).cloned().ok_or("an alias to an anchor not defined above it")?;
                 self.i += 1 + end;
                 *self.values += found.size();
                 if *self.values > MAX_VALUES {
                     return Err("aliases that expand past the size this reader takes");
                 }
+                found.named_at(line);
                 Ok(found)
             }
             _ => {
                 *self.values += 1;
-                Ok(Node { line, value: self.scalar()? })
+                Ok(Node { line, key_line: 0, value: self.scalar()? })
             }
         }
     }
@@ -1032,6 +1067,19 @@ mod tests {
         for text in [flow, block] {
             assert_eq!(refused(&text).message, "aliases that expand past the size this reader takes");
         }
+    }
+
+    /// A key is found at the line it is written on, or, reached through an
+    /// alias, at the line that names the alias, however deep it sits (0103).
+    #[test]
+    fn each_value_knows_the_line_of_its_key() {
+        let doc = ok("models:\n  shop:\n\n    with_anchor: &anc\n      inner:\n        +tags: [x]\n    aliased: *anc\n    merged:\n      <<: *anc\n      own: 1\n    flow: {a: 1,\n      b: {c: 2}}\n");
+        let at = |path: &str| doc.at_path(path).unwrap().key_line;
+        assert_eq!((at("models"), at("models.shop"), at("models.shop.with_anchor"), at("models.shop.with_anchor.inner")), (1, 2, 4, 5));
+        assert_eq!((at("models.shop.aliased"), at("models.shop.aliased.inner"), at("models.shop.aliased.inner.+tags")), (7, 7, 7));
+        assert_eq!((at("models.shop.merged.inner"), at("models.shop.merged.own")), (9, 10));
+        assert_eq!((at("models.shop.flow.a"), at("models.shop.flow.b"), at("models.shop.flow.b.c")), (11, 12, 12));
+        assert_eq!(doc.key_line, 0, "the document is under no key");
     }
 
     #[test]
