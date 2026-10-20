@@ -47,12 +47,14 @@ pub const UPDATE: &str = "cargo install --locked --force --git https://github.co
 /// The oldest collin this dbt-edith accepts. Raised when dbt-edith relies on
 /// something a later collin does: 0.8.0 is the first to list its roots, the
 /// columns a literal sets, which the `generated` badge is read from (0096).
+/// 0.10.0 reads a seed's columns from its CSV header, in the project it is
+/// given, which dbt-edith names only for a manifest lying in it (0109).
 /// collin's numbers restarted at 0.1.0 with its repository, so the old
 /// repository's 0.2.0, which writes no roots, is older again (0047). Every
 /// collin since answers `--version`, as that 0.2.0 did and nothing before it,
 /// so one that does not is older too (0043, 0098).
-pub const WANTS: (u32, u32, u32) = (0, 8, 0);
-pub const WANTS_TEXT: &str = "0.8.0";
+pub const WANTS: (u32, u32, u32) = (0, 10, 0);
+pub const WANTS_TEXT: &str = "0.10.0";
 
 /// Where collin's coverage report goes. Not `column_lineage*.json`: discovery
 /// would offer it as a cache.
@@ -390,6 +392,24 @@ pub struct Status {
 
 fn is_zero_u64(n: &u64) -> bool {
     *n == 0
+}
+
+/// Whether the manifest lies under the project folder, which is when collin
+/// may be given `--project` (0109). collin reads a seed's CSV header from the
+/// project it is named, so naming one beside another project's manifest would
+/// give that manifest this folder's seeds; a manifest named alone is read with
+/// what its own `root_path` says (0046, 0047). Both paths are resolved first,
+/// links followed, so a link out of the folder is outside it and a link to
+/// the folder is the folder, and compared a component at a time, so
+/// `/work/jaffle_shop_2` is not under `/work/jaffle_shop`. A path that cannot
+/// be resolved, a manifest not there, is not under: collin is then run
+/// without the flag and says so itself.
+pub fn manifest_in_project(manifest: &Path, project: &Path) -> bool {
+    let real = |p: &Path| p.canonicalize().map(crate::files::plain);
+    match (real(manifest), real(project)) {
+        (Ok(manifest), Ok(project)) => manifest.starts_with(project),
+        _ => false,
+    }
 }
 
 /// The files one run reads and writes.
@@ -793,9 +813,12 @@ pub fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<St
     if job.indirect {
         command.arg("--indirect");
     }
+    // Only when the manifest is the project's: collin reads the project's
+    // seeds for it, and another project's manifest must not get them (0109).
+    if manifest_in_project(&job.manifest, &job.project) {
+        command.arg("--project").arg(&job.project);
+    }
     let mut child = command
-        .arg("--project")
-        .arg(&job.project)
         .arg("--manifest")
         .arg(&job.manifest)
         .arg("--catalog")
@@ -1137,7 +1160,7 @@ pub(crate) mod tests {
         let beside = [pinned("0.4.0")];
         assert!(update_offered(Some(&default), &beside, old), "a version installed beside a default that runs changes nothing");
         assert!(!update_offered(Some(&beside[0].bin), &beside, Some("0.4.0")), "nor is an older one picked to compare");
-        assert!(!update_offered(Some(&default), &beside, Some("0.8.0 (86decf5)")), "a default at WANTS is not");
+        assert!(!update_offered(Some(&default), &beside, Some("0.10.0 (86decf5)")), "a default at WANTS is not");
         assert!(!update_offered(None, &[], None), "no collin running has nothing to update");
     }
 
@@ -1353,13 +1376,112 @@ pub(crate) mod tests {
         assert!(reports.get(&path).is_none());
     }
 
+    /// Runs `run` on a collin that writes what it was handed into `seen`, and
+    /// gives those arguments, one per line.
+    fn handed(d: &Path, project: &Path, manifest: &Path) -> Vec<String> {
+        let bin = d.join("recorder");
+        executable(
+            &bin,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$(dirname \"$0\")/seen\"\n\
+             while [ $# -gt 0 ]; do [ \"$1\" = --out ] && echo '{}' > \"$2\"; shift; done\n",
+        );
+        let mut job = job(d, bin);
+        job.project = project.to_path_buf();
+        job.manifest = manifest.to_path_buf();
+        run(&job, Duration::from_secs(10)).unwrap();
+        std::fs::read_to_string(d.join("seen")).unwrap().lines().map(str::to_string).collect()
+    }
+
+    /// A project folder `name` under `d` with its manifest in `target/`.
+    fn project_with_manifest(d: &Path, name: &str) -> (PathBuf, PathBuf) {
+        let project = d.join(name);
+        std::fs::create_dir_all(project.join("target")).unwrap();
+        let manifest = project.join("target").join("manifest.json");
+        std::fs::write(&manifest, "{}").unwrap();
+        (project, manifest)
+    }
+
+    fn names_project(args: &[String], project: &Path) -> bool {
+        args.windows(2).any(|w| w[0] == "--project" && Path::new(&w[1]) == project)
+    }
+
+    #[test]
+    fn project_is_passed_for_a_manifest_under_it() {
+        let d = dir("project-under");
+        let (project, manifest) = project_with_manifest(&d, "jaffle_shop");
+        let args = handed(&d, &project, &manifest);
+        assert!(names_project(&args, &project), "collin reads the project's seeds for its own manifest: {args:?}");
+        assert!(args.iter().any(|a| a == "--manifest"), "{args:?}");
+        assert!(manifest_in_project(&manifest, &project));
+    }
+
+    #[test]
+    fn project_is_not_passed_for_a_manifest_elsewhere() {
+        let d = dir("project-elsewhere");
+        let (project, _) = project_with_manifest(&d, "jaffle_shop");
+        let (_, other) = project_with_manifest(&d, "jaffle_shop_analytics");
+        let args = handed(&d, &project, &other);
+        assert!(!args.iter().any(|a| a == "--project"), "another project's manifest gets none of this folder's seeds: {args:?}");
+        assert!(args.iter().any(|a| a == "--manifest"), "{args:?}");
+        assert!(!manifest_in_project(&other, &project));
+    }
+
+    #[test]
+    fn a_sibling_sharing_the_name_prefix_is_not_under_the_project() {
+        let d = dir("project-sibling");
+        let (project, _) = project_with_manifest(&d, "jaffle_shop");
+        let (_, sibling) = project_with_manifest(&d, "jaffle_shop_2");
+        assert!(sibling.to_string_lossy().starts_with(&*project.to_string_lossy()), "a string prefix would say it is");
+        assert!(!manifest_in_project(&sibling, &project));
+        assert!(!handed(&d, &project, &sibling).iter().any(|a| a == "--project"));
+    }
+
+    #[test]
+    fn project_follows_links_on_both_sides() {
+        let d = dir("project-links");
+        let (project, inside) = project_with_manifest(&d, "jaffle_shop");
+        let (_, outside) = project_with_manifest(&d, "jaffle_shop_analytics");
+
+        // A manifest that is a link out of the project is the other one's.
+        let out_link = project.join("target").join("elsewhere.json");
+        std::os::unix::fs::symlink(&outside, &out_link).unwrap();
+        assert!(!manifest_in_project(&out_link, &project));
+        assert!(!handed(&d, &project, &out_link).iter().any(|a| a == "--project"));
+
+        // A link inside the project to a manifest inside it is the project's.
+        let in_link = project.join("copy.json");
+        std::os::unix::fs::symlink(&inside, &in_link).unwrap();
+        assert!(manifest_in_project(&in_link, &project));
+        assert!(names_project(&handed(&d, &project, &in_link), &project));
+
+        // The project reached by a link is the same folder, and so is a path
+        // that climbs out of the project and back into it.
+        let by_link = d.join("shop");
+        std::os::unix::fs::symlink(&project, &by_link).unwrap();
+        assert!(manifest_in_project(&inside, &by_link));
+        assert!(manifest_in_project(&by_link.join("target").join("manifest.json"), &project));
+        let climbing = project.join("target").join("..").join("..").join("jaffle_shop").join("target").join("manifest.json");
+        assert!(manifest_in_project(&climbing, &project));
+        let escaping = project.join("..").join("jaffle_shop_analytics").join("target").join("manifest.json");
+        assert!(!manifest_in_project(&escaping, &project));
+    }
+
+    #[test]
+    fn a_manifest_that_is_not_there_is_not_under_the_project() {
+        let d = dir("project-missing");
+        let (project, _) = project_with_manifest(&d, "jaffle_shop");
+        assert!(!manifest_in_project(&project.join("target").join("nothing.json"), &project));
+        assert!(!manifest_in_project(&project.join("target").join("manifest.json"), &d.join("no_such_project")));
+    }
+
     #[test]
     fn a_version_is_read_from_collin_and_compared_with_the_one_wanted() {
         let d = dir("version");
-        let new = fake(&d, "echo 'collin 0.8.0 (86decf5)'");
-        assert_eq!(version(&new).as_deref(), Some("0.8.0 (86decf5)"));
+        let new = fake(&d, "echo 'collin 0.10.0 (86decf5)'");
+        assert_eq!(version(&new).as_deref(), Some("0.10.0 (86decf5)"));
         assert!(!outdated(version(&new).as_deref()));
         assert!(outdated(Some("0.7.0 (77cbad3)")), "0.7.0 lists no roots, which the generated badge needs");
+        assert!(outdated(Some("0.9.0 (c37bff0)")), "0.9.0 reads no seed's header (0109)");
         assert!(
             outdated(Some("0.2.0 (a142ee5)")),
             "the 0.2.0 of collin's old repository writes no roots either: once WANTS passed 0.2.0 it is offered the update (0047)"
@@ -1370,6 +1492,7 @@ pub(crate) mod tests {
         assert!(outdated(None));
         assert!(outdated(Some("0.0.9")));
         assert!(!outdated(Some("0.10.0 (abc)")), "compared as numbers, not text");
+        assert!(outdated(Some("0.9.9")), "0.9.9 is below 0.10.0, which a text comparison gets wrong");
         assert!(!outdated(Some("1.0.0")));
         assert!(outdated(Some("garbage")));
         assert_eq!(semver(WANTS_TEXT), Some(WANTS), "the menu names the version the comparison uses");

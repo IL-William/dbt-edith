@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.43.1 - 2026-10-20
+
+- Offer "Update collin" to a collin older than 0.10.0, the first to read a
+  seed's columns from the header of its CSV (0109).
+- Give collin the project folder only when the manifest in use lies under it,
+  so a manifest named from another project's folder gets none of that
+  folder's seeds (0109).
+
 ## 1.43.0 - 2026-10-20
 
 - Dress the app for Halloween behind a pumpkin in the top bar, orange and black,

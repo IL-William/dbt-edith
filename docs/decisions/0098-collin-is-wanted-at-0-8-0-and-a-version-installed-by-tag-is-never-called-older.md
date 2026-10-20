@@ -1,6 +1,6 @@
 # 0098. collin is wanted at 0.8.0, and a version installed by tag is never called older
 
-Date: 2026-10-19 · Status: accepted · Amends 0043 and 0047 · Follows 0096
+Date: 2026-10-19 · Status: accepted, amended by 0109 · Amends 0043 and 0047 · Follows 0096
 
 **Trigger:** read before changing `WANTS` in `src/collin_run.rs`, or what the
 menu and the Columns tab say about the version of the collin that runs.
@@ -20,6 +20,8 @@ updates it" over a menu that has no update line for such a version (0060).
 - **dbt-edith wants collin 0.8.0 or later**, the first to list its roots. The
   old repository's 0.2.0 compares below it again, as 0047 said it would, and
   gets "Update collin".
+  *Amended by [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md):
+  collin 0.10.0 or later, the first to read a seed's header.*
 - **A version installed by its tag is never called older**, whatever its
   number: neither the update line nor the Columns tab speaks of an update
   while one runs. It was picked on purpose, the menu says it runs and lists

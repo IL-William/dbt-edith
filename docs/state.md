@@ -569,7 +569,8 @@ button and the menu, and Catalog > Columns gives the share of its edges matched
 by column name rather than read from the SQL, or, from collin's report, how
 many models it read the SQL of, with the reason over each model it could not
 read. The menu offers "Update collin" to a collin that gives no version, or one
-below 0.8.0, the first to list the columns a literal sets (0096, 0098), and
+below 0.10.0, which reads a seed's header and lists the columns a literal sets
+(0096, 0098, 0109), and
 "Check for a newer collin" to any other (0043); a version installed by its tag
 gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
@@ -1512,7 +1513,8 @@ legend lists every badge drawn, with or without a role on an edge. Checked
 against main on Jaffle Shop and on Shopify v1.10.0, and in headless Chrome on
 a Jaffle copy that sets literals and reads tables no node owns. Since
 1.34.1, `collin_run::WANTS` asks for collin 0.8.0, so "Update collin" brings
-roots to an older one.
+roots to an older one, and since 1.43.1 for 0.10.0, which reads a seed's
+header (0109).
 
 A column from a manifest alone (0099, 1.35.0): `--run-collin` runs collin over
 the manifest before `--column` answers, and `--compiled DIR` hands it the

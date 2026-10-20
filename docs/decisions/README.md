@@ -112,6 +112,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0106](0106-the-halloween-look-is-kept-per-machine-and-never-exported.md) | The Halloween look is kept per machine and never exported | changing the Halloween look, its switch or its sounds, what `look.json` holds, or what an export or Copy image carries of the page's colours |
 | [0107](0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) | The box art is drawn under a count and never exported | changing what the Halloween look draws on a lineage box, how many boxes it draws it on, `Lineage.setSkin`, or what `Lineage.snapshot()` measures and copies |
 | [0108](0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md) | The silk has dewdrops and the selected box grows a web | changing what the Halloween look draws on an edge, the web on the selected box, or what `select()` moves in the canvas |
+| [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md) | collin is given the project only for a manifest lying in it | changing the arguments dbt-edith hands collin, raising `WANTS`, or changing where a seed's columns come from |
 
 ## Keeping these honest
 
