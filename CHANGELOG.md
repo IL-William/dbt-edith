@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.40.0 - 2026-10-20
+
+- List the config paths of `dbt_project.yml` that apply to no resource, which
+  dbt warns of as it parses, in a Warnings section of Reports with its chip on
+  the button, and mark each key in the editor's gutter (0103).
+
 ## 1.39.0 - 2026-10-19
 
 - Open `dbt_project.yml` at a var's line when its `var()` is clicked in

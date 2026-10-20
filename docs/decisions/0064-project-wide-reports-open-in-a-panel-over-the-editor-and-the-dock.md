@@ -1,6 +1,6 @@
 # 0064. Project-wide reports open in a panel over the editor and the dock
 
-Date: 2026-10-11 · Status: accepted, amended by 0070, 0075 and 0091 · Amends 0059 and 0063
+Date: 2026-10-11 · Status: accepted, amended by 0070, 0075, 0091 and 0103 · Amends 0059 and 0063
 
 **Trigger:** read before adding a report, or changing what opens or closes the
 Reports panel, what its button counts, or when a report's file is read.
@@ -32,6 +32,9 @@ next.
   *Amended by [0075](0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md):
   but when the guided tour puts back a panel it rolled up, which comes back
   as it was left, unread.*
+  *Amended by [0103](0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md):
+  the index also reads `dbt_project.yml`, to count the config paths that
+  apply to nothing.*
 - **collin's report is a section**, and its badge is news on the button, one
   chip per section, under 0059's rule: only for a run finished since the
   section was last shown. The comparison of versions stays a tab: it is

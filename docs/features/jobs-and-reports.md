@@ -132,19 +132,21 @@ freshness configured. A `--project-dir` is taken to name this project.
 **Reports**, a sheet with a bar chart in the top bar whose name unfolds under
 the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
-the last dbt command's results once dbt has written them, collin's report once
-collin has written one, and the coverage of your jobs once the Jobs tab has a
-source. The sidebar stays, and anything that shows a file
-or a dock tab rolls the panel up again: a name in a report, a file in the
+the last dbt command's results once dbt has written them, the warnings dbt
+would give as it parses once there is one, collin's report once collin has
+written one, and the coverage of your jobs once the Jobs tab has a source.
+The sidebar stays, and anything that shows a file or a dock tab rolls the
+panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
 closes it. While no section has anything to show, the button is dimmed and its
 tooltip says what will fill it; it opens on the job coverage, where a source is
 added (0075).
 
 What is new since you last looked rides on the button, a chip per report in
-its colour: the last run's errors and failed tests in red, collin's models to
-investigate in pink, and in orange how many more models no scheduled job runs
-than when you last looked at the coverage. Alone, a chip says its words, "12 to
+its colour: the last run's errors and failed tests in red, the config paths
+that apply to nothing in dbt's orange, collin's models to investigate in pink,
+and in amber how many more models no scheduled job runs than when you last
+looked at the coverage. Alone, a chip says its words, "12 to
 investigate"; with others, its count alone, so the button stays short, and the
 tooltip says each in full. The panel opens on the first of them. A section is read again
 each time it is shown, and never redrawn while you read it: when its file
@@ -161,3 +163,23 @@ command did not reach is counted, never listed: not run says nothing about it.
 The section says when the manifest was written after the run, or when the run
 names tables the manifest names otherwise, likely another target. Errors and
 failed tests ride on the Reports button until you look (0065).
+
+**Warnings** lists what dbt would warn of as it parses, worked out from the
+manifest without running dbt: for now, the config paths of `dbt_project.yml`
+that apply to no resource, dbt's `UnusedResourceConfigPath`. A misspelt
+folder, a folder renamed or emptied, a `meta:` written without its `+`: no
+node's fqn begins with the key's path, so what it sets reaches nothing. Each
+path is written as dbt writes it, `models.jaffle_shop.stagign`, beside its
+line, which opens `dbt_project.yml` at the key, and says why: no node of the
+block's kind and no disabled node is under it. The list is dbt's, checked
+against dbt-core and Fusion, a disabled node counting as dbt counts it. When
+`dbt_project.yml` was saved after the manifest, or other files changed since,
+the section says so first: a folder added since the last parse is in no
+manifest. The count rides on the button from the first look of each page,
+then only when it rises, and only while the manifest matches the project. In
+the editor, each such key carries an amber mark in the gutter, grey while the
+manifest is behind: its hover card says why, and a click opens the section. A
+key reached through a YAML alias is marked at the alias, and keys sharing a
+line share one mark, whose card lists each. A `dbt_project.yml`
+this cannot read, a key written twice for one, lists the section to say at
+which line (0103).

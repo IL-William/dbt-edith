@@ -25,7 +25,8 @@ about it when online. GitHub Actions runs the Rust tests and both audits on
 every push and every Monday, never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
-The selection engine and the lineage are compared with `dbt ls` on
+The selection engine and the lineage are compared with `dbt ls`, and the
+unused config paths with dbt's warning (0103), on
 `tests/fixtures/jaffle_shop` and on Fivetran's Shopify, cloned at a pinned tag,
 which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to a Python that has
 them, or `DBT` to a dbt executable. It skips itself without either, and skips
@@ -181,6 +182,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
 | start collin, change when it runs or where it is looked for, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md), [0098](docs/decisions/0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
+| show a warning dbt gives as it parses, or judge whether a key of `dbt_project.yml` applies to anything | [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | add a report, or change what opens or closes the Reports panel | [0064](docs/decisions/0064-project-wide-reports-open-in-a-panel-over-the-editor-and-the-dock.md), [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | add a panel, or move a view between the dock and a panel | [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
 | add a setting, or change what the gear or a status bar pill opens | [0100](docs/decisions/0100-the-settings-open-in-a-panel-of-their-own.md), [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
@@ -188,7 +190,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
-| read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
+| read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | change which jobs count as scheduled, or what the job coverage calls unscheduled | [0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md), [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
@@ -277,6 +279,7 @@ src/incremental.rs    which incremental strategy dbt runs for a model, read from
 src/freshness.rs      whether manifest.json still matches the files dbt would parse
 src/envs.rs           .env parsing and location resolution per environment
 src/project.rs        the vars: and dispatch: blocks of dbt_project.yml, read by hand
+src/unused_paths.rs   the config paths of dbt_project.yml no fqn of the manifest begins, as dbt warns of them
 src/profiles.rs       where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs         the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs            working tree status and the git commands the UI can run

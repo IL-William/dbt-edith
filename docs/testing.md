@@ -72,8 +72,10 @@ The Custom selection box, `--select` and the lineage are compared with dbt
 itself: every named selector and a list of typed expressions, asked of the box
 and of the command line, and the nodes drawn around each model at one, two and
 twenty levels, resolved by dbt-edith and by `dbt ls`, have to name the same
-nodes. It runs on a copy of dbt Labs' Jaffle Shop in
-`tests/fixtures/`, and on Fivetran's Shopify package, cloned at the tag
+nodes. The Warnings report's config paths that apply to nothing are compared
+with the warning dbt gives as it parses, path for path (0103). It runs on a
+copy of dbt Labs' Jaffle Shop in `tests/fixtures/`, a second copy given such
+paths, and Fivetran's Shopify package, cloned at the tag
 `tests/fixtures/shopify/` names. It needs dbt-core and dbt-duckdb, and skips
 itself without them; without git or the network it skips Shopify:
 

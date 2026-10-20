@@ -546,7 +546,7 @@ pub fn profile(root: &Path) -> Option<String> {
     top_scalar(&project_text(root)?, "profile")
 }
 
-fn project_text(root: &Path) -> Option<String> {
+pub(crate) fn project_text(root: &Path) -> Option<String> {
     let path = root.join("dbt_project.yml");
     let meta = std::fs::metadata(&path).ok()?;
     if !meta.is_file() || meta.len() > MAX_BYTES {

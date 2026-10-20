@@ -915,6 +915,13 @@ column only they reach or leave, and `--column`, unless `--indirect` asks,
 leave them out by default. A cache without them answers as before, byte for
 byte.
 
+Warnings in Reports (0103). The config paths of `dbt_project.yml` that apply
+to no resource, which dbt warns of once as it parses, are worked out from the
+manifest with dbt's own rule and listed in a Warnings section, each at its
+line and with why; the editor marks each key in a gutter of its own. dbt-core
+agrees path for path on Jaffle Shop, Shopify and a Jaffle Shop copy given
+such paths, in `scripts/compare_with_dbt.py`, and Fusion on that copy.
+
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
 it, no longer changes between starts. Where the pick is one a person reads, it
@@ -1587,13 +1594,11 @@ quarter of the JSON's bytes. Not driven on the VM.
        10 MB (`dbt.log.1`, `dbt.log.2`).
      - Its folder can be moved with `--log-path` or `DBT_LOG_PATH`.
      - A manifest copied from another machine comes without its log.
-7. **Warnings worked out here, without a run.** They hold for dbt-core and
-   Fusion alike, and when no log is there.
-   - **First, the one asked for:** config paths in `dbt_project.yml` that apply
-     to no resource, dbt's own `UnusedResourceConfigPath`. The keys are
-     already placed on their folders (0036, 0039). What is left is matching
-     each path against the nodes' `fqn` as dbt does, so that the answer agrees
-     with dbt's warning, and linking each one to its line.
+7. **More warnings worked out here, without a run.** They hold for dbt-core
+   and Fusion alike, and when no log is there. The Warnings section of Reports
+   lists the first, the config paths of `dbt_project.yml` that apply to no
+   resource (0103); each of these would join it, checked against dbt the same
+   way in `scripts/compare_with_dbt.py`.
    - **Others worth ranking:**
      - sources no model reads;
      - sources without a freshness config, which `dbt source freshness`

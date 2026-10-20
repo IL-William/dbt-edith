@@ -311,3 +311,62 @@ check('the menu of a model, as the open tab reads it', menuRows(NESTED, 'models/
 check('the same read from the disk, each level opening on its own line', menuRows(CRLF, 'models/marts/finance/orders.sql'),
   menuRows(NESTED, 'models/marts/finance/orders.sql'));
 check('a lone \\r ends a line too, as CodeMirror reads it', editorText('a:\r  b: 1\r\n'), 'a:\n  b: 1\n');
+
+print('\n--- the keys dbt would warn of (0103) ---');
+var WARNED = [
+  'models:',
+  '  shop:',
+  '    # moved under staging since the file was read',
+  '    staging:',
+  '      stagign:',
+  '        +tags: [x]',
+  '    merged:',
+  '      <<: *shared',
+  'tests:',
+  '  +severity: warn',
+  'on-run-end:',
+  '  - stagign:',
+  '      +tags: [x]',
+].join('\n');
+var paths = [
+  { block: 'models', chain: ['shop', 'stagign'], line: 3 },
+  { block: 'models', chain: ['shop', 'staging', 'stagign'], line: 5 },
+  { block: 'models', chain: ['shop', 'merged', 'core'], line: 2 },
+  { block: 'data_tests', written: 'tests', chain: [], line: 9 },
+];
+function lines(text, saved) { return unusedLines(text, paths, saved).map(function (m) { return [unusedSays(m.u), m.line]; }); }
+check('each key by its chain, on the line the text has it now, a gone one unmarked', lines(WARNED, false),
+      [['models.shop.staging.stagign', 4], ['data_tests', 8]]);
+check('a path merged from an anchor at the server\'s line, while the text is the file', lines(WARNED, true),
+      [['models.shop.stagign', 2], ['models.shop.staging.stagign', 4], ['models.shop.merged.core', 1], ['data_tests', 8]]);
+check('nothing under a list item is a path', unusedLines(WARNED, [{ block: 'on-run-end', chain: ['0', 'stagign'], line: 0 }], false), []);
+var SHARED = [
+  'models:',
+  '  shop:',
+  '    base: &anc',
+  '      +tags: [a]',
+  '      inner:',
+  '        +tags: [b]',
+  '    aliased: *anc',
+  '  flow: {p: {+tags: 1}, q: {+tags: 2}}',
+].join('\n');
+var shared = [
+  { block: 'models', chain: ['shop', 'aliased'], line: 7 },
+  { block: 'models', chain: ['shop', 'aliased', 'inner'], line: 7 },
+  { block: 'models', chain: ['flow', 'p'], line: 8 },
+  { block: 'models', chain: ['flow', 'q'], line: 8 },
+];
+function byLine(saved) { return unusedByLine(unusedLines(SHARED, shared, saved)).map(function (m) { return [m.line, m.paths.map(unusedSays)]; }); }
+check('two paths on one line share one mark, in the order found', byLine(true),
+      [[6, ['models.shop.aliased', 'models.shop.aliased.inner']], [7, ['models.flow.p', 'models.flow.q']]]);
+check('a line with one path keeps its own mark', unusedByLine([{ line: 2, u: shared[0] }, { line: 5, u: shared[2] }]).map(function (m) { return m.line; }), [2, 5]);
+check('the hover key names every path and tells a stale mark', [unusedHoverKey(shared.slice(0, 2), false), unusedHoverKey(shared.slice(0, 2), true)],
+      ['unused:models.shop.aliased | models.shop.aliased.inner', 'unused:stale:models.shop.aliased | models.shop.aliased.inner']);
+check('why: no fqn of its kind', unusedWhy(paths[0]),
+      'No model\'s fqn begins with these keys, nor any disabled node\'s, so what the last one sets applies to nothing.');
+check('why: a block with nothing of its kind, under the name it was written with', unusedWhy(paths[3]),
+      'The manifest holds no data test and no disabled node, so what tests: sets applies to nothing. '
+        + 'dbt reads tests: as data_tests:, its name since dbt 1.8.');
+check('why: a config written without its +', unusedWhy({ block: 'seeds', chain: ['shop', 'docs'], line: 4 }),
+      'No seed\'s fqn begins with these keys, nor any disabled node\'s, so what the last one sets applies to nothing. '
+        + 'Without its +, dbt reads docs: as a folder; written +docs:, it is the config.');

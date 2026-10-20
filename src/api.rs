@@ -252,6 +252,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/report", get(collin_report_page))
         .route("/api/reports", get(reports_index))
         .route("/api/reports/run", get(last_run_report))
+        .route("/api/reports/warnings", get(warnings_report))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
@@ -916,14 +917,22 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
 
 /// Which reports the panel has something to show in, and when each last
 /// changed (0064). File metadata and the settings, and nothing else but the
-/// last run's counts, which the button shows: collin's report is not parsed,
-/// collin never starts (0042) and no job file is looked at, since a section
-/// reads its own when it opens (0063).
+/// last run's counts and the unused config paths, which the button shows:
+/// collin's report is not parsed, collin never starts (0042) and no job file
+/// is looked at, since a section reads its own when it opens (0063).
 async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     let report = mtime_secs(&st.target_dir.join(collin_run::REPORT));
     let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
     let manifest_at = st.graph.read().await.meta.manifest_mtime;
     let run = last_run_counts(&st).await;
+    // Listed only while there is one, as every section is (0064), or while
+    // the file cannot be read, which the section says and nothing else would.
+    let warnings = unused_paths(&st).await.filter(|r| !r.unused.is_empty() || r.unread.is_some()).map(|r| WarningsIndex {
+        at: r.at,
+        manifest_at: r.manifest_at,
+        unused: r.unused.len(),
+        unread: r.unread.is_some(),
+    });
     // The coverage's counts, for its news on the button, once the jobs were
     // read and never by looking at their files (0066).
     let counts = if sources > 0 && st.jobs.read_once() {
@@ -938,10 +947,35 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     };
     Json(ReportsIndex {
         run,
+        warnings,
         collin: (report > 0).then_some(Stamp { at: report }),
         jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at, counts }),
     })
     .into_response()
+}
+
+/// The config paths of `dbt_project.yml` no fqn of the manifest on screen
+/// begins (0103). The project's own file, read when asked: a few kilobytes,
+/// beside a manifest already in memory. None without a manifest, against
+/// which every path would read unused.
+async fn unused_paths(st: &Arc<AppState>) -> Option<crate::unused_paths::Report> {
+    let graph = st.graph.read().await.clone();
+    if graph.meta.manifest_mtime == 0 {
+        return None;
+    }
+    let root = st.root.clone();
+    tokio::task::spawn_blocking(move || crate::unused_paths::read(&root, &graph.config_fqns, graph.meta.manifest_mtime))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// What dbt would warn of in `dbt_project.yml`, worked out without a run.
+async fn warnings_report(State(st): State<Arc<AppState>>) -> Response {
+    match unused_paths(&st).await {
+        Some(report) => Json(report).into_response(),
+        None => (StatusCode::NOT_FOUND, "nothing to hold dbt_project.yml against: no manifest, or no dbt_project.yml this can read").into_response(),
+    }
 }
 
 /// The last run's counts, through the cache the section reads too, so one
@@ -992,6 +1026,8 @@ struct ReportsIndex {
     #[serde(skip_serializing_if = "Option::is_none")]
     run: Option<RunIndex>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    warnings: Option<WarningsIndex>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     collin: Option<Stamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     jobs: Option<JobsIndex>,
@@ -1009,6 +1045,18 @@ struct RunIndex {
 #[derive(serde::Serialize)]
 struct Stamp {
     at: u64,
+}
+
+/// How many config paths apply to nothing, and the two files that say so:
+/// either one written again can change the count. A file this cannot read
+/// lists the section with no count.
+#[derive(serde::Serialize)]
+struct WarningsIndex {
+    at: u64,
+    manifest_at: u64,
+    unused: usize,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    unread: bool,
 }
 
 /// The job sources named, and the manifest their steps are resolved against:
@@ -1031,9 +1079,12 @@ struct JobsCounts {
 
 /// The newest report file under `target/`, in seconds, polled with the
 /// freshness badge: that poll is how the page hears that a run wrote one,
-/// so the Reports button can say so without another timer (0064).
+/// so the Reports button can say so without another timer (0064). And
+/// `dbt_project.yml`, whose config paths a section counts (0103): a new
+/// manifest is heard of through the badge already.
 fn reports_at(st: &AppState) -> u64 {
-    [collin_run::REPORT, crate::run_results::FILE].iter().map(|f| mtime_secs(&st.target_dir.join(f))).max().unwrap_or(0)
+    let project = mtime_secs(&st.root.join("dbt_project.yml"));
+    [collin_run::REPORT, crate::run_results::FILE].iter().map(|f| mtime_secs(&st.target_dir.join(f))).max().unwrap_or(0).max(project)
 }
 
 #[derive(serde::Serialize)]
@@ -4508,6 +4559,62 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The paths of dbt_project.yml that no fqn of the manifest begins, in
+    /// the index while there is one, and none of them without a manifest to
+    /// hold the file against (0103).
+    #[tokio::test]
+    async fn the_warnings_list_the_config_paths_no_node_is_under() {
+        let root = temp_project("warnings");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(
+            root.join("dbt_project.yml"),
+            "name: shop\nmodels:\n  shop:\n    +materialized: table\n    stagign:\n      +tags: ['x']\nseeds:\n  +tags: ['raw']\n",
+        )
+        .unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+
+        let none = response_of(port, get("/api/reports/warnings", &h)).await;
+        assert!(none.starts_with("HTTP/1.1 404") && none.contains("no manifest"), "{none}");
+        assert!(!response_of(port, get("/api/reports", &h)).await.contains("warnings"));
+
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders": { "name": "orders", "resource_type": "model", "fqn": ["shop", "staging", "orders"] },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &target.join("manifest.json"), 7, 0));
+        let at = mtime_secs(&root.join("dbt_project.yml"));
+        let index = response_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(&format!(r#""warnings":{{"at":{at},"manifest_at":7,"unused":2}}"#)), "{index}");
+        let report = past_head(&response_of(port, get("/api/reports/warnings", &h)).await).to_string();
+        let body: serde_json::Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(body["checked"], 3, "{report}");
+        assert_eq!(
+            body["unused"],
+            serde_json::json!([
+                { "block": "models", "chain": ["shop", "stagign"], "line": 5 },
+                { "block": "seeds", "chain": [], "line": 7 },
+            ]),
+            "{report}"
+        );
+        assert!(status_of(port, keyless(get("/api/reports/warnings", &h))).await.ends_with("401 Unauthorized"));
+
+        // A key twice, which dbt takes the last of and this reader refuses:
+        // the section is listed to say so, with nothing to count.
+        std::fs::write(root.join("dbt_project.yml"), "name: shop\nseeds:\n  +tags: ['a']\nseeds:\n  +tags: ['b']\n").unwrap();
+        let at = mtime_secs(&root.join("dbt_project.yml"));
+        let index = response_of(port, get("/api/reports", &h)).await;
+        assert!(index.contains(&format!(r#""warnings":{{"at":{at},"manifest_at":7,"unused":0,"unread":true}}"#)), "{index}");
+        let report = past_head(&response_of(port, get("/api/reports/warnings", &h)).await).to_string();
+        assert!(report.contains(r#""unread":{"line":4,"message":"a key that appears twice in one mapping"}"#), "{report}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The index says which reports there are from file times and settings
     /// alone: a job source whose folder is not even there is still counted,
     /// since nothing is read until its section opens (0063, 0064).
@@ -4523,8 +4630,10 @@ mod tests {
         let empty = response_of(port, get("/api/reports", &h)).await;
         assert!(empty.starts_with("HTTP/1.1 200"), "{empty}");
         assert_eq!(past_head(&empty), "{}");
+        // dbt_project.yml is stamped too, since a section counts its paths.
+        let project_at = mtime_secs(&root.join("dbt_project.yml"));
         let fresh = response_of(port, get("/api/freshness", &h)).await;
-        assert!(fresh.contains(r#""reports_at":0"#) && fresh.contains(r#""state":"#), "{fresh}");
+        assert!(fresh.contains(&format!(r#""reports_at":{project_at}"#)) && fresh.contains(r#""state":"#), "{fresh}");
 
         std::fs::write(target.join(collin_run::REPORT), r#"{"totals":{"models":1}}"#).unwrap();
         let at = mtime_secs(&target.join(collin_run::REPORT));

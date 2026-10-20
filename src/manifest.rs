@@ -39,6 +39,16 @@ pub struct RawManifest {
     /// YAML (0065).
     #[serde(default)]
     pub unit_tests: BTreeMap<String, RawUnitTest>,
+    /// The kinds the graph has no use for, read for their fqn alone: a path
+    /// of `dbt_project.yml` that only one of them begins is used (0103).
+    #[serde(default)]
+    pub metrics: HashMap<String, RawFqn>,
+    #[serde(default)]
+    pub semantic_models: HashMap<String, RawFqn>,
+    #[serde(default)]
+    pub saved_queries: HashMap<String, RawFqn>,
+    #[serde(default)]
+    pub functions: HashMap<String, RawFqn>,
 }
 
 #[derive(serde::Deserialize)]
@@ -47,6 +57,14 @@ pub struct RawUnitTest {
     pub name: String,
     #[serde(default)]
     pub original_file_path: String,
+    #[serde(default)]
+    pub fqn: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct RawFqn {
+    #[serde(default)]
+    pub fqn: Vec<String>,
 }
 
 #[derive(serde::Deserialize, Default)]

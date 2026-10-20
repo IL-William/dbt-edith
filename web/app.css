@@ -815,6 +815,7 @@ kbd {
 .rentries .rcol, .rentries .rrel { font: 11.5px var(--mono); }
 .rentries .rcol { cursor: pointer; color: var(--fg); }
 .rentries .rcol:hover { text-decoration: underline; }
+.rentries .rwhy { color: var(--fg-dim); margin: 0 0 4px; max-width: 900px; }
 /* Two collin versions side by side: tables of figures, the moved rows bright. */
 .versionpick { font: 12px var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
 .cmptable { border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; min-width: 420px; }
@@ -838,6 +839,15 @@ kbd {
 
 /* Per-line + and - next to the line numbers, as in a review UI. */
 .CodeMirror-gutter.diff-mark { width: 14px; }
+/* A key of dbt_project.yml that dbt would warn applies to nothing (0103). */
+.CodeMirror-gutter.cfgwarn { width: 14px; }
+.cfgwarn-mark {
+  width: 12px; height: 12px; margin: 3px auto 0; border-radius: 50%; background: var(--warn); color: #10151c;
+  font: 700 9px/12px var(--mono); text-align: center; cursor: pointer;
+}
+.cfgwarn-mark:hover { background: var(--fg); }
+.cfgwarn-mark.stale { background: #6f7f93; }
+.cfgwarn-mark.stale:hover { background: var(--fg); }
 .diff-sign { font: 11px var(--mono); text-align: center; line-height: inherit; }
 .diff-sign.add { color: #56b98b; }
 .diff-sign.del { color: #d88; }
