@@ -274,7 +274,9 @@ FOUR_TOOLS = [
      "inputSchema": {"type": "object", "properties": {"column": {"type": "string"}, "up": {"type": ["integer", "string"]}, "down": {"type": ["integer", "string"]}, "stop_at": {"type": "array", "items": {"type": "string"}}, "indirect": {"type": "boolean"}, "tool": {"type": "string", "enum": ["fusion", "collin", "snowflake"]}, "run_collin": {"type": "boolean"}, "format": {"type": "string", "enum": ["name", "json", "compact"]}}, "required": ["column"], "additionalProperties": False},
      "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}},
 ]
-# What a Claude Code user would put in a skill's description for the recipes.
+# What a Claude Code user would put in a skill's description for the recipes:
+# the one-line skill 0110 weighed. The skill dbt-edith ships (0114) has a longer
+# description, about 190 tokens, which this figure does not include.
 SKILL_LINE = "dbt-edith: answers what a dbt project, node, selection or column is from the manifest (dbt-edith . --overview / --describe / -s / --column); read docs/features/command-line.md#for-an-agent first."
 
 PASSES = 3

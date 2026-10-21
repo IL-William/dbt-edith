@@ -1,6 +1,6 @@
 # 0102. A node and the project are described on the command line
 
-Date: 2026-10-19 · Status: accepted, amended by 0110 and 0113 · Follows 0057 and 0088
+Date: 2026-10-19 · Status: accepted, amended by 0110, 0113 and 0114 · Follows 0057 and 0088
 
 **Trigger:** read before adding to what the command line prints of a node or
 the project, or before letting it read a file of the project.
@@ -37,6 +37,8 @@ name and the path already say: the unique_id is the kind and the name.
 - **`raw_code` from the manifest for `--sql`**: it is deserialized for every
   node, the bulk of the manifest, for one answer.
 - **A skill here**: the caller's work (0057); the recipes page is its text.
+  *Amended by [0114](0114-a-skill-is-shipped-and-printed-never-installed.md):
+  a skill now ships as a file and `--skill` prints it.*
 
 ## Consequences
 

@@ -238,6 +238,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a key to `--count-by`, or let another mode count instead of list | [0112](docs/decisions/0112-a-selection-may-be-counted-instead-of-listed.md), [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
 | change what `--describe` or `--overview` prints, what `--output compact` leaves out, or let the command line read a file of the project | [0102](docs/decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md) |
 | print a location derived from a `.env` file on the command line or over MCP, or change the card's per-file lines | [0113](docs/decisions/0113-the-card-resolves-a-location-per-env-file.md), [0012](docs/decisions/0012-secrets-and-boundaries.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
+| change the agent skill, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
@@ -282,6 +283,7 @@ src/describe.rs       --describe and --overview: a node's card and the project's
 src/mcp.rs            --mcp: the stdio JSON-RPC loop and its one tool, over the same answers
 src/mcp_line.rs       the tool's command line: split, parsed by clap, accepted by an allow-list of flags
 src/mcp_graphs.rs     the manifest and the base graph the server keeps, reloaded when their files change
+src/skill.rs          --skill: the agent skill of docs/agent-skill/ printed for this version, and held to the flags this binary accepts
 src/jobs.rs           the orchestrator's jobs, read from the folders named, and the nodes each step acts on
 src/command.rs        a dbt command line, read into what it runs and what it selects
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree

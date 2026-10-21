@@ -71,7 +71,7 @@ const ALLOWED: [&str; 16] = [
 
 /// The flags that are refused on purpose, with why. `project` has a sentence
 /// of its own, since it names the server's root.
-const REFUSED: [(&str, &str); 10] = [
+const REFUSED: [(&str, &str); 11] = [
     ("project", ""),
     ("manifest", "named when the server starts, in its own arguments"),
     ("catalog", "named when the server starts, in its own arguments"),
@@ -82,6 +82,7 @@ const REFUSED: [(&str, &str); 10] = [
     ("no_open", "not a question"),
     ("no_update_check", "not a question"),
     ("mcp", "not a question"),
+    ("skill", "for a terminal, where it prints the skill; `help` is the tool's reference"),
 ];
 
 /// The longest line read. Far past any question.
@@ -232,7 +233,7 @@ fn tip_is_allowed(tip: &str, command: &clap::Command) -> bool {
 /// `\\`; a backslash outside quotes is a backslash; `*` and `?` stay, since
 /// dbt's `path:` globs need them. Shell syntax outside quotes is refused: the
 /// model would otherwise believe a pipe or a substitution happened.
-fn split(line: &str) -> Result<Vec<String>, String> {
+pub(crate) fn split(line: &str) -> Result<Vec<String>, String> {
     if line.len() > MAX_LINE {
         return Err(format!("the line is over {} KiB", MAX_LINE / 1024));
     }
@@ -431,6 +432,7 @@ mod tests {
             ("--overview --shell bash", "--shell", "not a question"),
             ("--overview --no-open", "--no-open", "not a question"),
             ("--overview --no-update-check", "--no-update-check", "not a question"),
+            ("--skill", "--skill", "for a terminal, where it prints the skill; `help` is the tool's reference"),
         ] {
             let said = refused(line);
             assert!(said.starts_with(&format!("error: {flag} is ")) && said.contains(why), "{line}: {said}");
@@ -500,7 +502,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 26] = [
+    const SAMPLES: [(&str, &str); 27] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -527,6 +529,7 @@ mod tests {
         ("depth", "--overview --depth 2"),
         ("output", "--overview --output json"),
         ("mcp", "--mcp"),
+        ("skill", "--skill"),
     ];
 
     #[test]

@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.48.0 - 2026-10-21
+
+- Print an agent skill for dbt-edith with `--skill`, shipped as a file too, so
+  a client loads it and asks edith before reading SQL (0114).
+
 ## 1.47.0 - 2026-10-21
 
 - Show the location a node's config gives with each `.env` file on
