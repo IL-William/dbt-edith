@@ -563,7 +563,8 @@ class Tally:
 
 def compare_jobs(tally, edith, oracle):
     """Each step of the job fixtures against the `dbt ls` its button types."""
-    summary = edith.send("/api/jobs/sources", "PUT", {"sources": JOB_SOURCES})
+    # Kept in the settings and not in the project: the fixture is never written into.
+    summary = edith.send("/api/jobs/sources", "PUT", {"sources": JOB_SOURCES, "place": "settings"})
     if "error" in summary:
         tally.fail(f"the job sources were refused: {summary['error']}")
         return

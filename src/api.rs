@@ -90,8 +90,9 @@ pub struct AppState {
     pub profiles: crate::profiles::Lookup,
     /// This launch's key, printed in the link that opens the page (0052).
     pub key: String,
-    /// Where the orchestrator's jobs are read from, held here as well as in
-    /// the settings, like `collin_chosen` (0063).
+    /// Where the orchestrator's jobs are read from when the project has no
+    /// `.dbt-edith/jobs.yml`, held here as well as in the settings, like
+    /// `collin_chosen` (0063, 0115).
     pub job_sources: std::sync::Mutex<Vec<crate::settings::JobSource>>,
     /// The jobs last read, kept until the manifest, the sources or a job file
     /// changes.
@@ -939,7 +940,7 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
 /// is looked at, since a section reads its own when it opens (0063).
 async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     let report = mtime_secs(&st.target_dir.join(collin_run::REPORT));
-    let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
+    let sources = job_sources_now(&st).await.list.len();
     let manifest_at = st.graph.read().await.meta.manifest_mtime;
     let run = last_run_counts(&st).await;
     // Listed only while there is one, as every section is (0064), or while
@@ -2681,25 +2682,64 @@ async fn with_jobs<T: Send + 'static>(
     look: bool,
     answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
 ) -> Result<T, Response> {
+    with_jobs_sources(st, look, answer).await.map(|(answered, _)| answered)
+}
+
+/// `with_jobs`, and the sources the read was made under, taken in the same
+/// blocking task: the route that says where the sources came from says what it
+/// read, and the file is read once.
+async fn with_jobs_sources<T: Send + 'static>(
+    st: &Arc<AppState>,
+    look: bool,
+    answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
+) -> Result<(T, crate::jobs::Sources), Response> {
     let graph = st.graph.read().await.clone();
-    let sources = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
+    let saved = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
     let st = st.clone();
     tokio::task::spawn_blocking(move || {
-        let read = st.jobs.get(&graph, &st.root, &sources, look);
-        answer(&graph, &read)
+        // The project's file is looked at on every call, so an edit in the
+        // editor or a pull is read at once (0115); the cache compares what
+        // it was read from by value.
+        let sources = crate::jobs::sources(&st.root, &saved);
+        let read = st.jobs.get(&graph, &st.root, &sources.list, look);
+        (answer(&graph, &read), sources)
     })
     .await
     .map_err(err)
+}
+
+/// The sources in force: the project's file, else the settings'. Read and
+/// parsed off the runtime's threads, as the file may sit on a slow disk.
+async fn job_sources_now(st: &Arc<AppState>) -> crate::jobs::Sources {
+    let saved = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
+    let root = st.root.clone();
+    tokio::task::spawn_blocking(move || crate::jobs::sources(&root, &saved)).await.unwrap_or(crate::jobs::Sources {
+        list: Vec::new(),
+        place: crate::jobs::Place::None,
+        refused: None,
+        stamp: None,
+    })
 }
 
 #[derive(serde::Serialize)]
 struct JobsSummary {
     #[serde(flatten)]
     summary: crate::jobs::Summary,
-    /// False without a config directory: the sources then last the session.
+    /// False without a config directory, for sources kept in the settings:
+    /// they then last the session. True for the project's file.
     saved: bool,
     /// The Airflow keys and the shape this tool proposes, for the form.
     airflow_keys: &'static [(&'static str, &'static str)],
+    /// Where the sources in force are kept: `project` (the file), `settings`
+    /// or `none` (0115).
+    from: &'static str,
+    /// Why the project's file is not read, when it is there and cannot be.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refused: Option<String>,
+    /// The file's version as read, sent back with a save so that a file
+    /// changed since is not written over (`files::stamp`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stamp: Option<String>,
 }
 
 /// `look=true` asks the jobs read to look at their files first; the page
@@ -2710,23 +2750,52 @@ struct LookQuery {
     look: bool,
 }
 
-async fn jobs_summary(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
-    let saved = st.settings.path.is_some();
-    match with_jobs(&st, q.look, |_, read| crate::jobs::summary(read)).await {
-        Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
+/// What the sources form shows: what was read, and where the sources are kept.
+/// `wrote` is the version a save has just written, from the file it wrote and
+/// not read again: a pull landing after the rename is then not taken for the
+/// page's own, and the next save finds the file changed.
+async fn jobs_payload(st: &Arc<AppState>, look: bool, settings_kept: bool, wrote: Option<String>) -> Response {
+    match with_jobs_sources(st, look, |_, read| crate::jobs::summary(read)).await {
+        Ok((summary, sources)) => Json(JobsSummary {
+            summary,
+            saved: sources.place == crate::jobs::Place::Project || settings_kept,
+            airflow_keys: crate::jobs::AIRFLOW_KEYS,
+            from: sources.place.as_str(),
+            refused: sources.refused,
+            stamp: wrote.or(sources.stamp),
+        })
+        .into_response(),
         Err(e) => e,
     }
+}
+
+async fn jobs_summary(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
+    jobs_payload(&st, q.look, st.settings.path.is_some(), None).await
 }
 
 #[derive(Deserialize)]
 struct JobSourcesBody {
     #[serde(default)]
     sources: Vec<crate::settings::JobSource>,
+    /// `project` writes `.dbt-edith/jobs.yml`; `settings`, or nothing, keeps
+    /// the sources outside the project. Once the file exists it is always the
+    /// file that is written (0115).
+    #[serde(default)]
+    place: String,
+    /// The file's stamp as the page read it, `""` for a file that was not
+    /// there. Without one the file is written whatever is on disk.
+    #[serde(default)]
+    seen: Option<String>,
 }
 
 /// Replaces the list of places jobs are read from. Each path must lead
-/// somewhere now; nothing under it is read until a route asks (0063).
+/// somewhere now; nothing under it is read until a route asks (0063). The
+/// project's file is written only here, on the person's save, and nothing
+/// ever deletes it (0115).
 async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSourcesBody>) -> Response {
+    if !matches!(b.place.as_str(), "" | "project" | "settings") {
+        return (StatusCode::BAD_REQUEST, "place is project or settings").into_response();
+    }
     if b.sources.len() > crate::jobs::MAX_SOURCES {
         return (StatusCode::BAD_REQUEST, format!("at most {} sources", crate::jobs::MAX_SOURCES)).into_response();
     }
@@ -2747,21 +2816,61 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
         }
         sources.push(s);
     }
-    if let Ok(mut held) = st.job_sources.lock() {
-        held.clone_from(&sources);
+    // The file, once there, is what is written, whatever `place` says; and a
+    // file there at all is one the form must have been shown (`seen`, which
+    // the page always sends: an empty one for no file).
+    let current = job_sources_now(&st).await;
+    let seen = b.seen.clone().unwrap_or_default();
+    if current.stamp.as_deref().is_some_and(|now| now != seen) {
+        return changed_sources_file(current.stamp);
     }
-    let saved = match st.settings.update(|s| s.job_sources = sources).await {
-        Ok(_) => true,
-        Err(e) => {
-            eprintln!("  job sources not saved: {e}");
-            false
+    let mut settings_kept = st.settings.path.is_some();
+    let mut wrote_stamp = None;
+    if b.place == "project" || current.place == crate::jobs::Place::Project {
+        let root = st.root.clone();
+        let wrote = tokio::task::spawn_blocking(move || -> Result<files::Saved, Response> {
+            // What a cloned repository may supply is what this one may write.
+            for s in &sources {
+                if let Some(why) = crate::jobs::check_in_project(s).or_else(|| crate::jobs::check_real(&root, s)) {
+                    return Err((StatusCode::BAD_REQUEST, format!("{why}: {}", s.path)).into_response());
+                }
+            }
+            files::write_file_atomic(&root, crate::jobs::SOURCES_FILE, &crate::jobs::sources_yaml(&sources), Some(&seen))
+                .map_err(|e| (StatusCode::BAD_REQUEST, format!("cannot write {}: {e}", crate::jobs::SOURCES_FILE)).into_response())
+        })
+        .await;
+        match wrote {
+            Ok(Ok(files::Saved::Written(stamp))) => wrote_stamp = Some(stamp),
+            Ok(Ok(files::Saved::Changed(now))) => return changed_sources_file(now),
+            Ok(Err(refusal)) => return refusal,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
         }
-    };
-    // Saving is how a person says the files are worth reading again.
-    match with_jobs(&st, true, |_, read| crate::jobs::summary(read)).await {
-        Ok(summary) => Json(JobsSummary { summary, saved, airflow_keys: crate::jobs::AIRFLOW_KEYS }).into_response(),
-        Err(e) => e,
+    } else {
+        if let Ok(mut held) = st.job_sources.lock() {
+            held.clone_from(&sources);
+        }
+        if let Err(e) = st.settings.update(|s| s.job_sources = sources).await {
+            eprintln!("  job sources not saved: {e}");
+            settings_kept = false;
+        }
     }
+    // Saving is how a person says the files are worth reading again.
+    jobs_payload(&st, true, settings_kept, wrote_stamp).await
+}
+
+/// A file changed on disk since the form read it is left as it is, and the
+/// page is told its version now: a pull or an edit in the editor is the
+/// person's to look at first.
+fn changed_sources_file(now: Option<String>) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "error": format!("{} changed on disk since it was read", crate::jobs::SOURCES_FILE),
+            "changed": true,
+            "stamp": now,
+        })),
+    )
+        .into_response()
 }
 
 /// One folder for the sources form to pick a source from, anywhere the user
@@ -2776,6 +2885,15 @@ async fn browse_job_sources(State(st): State<Arc<AppState>>, Query(q): Query<Pat
     }
 }
 
+#[derive(serde::Serialize)]
+struct NodeJobsBody {
+    #[serde(flatten)]
+    view: crate::jobs::NodeJobs,
+    /// Why the project's sources file is not read, when it is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources_refused: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct JobsNodeQuery {
     #[serde(default)]
@@ -2786,22 +2904,35 @@ struct JobsNodeQuery {
 
 /// Every step that acts on one node, grouped by job, with what reached it.
 async fn jobs_for_node(State(st): State<Arc<AppState>>, Query(q): Query<JobsNodeQuery>) -> Response {
-    let answer = with_jobs(&st, q.look, move |graph, read| {
+    let answer = with_jobs_sources(&st, q.look, move |graph, read| {
         graph.index.get(&q.id).map(|&i| crate::jobs::for_node(graph, read, i))
     })
     .await;
     match answer {
-        Ok(Some(view)) => Json(view).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, "unknown node").into_response(),
+        Ok((Some(view), sources)) => {
+            // Said with the answer: a file that does not read leaves the tab
+            // with no source, and the tab says why.
+            Json(NodeJobsBody { view, sources_refused: sources.refused }).into_response()
+        }
+        Ok((None, _)) => (StatusCode::NOT_FOUND, "unknown node").into_response(),
         Err(e) => e,
     }
 }
 
 async fn jobs_coverage(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
-    match with_jobs(&st, q.look, crate::jobs::coverage).await {
-        Ok(view) => Json(view).into_response(),
+    match with_jobs_sources(&st, q.look, crate::jobs::coverage).await {
+        Ok((view, sources)) => Json(CoverageBody { view, sources_refused: sources.refused }).into_response(),
         Err(e) => e,
     }
+}
+
+#[derive(serde::Serialize)]
+struct CoverageBody {
+    #[serde(flatten)]
+    view: crate::jobs::Coverage,
+    /// Why the project's sources file is not read, when it is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources_refused: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -3084,8 +3215,9 @@ async fn check_update_now(State(st): State<Arc<AppState>>) -> Response {
 struct TourBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<crate::tour::Pick>,
-    /// How many job sources are named, from the settings: the Jobs step's
-    /// wording, without a request that would read the jobs a second time.
+    /// How many job sources are named, by the project's file or else the
+    /// settings: the Jobs step's wording, without a request that would read the
+    /// jobs a second time.
     #[serde(skip_serializing_if = "is_zero")]
     sources: usize,
 }
@@ -3096,7 +3228,7 @@ struct TourBody {
 /// again (0074). Nothing at all without a model, and the page leaves out the
 /// steps that need one.
 async fn tour_model(State(st): State<Arc<AppState>>) -> Response {
-    let sources = st.job_sources.lock().map(|s| s.len()).unwrap_or(0);
+    let sources = job_sources_now(&st).await.list.len();
     let picked = if sources > 0 {
         with_jobs(&st, false, |graph, read| crate::tour::pick(graph, &crate::jobs::run_by_a_step(graph, read))).await
     } else {
@@ -4937,6 +5069,7 @@ mod tests {
             path: root.join("no-such-folder").to_string_lossy().into_owned(),
             label: String::new(),
             keys: Default::default(),
+            from_file: false,
         });
         let index = response_of(port, get("/api/reports", &h)).await;
         assert!(index.contains(r#""jobs":{"sources":1,"at":0}"#), "{index}");
@@ -5804,6 +5937,135 @@ mod tests {
         let foreign = with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
         assert!(status_of(port, keyless(get("/api/jobs", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
+        server.abort();
+    }
+
+    /// The sources may live in the project's `.dbt-edith/jobs.yml`: written
+    /// only on a save that says `project`, read before the settings from then
+    /// on, never over a version the page did not see, and never deleted (0115).
+    #[tokio::test]
+    async fn job_sources_may_be_kept_in_a_file_of_the_project() {
+        let root = temp_project("job-sources-file");
+        let outside = std::env::temp_dir().join(format!("dbt-edith-api-jobs-file-outside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&outside);
+        std::fs::create_dir_all(outside.join("dags")).unwrap();
+        std::fs::write(
+            outside.join("dags").join("daily.yml"),
+            "dag_id: shop_daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n",
+        )
+        .unwrap();
+        let (port, st, server) = serve(&root).await;
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "model.shop.orders": { "name": "orders", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/orders.sql", "fqn": ["shop", "orders"] },
+            },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let put = |body: serde_json::Value| with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", &own)], &body.to_string());
+        let read = || async { json_of(&response_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await) };
+        let file = root.join(".dbt-edith").join("jobs.yml");
+        let path = outside.join("dags").to_string_lossy().into_owned();
+        // From the project, one folder up: the file takes no other kind of path.
+        let rel = format!("../{}/dags", outside.file_name().unwrap().to_string_lossy());
+        let sources = serde_json::json!([{ "kind": "airflow", "path": rel, "label": "orchestration", "keys": {} }]);
+
+        let none = read().await;
+        assert_eq!((none["from"].as_str(), none["stamp"].is_null(), none["refused"].is_null()), (Some("none"), true, true));
+
+        // For me only: the settings, and no file made.
+        let mine = response_of(port, put(serde_json::json!({ "sources": sources, "place": "settings" }))).await;
+        assert!(mine.starts_with("HTTP/1.1 200") && mine.contains(r#""from":"settings""#), "{mine}");
+        assert!(!file.exists() && !root.join(".dbt-edith").exists(), "nothing written into the project");
+        assert_eq!(st.job_sources.lock().unwrap().len(), 1);
+        // No place at all is the settings too, as the scripts that predate the file send it.
+        assert!(response_of(port, put(serde_json::json!({ "sources": sources }))).await.contains(r#""from":"settings""#));
+        assert!(!root.join(".dbt-edith").exists());
+        // Anything else is refused.
+        let odd = response_of(port, put(serde_json::json!({ "sources": sources, "place": "cloud" }))).await;
+        assert!(odd.starts_with("HTTP/1.1 400") && odd.contains("project or settings"), "{odd}");
+
+        // In the project: the file is written, and the settings are left as they were.
+        let wrote = response_of(port, put(serde_json::json!({ "sources": sources, "place": "project", "seen": "" }))).await;
+        assert!(wrote.starts_with("HTTP/1.1 200"), "{wrote}");
+        let body = json_of(&wrote);
+        assert_eq!((body["from"].as_str(), body["saved"].as_bool(), body["jobs"].as_u64()), (Some("project"), Some(true), Some(1)));
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with("# Where dbt-edith reads the orchestrator's jobs.") && text.contains("label: \"orchestration\""), "{text}");
+        assert_eq!(st.job_sources.lock().unwrap().len(), 1, "the settings are untouched");
+        let stamp = body["stamp"].as_str().unwrap().to_string();
+        let node = response_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        assert!(node.contains(r#""name":"shop_daily""#), "{node}");
+
+        // The file wins: other sources in the settings are not read while it exists.
+        st.job_sources.lock().unwrap().push(crate::settings::JobSource { kind: "dbt_cloud".into(), path: "nowhere".into(), ..Default::default() });
+        let both = read().await;
+        assert_eq!((both["from"].as_str(), both["sources"].as_array().map(Vec::len)), (Some("project"), Some(1)));
+        assert_eq!(both["stamp"].as_str(), Some(stamp.as_str()));
+        // And a save that says settings still writes the file, never the settings.
+        let again = response_of(port, put(serde_json::json!({ "sources": sources, "place": "settings", "seen": stamp }))).await;
+        assert!(again.starts_with("HTTP/1.1 200") && again.contains(r#""from":"project""#), "{again}");
+        assert_eq!(st.job_sources.lock().unwrap().len(), 2, "the settings are untouched");
+
+        // A file changed since the page read it is not written over.
+        let theirs = "jobs:\n  - kind: dbt_cloud\n    path: \"/theirs\"\n";
+        std::fs::write(&file, theirs).unwrap();
+        let stale = response_of(port, put(serde_json::json!({ "sources": sources, "place": "project", "seen": stamp }))).await;
+        assert!(stale.starts_with("HTTP/1.1 409") && stale.contains(r#""changed":true"#), "{stale}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), theirs);
+
+        // A file that does not read gives no source and says why; the settings do not stand in.
+        std::fs::write(&file, "jobs:\n  - kind: airflow\n").unwrap();
+        let broken = read().await;
+        assert_eq!(broken["from"].as_str(), Some("project"));
+        assert!(broken["refused"].as_str().unwrap().contains("line 2"), "{broken}");
+        assert_eq!(broken["sources"].as_array().map(Vec::len), Some(0));
+        let node = response_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
+        assert!(node.contains(r#""configured":false"#), "{node}");
+        // Saved over from the form, with the version the page was shown.
+        let fixed = response_of(port, put(serde_json::json!({ "sources": sources, "place": "project", "seen": broken["stamp"] }))).await;
+        assert!(fixed.starts_with("HTTP/1.1 200") && fixed.contains(r#""jobs":1"#), "{fixed}");
+
+        // A file there is checked whatever `place` says, and no version sent is none seen.
+        let stamp = json_of(&fixed)["stamp"].as_str().unwrap().to_string();
+        for body in [
+            serde_json::json!({ "sources": sources, "place": "settings", "seen": "" }),
+            serde_json::json!({ "sources": sources, "place": "settings" }),
+            serde_json::json!({ "sources": sources, "place": "project" }),
+        ] {
+            let before = std::fs::read_to_string(&file).unwrap();
+            let refused = response_of(port, put(body)).await;
+            assert!(refused.starts_with("HTTP/1.1 409") && refused.contains(&stamp), "{refused}");
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
+        }
+        assert_eq!(st.job_sources.lock().unwrap().len(), 2, "the settings are untouched");
+
+        // The file holds only what a cloned repository may supply: a path from
+        // the project, two folders up at most, nothing hidden, no profile.
+        std::fs::create_dir_all(root.join(".hidden/x")).unwrap();
+        for (bad, why) in [
+            (path.as_str(), "an absolute path"),
+            ("../../..", "more than 2 folders above the project"),
+            (".hidden/x", "a hidden folder or file"),
+        ] {
+            let one = serde_json::json!([{ "kind": "airflow", "path": bad, "keys": {} }]);
+            let refused = response_of(port, put(serde_json::json!({ "sources": one, "place": "project", "seen": stamp }))).await;
+            assert!(refused.starts_with("HTTP/1.1 400") && refused.contains(why), "{bad}: {refused}");
+        }
+        std::fs::create_dir_all(root.join("conf")).unwrap();
+        std::fs::write(root.join("conf/profiles.yml"), "x: 1\n").unwrap();
+        let profile = serde_json::json!([{ "kind": "airflow", "path": "conf/profiles.yml", "keys": {} }]);
+        let refused = response_of(port, put(serde_json::json!({ "sources": profile, "place": "project", "seen": stamp }))).await;
+        assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("a profiles.yml"), "{refused}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap().contains("profiles.yml"), false);
+
+        // Emptied in the form, the file stays, saying so.
+        let emptied = response_of(port, put(serde_json::json!({ "sources": [], "place": "project", "seen": stamp }))).await;
+        assert!(emptied.starts_with("HTTP/1.1 200") && emptied.contains(r#""from":"project""#), "{emptied}");
+        assert!(file.exists() && std::fs::read_to_string(&file).unwrap().contains("jobs: []"));
         server.abort();
     }
 

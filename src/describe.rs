@@ -13,6 +13,7 @@
 use crate::collin::{self, iso_utc, Available};
 use crate::envs::{self, Status};
 use crate::graph::{Graph, Kind, Node, Place};
+use crate::jobs::{self, Known};
 use crate::ls::{self, node_named, Output, ANSWERED, REFUSED};
 use crate::files;
 use std::collections::BTreeMap;
@@ -142,7 +143,7 @@ pub fn run_describe(
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = respond_describe(&root, &graph, names, sql, output, &mut out, &mut err);
+    let written = respond_describe(&root, &graph, None, names, sql, output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
@@ -151,13 +152,14 @@ pub fn run_describe(
 pub(crate) fn respond_describe(
     root: &Path,
     graph: &Graph,
+    jobs: Option<&Known>,
     names: &[String],
     sql: bool,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let code = describe(graph, root, names, sql, output, out, err)?;
+    let code = describe(graph, root, jobs, names, sql, output, out, err)?;
     out.flush()?;
     let _ = ls::provenance(root, graph, err);
     Ok(code)
@@ -184,6 +186,7 @@ fn wanted(names: &[String]) -> Vec<&str> {
 fn describe(
     graph: &Graph,
     root: &Path,
+    jobs: Option<&Known>,
     names: &[String],
     sql: bool,
     output: Output,
@@ -195,7 +198,7 @@ fn describe(
         writeln!(err, "{NO_NAME}")?;
         return Ok(REFUSED);
     }
-    let files = Files::new(graph, root);
+    let files = Files::new(graph, root).with_jobs(jobs);
     let mut code = ANSWERED;
     let mut done: Vec<u32> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
@@ -466,6 +469,48 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
         "reach",
         if n.kind == Kind::Source { format!("{down} downstream") } else { format!("{} upstream, {down} downstream", graph.reach(idx, true)) },
     );
+    jobs_row(graph, files.jobs(), idx, sheet);
+}
+
+/// The steps of the orchestrator's jobs that run a node, when the project
+/// names where its jobs are (0115): one entry per step, `none` when no step
+/// does, and what could hide one.
+fn jobs_row(graph: &Graph, known: &Known, idx: u32, sheet: &mut Sheet) {
+    match known {
+        Known::Absent => {}
+        Known::Refused(why) => sheet.line("jobs", format!("not read, {}: {why}", jobs::SOURCES_FILE)),
+        // `jobs: []`: the file names nothing, which is not the same as no
+        // job running the node.
+        Known::Read(read) if read.sources.is_empty() => sheet.line("jobs", format!("no sources in {}", jobs::SOURCES_FILE)),
+        Known::Read(read) => {
+            let found = jobs::for_node(graph, read, idx);
+            let hits = jobs::hits(&found);
+            let unread = jobs::unread(read);
+            let mut parts: Vec<String> = hits.iter().map(|h| h.text.clone()).collect();
+            let (unresolved, refused) = (jobs::unresolved_for(&found), found.refused);
+            // `none` is said only when every source was looked in.
+            if parts.is_empty() && unread.is_none() {
+                parts.push("none".to_string());
+            }
+            if unresolved > 0 {
+                parts.push(format!("{} not resolved", counted(unresolved, "step", "steps")));
+            }
+            if refused > 0 {
+                parts.push(format!("{} not read", counted(refused, "job file", "job files")));
+            }
+            match (&unread, hits.is_empty()) {
+                (Some(u), true) => {
+                    parts.insert(0, format!("not read: {}", u.text()));
+                    sheet.line("jobs", parts.join("; "));
+                }
+                (Some(u), false) => {
+                    parts.push(format!("{} not read", u.text()));
+                    sheet.line(format!("jobs ({})", hits.len()), parts.join("; "));
+                }
+                (None, _) => sheet.line(format!("jobs ({})", hits.len()), parts.join("; ")),
+            }
+        }
+    }
 }
 
 // ------------------------------------------------- where a node lands per .env
@@ -595,11 +640,25 @@ struct Files<'a> {
     graph: &'a Graph,
     root: &'a Path,
     found: std::cell::OnceCell<Vec<envs::EnvFile>>,
+    /// The jobs, when the caller keeps them between calls (MCP); else they
+    /// are read the first time a card asks, and only if the project has a
+    /// sources file (0115).
+    kept_jobs: Option<&'a Known>,
+    jobs: std::cell::OnceCell<Known>,
 }
 
 impl<'a> Files<'a> {
     fn new(graph: &'a Graph, root: &'a Path) -> Files<'a> {
-        Files { graph, root, found: std::cell::OnceCell::new() }
+        Files { graph, root, found: std::cell::OnceCell::new(), kept_jobs: None, jobs: std::cell::OnceCell::new() }
+    }
+
+    fn with_jobs(mut self, kept: Option<&'a Known>) -> Files<'a> {
+        self.kept_jobs = kept;
+        self
+    }
+
+    fn jobs(&self) -> &Known {
+        self.kept_jobs.unwrap_or_else(|| self.jobs.get_or_init(|| jobs::known(self.graph, self.root)))
     }
 
     fn shown(&self) -> &[envs::EnvFile] {
@@ -805,6 +864,25 @@ struct Described<'a> {
     downstream_total: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     test: Option<TestFacts<'a>>,
+    /// The steps of the orchestrator's jobs that run it, when the project
+    /// names where its jobs are: an empty list says none does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs: Option<Vec<jobs::Hit>>,
+    /// Steps not resolved that could run it, and job files not read, which
+    /// could hold more.
+    #[serde(skip_serializing_if = "is_zero")]
+    jobs_unresolved: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    jobs_files_refused: usize,
+    /// How many sources the file names, when it names none or some were not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_sources: Option<usize>,
+    /// Sources that were not read: `jobs` is then only what the others hold.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_not_read: Option<jobs::Unread>,
+    /// Why the project's sources file was not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_refused: Option<String>,
     /// The node's own file, with `--sql`, once it was read.
     #[serde(skip_serializing_if = "Option::is_none")]
     sql: Option<String>,
@@ -882,6 +960,21 @@ impl<'a> Described<'a> {
         let tests = sorted_by_name(graph, &n.tests);
         let reach = !matches!(n.kind, Kind::Test | Kind::Exposure | Kind::Operation | Kind::Other);
         let path = ls::path_of(graph, n);
+        let (mut asked, mut unresolved, mut files_refused, mut refused) = (None, 0, 0, None);
+        let (mut sources, mut not_read) = (None, None);
+        // Asked only of a node that has a reach: a test's card never reads the jobs.
+        if reach {
+            match files.jobs() {
+                Known::Read(read) => {
+                    let found = jobs::for_node(graph, read, idx);
+                    (asked, unresolved, files_refused) = (Some(jobs::hits(&found)), jobs::unresolved_for(&found), found.refused);
+                    not_read = jobs::unread(read);
+                    sources = Some(read.sources.len());
+                }
+                Known::Refused(why) => refused = Some(why.clone()),
+                Known::Absent => {}
+            }
+        }
         Described {
             unique_id: &n.id,
             name: &n.name,
@@ -944,6 +1037,12 @@ impl<'a> Described<'a> {
                 },
                 settings: settings(n),
             }),
+            jobs: asked,
+            jobs_unresolved: unresolved,
+            jobs_files_refused: files_refused,
+            jobs_sources: sources.filter(|&n| n == 0 || not_read.is_some()),
+            jobs_not_read: not_read,
+            jobs_refused: refused,
             sql,
         }
     }
@@ -959,7 +1058,7 @@ pub fn run_overview(project: &Path, manifest: Option<&Path>, catalog: Option<&Pa
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = respond_overview(&root, &manifest_path, &graph, catalog, depth, output, &mut out, &mut err);
+    let written = respond_overview(&root, &manifest_path, &graph, None, catalog, depth, output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
@@ -969,6 +1068,7 @@ pub(crate) fn respond_overview(
     root: &Path,
     manifest_path: &Path,
     graph: &Graph,
+    jobs: Option<&Known>,
     catalog: Option<&Path>,
     depth: usize,
     output: Output,
@@ -980,7 +1080,7 @@ pub(crate) fn respond_overview(
     // them it would load.
     let caches = collin::discover(&target_dir);
     let whole = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()).display().to_string();
-    let found = Overview::of(
+    let mut found = Overview::of(
         graph,
         &whole(manifest_path),
         &whole(&ls::catalog_path(root, manifest_path, catalog)),
@@ -988,6 +1088,17 @@ pub(crate) fn respond_overview(
         depth,
         ls::now_secs(),
     );
+    // Read only when the project has a sources file, and by the caller when
+    // it keeps them between calls (0115).
+    match jobs.cloned().unwrap_or_else(|| jobs::known(graph, root)) {
+        Known::Absent => {}
+        Known::Refused(why) => found.jobs_refused = Some(why),
+        Known::Read(read) => {
+            found.jobs = Some(jobs::listed(&read));
+            found.jobs_sources = Some(read.sources.len());
+            found.jobs_not_read = jobs::unread(&read);
+        }
+    }
     match output {
         Output::Json => serde_json::to_writer(&mut *out, &found).map_err(io::Error::from).and_then(|_| writeln!(out)),
         Output::Name | Output::Compact => found.write_text(&mut *out),
@@ -1021,6 +1132,19 @@ struct Overview {
     macros: MacroFacts,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     selectors: Vec<SelectorFacts>,
+    /// The orchestrator's jobs, when the project names where they are
+    /// (`.dbt-edith/jobs.yml`): an empty list says it names none that read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs: Option<Vec<jobs::JobFact>>,
+    /// How many sources the file names; 0 reads as "no sources", not "no job".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_sources: Option<usize>,
+    /// Sources that were not read, which could hold more jobs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_not_read: Option<jobs::Unread>,
+    /// Why that file was not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    jobs_refused: Option<String>,
     /// Of every enabled node, a test included: `tag:recon` selects tests, and
     /// a test carries only the tags it is given.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -1260,6 +1384,10 @@ impl Overview {
                     unsupported: s.unsupported.clone(),
                 })
                 .collect(),
+            jobs: None,
+            jobs_sources: None,
+            jobs_not_read: None,
+            jobs_refused: None,
             tags,
             folders: folders(graph, depth),
             depth,
@@ -1332,6 +1460,20 @@ impl Overview {
             .map(|s| if s.unsupported.is_some() { format!("{} (not resolvable here)", s.name) } else { s.name.clone() })
             .collect();
         sheet.line("selectors", headed(&selectors));
+        match (&self.jobs, &self.jobs_refused) {
+            (_, Some(why)) => sheet.line("jobs", format!("not read, {}: {why}", jobs::SOURCES_FILE)),
+            (Some(_), None) if self.jobs_sources == Some(0) => sheet.line("jobs", format!("no sources in {}", jobs::SOURCES_FILE)),
+            (Some(list), None) => {
+                let names: Vec<String> = list.iter().map(|j| j.name.clone()).collect();
+                let from = format!("{} from {}", list.len(), jobs::SOURCES_FILE);
+                let mut line = if names.is_empty() { from } else { format!("{from}: {}", headed(&names)) };
+                if let Some(u) = &self.jobs_not_read {
+                    line.push_str(&format!("; {} not read", u.text()));
+                }
+                sheet.line("jobs", line);
+            }
+            (None, None) => {}
+        }
         if !self.tags.is_empty() {
             let tags: Vec<String> = sorted_by_count(&self.tags).iter().map(|(tag, n)| format!("{tag} {n}")).collect();
             sheet.line("tags", headed(&tags));
@@ -1542,7 +1684,7 @@ mod tests {
     fn ask_on(g: &Graph, root: &Path, names: &[&str], sql: bool, output: Output) -> (String, String, i32) {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = describe(g, root, &names, sql, output, &mut out, &mut err).unwrap();
+        let code = describe(g, root, None, &names, sql, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -2054,7 +2196,7 @@ mod tests {
         let log: Log = Rc::default();
         let (mut out, mut err) = (BufWriter::new(Tap("out", log.clone())), Tap("err", log.clone()));
         let names: Vec<String> = ["stg_orders", "nothing", "weekly_report"].iter().map(|n| n.to_string()).collect();
-        let code = describe(&graph(), Path::new("/nowhere"), &names, false, Output::Name, &mut out, &mut err).unwrap();
+        let code = describe(&graph(), Path::new("/nowhere"), None, &names, false, Output::Name, &mut out, &mut err).unwrap();
         assert_eq!(code, REFUSED);
         let seen = log.borrow();
         let first_error = seen.iter().position(|(stream, _)| *stream == "err").unwrap();
@@ -2530,5 +2672,171 @@ mod tests {
         let mut out = Vec::new();
         sheet.write(0, &mut out).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), "ab[0m  v\n");
+    }
+
+    /// A project folder whose `.dbt-edith/jobs.yml` names the invented job
+    /// fixtures, which the tests share (0014).
+    fn project_with_jobs(tag: &str, kinds: &[(&str, &str)]) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("dbt-edith-describe-jobs-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".dbt-edith")).unwrap();
+        // Inside the project: its file names paths from the project only.
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("jobs");
+        jobs::copy_tree(&fixtures, &root.join("jobs"));
+        let list: Vec<crate::settings::JobSource> = kinds
+            .iter()
+            .map(|(kind, dir)| crate::settings::JobSource { kind: kind.to_string(), path: format!("jobs/{dir}"), ..Default::default() })
+            .collect();
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
+        root
+    }
+
+    #[test]
+    fn the_jobs_line_names_each_step_that_runs_a_node_and_is_absent_without_a_sources_file() {
+        let root = project_with_jobs("card", &[("airflow", "airflow"), ("dbt_cloud", "dbt_cloud")]);
+        let (out, err, code) = ask_in(&root, &["orders"], false, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        // Scheduled jobs first, each step with what in its selection reached the node.
+        assert_eq!(
+            out.lines().last().unwrap(),
+            "  jobs (3)      DAG jaffle_daily › task marts (scheduled 0 6 * * *) via orders; \
+             DAG jaffle_on_marts › task rebuild_orders (scheduled on jaffle_marts) via @stg_orders; \
+             job Nightly build › step 2/3 (scheduled 0 2 * * *) via +orders; 1 step not resolved"
+        );
+        // Reach is the line before it: the jobs line closes the card.
+        assert!(out.contains("  reach         3 upstream, 2 downstream\n  jobs (3)"), "{out}");
+        let (json, _, _) = ask_in(&root, &["orders"], false, Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(json["jobs_unresolved"], 1);
+        assert_eq!(
+            json["jobs"][0],
+            json!({"kind": "airflow", "job": "jaffle_daily", "step": "task marts", "schedule": "scheduled 0 6 * * *", "via": ["orders"], "file": "jaffle_daily.yml"})
+        );
+        assert_eq!(json["jobs"].as_array().map(Vec::len), Some(3));
+        // Compact reads as the text does.
+        assert_eq!(ask_in(&root, &["orders"], false, Output::Compact).0, ask_in(&root, &["orders"], false, Output::Name).0);
+
+        // No step runs a source, said so; a card with a file and nothing to
+        // say still has the line, and the JSON an empty list.
+        let (out, _, _) = ask_in(&root, &["raw.orders"], false, Output::Name);
+        assert_eq!(out.lines().last().unwrap(), "  jobs (0)      none");
+        let (json, _, _) = ask_in(&root, &["raw.orders"], false, Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(json["jobs"], json!([]));
+
+        // A test is not a node a job runs by itself: its card has no line.
+        let (out, _, _) = ask_in(&root, &["not_null_orders_order_id"], false, Output::Name);
+        assert!(!out.contains("jobs"), "{out}");
+        // Without the file, nothing at all: not the line, not the JSON keys.
+        let (out, _, _) = ask_in(Path::new("/nowhere"), &["orders"], false, Output::Name);
+        assert!(!out.contains("jobs"), "{out}");
+        let (json, _, _) = ask_in(Path::new("/nowhere"), &["orders"], false, Output::Json);
+        assert!(!json.contains("jobs"), "{json}");
+    }
+
+    #[test]
+    fn a_sources_file_that_does_not_read_is_said_on_the_card_and_the_overview() {
+        let root = project_with_jobs("refused", &[("airflow", "airflow")]);
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs:\n  - kind: airflow\n").unwrap();
+        let (out, _, code) = ask_in(&root, &["orders"], false, Output::Name);
+        assert_eq!(code, ANSWERED, "the card is still answered");
+        assert_eq!(out.lines().last().unwrap(), "  jobs          not read, .dbt-edith/jobs.yml: line 2: a source with no kind or no path");
+        let (json, _, _) = ask_in(&root, &["orders"], false, Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(json["jobs_refused"], "line 2: a source with no kind or no path");
+        assert!(json.get("jobs").is_none());
+    }
+
+    #[test]
+    fn the_overview_names_the_jobs_of_the_sources_file() {
+        let root = project_with_jobs("overview", &[("airflow", "airflow"), ("dbt_cloud", "dbt_cloud")]);
+        let g = graph();
+        let run = |output| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            respond_overview(&root, Path::new("/p/target/manifest.json"), &g, None, None, 3, output, &mut out, &mut err).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let text = run(Output::Name);
+        let line = text.lines().find(|l| l.starts_with("jobs")).unwrap_or_default();
+        assert_eq!(line, "jobs            5 from .dbt-edith/jobs.yml: jaffle_daily, jaffle_on_marts, Nightly build, Exports, CI");
+        let json: serde_json::Value = serde_json::from_str(&run(Output::Json)).unwrap();
+        assert_eq!(json["jobs"].as_array().map(Vec::len), Some(5));
+        assert_eq!(json["jobs"][0]["kind"], "airflow");
+        assert_eq!(json["jobs"][0]["schedule"], "scheduled 0 6 * * *");
+        // Without the file: no line, no key.
+        let elsewhere = std::env::temp_dir().join("dbt-edith-describe-jobs-none");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        respond_overview(&elsewhere, Path::new("/p/target/manifest.json"), &g, None, None, 3, Output::Json, &mut out, &mut err).unwrap();
+        assert!(!String::from_utf8(out).unwrap().contains("jobs"));
+        // Fifteen at most in the text, like selectors; the JSON holds them all.
+        let many: Vec<String> = (0..20).map(|i| format!("job{i}")).collect();
+        assert_eq!(headed(&many), "job0, job1, job2, job3, job4, job5, job6, job7, job8, job9, job10, job11, job12, job13, job14, +5 more");
+    }
+
+    #[test]
+    fn a_source_that_did_not_read_is_said_and_none_is_not_said_over_it() {
+        let root = project_with_jobs("unread", &[("airflow", "airflow")]);
+        std::fs::write(
+            root.join(".dbt-edith/jobs.yml"),
+            "jobs:\n  - kind: airflow\n    path: jobs/airflow\n  - kind: airflow\n    path: jobs/missing\n",
+        )
+        .unwrap();
+        let (out, _, _) = ask_in(&root, &["orders"], false, Output::Name);
+        assert!(out.lines().last().unwrap().ends_with("; 1 of 2 sources (nothing at this path) not read"), "{out}");
+        assert!(out.lines().last().unwrap().starts_with("  jobs (2)"), "{out}");
+        // No step found, and a source unread: not `none`.
+        let (out, _, _) = ask_in(&root, &["raw.orders"], false, Output::Name);
+        assert_eq!(out.lines().last().unwrap(), "  jobs          not read: 1 of 2 sources (nothing at this path)");
+        let (json, _, _) = ask_in(&root, &["raw.orders"], false, Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(json["jobs"], json!([]));
+        assert_eq!(json["jobs_not_read"], json!({"sources": 1, "of": 2, "reason": "nothing at this path"}));
+        assert_eq!(json["jobs_sources"], 2);
+        // The overview says it too.
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("; 1 of 2 sources (nothing at this path) not read")), "{text}");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Json, &mut out, &mut err).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(json["jobs_not_read"]["of"], 2);
+    }
+
+    #[test]
+    fn a_file_that_names_no_source_is_no_sources_and_not_no_job() {
+        let root = project_with_jobs("empty", &[]);
+        let (out, _, _) = ask_in(&root, &["orders"], false, Output::Name);
+        assert_eq!(out.lines().last().unwrap(), "  jobs          no sources in .dbt-edith/jobs.yml");
+        let (json, _, _) = ask_in(&root, &["orders"], false, Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!((json["jobs"].clone(), json["jobs_sources"].clone()), (json!([]), json!(0)));
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("no sources in .dbt-edith/jobs.yml")), "{text}");
+    }
+
+    #[test]
+    fn a_file_nested_past_the_limit_is_refused_and_the_overview_still_answers() {
+        // The sources file itself, megabytes of brackets.
+        let root = project_with_jobs("deep-sources", &[]);
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), format!("jobs: {}{}\n", "[".repeat(400_000), "]".repeat(400_000))).unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(code, ANSWERED);
+        assert!(
+            text.lines().any(|l| l.starts_with("jobs") && l.ends_with("not read, .dbt-edith/jobs.yml: line 1: collections nested deeper than this reader takes")),
+            "{text}"
+        );
+        // A job file, and a block tree.
+        let root = project_with_jobs("deep-job", &[("airflow", "airflow")]);
+        std::fs::write(root.join("jobs/airflow/deep.yml"), format!("tasks: {}{}\n", "[".repeat(400_000), "]".repeat(400_000))).unwrap();
+        let block: String = (0..300).map(|i| format!("{}k{i}:\n", "  ".repeat(i))).collect();
+        std::fs::write(root.join("jobs/airflow/tree.yml"), block).unwrap();
+        let (out, _, code) = ask_in(&root, &["orders"], false, Output::Name);
+        assert_eq!(code, ANSWERED);
+        assert!(out.lines().last().unwrap().contains("2 job files not read"), "{out}");
     }
 }

@@ -641,6 +641,23 @@ pub fn write_file(root: &Path, rel: &str, content: &str, seen: Option<&str>) -> 
     Ok(Saved::Written(stamp_of(&file.metadata()?)))
 }
 
+/// `write_file` through a temporary file and a rename, for a file another
+/// program reads whole as soon as it is there (the project's sources file).
+/// The same lock and the same check of `seen`, and the stamp of what was
+/// written.
+pub fn write_file_atomic(root: &Path, rel: &str, content: &str, seen: Option<&str>) -> anyhow::Result<Saved> {
+    let path = resolve(root, rel)?;
+    let _alone = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(seen) = seen {
+        let now = stamp(&path);
+        if now.as_deref().unwrap_or("") != seen {
+            return Ok(Saved::Changed(now));
+        }
+    }
+    let written = crate::settings::write_atomic_meta(&path, content.as_bytes())?;
+    Ok(Saved::Written(stamp_of(&written)))
+}
+
 /// Whether this directory looks like the root of a dbt project. Used only to
 /// warn at startup: dbt-edith opens whatever it is given, since a monorepo or a
 /// manifest passed with `--manifest` is a legitimate way to work.

@@ -1,0 +1,315 @@
+//! The `--job` mode: one DAG or dbt Cloud job, step by step, with the nodes
+//! each step runs, printed, and the process ends (0115).
+//!
+//! Invariants: the jobs are the ones the project's own `.dbt-edith/jobs.yml`
+//! names, read by `jobs::known`, so the command line answers as the Jobs tab
+//! does over the same files, and no word of the line becomes a path. A project
+//! without that file is not a question this mode can answer, and says so in
+//! the exit code the modes keep for what could not be asked. stdout carries the
+//! answer and nothing else, as the other modes keep it (`ls::provenance` goes
+//! to stderr).
+
+use crate::graph::Graph;
+use crate::jobs::{self, Known};
+use crate::ls::{self, Output, ANSWERED, CANNOT_RUN, REFUSED};
+use std::io::{self, BufWriter, Write};
+use std::path::Path;
+
+const NO_NAME: &str = "error: --job wants the id of a DAG or the name of a dbt Cloud job";
+
+/// The whole mode, from the command line's arguments to the exit code.
+pub fn run_job(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, name: &str, output: Output) -> i32 {
+    if let Some(why) = no_name(name) {
+        eprintln!("{why}");
+        return REFUSED;
+    }
+    let (root, _, graph) = match ls::open_with_catalog(project, manifest, catalog) {
+        Ok(opened) => opened,
+        Err(why) => return ls::cannot_open(&why),
+    };
+    let mut err = io::stderr().lock();
+    let mut out = BufWriter::new(io::stdout().lock());
+    let written = respond_job(&root, &graph, None, name, output, &mut out, &mut err);
+    ls::ended(written, &mut err)
+}
+
+/// Why nothing can be asked, when no name was given. Before the project is
+/// opened: reading a manifest to say so is a wait for nothing.
+pub(crate) fn no_name(name: &str) -> Option<&'static str> {
+    name.trim().is_empty().then_some(NO_NAME)
+}
+
+/// What the mode does once the project is open. `kept` is the jobs a caller
+/// holds between calls (MCP); None reads them here, if the project has a
+/// sources file.
+pub(crate) fn respond_job(
+    root: &Path,
+    graph: &Graph,
+    kept: Option<&Known>,
+    name: &str,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let code = job(root, graph, kept, name.trim(), output, out, err)?;
+    out.flush()?;
+    let _ = ls::provenance(root, graph, err);
+    Ok(code)
+}
+
+fn job(root: &Path, graph: &Graph, kept: Option<&Known>, name: &str, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+    let known = kept.cloned().unwrap_or_else(|| jobs::known(graph, root));
+    let read = match known {
+        Known::Absent => {
+            writeln!(err, "error: no {} in this project; name the sources in the Jobs settings", clean(jobs::SOURCES_FILE))?;
+            return Ok(CANNOT_RUN);
+        }
+        Known::Refused(why) => {
+            writeln!(err, "error: {} is not read, {}", jobs::SOURCES_FILE, clean(&why))?;
+            return Ok(CANNOT_RUN);
+        }
+        Known::Read(read) => read,
+    };
+    let found = jobs::named(&read, name);
+    let one = match found.as_slice() {
+        [one] => *one,
+        [] => {
+            out.flush()?;
+            let mut why = jobs::unknown(&read, name);
+            if let Some(u) = jobs::unread(&read) {
+                why.push_str(&format!("; {} not read", u.text()));
+            }
+            writeln!(err, "error: {}", clean(&why))?;
+            return Ok(REFUSED);
+        }
+        many => {
+            out.flush()?;
+            // The source, since two sources may hold a job of one name.
+            let listed: Vec<String> = many.iter().map(|&i| jobs::listed_as(&read, i)).collect();
+            writeln!(err, "error: {} names {} jobs: {}", clean(name), many.len(), clean(&listed.join(", ")))?;
+            return Ok(REFUSED);
+        }
+    };
+    let answer = jobs::answer(graph, &read, one);
+    match output {
+        Output::Json => {
+            serde_json::to_writer(&mut *out, &answer)?;
+            writeln!(out)?;
+        }
+        // A card is read, so compact has nothing to drop from it: both print
+        // the text.
+        Output::Name | Output::Compact => write_text(&answer, out)?,
+    }
+    Ok(ANSWERED)
+}
+
+/// A line with every control character but the tab left out: the names and
+/// commands are the project's text, and an escape sequence in one would be
+/// the terminal's to run, not the reader's to see.
+fn clean(text: &str) -> String {
+    text.chars().filter(|&c| c == '\t' || !c.is_control()).collect()
+}
+
+fn write_text(a: &jobs::JobAnswer, out: &mut impl Write) -> io::Result<()> {
+    let head = if a.kind == jobs::AIRFLOW { format!("DAG {}", a.name) } else { format!("job {}", a.name) };
+    let ident = if a.ident.is_empty() { String::new() } else { format!(" [[{}]]", a.ident) };
+    writeln!(out, "{}", clean(&format!("{head}{ident}  {}  {}:{}", a.schedule, a.file, a.line)))?;
+    for s in &a.steps {
+        let mut line = format!("  {}  {}", s.label, s.command);
+        if !s.unresolved.is_empty() {
+            line.push_str(&format!("  not resolved: {}", s.unresolved));
+        } else if !s.runs_nothing.is_empty() {
+            line.push_str(&format!("  ({})", s.runs_nothing));
+        } else {
+            line.push_str(&format!("  ({})", if s.node_count == 1 { "1 node".to_string() } else { format!("{} nodes", s.node_count) }));
+        }
+        writeln!(out, "{}", clean(&line))?;
+        for w in &s.warnings {
+            writeln!(out, "{}", clean(&format!("    note: {w}")))?;
+        }
+        for n in &s.nodes {
+            writeln!(out, "{}", clean(&format!("    {} {}", n.kind, n.name)))?;
+        }
+    }
+    writeln!(out, "nodes {}", a.nodes)?;
+    if let Some(u) = &a.not_read {
+        writeln!(out, "not read: {}", clean(&u.text()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::RawManifest;
+    use crate::settings::JobSource;
+    use serde_json::json;
+
+    /// Jaffle Shop in miniature: two staging models, two marts and a seed.
+    fn graph() -> Graph {
+        let model = |name: &str, dir: &str, tags: &[&str]| {
+            json!({
+                "name": name, "resource_type": "model", "package_name": "jaffle_shop",
+                "original_file_path": format!("models/{dir}/{name}.sql"),
+                "fqn": ["jaffle_shop", dir, name], "tags": tags, "config": { "materialized": "table" },
+            })
+        };
+        let raw: RawManifest = serde_json::from_value(json!({
+            "metadata": { "project_name": "jaffle_shop" },
+            "nodes": {
+                "model.jaffle_shop.stg_orders": model("stg_orders", "staging", &["staging"]),
+                "model.jaffle_shop.stg_customers": model("stg_customers", "staging", &["staging"]),
+                "model.jaffle_shop.orders": model("orders", "marts", &[]),
+                "model.jaffle_shop.customers": model("customers", "marts", &[]),
+                "seed.jaffle_shop.raw_orders": {
+                    "name": "raw_orders", "resource_type": "seed", "package_name": "jaffle_shop",
+                    "original_file_path": "seeds/raw_orders.csv", "fqn": ["jaffle_shop", "raw_orders"],
+                },
+            },
+            "sources": {
+                "source.jaffle_shop.raw.payments": {
+                    "name": "payments", "resource_type": "source", "package_name": "jaffle_shop",
+                    "source_name": "raw", "original_file_path": "models/staging/sources.yml",
+                    "fqn": ["jaffle_shop", "staging", "raw", "payments"],
+                },
+            },
+            "parent_map": {
+                "model.jaffle_shop.stg_orders": ["seed.jaffle_shop.raw_orders"],
+                "model.jaffle_shop.orders": ["model.jaffle_shop.stg_orders", "model.jaffle_shop.customers"],
+                "model.jaffle_shop.customers": ["model.jaffle_shop.stg_customers"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, Path::new("manifest.json"), 0, 0)
+    }
+
+    /// A project folder whose sources file names the job fixtures, once per
+    /// `(kind, folder, label)`.
+    fn project(tag: &str, sources: &[(&str, &str, &str)]) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("dbt-edith-job-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".dbt-edith")).unwrap();
+        // Inside the project: its file names paths from the project only.
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("jobs");
+        jobs::copy_tree(&fixtures, &root.join("jobs"));
+        let list: Vec<JobSource> = sources
+            .iter()
+            .map(|(kind, dir, label)| JobSource {
+                kind: kind.to_string(),
+                path: format!("jobs/{dir}"),
+                label: label.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
+        root
+    }
+
+    fn ask(root: &Path, name: &str, output: Output) -> (String, String, i32) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = job(root, &graph(), None, name, output, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn a_dag_is_printed_step_by_step_with_the_nodes_each_step_runs() {
+        let root = project("dag", &[("airflow", "airflow", ""), ("dbt_cloud", "dbt_cloud", "")]);
+        let (out, err, code) = ask(&root, "jaffle_daily", Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert_eq!(
+            out,
+            "DAG jaffle_daily  scheduled 0 6 * * *  jaffle_daily.yml:2\n\
+             \x20 task load_seeds  dbt seed  (1 node)\n\
+             \x20   seed raw_orders\n\
+             \x20 task stage  dbt run --select tag:staging  (2 nodes)\n\
+             \x20   model stg_customers\n\
+             \x20   model stg_orders\n\
+             \x20 task marts  dbt run -s +customers orders --exclude tag:staging  (2 nodes)\n\
+             \x20   model customers\n\
+             \x20   model orders\n\
+             \x20 task reconcile  dbt test --selector recon_tests  not resolved: no selector named `recon_tests` in this manifest; \
+             the Selectors menu lists the ones it records\n\
+             nodes 5\n"
+        );
+        // Compact reads as the text does.
+        assert_eq!(ask(&root, "jaffle_daily", Output::Compact).0, out);
+    }
+
+    #[test]
+    fn a_dbt_cloud_job_is_found_by_its_name_its_case_or_its_identifier() {
+        let root = project("cloud", &[("dbt_cloud", "dbt_cloud", "")]);
+        let (out, _, code) = ask(&root, "Nightly build", Output::Name);
+        assert_eq!(code, ANSWERED);
+        let head = out.lines().next().unwrap();
+        assert_eq!(head, "job Nightly build [[nightly]]  scheduled 0 2 * * *  jobs.yml:22");
+        assert!(out.contains("  step 1/3  dbt seed  (1 node)\n"), "{out}");
+        assert!(out.contains("  step 2/3  dbt build --select +orders --exclude-resource-type test  ("), "{out}");
+        for other in ["NIGHTLY BUILD", "nightly"] {
+            assert_eq!(ask(&root, other, Output::Name).0, out, "{other}");
+        }
+        let (json, _, _) = ask(&root, "Nightly build", Output::Json);
+        let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!((json["kind"].as_str(), json["ident"].as_str(), json["schedule"].as_str()), (Some("dbt_cloud"), Some("nightly"), Some("scheduled 0 2 * * *")));
+        assert_eq!(json["steps"][0]["node_count"], 1);
+        assert_eq!(json["steps"][0]["nodes"][0], json!({"id": "seed.jaffle_shop.raw_orders", "kind": "seed", "name": "raw_orders"}));
+        assert_eq!(json["nodes"], 5, "distinct: the seed is run by two steps and counted once");
+    }
+
+    #[test]
+    fn a_step_that_compiles_runs_no_node_and_a_step_that_selects_nothing_says_zero() {
+        let root = project("compile", &[("airflow", "airflow", "")]);
+        let (out, _, _) = ask(&root, "jaffle_on_marts", Output::Name);
+        assert!(out.contains("  task compile_all  dbt compile  (dbt compile runs no node)\n"), "{out}");
+        assert!(!out.contains("(0 nodes)\n    model"), "a compile step lists no node: {out}");
+    }
+
+    #[test]
+    fn several_jobs_of_a_name_are_refused_with_their_sources_and_an_unknown_one_with_the_nearest() {
+        let root = project("many", &[("airflow", "airflow", "nightly"), ("airflow", "airflow", "copy")]);
+        let (out, err, code) = ask(&root, "jaffle_daily", Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        assert!(err.starts_with("error: jaffle_daily names 2 jobs: nightly: jaffle_daily, copy: jaffle_daily\n"), "{err}");
+        let (out, err, code) = ask(&root, "jaffle", Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        assert!(err.starts_with("error: no job named jaffle; did you mean jaffle_daily, jaffle_on_marts\n"), "{err}");
+        let (_, err, _) = ask(&root, "nothing_like_it", Output::Name);
+        assert!(err.starts_with("error: no job named nothing_like_it; the jobs read include jaffle_daily, jaffle_on_marts\n"), "{err}");
+        // A task is no job.
+        assert_eq!(ask(&root, "marts", Output::Name).2, REFUSED);
+    }
+
+    #[test]
+    fn without_a_sources_file_or_with_one_that_does_not_read_nothing_can_be_asked() {
+        let none = std::env::temp_dir().join(format!("dbt-edith-job-none-{}", std::process::id()));
+        std::fs::create_dir_all(&none).unwrap();
+        let (out, err, code) = ask(&none, "jaffle_daily", Output::Name);
+        assert_eq!((out.as_str(), code), ("", CANNOT_RUN));
+        assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Jobs settings\n"), "{err}");
+        let root = project("broken", &[("airflow", "airflow", "")]);
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs: nope\n").unwrap();
+        let (_, err, code) = ask(&root, "jaffle_daily", Output::Name);
+        assert_eq!(code, CANNOT_RUN);
+        assert!(err.starts_with("error: .dbt-edith/jobs.yml is not read, line 1: `jobs:` is not a list of sources\n"), "{err}");
+        assert_eq!(no_name("  "), Some(NO_NAME));
+        assert_eq!(no_name("jaffle_daily"), None);
+    }
+
+    #[test]
+    fn a_job_answer_says_which_sources_were_not_read() {
+        let root = project("unread", &[("airflow", "airflow", "")]);
+        std::fs::write(
+            root.join(".dbt-edith/jobs.yml"),
+            "jobs:\n  - kind: airflow\n    path: jobs/airflow\n  - kind: airflow\n    path: jobs/missing\n",
+        )
+        .unwrap();
+        let (out, _, code) = ask(&root, "jaffle_daily", Output::Name);
+        assert_eq!(code, ANSWERED);
+        assert!(out.ends_with("nodes 5\nnot read: 1 of 2 sources (nothing at this path)\n"), "{out}");
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_daily", Output::Json).0).unwrap();
+        assert_eq!(json["not_read"], json!({"sources": 1, "of": 2, "reason": "nothing at this path"}));
+        // Not found, and a source unread: the refusal says it could be there.
+        let (_, err, code) = ask(&root, "nothing_like_it", Output::Name);
+        assert_eq!(code, REFUSED);
+        assert!(err.contains("; 1 of 2 sources (nothing at this path) not read\n"), "{err}");
+    }
+}

@@ -79,10 +79,12 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   found where dbt looks for it, through its own route (0017, 0049), and that
   route never sends its passwords, tokens or keys (0054). The clone route reads
   it too, and sends only the active target's name, database and schema (0058).
-  The job folders the user names are read as well, their `.yml` and `.yaml`
-  files only, and only what was parsed from them leaves, never a `--vars` value
-  (0063). To pick one, the sources form lists any folder, by the names of its
-  folders and YAML files only (0070). Whether this binary was installed by
+  The job folders the user names are read as well, in the settings or in the
+  project's own `.dbt-edith/jobs.yml`, which the command line and MCP read too
+  and which is written on the person's click only (0115). Their `.yml` and
+  `.yaml` files only, and only what was parsed from them leaves, never a
+  `--vars` value (0063). To pick one, the sources form lists any folder, by the
+  names of its folders and YAML files only (0070). Whether this binary was installed by
   cargo or built in a clone is told from which files exist beside it, never
   from inside them (0068), and whether another was installed in its place from
   the time its own file was written (0095). A path the manifest records for a
@@ -195,6 +197,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |
 | read the orchestrator's jobs, change what leaves them, or resolve a job's dbt command | [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
+| change where the job sources are kept, what `.dbt-edith/jobs.yml` holds or who writes it, or what the command line and MCP read of the jobs | [0115](docs/decisions/0115-job-sources-may-live-in-the-project.md), [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | change which jobs count as scheduled, or what the job coverage calls unscheduled | [0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md), [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
@@ -280,11 +283,12 @@ src/select.rs         dbt selector expressions, parsed and resolved against the 
 src/selectors.rs      the named selectors of selectors.yml, as the manifest recorded them
 src/ls.rs             --select and --selector: one selection printed, and no server
 src/describe.rs       --describe and --overview: a node's card and the project's shape printed, and no server
+src/job.rs            --job: one DAG or dbt Cloud job printed step by step, with the nodes each runs, and no server
 src/mcp.rs            --mcp: the stdio JSON-RPC loop and its one tool, over the same answers
 src/mcp_line.rs       the tool's command line: split, parsed by clap, accepted by an allow-list of flags
 src/mcp_graphs.rs     the manifest and the base graph the server keeps, reloaded when their files change
 src/skill.rs          --skill: the agent skill of docs/agent-skill/ printed for this version, and held to the flags this binary accepts
-src/jobs.rs           the orchestrator's jobs, read from the folders named, and the nodes each step acts on
+src/jobs.rs           the orchestrator's jobs, read from the folders named (in the settings or `.dbt-edith/jobs.yml`), and the nodes each step acts on
 src/command.rs        a dbt command line, read into what it runs and what it selects
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree
 src/clone.rs          which nodes a clone into your schema copies: the model, its direct parents, through ephemerals

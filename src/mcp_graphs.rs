@@ -8,8 +8,14 @@
 //! has moved, so an edit to `selectors.yml` or a `dbt parse` in between never
 //! answers from the old graph. A load that fails empties its slot: a half
 //! written manifest is never kept.
+//!
+//! A third slot holds the jobs the project's `.dbt-edith/jobs.yml` names, read
+//! over the base graph (0115). It is kept while that graph, the file and every
+//! job file it walks are as they were, and read again otherwise; a project with
+//! no such file keeps nothing and reads nothing.
 
 use crate::graph::Graph;
+use crate::jobs::{self, Known};
 use crate::{api, ls, macros};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -30,6 +36,15 @@ struct Kept {
     /// What the load said and the command line prints before its answer:
     /// `catalog.json ignored: ...`.
     warning: Option<String>,
+}
+
+/// The jobs, and what they were read under: the base graph's load, the sources
+/// file as it was read, and the job files it walked.
+struct KeptJobs {
+    base_load: usize,
+    sources: jobs::Sources,
+    stamps: Vec<jobs::Stamp>,
+    known: Known,
 }
 
 /// How many times each graph was read from disk, so a test can tell a call
@@ -55,6 +70,9 @@ pub struct Graphs {
     catalog: Option<PathBuf>,
     manifest: Option<Kept>,
     base: Option<Kept>,
+    jobs: Option<KeptJobs>,
+    /// How many times the jobs were read, for a test.
+    jobs_read: usize,
     loads: Loads,
 }
 
@@ -63,7 +81,7 @@ impl Graphs {
     /// where the server was told the manifest is, else `target/manifest.json`.
     pub fn new(root: PathBuf, manifest: Option<PathBuf>, catalog: Option<PathBuf>) -> Graphs {
         let manifest_path = manifest.unwrap_or_else(|| root.join("target").join("manifest.json"));
-        Graphs { root, manifest_path, catalog, manifest: None, base: None, loads: Loads::default() }
+        Graphs { root, manifest_path, catalog, manifest: None, base: None, jobs: None, jobs_read: 0, loads: Loads::default() }
     }
 
     pub fn root(&self) -> &Path {
@@ -84,10 +102,16 @@ impl Graphs {
         self.loads
     }
 
+    #[cfg(test)]
+    pub fn jobs_read(&self) -> usize {
+        self.jobs_read
+    }
+
     /// Lets go of both graphs, for a call that panicked while it held one.
     pub fn forget(&mut self) {
         self.manifest = None;
         self.base = None;
+        self.jobs = None;
     }
 
     /// Every file the manifest graph's load reads: the manifest, the project
@@ -116,13 +140,50 @@ impl Graphs {
 
     /// The manifest with the packages placed and the catalog merged, as
     /// `ls::open_with_catalog` gives `--describe` and `--overview`. It is built
-    /// from a copy of the manifest graph, so the manifest is parsed once.
+    /// from a copy of the manifest graph, so the manifest is parsed once. The
+    /// calls that answer use `base_and_jobs`; this is the graph alone, for the
+    /// tests that compare it.
+    #[cfg(test)]
     pub fn base(&mut self) -> Result<Base<'_>, String> {
         self.refresh_base()?;
         self.base
             .as_ref()
             .map(|k| Base { graph: &k.graph, warning: k.warning.as_deref() })
             .ok_or_else(|| "error: the manifest is not loaded".to_string())
+    }
+
+    /// The base graph, and the jobs of the project's sources file, which the
+    /// command line reads as it answers (`Known`). Nothing of the jobs is
+    /// read unless that file is there.
+    pub fn base_and_jobs(&mut self) -> Result<(Base<'_>, Known), String> {
+        self.refresh_base()?;
+        let sources = jobs::sources(&self.root, &[]);
+        let known = if sources.place == jobs::Place::None {
+            self.jobs = None;
+            Known::Absent
+        } else {
+            let kept = self
+                .jobs
+                .as_ref()
+                .filter(|k| {
+                    k.base_load == self.loads.base
+                        && k.sources == sources
+                        && (sources.refused.is_some() || jobs::stamps_of(&self.root, &sources.list) == k.stamps)
+                })
+                .map(|k| k.known.clone());
+            match kept {
+                Some(known) => known,
+                None => {
+                    let Some(base) = &self.base else { return Err("error: the manifest is not loaded".to_string()) };
+                    let (known, stamps) = jobs::known_from(&base.graph, &self.root, &sources);
+                    self.jobs_read += 1;
+                    self.jobs = Some(KeptJobs { base_load: self.loads.base, sources, stamps, known: known.clone() });
+                    known
+                }
+            }
+        };
+        let base = self.base.as_ref().map(|k| Base { graph: &k.graph, warning: k.warning.as_deref() });
+        base.map(|b| (b, known)).ok_or_else(|| "error: the manifest is not loaded".to_string())
     }
 
     fn refresh_manifest(&mut self) -> Result<(), String> {
@@ -406,16 +467,16 @@ pub(crate) mod tests {
         let base = g.base().unwrap().graph;
         let names = ["orders", "helper", "stg_orders"].map(String::from);
         for output in [ls::Output::Name, ls::Output::Json] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, &names, true, output, o, e));
-            let got = said(|o, e| crate::describe::respond_describe(&root, base, &names, true, output, o, e));
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, &names, true, output, o, e));
+            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, &names, true, output, o, e));
             assert_eq!(got.0, want.0, "describe {output:?}");
             assert!(got.0.contains("helper") && got.0.contains("BIGINT"), "the cards hold the package's model and the catalog's type: {}", got.0);
             assert_eq!(got.2, want.2);
             // The freshness line's age is the one thing the clock moves.
             let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:")).collect::<Vec<_>>().join("\n");
             assert_eq!(strip(&got.1), strip(&want.1), "describe {output:?}");
-            let want = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, &opened, None, 3, output, o, e));
-            let got = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, base, None, 3, output, o, e));
+            let want = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, &opened, None, None, 3, output, o, e));
+            let got = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, base, None, None, 3, output, o, e));
             assert_eq!(no_ages(&got.0), no_ages(&want.0), "overview {output:?}");
             assert!(got.0.contains("jaffle_shop"), "{}", got.0);
             assert_eq!(got.2, want.2);
@@ -439,6 +500,53 @@ pub(crate) mod tests {
         let got = said(|o, e| ls::respond(&root, g.manifest().unwrap(), &query, None, ls::Output::Name, o, e));
         assert_eq!(got.0, want.0);
         assert_eq!(got.0, "orders\nstg_orders\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_jobs_are_kept_while_nothing_they_were_read_under_has_moved() {
+        let dir = project("jobs");
+        let mut g = graphs(&dir);
+        let known = |g: &mut Graphs| g.base_and_jobs().unwrap().1;
+        assert!(matches!(known(&mut g), Known::Absent));
+        assert_eq!(g.jobs_read(), 0, "no sources file, nothing read");
+
+        let dags = dir.join("dags");
+        std::fs::create_dir_all(&dags).unwrap();
+        let dag = dags.join("daily.yml");
+        std::fs::write(&dag, "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n").unwrap();
+        let sources = dir.join(".dbt-edith/jobs.yml");
+        std::fs::create_dir_all(dir.join(".dbt-edith")).unwrap();
+        std::fs::write(&sources, jobs::sources_yaml(&[crate::settings::JobSource { kind: "airflow".into(), path: "dags".into(), ..Default::default() }])).unwrap();
+        let Known::Read(read) = known(&mut g) else { panic!("read") };
+        assert_eq!((read.jobs.len(), g.jobs_read()), (1, 1));
+        known(&mut g);
+        assert_eq!(g.jobs_read(), 1, "kept while nothing moved");
+
+        // (what moved, whether it reads the jobs again)
+        touch(&dag);
+        known(&mut g);
+        assert_eq!(g.jobs_read(), 2, "a job file");
+        touch(&sources);
+        known(&mut g);
+        assert_eq!(g.jobs_read(), 3, "the sources file");
+        touch(&dir.join("target/manifest.json"));
+        known(&mut g);
+        assert_eq!(g.jobs_read(), 4, "the base graph reloaded, so the steps resolve again");
+        std::fs::write(dags.join("added.yml"), "dag_id: added\ntasks:\n  - task_id: t\n    command: dbt run --select stg_orders\n").unwrap();
+        let Known::Read(read) = known(&mut g) else { panic!("read") };
+        assert_eq!((read.jobs.len(), g.jobs_read()), (2, 5), "a job file added");
+
+        // A file that does not read is kept as it is, and read again once mended.
+        std::fs::write(&sources, "jobs: nope\n").unwrap();
+        assert!(matches!(known(&mut g), Known::Refused(_)));
+        assert!(matches!(known(&mut g), Known::Refused(_)));
+        assert_eq!(g.jobs_read(), 6);
+        // Taken away, the slot is emptied and nothing is read.
+        std::fs::remove_file(&sources).unwrap();
+        assert!(matches!(known(&mut g), Known::Absent));
+        assert_eq!(g.jobs_read(), 6);
+        g.forget();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

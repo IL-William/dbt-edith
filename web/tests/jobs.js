@@ -131,6 +131,33 @@ check('keys at the proposed shape are not sent, and dbt Cloud sends none', JSON.
       '{"sources":[{"kind":"airflow","path":"../orchestration/dags","label":"prod","keys":{"dag_id":"pipeline.name"}},'
       + '{"kind":"dbt_cloud","path":"jobs.yml","label":"","keys":{}}]}');
 
+var placed = jobSourcesBody([{ kind: 'dbt_cloud', path: 'jobs.yml', label: '', keys: {} }], DEFAULTS, 'project', '12-345');
+check('where they are kept, and the version of the file the form was shown', JSON.stringify(placed),
+      '{"sources":[{"kind":"dbt_cloud","path":"jobs.yml","label":"","keys":{}}],"place":"project","seen":"12-345"}');
+check('a file that was not there is seen as an empty version',
+      jobSourcesBody([], DEFAULTS, 'project', '').seen, '');
+check('for me only sends no version', JSON.stringify(jobSourcesBody([], DEFAULTS, 'settings', undefined)),
+      '{"sources":[],"place":"settings"}');
+
+print('\n--- what the project\'s file may hold ---');
+check('a path from the project, one folder up', jobsProjectPathIssue('../orchestration/dags'), '');
+check('two folders up are the most', jobsProjectPathIssue('../../orchestration/dags'), '');
+check('a path inside the project', jobsProjectPathIssue('jobs/airflow'), '');
+check('an absolute path', jobsProjectPathIssue('/srv/dags'), 'an absolute path');
+check('a Windows drive', jobsProjectPathIssue('C:\\dags'), 'an absolute path');
+check('three folders up', jobsProjectPathIssue('../../../x'), 'more than two folders above the project');
+check('up and down again is still too far', jobsProjectPathIssue('a/../../../../x'), 'more than two folders above the project');
+check('a hidden folder', jobsProjectPathIssue('./.hidden/x'), 'a hidden folder or file');
+check('a hidden folder deep in it', jobsProjectPathIssue('../orchestration/a/.ssh/b'), 'a hidden folder or file');
+check('the dbt profile', jobsProjectPathIssue('../../.dbt/profiles.yml'), 'a hidden folder or file');
+check('a profiles.yml by its name', jobsProjectPathIssue('../conf/profiles.yml'), 'a profiles.yml');
+check('an empty path asks nothing', jobsProjectPathIssue('  '), '');
+
+check('Save is held while a save is on its way', jobsSaveDisabled(true, ''), true);
+check('and while a path cannot go in the file', jobsSaveDisabled(false, 'an absolute path'), true);
+check('and free otherwise', jobsSaveDisabled(false, ''), false);
+check('a save on its way holds it whatever is typed', jobsSaveDisabled(true, 'an absolute path'), true);
+
 print('\n--- the example ---');
 check('the proposed shape', jobsExample('airflow', {}, DEFAULTS), [
   '# one file per DAG',

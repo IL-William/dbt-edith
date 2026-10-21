@@ -11,20 +11,21 @@ Run `dbt-edith` (on the PATH) from the dbt project root as `dbt-edith . <flags>`
 | To know | Run |
 | --- | --- |
 | what the project is | `dbt-edith . --overview`, once, first |
-| what a model, source or test is: columns, types, tests per column, materialization, incremental strategy, unique key, parents, children | `dbt-edith . --describe name[,name...]` on the nodes asked about (a source is `source_name.table`); `--sql` adds the file |
-| where a node is built | the card: `relation` is what dbt builds for the parsed target, `configured` the config as written, each `.env` line that config with the file's values |
+| what a model, source or test is: columns, types, tests per column, materialization, strategy, unique key, parents, children | `dbt-edith . --describe name[,name...]` on the nodes asked about (a source is `source_name.table`); `--sql` adds the file |
+| where a node is built | the card: `relation` is the parsed target's, `configured` the config as written, each `.env` line that config per file |
 | neighbours of a model | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact` for its children; `1+model` for its parents, `1+model+1` for both |
 | everything upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact` |
-| everything downstream, or what dropping or renaming a model breaks | `dbt-edith . -s 'model+' --exclude resource_type:test --output compact` |
+| everything downstream, or what dropping a model breaks | `dbt-edith . -s 'model+' --exclude resource_type:test --output compact` |
 | the sources feeding a model | `dbt-edith . -s '+model,resource_type:source' --exclude resource_type:test --output compact`; add `--count-by source` to count |
-| nodes per layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder` |
-| where a column comes from, or what it feeds | `dbt-edith . --column model.column --up all --output compact`; `--down all` for what it feeds |
+| nodes per layer upstream | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder` |
+| a column's sources, or what it feeds | `dbt-edith . --column model.column --up all --output compact`; `--down all` for what it feeds |
+| which DAGs or jobs run a node; what a job runs | `jobs` line of `--describe name` (needs `.dbt-edith/jobs.yml`); `dbt-edith . --job name` |
 
-`--count-by` counts a selection, instead of listing it, by `folder` (`--depth N`), `source`, `kind`, `materialized`, `tag` or `package`. Never count with a pipe.
+`--count-by` counts a selection by `folder` (`--depth N`), `source`, `kind`, `materialized`, `tag` or `package`. Never count with a pipe.
 
 A per-`.env` line is the config before the `generate_*_name` macros, which are not evaluated: dbt builds a model's custom schema as `<target schema>_<custom>` unless overridden, so say the line may differ (a source's schema is exact). `<target>`: left to the target. `<VAR not set>`, `<VAR placeholder>`: the file lacks it or holds a placeholder. `<hidden>`: a credential. `?`: not evaluated or empty. `~`: one branch of an `if`.
 
-Column lineage reads collin's or Fusion's newest cache beside the manifest, else it fails. `--run-collin` runs collin first over compiled SQL (after `dbt parse` alone its answer is partial or empty, exit 0) and writes `target/column_lineage.collin.json` and `target/collin.report.json`: ask before using it.
+Column lineage reads collin's or Fusion's newest cache beside the manifest, else it fails. `--run-collin` runs collin first over compiled SQL (after `dbt parse` alone its answer is partial or empty, exit 0) and rewrites its cache and report under `target/`: ask before using it.
 
 ## Habits
 

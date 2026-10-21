@@ -189,6 +189,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--describe name[,name...]]     print a node's card as the Catalog shows it and exit, without serving
          [--sql]                         --describe prints the node's own SQL file after its card
          [--overview]                    print what the project holds, by kind, materialization and folder, and exit
+         [--job name]                    print one DAG or dbt Cloud job, step by step, from .dbt-edith/jobs.yml and exit
          [--depth N]                     how many folder levels --overview lists or --count-by folder counts, default 3
          [--output name|json|compact]    what those modes print, default one name per line
          [--mcp]                         answer an MCP client over stdio, through one tool taking these flags, and exit when it closes

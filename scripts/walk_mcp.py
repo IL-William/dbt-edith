@@ -13,7 +13,7 @@ the same copy and with the same HOME, and the two have to agree:
   - the ages the answers print, `(N s ago)` and `"age_s"`, and the time collin
     took, are the one thing the clock moves, so they are masked on both sides.
 
-The questions are the five modes with their flags, a refusal, an empty answer,
+The questions are the six modes with their flags, a refusal, an empty answer,
 a partial one, the cache moved away, and a manifest that is not there, whose
 text legitimately differs: the command line says to pass --manifest and a
 line cannot. `--column` is answered from an invented cache of three edges
@@ -139,7 +139,29 @@ QUESTIONS = [
     ("--column orders.amount --up all --output json", 0),
     ("--column stg_payments.amount --up 1 --down 1", 0),
     ("--column orders.nope", 1),
+    # The jobs of the project's own .dbt-edith/jobs.yml, over the job fixtures:
+    # a node's card says which steps run it, and a job its steps.
+    ("--describe orders", 0),
+    ("--describe orders --output json", 0),
+    ("--job jaffle_daily", 0),
+    ("--job jaffle_daily --output json", 0),
+    ("--job 'Nightly build'", 0),
+    ("--job nightly", 0),
+    ("--job jaffle", 1),
+    ("--job no_such_job", 1),
 ]
+
+
+def sources_file(sources):
+    """The project's .dbt-edith/jobs.yml for these sources. A JSON string is a
+    double-quoted YAML scalar, so it needs no quoting of its own."""
+    lines = ["jobs:"]
+    for s in sources:
+        lines += [f"  - kind: {json.dumps(s['kind'])}", f"    path: {json.dumps(s['path'])}", f"    label: {json.dumps(s['label'])}"]
+        if s["keys"]:
+            lines.append("    keys:")
+            lines += [f"      {k}: {json.dumps(v)}" for k, v in s["keys"].items()]
+    return "\n".join(lines) + "\n"
 
 
 class Server:
@@ -617,6 +639,15 @@ def main():
         manifest = target / "manifest.json"
         (target / "column_lineage.collin.json").write_text(json.dumps(CACHE))
         (target / "catalog.json").write_text(json.dumps(CATALOG))
+        # The project names where its jobs are, in the file the Jobs settings
+        # write: a copy of the invented job fixtures, named from the project
+        # (the file takes no other kind of path), read by the command line and
+        # the tool alike (0115).
+        jobs = work / "jobs"
+        shutil.copytree(C.JOBS, jobs)
+        (project / ".dbt-edith").mkdir()
+        (project / ".dbt-edith" / "jobs.yml").write_text(
+            sources_file([dict(src, path=os.path.relpath(jobs / Path(src["path"]).name, project).replace(os.sep, "/")) for src in C.JOB_SOURCES]))
 
         # A home of its own, empty, for the server and the command line alike:
         # neither may write a setting, and the one-shot mode reads none.
@@ -650,7 +681,7 @@ def main():
 
         # The help has no command line to be compared with.
         blocks, is_error = blocks_of(server.call("help"))
-        flags = ["--overview", "--describe", "--select", "--selector", "--column", "--run-collin", "--output"]
+        flags = ["--overview", "--describe", "--select", "--selector", "--job", "--column", "--run-collin", "--output"]
         walk.check(
             blocks is not None and len(blocks) == 1 and not is_error and blocks[0].startswith("dbt-edith ") and all(f in blocks[0] for f in flags),
             "help lists the flags in one block", str(blocks),

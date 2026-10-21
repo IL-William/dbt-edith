@@ -1,6 +1,6 @@
 # 0011. Settings live outside the project, keyed by its path
 
-Date: 2026-09-16 · Status: accepted
+Date: 2026-09-16 · Status: accepted, amended by 0115
 
 **Trigger:** read before persisting anything, or before adding a second write
 endpoint.
@@ -30,6 +30,9 @@ starts.
 ## Rejected
 
 - **A dotfile in the project.** Pollutes someone else's repository.
+  *Amended by [0115](0115-job-sources-may-live-in-the-project.md):
+  the job sources may be kept in `.dbt-edith/jobs.yml`, written on the person's
+  click only; everything else stays here.*
 - **`localStorage` only.** Lost per browser, and invisible to the user.
 - **The project path as the file name.** Unusable on Windows, and long.
 

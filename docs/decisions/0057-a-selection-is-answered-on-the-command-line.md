@@ -1,6 +1,6 @@
 # 0057. A selection is answered on the command line, without a server
 
-Date: 2026-10-10 · Status: accepted, amended by 0110 and 0114 · Follows 0024 and 0052
+Date: 2026-10-10 · Status: accepted, amended by 0110, 0114 and 0115 · Follows 0024 and 0052
 
 **Trigger:** read before adding a flag that answers and exits instead of
 serving, or before letting anything but the page read the selection engine.
@@ -77,3 +77,7 @@ freshness walk and git.
 
 *Amended by [0114](0114-a-skill-is-shipped-and-printed-never-installed.md):
 a skill now ships as a file and `--skill` prints it.*
+
+*Amended by [0115](0115-job-sources-may-live-in-the-project.md):
+no settings are read still, but the project's `.dbt-edith/jobs.yml` is, for the
+jobs `--describe`, `--overview` and `--job` answer.*

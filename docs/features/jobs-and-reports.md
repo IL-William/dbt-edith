@@ -73,6 +73,44 @@ time, its folders and YAML files only: a click opens a folder or picks a file,
 and **Use** writes it from the project when it sits within two folders above
 it, in full otherwise
 ([0070](../decisions/0070-a-source-is-picked-from-folders-the-server-lists.md)).
+Where the sources are kept is chosen the first time they are saved: **In the
+project, `.dbt-edith/jobs.yml`** (shared, committed, the default), or **For me
+only**, in the settings outside the project. The first writes that file, a
+`jobs:` list of sources, and only on a save of the form, never on opening it;
+the second writes no file in the project. Once the file exists the form edits
+it and the settings are ignored, with the file's say on top: a file that cannot
+be read gives no source and shows why, at its line, and the settings do not
+stand in. A save of the form never writes over a version of the file it was not
+shown, as when a `git pull` changed it meanwhile; open the section again to read
+it. Nothing deletes the file, and the command line and MCP read it too, for
+[the jobs](command-line.md#a-job)
+([0115](../decisions/0115-job-sources-may-live-in-the-project.md)). It may be
+written by hand:
+
+```yaml
+jobs:
+  - kind: airflow
+    path: ../orchestration/dags     # from the project
+    label: orchestration
+    keys:
+      dag_id: pipeline.name         # only the keys that differ from the shape below
+  - kind: dbt_cloud
+    path: ../orchestration/dbt_cloud
+```
+
+A repository supplies that file, so it takes less than the settings do: a path
+from the project, at most two folders above it (`../..`), with no hidden folder
+or file in it (`.ssh`, `.dbt`, a `.env`, or one the system hides: macOS'
+`Library`, Windows' `AppData`) and never a `profiles.yml`, which the folder walk
+of such a source skips too, with every hidden entry. A link along the path is
+followed and held to the same where it leads, and the path may not lead to your
+home folder or any folder above it. A source
+that is not so refuses the whole file, at its line, and the form's save refuses
+it too, saying why under the choice; **For me only** takes any path, an
+absolute one included, as it always did. Nesting past 64 levels is refused as
+well, in this file and in the job files. The Jobs tab shows why a file that
+does not read gives no job.
+
 Saving reads them at once. When every source found jobs, no file was refused
 and the sources were saved, the form closes on what it found: the Jobs tab when
 it is showing a model, Job coverage otherwise. Anything else keeps it open on

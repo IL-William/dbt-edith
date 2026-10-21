@@ -9,6 +9,11 @@
 //! The sources form's picker lists one folder at a time, anywhere the user can
 //! read, by the names of what a walk would enter or open there (0070).
 //!
+//! Where the sources are kept: the per-user settings (0063), or a file of the
+//! project, `.dbt-edith/jobs.yml`, which wins when it exists and which the
+//! command line and MCP read as well, since they never read the settings
+//! (0115).
+//!
 //! Invariants: only `.yml` and `.yaml` files are opened, never hidden ones and
 //! never through a symlink. What leaves is what was parsed, and the names the
 //! picker lists, never a line of a file. The same files over the same manifest
@@ -17,6 +22,7 @@
 //! up.
 
 use crate::command::{self, Invocation, Verb};
+use crate::files;
 use crate::graph::{Graph, Kind};
 use crate::select::{self, Expr, Indirect, Spec, Tests};
 use crate::settings::JobSource;
@@ -106,9 +112,384 @@ pub fn locate(root: &Path, path: &str) -> PathBuf {
     }
 }
 
+/* ------------------------------------------------------- sources file -- */
+
+/// The project's own list of sources, from the project's root.
+pub const SOURCES_FILE: &str = ".dbt-edith/jobs.yml";
+
+/// Where the sources in force came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// `.dbt-edith/jobs.yml`, read or refused.
+    Project,
+    /// The per-user settings (0063).
+    Settings,
+    /// Nowhere: none named.
+    None,
+}
+
+impl Place {
+    /// As the page's payload spells it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Place::Project => "project",
+            Place::Settings => "settings",
+            Place::None => "none",
+        }
+    }
+}
+
+/// The sources in force and where they came from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sources {
+    pub list: Vec<JobSource>,
+    pub place: Place,
+    /// Why the file is not read, when it is there and cannot be, with its line
+    /// when there is one, and without its name. Never a fall-back to the
+    /// settings.
+    pub refused: Option<String>,
+    /// The file's version (`files::stamp`) as it was read, whether it read or
+    /// not, for a save to tell a pull from its own doing.
+    pub stamp: Option<String>,
+}
+
+fn at_line(line: usize, message: &str) -> String {
+    if line == 0 {
+        message.to_string()
+    } else {
+        format!("line {line}: {message}")
+    }
+}
+
+/// Why a source may not be named by the project's file, or None. A cloned
+/// repository supplies that file, and a source's `keys` can rename any key of
+/// a YAML file into a DAG's name, which the page then shows: so the file may
+/// point only at a path from the project, at most two folders above it, with
+/// no hidden folder or file in it (`.ssh`, `.dbt`, a `.env`) and never a
+/// `profiles.yml`. Sources the person saves in the settings are not held to
+/// this; they name what they like (0063). Fixed messages, none from the file.
+pub fn check_in_project(source: &JobSource) -> Option<String> {
+    let path = source.path.trim();
+    let b = path.as_bytes();
+    let absolute = Path::new(path).is_absolute()
+        || path.starts_with(['/', '\\'])
+        || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':');
+    if absolute {
+        return Some("an absolute path, which a file of the project may not name: write it from the project".into());
+    }
+    let mut depth: i32 = 0;
+    let mut last = "";
+    for seg in path.split(['/', '\\']).filter(|s| !s.is_empty() && *s != ".") {
+        if seg == ".." {
+            depth -= 1;
+            if depth < -(MAX_UPS as i32) {
+                return Some(format!("a path more than {MAX_UPS} folders above the project"));
+            }
+        } else {
+            if seg.starts_with('.') {
+                return Some("a hidden folder or file in a path".into());
+            }
+            depth += 1;
+        }
+        last = seg;
+    }
+    if is_profile(last) {
+        return Some("a profiles.yml, which holds credentials".into());
+    }
+    None
+}
+
+/// The same rules where the path really leads, a link along it followed
+/// (0115): the path written is no guard when a link committed in the
+/// repository (`vendor/x`) points at `~/.ssh`, at a profile's folder or at `/`.
+/// Its real place must sit at most two folders above the project's real place,
+/// with no hidden folder below that ancestor, and not be a profile. A path
+/// with nothing at it is let through, since nothing is read there; a link that
+/// leads nowhere is not. Fixed messages.
+pub fn check_real(root: &Path, source: &JobSource) -> Option<String> {
+    resolve_real(root, source, home_dir().as_deref()).err()
+}
+
+/// Hidden by the system and not by a dot: macOS' `UF_HIDDEN` (a user's
+/// `Library` has it) and Windows' hidden and system attributes (`AppData`).
+/// Elsewhere there is only the dot.
+fn os_hidden(meta: &std::fs::Metadata) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::macos::fs::MetadataExt;
+        meta.st_flags() & 0x8000 != 0
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        meta.file_attributes() & (0x2 | 0x4) != 0
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        let _ = meta;
+        false
+    }
+}
+
+/// Whether a folder or file counts as hidden for a source of the project's
+/// file: a dot in its name, or the system's own flag on it (0115).
+fn is_hidden(name: &str, meta: &std::fs::Metadata) -> bool {
+    name.starts_with('.') || os_hidden(meta)
+}
+
+/// The user's home folder, where the system says it is, or None.
+fn home_dir() -> Option<PathBuf> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var).filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
+/// `check_real`, with the home folder handed in, and the real place it found:
+/// Ok(None) when nothing is at the path. A source of the file may not lead to
+/// the home folder or a folder above it, however many folders up that is, since
+/// the applications keep their settings under it by names that do not start
+/// with a dot (`Library`, `AppData`) and a home folder of a project in
+/// `~/code/proj` is two folders up (0115).
+fn resolve_real(root: &Path, source: &JobSource, home: Option<&Path>) -> Result<Option<PathBuf>, String> {
+    let at = locate(root, &source.path);
+    if std::fs::symlink_metadata(&at).is_err() {
+        return Ok(None);
+    }
+    let Ok(real) = at.canonicalize() else { return Err("a link that leads nowhere".into()) };
+    let Ok(real_root) = root.canonicalize() else { return Err("the project cannot be resolved".into()) };
+    let (real, real_root) = (files::plain(real), files::plain(real_root));
+    let (r, a): (Vec<Component>, Vec<Component>) = (real_root.components().collect(), real.components().collect());
+    let common = r.iter().zip(&a).take_while(|(x, y)| x == y).count();
+    let named = a.iter().filter(|c| matches!(c, Component::Normal(_))).count();
+    if r.len() - common > MAX_UPS || named == 0 {
+        return Err(format!("a path that leads, through a link, more than {MAX_UPS} folders above the project"));
+    }
+    if let Some(home) = home.and_then(|h| h.canonicalize().ok()).map(files::plain) {
+        if home.starts_with(&real) {
+            return Err("the home folder or a folder above it".into());
+        }
+    }
+    // Each folder below the ancestor the project shares, by what is on disk.
+    let mut at_level: PathBuf = a[..common].iter().collect();
+    for c in &a[common..] {
+        at_level.push(c.as_os_str());
+        let name = c.as_os_str().to_str();
+        let hidden = match (name, std::fs::symlink_metadata(&at_level)) {
+            (Some(name), Ok(meta)) => is_hidden(name, &meta),
+            _ => true,
+        };
+        if hidden {
+            return Err("a path that leads, through a link or not, into a hidden folder or file".into());
+        }
+    }
+    if is_profile(real.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
+        return Err("a profiles.yml, which holds credentials".into());
+    }
+    Ok(Some(real))
+}
+
+/// The file's text read into the sources it names, whole or not at all. The
+/// messages are fixed and carry no text of the file, as `yaml::parse`'s do,
+/// bar the ones `check` gives, which name a key or a path the person wrote.
+#[cfg(test)]
+fn parse_sources(text: &str) -> Result<Vec<JobSource>, String> {
+    parse_entries(text).map(|list| list.into_iter().map(|(source, _)| source).collect())
+}
+
+/// `parse_sources` with the line each source begins on.
+fn parse_entries(text: &str) -> Result<Vec<(JobSource, usize)>, String> {
+    let doc = yaml::parse(text).map_err(|u| at_line(u.line, u.message))?;
+    let top = match &doc.value {
+        Value::Null => return Ok(Vec::new()),
+        Value::Map(entries) => entries,
+        _ => return Err(at_line(doc.line, "a mapping with a `jobs:` list")),
+    };
+    let mut listed: &[Node] = &[];
+    for (name, node) in top {
+        if name != "jobs" {
+            return Err(at_line(node.key_line, "a key this file does not have: it holds `jobs:` and nothing else"));
+        }
+        listed = match &node.value {
+            Value::Null => &[],
+            Value::Seq(items) => items,
+            _ => return Err(at_line(node.key_line, "`jobs:` is not a list of sources")),
+        };
+        if listed.len() > MAX_SOURCES {
+            return Err(at_line(node.key_line, &format!("more than {MAX_SOURCES} sources")));
+        }
+    }
+    let mut out = Vec::new();
+    for item in listed {
+        let Value::Map(entries) = &item.value else {
+            return Err(at_line(item.line, "a source that is not a mapping"));
+        };
+        let mut source = JobSource::default();
+        let (mut has_kind, mut has_path) = (false, false);
+        for (name, node) in entries {
+            let scalar = |what: &str| match &node.value {
+                Value::Str(s) => Ok(s.trim().to_string()),
+                Value::Null => Ok(String::new()),
+                _ => Err(at_line(node.line, &format!("{what} that is not text"))),
+            };
+            match name.as_str() {
+                "kind" => (source.kind, has_kind) = (scalar("a kind")?, true),
+                "path" => (source.path, has_path) = (scalar("a path")?, true),
+                "label" => source.label = scalar("a label")?,
+                "keys" => match &node.value {
+                    Value::Null => {}
+                    Value::Map(keys) => {
+                        for (k, v) in keys {
+                            let Value::Str(v) = &v.value else {
+                                return Err(at_line(v.line, "a key path that is not text"));
+                            };
+                            // As the form's save does: a key left empty is the proposed one.
+                            if !v.trim().is_empty() {
+                                source.keys.insert(k.clone(), v.trim().to_string());
+                            }
+                        }
+                    }
+                    _ => return Err(at_line(node.key_line, "`keys:` is not a mapping")),
+                },
+                _ => return Err(at_line(node.key_line, "a key a source does not have: kind, path, label and keys only")),
+            }
+        }
+        if !has_kind || !has_path {
+            return Err(at_line(item.line, "a source with no kind or no path"));
+        }
+        if let Some(why) = check(&source).or_else(|| check_in_project(&source)) {
+            return Err(at_line(item.line, &why));
+        }
+        out.push((source, item.line));
+    }
+    Ok(out)
+}
+
+/// The sources in force: the project's file when it exists, else `saved`, the
+/// settings'. A file that cannot be read gives no source and says why, and
+/// never the settings' in its place: an answer must not change silently when
+/// someone breaks a file (0055). The command line and MCP pass no settings.
+pub fn sources(root: &Path, saved: &[JobSource]) -> Sources {
+    let from_settings = || Sources {
+        list: saved.to_vec(),
+        place: if saved.is_empty() { Place::None } else { Place::Settings },
+        refused: None,
+        stamp: None,
+    };
+    // Looked for before anything is opened: most projects have none.
+    if std::fs::symlink_metadata(root.join(SOURCES_FILE)).is_err() {
+        return from_settings();
+    }
+    let refuse = |why: String, stamp: Option<String>| Sources { list: Vec::new(), place: Place::Project, refused: Some(why), stamp };
+    // A link that leads nowhere is a file the person meant, not an absent one.
+    if std::fs::symlink_metadata(root.join(SOURCES_FILE)).is_ok_and(|m| m.file_type().is_symlink())
+        && std::fs::metadata(root.join(SOURCES_FILE)).is_err()
+    {
+        return refuse("a link that leads nowhere".to_string(), None);
+    }
+    // Through `resolve`, so a link the repository commits that leads out of
+    // the project is refused as every file of the project is (0094).
+    let path = match files::resolve(root, SOURCES_FILE) {
+        Ok(p) => p,
+        Err(_) => return refuse("a link leads out of the project, which a committed link may not".to_string(), None),
+    };
+    let Ok(meta) = std::fs::metadata(&path) else { return refuse("cannot be read".to_string(), None) };
+    let stamp = files::stamp(&path);
+    if !meta.is_file() {
+        return refuse("not a file".to_string(), stamp);
+    }
+    if meta.len() > crate::project::MAX_BYTES {
+        return refuse("larger than 1 MiB, which no list of sources is".to_string(), stamp);
+    }
+    let Ok(bytes) = std::fs::read(&path) else { return refuse("cannot be read".to_string(), stamp) };
+    match parse_entries(&crate::envs::decode(&bytes)) {
+        Ok(entries) => {
+            let mut list = Vec::new();
+            for (mut source, line) in entries {
+                // Where a link along its path really leads, as of now.
+                if let Some(why) = check_real(root, &source) {
+                    return refuse(at_line(line, &why), stamp);
+                }
+                source.from_file = true;
+                list.push(source);
+            }
+            Sources { list, place: Place::Project, refused: None, stamp }
+        }
+        Err(why) => refuse(why, stamp),
+    }
+}
+
+/// A scalar of the file, double-quoted: backslash, quote and every control
+/// character escaped, so no value can end its line or open another.
+fn quoted(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The file for a list of sources already held to `check`: the shape
+/// `parse_sources` reads and nothing else. The key names are the ones `check`
+/// lets through, so they are written bare.
+pub fn sources_yaml(list: &[JobSource]) -> String {
+    let mut out = String::from("# Where dbt-edith reads the orchestrator's jobs. Written by its Jobs settings.\n");
+    if list.is_empty() {
+        out.push_str("jobs: []\n");
+        return out;
+    }
+    out.push_str("jobs:\n");
+    for s in list {
+        out.push_str(&format!("  - kind: {}\n    path: {}\n", quoted(&s.kind), quoted(&s.path)));
+        if !s.label.is_empty() {
+            out.push_str(&format!("    label: {}\n", quoted(&s.label)));
+        }
+        if !s.keys.is_empty() {
+            out.push_str("    keys:\n");
+            for (k, v) in &s.keys {
+                out.push_str(&format!("      {k}: {}\n", quoted(v)));
+            }
+        }
+    }
+    out
+}
+
+/// What the command line and MCP know of the jobs, which they read from the
+/// project's file alone (0115).
+#[derive(Clone)]
+pub enum Known {
+    /// No file: the jobs are not asked, and nothing of them is said.
+    Absent,
+    Refused(String),
+    Read(Arc<Read>),
+}
+
+/// The jobs of a project's file, read once over this graph, with the stamps
+/// of the job files that were walked, for a caller that keeps the read.
+pub(crate) fn known_from(graph: &Graph, root: &Path, sources: &Sources) -> (Known, Vec<Stamp>) {
+    match (&sources.refused, sources.place) {
+        (Some(why), _) => (Known::Refused(why.clone()), Vec::new()),
+        (None, Place::Project) => {
+            let (read, stamps) = build(graph, root, &sources.list);
+            (Known::Read(Arc::new(read)), stamps)
+        }
+        _ => (Known::Absent, Vec::new()),
+    }
+}
+
+/// `known_from` for a one-shot command line, which keeps nothing.
+pub fn known(graph: &Graph, root: &Path) -> Known {
+    known_from(graph, root, &sources(root, &[])).0
+}
+
 /* ----------------------------------------------------------------- walk -- */
 
-type Stamp = (PathBuf, u64, Option<SystemTime>);
+pub(crate) type Stamp = (PathBuf, u64, Option<SystemTime>);
 
 fn is_yaml(path: &Path) -> bool {
     path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("yml") || e.eq_ignore_ascii_case("yaml"))
@@ -116,7 +497,7 @@ fn is_yaml(path: &Path) -> bool {
 
 /// The job files of one source, sorted, each with its size and time, and
 /// whether the walk stopped at a bound.
-fn walk(path: &Path) -> Result<(Vec<Stamp>, bool), String> {
+fn walk(path: &Path, strict: bool) -> Result<(Vec<Stamp>, bool), String> {
     let meta = std::fs::symlink_metadata(path).map_err(|_| "nothing at this path".to_string())?;
     if meta.file_type().is_symlink() {
         return Err("a symlink, which this tool does not follow".into());
@@ -125,16 +506,19 @@ fn walk(path: &Path) -> Result<(Vec<Stamp>, bool), String> {
         if !is_yaml(path) {
             return Err("not a .yml or .yaml file".into());
         }
+        if strict && is_profile(path.file_name().and_then(|n| n.to_str()).unwrap_or("")) {
+            return Err("a profiles.yml, which holds credentials".into());
+        }
         return Ok((vec![(path.to_path_buf(), meta.len(), meta.modified().ok())], false));
     }
     let mut out = Vec::new();
     let mut capped = false;
-    descend(path, 0, &mut out, &mut capped);
+    descend(path, 0, strict, &mut out, &mut capped);
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok((out, capped))
 }
 
-fn descend(dir: &Path, depth: usize, out: &mut Vec<Stamp>, capped: &mut bool) {
+fn descend(dir: &Path, depth: usize, strict: bool, out: &mut Vec<Stamp>, capped: &mut bool) {
     if depth > MAX_DEPTH {
         *capped = true;
         return;
@@ -147,8 +531,8 @@ fn descend(dir: &Path, depth: usize, out: &mut Vec<Stamp>, capped: &mut bool) {
             *capped = true;
             return;
         }
-        match walked(&e, &e.file_name().to_string_lossy()) {
-            Some(true) => descend(&e.path(), depth + 1, out, capped),
+        match walked(&e, &e.file_name().to_string_lossy(), strict) {
+            Some(true) => descend(&e.path(), depth + 1, strict, out, capped),
             Some(false) => {
                 if let Ok(m) = e.metadata() {
                     out.push((e.path(), m.len(), m.modified().ok()));
@@ -161,10 +545,16 @@ fn descend(dir: &Path, depth: usize, out: &mut Vec<Stamp>, capped: &mut bool) {
 
 /// What the walk makes of one entry of a folder: `Some(true)` for a folder it
 /// enters, `Some(false)` for a file it opens, `None` for anything else. The
-/// sources form's picker lists by the same rule (0070).
-fn walked(e: &std::fs::DirEntry, name: &str) -> Option<bool> {
+/// sources form's picker lists by the same rule (0070). `strict` is the walk of
+/// a source that came from the project's file (0115), which opens no
+/// `profiles.yml` however a key would rename what is in it.
+fn walked(e: &std::fs::DirEntry, name: &str, strict: bool) -> Option<bool> {
     // A `.env` starts with a dot, so it is never opened (0020).
     if name.starts_with('.') {
+        return None;
+    }
+    // The system's own mark counts too for a source of the project's file.
+    if strict && e.metadata().is_ok_and(|m| os_hidden(&m)) {
         return None;
     }
     // From the entry itself, never through the link: a symlink, or a
@@ -175,10 +565,15 @@ fn walked(e: &std::fs::DirEntry, name: &str) -> Option<bool> {
     } else if kind.is_dir() {
         (!SKIPPED_DIRS.contains(&name)).then_some(true)
     } else if kind.is_file() && is_yaml(Path::new(name)) {
-        Some(false)
+        (!(strict && is_profile(name))).then_some(false)
     } else {
         None
     }
+}
+
+/// dbt's profile, which holds the warehouse credentials, in either extension.
+fn is_profile(name: &str) -> bool {
+    name.eq_ignore_ascii_case("profiles.yml") || name.eq_ignore_ascii_case("profiles.yaml")
 }
 
 fn shown_path(base: &Path, file: &Path) -> String {
@@ -316,7 +711,7 @@ pub fn browse(root: &Path, path: &str) -> Result<Listing, String> {
             for e in read.flatten() {
                 // A name JSON cannot carry is one no source could be saved with.
                 let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
-                if let Some(dir) = walked(&e, &name) {
+                if let Some(dir) = walked(&e, &name, false) {
                     found.push((dir, name));
                 }
             }
@@ -901,8 +1296,23 @@ fn link(read: &mut Read) {
     }
 }
 
+/// A copy of a folder, for a test that needs the job fixtures inside a project:
+/// a project's file names a path from the project only (`check_in_project`).
+#[cfg(test)]
+pub(crate) fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_tree(&e.path(), &target);
+        } else {
+            std::fs::copy(e.path(), target).unwrap();
+        }
+    }
+}
+
 /// Reads every source and resolves every step against the graph.
-fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>) {
+pub(crate) fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>) {
     let mut read = Read::default();
     let mut stamps = Vec::new();
     for (si, src) in sources.iter().enumerate() {
@@ -915,13 +1325,28 @@ fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>
             resolved: base.to_string_lossy().into_owned(),
             ..Default::default()
         };
-        match walk(&base) {
+        // A source from the project's file is checked again where its path
+        // leads now, and walked without opening a profile (0115).
+        let mut at = base.clone();
+        let walked = if src.from_file {
+            // Walked where the check found it really is, so a link moved
+            // between the two cannot take the walk elsewhere.
+            resolve_real(root, src, home_dir().as_deref()).and_then(|real| {
+                if let Some(real) = real {
+                    at = real;
+                }
+                walk(&at, true)
+            })
+        } else {
+            walk(&base, false)
+        };
+        match walked {
             Err(e) => sr.error = e,
             Ok((files, capped)) => {
                 sr.capped = capped;
                 sr.files = files.len();
                 for (path, len, _) in &files {
-                    let file = shown_path(&base, path);
+                    let file = shown_path(&at, path);
                     let (jobs_before, steps_before) = (read.jobs.len(), read.steps.len());
                     let outcome = match read_doc(path, *len) {
                         Err((line, message)) => Err(Refusal { file: file.clone(), line, message }),
@@ -953,8 +1378,22 @@ fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read, Vec<Stamp>
     (read, stamps)
 }
 
-fn stamps_of(root: &Path, sources: &[JobSource]) -> Vec<Stamp> {
-    sources.iter().flat_map(|s| walk(&locate(root, &s.path)).map(|(f, _)| f).unwrap_or_default()).collect()
+pub(crate) fn stamps_of(root: &Path, sources: &[JobSource]) -> Vec<Stamp> {
+    sources
+        .iter()
+        .flat_map(|s| {
+            // Where `build` walked: the real place, for a source of the file.
+            let mut at = locate(root, &s.path);
+            if s.from_file {
+                match resolve_real(root, s, home_dir().as_deref()) {
+                    Ok(Some(real)) => at = real,
+                    Ok(None) => {}
+                    Err(_) => return Vec::new(),
+                }
+            }
+            walk(&at, s.from_file).map(|(f, _)| f).unwrap_or_default()
+        })
+        .collect()
 }
 
 struct Held {
@@ -1283,6 +1722,360 @@ pub fn step_names(graph: &Graph, read: &Read, index: usize) -> Option<StepNames>
     })
 }
 
+/* ------------------------------------------------- on the command line -- */
+
+impl JobView {
+    /// What starts the job, as the Jobs tab words it (`jobsStartedBy`).
+    fn started_by(&self) -> Vec<String> {
+        let mut parts = Vec::new();
+        if !self.cron.is_empty() {
+            parts.push(self.cron.clone());
+        }
+        if !self.assets.is_empty() {
+            let unread = match (self.assets_unread.len(), self.assets.len()) {
+                (0, _) => String::new(),
+                (_, 1) => ", which no file read updates".to_string(),
+                _ => format!("; no file read updates {}", self.assets_unread.join(", ")),
+            };
+            parts.push(format!("on {}{unread}", self.assets.join(", ")));
+        }
+        if !self.after.is_empty() {
+            parts.push(if self.after_unread {
+                format!("after job {}, which no file read defines", self.after)
+            } else {
+                format!("after {}", self.after)
+            });
+        }
+        if self.ci {
+            parts.push("CI".to_string());
+        }
+        if self.merge {
+            parts.push("on merge".to_string());
+        }
+        if !self.note.is_empty() {
+            parts.push(self.note.clone());
+        }
+        parts
+    }
+
+    /// How the job starts, as the Jobs tab puts it on its pill (0077): what
+    /// runs on its own, what may, what something starts that never leads back
+    /// to a clock, and what nothing starts.
+    pub fn start_line(&self) -> String {
+        let by = self.started_by().join(" · ");
+        if self.scheduled {
+            format!("scheduled {by}")
+        } else if self.schedule_unread {
+            format!("schedule not read: {by}")
+        } else if by.is_empty() {
+            "manual".to_string()
+        } else {
+            by
+        }
+    }
+
+    /// Scheduled first, then what may run, then the rest, as the tab lists them.
+    fn rank(&self) -> u8 {
+        if self.scheduled {
+            0
+        } else if self.schedule_unread {
+            1
+        } else if self.started_by().is_empty() {
+            3
+        } else {
+            2
+        }
+    }
+
+    /// `DAG shop_daily`, `job Daily build`.
+    pub fn label(&self) -> String {
+        if self.kind == AIRFLOW {
+            format!("DAG {}", self.name)
+        } else {
+            format!("job {}", self.name)
+        }
+    }
+}
+
+impl StepView {
+    /// `task marts`, `step 2/3`, as the tab names a step.
+    pub fn label(&self, job: &JobView) -> String {
+        if job.kind == AIRFLOW {
+            format!("task {}", if self.name.is_empty() { self.n.to_string() } else { self.name.clone() })
+        } else {
+            format!("step {}/{}{}", self.n, job.steps, if self.implicit { ", from run_generate_sources" } else { "" })
+        }
+    }
+}
+
+/// One step that acts on a node, for the command line.
+#[derive(serde::Serialize, Debug)]
+pub struct Hit {
+    pub kind: &'static str,
+    pub job: String,
+    pub step: String,
+    pub schedule: String,
+    /// The terms of the step's selection that reach the node.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub via: Vec<String>,
+    pub file: String,
+    /// The line of a card.
+    #[serde(skip)]
+    pub text: String,
+}
+
+/// The steps that run a node, jobs that start on their own first and each
+/// class in the files' own order (0055).
+pub fn hits(found: &NodeJobs) -> Vec<Hit> {
+    let mut groups: Vec<&Group> = found.groups.iter().collect();
+    groups.sort_by_key(|g| g.job.rank());
+    groups
+        .into_iter()
+        .flat_map(|g| {
+            g.steps.iter().map(move |s| {
+                let (job, schedule) = (g.job.label(), g.job.start_line());
+                let step = s.label(&g.job);
+                let mut text = format!("{job} › {step} ({schedule})");
+                if !s.via.is_empty() {
+                    text.push_str(&format!(" via {}", s.via.join(", ")));
+                }
+                Hit { kind: g.job.kind, job: g.job.name.clone(), step, schedule, via: s.via.clone(), file: g.job.file.clone(), text }
+            })
+        })
+        .collect()
+}
+
+/// How many steps could not be resolved and could act on the node.
+pub fn unresolved_for(found: &NodeJobs) -> usize {
+    found.maybe.iter().map(|g| g.steps.len()).sum()
+}
+
+/// Sources that were named and not read, for an answer that would otherwise
+/// say `none` of a job it never looked for.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct Unread {
+    pub sources: usize,
+    pub of: usize,
+    /// Fixed sentences, none from a file.
+    pub reason: String,
+}
+
+impl Unread {
+    /// `the source (nothing at this path)`, `all 2 sources (...)`, `1 of 3
+    /// sources (...)`.
+    pub fn text(&self) -> String {
+        let which = match (self.sources, self.of) {
+            (1, 1) => "the source".to_string(),
+            (n, m) if n == m => format!("all {n} sources"),
+            (n, m) => format!("{n} of {m} sources"),
+        };
+        format!("{which} ({})", self.reason)
+    }
+}
+
+/// The sources whose folder or file could not be walked, or was cut at a
+/// bound, or None when every one was read. A job file refused inside a source
+/// that was read is counted apart, as a file (`NodeJobs::refused`).
+pub fn unread(read: &Read) -> Option<Unread> {
+    let mut reasons: Vec<String> = Vec::new();
+    let mut n = 0;
+    for s in &read.sources {
+        let why = if !s.error.is_empty() {
+            s.error.clone()
+        } else if s.capped {
+            "stopped at its bound on files or depth".to_string()
+        } else {
+            continue;
+        };
+        n += 1;
+        if !reasons.contains(&why) {
+            reasons.push(why);
+        }
+    }
+    (n > 0).then(|| Unread { sources: n, of: read.sources.len(), reason: reasons.join(", ") })
+}
+
+/// One job of the project, for the overview.
+#[derive(serde::Serialize, Debug)]
+pub struct JobFact {
+    pub kind: &'static str,
+    pub name: String,
+    pub schedule: String,
+    pub steps: usize,
+    pub file: String,
+}
+
+/// Every job read, in the files' own order (0055).
+pub fn listed(read: &Read) -> Vec<JobFact> {
+    (0..read.jobs.len())
+        .map(|i| {
+            let v = job_view(read, i);
+            JobFact { kind: v.kind, name: v.name.clone(), schedule: v.start_line(), steps: v.steps, file: v.file.clone() }
+        })
+        .collect()
+}
+
+/// A node a step acts on.
+#[derive(serde::Serialize, Debug)]
+pub struct NodeRef {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+}
+
+/// One step of a job and what it runs.
+#[derive(serde::Serialize, Debug)]
+pub struct StepAnswer {
+    pub n: usize,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    pub line: usize,
+    pub command: String,
+    /// What the step cannot do with nodes: why it was not resolved, or that
+    /// its command only compiles, lists or previews.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unresolved: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub runs_nothing: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+    pub node_count: usize,
+    pub nodes: Vec<NodeRef>,
+    #[serde(skip)]
+    pub label: String,
+}
+
+/// A job as `--job` answers it.
+#[derive(serde::Serialize, Debug)]
+pub struct JobAnswer {
+    pub kind: &'static str,
+    pub name: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ident: String,
+    pub file: String,
+    pub line: usize,
+    pub schedule: String,
+    pub steps: Vec<StepAnswer>,
+    /// Distinct nodes the steps run, counted once however many steps run them.
+    pub nodes: usize,
+    /// Sources that were not read, which could hold more of this job's steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_read: Option<Unread>,
+}
+
+/// The jobs a name stands for: a DAG id or a dbt Cloud job's name, exactly;
+/// else with the case ignored; else a dbt Cloud job's identifier. A step is
+/// never matched, and the first class that finds anything is the answer.
+pub fn named(read: &Read, name: &str) -> Vec<usize> {
+    let all = 0..read.jobs.len();
+    let by = |f: &dyn Fn(&Job) -> bool| -> Vec<usize> { all.clone().filter(|&i| f(&read.jobs[i])).collect() };
+    let exact = by(&|j| j.name == name);
+    if !exact.is_empty() {
+        return exact;
+    }
+    let folded = by(&|j| j.name.eq_ignore_ascii_case(name));
+    if !folded.is_empty() {
+        return folded;
+    }
+    by(&|j| j.kind == DBT_CLOUD && !j.ident.is_empty() && j.ident == name)
+}
+
+/// `source: name`, for listing the jobs a name could mean.
+pub fn listed_as(read: &Read, ji: usize) -> String {
+    format!("{}: {}", source_name(read, read.jobs[ji].source), read.jobs[ji].name)
+}
+
+/// How many names a refusal offers.
+const SUGGESTED: usize = 5;
+
+/// Why no job is named `name`, with the names nearest to it: those that
+/// contain it or that it contains, case ignored; else the first few.
+pub fn unknown(read: &Read, name: &str) -> String {
+    let want = name.to_lowercase();
+    let mut names: Vec<&str> = Vec::new();
+    for j in &read.jobs {
+        let have = j.name.to_lowercase();
+        if !want.is_empty() && (have.contains(&want) || want.contains(&have)) && !names.contains(&j.name.as_str()) {
+            names.push(&j.name);
+        }
+    }
+    let none = format!("no job named {name}");
+    if !names.is_empty() {
+        names.sort_unstable();
+        names.truncate(SUGGESTED);
+        return format!("{none}; did you mean {}", names.join(", "));
+    }
+    let mut all: Vec<&str> = read.jobs.iter().map(|j| j.name.as_str()).collect();
+    all.sort_unstable();
+    all.dedup();
+    if all.is_empty() {
+        return format!("{none}; the sources file names no job that read");
+    }
+    let more = all.len().saturating_sub(SUGGESTED);
+    all.truncate(SUGGESTED);
+    format!("{none}; the jobs read include {}{}", all.join(", "), if more > 0 { format!(", +{more} more") } else { String::new() })
+}
+
+/// One job, step by step, with the nodes each step runs.
+pub fn answer(graph: &Graph, read: &Read, ji: usize) -> JobAnswer {
+    let view = job_view(read, ji);
+    let job = &read.jobs[ji];
+    let mut distinct: Vec<u32> = Vec::new();
+    let steps = job
+        .steps
+        .iter()
+        .map(|&si| {
+            let s = &read.steps[si];
+            let sv = step_view(graph, read, si, None);
+            let runs = s.executes();
+            let nodes: Vec<NodeRef> = if runs {
+                let mut ids = s.nodes.clone();
+                ids.sort_by(|&a, &b| graph.by_name_then_id(a, b));
+                distinct.extend(&s.nodes);
+                ids.into_iter()
+                    .map(|i| {
+                        let n = &graph.nodes[i as usize];
+                        NodeRef { id: n.id.clone(), kind: n.resource_type().to_string(), name: n.name.clone() }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let runs_nothing = match s.verb() {
+                Some(v) if s.unresolved.is_empty() && !v.executes() => format!("dbt {} runs no node", v.name()),
+                _ => String::new(),
+            };
+            StepAnswer {
+                n: s.n,
+                name: s.name.clone(),
+                line: s.line,
+                command: s.shown.clone(),
+                unresolved: s.unresolved.clone(),
+                runs_nothing,
+                warnings: s.warnings.clone(),
+                node_count: nodes.len(),
+                nodes,
+                label: sv.label(&view),
+            }
+        })
+        .collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    JobAnswer {
+        kind: job.kind,
+        name: job.name.clone(),
+        source: view.source.clone(),
+        ident: view.ident.clone(),
+        file: job.file.clone(),
+        line: job.line,
+        schedule: view.start_line(),
+        steps,
+        nodes: distinct.len(),
+        not_read: unread(read),
+    }
+}
+
 /* ------------------------------------------------------------ coverage -- */
 
 #[derive(serde::Serialize, Debug, Clone)]
@@ -1534,6 +2327,7 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
             label: String::new(),
             keys: keys.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            from_file: false,
         }
     }
 
@@ -2064,11 +2858,11 @@ jobs:
             std::os::unix::fs::symlink(&outside, d.join("linked")).unwrap();
             std::os::unix::fs::symlink(outside.join("d.yml"), d.join("jobs/e.yml")).unwrap();
         }
-        let (files, capped) = walk(&d).unwrap();
+        let (files, capped) = walk(&d, false).unwrap();
         assert_eq!(files.iter().map(|f| shown_path(&d, &f.0)).collect::<Vec<_>>(), ["jobs/a.yml", "target/d.yml"]);
         assert!(!capped);
-        assert!(walk(&d.join("missing")).is_err());
-        assert_eq!(walk(&d.join("jobs/b.txt")).unwrap_err(), "not a .yml or .yaml file");
+        assert!(walk(&d.join("missing"), false).is_err());
+        assert_eq!(walk(&d.join("jobs/b.txt"), false).unwrap_err(), "not a .yml or .yaml file");
     }
 
     #[test]
@@ -2236,6 +3030,394 @@ jobs:
         assert_eq!(on_marts.start, Start::Yes, "on an asset a scheduled DAG updates");
         assert_eq!(read.jobs.iter().find(|j| j.name == "Exports").unwrap().start, Start::Yes);
         assert_eq!(read.jobs.iter().find(|j| j.name == "CI").unwrap().start, Start::No);
+    }
+
+    const KEPT: &str = ".dbt-edith/jobs.yml";
+
+    fn kept(dir: &Path, text: &str) {
+        write(dir, KEPT, text);
+    }
+
+    #[test]
+    fn the_sources_file_is_read_whole_with_its_keys() {
+        let d = dir("sources-file");
+        kept(
+            &d,
+            "# Where dbt-edith reads the orchestrator's jobs.\njobs:\n  - kind: airflow\n    path: ../airflow/include/dags\n    label: nightly\n    keys:\n      dag_id: pipeline.name\n      tasks: \"\"\n  - kind: dbt_cloud\n    path: \"jobs/cloud.yml\"\n",
+        );
+        let got = sources(&d, &[]);
+        assert_eq!((got.place, got.refused.as_deref()), (Place::Project, None));
+        assert!(got.stamp.is_some());
+        assert_eq!(got.list.len(), 2);
+        assert_eq!(
+            got.list[0],
+            JobSource {
+                kind: AIRFLOW.into(),
+                path: "../airflow/include/dags".into(),
+                label: "nightly".into(),
+                keys: [("dag_id".to_string(), "pipeline.name".to_string())].into_iter().collect(),
+                from_file: true,
+            },
+            "a key left empty is the proposed one"
+        );
+        assert_eq!((got.list[1].kind.as_str(), got.list[1].path.as_str()), (DBT_CLOUD, "jobs/cloud.yml"), "a path from the project");
+        // An empty file, or an empty list, is a project that names none.
+        for text in ["", "jobs:\n", "jobs: []\n"] {
+            kept(&d, text);
+            let got = sources(&d, &[]);
+            assert_eq!((got.list.len(), got.place, got.refused), (0, Place::Project, None), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_sources_file_is_refused_whole_at_its_line_and_never_replaced_by_the_settings() {
+        let d = dir("sources-refused");
+        let saved = [source(AIRFLOW, &d, &[])];
+        for (text, want) in [
+            ("jobs:\n  - kind: airflow\n    path: x\nother: 1\n", "line 4: a key this file does not have"),
+            ("jobs:\n  - kind: airflow\n    path: x\n    colour: red\n", "line 4: a key a source does not have"),
+            ("jobs:\n  - kind: luigi\n    path: x\n", "line 2: a source is airflow or dbt_cloud"),
+            ("jobs:\n  - kind: airflow\n", "line 2: a source with no kind or no path"),
+            ("jobs:\n  - kind: airflow\n    path: x\n    keys:\n      dag_id: dag..id\n", "line 2: `dag..id` is not a dotted key path"),
+            ("jobs:\n  - kind: dbt_cloud\n    path: x\n    keys:\n      dag_id: a\n", "line 2: dbt Cloud jobs are read"),
+            ("jobs: nope\n", "line 1: `jobs:` is not a list of sources"),
+            ("jobs:\n  - plain\n", "line 2: a source that is not a mapping"),
+            ("jobs:\n  - kind: airflow\n    path: [a]\n", "line 3: a path that is not text"),
+            ("- a\n", "a mapping with a `jobs:` list"),
+            ("jobs:\n  - kind: airflow\n    path: \"x\n", "line"),
+        ] {
+            kept(&d, text);
+            let got = sources(&d, &saved);
+            assert!(got.list.is_empty(), "nothing is kept of a refused file: {text:?}");
+            assert_eq!(got.place, Place::Project, "{text:?}");
+            let why = got.refused.unwrap_or_default();
+            assert!(why.contains(want), "{text:?}: {why}");
+            assert!(got.stamp.is_some(), "a refused file has a version too, for a save to replace it");
+        }
+        // More than a form lists.
+        let nine: String = (0..=MAX_SOURCES).map(|i| format!("  - kind: airflow\n    path: p{i}\n")).collect();
+        kept(&d, &format!("jobs:\n{nine}"));
+        assert!(sources(&d, &[]).refused.unwrap_or_default().contains("more than 8 sources"));
+        // A folder where the file should be.
+        std::fs::remove_file(d.join(KEPT)).unwrap();
+        std::fs::create_dir(d.join(KEPT)).unwrap();
+        assert_eq!(sources(&d, &saved).refused.as_deref(), Some("not a file"));
+    }
+
+    #[test]
+    fn the_sources_file_wins_over_the_settings_and_without_it_the_settings_stand() {
+        let d = dir("sources-wins");
+        let saved = [source(AIRFLOW, &d.join("saved"), &[])];
+        let got = sources(&d, &saved);
+        assert_eq!((got.place, got.list.clone(), got.stamp), (Place::Settings, saved.to_vec(), None));
+        assert_eq!(sources(&d, &[]).place, Place::None);
+        kept(&d, "jobs:\n  - kind: dbt_cloud\n    path: other\n");
+        let got = sources(&d, &saved);
+        assert_eq!((got.place, got.list.len(), got.list[0].path.as_str()), (Place::Project, 1, "other"));
+        assert_eq!(Place::Project.as_str(), "project");
+        // Edited in place, it is read again, and its stamp moves with it.
+        let before = got.stamp;
+        kept(&d, "jobs:\n  - kind: dbt_cloud\n    path: another-one\n");
+        let after = sources(&d, &saved);
+        assert_eq!(after.list[0].path, "another-one");
+        assert_ne!(after.stamp, before);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_that_takes_the_sources_file_out_of_the_project_is_refused() {
+        let d = dir("sources-link");
+        let outside = dir("sources-link-outside");
+        write(&outside, "jobs.yml", "jobs:\n  - kind: airflow\n    path: elsewhere\n");
+        std::os::unix::fs::symlink(&outside, d.join(".dbt-edith")).unwrap();
+        let got = sources(&d, &[source(AIRFLOW, &d, &[])]);
+        assert!(got.list.is_empty() && got.refused.as_deref().is_some_and(|w| w.contains("leads out of the project")), "{got:?}");
+        // The file itself a link to one outside.
+        std::fs::remove_file(d.join(".dbt-edith")).unwrap();
+        std::fs::create_dir(d.join(".dbt-edith")).unwrap();
+        std::os::unix::fs::symlink(outside.join("jobs.yml"), d.join(KEPT)).unwrap();
+        assert!(sources(&d, &[]).refused.is_some_and(|w| w.contains("leads out")));
+    }
+
+    #[test]
+    fn a_sources_file_names_only_what_a_cloned_repository_may_supply() {
+        let d = dir("sources-guard");
+        let file = |path: &str| format!("jobs:\n  - kind: airflow\n    path: {path}\n");
+        for ok in ["../orchestration/dags", "../../orchestration/dags", "dags", "./a/b", "a/../b", "a\\b", "'x..y/z'", "my~1-dags", "../orch~12"] {
+            kept(&d, &file(ok));
+            assert_eq!(sources(&d, &[]).refused, None, "{ok}");
+        }
+        for (bad, why) in [
+            ("../../.dbt/profiles.yml", "a hidden folder or file in a path"),
+            ("/srv/dags", "an absolute path"),
+            ("C:/dags", "an absolute path"),
+            ("'\\\\server\\share'", "an absolute path"),
+            ("../../../x", "more than 2 folders above the project"),
+            ("a/../../../../x", "more than 2 folders above the project"),
+            ("./.hidden/x", "a hidden folder or file in a path"),
+            ("../orchestration/a/.ssh/b", "a hidden folder or file in a path"),
+            ("../.env", "a hidden folder or file in a path"),
+            ("conf/profiles.yml", "a profiles.yml, which holds credentials"),
+            ("conf/Profiles.YML", "a profiles.yml, which holds credentials"),
+            ("conf/profiles.yaml", "a profiles.yml, which holds credentials"),
+        ] {
+            kept(&d, &file(bad));
+            let got = sources(&d, &[source(AIRFLOW, &d, &[])]);
+            assert!(got.list.is_empty(), "{bad}: nothing of a refused file is kept");
+            let message = got.refused.unwrap_or_default();
+            assert!(message.starts_with("line 2: ") && message.contains(why), "{bad}: {message}");
+        }
+        // The check alone, for the page's save: the settings are not held to it.
+        assert_eq!(check_in_project(&source(AIRFLOW, Path::new("/srv/dags"), &[])).as_deref().map(|w| w.starts_with("an absolute")), Some(true));
+        assert_eq!(check(&source(AIRFLOW, Path::new("/srv/dags"), &[])), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_that_leads_nowhere_is_a_file_refused_and_not_an_absent_one() {
+        let d = dir("sources-dangling");
+        std::fs::create_dir(d.join(".dbt-edith")).unwrap();
+        std::os::unix::fs::symlink(d.join("nowhere.yml"), d.join(KEPT)).unwrap();
+        let got = sources(&d, &[source(AIRFLOW, &d, &[])]);
+        assert_eq!((got.list.len(), got.place, got.refused.as_deref()), (0, Place::Project, Some("a link that leads nowhere")));
+    }
+
+    #[test]
+    fn sources_that_did_not_read_are_counted_and_an_empty_list_is_no_sources() {
+        let d = dir("unread");
+        write(&d, "dags/shop_daily.yml", DAG);
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("dags"), &[]), source(AIRFLOW, &d.join("missing"), &[]), source(DBT_CLOUD, &d.join("dags/shop_daily.yml"), &[])]);
+        let u = unread(&read).unwrap();
+        assert_eq!((u.sources, u.of), (1, 3));
+        assert_eq!(u.text(), "1 of 3 sources (nothing at this path)");
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("dags"), &[])]);
+        assert_eq!(unread(&read), None);
+        assert!(unread(&Read::default()).is_none(), "no sources is not sources unread");
+    }
+
+    /// A profile with a fake secret, in the shape of a DAG whose keys a
+    /// source could rename onto it.
+    const PROFILE: &str = "shop:\n  outputs:\n    dev:\n      type: duckdb\n      password: FAKE_SECRET_123\n      command: dbt run\n";
+
+    #[test]
+    fn a_source_of_the_file_never_opens_a_profile_whatever_its_keys_rename() {
+        let d = dir("sources-profile");
+        write(&d, "profiles.yml", PROFILE);
+        write(&d, "conf/Profiles.YAML", PROFILE);
+        write(&d, "dags/daily.yml", DAG);
+        kept(
+            &d,
+            "jobs:\n  - kind: airflow\n    path: .\n    keys:\n      dag_id: shop.outputs.dev.password\n      tasks: shop.outputs\n",
+        );
+        let g = graph();
+        let Known::Read(read) = known(&g, &d) else { panic!("read") };
+        let names: Vec<&str> = read.jobs.iter().map(|j| j.name.as_str()).collect();
+        assert!(!names.iter().any(|n| n.contains("FAKE_SECRET")), "{names:?}");
+        // Neither the one at the root nor the one in a folder was a file read.
+        assert_eq!(read.sources[0].files, 1, "only dags/daily.yml");
+        assert_eq!(read.sources[0].skipped, 1);
+        // The settings read what they are told to, as before (0063).
+        let from_settings = [JobSource { kind: AIRFLOW.into(), path: d.to_string_lossy().into_owned(), keys: [("dag_id".to_string(), "shop.outputs.dev.password".to_string()), ("tasks".to_string(), "shop.outputs".to_string())].into_iter().collect(), ..Default::default() }];
+        let (read, _) = build(&g, &d, &from_settings);
+        assert!(read.jobs.iter().any(|j| j.name == "FAKE_SECRET_123"), "the settings' rules are today's");
+        // The same walk is what a change is looked for in.
+        let walked = stamps_of(&d, &sources(&d, &[]).list);
+        assert!(walked.iter().all(|(p, _, _)| !p.to_string_lossy().to_lowercase().contains("profiles")), "{walked:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_along_the_path_does_not_defeat_the_rules() {
+        let base = dir("sources-links");
+        let project = base.join("proj");
+        write(&project, "dbt_project.yml", "name: shop\n");
+        write(&base, "orchestration/dags/shop_daily.yml", DAG);
+        write(&base, ".hidden/dags/shop_daily.yml", DAG);
+        std::fs::create_dir_all(project.join("vendor")).unwrap();
+        std::os::unix::fs::symlink(base.join(".hidden"), project.join("vendor/hidden")).unwrap();
+        std::os::unix::fs::symlink("/", project.join("vendor/root")).unwrap();
+        std::os::unix::fs::symlink(base.join("orchestration"), project.join("vendor/orch")).unwrap();
+        std::os::unix::fs::symlink(base.join("nowhere"), project.join("vendor/dangling")).unwrap();
+        let file = |path: &str| format!("jobs:\n  - kind: airflow\n    path: {path}\n");
+        for (path, why) in [
+            ("vendor/hidden/dags", "into a hidden folder"),
+            ("vendor/root", "more than 2 folders above the project"),
+            ("vendor/root/etc", "more than 2 folders above the project"),
+            ("vendor/dangling", "a link that leads nowhere"),
+        ] {
+            kept(&project, &file(path));
+            let got = sources(&project, &[]);
+            assert!(got.list.is_empty() && got.refused.as_deref().is_some_and(|m| m.starts_with("line 2: ") && m.contains(why)), "{path}: {got:?}");
+        }
+        // A sibling folder, directly and through a link, still reads.
+        for path in ["../orchestration/dags", "vendor/orch/dags"] {
+            kept(&project, &file(path));
+            let got = sources(&project, &[]);
+            assert_eq!((got.refused.as_deref(), got.list.len()), (None, 1), "{path}");
+            assert!(got.list[0].from_file);
+            let Known::Read(read) = known(&graph(), &project) else { panic!("read") };
+            assert_eq!(read.jobs.len(), 1, "{path}");
+        }
+        // Settings keep today's rules: any link, any place.
+        let (read, _) = build(&graph(), &project, &[source(AIRFLOW, &project.join("vendor/hidden/dags"), &[])]);
+        assert_eq!(read.jobs.len(), 1);
+        // A link moved after the file was read is caught where the read is made.
+        kept(&project, &file("vendor/orch/dags"));
+        let fresh = sources(&project, &[]);
+        std::fs::remove_file(project.join("vendor/orch")).unwrap();
+        std::os::unix::fs::symlink(base.join(".hidden"), project.join("vendor/orch")).unwrap();
+        let (read, _) = build(&graph(), &project, &fresh.list);
+        assert!(read.sources[0].error.contains("hidden folder") && read.jobs.is_empty(), "{:?}", read.sources[0].error);
+    }
+
+    fn from_file(path: &str) -> JobSource {
+        JobSource { kind: AIRFLOW.into(), path: path.into(), from_file: true, ..Default::default() }
+    }
+
+    #[test]
+    fn the_home_folder_and_what_is_above_it_is_never_a_source_of_the_file() {
+        let base = dir("home-rule");
+        let home = base.join("home");
+        write(&home, "code/proj/dbt_project.yml", "name: shop\n");
+        write(&home, "code/orch/dags/shop_daily.yml", DAG);
+        write(&home, "proj/dbt_project.yml", "name: shop\n");
+        let deep = home.join("code/proj");
+        let shallow = home.join("proj");
+        // A project below home: the folder beside it is allowed, home is not.
+        assert!(matches!(resolve_real(&deep, &from_file("../orch/dags"), Some(&home)), Ok(Some(_))));
+        assert!(matches!(resolve_real(&deep, &from_file(".."), Some(&home)), Ok(Some(_))), "~/code is not home");
+        for path in ["../..", "../../"] {
+            let why = resolve_real(&deep, &from_file(path), Some(&home)).unwrap_err();
+            assert!(why.contains("home folder"), "{path}: {why}");
+        }
+        assert!(resolve_real(&deep, &from_file("../../.."), Some(&home)).is_err(), "above it");
+        // A project straight under home: `..` is home, `../..` is above it.
+        for path in ["..", "../.."] {
+            let why = resolve_real(&shallow, &from_file(path), Some(&home)).unwrap_err();
+            assert!(why.contains("home folder"), "{path}: {why}");
+        }
+        assert!(matches!(resolve_real(&shallow, &from_file("."), Some(&home)), Ok(Some(_))), "the project itself");
+        // No home known: the rule is skipped, the distance one stands.
+        assert!(matches!(resolve_real(&deep, &from_file("../.."), None), Ok(Some(_))));
+        // Settings keep their rules: `build` of a source that is not the file's.
+        let (read, _) = build(&graph(), &deep, &[source(AIRFLOW, &home.join("code/orch/dags"), &[])]);
+        assert_eq!(read.jobs.len(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_folder_the_system_hides_is_hidden_for_the_file_though_its_name_is_not() {
+        let base = dir("os-hidden");
+        let project = base.join("proj");
+        write(&project, "dbt_project.yml", "name: shop\n");
+        write(&project, "jobs/visible/daily.yml", DAG);
+        write(&project, "jobs/Library/daily.yml", DAG.replace("shop_daily", "in_library").as_str());
+        let hide = std::process::Command::new("chflags").arg("hidden").arg(project.join("jobs/Library")).status().unwrap();
+        assert!(hide.success());
+        // A source that points into it is refused.
+        let why = resolve_real(&project, &from_file("jobs/Library"), None).unwrap_err();
+        assert!(why.contains("hidden folder"), "{why}");
+        // A folder source's walk leaves it out, where the settings' reads it.
+        let (read, _) = build(&graph(), &project, &[from_file("jobs")]);
+        let names: Vec<&str> = read.jobs.iter().map(|j| j.name.as_str()).collect();
+        assert_eq!(names, ["shop_daily"], "{names:?}");
+        let (read, _) = build(&graph(), &project, &[source(AIRFLOW, &project.join("jobs"), &[])]);
+        assert_eq!(read.jobs.len(), 2);
+        // And not as a change to look for.
+        assert!(stamps_of(&project, &[from_file("jobs")]).iter().all(|(p, _, _)| !p.to_string_lossy().contains("Library")));
+    }
+
+    #[test]
+    fn unread_sources_are_worded_by_how_many_and_their_reasons_joined_by_commas() {
+        let u = |sources, of, reason: &str| Unread { sources, of, reason: reason.into() }.text();
+        assert_eq!(u(1, 1, "nothing at this path"), "the source (nothing at this path)");
+        assert_eq!(u(2, 2, "nothing at this path"), "all 2 sources (nothing at this path)");
+        assert_eq!(u(1, 3, "nothing at this path"), "1 of 3 sources (nothing at this path)");
+        let d = dir("unread-two");
+        write(&d, "f.txt", "x");
+        let (read, _) = build(&graph(), &d, &[source(AIRFLOW, &d.join("missing"), &[]), source(AIRFLOW, &d.join("f.txt"), &[])]);
+        assert_eq!(unread(&read).unwrap().text(), "all 2 sources (nothing at this path, not a .yml or .yaml file)");
+    }
+
+    #[test]
+    fn the_emitter_writes_what_the_reader_reads_back() {
+        let hard = JobSource {
+            kind: AIRFLOW.into(),
+            path: "../a \"b\": c # d \\ e\u{e9}\u{4e2d}".into(),
+            label: "r\u{e9}: \"x\" # y".into(),
+            keys: [("dag_id".to_string(), "pipeline.name".to_string()), ("tasks".to_string(), "steps".to_string())].into_iter().collect(),
+            from_file: false,
+        };
+        let plain = JobSource { kind: DBT_CLOUD.into(), path: "jobs/cloud.yml".into(), ..Default::default() };
+        for list in [vec![hard.clone(), plain.clone()], vec![plain.clone()], vec![]] {
+            let text = sources_yaml(&list);
+            assert!(text.starts_with("# Where dbt-edith reads the orchestrator's jobs."), "{text}");
+            assert_eq!(parse_sources(&text), Ok(list), "{text}");
+        }
+        // A control character is escaped, so it cannot end its line, and the
+        // reader holds the value to `check` all the same.
+        let text = sources_yaml(&[JobSource { label: "a\nb\tc".into(), ..plain }]);
+        assert!(text.contains("\\u000a") && text.contains("\\u0009") && !text.contains("a\nb"), "{text}");
+        assert!(parse_sources(&text).unwrap_err().contains("no control characters"));
+    }
+
+    #[test]
+    fn the_known_jobs_are_absent_refused_or_read_from_the_sources_file_alone() {
+        let d = dir("known");
+        let g = graph();
+        write(&d, "dags/shop_daily.yml", DAG);
+        assert!(matches!(known(&g, &d), Known::Absent), "the settings are never read here");
+        kept(&d, "jobs:\n  - kind: airflow\n    path: dags\n");
+        let Known::Read(read) = known(&g, &d) else { panic!("read") };
+        assert_eq!((read.jobs.len(), read.steps.len()), (1, 2));
+        kept(&d, "jobs: oops\n");
+        assert!(matches!(known(&g, &d), Known::Refused(why) if why.contains("line 1")));
+    }
+
+    #[test]
+    fn the_command_line_reads_the_steps_of_a_node_and_the_nodes_of_a_job() {
+        let d = dir("cli-views");
+        write(&d, "daily.yml", DAG);
+        write(&d, "after.yml", ON_ASSET);
+        write(&d, "cloud/jobs.yml", "jobs:\n  nightly:\n    name: Nightly build\n    triggers:\n      schedule: true\n    schedule:\n      cron: \"0 2 * * *\"\n    execute_steps:\n      - dbt build --select orders\n      - dbt compile\n      - dbt run --select tag:nope\n");
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[]), source(DBT_CLOUD, &d.join("cloud"), &[])]);
+        let orders = g.index["model.shop.orders"];
+        let found = for_node(&g, &read, orders);
+        let lines: Vec<String> = hits(&found).into_iter().map(|h| h.text).collect();
+        assert_eq!(
+            lines,
+            [
+                "DAG shop_daily › task marts (scheduled 0 5 * * *) via +tag:daily",
+                "job Nightly build › step 1/3 (scheduled 0 2 * * *) via orders",
+            ]
+        );
+        assert_eq!(unresolved_for(&found), 0);
+        // A node no step runs has none; a compile step never counts.
+        let none = for_node(&g, &read, g.index["model.shop.test"]);
+        assert!(hits(&none).is_empty());
+
+        assert_eq!(named(&read, "shop_daily"), [1]);
+        assert_eq!(named(&read, "SHOP_DAILY"), [1], "the case is ignored once no name is exact");
+        assert_eq!(named(&read, "nightly"), [2], "a dbt Cloud identifier");
+        assert!(named(&read, "stage").is_empty(), "a task is no job");
+        let answer = answer(&g, &read, 2);
+        assert_eq!((answer.name.as_str(), answer.schedule.as_str()), ("Nightly build", "scheduled 0 2 * * *"));
+        let shown: Vec<(&str, usize, &str, &str)> =
+            answer.steps.iter().map(|s| (s.label.as_str(), s.node_count, s.runs_nothing.as_str(), s.unresolved.as_str())).collect();
+        assert_eq!(shown[0], ("step 1/3", 2, "", ""), "the model and its test");
+        assert_eq!(shown[1], ("step 2/3", 0, "dbt compile runs no node", ""));
+        assert_eq!(shown[2].1, 0);
+        assert_eq!(answer.nodes, 2, "distinct nodes, a compile step's none");
+        let airflow = super::answer(&g, &read, 1);
+        let names: Vec<&str> = airflow.steps[0].nodes.iter().map(|n| n.name.as_str()).collect();
+        assert_eq!((airflow.steps[0].label.as_str(), names), ("task stage", ["stg_customers", "stg_orders"].to_vec()));
+
+        assert!(unknown(&read, "shop").contains("did you mean shop_after, shop_daily"));
+        assert!(unknown(&read, "zzz").contains("the jobs read include Nightly build, shop_after, shop_daily"));
+        let listed = listed(&read);
+        assert_eq!(listed.iter().map(|j| j.name.as_str()).collect::<Vec<_>>(), ["shop_after", "shop_daily", "Nightly build"]);
     }
 
     #[test]

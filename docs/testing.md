@@ -93,7 +93,9 @@ DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executab
 same Jaffle Shop, the way an MCP client drives it, and every question it
 answers is asked of the command line too: the two have to give the same
 stdout and stderr, bar the ages and the time collin took, and `isError` has to
-be the exit code not being 0 (0110). The session also has to leave the project
+be the exit code not being 0 (0110). The copy gets a `.dbt-edith/jobs.yml`
+over a copy of the invented job fixtures, so `--describe` and `--job` are
+compared on jobs too (0115). The session also has to leave the project
 and the manifest's folder as they were, write nothing to a configuration
 folder, and, for `--run-collin` with a stand-in collin, change exactly the two
 files collin writes. It needs the same dbt, parses with it, and skips itself

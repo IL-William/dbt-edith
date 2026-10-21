@@ -167,9 +167,10 @@ class Shots:
         self.until("document.querySelectorAll('#counts .chip').length > 0", "the page to load", 30)
         self.until("[...document.querySelectorAll('.tour-offer button')].some((b) => b.textContent === 'Not now')", "the tour's offer")
         self.js("[...document.querySelectorAll('.tour-offer button')].find((b) => b.textContent === 'Not now').click()")
-        # Named through the route the sources form saves with.
+        # Named through the route the sources form saves with, in the settings
+        # so that no file is written into the project.
         answer = self.js("""fetch('/api/jobs/sources', { method: 'PUT', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sources: [
+          body: JSON.stringify({ place: 'settings', sources: [
             { kind: 'airflow', path: '../orchestration/dags', label: 'airflow', keys: {} },
             { kind: 'dbt_cloud', path: '../orchestration/dbt_cloud', label: 'dbt cloud', keys: {} }] }) })
           .then((r) => r.json()).then((r) => r.jobs)""")

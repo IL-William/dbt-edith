@@ -1139,6 +1139,9 @@ first skipped any folder named `target` or `logs`, which on that repository is
 a layer of eight DAGs, without a word; only `node_modules` and `__pycache__` are
 skipped now. Every replayed read request answers as on `main`. Driven in
 headless Chrome on that project. Not yet on a real dbt-jobs-as-code repository.
+Since 1.49.0 (0115) the sources may be kept in the project's own
+`.dbt-edith/jobs.yml` instead of the settings, which the command line and MCP
+read too: see the paragraph below the agent skill's.
 
 Reports (1.10.0, 0064): what speaks of the whole project sat in two places,
 collin's report in an editor tab behind a badge, and Coverage in a view of the
@@ -1647,6 +1650,26 @@ and every command the file cites parses, passes the mode checks and is accepted
 by the MCP line. Whether an agent loads it was measured with agents before it
 was written, not by a test.
 
+Job sources in the project, and jobs on the command line (0115, 1.49.0): the
+sources form offers to keep the sources in `.dbt-edith/jobs.yml`, shared and
+committed, or for the person only, in the settings, as before. The file is
+written by a save of the form and by nothing else, refuses a version it was not
+shown, wins over the settings while it exists, and gives no source and says why
+when it does not read, at its line, never the settings' in its place. The
+command line and MCP read it and never the settings: `--describe` gains a
+`jobs` line (and `jobs` in its JSON), `--overview` a `jobs` line and key, and
+`--job NAME` prints a DAG or a dbt Cloud job step by step with the nodes each
+runs. MCP keeps the read between calls while the graph, the file and the job
+files are as they were. Checked with `cargo test` (the file read, refused at a
+line, winning, a link out of the project, the emitter round-tripped, the PUT
+writing or not, a changed file refused, the cards, `--job`, the MCP slot) and by
+`walk_mcp.py`, which writes the file over the job fixtures in its copy of Jaffle
+Shop and compares the tool with the command line on `--describe orders` and
+`--job`. The form's states were driven in headless Chrome on a Jaffle Shop
+copy: no file, saved into the project, reopened on the file, and a file that
+does not read. Not driven: the reason shown under the choice for a path the
+file may not hold, and Save held while a save is on its way.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
@@ -2043,7 +2066,10 @@ of its own, and each panel updates the tour, its page under
     - a shorter `--overview` JSON, with `--depth 1` first;
     - a macro nameable by `--describe`, which takes nodes only;
     - the compiled SQL reachable from `--sql`, which prints the node's own
-      file.
+      file;
+    - `--jobs KIND:PATH`, to name job sources on a line without the project's
+      file (0115), which MCP could not take without a path in a line (0110);
+    - a `selectors` line on a node's card, the named selectors that select it.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -2405,6 +2431,19 @@ Left by the count (0112, 1.46.0), unranked:
   the values.
 - **Count mode** still sorts the selection by name before counting; linear and
   harmless.
+
+Left by the job sources in the project (0115, 1.49.0), unranked:
+
+- **The file names folders outside the project**, up to two folders above it
+  and never a hidden one, so whoever opens a project that commits it reads
+  them; the settings keep taking any path.
+- **A hand-written file with one mistake is refused whole**, with its line; the
+  form then shows an empty list until it is saved over.
+- **`SKILL.md` is at its 4096 bytes now**, after cuts to make room for the jobs
+  row; its description does not mention jobs, so an agent finds the row only
+  once the skill is loaded.
+- **A step that compiles** is not listed under `--job`'s nodes, and a job's
+  `nodes N` counts what the steps that run, build, test or check act on.
 
 Left by the agent skill (0114, 1.48.0), unranked:
 

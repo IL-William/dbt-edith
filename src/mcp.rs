@@ -19,7 +19,7 @@
 
 use crate::mcp_graphs::Graphs;
 use crate::mcp_line::{self, HELP, INSTRUCTIONS, TOOL};
-use crate::{collin_run, describe, ls, ls_column, Question};
+use crate::{collin_run, describe, job, ls, ls_column, Question};
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
@@ -396,21 +396,34 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
             if let Some(why) = describe::no_name(&names) {
                 return Outcome::failed(why);
             }
-            match graphs.base() {
-                Ok(base) => {
+            match graphs.base_and_jobs() {
+                Ok((base, jobs)) => {
                     kept_warning(base.warning, &mut err);
-                    describe::respond_describe(&root, base.graph, &names, sql, output, &mut out, &mut err)
+                    describe::respond_describe(&root, base.graph, Some(&jobs), &names, sql, output, &mut out, &mut err)
                 }
                 Err(why) => return Outcome::failed(&why),
             }
         }
-        Question::Overview { depth } => match graphs.base() {
-            Ok(base) => {
+        Question::Overview { depth } => match graphs.base_and_jobs() {
+            Ok((base, jobs)) => {
                 kept_warning(base.warning, &mut err);
-                describe::respond_overview(&root, &manifest_path, base.graph, catalog.as_deref(), depth, output, &mut out, &mut err)
+                describe::respond_overview(&root, &manifest_path, base.graph, Some(&jobs), catalog.as_deref(), depth, output, &mut out, &mut err)
             }
             Err(why) => return Outcome::failed(&why),
         },
+        Question::Job { name } => {
+            // As the command line does: before the project is opened.
+            if let Some(why) = job::no_name(&name) {
+                return Outcome::failed(why);
+            }
+            match graphs.base_and_jobs() {
+                Ok((base, jobs)) => {
+                    kept_warning(base.warning, &mut err);
+                    job::respond_job(&root, base.graph, Some(&jobs), &name, output, &mut out, &mut err)
+                }
+                Err(why) => return Outcome::failed(&why),
+            }
+        }
         Question::Column(ask) => match graphs.manifest() {
             // The cache is merged into a copy: the kept graph stays the manifest's.
             Ok(graph) => ls_column::respond(&root, &manifest_path, graph.clone(), &ask, output, stop, locate, &mut out, &mut err),
@@ -838,7 +851,7 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
         let names = ["helper".to_string(), "orders".to_string()];
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, &names, false, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(&root, &graph, None, &names, false, ls::Output::Name, &mut out, &mut err).unwrap();
         let said = s.ask("--describe helper,orders");
         let got = blocks(&said);
         assert_eq!(got[0], String::from_utf8(out).unwrap());
@@ -847,6 +860,47 @@ mod tests {
         let said = s.ask("--overview --output json");
         assert!(!is_error(&said));
         assert!(blocks(&said)[0].contains("\"project\":\"jaffle_shop\""), "{said}");
+    }
+
+    #[test]
+    fn the_jobs_of_the_sources_file_are_answered_over_a_line_as_on_the_command_line() {
+        let dir = project("jobs");
+        let root = dir.canonicalize().unwrap();
+        let s = Session::start(&dir);
+        // No sources file: a card says nothing of jobs, and the question cannot be asked.
+        assert!(!blocks(&s.ask("--describe orders"))[0].contains("jobs"));
+        let said = s.ask("--job daily");
+        assert!(is_error(&said) && said.to_string().contains("no .dbt-edith/jobs.yml in this project"), "{said}");
+
+        std::fs::create_dir_all(dir.join("dags")).unwrap();
+        std::fs::write(
+            dir.join("dags/daily.yml"),
+            "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join(".dbt-edith")).unwrap();
+        let source = crate::settings::JobSource { kind: "airflow".into(), path: "dags".into(), ..Default::default() };
+        std::fs::write(dir.join(".dbt-edith/jobs.yml"), crate::jobs::sources_yaml(&[source])).unwrap();
+        let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
+
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        describe::respond_describe(&root, &graph, None, &["orders".to_string()], false, ls::Output::Name, &mut out, &mut err).unwrap();
+        let card = String::from_utf8(out).unwrap();
+        assert!(card.contains("  jobs (1)"), "{card}");
+        assert_eq!(blocks(&s.ask("--describe orders"))[0], card);
+
+        for output in [ls::Output::Name, ls::Output::Json] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            crate::job::respond_job(&root, &graph, None, "daily", output, &mut out, &mut err).unwrap();
+            let line = if output == ls::Output::Json { "--job daily --output json" } else { "--job daily" };
+            let said = s.ask(line);
+            assert!(!is_error(&said), "{said}");
+            assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
+        }
+        let said = s.ask("--job nothing");
+        assert!(is_error(&said) && said.to_string().contains("no job named nothing"), "{said}");
+        let overview = blocks(&s.ask("--overview"))[0].clone();
+        assert!(overview.lines().any(|l| l.starts_with("jobs ") && l.ends_with(" 1 from .dbt-edith/jobs.yml: daily")), "{overview}");
     }
 
     #[test]

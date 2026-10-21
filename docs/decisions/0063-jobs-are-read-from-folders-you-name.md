@@ -1,6 +1,6 @@
 # 0063. Jobs are read from folders you name, outside the project
 
-Date: 2026-10-11 · Status: accepted, amended by 0077 and 0103 · Amends 0017 and 0018
+Date: 2026-10-11 · Status: accepted, amended by 0077, 0103 and 0115 · Amends 0017 and 0018
 
 **Trigger:** read before changing which job files are read, what leaves them,
 or how a job's dbt command is resolved.
@@ -52,6 +52,9 @@ tell what starts the DAGs on those assets, and nothing else.*
 - **A launch flag.** It would have to be retyped on every start.
 - **A file in the dbt project.** It would put a file of this tool's into the
   client's repository.
+  *Amended by [0115](0115-job-sources-may-live-in-the-project.md):
+  `.dbt-edith/jobs.yml`, written on the person's click only, and read before
+  the settings by the page, the command line and MCP.*
 
 ## Consequences
 
