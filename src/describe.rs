@@ -12,7 +12,7 @@
 
 use crate::collin::{self, iso_utc, Available};
 use crate::graph::{Graph, Kind, Node};
-use crate::ls::{self, node_named, Output, ANSWERED, CANNOT_RUN, REFUSED};
+use crate::ls::{self, node_named, Output, ANSWERED, REFUSED};
 use crate::files;
 use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
@@ -128,27 +128,40 @@ pub fn run_describe(
 ) -> i32 {
     // Before the project is opened: reading a manifest and a catalog to say
     // that no name was given is a wait for nothing.
-    if wanted(names).is_empty() {
-        eprintln!("{NO_NAME}");
+    if let Some(why) = no_name(names) {
+        eprintln!("{why}");
         return REFUSED;
     }
     let (root, _, graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
-    let code = match describe(&graph, &root, names, sql, output, &mut out, &mut err).and_then(|code| out.flush().map(|_| code)) {
-        Ok(code) => code,
-        // `| head` closing the pipe is someone having read enough, not a failure.
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ANSWERED,
-        Err(e) => {
-            let _ = writeln!(err, "error: cannot write the answer: {e}");
-            return CANNOT_RUN;
-        }
-    };
-    let _ = ls::provenance(&root, &graph, &mut err);
-    code
+    let written = respond_describe(&root, &graph, names, sql, output, &mut out, &mut err);
+    ls::ended(written, &mut err)
+}
+
+/// What the mode does once the project is open: the cards, flushed, then what
+/// the manifest is worth. The exit code, or the write that failed.
+pub(crate) fn respond_describe(
+    root: &Path,
+    graph: &Graph,
+    names: &[String],
+    sql: bool,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let code = describe(graph, root, names, sql, output, out, err)?;
+    out.flush()?;
+    let _ = ls::provenance(root, graph, err);
+    Ok(code)
+}
+
+/// Why nothing can be described, when no name was given.
+pub(crate) fn no_name(names: &[String]) -> Option<&'static str> {
+    wanted(names).is_empty().then_some(NO_NAME)
 }
 
 const NO_NAME: &str = "error: --describe wants the name or the unique_id of a node";
@@ -671,38 +684,46 @@ impl<'a> Described<'a> {
 pub fn run_overview(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, depth: usize, output: Output) -> i32 {
     let (root, manifest_path, graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
-    let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
+    let mut err = io::stderr().lock();
+    let mut out = BufWriter::new(io::stdout().lock());
+    let written = respond_overview(&root, &manifest_path, &graph, catalog, depth, output, &mut out, &mut err);
+    ls::ended(written, &mut err)
+}
+
+/// What the mode does once the project is open: the overview, flushed, then
+/// what the manifest is worth. The exit code, or the write that failed.
+pub(crate) fn respond_overview(
+    root: &Path,
+    manifest_path: &Path,
+    graph: &Graph,
+    catalog: Option<&Path>,
+    depth: usize,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let target_dir = files::folder_of(manifest_path).unwrap_or_else(|| root.join("target"));
     // The caches beside the manifest, as the page lists them, whichever of
     // them it would load.
     let caches = collin::discover(&target_dir);
     let whole = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()).display().to_string();
     let found = Overview::of(
-        &graph,
-        &whole(&manifest_path),
-        &whole(&ls::catalog_path(&root, &manifest_path, catalog)),
+        graph,
+        &whole(manifest_path),
+        &whole(&ls::catalog_path(root, manifest_path, catalog)),
         &caches,
         depth,
         ls::now_secs(),
     );
-    let mut err = io::stderr().lock();
-    let mut out = BufWriter::new(io::stdout().lock());
-    let written = match output {
-        Output::Json => serde_json::to_writer(&mut out, &found).map_err(io::Error::from).and_then(|_| writeln!(out)),
-        Output::Name | Output::Compact => found.write_text(&mut out),
-    }
-    .and_then(|_| out.flush());
-    match written {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ANSWERED,
-        Err(e) => {
-            let _ = writeln!(err, "error: cannot write the answer: {e}");
-            return CANNOT_RUN;
-        }
-    }
-    let _ = ls::provenance(&root, &graph, &mut err);
-    ANSWERED
+    match output {
+        Output::Json => serde_json::to_writer(&mut *out, &found).map_err(io::Error::from).and_then(|_| writeln!(out)),
+        Output::Name | Output::Compact => found.write_text(&mut *out),
+    }?;
+    out.flush()?;
+    let _ = ls::provenance(root, graph, err);
+    Ok(ANSWERED)
 }
 
 /// What the project holds, as a JSON answer and as the text drawn from it, so

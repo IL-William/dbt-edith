@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Everything that has to pass before a change is done: Rust tests, the release
 # notes, both audits, the Snowflake script's tests, the selection engine against
-# dbt itself, the guided tour walked in Chrome, the browser harnesses, and a
+# dbt itself, the MCP server against the command line, the guided tour walked in Chrome, the browser harnesses, and a
 # syntax check on the frontend the harnesses cannot catch.
 #
 # JavaScriptCore ships with macOS. Elsewhere, set JSC to a JavaScript shell
@@ -114,6 +114,24 @@ else
          *) skip "dbt itself" ;;
        esac ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "DBT COMPARISON FAILED"; failed=$((failed + 1)) ;;
+  esac
+fi
+
+echo
+echo "== the MCP server against the command line =="
+# dbt-edith --mcp driven over its stdin and stdout on a parsed copy of Jaffle
+# Shop, each question compared with the command line's own answer (0110). It
+# needs the same dbt as the step above to parse the copy, and skips itself
+# without it.
+if ! command -v "$py" > /dev/null 2>&1; then
+  echo "SKIPPED: no $py"
+  skip "the MCP server"
+else
+  out=$("$py" scripts/walk_mcp.py 2>&1)
+  case $? in
+    0) echo "mcp ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
+    2) printf '%s\n' "$out" | tail -1; skip "the MCP server" ;;
+    *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "MCP FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
 

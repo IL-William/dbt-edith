@@ -52,32 +52,60 @@ pub const CANNOT_RUN: i32 = 2;
 pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Output) -> i32 {
     let (root, _, graph) = match open(project, manifest) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return cannot_open(&why),
     };
 
     let mut err = io::stderr().lock();
     // Buffered, because a selection of thousands of names would otherwise be
     // one write per line.
     let mut out = BufWriter::new(io::stdout().lock());
-    let code = match answer(&graph, query, output, &mut out, &mut err).and_then(|code| out.flush().map(|_| code)) {
-        Ok(code) => code,
-        // `| head` closing the pipe is someone having read enough, not a failure.
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ANSWERED,
-        Err(e) => {
-            let _ = writeln!(err, "error: cannot write the answer: {e}");
-            return CANNOT_RUN;
-        }
-    };
-    // After the answer is out, so a slow walk of a large project never holds
-    // it back.
-    let _ = provenance(&root, &graph, &mut err);
-    code
+    let written = respond(&root, &graph, query, output, &mut out, &mut err);
+    ended(written, &mut err)
 }
 
-/// The project's root, the manifest's path and the graph it holds, or the exit
-/// code once the reason it cannot be read is on stderr. `--column` opens the
-/// project the same way.
-pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, PathBuf, Graph), i32> {
+/// What the mode does once the project is open: the answer, flushed, then what
+/// it is worth, after the answer is out, so a slow walk of a large project
+/// never holds it back. The exit code, or the write that failed. A caller that
+/// is not a process hands it two buffers in place of the standard streams.
+pub(crate) fn respond(
+    root: &Path,
+    graph: &Graph,
+    query: &Query,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let code = answer(graph, query, output, out, err)?;
+    out.flush()?;
+    let _ = provenance(root, graph, err);
+    Ok(code)
+}
+
+/// The exit code of a mode whose answer was written to the standard streams.
+pub(crate) fn ended(written: io::Result<i32>, err: &mut impl Write) -> i32 {
+    match written {
+        Ok(code) => code,
+        // `| head` closing the pipe is someone having read enough, not a failure.
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ANSWERED,
+        Err(e) => {
+            let _ = writeln!(err, "error: cannot write the answer: {e}");
+            CANNOT_RUN
+        }
+    }
+}
+
+/// Prints the reason a project did not open, as the line it was returned as,
+/// and gives the exit code the modes end with.
+pub(crate) fn cannot_open(why: &str) -> i32 {
+    eprintln!("{why}");
+    CANNOT_RUN
+}
+
+/// The project's root, the manifest's path and the graph it holds, or the
+/// reason it cannot be read, as the `error:` line to print. Returned and not
+/// printed, so an answer that is not a process can carry it. `--column` opens
+/// the project the same way.
+pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, PathBuf, Graph), String> {
     open_with(project, manifest, |root, path| api::load_manifest(root, path))
 }
 
@@ -88,15 +116,20 @@ pub(crate) fn open_with_catalog(
     project: &Path,
     manifest: Option<&Path>,
     catalog: Option<&Path>,
-) -> Result<(PathBuf, PathBuf, Graph), i32> {
+) -> Result<(PathBuf, PathBuf, Graph), String> {
     // Asked for by name and not there, it would be left out of the answer
     // without a word, and the card would show the types of the YAML as if the
     // catalog had none to give.
-    if let Some(named) = catalog.filter(|c| !c.is_file()) {
-        eprintln!("error: no catalog at {}", named.display());
-        return Err(CANNOT_RUN);
+    if let Some(why) = missing_catalog(catalog) {
+        return Err(why);
     }
     open_with(project, manifest, |root, path| api::load_base(root, path, &catalog_path(root, path, catalog)))
+}
+
+/// The error for a catalog named and not there, which `open_with_catalog`
+/// gives before it reads anything.
+pub(crate) fn missing_catalog(named: Option<&Path>) -> Option<String> {
+    named.filter(|c| !c.is_file()).map(|c| format!("error: no catalog at {}", c.display()))
 }
 
 /// The catalog that is merged: the one named, else the one beside the
@@ -111,25 +144,18 @@ fn open_with(
     project: &Path,
     manifest: Option<&Path>,
     load: impl FnOnce(&Path, &Path) -> anyhow::Result<Graph>,
-) -> Result<(PathBuf, PathBuf, Graph), i32> {
+) -> Result<(PathBuf, PathBuf, Graph), String> {
     let root = match project.canonicalize() {
         Ok(p) => files::plain(p),
-        Err(e) => {
-            eprintln!("error: cannot open {}: {e}", project.display());
-            return Err(CANNOT_RUN);
-        }
+        Err(e) => return Err(format!("error: cannot open {}: {e}", project.display())),
     };
     let manifest_path = manifest.map(Path::to_path_buf).unwrap_or_else(|| root.join("target").join("manifest.json"));
     if !manifest_path.is_file() {
-        eprintln!("error: no manifest at {}: run dbt parse, or pass --manifest", manifest_path.display());
-        return Err(CANNOT_RUN);
+        return Err(format!("error: no manifest at {}: run dbt parse, or pass --manifest", manifest_path.display()));
     }
     match load(&root, &manifest_path) {
         Ok(graph) => Ok((root, manifest_path, graph)),
-        Err(e) => {
-            eprintln!("error: cannot read {}: {e}", manifest_path.display());
-            Err(CANNOT_RUN)
-        }
+        Err(e) => Err(format!("error: cannot read {}: {e}", manifest_path.display())),
     }
 }
 
@@ -917,8 +943,8 @@ mod tests {
         // The manifest reads, so what refuses below is the catalog alone.
         assert_eq!(open(None), None);
         assert_eq!(open(Some(&dir.join("catalog.json"))), None);
-        assert_eq!(open(Some(&dir.join("nowhere.json"))), Some(CANNOT_RUN));
-        assert_eq!(open(Some(&dir)), Some(CANNOT_RUN), "a folder is not a catalog");
+        assert_eq!(open(Some(&dir.join("nowhere.json"))), Some(format!("error: no catalog at {}", dir.join("nowhere.json").display())));
+        assert!(open(Some(&dir)).is_some(), "a folder is not a catalog");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

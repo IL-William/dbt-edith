@@ -23,6 +23,9 @@ mod ls_column;
 mod macro_use;
 mod macros;
 mod manifest;
+mod mcp;
+mod mcp_graphs;
+mod mcp_line;
 mod profiles;
 mod program;
 mod project;
@@ -148,6 +151,16 @@ struct Args {
     /// What --select, --selector, --column, --describe and --overview print: one name per line, one JSON object per node (per model for --column, one for --overview), or compact tab-separated lines; --describe and --overview print a text card unless json
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
+
+    /// Answer an MCP client over stdio, through one tool that takes these flags as a command line, and exit when it closes stdin, without serving. Only PROJECT, --manifest and --catalog go with it
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "depth", "output",
+        ]
+    )]
+    mcp: bool,
 }
 
 /// The first flag that is set beside a mode it does not belong to, as a
@@ -178,60 +191,104 @@ fn stray(args: &Args) -> Option<String> {
     flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"))
 }
 
+/// What the command line asks, when it asks a question and does not serve.
+/// Beside the project, the manifest and the catalog, which come from where
+/// the question is asked: the command line's arguments, or the MCP server's
+/// own.
+enum Question {
+    Select(ls::Query),
+    Describe { names: Vec<String>, sql: bool },
+    Overview { depth: usize },
+    Column(ls_column::Ask),
+}
+
+/// The question the arguments ask, or None for the page. One mapping from
+/// flags to mode, so the command line and the MCP tool cannot read the same
+/// flags two ways. A selection is looked at first, then a name to describe,
+/// the overview and the column, which is the order the modes were added in.
+fn question_of(args: &Args) -> Option<Question> {
+    match (&args.select, &args.selector) {
+        (Some(select), _) => {
+            return Some(Question::Select(ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() }))
+        }
+        (None, Some(name)) => return Some(Question::Select(ls::Query::Named(name.clone()))),
+        (None, None) => {}
+    }
+    if !args.describe.is_empty() {
+        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql });
+    }
+    if args.overview {
+        // Not clap's `default_value_t`: a flag with a default is always set,
+        // and `stray` could not tell it was asked for.
+        return Some(Question::Overview { depth: args.depth.unwrap_or(3) });
+    }
+    args.column.as_ref().map(|column| {
+        Question::Column(ls_column::Ask {
+            column: column.clone(),
+            up: args.up.unwrap_or(0),
+            down: args.down.unwrap_or(0),
+            stop_at: args.stop_at.clone(),
+            tool: args.column_tool,
+            cache: args.column_lineage.clone(),
+            indirect: args.indirect,
+            produce: args.run_collin.then(|| ls_column::Produce {
+                catalog: args.catalog.clone(),
+                compiled: args.compiled.clone(),
+                indirect: args.indirect,
+            }),
+        })
+    })
+}
+
+impl Question {
+    /// The mode, from the command line's arguments to the exit code.
+    fn run(&self, args: &Args) -> i32 {
+        let (project, manifest, catalog) = (&args.project, args.manifest.as_deref(), args.catalog.as_deref());
+        match self {
+            Question::Select(query) => ls::run(project, manifest, query, args.output),
+            Question::Describe { names, sql } => describe::run_describe(project, manifest, catalog, names, *sql, args.output),
+            Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
+            Question::Column(ask) => ls_column::run(project, manifest, ask, args.output),
+        }
+    }
+}
+
+/// What `--mcp` starts on: the project, canonical, and the manifest and the
+/// catalog if they were named, each made whole against the folder the server
+/// was started in. Neither is looked for here: a manifest that is not there
+/// is each call's error, so a client can be configured before `dbt parse`.
+fn mcp_start(args: &Args) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), String> {
+    let root = match args.project.canonicalize() {
+        Ok(p) if p.is_dir() => files::plain(p),
+        Ok(p) => return Err(format!("error: cannot open {}: not a folder", p.display())),
+        Err(e) => return Err(format!("error: cannot open {}: {e}", args.project.display())),
+    };
+    let whole = |path: &PathBuf| std::path::absolute(path).unwrap_or_else(|_| path.clone());
+    Ok((root, args.manifest.as_ref().map(whole), args.catalog.as_ref().map(whole)))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    // Before everything a server needs: no port, no settings, no update look,
+    // no browser, and no file read until a call asks (0110).
+    if args.mcp {
+        std::process::exit(match mcp_start(&args) {
+            Ok((root, manifest, catalog)) => mcp::serve(root, manifest, catalog),
+            Err(why) => {
+                eprintln!("{why}");
+                ls::CANNOT_RUN
+            }
+        });
+    }
     if let Some(sentence) = stray(&args) {
         eprintln!("error: {sentence}");
         std::process::exit(ls::CANNOT_RUN);
     }
     // Answered before anything a server needs: no port, no key, no settings
     // read or written, no catalog, no watcher (0057).
-    let query = match (args.select, args.selector) {
-        (Some(select), _) => Some(ls::Query::Line { select, exclude: args.exclude.unwrap_or_default() }),
-        (None, Some(name)) => Some(ls::Query::Named(name)),
-        (None, None) => None,
-    };
-    if let Some(query) = query {
-        std::process::exit(ls::run(&args.project, args.manifest.as_deref(), &query, args.output));
-    }
-    if !args.describe.is_empty() {
-        std::process::exit(describe::run_describe(
-            &args.project,
-            args.manifest.as_deref(),
-            args.catalog.as_deref(),
-            &args.describe,
-            args.sql,
-            args.output,
-        ));
-    }
-    if args.overview {
-        std::process::exit(describe::run_overview(
-            &args.project,
-            args.manifest.as_deref(),
-            args.catalog.as_deref(),
-            // Not clap's `default_value_t`: a flag with a default is always set,
-            // and `stray` could not tell it was asked for.
-            args.depth.unwrap_or(3),
-            args.output,
-        ));
-    }
-    if let Some(column) = args.column {
-        let ask = ls_column::Ask {
-            column,
-            up: args.up.unwrap_or(0),
-            down: args.down.unwrap_or(0),
-            stop_at: args.stop_at,
-            tool: args.column_tool,
-            cache: args.column_lineage,
-            indirect: args.indirect,
-            produce: args.run_collin.then(|| ls_column::Produce {
-                catalog: args.catalog,
-                compiled: args.compiled,
-                indirect: args.indirect,
-            }),
-        };
-        std::process::exit(ls_column::run(&args.project, args.manifest.as_deref(), &ask, args.output));
+    if let Some(question) = question_of(&args) {
+        std::process::exit(question.run(&args));
     }
     let root = args
         .project
@@ -499,6 +556,80 @@ mod tests {
     }
 
     #[test]
+    fn mcp_goes_alone_with_the_project_the_manifest_and_the_catalog() {
+        for line in ["--mcp", "--mcp /work/jaffle_shop", "--mcp . --manifest m.json", "--mcp --manifest m.json --catalog c.json /work/jaffle_shop"] {
+            let args = asked(line);
+            assert!(args.mcp && question_of(&args).is_none() && stray(&args).is_none(), "{line}");
+        }
+        assert!(!asked("--overview").mcp);
+    }
+
+    #[test]
+    fn mcp_is_refused_beside_every_other_flag_and_names_it() {
+        // A default is not typed: `--mcp` alone parses with the port and the
+        // output it would otherwise have.
+        let args = asked("--mcp");
+        assert_eq!((args.port, args.output), (4321, ls::Output::Name));
+        for (flag, line) in [
+            ("--port", "--mcp --port 4321"),
+            ("--column-lineage", "--mcp --column-lineage c.json"),
+            ("--shell", "--mcp --shell bash"),
+            ("--no-open", "--mcp --no-open"),
+            ("--no-update-check", "--mcp --no-update-check"),
+            ("--select", "--mcp -s orders"),
+            ("--exclude", "--mcp --exclude x"),
+            ("--selector", "--mcp --selector nightly"),
+            ("--column", "--mcp --column a.b"),
+            ("--up", "--mcp --up 1"),
+            ("--down", "--mcp --down 1"),
+            ("--stop-at", "--mcp --stop-at window"),
+            ("--indirect", "--mcp --indirect"),
+            ("--column-tool", "--mcp --column-tool collin"),
+            ("--run-collin", "--mcp --run-collin"),
+            ("--compiled", "--mcp --compiled sql"),
+            ("--describe", "--mcp --describe orders"),
+            ("--sql", "--mcp --sql"),
+            ("--overview", "--mcp --overview"),
+            ("--depth", "--mcp --depth 2"),
+            ("--output", "--mcp --output json"),
+        ] {
+            let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+                Ok(_) => panic!("{line} was accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert!(why.contains(&format!("'{flag}")) && why.contains("'--mcp"), "{line}: {why}");
+        }
+        // Every flag of the command line is on the list, so one added later
+        // is refused beside --mcp until someone decides it is not.
+        use clap::CommandFactory;
+        let command = Args::command();
+        let conflicts: std::collections::BTreeSet<&str> =
+            command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "mcp").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
+        let others: std::collections::BTreeSet<&str> =
+            command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| !["mcp", "project", "manifest", "catalog"].contains(id)).collect();
+        assert_eq!(conflicts, others);
+    }
+
+    #[test]
+    fn mcp_starts_on_a_project_folder_and_reads_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mcp-start-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (root, manifest, catalog) = mcp_start(&asked(&format!("--mcp {}", dir.display()))).unwrap();
+        assert_eq!((root, manifest, catalog), (files::plain(dir.canonicalize().unwrap()), None, None));
+        // Named, and not there: not looked for.
+        let (_, manifest, catalog) = mcp_start(&asked(&format!("--mcp {} --manifest m.json --catalog /x/c.json", dir.display()))).unwrap();
+        assert_eq!(manifest, Some(std::path::absolute("m.json").unwrap()));
+        assert_eq!(catalog, Some(PathBuf::from("/x/c.json")));
+        let why = mcp_start(&asked(&format!("--mcp {}", dir.join("nowhere").display()))).unwrap_err();
+        assert!(why.starts_with("error: cannot open ") && why.contains("nowhere"), "{why}");
+        std::fs::write(dir.join("file"), "").unwrap();
+        let why = mcp_start(&asked(&format!("--mcp {}", dir.join("file").display()))).unwrap_err();
+        assert!(why.starts_with("error: cannot open ") && why.ends_with("not a folder"), "{why}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn the_flags_of_a_mode_beside_it_are_no_stray() {
         for line in [
             "--describe orders --sql",
@@ -514,6 +645,33 @@ mod tests {
         ] {
             assert_eq!(stray(&asked(line)), None, "{line}");
         }
+    }
+
+    #[test]
+    fn each_mode_is_the_question_its_flags_ask() {
+        let text = |line: &str| match question_of(&asked(line)) {
+            Some(Question::Select(ls::Query::Line { select, exclude })) => format!("select {select} | {exclude}"),
+            Some(Question::Select(ls::Query::Named(name))) => format!("selector {name}"),
+            Some(Question::Describe { names, sql }) => format!("describe {} {sql}", names.join(",")),
+            Some(Question::Overview { depth }) => format!("overview {depth}"),
+            Some(Question::Column(ask)) => format!(
+                "column {} {} {} {:?} produce={}",
+                ask.column,
+                ask.up,
+                ask.down,
+                ask.stop_at,
+                ask.produce.as_ref().is_some_and(|p| p.indirect)
+            ),
+            None => "page".to_string(),
+        };
+        assert_eq!(text("-s stg_orders+1 --exclude resource_type:test"), "select stg_orders+1 | resource_type:test");
+        assert_eq!(text("--selector nightly"), "selector nightly");
+        assert_eq!(text("--describe orders,customers --sql"), "describe orders,customers true");
+        assert_eq!(text("--overview"), "overview 3");
+        assert_eq!(text("--overview --depth 1"), "overview 1");
+        assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");
+        assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
+        assert_eq!(text(""), "page");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # 0057. A selection is answered on the command line, without a server
 
-Date: 2026-10-10 · Status: accepted · Follows 0024 and 0052
+Date: 2026-10-10 · Status: accepted, amended by 0110 · Follows 0024 and 0052
 
 **Trigger:** read before adding a flag that answers and exits instead of
 serving, or before letting anything but the page read the selection engine.
@@ -55,6 +55,8 @@ a process to stop afterwards, and 0052 keeps other programs off it on purpose.
   stable, for callers that only want an answer.
 - **An MCP server**: a protocol and a long-lived process, where one command
   already answers.
+  *Amended by [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md):
+  served on request by `--mcp`, through one tool taking these flags.*
 - **A `dbt-edith ls` subcommand**: the project is a positional argument with a
   default, so `ls` would be read as a project folder of that name, and one
   shape of command line is easier to explain than two.

@@ -97,6 +97,8 @@ jobs:
       - run: '"$RUNNER_TEMP/dbt/bin/pip" install --quiet "dbt-core~=${{ matrix.dbt }}.0" "dbt-duckdb~=1.11.0"'
       # Every model's lineage, where check.sh compares every eighth (0056).
       - run: '"$RUNNER_TEMP/dbt/bin/python" scripts/compare_with_dbt.py --every-model'
+      # The MCP server against the command line on Jaffle Shop (0110).
+      - run: '"$RUNNER_TEMP/dbt/bin/python" scripts/walk_mcp.py'
 
   # A pull request that changes what the tool does says so in CHANGELOG.md,
   # which is the only file that keeps the order of what shipped. The label is

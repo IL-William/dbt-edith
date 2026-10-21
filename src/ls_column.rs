@@ -17,6 +17,7 @@ use crate::{collin_run, files, profiles};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 /// The levels `all` stands for: more than any project has, and still an `i32`
 /// for the walk's signed depths.
@@ -88,27 +89,50 @@ pub fn levels(text: &str) -> Result<u32, String> {
 
 /// The whole mode, from the command line's arguments to the exit code.
 pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -> i32 {
-    let (root, manifest_path, mut graph) = match ls::open(project, manifest) {
+    let (root, manifest_path, graph) = match ls::open(project, manifest) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
-    let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
     let mut err = io::stderr().lock();
+    let mut out = BufWriter::new(io::stdout().lock());
+    // Nobody stops a run from here: the process ends with the Ctrl+C that
+    // would.
+    let written = respond(&root, &manifest_path, graph, ask, output, &AtomicBool::new(false), collin_run::locate, &mut out, &mut err);
+    ls::ended(written, &mut err)
+}
+
+/// What the mode does once the project is open, collin's run included: the
+/// answer, flushed, then what the cache is worth. The exit code, or the write
+/// that failed. `stop` ends a run of collin early; a failed or stopped run
+/// ends the mode with `CANNOT_RUN` like any other. `locate` finds the collin
+/// to run, asked only when a run is.
+pub(crate) fn respond(
+    root: &Path,
+    manifest_path: &Path,
+    mut graph: Graph,
+    ask: &Ask,
+    output: Output,
+    stop: &AtomicBool,
+    locate: impl FnOnce() -> collin_run::Located,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let target_dir = files::folder_of(manifest_path).unwrap_or_else(|| root.join("target"));
     // The model is the manifest's to name: a question naming none is refused
     // before collin spends a run, and rewrites the cache, for nothing.
     if ask.produce.is_some() {
         if let Err(why) = model_of(&graph, &ask.column) {
             let _ = writeln!(err, "error: {why}");
-            return REFUSED;
+            return Ok(REFUSED);
         }
     }
     // Only where the flag would be taken: it names its own cache, so clap
     // refuses it beside one named another way.
     let offer_run = ask.produce.is_none() && ask.tool.is_none() && ask.cache.is_none();
     let written = match &ask.produce {
-        Some(p) => match produce(&root, &manifest_path, &target_dir, p, collin_run::locate(), &mut err) {
+        Some(p) => match produce(root, manifest_path, &target_dir, p, locate(), stop, err) {
             Ok(Some(cache)) => Some(cache),
-            _ => return CANNOT_RUN,
+            _ => return Ok(CANNOT_RUN),
         },
         None => None,
     };
@@ -119,35 +143,28 @@ pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -
         Ok(path) => path,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
-            let _ = regenerate(&root, &graph, &target_dir, ask.tool.map_or("", Tool::name), offer_run, &mut err);
-            return CANNOT_RUN;
+            let _ = regenerate(root, &graph, &target_dir, ask.tool.map_or("", Tool::name), offer_run, err);
+            return Ok(CANNOT_RUN);
         }
     };
     let raw = match load(&cache) {
         Ok(raw) => raw,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
-            return CANNOT_RUN;
+            return Ok(CANNOT_RUN);
         }
     };
     let producer = raw.producer.clone();
     graph.merge_col_lineage(raw, files::mtime_secs(&cache));
     graph.meta.cll_file = cache.display().to_string();
 
-    let mut out = BufWriter::new(io::stdout().lock());
-    let code = match answer(&graph, ask, output, &mut out, &mut err).and_then(|code| out.flush().map(|_| code)) {
-        Ok(code) => code,
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ANSWERED,
-        Err(e) => {
-            let _ = writeln!(err, "error: cannot write the answer: {e}");
-            return CANNOT_RUN;
-        }
-    };
+    let code = answer(&graph, ask, output, out, err)?;
+    out.flush()?;
     // After the answer, as for `--select`: the freshness walk is most of the
     // time on a large project. A refusal says which cache it looked in too.
-    let _ = ls::provenance(&root, &graph, &mut err);
-    let _ = cache_lines(&root, &graph, &cache, &manifest_path, &producer, offer_run, &mut err);
-    code
+    let _ = ls::provenance(root, &graph, err);
+    let _ = cache_lines(root, &graph, &cache, manifest_path, &producer, offer_run, err);
+    Ok(code)
 }
 
 /// The cache at `path`, or why it is not one. Discovery passes over a file
@@ -220,6 +237,7 @@ fn produce(
     folder: &Path,
     p: &Produce,
     collin: collin_run::Located,
+    stop: &AtomicBool,
     err: &mut impl Write,
 ) -> io::Result<Option<PathBuf>> {
     // Named and not there, the folder would read no file, and every model it
@@ -282,7 +300,7 @@ fn produce(
         report: whole(&report),
     };
     let started = std::time::Instant::now();
-    match collin_run::run(&job, collin_run::DEADLINE) {
+    match collin_run::run_stoppable(&job, collin_run::DEADLINE, stop) {
         Ok(_) => {
             let read = collin_run::read_report(&report).map_or_else(String::new, |r| {
                 // As the page counts it: a file set aside is parsed, but
@@ -1294,7 +1312,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         std::fs::create_dir_all(dir.join("sql")).unwrap();
         let p = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
         let mut err = Vec::new();
-        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &mut err).unwrap();
+        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
         // The names the page's own run writes, so the page shows this run.
         assert_eq!(got, Some(folder.join("column_lineage.collin.json")));
         assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.10.0");
@@ -1314,7 +1332,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         // named; an answer crossing indirect edges has collin write them.
         std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
         let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None, indirect: true };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
         assert!(args.contains(" --indirect "), "{args}");
@@ -1324,14 +1342,14 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         let apart = scratch("produce-apart");
         let other = apart.join("manifest.json");
         std::fs::write(&other, "{}").unwrap();
-        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.10.0", WRITES), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(!args.contains("--project") && args.contains(&named("--manifest", other.clone())), "{args}");
         std::fs::remove_dir_all(&apart).unwrap();
 
         // A collin older than WANTS still runs, and says what updating brings.
         let mut err = Vec::new();
-        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None, indirect: false }, stand_in(&dir, "0.0.9", WRITES), &mut err)
+        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None, indirect: false }, stand_in(&dir, "0.0.9", WRITES), &AtomicBool::new(false), &mut err)
             .unwrap()
             .unwrap();
         let said = String::from_utf8(err).unwrap();
@@ -1344,7 +1362,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
         let mut err = Vec::new();
         let p = Produce { catalog: None, compiled: None, indirect: false };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", aside), &mut err).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
 
@@ -1357,7 +1375,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
   {"unique_id":"model.jaffle_shop.stg_orders","parse_error":"a python model, not SQL"}]}' > "$report""#;
         let warned = |p: &Produce| {
             let mut err = Vec::new();
-            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.10.0", unread), &mut err).unwrap().unwrap();
+            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.10.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
             String::from_utf8(err).unwrap()
         };
         let said = warned(&Produce { catalog: None, compiled: None, indirect: false });
@@ -1398,7 +1416,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         let both = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
         let said = |p: &Produce, collin: collin_run::Located| {
             let mut err = Vec::new();
-            let got = produce(&dir, &manifest, &dir, p, collin, &mut err).unwrap();
+            let got = produce(&dir, &manifest, &dir, p, collin, &AtomicBool::new(false), &mut err).unwrap();
             (got, String::from_utf8(err).unwrap())
         };
 
