@@ -18,3 +18,18 @@ function z(selector) {
   ok('a toast draws over ' + s, z('#toast') > z(s));
 });
 ok('and takes no click', /pointer-events:\s*none/.test(rule('#toast')));
+
+['#modal', '#tour', '#shortcuts', '#palette'].forEach(function (s) {
+  ok('a notice card draws over ' + s, z('.notice') > z(s));
+});
+ok('and is a card, not a backdrop: it does not cover the page', !/inset:\s*0/.test(rule('.notice')));
+
+var app = read('web/app.js');
+var closer = app.slice(app.indexOf('const onKey = (e) => {\n    if (e.key !== \'Escape\') return;'));
+closer = closer.slice(0, closer.indexOf('document.addEventListener'));
+ok('Escape is left alone outside the terminal, the card and the bare page',
+  /if \(!inTerm && t !== document\.body && !card\.contains\(t\)\) return;\s+closeNotice\(\)/.test(closer));
+ok('an Escape the card takes is marked taken, so the find bar and the panel keep theirs',
+  /closeNotice\(\);[\s\S]*?\n    e\.preventDefault\(\);/.test(closer));
+ok('and in the terminal it goes no further', /if \(inTerm\) e\.stopPropagation\(\)/.test(closer));
+ok('a click on the card keeps the focus where it was', /card\.addEventListener\('mousedown', \(e\) => e\.preventDefault\(\)\)/.test(app));

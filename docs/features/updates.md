@@ -22,14 +22,23 @@ The update is the menu's button, `Update to` the newest release, and right
 under it is how it goes: it types the command into the terminal below, Enter
 there runs it, a minute or two, and dbt-edith then has to be stopped where it
 was started and started again, since the version that started serves the page
-until then. The release tags are fetched before the pull, so the build stamp
-names the release it built. Once the new binary is in place, which dbt-edith
-tells by the time its own file was written, the menu says `Installed: restart
-dbt-edith to run it` in place of the button and the pill reads `restart to
-update`, within a few seconds of the update ending, and of an update run by
-hand once the menu is opened (0095). Neither, nor the menu's heading, names
-the new version, since a release out after the install may not be the one
-installed: a restart onto one still behind is offered the update again.
+until then. A card in the middle of the page says so once the command is typed
+(Press Enter in the terminal to run the update), and goes by itself after
+fifteen seconds, or at its button or at Escape pressed in the terminal or on the
+page. The command ends, when the install worked and not otherwise, on a line of
+its own saying the same restart in the terminal. The release tags are fetched
+before the pull, so the build stamp names the release it built. Once the new
+binary is in place, which dbt-edith tells by the time its own file was written,
+the menu says `Installed: restart dbt-edith to run it` in place of the button
+and the pill reads `restart to update`, within a few seconds of the update
+ending, and of an update run by hand once the menu is opened (0095). A second
+card, `dbt-edith is installed`, appears the moment the page learns it, whether
+or not the button was pressed here, and stays until closed with its button or
+Escape in the terminal or on the page; it is not shown for an install the page
+found already done when it loaded, which the pill covers (0111). Neither, nor
+the menu's heading, names the new version, since a release out after the install
+may not be the one installed: a restart onto one still behind is offered the
+update again.
 
 Opened by the pointer, the menu closes once the pointer has left Edith and the
 menu, or at the next key, which goes on to the editor or the terminal you were
@@ -45,6 +54,8 @@ To update by hand, stop dbt-edith first, because Windows will not replace an
 again. The command the menu types when a release is out needs no stop: it
 renames the running `dbt-edith.exe` to `dbt-edith.exe.old` first, which Windows
 allows, and the old one goes on serving the page from there; it puts it back if
-the build fails. Restart dbt-edith afterwards. A binary run
-from the clone's `target\release` gets no such command: cargo builds it through
-a file the rename does not free, so stop it before building.
+the build fails. In Git Bash that command then ends as a failure, with no
+closing line; PowerShell prints no closing line either, but its status stays
+a success. Restart dbt-edith afterwards. A binary run from the clone's
+`target\release` gets no such command: cargo builds it through a file the
+rename does not free, so stop it before building.

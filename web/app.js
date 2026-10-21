@@ -65,6 +65,7 @@ const S = {
   updateAt: 0,                // when that answer came, which the menu's opening asks again after
   lookPosted: false,          // a Check for updates waits on its answer, which the polls' answers must not replace
   installSince: 0,            // when the update was typed into the terminal, asked every few seconds after (0095)
+  notice: null,               // the centred card showing, if any: { card, timer, off } (0111)
   updateMenu: null,           // Edith's menu, drawn again while open when an answer comes in
   build: '',                  // the build stamp, under the version in Edith's menu
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
@@ -221,6 +222,70 @@ function toast(msg, kind = '') {
   t.textContent = msg;
   $('#toast').appendChild(t);
   setTimeout(() => t.remove(), 3200);
+}
+
+/* A card in the middle of the page, for the one message that must not be
+   missed: what to do once the update is typed, and that it is installed. A
+   toast is three seconds at the bottom, and these were read as nothing
+   having happened (0111). One at a time, a new one replacing the last. It
+   has no backdrop, so the terminal and the page stay usable around it; with
+   no `sticky` it goes by itself after `ms`, otherwise only its button or
+   Escape closes it, but only with the focus in the terminal (which the update
+   leaves it in), on the card or on the bare page: in the editor, a find bar,
+   the tour or a menu Escape is theirs, and the card stays. In the terminal it
+   stops at the card, or it would also reach a prompt or a vim. A click on
+   the card keeps the focus where it was, so Enter still reaches the terminal. */
+function notice({ title, body, sticky = false, ms = 15000 }) {
+  closeNotice();
+  const card = document.createElement('div');
+  card.className = 'notice';
+  card.setAttribute('role', 'status');
+  const head = document.createElement('div');
+  head.className = 'notice-head';
+  const h = document.createElement('div');
+  h.className = 'notice-title';
+  h.textContent = title;
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'notice-x';
+  x.textContent = '×';
+  x.title = 'Close';
+  x.setAttribute('aria-label', 'Close');
+  x.addEventListener('click', closeNotice);
+  head.append(h, x);
+  const p = document.createElement('div');
+  p.className = 'notice-body';
+  p.textContent = body;
+  card.append(head, p);
+  card.addEventListener('mousedown', (e) => e.preventDefault());
+  document.body.appendChild(card);
+  const onKey = (e) => {
+    if (e.key !== 'Escape') return;
+    const t = e.target;
+    const inTerm = !!(t && t.closest && t.closest('#term'));
+    if (!inTerm && t !== document.body && !card.contains(t)) return;
+    closeNotice();
+    // Taken, so the find bar's and the panel's Escape handlers (which check
+    // defaultPrevented) leave their own things open; in the terminal it also
+    // goes no further.
+    e.preventDefault();
+    if (inTerm) e.stopPropagation();
+  };
+  document.addEventListener('keydown', onKey, true);
+  S.notice = {
+    card,
+    timer: sticky ? 0 : setTimeout(closeNotice, ms),
+    off: () => document.removeEventListener('keydown', onKey, true),
+  };
+}
+
+function closeNotice() {
+  const n = S.notice;
+  if (!n) return;
+  S.notice = null;
+  clearTimeout(n.timer);
+  n.off();
+  n.card.remove();
 }
 
 /* Same colour rule as the lineage canvas, so a model looks the same everywhere. */
@@ -8195,8 +8260,10 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
 /* Types a command into the integrated terminal. It stops at the prompt by
    default, because running it is the user's decision and dbt is theirs to
    launch (0002). `run` is for the freshness badge alone: its dbt parse reaches
-   no warehouse, and a command that can is never run for the user (0071). */
-function sendToTerminal(cmd, run) {
+   no warehouse, and a command that can is never run for the user (0071).
+   `typed`, when given, is called once the command is in the terminal in place
+   of the toast, for the update, whose card says what to do next (0111). */
+function sendToTerminal(cmd, run, typed) {
   // Always on a click, and the terminal is what it asks to see.
   closePanel();
   showDock('terminal');
@@ -8207,7 +8274,8 @@ function sendToTerminal(cmd, run) {
       S.termPrompt = promptAfter(S.termPrompt, d);
       S.ws.send(JSON.stringify({ t: 'i', d }));
       S.term && S.term.focus();
-      toast(run ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
+      if (typed) typed();
+      else toast(run ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
     } else if (tries++ < 40) setTimeout(attempt, 100);
     else toast('terminal is not connected', 'err');
   };
@@ -14975,6 +15043,33 @@ function releaseRows(u) {
   };
 }
 
+/* The cards of the update flow (0111), as data so the harness reads them
+   without a DOM. 'typed' is the one after the button types the command, which
+   goes by itself. 'installed' is the answer to a transition: the one to
+   `replaced`, from an answer that was not (null for the first answer, which
+   the pill already covers), and sticky since nothing else says to restart.
+   Null when there is nothing to show. */
+function updateNotice(kind, prev, next) {
+  if (kind === 'typed') {
+    return {
+      title: 'Press Enter in the terminal to run the update',
+      body: 'It takes a minute or two. When it ends, stop dbt-edith where you started it and start it again.',
+      sticky: false, ms: 15000,
+    };
+  }
+  // The menu's own test of installed, so a card shows exactly when the pill
+  // and the menu start to say it: `replaced` alone is true for a binary that
+  // is already the newest.
+  if (!prev || !prev.current) return null;
+  const was = updateOffer(prev), is = updateOffer(next);
+  if ((was && was.installed) || !(is && is.installed)) return null;
+  return {
+    title: 'dbt-edith is installed',
+    body: 'Stop dbt-edith in the terminal where you started it (Ctrl+C), then start it again to run the new version.',
+    sticky: true,
+  };
+}
+
 /* Edith's menu, from the name at the top left and from the status bar's pill
    alike: which build serves the page, a newer release and how to install it
    once one is known (0068), the restart left once it is installed (0095), and
@@ -15024,7 +15119,11 @@ function paintUpdateMenu(menu) {
       run.type = 'button';
       run.setAttribute('role', 'menuitem');
       run.title = o.command;
-      run.addEventListener('click', () => { closePopup(); sendToTerminal(o.command); watchInstall(); });
+      run.addEventListener('click', () => {
+        closePopup();
+        sendToTerminal(o.command, false, () => notice(updateNotice('typed')));
+        watchInstall();
+      });
       menu.append(run);
     }
     if (o.step) menu.append(el('div', 'menunote updstep', o.step));
@@ -15083,12 +15182,18 @@ function paintUpdateMenu(menu) {
 /* The menu's button. The server answers once GitHub has, so the menu says it
    is looking until then, and is drawn again with the answer. */
 async function checkForUpdate() {
+  // The answer before this look, not the copy marked as checking: with none
+  // yet, an install the page finds already done is not a transition.
+  const before = S.update;
   S.update = Object.assign({}, S.update, { checking: true });
   S.lookPosted = true;
   const asked = ++S.updateAsks;
   paintUpdate();
   try {
-    S.update = await api.send('/api/update/check', 'POST', {});
+    const got = await api.send('/api/update/check', 'POST', {});
+    const n = updateNotice('installed', before, got);
+    if (n) notice(n);
+    S.update = got;
     S.updateShown = asked;
     S.updateAt = Date.now();
   } catch (e) {
@@ -15143,6 +15248,8 @@ async function refreshUpdate() {
   // for ten minutes.
   if (!S.lookPosted && asked > S.updateShown) {
     const changed = JSON.stringify(got) !== JSON.stringify(S.update);
+    const n = updateNotice('installed', S.update, got);
+    if (n) notice(n);
     S.update = got;
     S.updateShown = asked;
     S.updateAt = Date.now();

@@ -144,3 +144,25 @@ var capped = releaseRows({ current: '1.0.0', latest: '1.25.0', newer: true, olde
   releases: [{ version: '1.25.0', title: 'A', notes: tag + '1.25.0' }] });
 check('counts the ones left out', capped.head, '6 releases since yours');
 check('and links every release for them', capped.older, { label: 'and 5 older', href: 'https://github.com/IL-William/dbt-edith/releases', tip: 'Every release, on GitHub' });
+
+print('\n--- the cards of the update flow (0111) ---');
+var typed = updateNotice('typed');
+check('after the button: press Enter', typed.title, 'Press Enter in the terminal to run the update');
+check('and what comes after', typed.body,
+  'It takes a minute or two. When it ends, stop dbt-edith where you started it and start it again.');
+check('it goes by itself after fifteen seconds', [typed.sticky, typed.ms], [false, 15000]);
+var before = { current: '1.11.0', latest: '1.12.0', newer: true };
+var after = { current: '1.11.0', latest: '1.12.0', newer: true, replaced: true };
+var done = updateNotice('installed', before, after);
+check('on the move to installed', done.title, 'dbt-edith is installed');
+check('it says to stop and start again', done.body,
+  'Stop dbt-edith in the terminal where you started it (Ctrl+C), then start it again to run the new version.');
+ok('and stays until closed', done.sticky === true);
+check('not on the first answer, which the pill covers', updateNotice('installed', null, after), null);
+check('not on every poll once installed', updateNotice('installed', after, after), null);
+check('not while it is not installed', updateNotice('installed', before, before), null);
+check('not when it goes back (the build failed, the .exe is back)', updateNotice('installed', after, before), null);
+check('nothing without an answer', updateNotice('installed', before, null), null);
+var newest = { current: '1.12.0', latest: '1.12.0', replaced: true };
+check('not for a binary that is already the newest: the pill says nothing either',
+  updateNotice('installed', { current: '1.12.0', latest: '1.12.0' }, newest), null);
