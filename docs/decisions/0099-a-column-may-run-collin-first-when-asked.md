@@ -1,6 +1,6 @@
 # 0099. A column may run collin first, when the command line asks
 
-Date: 2026-10-19 · Status: accepted, amended by 0109 · Amends 0088 and 0042
+Date: 2026-10-19 · Status: accepted, amended by 0109 and 0110 · Amends 0088 and 0042
 
 **Trigger:** read before letting the command line start a program, before
 changing what `--run-collin` hands collin or where it writes, or before
@@ -99,6 +99,8 @@ canvas's, so the page draws the same, which was not driven here.
   for, the deferred "A target for Regenerate".
 - **An MCP server**, asked again for an agent: 0057's reasons hold, a
   protocol and a long-lived process where one command answers.
+  *Amended by [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md):
+  the server's tool may carry `--run-collin` in its line, under this guard.*
 
 ## Consequences
 

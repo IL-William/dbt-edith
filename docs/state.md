@@ -1566,6 +1566,20 @@ own arguments, and so does the answer; with the `compiled_code` taken out,
 `--compiled` read every model's file, and without it stderr said none was
 found. Not driven in the page.
 
+An MCP server (0110, 1.44.0): `dbt-edith --mcp` answers an MCP client over
+stdio through one tool, `edith`, taking the command line's flags as a line:
+allowed by clap argument id, no shell, the project, manifest and catalog fixed
+when it starts. It keeps the manifest and the base graph between calls and
+reloads them when their files change, answers the command line's text in two
+blocks, and lets `--run-collin` run per call, stopped by a cancellation or the
+end of input. Opt-in: nothing configures a client. Only the 2025-11-25
+handshake is served. Checked by `cargo test` and by `scripts/walk_mcp.py`,
+which drives it over stdio on Jaffle Shop and compares every answer with the
+command line's, bytes and exit codes, and by `--measure` on Jaffle Shop and
+Shopify v1.10.0: a warm call 4.9 ms against 9.8 for the command line on Jaffle
+Shop, 34.9 against 53.0 on Shopify, of which the freshness check with git is
+almost all.
+
 A node and the project on the command line (0102, 1.37.0): `--describe`
 prints a node's card, what the Catalog shows of it, with `--sql` for its own
 file; `--overview` prints what the project holds, by kind, materialization and
@@ -1970,14 +1984,7 @@ of its own, and each panel updates the tour, its page under
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-20. **An MCP server over these answers.** A stdio JSON-RPC facade on
-    `--describe`, `--overview`, `--select` and `--column`, which needs no
-    dependency. Asked for on 2026-10-20, for Copilot and Claude Code: one tool
-    taking a command line, rather than one per mode, and `column` allowed to
-    run collin on demand (0099). A plan exists; nothing is decided or written.
-    It would supersede the MCP lines of 0057, 0099 and 0102, which deferred it
-    because a skill that calls the command costs fewer tokens than tools
-    described in every context.
+20. ~~**An MCP server over these answers.**~~ Shipped in 1.44.0 (0110).
 21. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
     - one compact line per column of every selected node;
@@ -2282,6 +2289,29 @@ known limit, unranked:
     same project kept outside the checkout loses its seed headers today;
   - the `collin_run` test module is unix-only and the CI has no Windows job, so
     the Windows spelling of `files::plain` is not run there.
+
+Left by the MCP server (0110, 1.44.0), unranked:
+
+- **The modern handshake (2026-07-28)** is not served: `server/discover` gets
+  -32601, which Claude Code answers by falling back to `initialize`, and VS
+  Code sends `initialize` anyway. Serving it means a version tracker, the
+  per-request `_meta`, `ttlMs`/`cacheScope` and its own errors.
+- **The skill or the server.** The skill line costs about 48 tokens and the
+  tool about 153 in every context; where an agent has a terminal and the
+  freshness walk dominates, which of the two to recommend is not measured in a
+  session, only in bytes over four.
+- **Windows is not checked by hand:** the `.exe` spawned by each client, a
+  `TerminateProcess` leaving collin running, a CRLF answer in VS Code. No CI
+  job runs Windows, and the check's stand-in collin is a shell script.
+- **A project-scoped `.mcp.json`** with `"."` for the project: the folder
+  Claude Code starts a server in is undocumented, and was not checked. Only
+  `claude mcp add` with the path written out is documented.
+- **Clients cut long answers**: Claude Code stops at 25 000 tokens. The server
+  does not cap, so that the answer stays the command line's.
+- **Freshness is checked on every call**, git included, and is the whole of
+  the warm call on a project in a repository. Keeping one git answer for a
+  second or two would take it well under a millisecond on Shopify, and make
+  the line late.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has

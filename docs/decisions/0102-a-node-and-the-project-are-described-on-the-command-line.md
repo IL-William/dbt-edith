@@ -1,6 +1,6 @@
 # 0102. A node and the project are described on the command line
 
-Date: 2026-10-19 · Status: accepted · Follows 0057 and 0088
+Date: 2026-10-19 · Status: accepted, amended by 0110 · Follows 0057 and 0088
 
 **Trigger:** read before adding to what the command line prints of a node or
 the project, or before letting it read a file of the project.
@@ -29,6 +29,8 @@ name and the path already say: the unique_id is the kind and the name.
 
 - **An MCP server**: a protocol and a long-lived process, where one command
   answers. It may wrap these later.
+  *Amended by [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md):
+  it wraps them, in one tool, when the client is configured for it.*
 - **Full cards from `--select`**: one card per node is the JSON's size again.
 - **`raw_code` from the manifest for `--sql`**: it is deserialized for every
   node, the bulk of the manifest, for one answer.

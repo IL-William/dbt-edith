@@ -3,7 +3,8 @@
 Four questions dbt-edith answers without a page: what a selection matches, what
 a column reaches, what a node is, and what the project holds. Each reads the
 manifest dbt already wrote, prints and exits, so a script or an AI agent can
-ask with one command and read the answer in few tokens.
+ask with one command and read the answer in few tokens. An agent with no
+terminal can ask the same questions [over MCP](#over-mcp).
 
 ## Without a server
 
@@ -335,5 +336,108 @@ Three habits keep the answers small and true:
   says what dbt itself selects
   ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md)).
 
-The calls are plain commands with no protocol, so a skill that wraps them is
-the caller's own: the recipes above are what it would hold.
+The calls are plain commands, so a skill that wraps them is the caller's own:
+the recipes above are what it would hold. An agent that has no terminal, or
+whose client lists tools rather than skills, can ask the same questions
+[over MCP](#over-mcp).
+
+## Over MCP
+
+`dbt-edith --mcp` answers an MCP client over stdin and stdout instead of
+printing one answer
+([0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md)). It
+is opt-in: nothing configures it, no file is shipped for a client and none is
+written, and the command line and a skill keep working beside it. The server
+reads nothing until a call asks, so a client can be configured before
+`dbt parse`, and it ends when the client closes its input.
+
+```
+dbt-edith --mcp [PROJECT] [--manifest path/manifest.json] [--catalog path/catalog.json]
+```
+
+The project, the manifest and the catalog are named here, once, and are the
+same for every call; the defaults are the command line's.
+
+### The tool
+
+There is one tool, `edith`, taking one argument, `line`: the flags of the four
+questions above and `--output`, written as on the command line and with no
+project.
+
+```
+--overview
+--describe orders --sql
+-s 'stg_orders+1' --exclude resource_type:test --output compact
+--column stg_payments.amount --down all --output compact
+```
+
+- **`help`** (or `--help`) answers the reference of every flag. It is not in the
+  tool's description, so it enters the context only when the model asks.
+- **No shell.** Quotes group words; a pipe, a redirection, `;`, `&`, a backtick
+  or `$` outside quotes is refused with its reason. A recipe that ends in
+  `| cut | sort | uniq` cannot go through the tool: ask for the list and count
+  it in the reader. A leading `dbt-edith` and `.` are dropped, so a recipe
+  pastes as it is.
+- **Only the questions' flags pass.** `--port`, `--manifest`, `--catalog`,
+  `--column-lineage`, `--compiled`, `--shell`, `--no-open`,
+  `--no-update-check` and `--mcp` are refused, and so is any flag added to the
+  command line later until someone decides it is a question.
+- **A selection holding spaces is quoted**: `-s 'stg_orders orders'`. The dbt
+  habit `-s stg_orders orders` is answered with that advice, not with a wrong
+  selection; a third bare word is clap's "unexpected argument".
+- **`--run-collin` goes in a line** under the rule of
+  [0099](../decisions/0099-a-column-may-run-collin-first-when-asked.md): it
+  writes collin's cache beside the manifest, takes up to 600 s, and is stopped
+  when the client cancels the call or closes its input. Because of it the tool
+  is not marked read-only, and a client that approves the tool approves collin
+  runs with it. On Windows a client that ends the server with
+  `TerminateProcess` can leave collin running until it finishes.
+
+The result is the command line's text in two blocks, stdout then stderr, an
+empty one left out, with `isError` set when the exit code would not be 0. The
+second block carries the lines of the command line's stderr: the manifest that
+answered, when it was written, and `freshness:`. The answer is still the
+manifest's: when the line says `stale`, run `dbt parse` and ask again, the
+server reloads the manifest when its file changes. `column lineage capped at N
+edges` is the one message that goes to the server's own stderr instead.
+
+### Configuring a client
+
+Claude Code, run in the project:
+
+```
+claude mcp add dbt-edith -- dbt-edith --mcp "$PWD"
+```
+
+The tool is then `mcp__dbt-edith__edith` in a permission rule. VS Code, in
+`.vscode/mcp.json` of the workspace (or the user-level file):
+
+```json
+{ "servers": { "dbt-edith": { "type": "stdio", "command": "dbt-edith", "args": ["--mcp", "${workspaceFolder}"] } } }
+```
+
+On Windows the command is `dbt-edith` when it is on the PATH, else the whole
+path of the `.exe`, with its backslashes doubled in the JSON. A client that
+starts the server in another folder needs the project named, as above; a
+relative `--manifest` is made whole against the folder the server started in.
+
+### What it is for
+
+Measured on 2026-10-21 on Jaffle Shop and on Fivetran's Shopify v1.10.0, one
+machine, a release build:
+
+- **A call is faster by about 1.5x to 2x**, the process start and the load it
+  does not repeat: a warm call 4.9 ms against 9.8 ms on Jaffle Shop, 34.9
+  against 53.0 on Shopify. What is left is the freshness line, whose git
+  processes run on every call; keeping the manifest costs microseconds and
+  saves almost nothing by itself.
+- **The graph stays in memory**: 3.5 MiB after the handshake, 8.5 and 30 MiB
+  after twenty questions.
+- **It works where there is no terminal.**
+- **It costs context**: the tool and the server's instructions are about 153
+  tokens (bytes over four), against about 48 for a one-line skill and 447 for
+  a tool per mode. Where the agent has a terminal and the answer is not on
+  the critical path, the skill is the cheaper way to ask.
+
+A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
+`--output compact`, or a narrower selection.

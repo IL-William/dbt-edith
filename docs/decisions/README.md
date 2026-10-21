@@ -113,6 +113,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0107](0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) | The box art is drawn under a count and never exported | changing what the Halloween look draws on a lineage box, how many boxes it draws it on, `Lineage.setSkin`, or what `Lineage.snapshot()` measures and copies |
 | [0108](0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md) | The silk has dewdrops and the selected box grows a web | changing what the Halloween look draws on an edge, the web on the selected box, or what `select()` moves in the canvas |
 | [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md) | collin is given the project only for a manifest lying in it | changing the arguments dbt-edith hands collin, raising `WANTS`, or changing where a seed's columns come from |
+| [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md) | An agent may ask over MCP, through one tool | changing `--mcp`, the `edith` tool, what its line accepts, or what the server reads or writes |
 
 ## Keeping these honest
 

@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.44.0 - 2026-10-21
+
+- Answer an agent over MCP with `dbt-edith --mcp`, through one tool that takes
+  the command line's flags as a line, started only by a client configured for
+  it (0110).
+- Let that line carry `--run-collin`, stopped when the client cancels the call
+  or closes its input (0110).
+
 ## 1.43.1 - 2026-10-20
 
 - Offer "Update collin" to a collin older than 0.10.0, the first to read a
