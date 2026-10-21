@@ -134,7 +134,7 @@ pub fn run_describe(
     }
     let (root, _, graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
@@ -671,7 +671,7 @@ impl<'a> Described<'a> {
 pub fn run_overview(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, depth: usize, output: Output) -> i32 {
     let (root, manifest_path, graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
     let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
     // The caches beside the manifest, as the page lists them, whichever of

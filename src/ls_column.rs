@@ -90,7 +90,7 @@ pub fn levels(text: &str) -> Result<u32, String> {
 pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -> i32 {
     let (root, manifest_path, mut graph) = match ls::open(project, manifest) {
         Ok(opened) => opened,
-        Err(code) => return code,
+        Err(why) => return ls::cannot_open(&why),
     };
     let target_dir = files::folder_of(&manifest_path).unwrap_or_else(|| root.join("target"));
     let mut err = io::stderr().lock();

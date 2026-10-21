@@ -142,19 +142,31 @@ struct Assets;
 pub fn load_base(project: &Path, manifest_path: &Path, catalog_path: &Path) -> anyhow::Result<Graph> {
     let started = std::time::Instant::now();
     let mut graph = load_manifest(project, manifest_path)?;
-    graph.place_packages(project);
-    if catalog_path.exists() {
-        match RawCatalog::load(catalog_path) {
-            Ok(cat) => {
-                let n = graph.merge_catalog(cat, mtime_secs(catalog_path));
-                graph.meta.catalog_columns = n;
-                graph.meta.catalog_mtime = graph.catalog_mtime;
-            }
-            Err(e) => eprintln!("  catalog.json ignored: {e}"),
-        }
+    if let Some(warning) = add_catalog(&mut graph, project, catalog_path) {
+        eprintln!("{warning}");
     }
     graph.meta.load_ms = started.elapsed().as_millis();
     Ok(graph)
+}
+
+/// What `load_base` adds to a manifest's graph: the packages placed under the
+/// project, and the catalog when there is one. A catalog that does not read is
+/// left out and returned as the line `load_base` prints, so a caller that is
+/// not a terminal can keep it.
+pub fn add_catalog(graph: &mut Graph, project: &Path, catalog_path: &Path) -> Option<String> {
+    graph.place_packages(project);
+    if !catalog_path.exists() {
+        return None;
+    }
+    match RawCatalog::load(catalog_path) {
+        Ok(cat) => {
+            let n = graph.merge_catalog(cat, mtime_secs(catalog_path));
+            graph.meta.catalog_columns = n;
+            graph.meta.catalog_mtime = graph.catalog_mtime;
+            None
+        }
+        Err(e) => Some(format!("  catalog.json ignored: {e}")),
+    }
 }
 
 /// The manifest alone, with no catalog: all a selection needs, and so all the
@@ -5850,6 +5862,22 @@ b"}"#,
         assert!(!st.sidecar.wanted());
 
         server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_catalog_that_does_not_read_is_returned_as_the_line_load_base_prints() {
+        let root = temp_project("add-catalog");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("manifest.json"), r#"{"metadata":{"project_name":"jaffle_shop"},"nodes":{}}"#).unwrap();
+        let mut graph = load_manifest(&root, &target.join("manifest.json")).unwrap();
+        assert_eq!(add_catalog(&mut graph, &root, &target.join("catalog.json")), None, "none beside the manifest is no warning");
+        std::fs::write(target.join("catalog.json"), "{ not json").unwrap();
+        let warning = add_catalog(&mut graph, &root, &target.join("catalog.json")).expect("a catalog that does not read");
+        assert!(warning.starts_with("  catalog.json ignored: "), "{warning}");
+        std::fs::write(target.join("catalog.json"), r#"{"nodes":{}}"#).unwrap();
+        assert_eq!(add_catalog(&mut graph, &root, &target.join("catalog.json")), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
