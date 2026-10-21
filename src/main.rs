@@ -23,8 +23,6 @@ mod ls_column;
 mod macro_use;
 mod macros;
 mod manifest;
-// Started by `--mcp`, which the next change adds.
-#[allow(dead_code)]
 mod mcp;
 mod mcp_graphs;
 mod mcp_line;
@@ -153,6 +151,16 @@ struct Args {
     /// What --select, --selector, --column, --describe and --overview print: one name per line, one JSON object per node (per model for --column, one for --overview), or compact tab-separated lines; --describe and --overview print a text card unless json
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
+
+    /// Answer an MCP client over stdio, through one tool that takes these flags as a command line, and exit when it closes stdin, without serving. Only PROJECT, --manifest and --catalog go with it
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "depth", "output",
+        ]
+    )]
+    mcp: bool,
 }
 
 /// The first flag that is set beside a mode it does not belong to, as a
@@ -245,9 +253,34 @@ impl Question {
     }
 }
 
+/// What `--mcp` starts on: the project, canonical, and the manifest and the
+/// catalog if they were named, each made whole against the folder the server
+/// was started in. Neither is looked for here: a manifest that is not there
+/// is each call's error, so a client can be configured before `dbt parse`.
+fn mcp_start(args: &Args) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), String> {
+    let root = match args.project.canonicalize() {
+        Ok(p) if p.is_dir() => files::plain(p),
+        Ok(p) => return Err(format!("error: cannot open {}: not a folder", p.display())),
+        Err(e) => return Err(format!("error: cannot open {}: {e}", args.project.display())),
+    };
+    let whole = |path: &PathBuf| std::path::absolute(path).unwrap_or_else(|_| path.clone());
+    Ok((root, args.manifest.as_ref().map(whole), args.catalog.as_ref().map(whole)))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    // Before everything a server needs: no port, no settings, no update look,
+    // no browser, and no file read until a call asks (0110).
+    if args.mcp {
+        std::process::exit(match mcp_start(&args) {
+            Ok((root, manifest, catalog)) => mcp::serve(root, manifest, catalog),
+            Err(why) => {
+                eprintln!("{why}");
+                ls::CANNOT_RUN
+            }
+        });
+    }
     if let Some(sentence) = stray(&args) {
         eprintln!("error: {sentence}");
         std::process::exit(ls::CANNOT_RUN);
@@ -520,6 +553,80 @@ mod tests {
         ] {
             assert_eq!(stray(&asked(line)).as_deref(), Some(flag), "{line}");
         }
+    }
+
+    #[test]
+    fn mcp_goes_alone_with_the_project_the_manifest_and_the_catalog() {
+        for line in ["--mcp", "--mcp /work/jaffle_shop", "--mcp . --manifest m.json", "--mcp --manifest m.json --catalog c.json /work/jaffle_shop"] {
+            let args = asked(line);
+            assert!(args.mcp && question_of(&args).is_none() && stray(&args).is_none(), "{line}");
+        }
+        assert!(!asked("--overview").mcp);
+    }
+
+    #[test]
+    fn mcp_is_refused_beside_every_other_flag_and_names_it() {
+        // A default is not typed: `--mcp` alone parses with the port and the
+        // output it would otherwise have.
+        let args = asked("--mcp");
+        assert_eq!((args.port, args.output), (4321, ls::Output::Name));
+        for (flag, line) in [
+            ("--port", "--mcp --port 4321"),
+            ("--column-lineage", "--mcp --column-lineage c.json"),
+            ("--shell", "--mcp --shell bash"),
+            ("--no-open", "--mcp --no-open"),
+            ("--no-update-check", "--mcp --no-update-check"),
+            ("--select", "--mcp -s orders"),
+            ("--exclude", "--mcp --exclude x"),
+            ("--selector", "--mcp --selector nightly"),
+            ("--column", "--mcp --column a.b"),
+            ("--up", "--mcp --up 1"),
+            ("--down", "--mcp --down 1"),
+            ("--stop-at", "--mcp --stop-at window"),
+            ("--indirect", "--mcp --indirect"),
+            ("--column-tool", "--mcp --column-tool collin"),
+            ("--run-collin", "--mcp --run-collin"),
+            ("--compiled", "--mcp --compiled sql"),
+            ("--describe", "--mcp --describe orders"),
+            ("--sql", "--mcp --sql"),
+            ("--overview", "--mcp --overview"),
+            ("--depth", "--mcp --depth 2"),
+            ("--output", "--mcp --output json"),
+        ] {
+            let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+                Ok(_) => panic!("{line} was accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert!(why.contains(&format!("'{flag}")) && why.contains("'--mcp"), "{line}: {why}");
+        }
+        // Every flag of the command line is on the list, so one added later
+        // is refused beside --mcp until someone decides it is not.
+        use clap::CommandFactory;
+        let command = Args::command();
+        let conflicts: std::collections::BTreeSet<&str> =
+            command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "mcp").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
+        let others: std::collections::BTreeSet<&str> =
+            command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| !["mcp", "project", "manifest", "catalog"].contains(id)).collect();
+        assert_eq!(conflicts, others);
+    }
+
+    #[test]
+    fn mcp_starts_on_a_project_folder_and_reads_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-mcp-start-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (root, manifest, catalog) = mcp_start(&asked(&format!("--mcp {}", dir.display()))).unwrap();
+        assert_eq!((root, manifest, catalog), (files::plain(dir.canonicalize().unwrap()), None, None));
+        // Named, and not there: not looked for.
+        let (_, manifest, catalog) = mcp_start(&asked(&format!("--mcp {} --manifest m.json --catalog /x/c.json", dir.display()))).unwrap();
+        assert_eq!(manifest, Some(std::path::absolute("m.json").unwrap()));
+        assert_eq!(catalog, Some(PathBuf::from("/x/c.json")));
+        let why = mcp_start(&asked(&format!("--mcp {}", dir.join("nowhere").display()))).unwrap_err();
+        assert!(why.starts_with("error: cannot open ") && why.contains("nowhere"), "{why}");
+        std::fs::write(dir.join("file"), "").unwrap();
+        let why = mcp_start(&asked(&format!("--mcp {}", dir.join("file").display()))).unwrap_err();
+        assert!(why.starts_with("error: cannot open ") && why.ends_with("not a folder"), "{why}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -488,7 +488,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 24] = [
+    const SAMPLES: [(&str, &str); 25] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -513,6 +513,7 @@ mod tests {
         ("overview", "--overview"),
         ("depth", "--overview --depth 2"),
         ("output", "--overview --output json"),
+        ("mcp", "--mcp"),
     ];
 
     #[test]

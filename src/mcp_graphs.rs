@@ -363,6 +363,30 @@ pub(crate) mod tests {
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
+    /// An age is the one thing the clock moves between two answers: `(1 s ago)`
+    /// and `(0 s ago)` are the same answer.
+    fn no_ages(text: &str) -> String {
+        const TAIL: &str = " s ago)";
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(at) = rest.find(TAIL) {
+            let digits = rest[..at].bytes().rev().take_while(u8::is_ascii_digit).count();
+            out.push_str(&rest[..at - digits]);
+            out.push_str("N s ago)");
+            rest = &rest[at + TAIL.len()..];
+        }
+        let out = out + rest;
+        // The JSON answer's own: `"age_s":1`.
+        let (mut json, mut rest) = (String::new(), out.as_str());
+        while let Some(at) = rest.find("\"age_s\":") {
+            let end = at + "\"age_s\":".len();
+            json.push_str(&rest[..end]);
+            json.push('N');
+            rest = rest[end..].trim_start_matches(|c: char| c.is_ascii_digit());
+        }
+        json + rest
+    }
+
     #[test]
     fn the_base_made_from_a_copy_answers_as_the_command_lines_own_open_does() {
         let dir = project("same");
@@ -382,7 +406,7 @@ pub(crate) mod tests {
             assert_eq!(strip(&got.1), strip(&want.1), "describe {output:?}");
             let want = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, &opened, None, 3, output, o, e));
             let got = said(|o, e| crate::describe::respond_overview(&root, &manifest_path, base, None, 3, output, o, e));
-            assert_eq!(got.0, want.0, "overview {output:?}");
+            assert_eq!(no_ages(&got.0), no_ages(&want.0), "overview {output:?}");
             assert!(got.0.contains("jaffle_shop"), "{}", got.0);
             assert_eq!(got.2, want.2);
         }
