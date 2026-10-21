@@ -131,6 +131,8 @@ QUESTIONS = [
     ("-s '+customers'", 0),
     ("-s 'path:models/staging/*.sql' --output json", 0),
     ("--selector orders_eager", 0),
+    ("-s '+customers' --exclude resource_type:test --count-by folder --output json", 0),
+    ("-s 'resource_type:model' --count-by materialized", 0),
     ("-s 'tag:nothing_has_this_tag'", 0),
     ("-s 'nosuchmethod:orders'", 1),
     ("--column stg_payments.amount --down all --output compact", 0),

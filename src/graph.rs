@@ -263,6 +263,10 @@ pub struct Node {
     /// which pays a pointer for it.
     pub version: Option<Box<Version>>,
     pub kind: Kind,
+    /// A source table's source, as the manifest names it; empty on every other
+    /// node. `name` joins it to the table with a dot, which cannot be split
+    /// back where either part holds one.
+    pub source_name: String,
     /// `original_file_path`: relative to the project for its own nodes, to the
     /// package for an installed package's. Selection matches on it as dbt does.
     pub file: String,
@@ -837,6 +841,7 @@ impl Graph {
                 fqn: raw_node.fqn.join("."),
                 version,
                 kind,
+                source_name: if kind == Kind::Source { raw_node.source_name.clone().unwrap_or_default() } else { String::new() },
                 yml: slashed(
                     raw_node
                         .patch_path

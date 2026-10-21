@@ -178,6 +178,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [-s, --select "line"]           print what the line selects and exit, without serving
          [--exclude "line"]              what --select leaves out
          [--selector name]               print what a named selector selects and exit
+         [--count-by KEY]                with --select or --selector, count by kind, materialized, source, folder, tag or package instead of listing
          [--column model.column]         print one column's lineage from the cache and exit
          [--up N|all] [--down N|all]     how far --column walks, default 0
          [--stop-at window,aggregate]    roles --column does not walk past downstream
@@ -188,7 +189,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--describe name[,name...]]     print a node's card as the Catalog shows it and exit, without serving
          [--sql]                         --describe prints the node's own SQL file after its card
          [--overview]                    print what the project holds, by kind, materialization and folder, and exit
-         [--depth N]                     how many folder levels --overview lists, default 3
+         [--depth N]                     how many folder levels --overview lists or --count-by folder counts, default 3
          [--output name|json|compact]    what those modes print, default one name per line
          [--mcp]                         answer an MCP client over stdio, through one tool taking these flags, and exit when it closes
          [-V, --version]                 print the version and the build it came from, and exit

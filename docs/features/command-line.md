@@ -84,6 +84,56 @@ and an installed package's name is in its path. A tab, a newline or another
 control character inside a field is written as a space, so every line has its
 columns. An answer with no node has no header either.
 
+### Counting a selection
+
+`--count-by KEY` counts what the selection matched instead of listing it, for
+the questions whose answer is a number: how many models sit in each layer, which
+sources feed this model. It goes with `--select` or `--selector` and takes
+`--exclude`, and the selection is resolved, refused and signed on stderr exactly
+as a list is
+([0112](../decisions/0112-a-selection-may-be-counted-instead-of-listed.md)).
+
+```
+dbt-edith path/to/project -s '+customers' --exclude resource_type:test --count-by folder
+```
+
+```
+count	folder
+1	models
+3	models/staging
+3	seeds
+7	(all)
+```
+
+| Key | Counts | Rows |
+| --- | --- | --- |
+| `kind` | dbt's resource type | `model`, `source`, `seed`, `test` |
+| `materialized` | how it is built | `view`, `table`, `incremental`, `source`, and `unset` where the manifest says nothing |
+| `source` | the source a source table belongs to, by the name the manifest gives it | the source's name, and `(not a source)` for every other node |
+| `folder` | the folders of its file, the file's own name left off, down to `--depth N` levels (default 3) | `models/staging`, and `(no folder)` for a file at the project's root; an installed package's node whose files `dbt deps` has not put on disk falls under `dbt_packages/<package>`, as in `--overview` |
+| `tag` | each tag, once per tag a node carries | the tag, and `(no tag)` |
+| `package` | the package it belongs to | the package's name, and `(no package)` where the manifest names none and neither does the project |
+
+Rows go by count, the most first, then by value. `folder` goes in path order, so
+numbered layers (`01_staging`, `02_marts`) read in order. A row counts a node
+once, in its own folder cut at `--depth`, and not in the folders above it:
+unlike `--overview`, where a folder counts its whole subtree, `models` above
+holds the one model that sits directly in it. The last row, `(all)`,
+is the number of nodes selected: a node with two tags is in two `tag` rows and
+once in `(all)`, so those rows can add up to more. `--depth` goes with
+`--count-by folder` and is refused beside any other key; `--depth 0` is refused
+there too, since it counts no folder.
+
+`--output name` and `--output compact` print the same text. `--output json`
+prints one object, `depth` only for `folder`:
+
+```
+{"by":"folder","depth":3,"total":7,"counts":[{"key":"models","count":1},{"key":"models/staging","count":3},{"key":"seeds","count":3}]}
+```
+
+A selection that matches nothing prints no row, says so on stderr and exits 0;
+as JSON it prints the object with `total` 0 and an empty `counts`.
+
 ## A column
 
 `--column` walks one column's lineage over the cache beside the manifest, as
@@ -316,7 +366,7 @@ are safe to run unasked.
 | what the project is | `dbt-edith . --overview`, once, first |
 | what a model, source or test is | `dbt-edith . --describe name[,name...]`, on the nodes the question names; add `--sql` to read the model |
 | a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact`; `+model` for its parents |
-| how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact \| cut -f4 \| cut -d/ -f1-3 \| sort \| uniq -c` |
+| how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
@@ -383,10 +433,12 @@ project.
 - **`help`** (or `--help`) answers the reference of every flag. It is not in the
   tool's description, so it enters the context only when the model asks.
 - **No shell.** Quotes group words; a pipe, a redirection, `;`, `&`, a backtick
-  or `$` outside quotes is refused with its reason. A recipe that ends in
-  `| cut | sort | uniq` cannot go through the tool: ask for the list and count
-  it in the reader. A leading `dbt-edith` and `.` are dropped, so a recipe
-  pastes as it is.
+  or `$` outside quotes is refused with its reason. A count is asked with
+  `--count-by`, so no pipe is needed
+  ([0112](../decisions/0112-a-selection-may-be-counted-instead-of-listed.md)); a
+  recipe that filters a list in a pipe is done on the answer by the one who
+  reads it. A leading `dbt-edith` and `.` are dropped, so a recipe pastes as it
+  is.
 - **Only the questions' flags pass.** `--port`, `--manifest`, `--catalog`,
   `--column-lineage`, `--compiled`, `--shell`, `--no-open`,
   `--no-update-check` and `--mcp` are refused, and so is any flag added to the

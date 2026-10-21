@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-20.
+belongs here. Last updated 2026-10-21.
 
 ## Shipped
 
@@ -1594,6 +1594,17 @@ two depths) and by running them on Jaffle Shop parsed, compiled, seeded and
 documented with dbt 1.11, with collin's cache beside the manifest, the flags'
 conflicts and an unknown name. On Jaffle Shop a compact answer is about a
 quarter of the JSON's bytes.
+
+A selection counted instead of listed (0112, 1.46.0): `--count-by KEY` on
+`--select` or `--selector`, with `kind`, `materialized`, `source`, `folder`,
+`tag` or `package`, prints one row per value under a `count` header and the
+nodes selected as `(all)`, or one JSON object; `--depth` cuts the folders, as
+the overview's does. The MCP line allows it, so a count no longer needs a pipe
+that line refuses (0110). A source is counted by the name the manifest gives
+it, now kept on the node. Checked with `cargo test` on an invented graph (each
+key, the depth cut and its order, a package's source, a tag written twice, the
+JSON shape, an empty selection, the flags' refusals) and by `walk_mcp.py`
+comparing the line with the command line on Jaffle Shop.
 
 ## Deferred, in the order they were chosen
 

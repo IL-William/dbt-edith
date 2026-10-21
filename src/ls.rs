@@ -1,5 +1,6 @@
 //! The `--select` and `--selector` modes: one selection resolved against the
-//! manifest, printed, and the process ends (0057).
+//! manifest, printed or, with `--count-by`, counted, and the process ends
+//! (0057, 0112).
 //!
 //! Invariants: the selection goes through the same entry points as the
 //! Selection box, so the command line and the page cannot disagree. stdout
@@ -9,10 +10,12 @@
 //! badge already asks.
 
 use crate::collin::iso_utc;
+use crate::describe::{materialization, sorted_by_count};
 use crate::graph::{newer_version, Graph, Kind, Node};
 use crate::select::{self, Resolved, SelectError, Tests};
 use crate::{api, files, freshness, git};
-use std::collections::HashSet;
+use clap::ValueEnum;
+use std::collections::{BTreeMap, HashSet};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -21,6 +24,30 @@ use std::path::{Path, PathBuf};
 pub enum Query {
     Line { select: String, exclude: String },
     Named(String),
+}
+
+/// What `--count-by` sorts a selection under (0112).
+#[derive(clap::ValueEnum, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CountBy {
+    /// The kind of node: model, source, seed, test.
+    Kind,
+    /// How a node is built; `unset` where its config says nothing.
+    Materialized,
+    /// The source a source table belongs to; every other node is `(not a source)`.
+    Source,
+    /// The folders of the node's file, down to --depth levels.
+    Folder,
+    /// Each tag a node carries, once per tag; `(no tag)` for a node with none.
+    Tag,
+    /// The package a node belongs to.
+    Package,
+}
+
+/// A selection to count instead of list. `depth` is read for `Folder` only.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Count {
+    pub by: CountBy,
+    pub depth: usize,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, PartialEq, Eq, Debug)]
@@ -49,7 +76,7 @@ pub const REFUSED: i32 = 1;
 pub const CANNOT_RUN: i32 = 2;
 
 /// The whole mode, from the command line's arguments to the exit code.
-pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Output) -> i32 {
+pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, count: Option<Count>, output: Output) -> i32 {
     let (root, _, graph) = match open(project, manifest) {
         Ok(opened) => opened,
         Err(why) => return cannot_open(&why),
@@ -59,7 +86,7 @@ pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Outpu
     // Buffered, because a selection of thousands of names would otherwise be
     // one write per line.
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = respond(&root, &graph, query, output, &mut out, &mut err);
+    let written = respond(&root, &graph, query, count, output, &mut out, &mut err);
     ended(written, &mut err)
 }
 
@@ -71,11 +98,12 @@ pub(crate) fn respond(
     root: &Path,
     graph: &Graph,
     query: &Query,
+    count: Option<Count>,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let code = answer(graph, query, output, out, err)?;
+    let code = answer(graph, query, count, output, out, err)?;
     out.flush()?;
     let _ = provenance(root, graph, err);
     Ok(code)
@@ -159,9 +187,16 @@ fn open_with(
     }
 }
 
-/// Resolves the query and prints it. Returns the exit code; an `Err` is only
-/// ever a failed write.
-fn answer(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+/// Resolves the query and prints it, or counts it when asked. Returns the exit
+/// code; an `Err` is only ever a failed write.
+fn answer(
+    graph: &Graph,
+    query: &Query,
+    count: Option<Count>,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
     let resolved = match resolve(graph, query) {
         Ok(r) => r,
         Err(e) => {
@@ -173,18 +208,27 @@ fn answer(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, er
     // dbt sorts by name. The id breaks a tie, so two nodes of one name come
     // out the same way on every run (0055).
     nodes.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    if output == Output::Compact && !nodes.is_empty() {
-        writeln!(out, "{COMPACT_HEADER}")?;
-    }
-    let shared = if output == Output::Compact { shared_names(graph) } else { HashSet::new() };
-    for n in &nodes {
-        match output {
-            Output::Name => writeln!(out, "{}", n.name)?,
-            Output::Json => {
-                serde_json::to_writer(&mut *out, &Listed::of(graph, n))?;
-                writeln!(out)?;
+    if let Some(count) = count {
+        // A selection that matched nothing prints no rows, as a listing
+        // prints no header; JSON is one object either way, so a script that
+        // parses it never meets an empty stdout.
+        if !nodes.is_empty() || output == Output::Json {
+            write_counts(graph, &nodes, count, output, out)?;
+        }
+    } else {
+        if output == Output::Compact && !nodes.is_empty() {
+            writeln!(out, "{COMPACT_HEADER}")?;
+        }
+        let shared = if output == Output::Compact { shared_names(graph) } else { HashSet::new() };
+        for n in &nodes {
+            match output {
+                Output::Name => writeln!(out, "{}", n.name)?,
+                Output::Json => {
+                    serde_json::to_writer(&mut *out, &Listed::of(graph, n))?;
+                    writeln!(out)?;
+                }
+                Output::Compact => writeln!(out, "{}", compact_line(graph, n, &shared))?,
             }
-            Output::Compact => writeln!(out, "{}", compact_line(graph, n, &shared))?,
         }
     }
     for w in &resolved.warnings {
@@ -194,6 +238,93 @@ fn answer(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, er
         writeln!(err, "nothing matched")?;
     }
     Ok(ANSWERED)
+}
+
+/// The selection counted under `count.by`: each key and how many nodes it
+/// holds, in the order the answer prints them. A tag counts a node once per tag
+/// it carries, so those rows can add up to more than the total.
+fn counted(graph: &Graph, nodes: &[&Node], count: Count) -> Vec<(String, usize)> {
+    let mut by: BTreeMap<String, usize> = BTreeMap::new();
+    for n in nodes {
+        let mut tally = |key: String| *by.entry(key).or_insert(0) += 1;
+        match count.by {
+            CountBy::Kind => tally(n.resource_type().to_string()),
+            CountBy::Materialized => tally(materialization(n)),
+            // The name the manifest gave the source, not a cut of the node's
+            // name at its first dot: a package's source and a dotted name
+            // both break that.
+            CountBy::Source if n.kind == Kind::Source => tally(n.source_name.clone()),
+            CountBy::Source => tally("(not a source)".to_string()),
+            CountBy::Folder => tally(folder_of(graph, n, count.depth)),
+            CountBy::Tag if n.tags.is_empty() => tally("(no tag)".to_string()),
+            CountBy::Tag => {
+                // A tag written twice on one node counts once, as the overview counts it.
+                let mut own: Vec<&String> = n.tags.iter().collect();
+                own.sort_unstable();
+                own.dedup();
+                own.into_iter().for_each(|t| tally(t.clone()));
+            }
+            CountBy::Package if !n.package.is_empty() => tally(n.package.clone()),
+            CountBy::Package if !graph.macros.root().is_empty() => tally(graph.macros.root().to_string()),
+            CountBy::Package => tally("(no package)".to_string()),
+        }
+    }
+    if count.by == CountBy::Folder {
+        // Path order, a folder's own before its sub-folders' and siblings by
+        // name, so numbered layers read in order as `--overview` lists them.
+        let mut rows: Vec<(String, usize)> = by.into_iter().collect();
+        rows.sort_by(|a, b| a.0.split('/').cmp(b.0.split('/')));
+        rows
+    } else {
+        sorted_by_count(&by).into_iter().map(|(k, &n)| (k.clone(), n)).collect()
+    }
+}
+
+/// The folders of a node's file down to `depth` levels, the file's own name
+/// left off. A node is counted once, in this folder alone and not in the ones
+/// above it, where `--overview` counts a folder's whole subtree. A package's
+/// node nobody found on disk falls under `dbt_packages/<package>`.
+fn folder_of(graph: &Graph, n: &Node, depth: usize) -> String {
+    let path = path_of(graph, n);
+    let mut parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
+    parts.pop();
+    parts.truncate(depth);
+    if parts.is_empty() { "(no folder)".to_string() } else { parts.join("/") }
+}
+
+/// A `--count-by` answer. Text, for `name` and `compact` alike: a header of
+/// `count` and the key, a row per value, then the total. JSON: one object.
+fn write_counts(graph: &Graph, nodes: &[&Node], count: Count, output: Output, out: &mut impl Write) -> io::Result<()> {
+    let rows = counted(graph, nodes, count);
+    let by = count.by.to_possible_value().map(|v| v.get_name().to_string()).unwrap_or_default();
+    if output == Output::Json {
+        #[derive(serde::Serialize)]
+        struct Row<'a> {
+            key: &'a str,
+            count: usize,
+        }
+        #[derive(serde::Serialize)]
+        struct Counts<'a> {
+            by: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            depth: Option<usize>,
+            total: usize,
+            counts: Vec<Row<'a>>,
+        }
+        let counts = Counts {
+            by: &by,
+            depth: (count.by == CountBy::Folder).then_some(count.depth),
+            total: nodes.len(),
+            counts: rows.iter().map(|(key, count)| Row { key, count: *count }).collect(),
+        };
+        serde_json::to_writer(&mut *out, &counts)?;
+        return writeln!(out);
+    }
+    writeln!(out, "count\t{by}")?;
+    for (key, n) in &rows {
+        writeln!(out, "{n}\t{}", field(key))?;
+    }
+    writeln!(out, "{}\t(all)", nodes.len())
 }
 
 /// The route's own steps, in its order: a `--selector` inside the line wins,
@@ -661,7 +792,7 @@ mod tests {
 
     fn ask_on(g: &Graph, query: &Query, output: Output) -> (String, String, i32) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = answer(g, query, output, &mut out, &mut err).unwrap();
+        let code = answer(g, query, None, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -739,7 +870,7 @@ mod tests {
         let g = Graph::build(raw, Path::new("manifest.json"), 0, 0);
         let run = |select: &str, output: Output| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            answer(&g, &line(select, ""), output, &mut out, &mut err).unwrap();
+            answer(&g, &line(select, ""), None, output, &mut out, &mut err).unwrap();
             String::from_utf8(out).unwrap()
         };
         assert_eq!(run("totals", Output::Name), "totals.v1\ntotals.v2\n");
@@ -816,6 +947,156 @@ mod tests {
         let row = compact_line(&g, &g.nodes[at], &shared_names(&g));
         assert_eq!(row.split('\t').count(), 6, "{row:?}");
         assert_eq!(row, "stg orders\tmodel\tview\tmodels/stg orders.sql\ta b,c d [0m\traw.orders");
+    }
+
+    /// stdout, stderr and the exit code of one query counted.
+    fn count_on(g: &Graph, select: &str, by: CountBy, depth: usize, output: Output) -> (String, String, i32) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = answer(g, &line(select, ""), Some(Count { by, depth }), output, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    fn count(select: &str, by: CountBy, depth: usize) -> String {
+        count_on(&graph(), select, by, depth, Output::Name).0
+    }
+
+    #[test]
+    fn a_selection_is_counted_by_kind_materialization_source_tag_and_package() {
+        assert_eq!(count("+orders+", CountBy::Kind, 3), "count\tkind\n3\tmodel\n1\tsource\n1\ttest\n5\t(all)\n");
+        // A model whose config says nothing is `unset`, as the overview says;
+        // the most first, then by value.
+        assert_eq!(
+            count("+orders+", CountBy::Materialized, 3),
+            "count\tmaterialized\n2\ttable\n1\tsource\n1\tunset\n1\tview\n5\t(all)\n"
+        );
+        assert_eq!(count("+orders+", CountBy::Source, 3), "count\tsource\n4\t(not a source)\n1\traw\n5\t(all)\n");
+        assert_eq!(count("+orders+", CountBy::Tag, 3), "count\ttag\n4\t(no tag)\n1\tnightly\n5\t(all)\n");
+        assert_eq!(count("+orders+", CountBy::Package, 3), "count\tpackage\n5\tshop\n5\t(all)\n");
+    }
+
+    #[test]
+    fn a_node_with_two_tags_is_counted_under_each_and_once_in_the_total() {
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].tags = vec!["finance".into(), "nightly".into()];
+        let (out, _, _) = count_on(&g, "+orders+", CountBy::Tag, 3, Output::Name);
+        assert_eq!(out, "count\ttag\n3\t(no tag)\n2\tnightly\n1\tfinance\n5\t(all)\n");
+    }
+
+    #[test]
+    fn a_tag_written_twice_on_a_node_counts_once() {
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].tags = vec!["nightly".into(), "nightly".into()];
+        let (out, _, _) = count_on(&g, "orders --exclude resource_type:test", CountBy::Tag, 3, Output::Name);
+        assert_eq!(out, "count\ttag\n1\tnightly\n1\t(all)\n");
+    }
+
+    #[test]
+    fn a_package_node_without_a_package_falls_under_the_projects() {
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].package.clear();
+        let (out, _, _) = count_on(&g, "orders --exclude resource_type:test", CountBy::Package, 3, Output::Name);
+        // The fixture's project is `shop`.
+        assert_eq!(out, "count\tpackage\n1\tshop\n1\t(all)\n");
+    }
+
+    #[test]
+    fn folders_are_counted_to_the_depth_asked_in_path_order() {
+        assert_eq!(count("+orders+", CountBy::Folder, 3), "count\tfolder\n3\tmodels/marts\n2\tmodels/staging\n5\t(all)\n");
+        assert_eq!(count("+orders+", CountBy::Folder, 1), "count\tfolder\n5\tmodels\n5\t(all)\n");
+        // A folder's own files before its sub-folders', and a sibling by
+        // name: `a` comes before `a-b` though '-' sorts before '/'.
+        let g = graph_with(|m| {
+            for (id, path) in [("deep", "models/a/b/deep.sql"), ("dashed", "models/a-b/dashed.sql"), ("top", "models/top.sql")] {
+                m["nodes"][format!("model.shop.{id}")] = json!({
+                    "name": id, "resource_type": "model", "package_name": "shop", "original_file_path": path,
+                    "fqn": ["shop", id],
+                });
+            }
+        });
+        let (out, _, _) = count_on(&g, "resource_type:model --exclude resource_type:test", CountBy::Folder, 3, Output::Name);
+        assert_eq!(
+            out,
+            "count\tfolder\n1\tmodels\n1\tmodels/a/b\n1\tmodels/a-b\n2\tmodels/marts\n1\tmodels/staging\n6\t(all)\n"
+        );
+    }
+
+    #[test]
+    fn a_package_node_is_filed_where_dbt_deps_puts_the_package() {
+        let mut g = graph();
+        let at = g.index["model.shop.customers"] as usize;
+        g.nodes[at].package = "audit".into();
+        let (out, _, _) = count_on(&g, "customers orders --exclude resource_type:test", CountBy::Folder, 3, Output::Name);
+        assert_eq!(out, "count\tfolder\n1\tdbt_packages/audit/models\n1\tmodels/marts\n2\t(all)\n");
+    }
+
+    #[test]
+    fn a_source_is_counted_by_the_name_the_manifest_gives_not_by_a_cut_of_its_own() {
+        // Two packages' sources, and a source whose own name holds a dot: the
+        // node's name, `raw.v2.payments`, cannot be cut back at a dot.
+        let g = graph_with(|m| {
+            m["sources"]["source.audit.raw.v2.payments"] = json!({
+                "name": "payments", "resource_type": "source", "package_name": "audit",
+                "source_name": "raw.v2", "identifier": "payments", "original_file_path": "models/sources.yml",
+            });
+            m["sources"]["source.audit.stripe.charges"] = json!({
+                "name": "charges", "resource_type": "source", "package_name": "audit",
+                "source_name": "stripe", "identifier": "charges", "original_file_path": "models/sources.yml",
+            });
+        });
+        let (out, _, _) = count_on(&g, "source:*", CountBy::Source, 3, Output::Name);
+        assert_eq!(out, "count\tsource\n1\traw\n1\traw.v2\n1\tstripe\n3\t(all)\n");
+        assert!(g.nodes.iter().all(|n| (n.kind == Kind::Source) == !n.source_name.is_empty()));
+    }
+
+    #[test]
+    fn counts_are_one_json_object_and_compact_prints_the_text_of_name() {
+        let (out, err, code) = count_on(&graph(), "+orders+", CountBy::Folder, 2, Output::Json);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(
+            v,
+            json!({ "by": "folder", "depth": 2, "total": 5,
+                    "counts": [{ "key": "models/marts", "count": 3 }, { "key": "models/staging", "count": 2 }] })
+        );
+        assert_eq!(out.lines().count(), 1, "{out}");
+        // The depth belongs to the folder count alone.
+        let (out, _, _) = count_on(&graph(), "+orders+", CountBy::Kind, 2, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert!(v.get("depth").is_none(), "{v}");
+        assert_eq!(v["by"], "kind");
+        let name = count_on(&graph(), "+orders+", CountBy::Kind, 3, Output::Name);
+        assert_eq!(name, count_on(&graph(), "+orders+", CountBy::Kind, 3, Output::Compact));
+    }
+
+    #[test]
+    fn a_counted_key_keeps_the_columns_of_its_line() {
+        let mut g = graph();
+        let at = g.index["model.shop.stg_orders"] as usize;
+        g.nodes[at].tags = vec!["a\tb\u{1b}[0m".into()];
+        let (out, _, _) = count_on(&g, "stg_orders", CountBy::Tag, 3, Output::Name);
+        assert_eq!(out, "count\ttag\n1\ta b [0m\n1\t(all)\n");
+    }
+
+    #[test]
+    fn counting_an_empty_selection_is_an_answer_with_no_rows() {
+        let (out, err, code) = count_on(&graph(), "tag:nowhere", CountBy::Kind, 3, Output::Name);
+        assert_eq!((out.as_str(), code), ("", ANSWERED));
+        assert!(err.ends_with("nothing matched\n"), "{err}");
+        // A script reading JSON still gets an object to read.
+        let (out, err, code) = count_on(&graph(), "tag:nowhere", CountBy::Folder, 3, Output::Json);
+        assert_eq!(code, ANSWERED);
+        assert!(err.ends_with("nothing matched\n"), "{err}");
+        assert_eq!(out.trim(), r#"{"by":"folder","depth":3,"total":0,"counts":[]}"#);
+    }
+
+    #[test]
+    fn a_refused_selection_is_refused_the_same_when_counted() {
+        let (out, err, code) = count_on(&graph(), "nope:x", CountBy::Kind, 3, Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        assert!(err.starts_with("error: "), "{err}");
     }
 
     #[test]
