@@ -120,10 +120,16 @@ pub(crate) fn open_with_catalog(
     // Asked for by name and not there, it would be left out of the answer
     // without a word, and the card would show the types of the YAML as if the
     // catalog had none to give.
-    if let Some(named) = catalog.filter(|c| !c.is_file()) {
-        return Err(format!("error: no catalog at {}", named.display()));
+    if let Some(why) = missing_catalog(catalog) {
+        return Err(why);
     }
     open_with(project, manifest, |root, path| api::load_base(root, path, &catalog_path(root, path, catalog)))
+}
+
+/// The error for a catalog named and not there, which `open_with_catalog`
+/// gives before it reads anything.
+pub(crate) fn missing_catalog(named: Option<&Path>) -> Option<String> {
+    named.filter(|c| !c.is_file()).map(|c| format!("error: no catalog at {}", c.display()))
 }
 
 /// The catalog that is merged: the one named, else the one beside the
