@@ -28,7 +28,7 @@ use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -796,8 +796,17 @@ fn tmp_of(path: &Path) -> PathBuf {
 
 /// One run, its last lines when it succeeds, or why it failed and its last
 /// lines. The command line calls this directly; the page goes through
-/// `Runner::generate`, which keeps to one run at a time.
+/// `Runner::generate`, which keeps to one run at a time. Neither can be asked
+/// to stop before the deadline.
 pub fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<String>)> {
+    run_stoppable(job, deadline, &AtomicBool::new(false))
+}
+
+/// `run`, ended early when `stop` is set: collin is killed, and what it had
+/// begun to write is removed, as for any failed run, so the cache standing
+/// before it stays. For a caller that answers someone who can walk away while
+/// collin works.
+pub fn run_stoppable(job: &Job, deadline: Duration, stop: &AtomicBool) -> Result<Vec<String>, (String, Vec<String>)> {
     let tmp = tmp_of(&job.out);
     // The report too: written in place, a failed run left a new report
     // beside the old cache, describing edges nobody could see.
@@ -850,6 +859,11 @@ pub fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<St
                 let _ = child.kill();
                 let _ = child.wait();
                 break Err(format!("collin took longer than {} s and was stopped", deadline.as_secs()));
+            }
+            Ok(None) if stop.load(Ordering::Relaxed) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err("collin was stopped before it finished".to_string());
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(50)),
             Err(e) => break Err(format!("lost track of collin: {e}")),
@@ -1211,6 +1225,29 @@ pub(crate) mod tests {
         assert_eq!(status.state, "failed");
         assert!(status.error.contains("was stopped"), "{status:?}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_run_whose_stop_flag_is_set_kills_collin_and_leaves_the_old_cache() {
+        let d = dir("stopped");
+        let bin = fake(&d, "echo half > \"$out\"\necho half > \"$report\"\nexec sleep 30");
+        let job = job(&d, bin);
+        std::fs::write(&job.out, "old").unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let setter = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                stop.store(true, Ordering::Relaxed);
+            })
+        };
+        let started = Instant::now();
+        let (why, _) = run_stoppable(&job, Duration::from_secs(60), &stop).unwrap_err();
+        setter.join().unwrap();
+        assert!(why.contains("was stopped"), "{why}");
+        assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        assert_eq!(std::fs::read_to_string(&job.out).unwrap(), "old");
+        assert!(!tmp_of(&job.out).exists() && !tmp_of(&job.report).exists(), "no half-written file is left");
     }
 
     #[tokio::test]
