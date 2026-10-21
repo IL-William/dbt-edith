@@ -36,7 +36,8 @@ dbt-edith
   the command line by `--column`.
 - **[Command line](docs/features/command-line.md)**: a node's card, the
   project's shape, a selection or a column, answered without a server, for
-  scripts and agents, and over MCP for an agent that asks it, opt-in.
+  scripts and agents, and over MCP for an agent that asks it (optional; with a
+  terminal prefer the skill).
 - **[Jobs and Reports](docs/features/jobs-and-reports.md)**: which Airflow DAG
   or dbt Cloud job runs a model, which models no scheduled job runs, and what
   the last dbt command did.

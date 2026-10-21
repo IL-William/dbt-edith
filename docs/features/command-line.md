@@ -336,12 +336,21 @@ Three habits keep the answers small and true:
   says what dbt itself selects
   ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md)).
 
-The calls are plain commands, so a skill that wraps them is the caller's own:
-the recipes above are what it would hold. An agent that has no terminal, or
-whose client lists tools rather than skills, can ask the same questions
-[over MCP](#over-mcp).
+Start from these commands, or from a skill that wraps them: the recipes above
+are what it would hold. Use MCP only where there is no terminal to run them in;
+an agent without one can ask the same questions [over MCP](#over-mcp).
 
 ## Over MCP
+
+Where the client has a terminal (Claude Code, Copilot in agent mode with
+auto-approve), prefer the skill: the commands of
+[For an agent](#for-an-agent). The server is the exception, for a client that
+cannot run a command, such as Claude Desktop chat or a Copilot mode with no
+terminal. It answers about twice as fast per call (4.9 ms against 9.8 ms on
+Jaffle Shop, 34.9 ms against 53.0 ms on the Shopify fixture), but that is
+milliseconds nobody waits on, and it puts about 153 tokens of tool definition in
+every conversation of a client where it is configured, against about 48 for a
+skill line.
 
 `dbt-edith --mcp` answers an MCP client over stdin and stdout instead of
 printing one answer
@@ -423,11 +432,9 @@ relative `--manifest` is made whole against the folder the server started in.
 
 ### What it is for
 
-A call is faster by about 1.5x to 2x, the graph stays in memory, and it works
-where there is no terminal; it costs about 153 tokens of context against about
-48 for a one-line skill. Where the agent has a terminal and the answer is not
-on the critical path, the skill is the cheaper way to ask. The figures and
-what was weighed are in
+It is for the clients that cannot run a command. Where one can, the skill is
+the better choice, as said at the top: the graph the server keeps in memory
+does not make up for the tokens of its definition. What else was weighed is in
 [0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md).
 
 A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
