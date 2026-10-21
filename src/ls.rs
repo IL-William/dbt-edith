@@ -59,19 +59,39 @@ pub fn run(project: &Path, manifest: Option<&Path>, query: &Query, output: Outpu
     // Buffered, because a selection of thousands of names would otherwise be
     // one write per line.
     let mut out = BufWriter::new(io::stdout().lock());
-    let code = match answer(&graph, query, output, &mut out, &mut err).and_then(|code| out.flush().map(|_| code)) {
+    let written = respond(&root, &graph, query, output, &mut out, &mut err);
+    ended(written, &mut err)
+}
+
+/// What the mode does once the project is open: the answer, flushed, then what
+/// it is worth, after the answer is out, so a slow walk of a large project
+/// never holds it back. The exit code, or the write that failed. A caller that
+/// is not a process hands it two buffers in place of the standard streams.
+pub(crate) fn respond(
+    root: &Path,
+    graph: &Graph,
+    query: &Query,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let code = answer(graph, query, output, out, err)?;
+    out.flush()?;
+    let _ = provenance(root, graph, err);
+    Ok(code)
+}
+
+/// The exit code of a mode whose answer was written to the standard streams.
+pub(crate) fn ended(written: io::Result<i32>, err: &mut impl Write) -> i32 {
+    match written {
         Ok(code) => code,
         // `| head` closing the pipe is someone having read enough, not a failure.
-        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ANSWERED,
+        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ANSWERED,
         Err(e) => {
             let _ = writeln!(err, "error: cannot write the answer: {e}");
-            return CANNOT_RUN;
+            CANNOT_RUN
         }
-    };
-    // After the answer is out, so a slow walk of a large project never holds
-    // it back.
-    let _ = provenance(&root, &graph, &mut err);
-    code
+    }
 }
 
 /// Prints the reason a project did not open, as the line it was returned as,
