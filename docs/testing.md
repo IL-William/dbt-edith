@@ -103,6 +103,18 @@ without it; CI runs it beside the comparison above:
 /tmp/dbt/bin/python scripts/walk_mcp.py
 ```
 
+`--measure` times the same kinds of question through the command line and
+through one server process, on Jaffle Shop and on Fivetran's Shopify, and
+prints tables of milliseconds, bytes and memory. It builds the release binary,
+compares nothing, and neither check.sh nor CI runs it. Shopify needs git and
+the network; `SHOPIFY_FIXTURE` names a folder with `target/manifest.json`,
+`target/catalog.json` and `expected/cache.json` to stand in for `dbt parse` and
+for a column cache, else the `--column` lines are left out:
+
+```
+/tmp/dbt/bin/python scripts/walk_mcp.py --measure [--work /tmp/measure]
+```
+
 The guided tour is walked in headless Chrome on the same Jaffle Shop, every
 step, through the DevTools protocol and the standard library alone. It needs
 dbt to parse the copy, and Chrome; it skips itself without either:

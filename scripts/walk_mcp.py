@@ -31,11 +31,22 @@ where cargo put it, or is whatever DBT_EDITH names.
 
 Exit 0 when the server and the command line agree, 1 when they do not, 2 when
 skipped.
+
+`--measure` does not compare: it times the same questions through the command
+line and through one server process, on Jaffle Shop and on Fivetran's Shopify,
+and prints tables (0110). It builds the release binary. Shopify needs git and
+the network; SHOPIFY_FIXTURE names a folder holding `target/manifest.json`,
+`target/catalog.json` and `expected/cache.json` (dbt-collin keeps one), whose
+files stand in for `dbt parse` and for a cache, else dbt parses it and the
+`--column` questions are left out. `--work DIR` keeps the projects it builds in
+DIR. Nothing of it is run by check.sh.
 """
 
 import json
 import os
 import queue
+import statistics
+import time
 import re
 import shlex
 import shutil
@@ -242,6 +253,350 @@ class Walk:
         return self.check(ok, label, f"exit {code}, isError {is_error}\nserver: {got!r}\ncli:    {want!r}")
 
 
+# ---------------------------------------------------------------- --measure
+
+# The first plan's four tools, kept for the comparison of what sits in the
+# context. Never served.
+FOUR_TOOLS = [
+    {"name": "overview", "description": "What the dbt project holds: kinds, materializations, tags, selectors, folders. Ask first.",
+     "inputSchema": {"type": "object", "properties": {"depth": {"type": "integer"}, "format": {"type": "string", "enum": ["text", "json"]}}, "additionalProperties": False},
+     "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+    {"name": "describe", "description": "A node's card: columns with types and tests, parents, children, tests, reach; sql adds its file.",
+     "inputSchema": {"type": "object", "properties": {"names": {"type": "array", "items": {"type": "string"}}, "sql": {"type": "boolean"}, "format": {"type": "string", "enum": ["text", "json"]}}, "required": ["names"], "additionalProperties": False},
+     "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+    {"name": "select", "description": "What a dbt selection matches, as dbt ls, tests included unless excluded.",
+     "inputSchema": {"type": "object", "properties": {"select": {"type": "string"}, "exclude": {"type": "string"}, "selector": {"type": "string"}, "format": {"type": "string", "enum": ["name", "json", "compact"]}}, "additionalProperties": False},
+     "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+    {"name": "column", "description": "A column's lineage over the cache beside the manifest; run_collin writes that cache first.",
+     "inputSchema": {"type": "object", "properties": {"column": {"type": "string"}, "up": {"type": ["integer", "string"]}, "down": {"type": ["integer", "string"]}, "stop_at": {"type": "array", "items": {"type": "string"}}, "indirect": {"type": "boolean"}, "tool": {"type": "string", "enum": ["fusion", "collin", "snowflake"]}, "run_collin": {"type": "boolean"}, "format": {"type": "string", "enum": ["name", "json", "compact"]}}, "required": ["column"], "additionalProperties": False},
+     "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}},
+]
+# What a Claude Code user would put in a skill's description for the recipes.
+SKILL_LINE = "dbt-edith: answers what a dbt project, node, selection or column is from the manifest (dbt-edith . --overview / --describe / -s / --column); read docs/features/command-line.md#for-an-agent first."
+
+PASSES = 3
+N_CALLS = 20
+
+
+def release_binary():
+    if os.environ.get("DBT_EDITH"):
+        return Path(os.environ["DBT_EDITH"])
+    out = subprocess.run(["cargo", "build", "--release", "--locked", "--quiet", "--message-format=json-render-diagnostics"],
+                         cwd=C.ROOT, check=True, stdout=subprocess.PIPE, encoding="utf-8").stdout
+    for line in out.splitlines():
+        msg = json.loads(line)
+        if msg.get("reason") == "compiler-artifact" and msg["target"]["name"] == "dbt-edith" and msg.get("executable"):
+            return Path(msg["executable"])
+    sys.exit("cargo build named no dbt-edith executable")
+
+
+def rss_kib(pid):
+    out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return int(out) if out else 0
+
+
+def ms_since(t):
+    return (time.perf_counter() - t) * 1000.0
+
+
+def med(values):
+    return statistics.median(values)
+
+
+def text_bytes(response):
+    return sum(len(b["text"].encode()) for b in response["result"]["content"] if b["type"] == "text")
+
+
+def questions_of(models, columns):
+    """Twenty lines spread over the modes, by the first models by name."""
+    m = lambda i: models[i % len(models)]
+    overview = ["--overview", "--overview --depth 1 --output json"]
+    describe = [f"--describe {m(0)}", f"--describe {m(1)} --sql", f"--describe {m(2)},{m(3)}", f"--describe {m(4)} --output json", f"--describe {m(0)}"]
+    select = [f"-s '+{m(0)}'", f"-s '{m(1)}+'", f"-s '+{m(2)}+' --exclude resource_type:test", f"-s '{m(3)}+2' --output compact",
+              "-s resource_type:seed", "-s config.materialized:table", f"-s 'resource_type:test,+{m(4)}'", f"-s '1+{m(5)}+1'"]
+    column = [f"--column {c} --down all --output compact" for c in columns[:5]]
+    order = [("o", 0), ("d", 0), ("s", 0), ("s", 1), ("c", 0), ("d", 1), ("s", 2), ("c", 1), ("d", 2), ("s", 3),
+             ("c", 2), ("d", 3), ("s", 4), ("s", 5), ("c", 3), ("d", 4), ("s", 6), ("c", 4), ("o", 1), ("s", 7)]
+    pools = {"o": overview, "d": describe, "s": select, "c": column}
+    out = []
+    for kind, i in order:
+        if i < len(pools[kind]):
+            out.append((kind, pools[kind][i]))
+    return out
+
+
+MODE = {"o": "--overview", "d": "--describe", "s": "-s", "c": "--column"}
+
+
+def cli_pass(binary, project, manifest, questions, env, work):
+    """Each line through its own process: wall ms and answer bytes."""
+    rows = []
+    for _, line in questions:
+        t = time.perf_counter()
+        run = subprocess.run([str(binary), str(project), "--manifest", str(manifest)] + shlex.split(line),
+                             capture_output=True, env=env, cwd=work, timeout=WAIT)
+        rows.append((ms_since(t), len(run.stdout) + len(run.stderr), run.returncode))
+    return rows
+
+
+def server_pass(binary, project, manifest, questions, env, work, reload_lines=None):
+    """One server process: the handshake, then each line from the write of
+    the request to the read of its response."""
+    s = Server(binary, project, manifest, env, work, "measure")
+    t = time.perf_counter()
+    s.request("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "measure", "version": "0"}})
+    init_ms = ms_since(t)
+    s.notify("notifications/initialized")
+    s.request("tools/list")
+    rss_idle = rss_kib(s.proc.pid)
+    rows = []
+    for _, line in questions:
+        t = time.perf_counter()
+        said = s.call(line)
+        took = ms_since(t)
+        rows.append((took, text_bytes(said), len(s.written[-1]), said["result"]["isError"]))
+    rss_after = rss_kib(s.proc.pid)
+    out = {"init_ms": init_ms, "rss_idle": rss_idle, "rss_after": rss_after, "rows": rows, "reload": {}}
+    # The reload: the manifest moves on, the next call reads it again.
+    for label, line in (reload_lines or []):
+        warm = []
+        for _ in range(3):
+            t = time.perf_counter()
+            s.call(line)
+            warm.append(ms_since(t))
+        os.utime(manifest, None)
+        t = time.perf_counter()
+        s.call(line)
+        out["reload"][label] = (med(warm), ms_since(t))
+    out["rss_reload"] = rss_kib(s.proc.pid)
+    s.close()
+    return out
+
+
+def probe_pass(binary, project, manifest, env, work):
+    """What Claude Code pays for a probe: a process, a modern server/discover
+    answered -32601, and the exit when stdin closes."""
+    log = open(work / "probe-stderr.log", "w")
+    t = time.perf_counter()
+    proc = subprocess.Popen([str(binary), "--mcp", str(project), "--manifest", str(manifest)],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env, cwd=work)
+    proc.stdin.write((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {}}) + "\n").encode())
+    proc.stdin.flush()
+    answer = json.loads(proc.stdout.readline())
+    first = ms_since(t)
+    proc.stdin.close()
+    proc.wait(timeout=30)
+    exited = ms_since(t)
+    log.close()
+    assert answer["error"]["code"] == -32601, answer
+    return first, exited
+
+
+def peak_rss_mib(binary, project, manifest, line, env, work):
+    """The command line's peak resident memory for one line, from /usr/bin/time."""
+    flag = "-l" if sys.platform == "darwin" else "-v"
+    if not Path("/usr/bin/time").exists() or os.name == "nt":
+        return None
+    run = subprocess.run(["/usr/bin/time", flag, str(binary), str(project), "--manifest", str(manifest)] + shlex.split(line),
+                         capture_output=True, text=True, env=env, cwd=work)
+    for row in run.stderr.splitlines():
+        if "maximum resident set size" in row.lower():
+            n = int(re.search(r"\d+", row.replace("Maximum resident set size (kbytes):", "").strip() or row).group())
+            return (n / (1024 * 1024) if sys.platform == "darwin" else n / 1024)
+    return None
+
+
+def table(head, rows):
+    print("| " + " | ".join(head) + " |")
+    print("| " + " | ".join("---" for _ in head) + " |")
+    for row in rows:
+        print("| " + " | ".join(str(c) for c in row) + " |")
+    print()
+
+
+def tokens_of(text):
+    try:
+        import tiktoken
+        return len(tiktoken.get_encoding("o200k_base").encode(text))
+    except Exception:
+        return None
+
+
+def context_sizes(binary, project, manifest, env, work):
+    s = Server(binary, project, manifest, env, work, "sizes")
+    init = s.request("initialize", {"protocolVersion": "2025-11-25"})["result"]
+    s.notify("notifications/initialized")
+    tools = s.request("tools/list")["result"]["tools"]
+    helped = text_bytes(s.call("help"))
+    helptext = s.call("help")["result"]["content"][0]["text"]
+    s.close()
+    compact = lambda v: json.dumps(v, separators=(",", ":"))
+    rows = [
+        ("one tool: tools/list result", compact({"tools": tools})),
+        ("one tool: INSTRUCTIONS", init["instructions"]),
+        ("one tool: both (always in context)", compact({"tools": tools}) + init["instructions"]),
+        ("`help` answer (only when asked)", helptext),
+        ("four tools: tools/list result", compact({"tools": FOUR_TOOLS})),
+        ("skill line", SKILL_LINE),
+    ]
+    out = []
+    for label, text in rows:
+        n = len(text.encode())
+        tok = tokens_of(text)
+        out.append((label, n, n // 4, tok if tok is not None else "n/a"))
+    print("### What sits in the context\n")
+    table(["Candidate", "Bytes", "Tokens at bytes/4", "Tokens, o200k"], out)
+    return helped
+
+
+def measure_project(label, binary, project, manifest, models, columns, env, work, alone=None):
+    print(f"## {label}\n")
+    questions = questions_of(models, columns)
+    n_by_mode = {k: sum(1 for q in questions if q[0] == k) for k in MODE}
+    print(f"{len(questions)} lines: " + ", ".join(f"{n} of {MODE[k]}" for k, n in n_by_mode.items()) + f"; {PASSES} passes, medians.\n")
+    cli = [cli_pass(binary, project, manifest, questions, env, work) for _ in range(PASSES)]
+    reload_lines = [("-s after touching the manifest", questions[2][1]), ("--describe after touching the manifest", questions[1][1])]
+    srv = [server_pass(binary, project, manifest, questions, env, work, reload_lines) for _ in range(PASSES)]
+    per = lambda passes, i: med([p[i][0] for p in passes])
+    cli_ms = [per(cli, i) for i in range(len(questions))]
+    srv_ms = [med([p["rows"][i][0] for p in srv]) for i in range(len(questions))]
+    srv_first = med([p["rows"][0][0] for p in srv])
+    rows = []
+    for i, (kind, line) in enumerate(questions):
+        rows.append((i + 1, line, f"{cli_ms[i]:.1f}", f"{srv_ms[i]:.1f}", cli[0][i][1], srv[0]["rows"][i][1], srv[0]["rows"][i][2]))
+    table(["#", "line", "CLI ms", "server ms", "answer bytes (CLI)", "answer bytes (server text)", "response line bytes"], rows)
+
+    def mode_row(name, idx):
+        c = [cli_ms[i] for i in idx]
+        sv = [srv_ms[i] for i in idx]
+        return (name, len(idx), f"{med(c):.1f}", f"{med(sv):.1f}", f"{med(c) / med(sv):.1f}x")
+
+    modes = [mode_row(MODE[k], [i for i, q in enumerate(questions) if q[0] == k]) for k in MODE]
+    warm_idx = list(range(1, len(questions)))
+    modes.append(mode_row("all, first call left out", warm_idx))
+    print("### Median per call, by mode\n")
+    table(["mode", "calls", "CLI ms", "server ms (warm)", "CLI / server"], modes)
+    total_cli = med([sum(r[0] for r in p) for p in cli])
+    total_srv = med([sum(r[0] for r in p["rows"]) for p in srv])
+    print("### Total for the lines\n")
+    table(["", "ms"], [("CLI, 20 processes", f"{total_cli:.0f}"), ("server, 20 calls on one process", f"{total_srv:.0f}"),
+                       ("server's first call (the load)", f"{srv_first:.1f}"),
+                       ("server's handshake, start to `initialize` answered", f"{med([p['init_ms'] for p in srv]):.1f}"),
+                       ("per call saved, total / N", f"{(total_cli - total_srv) / len(questions):.1f}")])
+    print("### The reload\n")
+    table(["call", "warm ms", "after touch ms"],
+          [(k, f"{med([p['reload'][k][0] for p in srv]):.1f}", f"{med([p['reload'][k][1] for p in srv]):.1f}") for k in srv[0]["reload"]])
+    print("### Memory\n")
+    peak_sel = peak_rss_mib(binary, project, manifest, next(l for k, l in questions if k == "s"), env, work)
+    peak_col = peak_rss_mib(binary, project, manifest, next((l for k, l in questions if k == "c"), questions[0][1]), env, work)
+    table(["", "MiB"], [("server, after the handshake", f"{med([p['rss_idle'] for p in srv]) / 1024:.1f}"),
+                        ("server, after the lines", f"{med([p['rss_after'] for p in srv]) / 1024:.1f}"),
+                        ("server, after the reloads", f"{med([p['rss_reload'] for p in srv]) / 1024:.1f}"),
+                        ("one CLI -s call, peak", "n/a" if peak_sel is None else f"{peak_sel:.1f}"),
+                        ("one CLI --column call, peak", "n/a" if peak_col is None else f"{peak_col:.1f}")])
+    probes = [probe_pass(binary, project, manifest, env, work) for _ in range(PASSES)]
+    print("### Claude Code's probe\n")
+    table(["", "ms"], [("process start to the -32601 answer", f"{med([p[0] for p in probes]):.1f}"),
+                       ("process start to exit once stdin closes", f"{med([p[1] for p in probes]):.1f}")])
+    # --column alone, twenty times: does cloning the graph per call matter.
+    cols = [("c", f"--column {c} --down all --output compact") for c in (columns * 4)[:N_CALLS]] if columns else []
+    if cols:
+        ccli = [cli_pass(binary, project, manifest, cols, env, work) for _ in range(PASSES)]
+        csrv = [server_pass(binary, project, manifest, cols, env, work) for _ in range(PASSES)]
+        c_c = med([sum(r[0] for r in p) for p in ccli])
+        c_s = med([sum(r[0] for r in p["rows"]) for p in csrv])
+        c_first = med([p["rows"][0][0] for p in csrv])
+        c_warm = med([r[0] for p in csrv for r in p["rows"][1:]])
+        print("### `--column` alone, 20 calls\n")
+        table(["", "ms"], [("CLI, 20 processes", f"{c_c:.0f}"), ("server, 20 calls", f"{c_s:.0f}"), ("server, first call", f"{c_first:.1f}"),
+                           ("server, median of the others", f"{c_warm:.1f}"), ("CLI, median", f"{med([r[0] for p in ccli for r in p]):.1f}")])
+    if alone is not None:
+        # The same project without dbt_project.yml: the freshness line is not
+        # computed ("not checked"), so the difference is what it costs.
+        aproject, amanifest = alone
+        acli = [cli_pass(binary, aproject, amanifest, questions, env, work) for _ in range(PASSES)]
+        asrv = [server_pass(binary, aproject, amanifest, questions, env, work) for _ in range(PASSES)]
+        acli_ms = [per(acli, i) for i in range(len(questions))]
+        asrv_ms = [med([p["rows"][i][0] for p in asrv]) for i in range(len(questions))]
+        print("### Without the freshness walk (no dbt_project.yml beside the manifest)\n")
+        table(["", "with freshness ms", "without ms", "freshness costs ms"],
+              [("CLI, median per call", f"{med(cli_ms[1:]):.1f}", f"{med(acli_ms[1:]):.1f}", f"{med(cli_ms[1:]) - med(acli_ms[1:]):.1f}"),
+               ("server, median per call, first left out", f"{med(srv_ms[1:]):.1f}", f"{med(asrv_ms[1:]):.1f}", f"{med(srv_ms[1:]) - med(asrv_ms[1:]):.1f}")])
+
+
+def measure(argv):
+    binary = release_binary()
+    keep = Path(argv[argv.index("--work") + 1]) if "--work" in argv else None
+    os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
+    os.environ.setdefault("DO_NOT_TRACK", "1")
+    ctx = tempfile.TemporaryDirectory(prefix="dbt-edith-measure-") if keep is None else None
+    work = Path(ctx.name) if ctx else keep
+    work.mkdir(parents=True, exist_ok=True)
+    print(f"# dbt-edith {binary.name} --mcp against the command line, {time.strftime('%Y-%m-%d')}\n")
+    print(f"{C.Dbt(work, work).version()}; {sys.platform}; release build; each line is a whole process for the command line.\n")
+    home = work / "home"
+    home.mkdir(exist_ok=True)
+    env = {k: v for k, v in os.environ.items() if k != "DBT_EDITH_CONFIG_DIR"}
+    env.update(HOME=str(home), XDG_CONFIG_HOME=str(home), APPDATA=str(home), LOCALAPPDATA=str(home), USERPROFILE=str(home))
+
+    # Jaffle Shop.
+    project = work / "jaffle" / "project"
+    if not project.exists():
+        shutil.copytree(C.JAFFLE, project)
+        C.Dbt(project, work / "jaffle").parse()
+    target = work / "jaffle" / "target"
+    (target / "column_lineage.collin.json").write_text(json.dumps(CACHE))
+    (target / "catalog.json").write_text(json.dumps(CATALOG))
+    manifest = target / "manifest.json"
+    models = sorted(n["name"] for n in json.loads(manifest.read_text())["nodes"].values() if n["resource_type"] == "model")
+    columns = ["stg_payments.amount", "orders.amount", "stg_orders.order_id", "stg_payments.amount", "orders.order_id"]
+    context_sizes(binary, project, manifest, env, work)
+    alone = work / "jaffle-alone"
+    (alone / "target").mkdir(parents=True, exist_ok=True)
+    for name in ("manifest.json", "catalog.json", "column_lineage.collin.json"):
+        shutil.copy(target / name, alone / "target" / name)
+    measure_project("Jaffle Shop", binary, project, manifest, models, columns, env, work, (alone, alone / "target" / "manifest.json"))
+
+    # Shopify.
+    fixture = Path(os.environ["SHOPIFY_FIXTURE"]) if os.environ.get("SHOPIFY_FIXTURE") else None
+    try:
+        shopify = work / "shopify" / "dbt_shopify" / "integration_tests"
+        if not shopify.exists():
+            shopify = C.fetch_shopify(work / "shopify")
+            C.Dbt(shopify, work / "shopify").deps()
+    except (C.Unavailable, RuntimeError, subprocess.CalledProcessError) as e:
+        print(f"## Shopify\n\nSKIPPED: {e}\n")
+        return 0
+    starget = work / "shopify" / "target"
+    starget.mkdir(parents=True, exist_ok=True)
+    smanifest = starget / "manifest.json"
+    scolumns = []
+    if fixture:
+        shutil.copy(fixture / "target" / "manifest.json", smanifest)
+        shutil.copy(fixture / "target" / "catalog.json", starget / "catalog.json")
+        shutil.copy(fixture / "expected" / "cache.json", starget / "column_lineage.collin.json")
+        graph = json.loads(smanifest.read_text())["nodes"]
+        edges = json.loads((starget / "column_lineage.collin.json").read_text())["edges"]
+        pairs = sorted({(graph[e["from"]]["name"], e["from_col"]) for e in edges if e["from"] in graph and graph[e["from"]]["resource_type"] == "model"})
+        by_model = {}
+        for model, col in pairs:
+            by_model.setdefault(model, col)
+        scolumns = [f"{m}.{c}" for m, c in list(by_model.items())[:5]]
+    elif not smanifest.exists():
+        C.Dbt(shopify, work / "shopify").parse()
+    nodes = json.loads(smanifest.read_text())["nodes"]
+    smodels = sorted(n["name"] for n in nodes.values() if n["resource_type"] == "model")
+    salone = work / "shopify-alone"
+    (salone / "target").mkdir(parents=True, exist_ok=True)
+    for f in starget.iterdir():
+        shutil.copy(f, salone / "target" / f.name)
+    print(f"Shopify v{C.SHOPIFY_TAG.lstrip('v')} ({C.SHOPIFY_COMMIT[:7]}): {len(smodels)} models, {len(nodes)} nodes; "
+          f"{'manifest, catalog and cache from SHOPIFY_FIXTURE' if fixture else 'manifest from dbt parse, no cache'}.\n")
+    measure_project("Fivetran's Shopify v1.10.0", binary, shopify, smanifest, smodels, scolumns, env, work, (salone, salone / "target" / "manifest.json"))
+    print(f"Projects kept in {work}" if keep else "")
+    return 0
+
+
 def main():
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
     os.environ.setdefault("DO_NOT_TRACK", "1")
@@ -389,4 +744,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(measure(sys.argv[1:]) if "--measure" in sys.argv[1:] else main())
