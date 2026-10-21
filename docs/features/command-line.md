@@ -387,7 +387,8 @@ are safe to run unasked.
 | --- | --- |
 | what the project is | `dbt-edith . --overview`, once, first |
 | what a model, source or test is | `dbt-edith . --describe name[,name...]`, on the nodes the question names; add `--sql` to read the model |
-| a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact`; `+model` for its parents |
+| a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact` for its children; `1+model` for its parents, `1+model+1` for both |
+| everything upstream, or downstream, of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact`; `model+` for what dropping or renaming it breaks |
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
@@ -408,9 +409,47 @@ Three habits keep the answers small and true:
   says what dbt itself selects
   ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md)).
 
-Start from these commands, or from a skill that wraps them: the recipes above
-are what it would hold. Use MCP only where there is no terminal to run them in;
+Start from these commands, or from the skill that wraps them
+([below](#the-skill)). Use MCP only where there is no terminal to run them in;
 an agent without one can ask the same questions [over MCP](#over-mcp).
+
+### The skill
+
+The recipes and the habits above are shipped as a skill, a `SKILL.md` an agent
+client loads
+([0114](../decisions/0114-a-skill-is-shipped-and-printed-never-installed.md)).
+`dbt-edith --skill` prints the one that matches the installed binary, and
+nothing else: it takes no project, reads nothing, writes nothing and starts
+nothing. Putting it where the client looks is the caller's step:
+
+```
+mkdir -p .claude/skills/dbt-edith && dbt-edith --skill > .claude/skills/dbt-edith/SKILL.md      # Claude Code
+mkdir -p .github/skills/dbt-edith && dbt-edith --skill > .github/skills/dbt-edith/SKILL.md      # Copilot
+```
+
+In Windows PowerShell 5.1 `>` writes UTF-16, which a client may not read: run
+it in Git Bash or cmd.
+
+The same file is [docs/agent-skill/SKILL.md](../agent-skill/SKILL.md) in the
+repository, with a literal `{version}` in a comment under its frontmatter that
+`--skill` fills in with the installed version. dbt-edith never writes it into a
+client's folder or settings. Print it again after updating dbt-edith: a flag the
+installed binary refuses means it is older than the text. The tests check that
+every long flag written anywhere in the file is one this version has, that the
+keys it lists for `--count-by` are keys, that every selection it cites resolves
+on a small graph, and that every command it cites parses and is accepted, over
+MCP too. They do not check what a recipe means.
+
+What the description says decides whether an agent loads the skill at all: a
+one-line description was not loaded where one that names the questions it
+answers was, so the shipped one lists them, the kinds of node, the lineage in
+both directions, the column lineage and the overview, and says to use it before
+grepping SQL or running `dbt ls`. Change it with care. It describes the card's
+per-`.env` lines as [the card](#the-card) does, the config before the
+`generate_*_name` macros and not where dbt builds. An agent that has no
+terminal, or whose client lists tools rather than skills, needs no skill: it
+can ask the same questions [over MCP](#over-mcp), where `help` is the reference
+and `--skill` is refused.
 
 ## Over MCP
 
@@ -420,15 +459,16 @@ auto-approve), prefer the skill: the commands of
 cannot run a command, such as Claude Desktop chat or a Copilot mode with no
 terminal. It answers about twice as fast per call (4.9 ms against 9.8 ms on
 Jaffle Shop, 34.9 ms against 53.0 ms on the Shopify fixture), but that is
-milliseconds nobody waits on, and it puts about 153 tokens of tool definition in
-every conversation of a client where it is configured, against about 48 for a
-skill line.
+milliseconds nobody waits on. Context does not decide it either: the tool's
+definition is about 153 tokens in each conversation of a client that lists it up
+front, the skill's description about 190 and its body about 800 more once
+loaded. What decides it is in [What it is for](#what-it-is-for).
 
 `dbt-edith --mcp` answers an MCP client over stdin and stdout instead of
 printing one answer
 ([0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md)). It
-is opt-in: nothing configures it, no file is shipped for a client and none is
-written, and the command line and a skill keep working beside it. The server
+is opt-in: nothing configures it, no file of a client's is written, and the
+command line and [the skill](#the-skill) keep working beside it. The server
 reads nothing until a call asks, so a client can be configured before
 `dbt parse`, and it ends when the client closes its input.
 
@@ -463,7 +503,7 @@ project.
   is.
 - **Only the questions' flags pass.** `--port`, `--manifest`, `--catalog`,
   `--column-lineage`, `--compiled`, `--shell`, `--no-open`,
-  `--no-update-check` and `--mcp` are refused, and so is any flag added to the
+  `--no-update-check`, `--mcp` and `--skill` are refused, and so is any flag added to the
   command line later until someone decides it is a question.
 - **A selection holding spaces is quoted**: `-s 'stg_orders orders'`. The dbt
   habit `-s stg_orders orders` is answered with that advice, not with a wrong
@@ -507,9 +547,15 @@ relative `--manifest` is made whole against the folder the server started in.
 ### What it is for
 
 It is for the clients that cannot run a command. Where one can, the skill is
-the better choice, as said at the top: the graph the server keeps in memory
-does not make up for the tokens of its definition. What else was weighed is in
-[0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md).
+the better choice. The tool is the cheaper in context (its
+definition against the skill's description, and the skill's body once loaded),
+but the skill needs no server to configure and works with any agent that has a
+terminal. When both were tried with agents, what decided it was how the
+agent finds them: Claude Code defers an MCP tool, showing the agent only its
+name until it searches for it, and an agent given the tool then mostly ran
+`dbt ls` instead; listed up front, the tool was used every time. A client that
+defers tools therefore needs the skill, or the tool listed. What else was
+weighed is in [0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md).
 
 A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
 `--output compact`, or a narrower selection.

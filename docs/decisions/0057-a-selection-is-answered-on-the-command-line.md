@@ -1,6 +1,6 @@
 # 0057. A selection is answered on the command line, without a server
 
-Date: 2026-10-10 · Status: accepted, amended by 0110 · Follows 0024 and 0052
+Date: 2026-10-10 · Status: accepted, amended by 0110 and 0114 · Follows 0024 and 0052
 
 **Trigger:** read before adding a flag that answers and exits instead of
 serving, or before letting anything but the page read the selection engine.
@@ -74,3 +74,6 @@ answers stale, and only stderr says so. No skill ships here: writing one is
 the caller's work, and this is the command it would call. On that project the
 same answer took 0.9 s, 0.16 s of it loading the manifest and the rest the
 freshness walk and git.
+
+*Amended by [0114](0114-a-skill-is-shipped-and-printed-never-installed.md):
+a skill now ships as a file and `--skill` prints it.*

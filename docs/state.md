@@ -1623,6 +1623,19 @@ key, the depth cut and its order, a package's source, a tag written twice, the
 JSON shape, an empty selection, the flags' refusals) and by `walk_mcp.py`
 comparing the line with the command line on Jaffle Shop.
 
+An agent skill, shipped and printed (0114, 1.48.0): `docs/agent-skill/SKILL.md`
+holds the command-line page's recipes, its three habits and the freshness rule
+under a description that names the questions it answers, and `dbt-edith --skill`
+prints it for the installed version, with nothing beside it and nothing read,
+written or started. It is refused over MCP. The binary never writes a client's
+folder: the caller redirects the output. Checked with `cargo test`: the output is
+the file with the version filled, the frontmatter is valid and its description is
+at most 1000 characters, every long flag written anywhere in the file and every
+`--count-by` key is one this binary has (a test misspells several to prove it),
+and every command the file cites parses, passes the mode checks and is accepted
+by the MCP line. Whether an agent loads it was measured with agents before it
+was written, not by a test.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
@@ -2324,10 +2337,12 @@ Left by the MCP server (0110, 1.44.0), unranked:
   -32601, which Claude Code answers by falling back to `initialize`, and VS
   Code sends `initialize` anyway. Serving it means a version tracker, the
   per-request `_meta`, `ttlMs`/`cacheScope` and its own errors.
-- **The skill or the server.** The skill line costs about 48 tokens and the
-  tool about 153 in every context; where an agent has a terminal and the
-  freshness walk dominates, which of the two to recommend is not measured in a
-  session, only in bytes over four.
+- ~~**The skill or the server.**~~ Settled in 1.48.0 (0114): the docs prefer the
+  skill where there is a terminal, and the tool where a client has none. The
+  tool is about 153 tokens, plus at most 384 for `help`; the skill's
+  description about 190 and its body about 800 more once loaded (bytes over
+  four). What is left: which clients defer MCP tools, and whether any can list
+  this one up front; deferral was seen on Claude Code only.
 - **Windows has no check:** the `.exe` spawned by each client, a
   `TerminateProcess` leaving collin running, a CRLF answer in VS Code. No CI
   job runs Windows, and the check's stand-in collin is a shell script.

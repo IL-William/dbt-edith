@@ -1,6 +1,6 @@
 # 0110. An agent may ask over MCP, through one tool
 
-Date: 2026-10-21 · Status: accepted, amended by 0113 · Amends 0057, 0099 and 0102
+Date: 2026-10-21 · Status: accepted, amended by 0113 and 0114 · Amends 0057, 0099 and 0102
 
 **Trigger:** read before changing `--mcp`, the `edith` tool, what its line
 accepts, what the server reads or writes, or before adding a second tool.
@@ -26,6 +26,9 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
   settings. The command line and the skill keep working; the two coexist.
   Nothing is read at start, so a client can be configured before `dbt parse`
   and a probe process costs about 3 ms.
+  *Amended by [0114](0114-a-skill-is-shipped-and-printed-never-installed.md):
+  a skill is now shipped as a file and printed by `--skill`; the binary still
+  writes nothing for a client.*
 - **One tool, `edith`, taking a command line.** The line is split by a
   splitter of our own (quotes, no shell), parsed by the command line's own clap
   definition and accepted only by listing: the flags of the four questions and
@@ -69,6 +72,7 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
 - **Context**: the tool and the instructions are about 153 tokens, against 48
   for a one-line skill description and 447 for a tool per mode (bytes over
   four, not Claude's tokenizer).
+  *The shipped skill's description is about 190 (0114).*
 - **Clients without a terminal** can ask at all. Approving the one tool
   approves collin runs too, since the tool cannot be split by flag.
 

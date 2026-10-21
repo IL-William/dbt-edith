@@ -36,6 +36,7 @@ mod select;
 mod selectors;
 mod settings;
 mod sidecar;
+mod skill;
 mod tour;
 mod unused_paths;
 mod update;
@@ -161,10 +162,21 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "count_by", "depth", "output",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
+
+    /// Print the agent skill that matches this version, a SKILL.md for a client to load, and exit. It takes nothing beside it and reads, writes and starts nothing
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
+            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "count_by",
+            "depth", "output", "mcp",
+        ]
+    )]
+    skill: bool,
 }
 
 /// The first flag that is set beside a mode it does not belong to, as a
@@ -286,6 +298,11 @@ fn mcp_start(args: &Args) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>),
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    // First of all, ahead of even `--mcp`: it is a file printed, and nothing
+    // else is read, written or started (0114).
+    if args.skill {
+        std::process::exit(skill::print());
+    }
     // Before everything a server needs: no port, no settings, no update look,
     // no browser, and no file read until a call asks (0110).
     if args.mcp {
@@ -616,6 +633,7 @@ mod tests {
             ("--count-by", "--mcp --count-by kind"),
             ("--depth", "--mcp --depth 2"),
             ("--output", "--mcp --output json"),
+            ("--skill", "--mcp --skill"),
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
@@ -631,6 +649,42 @@ mod tests {
             command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "mcp").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
         let others: std::collections::BTreeSet<&str> =
             command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| !["mcp", "project", "manifest", "catalog"].contains(id)).collect();
+        assert_eq!(conflicts, others);
+    }
+
+    #[test]
+    fn skill_goes_alone_and_every_other_flag_is_refused_beside_it() {
+        // As with --mcp, a default is not typed: `--skill` alone parses with
+        // the project and the port it would otherwise have.
+        let args = asked("--skill");
+        assert!(args.skill && !args.mcp && question_of(&args).is_none() && stray(&args).is_none());
+        assert_eq!((args.port, args.output), (4321, ls::Output::Name));
+        for line in [
+            "--skill .",
+            "--skill /work/jaffle_shop",
+            "--skill --manifest m.json",
+            "--skill --catalog c.json",
+            "--skill --port 4321",
+            "--skill -s orders",
+            "--skill --describe orders",
+            "--skill --overview",
+            "--skill --output json",
+            "--skill --mcp",
+            "--mcp --skill",
+        ] {
+            let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+                Ok(_) => panic!("{line} was accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert!(why.contains("'--skill"), "{line}: {why}");
+        }
+        // Every other flag is on its list, so one added later is refused
+        // beside --skill until someone decides it is not.
+        use clap::CommandFactory;
+        let command = Args::command();
+        let conflicts: std::collections::BTreeSet<&str> =
+            command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "skill").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
+        let others: std::collections::BTreeSet<&str> = command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| *id != "skill").collect();
         assert_eq!(conflicts, others);
     }
 
