@@ -15,11 +15,12 @@ use clap::parser::ValueSource;
 use clap::{CommandFactory, FromArgMatches};
 use std::path::Path;
 
-/// The tool, as `tools/list` gives it. Only `openWorldHint` is written: left
-/// at its default of true it would make VS Code confirm each result, and the
-/// tool reaches nothing outside the project. The other hints stay at their
-/// defaults because they are the truth: `--run-collin` replaces collin's
-/// cache, which may have come from another catalog or other SQL (0099).
+/// The tool, as `tools/list` gives it. Only `openWorldHint` is written: the
+/// spec's default is true, and the tool reaches nothing outside the project,
+/// so false is the truth (VS Code asks to confirm a result only when the hint
+/// is truthy, which it is not). The other hints stay at their defaults because
+/// they are the truth: `--run-collin` replaces collin's cache, which may have
+/// come from another catalog or other SQL (0099).
 pub const TOOL: &str = r#"{"name":"edith","description":"Answers one dbt-edith command line about this dbt project, from its manifest: --overview, --describe NAME, -s 'SELECTION', --selector NAME or --column MODEL.COLUMN, with their flags. `help` lists every flag.","inputSchema":{"type":"object","properties":{"line":{"type":"string","description":"the flags, no project: --describe orders --sql"}},"additionalProperties":false},"annotations":{"openWorldHint":false}}"#;
 
 /// What the server tells a client about itself, once, at `initialize`.
@@ -68,7 +69,7 @@ const ALLOWED: [&str; 15] = [
 
 /// The flags that are refused on purpose, with why. `project` has a sentence
 /// of its own, since it names the server's root.
-const REFUSED: [(&str, &str); 11] = [
+const REFUSED: [(&str, &str); 10] = [
     ("project", ""),
     ("manifest", "named when the server starts, in its own arguments"),
     ("catalog", "named when the server starts, in its own arguments"),
@@ -79,7 +80,6 @@ const REFUSED: [(&str, &str); 11] = [
     ("no_open", "not a question"),
     ("no_update_check", "not a question"),
     ("mcp", "not a question"),
-    ("help", "not a question"),
 ];
 
 /// The longest line read. Far past any question.
@@ -100,6 +100,12 @@ pub enum Read {
 /// what the question runs against, and nothing in the line can change them.
 /// An `Err` is the text of a refusal, ready for the model.
 pub fn read(line: &str, root: &Path, manifest: Option<&Path>, catalog: Option<&Path>) -> Result<Read, String> {
+    read_with(Args::command(), line, root, manifest, catalog)
+}
+
+/// `read` against a given command definition: the command line's own, bar in
+/// the test that adds a flag to it.
+fn read_with(command: clap::Command, line: &str, root: &Path, manifest: Option<&Path>, catalog: Option<&Path>) -> Result<Read, String> {
     let mut words = split(line).map_err(refusal)?;
     // The recipes in the docs begin with the program's name and the project:
     // pasted as they are, they mean this server's.
@@ -112,7 +118,6 @@ pub fn read(line: &str, root: &Path, manifest: Option<&Path>, catalog: Option<&P
     if words.is_empty() || words == ["help"] {
         return Ok(Read::Help);
     }
-    let command = Args::command();
     let matches = match command.clone().try_get_matches_from(std::iter::once("dbt-edith".to_string()).chain(words)) {
         Ok(m) => m,
         Err(e) => {
@@ -533,9 +538,9 @@ mod tests {
                 (false, Err(why)) => assert!(why.starts_with("error: ") && why.ends_with("`help` lists every flag."), "{line:?}: {why}"),
             }
         }
-        // Every id the table names is an argument, bar the ones a later change adds.
+        // Every id the table names is an argument.
         for (id, _) in REFUSED {
-            assert!(ids.contains(id) || matches!(id, "mcp" | "help"), "{id} is in REFUSED and not in Args");
+            assert!(ids.contains(id), "{id} is in REFUSED and not in Args");
         }
     }
 
@@ -543,14 +548,10 @@ mod tests {
     fn a_flag_not_listed_is_refused_whatever_it_is_called() {
         // The allow-list accepts by name: a command with one more flag is
         // refused for it until ALLOWED lists it.
-        let mut command = Args::command().arg(clap::Arg::new("future").long("future").action(clap::ArgAction::SetTrue));
-        let m = command.try_get_matches_from_mut(["dbt-edith", "--overview", "--future"]).unwrap();
-        let unlisted: Vec<_> = command
-            .get_arguments()
-            .filter(|a| m.value_source(a.get_id().as_str()) == Some(ValueSource::CommandLine) && !ALLOWED.contains(&a.get_id().as_str()))
-            .map(|a| a.get_id().to_string())
-            .collect();
-        assert_eq!(unlisted, ["future"]);
+        let command = Args::command().arg(clap::Arg::new("future").long("future").action(clap::ArgAction::SetTrue));
+        let Err(said) = read_with(command, "--overview --future", root(), None, None) else { panic!("--future was accepted") };
+        assert!(said.starts_with("error: --future is not a question"), "{said}");
+        assert!(said.ends_with("`help` lists every flag."), "{said}");
     }
 
     /// The flags named in a text: `--word` and `-w` as the tool's help writes them.

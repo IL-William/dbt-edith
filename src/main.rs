@@ -195,7 +195,7 @@ fn stray(args: &Args) -> Option<String> {
 /// Beside the project, the manifest and the catalog, which come from where
 /// the question is asked: the command line's arguments, or the MCP server's
 /// own.
-pub(crate) enum Question {
+enum Question {
     Select(ls::Query),
     Describe { names: Vec<String>, sql: bool },
     Overview { depth: usize },

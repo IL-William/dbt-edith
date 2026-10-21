@@ -383,13 +383,19 @@ pub(crate) fn answer_line(graphs: &mut Graphs, line: &str, stop: &AtomicBool) ->
             Ok(graph) => ls::respond(&root, graph, &query, output, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
         },
-        Question::Describe { names, sql } => match graphs.base() {
-            Ok(base) => {
-                kept_warning(base.warning, &mut err);
-                describe::respond_describe(&root, base.graph, &names, sql, output, &mut out, &mut err)
+        Question::Describe { names, sql } => {
+            // As the command line does: before the project is opened.
+            if let Some(why) = describe::no_name(&names) {
+                return Outcome::failed(why);
             }
-            Err(why) => return Outcome::failed(&why),
-        },
+            match graphs.base() {
+                Ok(base) => {
+                    kept_warning(base.warning, &mut err);
+                    describe::respond_describe(&root, base.graph, &names, sql, output, &mut out, &mut err)
+                }
+                Err(why) => return Outcome::failed(&why),
+            }
+        }
         Question::Overview { depth } => match graphs.base() {
             Ok(base) => {
                 kept_warning(base.warning, &mut err);
@@ -857,6 +863,19 @@ mod tests {
         let said = s.ask("--column orders.order_id");
         assert!(is_error(&said), "{said}");
         assert!(blocks(&said).last().unwrap().contains("error:"), "{said}");
+    }
+
+    #[test]
+    fn a_describe_with_no_name_is_the_command_lines_one_line_before_the_project_is_opened() {
+        let dir = project("noname");
+        // No manifest: opening the project would say so instead.
+        std::fs::remove_file(dir.join("target/manifest.json")).unwrap();
+        let s = Session::start(&dir);
+        for line in ["--describe ''", "--describe ,", "--describe ' , '"] {
+            let said = s.ask(line);
+            assert!(is_error(&said), "{line}");
+            assert_eq!(blocks(&said), ["error: --describe wants the name or the unique_id of a node\n"], "{line}");
+        }
     }
 
     #[test]

@@ -807,6 +807,10 @@ pub fn run(job: &Job, deadline: Duration) -> Result<Vec<String>, (String, Vec<St
 /// before it stays. For a caller that answers someone who can walk away while
 /// collin works.
 pub fn run_stoppable(job: &Job, deadline: Duration, stop: &AtomicBool) -> Result<Vec<String>, (String, Vec<String>)> {
+    // Already asked to stop: collin is not started, and nothing is touched.
+    if stop.load(Ordering::Relaxed) {
+        return Err(("collin was stopped before it started".to_string(), Vec::new()));
+    }
     let tmp = tmp_of(&job.out);
     // The report too: written in place, a failed run left a new report
     // beside the old cache, describing edges nobody could see.
@@ -1248,6 +1252,19 @@ pub(crate) mod tests {
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
         assert_eq!(std::fs::read_to_string(&job.out).unwrap(), "old");
         assert!(!tmp_of(&job.out).exists() && !tmp_of(&job.report).exists(), "no half-written file is left");
+    }
+
+    #[test]
+    fn a_stop_flag_already_set_keeps_collin_from_starting() {
+        let d = dir("stopped-first");
+        let bin = fake(&d, "echo new > \"$out\"");
+        let job = job(&d, bin);
+        std::fs::write(&job.out, "old").unwrap();
+        let (why, log) = run_stoppable(&job, Duration::from_secs(60), &AtomicBool::new(true)).unwrap_err();
+        assert!(why.contains("was stopped before it started"), "{why}");
+        assert!(log.is_empty());
+        assert_eq!(runs(&d), 0, "collin was never spawned");
+        assert_eq!(std::fs::read_to_string(&job.out).unwrap(), "old");
     }
 
     #[tokio::test]

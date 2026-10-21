@@ -219,7 +219,17 @@ pub(crate) mod tests {
     /// Moves a file's or a folder's mtime on, so its stamp differs whatever
     /// the clock's grain.
     fn touch(path: &Path) {
-        let file = std::fs::File::open(path).unwrap();
+        let mut open = std::fs::OpenOptions::new();
+        // Windows opens a folder only with backup semantics, and sets a time
+        // only through a handle with write-attributes access.
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            open.access_mode(0x0100).custom_flags(0x0200_0000);
+        }
+        #[cfg(not(windows))]
+        open.read(true);
+        let file = open.open(path).unwrap();
         let was = std::fs::metadata(path).unwrap().modified().unwrap();
         file.set_modified(was + Duration::from_secs(10)).unwrap();
     }

@@ -114,6 +114,7 @@ QUESTIONS = [
     ("--describe orders --sql", 0),
     ("--describe orders,nope", 1),
     ("--describe nope", 1),
+    ("--describe ,", 1),
     ("-s 'stg_orders+1' --exclude resource_type:test --output compact", 0),
     ("-s '+customers'", 0),
     ("-s 'path:models/staging/*.sql' --output json", 0),
