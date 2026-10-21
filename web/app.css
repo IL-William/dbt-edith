@@ -1737,6 +1737,24 @@ kbd {
 .toast.ok { border-left-color: var(--ok); }
 .toast.warn { border-left-color: var(--warn); }
 
+/* The notice card (0111): in the middle of the page, over every backdrop like
+   a toast. It has no backdrop of its own, so the terminal and the page behind
+   take their clicks; only the card does. */
+.notice {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 80;
+  width: min(420px, 92vw); background: var(--bg-2); color: var(--fg);
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 14px 16px; box-shadow: 0 18px 60px #0009;
+}
+.notice-head { display: flex; align-items: flex-start; gap: 10px; }
+.notice-title { flex: 1; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.notice-x {
+  font: 18px/1 var(--ui); color: var(--fg-dim); background: none; border: 0;
+  padding: 0 2px; cursor: pointer;
+}
+.notice-x:hover { color: var(--fg); }
+.notice-body { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--fg-dim); }
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2b3746; border-radius: 5px; border: 2px solid var(--bg-2); }

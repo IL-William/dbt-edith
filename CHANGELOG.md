@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.45.0 - 2026-10-21
+
+- Say it in a card in the middle of the page once the update is typed into the
+  terminal, and again when dbt-edith is installed and waits for a restart, in
+  place of the toast and the menu alone (0111).
+- End the update command on a line saying to stop dbt-edith and start it
+  again, printed only when the install worked (0111).
+- Fail the update command in Git Bash on Windows when the build failed, the
+  binary put back, where it used to end as if it had worked (0111).
+
 ## 1.44.0 - 2026-10-21
 
 - Answer an agent over MCP with `dbt-edith --mcp`, through one tool that takes

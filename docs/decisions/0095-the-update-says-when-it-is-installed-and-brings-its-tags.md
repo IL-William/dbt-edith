@@ -73,6 +73,9 @@ worked, and three things in it read wrong to the person running it:
 - **An `echo` at the end of the command.** It would land in the terminal the
   update ran in, written for two shells, and say nothing to the menu or the
   pill, which are what was misread.
+  *Amended by [0111](0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md):
+  the command now ends on a line, once `compose` writes a variant per shell
+  and the cards carry what the menu and the pill said alone.*
 - **`git describe --match` on the release `Cargo.toml` names.** It hides the
   tags a clone lacks rather than bringing them.
 - **`git pull --tags`.** One moved tag fails the whole pull, above.

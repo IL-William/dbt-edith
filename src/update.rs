@@ -664,21 +664,32 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
 /// With `swap`, the running binary is renamed to `<exe>.old` before the
 /// rebuild and put back when the rebuild fails, so a failed update still
 /// leaves one to start.
+/// The last thing it prints is `DONE`, and only once the install worked: the
+/// restore after a failed build must itself end in a failure, or the shell
+/// would read the put-back as success and claim an install that never was
+/// (0111). The text holds no quote, `$` or backtick, since it sits inside a
+/// string in either shell.
 fn compose(shell: Shell, source: &str, step: &str, swap: Option<&str>) -> String {
     let pull =
         format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" pull --ff-only origin main");
     match (shell, swap) {
-        (Shell::Posix, None) => format!("{pull} && {step}"),
+        (Shell::Posix, None) => format!("{pull} && {step} && printf '\\n%s\\n' '{DONE}'"),
         (Shell::Posix, Some(exe)) => {
-            format!("{pull} && mv -f \"{exe}\" \"{exe}.old\" && ({step} || mv -f \"{exe}.old\" \"{exe}\")")
+            format!(
+                "{pull} && mv -f \"{exe}\" \"{exe}.old\" && ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
+                 && printf '\\n%s\\n' '{DONE}'"
+            )
         }
-        (Shell::PowerShell, None) => format!("{pull}; if ($?) {{ {step} }}"),
+        (Shell::PowerShell, None) => format!("{pull}; if ($?) {{ {step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} }}"),
         (Shell::PowerShell, Some(exe)) => format!(
             "{pull}; if ($?) {{ Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
-             if (-not $?) {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
+             if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
         ),
     }
 }
+
+/// What the command ends on when the install worked (0111).
+const DONE: &str = "dbt-edith is installed. Stop dbt-edith where you started it (Ctrl+C) and start it again to run it.";
 
 /// The page that says what a release changed: its section of CHANGELOG.md,
 /// published by the release workflow (0045).
@@ -1147,7 +1158,7 @@ mod tests {
             how.command,
             format!(
                 "git -C \"{s}\" fetch --tags --force origin; git -C \"{s}\" pull --ff-only origin main && \
-                 cargo install --locked --path \"{s}\""
+                 cargo install --locked --path \"{s}\" && printf '\\n%s\\n' '{DONE}'"
             )
         );
         assert_eq!((how.kind, how.renames, how.exe.as_str()), ("install", false, "dbt-edith"));
@@ -1160,7 +1171,8 @@ mod tests {
         let exe = source.join("target").join("release").join("dbt-edith");
         let built = how(&source, &exe, Some(Shell::Posix), false).unwrap();
         assert_eq!(built.kind, "build");
-        assert!(built.command.ends_with(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
+        assert!(built.command.contains(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
+        assert!(built.command.ends_with(&format!("&& printf '\\n%s\\n' '{DONE}'")));
         // Not on Windows, where the build would overwrite the running file.
         assert_eq!(how(&source, &exe, Some(Shell::Posix), true), Err(Why::Locked));
         let _ = std::fs::remove_dir_all(source.parent().unwrap());
@@ -1211,7 +1223,7 @@ mod tests {
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
                  git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
-                 ({step} || mv -f \"{exe}.old\" \"{exe}\")"
+                 ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && printf '\\n%s\\n' '{DONE}'"
             )
         );
         assert_eq!(
@@ -1220,10 +1232,76 @@ mod tests {
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
                  git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
                  Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
-                 if (-not $?) {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
+                 if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
             )
         );
         assert_eq!(quotable(Path::new(r"C:\Users\ada\.cargo\bin\dbt-edith.exe"), true).as_deref(), Some(exe));
+    }
+
+    /// The closing line is chained after the install in every shell and swap
+    /// combination, and no failure path reaches it (0111).
+    #[test]
+    fn the_closing_line_follows_the_install_alone() {
+        assert!(!DONE.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
+        let (exe, step) = ("/bin/dbt-edith", "cargo install --locked --path \"/src\"");
+        let posix = compose(Shell::Posix, "/src", step, None);
+        assert!(posix.ends_with(&format!("{step} && printf '\\n%s\\n' '{DONE}'")), "{posix}");
+        // The restore ends in `false`, or the subshell would exit 0 after a
+        // failed build and the chain would go on to the line.
+        let swapped = compose(Shell::Posix, "/src", step, Some(exe));
+        assert!(swapped.contains(&format!("({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && printf")), "{swapped}");
+        let ps = compose(Shell::PowerShell, "/src", step, None);
+        assert!(ps.ends_with(&format!("{{ {step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} }}")), "{ps}");
+        let ps_swapped = compose(Shell::PowerShell, "/src", step, Some(exe));
+        let (ok, failed) = ps_swapped.split_once(" else ").unwrap();
+        assert!(ok.ends_with(&format!("{step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }}")), "{ps_swapped}");
+        assert!(failed.starts_with("{ Move-Item") && !failed.contains("Write-Host"), "{ps_swapped}");
+    }
+
+    /// The real sh, with a stand-in for the install step: success prints the
+    /// line, a failed step does not, and with the swap the binary is put back
+    /// and the command still fails.
+    #[cfg(unix)]
+    #[test]
+    fn sh_prints_the_closing_line_only_when_the_install_worked() {
+        let dir = scratch("closing");
+        let exe = dir.join("dbt-edith");
+        let repo = dir.join("clone");
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Ada")
+                .env("GIT_AUTHOR_EMAIL", "ada@example.com")
+                .env("GIT_COMMITTER_NAME", "Ada")
+                .env("GIT_COMMITTER_EMAIL", "ada@example.com")
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        };
+        let (remote, clone) = (dir.join("remote"), repo.to_str().unwrap());
+        let r = remote.to_str().unwrap();
+        git(&["init", "-q", "-b", "main", r]);
+        git(&["-C", r, "commit", "-q", "--allow-empty", "-m", "one"]);
+        git(&["clone", "-q", r, clone]);
+        let run = |command: &str| {
+            let out = std::process::Command::new("sh").args(["-c", command]).output().unwrap();
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string())
+        };
+        let e = exe.to_str().unwrap();
+        for swap in [None, Some(e)] {
+            std::fs::write(&exe, "old").unwrap();
+            let (ok, out) = run(&compose(Shell::Posix, clone, "true", swap));
+            assert!(ok && out.contains(DONE), "{swap:?}: {out}");
+            std::fs::write(&exe, "old").unwrap();
+            let (ok, out) = run(&compose(Shell::Posix, clone, "false", swap));
+            assert!(!ok && !out.contains(DONE), "{swap:?}: a failed step must not claim an install: {out}");
+            if swap.is_some() {
+                assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The menu says to restart once another binary sits at this one's
