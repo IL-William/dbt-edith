@@ -102,6 +102,7 @@ CATALOG = {
 # report: collin 0.10.0 saying it read the SQL of every model.
 STAND_IN = """#!/bin/sh
 [ "$1" = --version ] && echo 'collin 0.10.0' && exit 0
+echo "$@" > "$(dirname "$0")/args"
 out=''
 report=''
 while [ $# -gt 0 ]; do
@@ -146,7 +147,7 @@ class Server:
         self.stderr_path = work / f"{name}-stderr.log"
         self.log = open(self.stderr_path, "w")
         self.proc = subprocess.Popen(
-            [str(binary), "--mcp", str(project), "--manifest", str(manifest)],
+            [str(binary), "--mcp", str(project)] + (["--manifest", str(manifest)] if manifest else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, env=env, cwd=work,
         )
         self.lines = queue.Queue()
@@ -716,6 +717,8 @@ def main():
             before = tree(project, target)
             served = late.call(line)
             after = tree(project, target)
+            given = (bin_dir / "args").read_text()
+            walk.check("--project" not in given.split(), "collin is not given --project beside a manifest outside the project", given)
             changed = sorted(Path(p).name for p in after if before.get(p) != after[p])
             walk.check(
                 changed == ["collin.report.json", "column_lineage.collin.json"] and not any(p not in after for p in before),
@@ -725,6 +728,26 @@ def main():
             code = late.close()
             walk.check(code == 0, "a second server ends with exit 0 when stdin closes", str(code))
             walk.check(late.stderr_path.read_text() == "", "nothing was written to its stderr")
+
+            # A copy laid out as documented: `--mcp <project>` alone, the
+            # manifest at <project>/target/manifest.json inside it. That is
+            # when collin is given --project (0109).
+            documented = work / "documented"
+            shutil.copytree(C.JAFFLE, documented)
+            (documented / "target").mkdir()
+            shutil.copy(manifest, documented / "target" / "manifest.json")
+            alone = Server(binary, documented, None, env, work, "documented")
+            alone.request("initialize", {"protocolVersion": "2025-11-25"})
+            blocks, is_error = blocks_of(alone.call("--describe orders"))
+            walk.check(blocks is not None and not is_error and "orders" in blocks[0], "the documented layout answers with no --manifest", str(blocks))
+            blocks, is_error = blocks_of(alone.call("--column stg_payments.amount --down all --run-collin"))
+            args = (bin_dir / "args").read_text().split()
+            walk.check(
+                blocks is not None and not is_error and "--project" in args and Path(args[args.index("--project") + 1]).resolve() == documented.resolve(),
+                "--run-collin on the documented layout gives collin --project <project>", f"{args}\n{blocks}",
+            )
+            code = alone.close()
+            walk.check(code == 0 and alone.stderr_path.read_text() == "", "the documented-layout server ends with exit 0 and a silent stderr", str(code))
 
         code = server.close()
         walk.check(code == 0, "the server ends with exit 0 when stdin closes", str(code))

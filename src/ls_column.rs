@@ -97,14 +97,15 @@ pub fn run(project: &Path, manifest: Option<&Path>, ask: &Ask, output: Output) -
     let mut out = BufWriter::new(io::stdout().lock());
     // Nobody stops a run from here: the process ends with the Ctrl+C that
     // would.
-    let written = respond(&root, &manifest_path, graph, ask, output, &AtomicBool::new(false), &mut out, &mut err);
+    let written = respond(&root, &manifest_path, graph, ask, output, &AtomicBool::new(false), collin_run::locate, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
 /// What the mode does once the project is open, collin's run included: the
 /// answer, flushed, then what the cache is worth. The exit code, or the write
 /// that failed. `stop` ends a run of collin early; a failed or stopped run
-/// ends the mode with `CANNOT_RUN` like any other.
+/// ends the mode with `CANNOT_RUN` like any other. `locate` finds the collin
+/// to run, asked only when a run is.
 pub(crate) fn respond(
     root: &Path,
     manifest_path: &Path,
@@ -112,6 +113,7 @@ pub(crate) fn respond(
     ask: &Ask,
     output: Output,
     stop: &AtomicBool,
+    locate: impl FnOnce() -> collin_run::Located,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
@@ -128,7 +130,7 @@ pub(crate) fn respond(
     // refuses it beside one named another way.
     let offer_run = ask.produce.is_none() && ask.tool.is_none() && ask.cache.is_none();
     let written = match &ask.produce {
-        Some(p) => match produce(root, manifest_path, &target_dir, p, collin_run::locate(), stop, err) {
+        Some(p) => match produce(root, manifest_path, &target_dir, p, locate(), stop, err) {
             Ok(Some(cache)) => Some(cache),
             _ => return Ok(CANNOT_RUN),
         },

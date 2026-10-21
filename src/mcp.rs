@@ -19,7 +19,7 @@
 
 use crate::mcp_graphs::Graphs;
 use crate::mcp_line::{self, HELP, INSTRUCTIONS, TOOL};
-use crate::{describe, ls, ls_column, Question};
+use crate::{collin_run, describe, ls, ls_column, Question};
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
@@ -278,7 +278,9 @@ fn handle<W: Write>(wire: &Wire<W>, jobs: &mpsc::Sender<Job>, line: &[u8]) {
         _ => return wire.emit(&error(&reply_to, INVALID_REQUEST, "a request is {\"jsonrpc\":\"2.0\",\"method\":...}")),
     };
     let params = message.get("params");
-    if method == "notifications/cancelled" {
+    // Only a notification (no id) cancels: a request of that name is a
+    // request for a method the server does not have, and is answered so.
+    if method == "notifications/cancelled" && id.is_none() {
         if let Some(requested) = params.and_then(|p| p.get("requestId")) {
             wire.cancel(&requested.to_string());
         }
@@ -369,6 +371,12 @@ fn tool_result(outcome: &Outcome) -> Value {
 /// text it writes is the command line's, stdout and stderr, and `is_error` is
 /// its exit code not being 0.
 pub(crate) fn answer_line(graphs: &mut Graphs, line: &str, stop: &AtomicBool) -> Outcome {
+    answer_with(graphs, line, stop, collin_run::locate)
+}
+
+/// `answer_line` with the search for collin handed in, which a test replaces
+/// by a stand-in instead of changing the process's PATH.
+fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl FnOnce() -> collin_run::Located) -> Outcome {
     let root = graphs.root().to_path_buf();
     let manifest_path = graphs.manifest_path().to_path_buf();
     let catalog = graphs.catalog().map(Path::to_path_buf);
@@ -405,7 +413,7 @@ pub(crate) fn answer_line(graphs: &mut Graphs, line: &str, stop: &AtomicBool) ->
         },
         Question::Column(ask) => match graphs.manifest() {
             // The cache is merged into a copy: the kept graph stays the manifest's.
-            Ok(graph) => ls_column::respond(&root, &manifest_path, graph.clone(), &ask, output, stop, &mut out, &mut err),
+            Ok(graph) => ls_column::respond(&root, &manifest_path, graph.clone(), &ask, output, stop, locate, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
         },
     };
@@ -1042,6 +1050,24 @@ mod tests {
     }
 
     #[test]
+    fn a_request_named_cancelled_is_answered_not_taken_for_the_notification() {
+        let gate = Gate::new();
+        let mut s = gate.session(&project("cancel-request"));
+        s.call(1, "wait");
+        while gate.started.lock().unwrap().is_empty() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        // It has an id: a request for a method the server does not have.
+        s.request("c", "notifications/cancelled", json!({"requestId": 1}));
+        let said = s.recv();
+        assert_eq!((&said["id"], &said["error"]["code"]), (&json!("c"), &json!(METHOD_NOT_FOUND)), "{said}");
+        assert!(!gate.stopped.load(Ordering::Relaxed), "the call was not stopped");
+        gate.go.store(true, Ordering::Relaxed);
+        assert_eq!(s.recv()["id"], 1);
+        s.close();
+    }
+
+    #[test]
     fn a_call_cancelled_while_it_waits_is_never_run() {
         let gate = Gate::new();
         let mut s = gate.session(&project("cancel-queued"));
@@ -1096,18 +1122,14 @@ mod tests {
         use super::*;
         use std::os::unix::fs::PermissionsExt;
 
-        /// PATH is the process's: one test at a time holds it.
-        static PATH: Mutex<()> = Mutex::new(());
-
-        /// A collin on the PATH for as long as it lives.
-        struct OnPath {
-            was: Option<std::ffi::OsString>,
-            _held: MutexGuard<'static, ()>,
+        /// A collin that is a script in `dir`, handed to the call in place of
+        /// the search of the PATH, which the other tests would see changed.
+        struct StandIn {
+            dir: PathBuf,
         }
 
-        impl OnPath {
-            fn new(dir: &Path, body: &str) -> OnPath {
-                let held = PATH.lock().unwrap_or_else(PoisonError::into_inner);
+        impl StandIn {
+            fn new(dir: &Path, body: &str) -> StandIn {
                 let bin = dir.join("collin");
                 let script = format!(
                     "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.10.0' && exit 0\nout=''\nreport=''\n\
@@ -1116,20 +1138,15 @@ mod tests {
                 );
                 crate::collin_run::tests::executable(&bin, &script);
                 assert!(std::fs::metadata(&bin).unwrap().permissions().mode() & 0o111 != 0);
-                let was = std::env::var_os("PATH");
-                let mut dirs = vec![dir.to_path_buf()];
-                dirs.extend(was.iter().flat_map(std::env::split_paths));
-                std::env::set_var("PATH", std::env::join_paths(dirs).unwrap());
-                OnPath { was, _held: held }
+                StandIn { dir: dir.to_path_buf() }
             }
-        }
 
-        impl Drop for OnPath {
-            fn drop(&mut self) {
-                match &self.was {
-                    Some(path) => std::env::set_var("PATH", path),
-                    None => std::env::remove_var("PATH"),
-                }
+            /// A server whose calls find this collin.
+            fn serving(&self, root: &Path) -> Session {
+                let bin = self.dir.join("collin");
+                Session::with(root, move |g, line, stop| {
+                    answer_with(g, line, stop, || collin_run::Located { bin: Some(bin.clone()), ..Default::default() })
+                })
             }
         }
 
@@ -1190,8 +1207,8 @@ mod tests {
         #[test]
         fn a_cancelled_run_of_collin_is_killed_and_leaves_the_old_cache_and_no_temporary_file() {
             let (dir, bin) = waiting("collin-cancel");
-            let _path = OnPath::new(&bin, WAITS);
-            let mut s = Session::start(&dir);
+            let stand = StandIn::new(&bin, WAITS);
+            let mut s = stand.serving(&dir);
             s.call(7, "--column orders.order_id --run-collin");
             let pid = started(&bin);
             assert!(alive(&pid));
@@ -1210,8 +1227,8 @@ mod tests {
         #[test]
         fn the_end_of_input_kills_a_run_of_collin_and_the_server_ends() {
             let (dir, bin) = waiting("collin-eof");
-            let _path = OnPath::new(&bin, WAITS);
-            let mut s = Session::start(&dir);
+            let stand = StandIn::new(&bin, WAITS);
+            let mut s = stand.serving(&dir);
             s.call(1, "--column orders.order_id --run-collin");
             let pid = started(&bin);
             s.close();
@@ -1223,8 +1240,8 @@ mod tests {
         #[test]
         fn a_collin_that_is_killed_from_outside_is_a_tool_error_and_the_server_goes_on() {
             let (dir, bin) = waiting("collin-killed");
-            let _path = OnPath::new(&bin, "kill -9 $$");
-            let mut s = Session::start(&dir);
+            let stand = StandIn::new(&bin, "kill -9 $$");
+            let mut s = stand.serving(&dir);
             let said = s.ask("--column orders.order_id --run-collin");
             assert!(is_error(&said), "{said}");
             let got = blocks(&said);
@@ -1243,8 +1260,8 @@ mod tests {
                 "echo '{}' > \"$out\"\necho '{{\"totals\":{{\"models\":1,\"parsed\":1}},\"models\":[]}}' > \"$report\"",
                 OLD_CACHE
             );
-            let _path = OnPath::new(&bin, &writes);
-            let s = Session::start(&dir);
+            let stand = StandIn::new(&bin, &writes);
+            let s = stand.serving(&dir);
             let before = tree(&dir);
             let said = s.ask("--column orders.order_id --run-collin");
             assert!(!is_error(&said), "{said}");
