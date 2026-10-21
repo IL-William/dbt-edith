@@ -163,14 +163,15 @@ const SECRET_PREFIX: &str = "DBT_ENV_SECRET_";
 
 /// dbt's own marker for a value that must never be rendered. The one guard that
 /// applies to every path out of this module (0012).
-fn is_secret(name: &str) -> bool {
+pub(crate) fn is_secret(name: &str) -> bool {
     name.starts_with(SECRET_PREFIX)
 }
 
-/// Names that read as a credential rather than as a location. Applied only by
-/// the vars route (0019), never by the location resolver: that one legitimately
-/// reads names like `DBT_DB_RAW`, and a broad rule there would blank real
-/// schema names and quietly wreck `agreement`.
+/// Names that read as a credential rather than as a location. Applied by the
+/// vars route (0019) and by the command line's card (0113), never by the
+/// location resolver itself: that one legitimately reads names like
+/// `DBT_DB_RAW`, and a broad rule there would blank real schema names and
+/// quietly wreck `agreement`.
 ///
 /// Matched on underscore-delimited tokens, because `KEY` as a substring also
 /// catches `PARTITION_KEY`, `DBT_UNIQUE_KEY` and `MONKEY`.
@@ -457,6 +458,26 @@ pub fn var_names(written: &str) -> Vec<String> {
         let inner = rest[start + 2..start + 2 + len].trim_start_matches('-').trim_end_matches('-');
         if let Some((name, _)) = env_var_call(inner) {
             names.push(name);
+        }
+        rest = &rest[start + 2 + len + 2..];
+    }
+    names
+}
+
+/// The variables `written` reads through `env_var()` with no default that
+/// `vars` does not define: the ones a file must be missing for the expression
+/// to be unset, never a variable that falls back to its default.
+pub fn unset_vars(written: &str, vars: &Vars) -> Vec<String> {
+    let expr = drop_comments(written);
+    let mut names = Vec::new();
+    let mut rest = expr.as_str();
+    while let Some(start) = rest.find("{{") {
+        let Some(len) = rest[start + 2..].find("}}") else { break };
+        let inner = rest[start + 2..start + 2 + len].trim_start_matches('-').trim_end_matches('-');
+        if let Some((name, None)) = env_var_call(inner) {
+            if !vars.contains_key(&name) && !is_secret(&name) {
+                names.push(name);
+            }
         }
         rest = &rest[start + 2 + len + 2..];
     }
@@ -891,6 +912,14 @@ mod tests {
     }
 
     // var_names, agreement
+
+    #[test]
+    fn unset_vars_leaves_out_what_a_default_or_the_file_covers() {
+        let v = vars(&[("B", "x")]);
+        assert_eq!(unset_vars("{{ env_var('A') }}_{{ env_var('B') }}_{{ env_var('C', 'd') }}", &v), vec!["A".to_string()]);
+        // A secret is never named as missing, and a comment reads nothing.
+        assert!(unset_vars("{{ env_var('DBT_ENV_SECRET_X') }}{# {{ env_var('Z') }} #}", &v).is_empty());
+    }
 
     #[test]
     fn var_names_lists_every_env_var() {

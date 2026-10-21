@@ -11,7 +11,8 @@
 //! page asks for.
 
 use crate::collin::{self, iso_utc, Available};
-use crate::graph::{Graph, Kind, Node};
+use crate::envs::{self, Status};
+use crate::graph::{Graph, Kind, Node, Place};
 use crate::ls::{self, node_named, Output, ANSWERED, REFUSED};
 use crate::files;
 use std::collections::BTreeMap;
@@ -44,7 +45,10 @@ impl Sheet {
     fn line(&mut self, key: impl Into<String>, value: impl Into<String>) {
         let value = value.into();
         if !value.is_empty() {
-            self.rows.push(Row::Line(key.into(), value));
+            // A key may come from a file name (a `.env` file's), so it is
+            // held to the cleaning a value gets: a line break in it would
+            // forge a row of the card.
+            self.rows.push(Row::Line(clean(&key.into()), value));
         }
     }
 
@@ -191,6 +195,7 @@ fn describe(
         writeln!(err, "{NO_NAME}")?;
         return Ok(REFUSED);
     }
+    let files = Files::new(graph, root);
     let mut code = ANSWERED;
     let mut done: Vec<u32> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
@@ -223,13 +228,13 @@ fn describe(
         };
         match output {
             Output::Json => {
-                serde_json::to_writer(&mut *out, &Described::of(graph, idx, body))?;
+                serde_json::to_writer(&mut *out, &Described::of(graph, &files, idx, body))?;
                 writeln!(out)?;
             }
             // A card is read, so compact has nothing to drop from it: both
             // print the text.
             Output::Name | Output::Compact => {
-                let (first, mut sheet) = card(graph, idx);
+                let (first, mut sheet) = card(graph, &files, idx);
                 if let Some(body) = body.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
                     sheet.block("sql", "", body.lines().map(|l| l.trim_end().to_string()).collect());
                 }
@@ -363,7 +368,7 @@ fn test_entry(graph: &Graph, owner: u32, t: &Node) -> String {
 /// kind, the name, how it is built and where it is written, so the rows below
 /// need not. How it is built is left off when it only repeats the kind, as a
 /// source's and a test's `materialized` do.
-fn card(graph: &Graph, idx: u32) -> (String, Sheet) {
+fn card(graph: &Graph, files: &Files, idx: u32) -> (String, Sheet) {
     let n = &graph.nodes[idx as usize];
     let kind = n.resource_type();
     let how = if n.materialized == kind { "" } else { n.materialized.as_str() };
@@ -383,7 +388,7 @@ fn card(graph: &Graph, idx: u32) -> (String, Sheet) {
             description_rows(n, &mut sheet);
             sheet.line(format!("parents ({})", n.parents.len()), refs(graph, &n.parents, true));
         }
-        Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Analysis | Kind::Source => built_rows(graph, idx, &mut sheet),
+        Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Analysis | Kind::Source => built_rows(graph, files, idx, &mut sheet),
     }
     (first, sheet)
 }
@@ -406,9 +411,16 @@ fn description_rows(n: &Node, sheet: &mut Sheet) {
 
 /// A model, seed, snapshot, analysis or source: the nodes with columns, and a
 /// place in the graph.
-fn built_rows(graph: &Graph, idx: u32, sheet: &mut Sheet) {
+fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
     let n = &graph.nodes[idx as usize];
     sheet.line("relation", relation(n));
+    let landing = Landing::of(n, files);
+    if let Some(keys) = &landing.configured {
+        sheet.line("configured", keys.as_row());
+    }
+    for (file, parts) in &landing.by_env {
+        sheet.line(file.as_str(), parts.iter().map(Part::text).filter(|t| !t.is_empty()).collect::<Vec<_>>().join("."));
+    }
     common_rows(graph, n, sheet);
     sheet.line("yml", n.yml.as_str());
     if n.is_incremental() {
@@ -454,6 +466,253 @@ fn built_rows(graph: &Graph, idx: u32, sheet: &mut Sheet) {
         "reach",
         if n.kind == Kind::Source { format!("{down} downstream") } else { format!("{} upstream, {down} downstream", graph.reach(idx, true)) },
     );
+}
+
+// ------------------------------------------------- where a node lands per .env
+
+/// A location's three keys, each left out of the JSON when it is empty.
+#[derive(serde::Serialize, Default, PartialEq)]
+struct Keys {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    database: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    schema: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    alias: String,
+}
+
+impl Keys {
+    /// `database X  schema Y`, the keys that are set.
+    fn as_row(&self) -> String {
+        [("database", &self.database), ("schema", &self.schema), ("alias", &self.alias)]
+            .into_iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| format!("{k} {v}"))
+            .collect::<Vec<_>>()
+            .join("  ")
+    }
+}
+
+/// One key of a location read through one `.env` file.
+enum Part {
+    Value(String),
+    /// A value taken from one branch of an `if` picked by what dbt parsed, as
+    /// the Catalog does: the condition was not evaluated, so it is a guess.
+    Guess(String),
+    /// Nothing written: dbt takes the target's database or schema, which this
+    /// parse does not say for another environment.
+    Target,
+    /// The variables the file does not define and `env_var()` gives no default.
+    NotSet(Vec<String>),
+    /// The variables the file defines as a placeholder (`TBD`, `<changeme>`).
+    Placeholder(Vec<String>),
+    /// Jinja that is not evaluated, an empty value, or a variable dbt never
+    /// renders (`DBT_ENV_SECRET_*`).
+    Unknown,
+    /// A variable named like a credential, or a value shaped like one (0019,
+    /// 0090): said to be there, never printed.
+    Hidden,
+}
+
+impl Part {
+    fn text(&self) -> String {
+        match self {
+            Part::Value(v) => v.clone(),
+            Part::Guess(v) => format!("{v}~"),
+            Part::Target => "<target>".to_string(),
+            Part::NotSet(vars) => format!("<{} not set>", vars.join(", ")),
+            Part::Placeholder(vars) => format!("<{} placeholder>", vars.join(", ")),
+            Part::Unknown => "?".to_string(),
+            Part::Hidden => "<hidden>".to_string(),
+        }
+    }
+}
+
+/// A file's reading of a node in JSON: the keys it resolved and, apart, what
+/// stopped it from resolving the others.
+#[derive(serde::Serialize)]
+struct AtEnv {
+    #[serde(flatten)]
+    place: Keys,
+    /// Variables the file lacks, with no default to fall back on.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    not_set: Vec<String>,
+    /// Variables the file defines as a placeholder.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    placeholder: Vec<String>,
+    /// Keys nothing writes, so the target decides; left out above.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    from_target: Vec<&'static str>,
+    /// Keys whose value is one branch of an `if`, picked by what dbt parsed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    branch: Vec<&'static str>,
+    /// Keys left out because Jinja was not evaluated, the value is empty or it
+    /// is withheld.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unresolved: Vec<&'static str>,
+}
+
+impl AtEnv {
+    fn of(parts: &[Part; 3]) -> AtEnv {
+        let mut at = AtEnv {
+            place: Keys::default(),
+            not_set: Vec::new(),
+            placeholder: Vec::new(),
+            from_target: Vec::new(),
+            branch: Vec::new(),
+            unresolved: Vec::new(),
+        };
+        let slots = [("database", &mut at.place.database), ("schema", &mut at.place.schema), ("alias", &mut at.place.alias)];
+        for ((key, slot), part) in slots.into_iter().zip(parts) {
+            let named = |into: &mut Vec<String>, vars: &[String]| {
+                for var in vars {
+                    if !into.contains(var) {
+                        into.push(var.clone());
+                    }
+                }
+            };
+            match part {
+                Part::Value(v) => *slot = v.clone(),
+                Part::Guess(v) => {
+                    *slot = v.clone();
+                    at.branch.push(key);
+                }
+                Part::Target => at.from_target.push(key),
+                Part::NotSet(vars) => named(&mut at.not_set, vars),
+                Part::Placeholder(vars) => named(&mut at.placeholder, vars),
+                Part::Unknown | Part::Hidden => at.unresolved.push(key),
+            }
+        }
+        at
+    }
+}
+
+/// The `.env` files a card reads, found once per call and only when a node
+/// asks: the files the Catalog shows by default (a template or a backup by its
+/// name, and one that defines none of the variables the project's locations
+/// read), read fresh as it reads them.
+struct Files<'a> {
+    graph: &'a Graph,
+    root: &'a Path,
+    found: std::cell::OnceCell<Vec<envs::EnvFile>>,
+}
+
+impl<'a> Files<'a> {
+    fn new(graph: &'a Graph, root: &'a Path) -> Files<'a> {
+        Files { graph, root, found: std::cell::OnceCell::new() }
+    }
+
+    fn shown(&self) -> &[envs::EnvFile] {
+        self.found.get_or_init(|| {
+            let places: Vec<(&Place, &Place)> =
+                self.graph.nodes.iter().filter(|o| o.kind != Kind::Test).map(|o| (&o.written, &o.parsed)).collect();
+            let referenced = envs::referenced(&places);
+            let mut files = envs::discover(self.root);
+            // A name with a control character in it would reach the terminal as
+            // an escape or forge a row of the card (Unix allows both): it is
+            // no environment anyone named.
+            files.retain(|f| {
+                !f.file.chars().any(char::is_control) && envs::auto_hidden(f, &envs::coverage(f, &referenced), &referenced).is_none()
+            });
+            files
+        })
+    }
+}
+
+/// A written key as the card may show it: a default in the project's own file
+/// may be a secret too, so the text is held to the guards a value gets, and a
+/// variable named like a credential keeps nothing of its expression (0090).
+fn written_shown(text: &str) -> String {
+    let secret_var = envs::var_names(text).iter().any(|v| envs::is_secret(v) || envs::sensitive_name(v));
+    if secret_var || envs::carries_credential(text) { "<hidden>".to_string() } else { text.to_string() }
+}
+
+/// What a node's location says besides its built one: the keys as written
+/// when they say more than the built relation does, and what each `.env` file
+/// makes of those keys. That is the configured value, before dbt's
+/// `generate_*_name` macros run, so it is not the relation dbt would build.
+#[derive(Default)]
+struct Landing {
+    configured: Option<Keys>,
+    by_env: Vec<(String, [Part; 3])>,
+}
+
+impl Landing {
+    fn of(n: &Node, files: &Files) -> Landing {
+        // Mirrors `relation()`: an ephemeral model is never built, so it lands
+        // nowhere.
+        let built_kind = matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Source);
+        if !built_kind || n.materialized == "ephemeral" {
+            return Landing::default();
+        }
+        let written = [&n.written.database, &n.written.schema, &n.written.alias].map(|w| flat(w));
+        let built = [&n.database, &n.schema, &n.alias];
+        // A key left to the profile says nothing the relation does not, and
+        // neither does one written as the value it was built with.
+        let differs = written.iter().zip(built).any(|(w, b)| !w.is_empty() && !envs::same_ident(w, b));
+        let configured = differs.then(|| {
+            let [database, schema, alias] = written.clone().map(|w| written_shown(&w));
+            Keys { database, schema, alias }
+        });
+        let mut landing = Landing { configured, by_env: Vec::new() };
+        if !written.iter().any(|w| w.contains("env_var")) {
+            return landing;
+        }
+        for file in files.shown() {
+            let r = envs::resolve_place(&n.written, &n.parsed, &file.vars);
+            let part = |value: &String, cell: &envs::Cell, written: &str, built: &String, from_target: bool, parsed_is_target: bool| {
+                let unset = envs::unset_vars(written, &file.vars);
+                match cell.kind {
+                    Status::Missing => {
+                        let lacking: Vec<String> = cell.vars.iter().filter(|v| unset.contains(v)).cloned().collect();
+                        // A credential's name is withheld as the configured line
+                        // withholds it (0113), set or not.
+                        if lacking.iter().any(|v| envs::sensitive_name(v) || envs::is_secret(v)) {
+                            Part::Hidden
+                        } else if lacking.is_empty() {
+                            Part::Unknown
+                        } else {
+                            Part::NotSet(lacking)
+                        }
+                    }
+                    Status::Unevaluated => Part::Unknown,
+                    // resolve_place applies only the DBT_ENV_SECRET_ guard,
+                    // since a location legitimately reads names like
+                    // DBT_DB_RAW; the card has no use for a credential's
+                    // value, so it applies the other two as well.
+                    _ if cell.vars.iter().any(|v| envs::sensitive_name(v)) || envs::carries_credential(value) => Part::Hidden,
+                    // Nothing written: the target decides a database or a
+                    // schema, and the alias is the one this parse built.
+                    // A source's schema, though, is dbt's own default (its
+                    // name) and the same in every environment, so a parsed
+                    // value stands; only its database is the target's.
+                    Status::Parsed | Status::Literal if value.is_empty() || cell.kind == Status::Parsed => {
+                        if from_target && (value.is_empty() || parsed_is_target) {
+                            Part::Target
+                        } else {
+                            Part::Value(if value.is_empty() { built.clone() } else { value.clone() })
+                        }
+                    }
+                    Status::Placeholder if value.is_empty() => Part::Unknown,
+                    Status::Placeholder => {
+                        let named: Vec<String> =
+                            cell.vars.iter().filter(|v| file.vars.get(*v).is_some_and(|x| envs::is_placeholder(x))).cloned().collect();
+                        Part::Placeholder(if named.is_empty() { cell.vars.clone() } else { named })
+                    }
+                    _ if value.is_empty() => Part::Unknown,
+                    _ if cell.branch => Part::Guess(value.clone()),
+                    _ => Part::Value(value.clone()),
+                }
+            };
+            let parts = [
+                part(&r.place.database, &r.status.database, &n.written.database, &n.database, true, n.kind == Kind::Source),
+                part(&r.place.schema, &r.status.schema, &n.written.schema, &n.schema, true, false),
+                part(&r.place.alias, &r.status.alias, &n.written.alias, &n.alias, false, false),
+            ];
+            landing.by_env.push((file.file.clone(), parts));
+        }
+        landing
+    }
 }
 
 /// A test: what it checks, on what, and how it is set, in place of the
@@ -512,6 +771,15 @@ struct Described<'a> {
     alias: &'a str,
     #[serde(skip_serializing_if = "String::is_empty")]
     relation_name: String,
+    /// The database, schema and alias as the project writes them, when any
+    /// differs from the built one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    configured: Option<Keys>,
+    /// The configured location per `.env` file that is not hidden, when it
+    /// reads a variable, before dbt's `generate_*_name` macros: dbt's default
+    /// `generate_schema_name` builds a custom schema as `<target schema>_<it>`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    by_env: BTreeMap<String, AtEnv>,
     /// An incremental model's only, as on its card: a view inherits the
     /// setting of its folder and does not use it.
     #[serde(skip_serializing_if = "str::is_empty")]
@@ -599,8 +867,9 @@ struct TestFacts<'a> {
 }
 
 impl<'a> Described<'a> {
-    fn of(graph: &'a Graph, idx: u32, sql: Option<String>) -> Described<'a> {
+    fn of(graph: &'a Graph, files: &Files, idx: u32, sql: Option<String>) -> Described<'a> {
         let n = &graph.nodes[idx as usize];
+        let landing = Landing::of(n, files);
         let ids = |list: &[u32]| {
             let mut ids: Vec<&str> = list.iter().map(|&i| graph.nodes[i as usize].id.as_str()).collect();
             // Sorted, so a node's line is the same on every run whatever
@@ -627,6 +896,8 @@ impl<'a> Described<'a> {
             schema: &n.schema,
             alias: &n.alias,
             relation_name: relation(n),
+            configured: landing.configured,
+            by_env: landing.by_env.into_iter().map(|(file, parts)| (file, AtEnv::of(&parts))).collect(),
             incremental_strategy: if n.is_incremental() { strategy_of(n) } else { "" },
             unique_key: n.box_key(),
             description: n.description.trim(),
@@ -1605,7 +1876,7 @@ mod tests {
     }
 
     fn json_of(g: &Graph, name: &str) -> serde_json::Value {
-        serde_json::to_value(Described::of(g, node_named(g, name, &[]).unwrap(), None)).unwrap()
+        serde_json::to_value(Described::of(g, &Files::new(g, Path::new("/nowhere")), node_named(g, name, &[]).unwrap(), None)).unwrap()
     }
 
     #[test]
@@ -1624,7 +1895,7 @@ mod tests {
         let entry = own.as_array().unwrap().iter().find(|t| t["test_name"] == "relationships").unwrap();
         assert_eq!(entry, &json!({ "name": "relationships_orders_customer_id", "test_name": "relationships", "column": "customer_id" }));
         // The card says the same thing in its words.
-        let (_, sheet) = card(&g, node_named(&g, "model.shop.customers", &[]).unwrap());
+        let (_, sheet) = card(&g, &Files::new(&g, Path::new("/nowhere")), node_named(&g, "model.shop.customers", &[]).unwrap());
         let mut text = Vec::new();
         sheet.write(2, &mut text).unwrap();
         assert!(String::from_utf8(text).unwrap().contains("relationships_orders_customer_id: relationships on orders.customer_id"));
@@ -1636,7 +1907,7 @@ mod tests {
         let audit = "model.audit.customers";
         // Not looked for on disk: where `dbt deps` would have put it, while
         // dbt's own path stays the package's.
-        let (first, _) = card(&g, g.index[audit]);
+        let (first, _) = card(&g, &Files::new(&g, Path::new("/nowhere")), g.index[audit]);
         assert_eq!(first, "model customers  view  dbt_packages/audit/models/customers.sql");
         let v = json_of(&g, audit);
         assert_eq!(v["original_file_path"], "models/customers.sql");
@@ -1644,7 +1915,7 @@ mod tests {
         // Found under the project: where it is.
         let at = g.index[audit] as usize;
         g.nodes[at].place = "dbt_modules/audit/models/customers.sql".into();
-        assert_eq!(card(&g, at as u32).0, "model customers  view  dbt_modules/audit/models/customers.sql");
+        assert_eq!(card(&g, &Files::new(&g, Path::new("/nowhere")), at as u32).0, "model customers  view  dbt_modules/audit/models/customers.sql");
         let v = json_of(&g, audit);
         assert_eq!(v["original_file_path"], "models/customers.sql");
         assert_eq!(v["path"], "dbt_modules/audit/models/customers.sql");
@@ -1958,5 +2229,306 @@ mod tests {
         let text = text(&o);
         assert!(text.contains("\ncolumn lineage  column_lineage.json from fusion, written 2026-03-01T10:02:00Z (3 min ago)\n"), "{text}");
         assert!(text.contains("\ncolumn lineage  column_lineage.other.json, written 2026-03-01T10:02:00Z (3 min ago)\n"), "{text}");
+    }
+
+    // -------------------------------------------------- where a node lands
+
+    /// A project root holding the given `.env` files, in a folder of its own.
+    fn root_with(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-describe-env-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, text) in files {
+            std::fs::write(dir.join(name), text).unwrap();
+        }
+        dir
+    }
+
+    /// `orders` with its database and schema read from the environment, built
+    /// where `graph()` says it is.
+    fn orders_by_env() -> Graph {
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].written = Place {
+            database: "{{ env_var('DBT_DB_SHOP') }}".into(),
+            schema: "{{ env_var('DBT_SCHEMA_SHOP') }}".into(),
+            alias: String::new(),
+        };
+        g
+    }
+
+    /// The value on the card's row with this key, or None.
+    fn row<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+        text.lines().find_map(|l| l.strip_prefix("  ")?.strip_prefix(key).filter(|v| v.starts_with(' ')).map(str::trim))
+    }
+
+    #[test]
+    fn a_card_says_where_each_env_file_lands_the_node() {
+        let root = root_with(
+            "rows",
+            &[
+                (".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n"),
+                (".env.prod", "DBT_SCHEMA_SHOP=marts_prod\n"),
+            ],
+        );
+        let (out, err, code) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert_eq!(row(&out, "configured"), Some("database {{ env_var('DBT_DB_SHOP') }}  schema {{ env_var('DBT_SCHEMA_SHOP') }}"));
+        // The alias nothing wrote is the one this parse built; a variable the
+        // file lacks is named where its value would be.
+        assert_eq!(row(&out, ".env.qa"), Some("SHOP_QA.marts_qa.fct_orders"));
+        assert_eq!(row(&out, ".env.prod"), Some("<DBT_DB_SHOP not set>.marts_prod.fct_orders"));
+        // After the relation, in the order of the file names.
+        let at = |key: &str| out.find(&format!("\n  {key}")).unwrap();
+        assert!(at("relation") < at("configured") && at("configured") < at(".env.prod") && at(".env.prod") < at(".env.qa"), "{out}");
+    }
+
+    #[test]
+    fn json_carries_the_written_keys_and_each_files_place() {
+        let root = root_with(
+            "json",
+            &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n"), (".env.prod", "DBT_SCHEMA_SHOP=marts_prod\n")],
+        );
+        let (out, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["configured"], json!({ "database": "{{ env_var('DBT_DB_SHOP') }}", "schema": "{{ env_var('DBT_SCHEMA_SHOP') }}" }));
+        assert_eq!(
+            v["by_env"],
+            json!({
+                ".env.prod": { "schema": "marts_prod", "alias": "fct_orders", "not_set": ["DBT_DB_SHOP"] },
+                ".env.qa": { "database": "SHOP_QA", "schema": "marts_qa", "alias": "fct_orders" },
+            })
+        );
+    }
+
+    #[test]
+    fn nothing_is_added_when_the_written_keys_are_the_built_ones() {
+        let root = root_with("same", &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\n")]);
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        // Case alone is not a difference, as in the Catalog (0010).
+        g.nodes[at].written = Place { database: "db".into(), schema: "SCHEMA".into(), alias: "fct_orders".into() };
+        let (out, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        assert!(row(&out, "configured").is_none() && row(&out, ".env.qa").is_none(), "{out}");
+        let (out, _, _) = ask_on(&g, &root, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert!(v.get("configured").is_none() && v.get("by_env").is_none(), "{v}");
+    }
+
+    #[test]
+    fn no_env_file_means_no_env_rows() {
+        let root = root_with("none", &[]);
+        let (out, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Name);
+        // What is written is still said; where it lands per file is not, with
+        // no file to say it.
+        assert!(row(&out, "configured").is_some(), "{out}");
+        assert!(!out.contains("\n  .env"), "{out}");
+        let (out, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert!(v.get("configured").is_some() && v.get("by_env").is_none(), "{v}");
+    }
+
+    #[test]
+    fn a_secret_or_a_credential_is_never_printed() {
+        let root = root_with(
+            "secret",
+            &[(
+                ".env.qa",
+                "DBT_ENV_SECRET_SCHEMA=topsecret\nSHOP_API_KEY=abc123key\nSHOP_CONN=postgres://svc:hunter2@db.example.com/x\n\
+                 DBT_DB_SHOP=SHOP_QA\nUNRELATED_TOKEN=zzz-unrelated\n",
+            )],
+        );
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].written = Place {
+            database: "{{ env_var('SHOP_API_KEY') }}".into(),
+            schema: "{{ env_var('DBT_ENV_SECRET_SCHEMA') }}".into(),
+            alias: "{{ env_var('SHOP_CONN') }}".into(),
+        };
+        let (out, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        // Said to be withheld, or not evaluated, and nothing of the values.
+        assert_eq!(row(&out, ".env.qa"), Some("<hidden>.?.<hidden>"));
+        let (json, _, _) = ask_on(&g, &root, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(json.trim()).unwrap();
+        assert_eq!(v["by_env"][".env.qa"], json!({ "unresolved": ["database", "schema", "alias"] }));
+        for leaked in ["topsecret", "abc123key", "hunter2", "zzz-unrelated", "SHOP_QA"] {
+            assert!(!out.contains(leaked) && !json.contains(leaked), "{leaked} leaked: {out} {json}");
+        }
+
+        // A default in the project's own file that is a connection string.
+        g.nodes[at].written.alias = "{{ env_var('SHOP_ALIAS', 'postgres://svc:hunter2@db.example.com/x') }}".into();
+        let (out, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        assert!(!out.contains("hunter2") && row(&out, "configured").unwrap().ends_with("alias <hidden>"), "{out}");
+    }
+
+    #[test]
+    fn a_template_a_backup_and_a_file_of_other_variables_are_skipped() {
+        let root = root_with(
+            "hidden",
+            &[
+                (".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n"),
+                (".env.example", "DBT_DB_SHOP=SHOP_EXAMPLE\nDBT_SCHEMA_SHOP=marts_example\n"),
+                (".env.qa.bak", "DBT_DB_SHOP=SHOP_BACKUP\nDBT_SCHEMA_SHOP=marts_backup\n"),
+                (".env.other", "SOMETHING_ELSE=1\n"),
+            ],
+        );
+        let (out, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Name);
+        assert_eq!(row(&out, ".env.qa"), Some("SHOP_QA.marts_qa.fct_orders"));
+        for skipped in [".env.example", ".env.qa.bak", ".env.other", "SHOP_EXAMPLE", "SHOP_BACKUP"] {
+            assert!(!out.contains(skipped), "{skipped} shown: {out}");
+        }
+    }
+
+    #[test]
+    fn a_source_lands_per_env_file_too() {
+        let root = root_with("source", &[(".env.qa", "DBT_DB_RAW=RAW_QA\n")]);
+        let mut g = graph();
+        let at = g.index["source.shop.raw.orders"] as usize;
+        g.nodes[at].written = Place { database: "{{ env_var('DBT_DB_RAW') }}".into(), schema: "SHOP".into(), alias: String::new() };
+        let (out, _, _) = ask_on(&g, &root, &["raw.orders"], false, Output::Name);
+        assert_eq!(row(&out, "configured"), Some("database {{ env_var('DBT_DB_RAW') }}  schema SHOP"));
+        assert_eq!(row(&out, ".env.qa"), Some("RAW_QA.SHOP.orders"));
+    }
+
+    /// `orders` with the places given, the env files given, as text and JSON.
+    fn landing_of(tag: &str, files: &[(&str, &str)], written: [&str; 3], parsed_db: &str) -> (String, serde_json::Value) {
+        let root = root_with(tag, files);
+        let mut g = graph();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].written = Place { database: written[0].into(), schema: written[1].into(), alias: written[2].into() };
+        g.nodes[at].parsed.database = parsed_db.into();
+        let (text, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        let (json, _, _) = ask_on(&g, &root, &["orders"], false, Output::Json);
+        (text, serde_json::from_str(json.trim()).unwrap())
+    }
+
+    #[test]
+    fn a_key_nothing_writes_is_the_targets_not_this_parses() {
+        let (text, v) = landing_of(
+            "target",
+            &[(".env.prod", "DBT_DB_SHOP=SHOP_PROD\n")],
+            ["{{ env_var('DBT_DB_SHOP') }}", "", ""],
+            "SHOP_SANDBOX",
+        );
+        // The sandbox schema of this parse is not where `.env.prod` lands; the
+        // alias is the model's own.
+        assert_eq!(row(&text, ".env.prod"), Some("SHOP_PROD.<target>.fct_orders"));
+        assert_eq!(v["by_env"][".env.prod"], json!({ "database": "SHOP_PROD", "alias": "fct_orders", "from_target": ["schema"] }));
+        assert!(!row(&text, ".env.prod").unwrap().contains("SCHEMA"), "{text}");
+    }
+
+    #[test]
+    fn a_branch_taken_by_guess_is_marked() {
+        let written = "{% if env_var('DBT_TARGET') == 'prod' %}{{ env_var('DB_PROD') }}{% else %}DEV_DB{% endif %}";
+        let files = [(".env.prod", "DBT_TARGET=prod\nDB_PROD=SHOP_PROD\n")];
+        // dbt took the else branch: the file's variable is not what it chose.
+        let (text, v) = landing_of("branch-else", &files, [written, "marts", ""], "DEV_DB");
+        assert_eq!(row(&text, ".env.prod"), Some("DEV_DB~.marts.fct_orders"));
+        assert_eq!(v["by_env"][".env.prod"]["branch"], json!(["database"]));
+        assert_eq!(v["by_env"][".env.prod"]["database"], "DEV_DB");
+        // The then branch, when nothing says dbt took the other.
+        let (text, v) = landing_of("branch-then", &files, [written, "marts", ""], "SOMETHING_ELSE");
+        assert_eq!(row(&text, ".env.prod"), Some("SHOP_PROD~.marts.fct_orders"));
+        assert_eq!(v["by_env"][".env.prod"]["branch"], json!(["database"]));
+    }
+
+    #[test]
+    fn a_written_default_that_is_a_secret_is_hidden_with_its_expression() {
+        let (text, v) = landing_of(
+            "default",
+            &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\n")],
+            ["{{ env_var('DBT_DB_SHOP') }}", "{{ env_var('DBT_ENV_SECRET_PW', 'pw-default-1') }}", "{{ env_var('SHOP_API_KEY', 'abc123key') }}"],
+            "",
+        );
+        assert_eq!(row(&text, "configured"), Some("database {{ env_var('DBT_DB_SHOP') }}  schema <hidden>  alias <hidden>"));
+        for leaked in ["pw-default-1", "abc123key", "SHOP_API_KEY", "DBT_ENV_SECRET_PW"] {
+            assert!(!text.contains(leaked) && !v.to_string().contains(leaked), "{leaked} leaked: {text} {v}");
+        }
+    }
+
+    #[test]
+    fn an_ephemeral_model_lands_nowhere() {
+        let root = root_with("ephemeral", &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n")]);
+        let mut g = orders_by_env();
+        let at = g.index["model.shop.orders"] as usize;
+        g.nodes[at].materialized = "ephemeral".into();
+        let (text, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        assert!(row(&text, "configured").is_none() && row(&text, ".env.qa").is_none(), "{text}");
+        let (json, _, _) = ask_on(&g, &root, &["orders"], false, Output::Json);
+        assert!(!json.contains("by_env") && !json.contains("configured"), "{json}");
+    }
+
+    #[test]
+    fn a_placeholder_and_an_empty_value_are_not_locations() {
+        let (text, v) = landing_of(
+            "placeholder",
+            &[(".env.qa", "DBT_DB_SHOP=TBD\nDBT_SCHEMA_SHOP=\n")],
+            ["{{ env_var('DBT_DB_SHOP') }}", "{{ env_var('DBT_SCHEMA_SHOP') }}", ""],
+            "",
+        );
+        assert_eq!(row(&text, ".env.qa"), Some("<DBT_DB_SHOP placeholder>.?.fct_orders"));
+        assert_eq!(v["by_env"][".env.qa"], json!({ "alias": "fct_orders", "placeholder": ["DBT_DB_SHOP"], "unresolved": ["schema"] }));
+    }
+
+    #[test]
+    fn a_variable_with_a_default_is_never_said_not_set() {
+        let (text, v) = landing_of(
+            "defaults",
+            &[(".env.qa", "DBT_SCHEMA_SHOP=marts_qa\n")],
+            ["{{ env_var('DBT_DB_SHOP') }}_{{ env_var('DBT_DB_SUFFIX', 'dflt') }}", "{{ env_var('DBT_SCHEMA_SHOP') }}", ""],
+            "",
+        );
+        assert_eq!(row(&text, ".env.qa"), Some("<DBT_DB_SHOP not set>.marts_qa.fct_orders"));
+        assert_eq!(v["by_env"][".env.qa"]["not_set"], json!(["DBT_DB_SHOP"]));
+    }
+
+    #[test]
+    fn a_sources_schema_is_its_own_default_in_every_environment() {
+        let root = root_with("source-schema", &[(".env.qa", "DBT_DB_RAW=RAW_QA\n")]);
+        let mut g = graph();
+        let at = g.index["source.shop.raw.orders"] as usize;
+        // No `schema:` in the YAML: dbt parsed it as SHOP, whatever the file says.
+        g.nodes[at].written = Place { database: "{{ env_var('DBT_DB_RAW') }}".into(), schema: String::new(), alias: String::new() };
+        let (out, _, _) = ask_on(&g, &root, &["raw.orders"], false, Output::Name);
+        assert_eq!(row(&out, ".env.qa"), Some("RAW_QA.SHOP.orders"));
+        // A source's database nothing writes is still the target's.
+        g.nodes[at].written = Place { database: String::new(), schema: "{{ env_var('DBT_DB_RAW') }}".into(), alias: String::new() };
+        let (out, _, _) = ask_on(&g, &root, &["raw.orders"], false, Output::Name);
+        assert_eq!(row(&out, ".env.qa"), Some("<target>.RAW_QA.orders"));
+    }
+
+    #[test]
+    fn a_credential_named_variable_the_file_lacks_is_not_named() {
+        let (text, v) = landing_of(
+            "lacking-secret",
+            &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\n")],
+            ["{{ env_var('DBT_DB_SHOP') }}", "{{ env_var('SHOP_API_KEY') }}", "{{ env_var('DBT_ENV_SECRET_ALIAS') }}"],
+            "",
+        );
+        assert_eq!(row(&text, ".env.qa"), Some("SHOP_QA.<hidden>.?"));
+        assert_eq!(v["by_env"][".env.qa"], json!({ "database": "SHOP_QA", "unresolved": ["schema", "alias"] }));
+        assert!(!text.contains("SHOP_API_KEY") && !text.contains("DBT_ENV_SECRET"), "{text}");
+        assert!(!v["by_env"].to_string().contains("SHOP_API_KEY") && !v["by_env"].to_string().contains("SECRET"), "{v}");
+    }
+
+    #[test]
+    fn a_file_name_with_a_control_character_is_no_row_and_forges_none() {
+        let name = ".env.q\u{1b}[31mX";
+        let forged = ".env.q\nrelation  evil.x.y";
+        let body = "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n";
+        let root = root_with("control", &[(".env.qa", body), (name, body), (forged, body)]);
+        let (text, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Name);
+        assert!(text.chars().all(|c| c == '\n' || c == '\t' || !c.is_control()), "{text:?}");
+        assert!(!text.contains("evil") && !text.contains("[31m"), "{text:?}");
+        assert_eq!(row(&text, ".env.qa"), Some("SHOP_QA.marts_qa.fct_orders"));
+        let (json, _, _) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(json.trim()).unwrap();
+        assert_eq!(v["by_env"].as_object().unwrap().keys().collect::<Vec<_>>(), [".env.qa"]);
+        // A key that does reach the sheet is flattened on its way in.
+        let mut sheet = Sheet::default();
+        sheet.line("a\nb\u{1b}[0m", "v");
+        let mut out = Vec::new();
+        sheet.write(0, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "ab[0m  v\n");
     }
 }

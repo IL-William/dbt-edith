@@ -1,6 +1,6 @@
 # 0102. A node and the project are described on the command line
 
-Date: 2026-10-19 · Status: accepted, amended by 0110 · Follows 0057 and 0088
+Date: 2026-10-19 · Status: accepted, amended by 0110 and 0113 · Follows 0057 and 0088
 
 **Trigger:** read before adding to what the command line prints of a node or
 the project, or before letting it read a file of the project.
@@ -24,6 +24,8 @@ name and the path already say: the unique_id is the kind and the name.
   node or per column under a header, which `cut -f` reads.
 - **`--sql` is the one file read**: the node's own, through the read the page
   uses, confined to the project root. Still nothing served, stored or run.
+  *Amended by [0113](0113-the-card-resolves-a-location-per-env-file.md): the
+  card reads the project's `.env` files too, for the locations they resolve.*
 
 ## Rejected
 

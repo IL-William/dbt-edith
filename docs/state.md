@@ -1566,6 +1566,23 @@ own arguments, and so does the answer; with the `compiled_code` taken out,
 `--compiled` read every model's file, and without it stderr said none was
 found. Not driven in the page.
 
+A node's location per `.env` file on the command line (0113, 1.47.0):
+`--describe`, and the MCP tool through it, adds to a built node's card a
+`configured` line (the database, schema and alias as the project writes them,
+when one differs from the built one) and a line per `.env` file the Catalog
+shows by default, each the configured value with that file's variables filled
+in, before dbt's `generate_*_name` macros (`relation` stays dbt's own, for this
+parse's target), with `configured` and `by_env` in the JSON. The values come
+from `envs::resolve_place`, so `DBT_ENV_SECRET_*` is never substituted; the
+card also hides a variable named like a credential and a value carrying a
+password, and a written default that reads one. A database or schema nothing
+writes is `<target>`, a value taken from one branch of an `if` ends in `~`.
+Checked by `cargo test` on an invented graph with temporary `.env` files (the
+rows, the JSON, a secret, a credential-shaped value, a template, a placeholder,
+an ephemeral model) and by running `--describe` and `--mcp` on a small
+invented manifest. The macros `generate_*_name` are not evaluated, so a line
+is not where that environment builds the node.
+
 An MCP server (0110, 1.44.0): `dbt-edith --mcp` answers an MCP client over
 stdio through one tool, `edith`, taking the command line's flags as a line:
 allowed by clap argument id, no shell, the project, manifest and catalog fixed
@@ -2323,6 +2340,16 @@ Left by the MCP server (0110, 1.44.0), unranked:
   the warm call on a project in a repository. Keeping one git answer for a
   second or two would take it well under a millisecond on Shopify, and make
   the line late.
+
+Left by the card's per-file locations (0113, 1.47.0), unranked:
+
+- **A `.env` symlink pointing outside the project** is followed by
+  `envs::discover`, as it has been for the page; the command line and the MCP
+  tool now print the locations resolved from it too. Holding `discover` to the
+  project would change the Catalog's files, so it was left.
+- **`generate_*_name` macros are not evaluated**, so a project that overrides
+  one gets the input to it on the card, not what dbt builds, and dbt's default
+  prefixes a custom schema with the target's.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has

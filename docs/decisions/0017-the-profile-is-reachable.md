@@ -1,6 +1,6 @@
 # 0017. The dbt profile is reachable, and it alone
 
-Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048, 0049, 0063 and 0094 · Supersedes 0012
+Date: 2026-09-18 · Status: accepted, amended by 0019, 0031, 0048, 0049, 0063, 0094 and 0113 · Supersedes 0012
 
 **Trigger:** read before opening, reading or writing anything outside the
 project.
@@ -43,6 +43,8 @@ files under the job folders the user names are read too, and only what was
 parsed from them leaves.*
 *Amended by [0094](0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md):
 the write goes through a link to the file it names, and the link stays.*
+*Amended by [0113](0113-the-card-resolves-a-location-per-env-file.md): the
+command line and MCP print a node's resolved locations per `.env` file too.*
 
 ## Rejected
 
