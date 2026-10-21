@@ -89,6 +89,20 @@ python3 -m venv /tmp/dbt && /tmp/dbt/bin/pip install dbt-core dbt-duckdb
 DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executable, Fusion included
 ```
 
+`dbt-edith --mcp` is driven over its stdin and stdout on a parsed copy of the
+same Jaffle Shop, the way an MCP client drives it, and every question it
+answers is asked of the command line too: the two have to give the same
+stdout and stderr, bar the ages and the time collin took, and `isError` has to
+be the exit code not being 0 (0110). The session also has to leave the project
+and the manifest's folder as they were, write nothing to a configuration
+folder, and, for `--run-collin` with a stand-in collin, change exactly the two
+files collin writes. It needs the same dbt, parses with it, and skips itself
+without it; CI runs it beside the comparison above:
+
+```
+/tmp/dbt/bin/python scripts/walk_mcp.py
+```
+
 The guided tour is walked in headless Chrome on the same Jaffle Shop, every
 step, through the DevTools protocol and the standard library alone. It needs
 dbt to parse the copy, and Chrome; it skips itself without either:

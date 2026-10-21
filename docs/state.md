@@ -2696,7 +2696,8 @@ GitHub Actions runs `cargo test --locked`, a RustSec audit of the lockfile that
 refuses a yanked version, an audit of `web/vendor/` by SHA-256 against the
 upstream tarballs and against OSV, the Snowflake script's tests and the
 comparison with dbt-core 1.11 and 1.12 on Jaffle Shop and Shopify, every
-model's lineage included (0033, 0056), on every push and every Monday, and
+model's lineage included (0033, 0056), the MCP server against the command
+line on Jaffle Shop (0110), on every push and every Monday, and
 Dependabot opens weekly lockfile bumps. A pull request touching `src/`, `web/` or `tools/` also has to touch `CHANGELOG.md`, or carry the
 `no changelog` label, and its branch and title have to read the way AGENTS.md
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
