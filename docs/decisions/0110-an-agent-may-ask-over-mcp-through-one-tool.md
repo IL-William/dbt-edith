@@ -1,6 +1,6 @@
 # 0110. An agent may ask over MCP, through one tool
 
-Date: 2026-10-21 · Status: accepted · Amends 0057, 0099 and 0102
+Date: 2026-10-21 · Status: accepted, amended by 0113 · Amends 0057, 0099 and 0102
 
 **Trigger:** read before changing `--mcp`, the `edith` tool, what its line
 accepts, what the server reads or writes, or before adding a second tool.
@@ -44,6 +44,8 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
   and the tool reaches nothing outside the project and the programs on this
   machine: no network, no warehouse. VS Code asks to confirm a result only when
   the hint is truthy, so false is both the truth and the quiet choice.
+  *Amended by [0113](0113-the-card-resolves-a-location-per-env-file.md): a
+  `.env` symlink may lead the card's read outside the project.*
 - **The legacy handshake only.** `initialize` (2025-11-25, answering the
   client's version when it is 2025-06-18 or 2025-03-26), `ping`, `tools/list`,
   `tools/call` and `notifications/cancelled`. Claude Code probes with

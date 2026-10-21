@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.47.0 - 2026-10-21
+
+- Show the location a node's config gives with each `.env` file on
+  `--describe`'s card and JSON, and as the project writes it (0113).
+
 ## 1.46.0 - 2026-10-21
 
 - Count a selection by kind, materialization, source, folder, tag or package

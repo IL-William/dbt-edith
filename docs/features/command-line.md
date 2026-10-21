@@ -233,7 +233,9 @@ Every line under it is left out when it has nothing to say.
 | Line | What it says |
 | --- | --- |
 | `status` | `disabled`, for a node the manifest holds but dbt does not run |
-| `relation` | where it is built: dbt's `relation_name`, else the database, schema and alias |
+| `relation` | where it is built by this parse's target: dbt's `relation_name`, else the database, schema and alias |
+| `configured` | the database, schema and alias the project writes, the ones that are set, when any differs from the built one (before dbt's `generate_*_name` macros, which are not evaluated): `database {{ env_var('DBT_DB_SHOP') }}  schema marts`. A model, seed, snapshot or source that is built (not an ephemeral one) only |
+| `.env.qa`, one line per file | what the project's config writes for a node whose location reads a variable, with that file's values filled in: `SHOP_QA.marts_qa.fct_orders`. It is the configured value before dbt's `generate_*_name` macros, not the relation dbt builds there. A database or schema nothing writes is `<target>`, the target's, which this parse does not know for another environment (a source's schema is the exception: dbt's own default, its name, in every environment, so it prints as parsed); an alias nothing writes is the one this parse built. A variable the file lacks and `env_var()` gives no default reads `<DBT_DB_SHOP not set>` in its place, one it defines as a placeholder (`TBD`) `<DBT_DB_SHOP placeholder>`, a value withheld `<hidden>`, and `?` stands for Jinja that is not evaluated (an `{% if %}` with no branch to pick, any other expression, a `DBT_ENV_SECRET_*` variable) or for an empty value. A value taken from one branch of an `{% if %}` by what dbt parsed, as the Catalog does, ends in `~`: the condition was not evaluated. The parts are joined by dots, so a value with a dot in it reads ambiguously; the JSON is the exact form |
 | `package` | the package it comes from, when it is not the project's |
 | `tags` | comma-separated |
 | `yml` | the properties file that documents it |
@@ -252,6 +254,24 @@ A test's card says what it checks and how it is set instead:
 | `severity`, `settings` | `warn`, and the settings off dbt's default |
 | `generic` | `dbt_utils.unique_combination_of_columns` for a generic named through a package |
 | `parents (N)` | the nodes it reads, by name |
+
+The per-file lines are the Catalog's resolved column for each environment (see
+[the Catalog](catalog.md#environments)), through the same guards and two more
+(0113). They show the files the Catalog shows by default: a template or a
+backup, and a file that defines none of the variables the project's locations
+read, are left out. They are the location as written, with the variables filled
+in: a `generate_database_name`, `generate_schema_name` or `generate_alias_name`
+macro runs after the config, and none is evaluated. `relation` is dbt's own
+name for this parse's target; a per-file line is the configured value before
+those macros. dbt's default `generate_schema_name` builds a custom schema
+`stg_qa` as `<target schema>_stg_qa`, and a project may override any of the
+three, so a line is not where that environment builds the node. Only the
+resolved locations leave a `.env` file this way (0113): a variable named like a
+credential (`DBT_API_KEY`), a `DBT_ENV_SECRET_*` one and a value shaped like
+one (a URL with a password in it) are never printed, and nothing else of the
+file is. A written key that reads such a variable shows `<hidden>` on the
+`configured` line, expression and default included. Over MCP the files are the
+server's project's.
 
 An exposure has its description and its parents. The columns line is the same
 text the Catalog's Columns tab shows: a declared type wins over the catalog's,
@@ -286,6 +306,8 @@ names, and leaves out every key that is empty:
 | `path` | where that file is, or would be, under the project, only when it is not `original_file_path`: `dbt_packages/<package>/...` for an installed package's node |
 | `materialized`, `disabled` | how it is built; `true` when disabled |
 | `database`, `schema`, `alias`, `relation_name` | where it is built |
+| `configured` | `database`, `schema`, `alias` as the project writes them, the keys that are set, only when one differs from the built one |
+| `by_env` | for a node whose location reads a variable, per `.env` file that is not hidden: `database`, `schema`, `alias` the config resolves to with that file's values, before `generate_*_name`, and, apart, the keys that did not resolve: `not_set` and `placeholder` (variable names), `from_target` (keys nothing writes), `branch` (keys whose value, still given, is one branch of an `if` picked by what dbt parsed) and `unresolved` (keys left out because Jinja was not evaluated, the value is empty or it is withheld). A `generate_*_name` macro runs after it and may change the value, as dbt's default does a custom schema |
 | `incremental_strategy`, `unique_key` | an incremental model's only |
 | `description`, `tags` | |
 | `columns` | `name`, `data_type`, `description`, `tests` (the names of the test nodes), `undeclared` (`true` for a column only the catalog has) |
