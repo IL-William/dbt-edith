@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.49.0 - 2026-10-21
+
+- Keep the job sources in the project's `.dbt-edith/jobs.yml`, which the Jobs
+  settings write on request and the command line and MCP read, and ask which
+  jobs run a node with `--describe`, a job's steps with `--job`, and the jobs
+  of the project with `--overview` (0115).
+
 ## 1.48.0 - 2026-10-21
 
 - Print an agent skill for dbt-edith with `--skill`, shipped as a file too, so

@@ -20,6 +20,13 @@ use std::collections::HashMap;
 /// past any job file, and short of what a few nested aliases can reach.
 const MAX_VALUES: usize = 200_000;
 
+/// How deep collections may nest, block or flow. Far past any job or project
+/// file, and short of the depth at which the recursive reading, copying and
+/// dropping of a tree would overflow the stack: a hostile file of `[[[[` is
+/// refused here, at its line.
+const MAX_DEPTH: usize = 64;
+const DEEP: &str = "collections nested deeper than this reader takes";
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Null,
@@ -96,6 +103,16 @@ impl Node {
         }
     }
 
+    /// How many collections nest below this value, itself included: 0 for a
+    /// scalar. Bounded by `MAX_DEPTH`, since a tree is only ever built under it.
+    fn height(&self) -> usize {
+        match &self.value {
+            Value::Seq(items) => 1 + items.iter().map(Node::height).max().unwrap_or(0),
+            Value::Map(entries) => 1 + entries.iter().map(|(_, v)| v.height()).max().unwrap_or(0),
+            _ => 0,
+        }
+    }
+
     fn size(&self) -> usize {
         1 + match &self.value {
             Value::Seq(items) => items.iter().map(Node::size).sum(),
@@ -156,7 +173,7 @@ pub fn parse(text: &str) -> Result<Node, Unparsed> {
             Line { no: i + 1, indent, text: raw[indent..].to_string(), raw: raw.to_string() }
         })
         .collect();
-    Parser { lines, at: 0, anchors: HashMap::new(), values: 0 }.document()
+    Parser { lines, at: 0, anchors: HashMap::new(), values: 0, depth: 0 }.document()
 }
 
 struct Parser {
@@ -164,6 +181,8 @@ struct Parser {
     at: usize,
     anchors: HashMap<String, Node>,
     values: usize,
+    /// How many block mappings and lists are open around the line being read.
+    depth: usize,
 }
 
 impl Parser {
@@ -232,6 +251,22 @@ impl Parser {
     }
 
     fn map(&mut self, indent: usize) -> R<Node> {
+        self.deeper()?;
+        let node = self.map_body(indent);
+        self.depth -= 1;
+        node
+    }
+
+    /// One block collection further in, or a refusal at its line.
+    fn deeper(&mut self) -> R<()> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return fail(self.lines[self.at].no, DEEP);
+        }
+        Ok(())
+    }
+
+    fn map_body(&mut self, indent: usize) -> R<Node> {
         let first = self.lines[self.at].no;
         let mut entries: Vec<(String, Node)> = Vec::new();
         let mut merges: Vec<(usize, Node)> = Vec::new();
@@ -292,6 +327,13 @@ impl Parser {
     }
 
     fn seq(&mut self, indent: usize) -> R<Node> {
+        self.deeper()?;
+        let node = self.seq_body(indent);
+        self.depth -= 1;
+        node
+    }
+
+    fn seq_body(&mut self, indent: usize) -> R<Node> {
         let first = self.lines[self.at].no;
         let mut items: Vec<Node> = Vec::new();
         loop {
@@ -366,6 +408,12 @@ impl Parser {
             self.values += found.size();
             if self.values > MAX_VALUES {
                 return fail(no, "aliases that expand past the size this reader takes");
+            }
+            // What an alias pastes in nests as deep as it was written, from
+            // where it lands: a chain of anchors each holding the last would
+            // otherwise build a tree no recursion survives.
+            if self.depth + found.height() > MAX_DEPTH {
+                return fail(no, DEEP);
             }
             found.named_at(no);
             return Ok(found);
@@ -565,7 +613,7 @@ impl Parser {
         if !rest.is_empty() && !rest.starts_with('#') {
             return fail(no, "text after a closing ] or }");
         }
-        let mut f = Flow { s: &text[..end], i: 0, line: no, breaks: &breaks, anchors: &self.anchors, values: &mut self.values };
+        let mut f = Flow { s: &text[..end], i: 0, line: no, breaks: &breaks, anchors: &self.anchors, values: &mut self.values, depth: self.depth };
         let node = f.value().or_else(|m| fail(no, m))?;
         self.values += 1;
         Ok(node)
@@ -764,6 +812,9 @@ struct Flow<'s> {
     /// `<<: [*a, *b]` is how a merge of several is usually written.
     anchors: &'s HashMap<String, Node>,
     values: &'s mut usize,
+    /// How many collections are open around the value being read: the block
+    /// ones the flow sits in, then its own `[ ]` and `{ }`.
+    depth: usize,
 }
 
 impl Flow<'_> {
@@ -786,6 +837,10 @@ impl Flow<'_> {
         match self.peek() {
             Some('[') => {
                 self.i += 1;
+                self.depth += 1;
+                if self.depth > MAX_DEPTH {
+                    return Err(DEEP);
+                }
                 let mut items = Vec::new();
                 loop {
                     self.ws();
@@ -805,10 +860,15 @@ impl Flow<'_> {
                         _ => return Err("a missing comma inside [ ]"),
                     }
                 }
+                self.depth -= 1;
                 Ok(Node { line, key_line: 0, value: Value::Seq(items) })
             }
             Some('{') => {
                 self.i += 1;
+                self.depth += 1;
+                if self.depth > MAX_DEPTH {
+                    return Err(DEEP);
+                }
                 let mut entries: Vec<(String, Node)> = Vec::new();
                 loop {
                     self.ws();
@@ -846,6 +906,7 @@ impl Flow<'_> {
                         _ => return Err("a missing comma inside { }"),
                     }
                 }
+                self.depth -= 1;
                 Ok(Node { line, key_line: 0, value: Value::Map(entries) })
             }
             Some('*') => {
@@ -856,6 +917,9 @@ impl Flow<'_> {
                 *self.values += found.size();
                 if *self.values > MAX_VALUES {
                     return Err("aliases that expand past the size this reader takes");
+                }
+                if self.depth + found.height() > MAX_DEPTH {
+                    return Err(DEEP);
                 }
                 found.named_at(line);
                 Ok(found)
@@ -1086,5 +1150,49 @@ mod tests {
     fn a_refusal_never_carries_text_from_the_file() {
         let e = refused("secret: \"hunter2\nnext: 1\n");
         assert!(!e.message.contains("hunter2"));
+    }
+
+    #[test]
+    fn refuses_collections_nested_past_the_limit_at_their_line() {
+        let flow = |n: usize| format!("a: {}{}\n", "[".repeat(n), "]".repeat(n));
+        assert!(parse(&flow(MAX_DEPTH - 1)).is_ok(), "the mapping around it counts");
+        let e = refused(&flow(MAX_DEPTH));
+        assert_eq!((e.line, e.message), (1, DEEP));
+        let braces = format!("x: 1\na: {}1{}\n", "{k: ".repeat(MAX_DEPTH + 1), "}".repeat(MAX_DEPTH + 1));
+        assert_eq!(refused(&braces).line, 2);
+        // A block tree, mappings and lists alike.
+        let block = |n: usize| (0..n).map(|i| format!("{}k{i}:\n", "  ".repeat(i))).collect::<String>();
+        assert!(parse(&block(MAX_DEPTH)).is_ok());
+        let e = refused(&block(MAX_DEPTH + 1));
+        assert_eq!((e.line, e.message), (MAX_DEPTH + 1, DEEP));
+        let lists = (0..=MAX_DEPTH).map(|i| format!("{}-\n", " ".repeat(i))).collect::<String>();
+        assert_eq!(refused(&lists).message, DEEP);
+        // Megabytes of brackets are refused without a deep stack.
+        let huge = format!("a: {}{}\n", "[".repeat(400_000), "]".repeat(400_000));
+        assert_eq!(refused(&huge).message, DEEP);
+        assert_eq!(refused(&format!("a: {}\n", "[".repeat(800_000))).line, 1, "unclosed is refused too");
+    }
+
+    #[test]
+    fn what_an_alias_pastes_in_counts_toward_the_depth() {
+        // Each anchor holds the one before it: one level more per line.
+        let chain = |n: usize| -> String {
+            let mut text = String::from("x0: &x0 [1]\n");
+            for i in 1..n {
+                text.push_str(&format!("x{i}: &x{i} [*x{}]\n", i - 1));
+            }
+            text
+        };
+        assert!(parse(&chain(MAX_DEPTH - 2)).is_ok());
+        let e = refused(&chain(MAX_DEPTH + 10));
+        assert_eq!(e.message, DEEP);
+        assert!(e.line <= MAX_DEPTH + 2, "refused where it first passes the limit: line {}", e.line);
+        // The same in block style, an alias placed under a deep key.
+        let mut block = String::from("a: &a\n  - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 1\n");
+        for i in 0..40 {
+            block.push_str(&format!("{}k{i}:\n", "  ".repeat(i)));
+        }
+        block.push_str(&format!("{}v: *a\n", "  ".repeat(40)));
+        assert_eq!(refused(&block).message, DEEP);
     }
 }

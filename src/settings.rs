@@ -76,6 +76,11 @@ pub struct JobSource {
     /// Airflow only: the dotted key paths that differ from the proposed shape.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub keys: BTreeMap<String, String>,
+    /// Read from the project's `.dbt-edith/jobs.yml` and not the settings,
+    /// so held to the narrower rules of a file a repository supplies (0115).
+    /// Never read from a request or written to the settings.
+    #[serde(skip)]
+    pub from_file: bool,
 }
 
 /// Whether Snowflake's features are on: the user's choice for the project, or,
@@ -158,6 +163,13 @@ pub fn file_name(root: &str, windows: bool) -> String {
 }
 
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic_meta(path, bytes).map(|_| ())
+}
+
+/// `write_atomic`, and the metadata of what was written, taken from the
+/// temporary file before it is renamed over the target: a write landing after
+/// the rename cannot be taken for this one's.
+pub(crate) fn write_atomic_meta(path: &Path, bytes: &[u8]) -> std::io::Result<std::fs::Metadata> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -169,7 +181,13 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
     tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));
     let tmp = path.with_file_name(tmp_name);
-    write_private(&tmp, bytes)?;
+    // A temporary file left in the repository's folder could be committed by a
+    // `git add .`: it goes on every failure, best effort.
+    let gone = |e: std::io::Error| {
+        let _ = std::fs::remove_file(&tmp);
+        e
+    };
+    write_private(&tmp, bytes).map_err(gone)?;
     // The write changes the content, never who may read it: the file keeps
     // the target's mode, or takes the one any new file there would get.
     // `~/.dbt/profiles.yml` can hold a warehouse password and is commonly
@@ -177,10 +195,11 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     // file's mode. The in-place fallback below truncates rather than
     // replaces, so it keeps the mode on its own.
     settle_mode(path, &tmp);
+    let written = std::fs::metadata(&tmp).map_err(gone)?;
     let mut last_error = None;
     for attempt in 0..3 {
         match std::fs::rename(&tmp, path) {
-            Ok(()) => return Ok(()),
+            Ok(()) => return Ok(written),
             Err(e) => {
                 last_error = Some(e);
                 if attempt < 2 {
@@ -192,7 +211,8 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     // On Windows an indexer or antivirus can hold the target long enough for
     // every rename to fail. Writing in place is less tidy than losing the change.
     let _ = std::fs::remove_file(&tmp);
-    std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))
+    std::fs::write(path, bytes).map_err(|e| last_error.unwrap_or(e))?;
+    std::fs::metadata(path)
 }
 
 /// `write_atomic` of the file a link names, keeping the link. For the dbt
@@ -320,6 +340,19 @@ mod tests {
 
     fn env(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<OsString> {
         move |key| pairs.iter().find(|(k, _)| *k == key).map(|(_, v)| OsString::from(*v))
+    }
+
+    #[test]
+    fn a_failed_write_leaves_no_temporary_file_behind() {
+        // In a repository's folder one would be committed by `git add .`.
+        let dir = std::env::temp_dir().join(format!("dbt-edith-atomic-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let target = dir.join("jobs.yml");
+        std::fs::create_dir_all(target.join("inside")).unwrap();
+        assert!(write_atomic_meta(&target, b"jobs: []\n").is_err(), "a folder where the file should go cannot be renamed over");
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left, ["jobs.yml"], "{left:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(unix)]

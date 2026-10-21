@@ -1,6 +1,6 @@
 # 0110. An agent may ask over MCP, through one tool
 
-Date: 2026-10-21 · Status: accepted, amended by 0113 and 0114 · Amends 0057, 0099 and 0102
+Date: 2026-10-21 · Status: accepted, amended by 0113, 0114 and 0115 · Amends 0057, 0099 and 0102
 
 **Trigger:** read before changing `--mcp`, the `edith` tool, what its line
 accepts, what the server reads or writes, or before adding a second tool.
@@ -75,6 +75,12 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
   *The shipped skill's description is about 190 (0114).*
 - **Clients without a terminal** can ask at all. Approving the one tool
   approves collin runs too, since the tool cannot be split by flag.
+
+*Amended by [0115](0115-job-sources-may-live-in-the-project.md):
+a `--describe`, `--overview` or `--job` call also reads the project's
+`.dbt-edith/jobs.yml` and, when it names sources, the job folders they point
+at, from the project or two folders above it; never the settings, and no path
+in a line.*
 
 ## Rejected
 

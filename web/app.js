@@ -8583,8 +8583,11 @@ function jobsCoverageLine(cov) {
 }
 
 /* What PUT /api/jobs/sources takes from what the form holds. A key left at
-   the proposed shape is not sent, so a source lists only what differs. */
-function jobSourcesBody(forms, defaults) {
+   the proposed shape is not sent, so a source lists only what differs. `place`
+   says where they are kept, `project` for .dbt-edith/jobs.yml or `settings`,
+   and `seen` the version of that file the form was shown, so that a file
+   changed since is not written over (0115). */
+function jobSourcesBody(forms, defaults, place, seen) {
   return {
     sources: forms.map((f) => {
       const keys = {};
@@ -8596,7 +8599,39 @@ function jobSourcesBody(forms, defaults) {
       }
       return { kind: f.kind, path: String(f.path || '').trim(), label: String(f.label || '').trim(), keys };
     }),
+    place,
+    seen,
   };
+}
+
+/* Why a path may not go in the project's .dbt-edith/jobs.yml, or '' (0115):
+   that file comes with the repository, so it holds only a path from the
+   project, at most two folders above it, with no hidden folder or file in it
+   and no profiles.yml. The server holds it to the same, with the same rules. */
+function jobsProjectPathIssue(path) {
+  const p = String(path || '').trim();
+  if (!p) return '';
+  if (p.startsWith('/') || p.startsWith('\\') || /^[A-Za-z]:/.test(p)) return 'an absolute path';
+  let depth = 0;
+  let last = '';
+  for (const seg of p.split(/[\\/]/).filter((x) => x && x !== '.')) {
+    if (seg === '..') {
+      depth--;
+      if (depth < -2) return 'more than two folders above the project';
+    } else {
+      if (seg.startsWith('.')) return 'a hidden folder or file';
+      depth++;
+    }
+    last = seg;
+  }
+  return /^profiles\.ya?ml$/i.test(last) ? 'a profiles.yml' : '';
+}
+
+/* Whether Save is held back: while a save is on its way, whatever else is
+   typed meanwhile, or while a path cannot go in the project's file. A second
+   click on the way would send the version the first is about to change. */
+function jobsSaveDisabled(busy, issue) {
+  return !!busy || !!issue;
 }
 
 function jobsPlural(n, word) {
@@ -8752,6 +8787,7 @@ async function loadJobs({ look = false } = {}) {
     S.jobsKeys = summary.airflow_keys;
   }
   if (!id) {
+    if (summary.refused) return jobsRefusedFile(body, summary.refused);
     if (!summary.sources.length) return jobsNoSource(body);
     body.replaceChildren(jel('div', 'compiled-empty', 'Select a model first, or open Reports for the coverage of the whole project.'));
     return;
@@ -8825,6 +8861,16 @@ function jobsNoSource(body) {
   body.replaceChildren(box);
 }
 
+/* The project's own file, there and not readable: no source, and the reason
+   in place of the invitation to add one, in the Jobs tab and the coverage
+   alike (0115). */
+function jobsRefusedFile(body, why) {
+  const sources = jel('button', 'btn sm', 'Sources…');
+  sources.addEventListener('click', openJobSources);
+  body.replaceChildren(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${why}. `
+    + 'No job is known until it is: Sources… writes it again.'), sources);
+}
+
 /* One job and the steps of it that act on the node, as cards. */
 function jobsCard(group, { reason = false } = {}) {
   const { job } = group;
@@ -8863,6 +8909,9 @@ function jobsCard(group, { reason = false } = {}) {
 }
 
 function renderJobs(body, view, id, reveal) {
+  // The project's own file, there and not readable: no source, and the reason
+  // rather than the invitation to add one (0115).
+  if (view.sources_refused) return jobsRefusedFile(body, view.sources_refused);
   if (!view.configured) return jobsNoSource(body);
   const out = [];
   if (view.refused) {
@@ -8947,6 +8996,7 @@ function jobsStepList(title, refs) {
 }
 
 function renderCoverage(body, cov) {
+  if (cov.sources_refused) return jobsRefusedFile(body, cov.sources_refused);
   if (!cov.configured) return jobsNoSource(body);
   const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
   const short = (n) => n <= 50;
@@ -9131,6 +9181,13 @@ async function jobSourcesForm(box, { add = false } = {}) {
   forgetCatalogJobs();
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
+  // Where the sources are kept (0115). Once the project has its file, it is
+  // the file that is edited and the settings are ignored; before, the person
+  // chooses, and a list already in the settings stays there unless they move it.
+  let hasFile = summary.from === 'project';
+  let refusedWhy = summary.refused || '';
+  let seen = summary.stamp || '';
+  let place = hasFile || summary.from !== 'settings' ? 'project' : 'settings';
   const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys) }));
   // A source being added has its picker open, and what the picker shows is
   // kept, so that drawing the cards again leaves it as it was without asking
@@ -9142,6 +9199,9 @@ async function jobSourcesForm(box, { add = false } = {}) {
   const list = jel('div', 'jobsrc-list');
   const foot = jel('div', 'jobsrc-foot');
   const saved = jel('p', 'muted', '');
+  const where = jel('div', 'jobsrc-place');
+  const issue = jel('div', 'jobs-warn', '');
+  let busy = false; // a save is on its way
 
   const input = (value, placeholder, onInput, cls = '') => {
     const i = jel('input', cls);
@@ -9163,8 +9223,8 @@ async function jobSourcesForm(box, { add = false } = {}) {
       }
       kind.addEventListener('change', () => { f.kind = kind.value; paint(); });
       const remove = jel('button', 'btn sm', 'Remove');
-      remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; paint(); });
-      const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; }, 'grow');
+      remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; paint(); refreshIssue(); });
+      const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; refreshIssue(); }, 'grow');
       const browse = jel('button', 'btn sm', 'Browse…');
       browse.title = 'Pick the folder or the file from a list';
       let picker = null;
@@ -9185,7 +9245,7 @@ async function jobSourcesForm(box, { add = false } = {}) {
         browseJobSource(picker, f.path, {
           kept: f.browsed,
           keep: (k) => { f.browsed = k; },
-          use: (w) => { f.path = w; path.value = w; closePicker(); },
+          use: (w) => { f.path = w; path.value = w; closePicker(); refreshIssue(); },
           cancel: closePicker,
         });
       };
@@ -9214,14 +9274,55 @@ async function jobSourcesForm(box, { add = false } = {}) {
     if (!forms.length) list.append(jel('p', 'muted', 'No source yet.'));
   };
 
+  // The file takes only paths it may hold: a path that is not one says why
+  // under the choice, and nothing is sent until it is mended or "For me only"
+  // is picked, which keeps any path.
+  const refreshIssue = () => {
+    const bad = forms.find((f) => jobsProjectPathIssue(f.path));
+    const why = bad && (hasFile || place === 'project')
+      ? `${bad.path} is ${jobsProjectPathIssue(bad.path)}, which the project's file may not hold. `
+        + 'Write the path from the project, or pick "For me only".'
+      : '';
+    issue.textContent = why;
+    issue.hidden = !why;
+    save.disabled = jobsSaveDisabled(busy, why);
+  };
+
+  // The choice, or what the file already says. Painted again after a save,
+  // since the first one writes the file and the form then edits it.
+  const paintPlace = () => {
+    where.replaceChildren();
+    if (hasFile) {
+      where.append(jel('p', 'setnote', 'Kept in the project, in .dbt-edith/jobs.yml, which whoever has the repository shares. '
+        + 'Saving rewrites that file; the settings are ignored while it exists, and nothing deletes it.'));
+      if (refusedWhy) where.append(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${refusedWhy}. Saving writes it again.`));
+      return;
+    }
+    for (const [v, text] of [
+      ['project', 'In the project, .dbt-edith/jobs.yml (shared, committed)'],
+      ['settings', 'For me only (kept outside the project)'],
+    ]) {
+      const label = jel('label', 'jobsrc-choice');
+      const radio = jel('input', '');
+      radio.type = 'radio';
+      radio.name = 'jobsrc-place';
+      radio.checked = place === v;
+      radio.addEventListener('change', () => { if (radio.checked) { place = v; refreshIssue(); } });
+      label.append(radio, jel('span', '', text));
+      where.append(label);
+    }
+  };
+
   const addAirflow = jel('button', 'btn sm', '+ Airflow');
   addAirflow.addEventListener('click', () => { forms.push(fresh('airflow')); paint(); });
   const addCloud = jel('button', 'btn sm', '+ dbt Cloud');
   addCloud.addEventListener('click', () => { forms.push(fresh('dbt_cloud')); paint(); });
   const save = jel('button', 'btn sm primary', 'Save and read');
   save.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
     save.disabled = true;
-    const sent = jobSourcesBody(forms, defaults);
+    const sent = jobSourcesBody(forms, defaults, hasFile ? 'project' : place, seen);
     try {
       const answer = await api.send('/api/jobs/sources', 'PUT', sent);
       reads = answer.sources;
@@ -9232,7 +9333,11 @@ async function jobSourcesForm(box, { add = false } = {}) {
       const store = [S.settingsKept, tourKept].find((k) => k && k.jobs && k.jobs.contains(box));
       const kept = !!store;
       const route = jobsSaveRoute({ kept, shown: box.isConnected,
-        clean: jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults)) });
+        clean: jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults, hasFile ? 'project' : place, seen)) });
+      // The file now exists, with this version, whichever way the form goes on.
+      hasFile = answer.from === 'project';
+      refusedWhy = answer.refused || '';
+      seen = answer.stamp || '';
       if (route === 'gone') {
         // A form read cleanly behind another section is done with: its
         // section reads the sources afresh when it is shown again.
@@ -9243,16 +9348,23 @@ async function jobSourcesForm(box, { add = false } = {}) {
         return loadReportsIndex();
       }
       if (route === 'read') return jobSourcesRead(answer);
-      saved.textContent = answer.saved
-        ? 'Saved for this project, outside it. Only YAML files are read, never through a symlink.'
-        : 'No config directory is available, so these sources last until dbt-edith stops.';
+      saved.textContent = answer.from === 'project'
+        ? 'Saved in .dbt-edith/jobs.yml. Only YAML files are read, never through a symlink.'
+        : answer.saved
+          ? 'Saved for this project, outside it. Only YAML files are read, never through a symlink.'
+          : 'No config directory is available, so these sources last until dbt-edith stops.';
+      paintPlace();
       paint();
       if (S.dock === 'jobs') loadJobs();
       loadReportsIndex();
     } catch (e) {
+      // The file moved on since the form read it (a pull, an edit in the
+      // editor): left as it is, and said, since a second save would fail the same way.
+      if (e.changed) saved.textContent = '.dbt-edith/jobs.yml changed on disk since this form read it. Close this section and open it again to read it, and nothing is written over it until then.';
       toast('sources: ' + e.message, 'err');
     } finally {
-      save.disabled = false;
+      busy = false;
+      refreshIssue();
     }
   });
   foot.append(addAirflow, addCloud, jel('div', 'grow'), save);
@@ -9260,8 +9372,10 @@ async function jobSourcesForm(box, { add = false } = {}) {
     jel('p', 'setnote', 'Read from their YAML wherever it lives, often in another repository, for the Jobs tab and the '
       + 'job coverage in Reports. Folders or files holding your jobs, relative to the project or absolute. An Airflow '
       + 'key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
-    list, foot, saved);
+    where, issue, list, foot, saved);
+  paintPlace();
   paint();
+  refreshIssue();
   box.replaceChildren(body);
 }
 

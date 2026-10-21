@@ -1,15 +1,16 @@
 # Command line
 
-Four questions dbt-edith answers without a page: what a selection matches, what
-a column reaches, what a node is, and what the project holds. Each reads the
+Five questions dbt-edith answers without a page: what a selection matches, what
+a column reaches, what a node is, what the project holds, and what a job runs.
+Each reads the
 manifest dbt already wrote, prints and exits, so a script or an AI agent can
 ask with one command and read the answer in few tokens. An agent with no
 terminal can ask the same questions [over MCP](#over-mcp).
 
 ## Without a server
 
-`--select` and `--selector`, `--column`, `--describe` and `--overview` have
-this in common
+`--select` and `--selector`, `--column`, `--describe`, `--overview` and `--job`
+have this in common
 ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md),
 [0102](../decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md)):
 
@@ -28,7 +29,7 @@ this in common
   | --- | --- |
   | 0 | answered, an empty answer included, which stderr says |
   | 1 | refused: a selection or a name it cannot resolve, with the reason on stderr; `--describe` still prints the names it could |
-  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag |
+  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag; for `--job`, no `.dbt-edith/jobs.yml`, or one that does not read |
 
   A flag that belongs to another mode is a wrong flag: `--sql` beside
   `--overview` or `--depth` beside `--describe` is refused, naming the mode it
@@ -41,13 +42,14 @@ this in common
   relative to where the command is typed, not to the project.
 - **`--output`** picks what is printed: `name`, the default, one name per
   line; `json`, one object per node; `compact`, tab-separated lines under a
-  header. `--describe` and `--overview` print a text card unless it is `json`:
-  a card is read, so `compact` prints the same text.
+  header. `--describe`, `--overview` and `--job` print a text card unless it is
+  `json`: a card is read, so `compact` prints the same text.
 
 A call costs one process start and one read of the artifacts: the manifest for
 a selection or a column, and for `--describe` and `--overview` the catalog and
 the caches beside it too, which is why those two take longer on a project with
-a wide catalog. The freshness walk runs after the answer is out, so it never
+a wide catalog. The job files are read only by a project that has a
+`.dbt-edith/jobs.yml`, and then once per call. The freshness walk runs after the answer is out, so it never
 holds it back.
 
 ## A selection
@@ -245,6 +247,7 @@ Every line under it is left out when it has nothing to say.
 | `parents (N)`, `children (N)` | `name (materialized)`, a source or an exposure saying its kind, sorted by name |
 | `tests (N)` | each test on the node: `name: generic on column`, `name (singular)` for a query of its own, then `warn` and each setting off dbt's default (`where x`, `limit 5`); a test declared on another node, as a `relationships` is on the model it points at, names that node: `on orders.customer_id` |
 | `reach` | how many nodes lie upstream and downstream, tests excluded; a source has only downstream |
+| `jobs (N)` | only in a project with a `.dbt-edith/jobs.yml` ([below](#a-job)): the steps of the orchestrator's jobs that run it, scheduled jobs first, `DAG shop_daily › task marts (scheduled 0 5 * * *) via +tag:daily` or `job Daily build › step 3/3 (manual)`, the terms of the step's selection that reached it after `via`; `none` when no step does and every source was read, then `N steps not resolved` for the ones that could not be read or resolved and could act on it, `N job files not read`, and `1 of 3 sources (nothing at this path) not read` for a source whose folder or file could not be walked or was cut at a bound, which says `jobs  not read: 1 of 3 sources (...)` instead of `none`. A file with `jobs: []` says `no sources in .dbt-edith/jobs.yml`, which is not `none`. A file that does not read gives `not read, .dbt-edith/jobs.yml:` and the reason in its place. Left off a test, an exposure and the nodes with no reach line |
 
 A test's card says what it checks and how it is set instead:
 
@@ -315,8 +318,67 @@ names, and leaves out every key that is empty:
 | `children` | the unique_ids of its children, sorted |
 | `tests` | each test on the node: `name`, `test_name` (absent for a singular one), `column`, `host` (the unique_id of the node that declares it, only when that is not the node described: the `column` is its), `warn`, `settings` |
 | `upstream_total`, `downstream_total` | the reach, tests excluded |
+| `jobs`, `jobs_unresolved`, `jobs_files_refused`, `jobs_not_read`, `jobs_sources`, `jobs_refused` | with a `.dbt-edith/jobs.yml`, for the nodes that have a reach: `jobs` the steps that run it, each `kind` (`airflow` or `dbt_cloud`), `job`, `step`, `schedule`, `via` and `file`, an empty list when none does; `jobs_unresolved` the steps not resolved that could act on it and `jobs_files_refused` the job files not read, when not zero; `jobs_not_read` the sources that were not read (`sources`, `of`, `reason`), so an empty `jobs` is not an answer; `jobs_sources` how many sources the file names, when none or when some were not read; `jobs_refused` why the sources file was not read, instead of `jobs` |
 | `test` | on a test node: `checks` (the generic's name, or `singular`), `column`, `host` (the unique_id of the node it is declared on), `severity`, `generic`, `settings` |
 | `sql` | with `--sql`, the file, whole, once it was read |
+
+## A job
+
+`--job NAME` prints one DAG or dbt Cloud job step by step, with the nodes each
+step runs, the question the other way round from a card's `jobs` line
+([0115](../decisions/0115-job-sources-may-live-in-the-project.md)):
+
+```
+dbt-edith path/to/project --job jaffle_daily
+dbt-edith path/to/project --job 'Nightly build' --output json
+```
+
+The jobs are the ones the project names in its own `.dbt-edith/jobs.yml`, which
+the Jobs settings write when you choose to keep the sources in the project
+([Jobs](jobs-and-reports.md#jobs)), read as the Jobs tab reads them over the
+same files, and never the settings: the command line reads none. Without that
+file the call exits 2 with `no .dbt-edith/jobs.yml in this project; name the
+sources in the Jobs settings`, and with one that does not read, exits 2 with its
+reason and line. The call never runs dbt.
+
+```
+DAG jaffle_daily  scheduled 0 6 * * *  jaffle_daily.yml:2
+  task load_seeds  dbt seed  (1 node)
+    seed raw_orders
+  task stage  dbt run --select tag:staging  (2 nodes)
+    model stg_customers
+    model stg_orders
+  task marts  dbt run -s +customers orders --exclude tag:staging  (2 nodes)
+    model customers
+    model orders
+  task reconcile  dbt test --selector recon_tests  not resolved: no selector named ...
+nodes 5
+```
+
+A job is found by a DAG id or a dbt Cloud job's name, written exactly; else with
+the case ignored; else by the identifier dbt-jobs-as-code gives a dbt Cloud job.
+Several jobs of the name are refused with their sources (`nightly: shop_daily`)
+and none with the nearest names, as `--describe` does, exit 1. A task is no job.
+
+The first line is the job, how it starts and where it is written, as the Jobs
+tab's pill puts it: `scheduled 0 6 * * *`, `schedule not read: ...`, what
+starts it when no clock does (`CI`, `on merge`, `on an_asset`), or `manual`.
+Under it each step in order: its command, as parsed (the values of `--vars`
+and `--args` are `…`), then how many nodes it runs and the nodes themselves,
+`kind name`, sorted by name. A step that could not be read or resolved says why
+instead; one that only compiles, lists or previews says `dbt compile runs no
+node`. `nodes N` closes the answer: the distinct nodes the steps run, once
+however many steps run them.
+
+`--output json` prints one object: `kind`, `name`, `source`, `ident` (a dbt Cloud
+job's), `file`, `line`, `schedule`, `steps` (each `n`, `name`, `line`,
+`command`, `unresolved`, `runs_nothing`, `warnings`, `node_count` and `nodes`,
+a list of `id`, `kind` and `name`) and `nodes`, the total, and `not_read`
+when a source was not read: the text answer then ends on a `not read:` line, and
+a refusal for a name no job has says it too, since the job may be in that source.
+The file is the one [Jobs](jobs-and-reports.md#jobs) describes: paths from the
+project, never hidden, never a profile, never the home folder, a link along the
+path included.
 
 ## The project
 
@@ -357,6 +419,7 @@ folders         (by folder, 3 levels)
 | `models` | the enabled models by materialization, most first; the incremental ones give the strategies the manifest names, `1 incremental (merge 1)`, and none in parentheses when it names none |
 | `macros` | all of them, dbt's and the adapter's included, then the project's own once the manifest or `dbt_project.yml` names the project |
 | `selectors` | the named selectors of `selectors.yml`, fifteen at most then `+N more`, marking the ones this build cannot resolve, since they compare with another run |
+| `jobs` | only in a project with a `.dbt-edith/jobs.yml`: how many jobs it names and their names, `12 from .dbt-edith/jobs.yml: shop_daily, ..., +N more`, fifteen at most, in the files' own order, then `1 of 3 sources (...) not read` when a source could not be read; `no sources in .dbt-edith/jobs.yml` for `jobs: []`; `not read, .dbt-edith/jobs.yml:` and the reason when it does not read |
 | `tags` | the tags of every enabled node, tests included, since `tag:` selects a test by the tags it is given: most used first, fifteen at most, then `+N more` |
 | `folders` | every enabled model, source, seed, snapshot, test, exposure and analysis filed under the folders of its file, each folder counting its whole subtree |
 
@@ -373,7 +436,9 @@ they are numbered.
 `source`, `producer`, `written`), `nodes`, `materializations`,
 `incremental_strategies`, `macros` (`total`, and `project` once the project is
 named), `selectors` (`name`, `description`, and `unsupported` with the
-reason), `tags` (all of them) and `folders`, a flat list in tree order,
+reason), `jobs` (all of them: `kind`, `name`, `schedule`, `steps` and `file`,
+present only with a sources file, `jobs_sources`, `jobs_not_read` for sources
+that were not read, and `jobs_refused` in its place when the file does not read), `tags` (all of them) and `folders`, a flat list in tree order,
 parents before their children, each with its `path`, its `depth` and the
 counts of its subtree, a zero left out.
 
@@ -391,6 +456,8 @@ are safe to run unasked.
 | everything upstream, or downstream, of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact`; `model+` for what dropping or renaming it breaks |
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
+| which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
+| what a DAG or dbt Cloud job runs | `dbt-edith . --job name`, step by step |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
 Three habits keep the answers small and true:
@@ -481,13 +548,14 @@ same for every call; the defaults are the command line's.
 
 ### The tool
 
-There is one tool, `edith`, taking one argument, `line`: the flags of the four
+There is one tool, `edith`, taking one argument, `line`: the flags of the
 questions above and `--output`, written as on the command line and with no
 project.
 
 ```
 --overview
 --describe orders --sql
+--job jaffle_daily
 -s 'stg_orders+1' --exclude resource_type:test --output compact
 --column stg_payments.amount --down all --output compact
 ```
