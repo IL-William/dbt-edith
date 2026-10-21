@@ -813,6 +813,17 @@ another binary is there, not which. The command fetches the tags in a step of
 their own before the pull, whose failure stops nothing, so the build stamp
 names the release it built.
 
+The update ends on a line and a card (0111, 1.45.0), amending 0095. The command
+ends on `dbt-edith is installed. Stop dbt-edith where you started it (Ctrl+C)
+and start it again to run it.`, printed only when the install worked. A card in
+the middle of the page says the same once the button has typed the command
+(Press Enter, and the restart, gone after fifteen seconds) and when the menu
+first turns to installed, closed by its button or by Escape, over every
+backdrop; it replaces the toast for the update alone. A failed build in Git
+Bash on Windows, the binary put back, now ends in failure, where it ended as if
+it had worked; in PowerShell the line is skipped but the status is still a
+success.
+
 A test in the Catalog reads as a test (1.29.0). It was drawn as a model: Mat.
 type `test`, no columns, a location table for a relation dbt never builds for
 it, and "No description in the YAML." It has Preview alone now, which opens on
@@ -2025,8 +2036,7 @@ of its own, and each panel updates the tour, its page under
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-20. ~~**An MCP server over these answers.**~~ Shipped in 1.44.0 (0110).
-21. **From the command line, for an agent.** Ideas for `--describe`,
+20. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
     - one compact line per column of every selected node;
     - a card of the columns alone;
@@ -2355,6 +2365,9 @@ Left by the MCP server (0110, 1.44.0), unranked:
   the warm call on a project in a repository. Keeping one git answer for a
   second or two would take it well under a millisecond on Shopify, and make
   the line late.
+- **A test to watch:**
+  `the_end_of_input_kills_a_run_of_collin_and_the_server_ends` (`src/mcp.rs`)
+  failed once in a first run and passed alone and on a rerun; possibly flaky.
 
 Left by the card's per-file locations (0113, 1.47.0), unranked:
 
@@ -2365,6 +2378,43 @@ Left by the card's per-file locations (0113, 1.47.0), unranked:
 - **`generate_*_name` macros are not evaluated**, so a project that overrides
   one gets the input to it on the card, not what dbt builds, and dbt's default
   prefixes a custom schema with the target's.
+- **The card's `.env` files follow the default hide and show rules**, not the
+  Catalog settings' own choices.
+- **The word "lands"** survives in the section headings and some test names of
+  `src/describe.rs`, after the wording moved to "config before the macros".
+
+Left by the update card (0111, 1.45.0), unranked:
+
+- **PowerShell is read, not run:** the update commands are tested for their
+  structure only, and a failed build there still ends with a success status,
+  only the closing line is skipped.
+- **The card's Escape and focus rules** are covered by source-level tests and
+  by a check in headless Chrome, not by a test that presses a key or clicks.
+- **Escape in the editor, a find bar, the tour or a menu** stays theirs, so a
+  card that stays there closes with its button alone.
+- **With the Halloween look on**, the witch sprite sits on the dock tab row
+  and the tabs are shifted about 14px down; not caused by the card, and not
+  investigated.
+
+Left by the count (0112, 1.46.0), unranked:
+
+- **One key per call:** `--count-by` with two keys is refused, and a node's tags
+  can add up to more than `(all)`, which is documented.
+- **Over MCP**, an invalid `--count-by` value is refused without clap's
+  `[possible values]` line, as are `--output` and `--column-tool`; `help` lists
+  the values.
+- **Count mode** still sorts the selection by name before counting; linear and
+  harmless.
+
+Left by the agent skill (0114, 1.48.0), unranked:
+
+- **The test checks that every flag and command in `SKILL.md` parses**, not that
+  a recipe means what its row says.
+- **`SKILL.md` is close to the 4096 bytes its test allows**, so a recipe added
+  needs another cut; `scripts/walk_mcp.py --measure` and the figures of 0110
+  still weigh the one-line skill.
+- **Skill against MCP tool** was tried with Claude Code only, whose deferral of
+  MCP tools is the client's setting; Copilot and the others were not tried.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
