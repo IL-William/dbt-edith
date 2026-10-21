@@ -115,6 +115,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md) | collin is given the project only for a manifest lying in it | changing the arguments dbt-edith hands collin, raising `WANTS`, or changing where a seed's columns come from |
 | [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md) | An agent may ask over MCP, through one tool | changing `--mcp`, the `edith` tool, what its line accepts, or what the server reads or writes |
 | [0111](0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md) | The update ends on a line and a card, and a failed build is a failure | changing what the update command prints or ends on, what the page shows once it is typed or installed, or where a message in the middle of the page replaces a toast |
+| [0112](0112-a-selection-may-be-counted-instead-of-listed.md) | A selection may be counted instead of listed | adding a key to `--count-by`, letting another mode count, or answering over MCP what a recipe would pipe |
 
 ## Keeping these honest
 

@@ -435,8 +435,8 @@ pub(crate) mod tests {
         let (_, _, opened) = ls::open(&dir, None).unwrap();
         let mut g = graphs(&dir);
         let query = ls::Query::Line { select: "+orders".to_string(), exclude: String::new() };
-        let want = said(|o, e| ls::respond(&root, &opened, &query, ls::Output::Name, o, e));
-        let got = said(|o, e| ls::respond(&root, g.manifest().unwrap(), &query, ls::Output::Name, o, e));
+        let want = said(|o, e| ls::respond(&root, &opened, &query, None, ls::Output::Name, o, e));
+        let got = said(|o, e| ls::respond(&root, g.manifest().unwrap(), &query, None, ls::Output::Name, o, e));
         assert_eq!(got.0, want.0);
         assert_eq!(got.0, "orders\nstg_orders\n");
         std::fs::remove_dir_all(&dir).unwrap();

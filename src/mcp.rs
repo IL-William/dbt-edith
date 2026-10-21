@@ -387,8 +387,8 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
     };
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let written = match question {
-        Question::Select(query) => match graphs.manifest() {
-            Ok(graph) => ls::respond(&root, graph, &query, output, &mut out, &mut err),
+        Question::Select(query, count) => match graphs.manifest() {
+            Ok(graph) => ls::respond(&root, graph, &query, count, output, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
         },
         Question::Describe { names, sql } => {
@@ -805,7 +805,7 @@ mod tests {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let (_, _, graph) = ls::open(&root, None).unwrap();
         let query = ls::Query::Line { select: "+orders".to_string(), exclude: String::new() };
-        assert_eq!(ls::respond(&root, &graph, &query, ls::Output::Name, &mut out, &mut err).unwrap(), 0);
+        assert_eq!(ls::respond(&root, &graph, &query, None, ls::Output::Name, &mut out, &mut err).unwrap(), 0);
         let said = s.ask("-s '+orders'");
         let got = blocks(&said);
         assert_eq!(got.len(), 2, "{said}");
@@ -819,6 +819,15 @@ mod tests {
         s.ask("--selector marts");
         assert_eq!(s.loads.lock().unwrap().last().unwrap().manifest, 1);
         assert_eq!(s.loads.lock().unwrap().last().unwrap().base, 0);
+    }
+
+    #[test]
+    fn a_selection_is_counted_over_the_line_when_it_asks() {
+        let dir = project("count");
+        let s = Session::start(&dir);
+        let said = s.ask("-s '+orders' --count-by kind");
+        assert!(!is_error(&said), "{said}");
+        assert_eq!(blocks(&said)[0], "count\tkind\n2\tmodel\n2\t(all)\n");
     }
 
     #[test]

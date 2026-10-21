@@ -162,7 +162,9 @@ source and `orders.v2` for a version, where dbt's own JSON writes the name
 bare, and a version carries the manifest's `version` and `latest_version`.
 `--output compact` prints a tab-separated line per node under a header
 instead, a fraction of the JSON's size: see
-[command-line.md](command-line.md#a-selection).
+[command-line.md](command-line.md#a-selection). `--count-by KEY` counts the
+selection by kind, materialization, source, folder, tag or package instead of
+listing it: see [command-line.md](command-line.md#counting-a-selection).
 
 stdout carries the answer and nothing else. stderr says what it is worth: the
 manifest that answered, when it was written and by which dbt, then the verdict

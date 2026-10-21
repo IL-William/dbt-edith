@@ -144,11 +144,15 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
     overview: bool,
 
-    /// How many folder levels --overview lists (default 3)
-    #[arg(long, value_name = "N", requires = "overview")]
+    /// Count what --select or --selector matched instead of listing it, one row per value of KEY and a total
+    #[arg(long, value_enum, value_name = "KEY")]
+    count_by: Option<ls::CountBy>,
+
+    /// How many folder levels --overview lists, or --count-by folder counts (default 3)
+    #[arg(long, value_name = "N")]
     depth: Option<usize>,
 
-    /// What --select, --selector, --column, --describe and --overview print: one name per line, one JSON object per node (per model for --column, one for --overview), or compact tab-separated lines; --describe and --overview print a text card unless json
+    /// What --select, --selector, --column, --describe and --overview print: one name per line, one JSON object per node (per model for --column, one for --overview), or compact tab-separated lines; --describe and --overview print a text card unless json; with --count-by, json prints one object and name and compact print the same table
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
 
@@ -157,7 +161,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "depth", "output",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "count_by", "depth", "output",
         ]
     )]
     mcp: bool,
@@ -171,7 +175,8 @@ fn stray(args: &Args) -> Option<String> {
     let flags = [
         (args.sql, "--sql", "--describe", !args.describe.is_empty()),
         (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
-        (args.depth.is_some(), "--depth", "--overview", args.overview),
+        (args.count_by.is_some(), "--count-by", "--select or --selector", args.select.is_some() || args.selector.is_some()),
+        (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
         (args.up.is_some(), "--up", "--column", args.column.is_some()),
         (args.down.is_some(), "--down", "--column", args.column.is_some()),
         (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
@@ -188,7 +193,12 @@ fn stray(args: &Args) -> Option<String> {
             args.column.is_some() || (args.describe.is_empty() && !args.overview && args.select.is_none() && args.selector.is_none()),
         ),
     ];
-    flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"))
+    let stray = flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"));
+    // Every folder is deeper than level 0, so a count to that depth would be
+    // one row of nothing. The overview's 0 leaves its folders out on purpose.
+    stray.or_else(|| {
+        (args.count_by == Some(ls::CountBy::Folder) && args.depth == Some(0)).then(|| "--depth 0 counts no folder; use 1 or more".to_string())
+    })
 }
 
 /// What the command line asks, when it asks a question and does not serve.
@@ -196,7 +206,8 @@ fn stray(args: &Args) -> Option<String> {
 /// the question is asked: the command line's arguments, or the MCP server's
 /// own.
 enum Question {
-    Select(ls::Query),
+    /// A selection, listed or, with a `Count`, counted (0112).
+    Select(ls::Query, Option<ls::Count>),
     Describe { names: Vec<String>, sql: bool },
     Overview { depth: usize },
     Column(ls_column::Ask),
@@ -207,11 +218,16 @@ enum Question {
 /// flags two ways. A selection is looked at first, then a name to describe,
 /// the overview and the column, which is the order the modes were added in.
 fn question_of(args: &Args) -> Option<Question> {
+    // The depth's 3 is applied here, as the overview's is below.
+    let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
     match (&args.select, &args.selector) {
         (Some(select), _) => {
-            return Some(Question::Select(ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() }))
+            return Some(Question::Select(
+                ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() },
+                count,
+            ))
         }
-        (None, Some(name)) => return Some(Question::Select(ls::Query::Named(name.clone()))),
+        (None, Some(name)) => return Some(Question::Select(ls::Query::Named(name.clone()), count)),
         (None, None) => {}
     }
     if !args.describe.is_empty() {
@@ -245,7 +261,7 @@ impl Question {
     fn run(&self, args: &Args) -> i32 {
         let (project, manifest, catalog) = (&args.project, args.manifest.as_deref(), args.catalog.as_deref());
         match self {
-            Question::Select(query) => ls::run(project, manifest, query, args.output),
+            Question::Select(query, count) => ls::run(project, manifest, query, *count, args.output),
             Question::Describe { names, sql } => describe::run_describe(project, manifest, catalog, names, *sql, args.output),
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
             Question::Column(ask) => ls_column::run(project, manifest, ask, args.output),
@@ -538,7 +554,14 @@ mod tests {
     fn a_flag_of_another_mode_is_named_and_not_dropped() {
         for (line, flag) in [
             ("--overview --sql", "--sql goes with --describe"),
-            ("--describe orders --depth 2", "--depth goes with --overview"),
+            ("--describe orders --depth 2", "--depth goes with --overview or --count-by folder"),
+            ("-s orders --depth 2", "--depth goes with --overview or --count-by folder"),
+            ("-s orders --count-by kind --depth 2", "--depth goes with --overview or --count-by folder"),
+            ("-s orders --count-by folder --depth 0", "--depth 0 counts no folder; use 1 or more"),
+            ("--count-by kind", "--count-by goes with --select or --selector"),
+            ("--describe orders --count-by kind", "--count-by goes with --select or --selector"),
+            ("--overview --count-by folder", "--count-by goes with --select or --selector"),
+            ("--column a.b --count-by tag", "--count-by goes with --select or --selector"),
             ("--describe orders --exclude resource_type:test", "--exclude goes with --select"),
             ("--describe orders --up 1", "--up goes with --column"),
             ("--overview --indirect", "--indirect goes with --column"),
@@ -590,6 +613,7 @@ mod tests {
             ("--describe", "--mcp --describe orders"),
             ("--sql", "--mcp --sql"),
             ("--overview", "--mcp --overview"),
+            ("--count-by", "--mcp --count-by kind"),
             ("--depth", "--mcp --depth 2"),
             ("--output", "--mcp --output json"),
         ] {
@@ -634,6 +658,8 @@ mod tests {
         for line in [
             "--describe orders --sql",
             "--overview --depth 2",
+            "-s a --count-by folder --depth 2",
+            "--selector nightly --count-by kind",
             "-s a --exclude b",
             "--column a.b --up 1",
             "--column a.b --down all --stop-at window --indirect --column-tool collin",
@@ -650,8 +676,9 @@ mod tests {
     #[test]
     fn each_mode_is_the_question_its_flags_ask() {
         let text = |line: &str| match question_of(&asked(line)) {
-            Some(Question::Select(ls::Query::Line { select, exclude })) => format!("select {select} | {exclude}"),
-            Some(Question::Select(ls::Query::Named(name))) => format!("selector {name}"),
+            Some(Question::Select(ls::Query::Line { select, exclude }, None)) => format!("select {select} | {exclude}"),
+            Some(Question::Select(ls::Query::Named(name), None)) => format!("selector {name}"),
+            Some(Question::Select(_, Some(ls::Count { by, depth }))) => format!("count {by:?} {depth}"),
             Some(Question::Describe { names, sql }) => format!("describe {} {sql}", names.join(",")),
             Some(Question::Overview { depth }) => format!("overview {depth}"),
             Some(Question::Column(ask)) => format!(
@@ -667,6 +694,8 @@ mod tests {
         assert_eq!(text("-s stg_orders+1 --exclude resource_type:test"), "select stg_orders+1 | resource_type:test");
         assert_eq!(text("--selector nightly"), "selector nightly");
         assert_eq!(text("--describe orders,customers --sql"), "describe orders,customers true");
+        assert_eq!(text("-s orders --count-by kind"), "count Kind 3");
+        assert_eq!(text("--selector nightly --count-by folder --depth 1"), "count Folder 1");
         assert_eq!(text("--overview"), "overview 3");
         assert_eq!(text("--overview --depth 1"), "overview 1");
         assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");

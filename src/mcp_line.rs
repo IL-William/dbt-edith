@@ -35,6 +35,7 @@ pub const HELP: &str = concat!(
     "--overview [--depth N]          the project's shape: kinds, materializations, tags, selectors, folders. Ask first.\n",
     "--describe NAME[,NAME] [--sql]  a node's card: columns, types, tests, parents, children, reach. --sql adds its file.\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
+    "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
     "--selector NAME                 a selector of selectors.yml\n",
     "--column MODEL.COLUMN           a column's lineage, over the cache beside the manifest\n",
     "  --up N|all --down N|all       how far, 0 by default\n",
@@ -43,13 +44,13 @@ pub const HELP: &str = concat!(
     "  --column-tool fusion|collin|snowflake  whose cache answers\n",
     "  --run-collin                  run collin first, which rewrites its cache under target/\n",
     "--output name|json|compact      name by default; compact: one tab-separated line per node or column, under a header\n",
-    "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe, no shell: filter the answer yourself.\n",
+    "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe, no shell: count with --count-by KEY, or filter the answer yourself.\n",
     "After the answer: the manifest that answered, then freshness. When it says stale, run dbt parse and ask again.\n",
 );
 
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
-const ALLOWED: [&str; 15] = [
+const ALLOWED: [&str; 16] = [
     "select",
     "exclude",
     "selector",
@@ -63,6 +64,7 @@ const ALLOWED: [&str; 15] = [
     "describe",
     "sql",
     "overview",
+    "count_by",
     "depth",
     "output",
 ];
@@ -275,9 +277,13 @@ fn split(line: &str) -> Result<Vec<String>, String> {
                 }
             }
             c if SHELL.contains(c) => {
-                return Err(format!(
-                    "`{c}` is shell syntax, and the line is read by dbt-edith alone, never by a shell: ask one question, and filter its answer yourself"
-                ))
+                // A pipe is almost always a count (`| sort | uniq -c`), which a flag answers.
+                let tip = if c == '|' {
+                    ": count a selection with --count-by KEY, or ask one question and filter its answer yourself"
+                } else {
+                    ": ask one question, and filter its answer yourself"
+                };
+                return Err(format!("`{c}` is shell syntax, and the line is read by dbt-edith alone, never by a shell{tip}"));
             }
             c => {
                 in_word = true;
@@ -351,6 +357,7 @@ mod tests {
             let why = split(&format!("--overview {c} cut -f1")).unwrap_err();
             assert!(why.contains(&format!("`{c}` is shell syntax")), "{why}");
             assert!(why.contains("never by a shell"), "{why}");
+            assert_eq!(why.contains("--count-by"), c == '|', "{why}");
             assert_eq!(words(&format!("-s 'a{c}b'")), ["-s", &format!("a{c}b")]);
             assert_eq!(words(&format!("-s \"a{c}b\"")), ["-s", &format!("a{c}b")]);
         }
@@ -391,10 +398,10 @@ mod tests {
     #[test]
     fn each_mode_reads_to_its_question_and_the_flags_beside_it() {
         let (q, output) = asked("-s 'stg_orders+1' --exclude resource_type:test --output compact");
-        assert!(matches!(q, Question::Select(crate::ls::Query::Line { ref select, ref exclude }) if select == "stg_orders+1" && exclude == "resource_type:test"));
+        assert!(matches!(q, Question::Select(crate::ls::Query::Line { ref select, ref exclude }, None) if select == "stg_orders+1" && exclude == "resource_type:test"));
         assert_eq!(output, Output::Compact);
-        assert!(matches!(asked("--select=orders").0, Question::Select(_)), "the = form");
-        assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n)) if n == "nightly"));
+        assert!(matches!(asked("--select=orders").0, Question::Select(..)), "the = form");
+        assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n), None) if n == "nightly"));
         assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true } if names.len() == 2));
         assert!(matches!(asked("--overview --depth 1 --output=json").0, Question::Overview { depth: 1 }));
         let (q, _) = asked("--column orders.amount --up all --down 2 --stop-at window,aggregate --indirect --column-tool collin");
@@ -493,7 +500,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 25] = [
+    const SAMPLES: [(&str, &str); 26] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -516,6 +523,7 @@ mod tests {
         ("describe", "--describe orders"),
         ("sql", "--describe orders --sql"),
         ("overview", "--overview"),
+        ("count_by", "-s orders --count-by folder --depth 2"),
         ("depth", "--overview --depth 2"),
         ("output", "--overview --output json"),
         ("mcp", "--mcp"),
