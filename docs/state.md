@@ -1572,7 +1572,7 @@ allowed by clap argument id, no shell, the project, manifest and catalog fixed
 when it starts. It keeps the manifest and the base graph between calls and
 reloads them when their files change, answers the command line's text in two
 blocks, and lets `--run-collin` run per call, stopped by a cancellation or the
-end of input. Opt-in: nothing configures a client. Only the 2025-11-25
+end of input. Opt-in: nothing configures a client. Only the legacy
 handshake is served. Checked by `cargo test` and by `scripts/walk_mcp.py`,
 which drives it over stdio on Jaffle Shop and compares every answer with the
 command line's, bytes and exit codes, and by `--measure` on Jaffle Shop and
@@ -2300,7 +2300,7 @@ Left by the MCP server (0110, 1.44.0), unranked:
   tool about 153 in every context; where an agent has a terminal and the
   freshness walk dominates, which of the two to recommend is not measured in a
   session, only in bytes over four.
-- **Windows is not checked by hand:** the `.exe` spawned by each client, a
+- **Windows has no check:** the `.exe` spawned by each client, a
   `TerminateProcess` leaving collin running, a CRLF answer in VS Code. No CI
   job runs Windows, and the check's stand-in collin is a shell script.
 - **A project-scoped `.mcp.json`** with `"."` for the project: the folder

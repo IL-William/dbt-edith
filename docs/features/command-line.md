@@ -397,7 +397,7 @@ The result is the command line's text in two blocks, stdout then stderr, an
 empty one left out, with `isError` set when the exit code would not be 0. The
 second block carries the lines of the command line's stderr: the manifest that
 answered, when it was written, and `freshness:`. The answer is still the
-manifest's: when the line says `stale`, run `dbt parse` and ask again, the
+manifest's: when the line says `stale`, run `dbt parse` and ask again: the
 server reloads the manifest when its file changes. `column lineage capped at N
 edges` is the one message that goes to the server's own stderr instead.
 
@@ -423,21 +423,12 @@ relative `--manifest` is made whole against the folder the server started in.
 
 ### What it is for
 
-Measured on 2026-10-21 on Jaffle Shop and on Fivetran's Shopify v1.10.0, one
-machine, a release build:
-
-- **A call is faster by about 1.5x to 2x**, the process start and the load it
-  does not repeat: a warm call 4.9 ms against 9.8 ms on Jaffle Shop, 34.9
-  against 53.0 on Shopify. What is left is the freshness line, whose git
-  processes run on every call; keeping the manifest costs microseconds and
-  saves almost nothing by itself.
-- **The graph stays in memory**: 3.5 MiB after the handshake, 8.5 and 30 MiB
-  after twenty questions.
-- **It works where there is no terminal.**
-- **It costs context**: the tool and the server's instructions are about 153
-  tokens (bytes over four), against about 48 for a one-line skill and 447 for
-  a tool per mode. Where the agent has a terminal and the answer is not on
-  the critical path, the skill is the cheaper way to ask.
+A call is faster by about 1.5x to 2x, the graph stays in memory, and it works
+where there is no terminal; it costs about 153 tokens of context against about
+48 for a one-line skill. Where the agent has a terminal and the answer is not
+on the critical path, the skill is the cheaper way to ask. The figures and
+what was weighed are in
+[0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md).
 
 A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
 `--output compact`, or a narrower selection.

@@ -56,25 +56,19 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
 
 ## What it adds, measured
 
-- **Faster per call, by what it does not repeat.** Warm, the median call took
-  4.9 ms against 9.8 ms for the command line on Jaffle Shop (2.0x) and 34.9
-  against 53.0 ms on Shopify (1.5x); 20 mixed lines took 106 against 200 ms and
-  774 against 1206 ms. The gain is the process start and the load (about 2 ms
-  on Jaffle Shop; 9 ms for the manifest and 39 ms for the graph `--describe`
-  and `--overview` use on Shopify). **The cache itself saves almost nothing**:
-  deciding it is still good costs microseconds. The freshness line, with its
-  git processes, runs on every call and is 4.8 of the 4.9 ms on Jaffle Shop
-  (one failed spawn: it is not a repository) and 34.6 of the 34.9 on Shopify.
-  Without it the warm call is 0.1 and 0.2 ms.
+- **Faster per call, 1.5x to 2x**: a warm call took 4.9 ms against 9.8 ms for
+  the command line on Jaffle Shop and 34.9 against 53.0 ms on Shopify. Checking
+  that the kept graph is still good costs microseconds; what it saves is the
+  process start and the load (9 ms for the manifest and 39 ms for the graph
+  `--describe` and `--overview` use on Shopify). What is left is the freshness
+  line, whose git processes run on every call.
 - **Memory is kept**: 3.5 MiB after the handshake, 8.5 MiB (Jaffle Shop) and 30
   MiB (Shopify) after 20 lines, against 7 and 18 to 22 MiB for one command.
-- **Clients without a terminal** can ask at all.
-- **What it costs in the context**: the tool and the server's instructions are
-  614 bytes, about 153 tokens at four bytes a token, against 195 bytes (48) for
-  a one-line skill description and 1791 bytes (447) for a tool per mode. Those
-  are bytes over four, not Claude's tokenizer.
-- **Approving the one tool approves collin runs too**, since the tool cannot
-  be split by flag.
+- **Context**: the tool and the instructions are about 153 tokens, against 48
+  for a one-line skill description and 447 for a tool per mode (bytes over
+  four, not Claude's tokenizer).
+- **Clients without a terminal** can ask at all. Approving the one tool
+  approves collin runs too, since the tool cannot be split by flag.
 
 ## Rejected
 
@@ -101,13 +95,8 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
   are what was weighed then, and this is what followed.
 - `graph.rs` prints "column lineage capped" to the server's own stderr, not to
   the answer.
-
-## Known limits
-
-- The modern handshake is not served; a client that insists on it is out.
 - On Windows a client that ends the server with `TerminateProcess` can leave a
-  running collin to its end. Nothing was run on Windows by hand; no CI job
-  covers it, and the stand-in collin of the check is a shell script.
+  running collin to its end. No CI job covers Windows, and the stand-in collin
+  of the check is a shell script.
 - A line is at most 16 KiB and a message 1 MiB, and a longer one is refused.
-- One machine, one run of three passes; timings of 5 ms are within a few
-  tenths of noise.
+  The modern handshake and the other limits are in `docs/state.md`.
