@@ -23,10 +23,10 @@ mod ls_column;
 mod macro_use;
 mod macros;
 mod manifest;
-// Read by the MCP server, which the next change adds.
+// Started by `--mcp`, which the next change adds.
 #[allow(dead_code)]
+mod mcp;
 mod mcp_graphs;
-#[allow(dead_code)]
 mod mcp_line;
 mod profiles;
 mod program;

@@ -79,6 +79,7 @@ impl Graphs {
         self.catalog.as_deref()
     }
 
+    #[cfg(test)]
     pub fn loads(&self) -> Loads {
         self.loads
     }
@@ -168,14 +169,14 @@ fn for_the_server(why: String) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::time::Duration;
 
     /// A Jaffle Shop project with a manifest, a catalog, a project file, a
     /// selectors file, and a model of an installed package whose file sits
     /// under `dbt_packages/`.
-    fn project(tag: &str) -> PathBuf {
+    pub(crate) fn project(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("dbt-edith-mcp-graphs-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("target")).unwrap();
