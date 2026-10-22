@@ -1670,6 +1670,27 @@ copy: no file, saved into the project, reopened on the file, and a file that
 does not read. Not driven: the reason shown under the choice for a path the
 file may not hold, and Save held while a save is on its way.
 
+The tool's own checks (0116, 1.51.0): a Checks section in Reports, apart from
+Warnings, listing the root project's own enabled nodes that four rules pick
+out: sources with no freshness threshold as dbt-core counts one (read from the
+source's `freshness`, else its config, and given no verdict where the manifest
+has neither), models no test counts for (a generic test declared on one, found
+by dbt's `attached_node` or, for a source's test, its `file_key_name`; a
+singular test selecting from one; a unit test of one), models with no
+description, and sources no node reads. Each rule is a fold with its count,
+its rows grouped by folder, the first hundred drawn and a button for the
+rest, and the server sends at most a thousand rows of each with its total. The
+section is quiet: listed in the rail, never lighting the button, carrying a
+chip or opening the panel, so 0075 holds. Checked with `cargo test` on an
+invented graph (each rule, a relationships target, a source's test with a
+package prefix or a name of the user's, a versioned model, a disabled node, a
+package's, a key absent, the cap and the total, the route and the index) and by
+`scripts/compare_with_dbt.py`, which works the four lists out again in Python
+from the manifest dbt-core 1.12.6 wrote, on Jaffle Shop, Shopify and a copy of
+Jaffle Shop given sources, models and tests of every shape. Not checked: dbt
+Fusion's manifest for `freshness` and for `file_key_name`, and the Reports
+panel with the lists of a project of many thousands of nodes.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
@@ -1722,21 +1743,25 @@ edited, so find an item by its title.
 6. **More warnings worked out here, without a run.** They hold for dbt-core
    and Fusion alike, and when no log is there. The Warnings section of Reports
    lists the first, the config paths of `dbt_project.yml` that apply to no
-   resource (0103); each of these would join it, checked against dbt the same
-   way in `scripts/compare_with_dbt.py`.
+   resource (0103), and the Checks section the tool's own rules (0116); each
+   of these would join the one that fits it, checked against dbt the same way
+   in `scripts/compare_with_dbt.py`.
    - **Others worth ranking:**
-     - sources no model reads;
-     - sources without a freshness config, which `dbt source freshness`
-       skips;
-     - models with no test or no description;
+     - ~~sources no model reads;~~ Settled in 1.51.0 (0116), in Checks.
+     - ~~sources without a freshness config, which `dbt source freshness`
+       skips;~~ Settled in 1.51.0 (0116), in Checks.
+     - ~~models with no test or no description;~~ Settled in 1.51.0 (0116), in
+       Checks.
      - vars `dbt_project.yml` defines that no `var()` call reads, from 0018's
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-   - **A "Checks" section in Reports, apart from Warnings:** sources without
+   - ~~**A "Checks" section in Reports, apart from Warnings:** sources without
      freshness, project models with no test, no description, and sources no
      model reads. dbt warns of none of these. It needs `freshness` read from
-     the manifest, and its own decision.
+     the manifest, and its own decision.~~ Settled in 1.51.0 (0116). Left
+     over: dbt Fusion's manifest shape for `freshness` was not looked at, and
+     the checks hold only the root project's own nodes.
 7. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:

@@ -270,6 +270,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/reports/run", get(last_run_report))
         .route("/api/reports/warnings", get(warnings_report))
         .route("/api/reports/macros", get(macros_report))
+        .route("/api/reports/checks", get(checks_report))
         .route("/api/collin/version", post(choose_collin_version))
         .route("/api/collin/install", get(collin_install_command))
         .route("/api/collin/compare", get(compare_collin_versions))
@@ -936,7 +937,8 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
 /// Which reports the panel has something to show in, and when each last
 /// changed (0064). File metadata and the settings, and nothing else but the
 /// last run's counts and the unused config paths, which the button shows, the
-/// counts colouring the last run's dot in the rail as well:
+/// counts colouring the last run's dot in the rail as well, and what the
+/// graph in memory holds, the macros' and the checks' counts:
 /// collin's report is not parsed, collin never starts (0042) and no job file
 /// is looked at, since a section reads its own when it opens (0063).
 async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
@@ -967,10 +969,12 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     // The macros section is listed only while some macro of the project is
     // reached by no node and nothing explains it, from summaries worked out
     // once per macro (0105).
-    let unexplained = {
+    // The checks section is listed only while one of the four finds a node,
+    // counted from the same graph: no file is read (0116).
+    let (unexplained, checks) = {
         let graph = st.graph.read().await;
         let unreached = graph.macro_use.unreached(&graph.macros);
-        unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count()
+        (unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count(), crate::checks::count(&graph))
     };
     Json(ReportsIndex {
         run,
@@ -978,6 +982,7 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         collin: (report > 0).then_some(Stamp { at: report }),
         jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at, counts }),
         macros: (unexplained > 0).then_some(MacrosIndex { unexplained, at: manifest_at }),
+        checks: (checks > 0).then_some(ChecksIndex { count: checks, at: manifest_at }),
     })
     .into_response()
 }
@@ -1072,6 +1077,25 @@ async fn macros_report(State(st): State<Arc<AppState>>, Query(q): Query<MacrosRe
         Ok(r) => Json(r).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+/// The tool's own checks on the project, which dbt warns of none of (0116).
+async fn checks_report(State(st): State<Arc<AppState>>) -> Response {
+    let graph = st.graph.read().await.clone();
+    if graph.meta.manifest_mtime == 0 {
+        return (StatusCode::NOT_FOUND, "nothing to check: no manifest").into_response();
+    }
+    match tokio::task::spawn_blocking(move || ChecksReport { manifest_at: graph.meta.manifest_mtime, checks: crate::checks::checks(&graph) }).await {
+        Ok(r) => Json(r).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ChecksReport {
+    manifest_at: u64,
+    #[serde(flatten)]
+    checks: crate::checks::Checks,
 }
 
 /// More nodes than a list in a report is read through: a project macro a
@@ -1196,6 +1220,16 @@ struct ReportsIndex {
     jobs: Option<JobsIndex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     macros: Option<MacrosIndex>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checks: Option<ChecksIndex>,
+}
+
+/// How many nodes the checks list in all, against the manifest they were
+/// counted in (0116).
+#[derive(serde::Serialize)]
+struct ChecksIndex {
+    count: usize,
+    at: u64,
 }
 
 /// How many of the project's macros no node reaches and nothing explains,
@@ -5576,6 +5610,73 @@ mod tests {
         *st.graph.write().await = Arc::new(Graph::build(manifest(false), &path, 0, 0));
         assert_eq!(json(&response_of(port, get("/api/reports", &h)).await)["macros"]["unexplained"], 4);
 
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The checks are the tool's own rules, listed in Reports while one finds
+    /// a node, from the graph in memory, and read off the manifest (0116).
+    #[tokio::test]
+    async fn the_checks_list_what_the_manifest_leaves_undone_and_the_index_only_while_one_does() {
+        let root = temp_project("checks");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let json = |answer: &str| -> serde_json::Value { serde_json::from_str(past_head(answer)).unwrap() };
+
+        let none = response_of(port, get("/api/reports/checks", &h)).await;
+        assert!(none.starts_with("HTTP/1.1 404") && none.contains("no manifest"), "{none}");
+        assert!(json(&response_of(port, get("/api/reports", &h)).await).get("checks").is_none());
+
+        let manifest = |description: &str, tested: bool| -> RawManifest {
+            let mut nodes = serde_json::json!({
+                "model.shop.orders": { "name": "orders", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/marts/orders.sql", "description": description },
+            });
+            if tested {
+                nodes["test.shop.not_null_orders_id"] = serde_json::json!({
+                    "name": "not_null_orders_id", "resource_type": "test", "package_name": "shop",
+                    "attached_node": "model.shop.orders", "test_metadata": { "name": "not_null" } });
+            }
+            serde_json::from_value(serde_json::json!({
+                "metadata": { "project_name": "shop" },
+                "nodes": nodes,
+                "sources": {
+                    "source.shop.crm.customers": { "name": "customers", "resource_type": "source", "package_name": "shop",
+                        "source_name": "crm", "original_file_path": "models/sources.yml", "freshness": null },
+                },
+                "parent_map": { "model.shop.orders": ["source.shop.crm.customers"],
+                    "test.shop.not_null_orders_id": ["model.shop.orders"] },
+            }))
+            .unwrap()
+        };
+        let path = root.join("target").join("manifest.json");
+        *st.graph.write().await = Arc::new(Graph::build(manifest("", false), &path, 7, 0));
+        let index = json(&response_of(port, get("/api/reports", &h)).await);
+        // The source has no freshness, and the model no test and no description.
+        assert_eq!(index["checks"], serde_json::json!({ "count": 3, "at": 7 }));
+        let report = json(&response_of(port, get("/api/reports/checks", &h)).await);
+        let row = |id: &str, name: &str, file: &str, folder: &str| serde_json::json!({ "id": id, "name": name, "file": file, "folder": folder });
+        assert_eq!(report["manifest_at"], 7);
+        assert_eq!(report["sources_without_freshness"]["total"], 1);
+        assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models")]));
+        assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts")]));
+        assert_eq!(report["models_without_description"]["rows"][0]["name"], "orders");
+        assert_eq!(report["sources_not_read"], serde_json::json!({ "total": 0, "rows": [] }));
+        assert!(status_of(port, keyless(get("/api/reports/checks", &h))).await.ends_with("401 Unauthorized"));
+
+        // The model described and tested, and the source read: only its
+        // freshness is left, so the count follows the manifest.
+        *st.graph.write().await = Arc::new(Graph::build(manifest("One row per order.", true), &path, 8, 0));
+        assert_eq!(json(&response_of(port, get("/api/reports", &h)).await)["checks"], serde_json::json!({ "count": 1, "at": 8 }));
+
+        // Nothing left: the section is not listed, though the route still answers.
+        let mut all = manifest("One row per order.", true);
+        all.sources.get_mut("source.shop.crm.customers").unwrap().freshness =
+            Some(Box::new(serde_json::json!({ "warn_after": { "count": 1, "period": "day" } })));
+        *st.graph.write().await = Arc::new(Graph::build(all, &path, 9, 0));
+        assert!(json(&response_of(port, get("/api/reports", &h)).await).get("checks").is_none());
+        assert_eq!(json(&response_of(port, get("/api/reports/checks", &h)).await)["models_without_test"]["total"], 0);
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -9540,9 +9540,11 @@ function escapePanel() {
    nothing, collin's report once a run wrote one, the coverage of the jobs
    once a source is named, the macros while one of the project's is reached by
    no node and nothing explains it, and, empty, once a macro's card asked for
-   its callers, `focus` (0105). Before that the coverage is listed all the
-   same, `empty`, as the place a source is added from (0070), but it is not
-   opened on for itself, and the button stays dimmed (0075). */
+   its callers, `focus` (0105), and last the tool's own checks while one finds
+   a node, `quiet`: listed, but it never lights the button nor opens the panel
+   (0116). Before that the coverage is listed all the same, `empty`, as the
+   place a source is added from (0070), but it is not opened on for itself, and
+   the button stays dimmed (0075). */
 function reportsSections(index, focus) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
@@ -9555,6 +9557,8 @@ function reportsSections(index, focus) {
       title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
     { key: 'macros', label: 'Macros', tool: 'dbt',
       title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
+    { key: 'checks', label: 'Checks', tool: 'dbt',
+      title: "This tool's own checks on the project, which dbt warns of none of: sources without freshness, models with no test or no description, sources no node reads" },
   ];
   const has = (key) => !!(index && index[key]);
   // The last run's dot says how it ended, from the counts the index carries;
@@ -9565,8 +9569,16 @@ function reportsSections(index, focus) {
   // A card's focus lists the macros all the same, `empty` unless one lights
   // the button: what lights it is the user's rule, not a click (0105).
   const listed = (key) => key === 'jobs' || has(key) || (key === 'macros' && !!focus);
+  // The checks are listed in the rail and never light the button or open the
+  // panel, `quiet`: they would be there on nearly every project (0116).
   return all.filter((sec) => listed(sec.key))
-    .map((sec) => (has(sec.key) ? sec : Object.assign(sec, { empty: true })));
+    .map((sec) => Object.assign(sec, has(sec.key) ? (sec.key === 'checks' ? { quiet: true } : {}) : { empty: true }));
+}
+
+/* Whether a section lights the button and may be the one the panel opens on:
+   one with something, and not a quiet one (0075, 0116). */
+function lights(sec) {
+  return !sec.empty && !sec.quiet;
 }
 
 /* What is new in the reports since each was last shown, in the sections'
@@ -9783,13 +9795,14 @@ function runEntryText(e) {
 /* The section the panel opens on: one with news, then the one read last this
    session unless it is empty, then the first that is not, and the first there
    is, the empty coverage, only when every one is (0070, 0075): the macros come
-   after the coverage, so the first listed is not always the one to open on. */
+   after the coverage, so the first listed is not always the one to open on.
+   A quiet section is none of them. */
 function reportsDefaultSection(sections, news, last) {
   const has = (key) => sections.some((sec) => sec.key === key);
   const fresh = (news || []).find((n) => has(n.key));
   if (fresh) return fresh.key;
-  if (last && sections.some((sec) => sec.key === last && !sec.empty)) return last;
-  const full = sections.find((sec) => !sec.empty);
+  if (last && sections.some((sec) => sec.key === last && lights(sec))) return last;
+  const full = sections.find(lights);
   return full ? full.key : sections.length ? sections[0].key : '';
 }
 
@@ -9797,7 +9810,7 @@ function reportsDefaultSection(sections, news, last) {
    what will fill them while nothing does, since the button is dimmed then
    rather than hidden (0075). */
 function reportsButtonTitle(sections, news, key) {
-  const names = sections.filter((sec) => !sec.empty).map((sec) => sec.label).join(', ');
+  const names = sections.filter(lights).map((sec) => sec.label).join(', ');
   const none = 'Nothing yet: the last dbt run fills one, from target/run_results.json, a config path of dbt_project.yml '
     + 'that applies to nothing another, collin\'s report another, the job coverage once the Jobs tab has a source, '
     + 'which is added here, and a macro of the project no node reaches that nothing explains.';
@@ -9862,7 +9875,7 @@ function paintReportsButton() {
   // anything, and dimmed until a section does, with no chip until then:
   // news of a report the index does not list yet would say the opposite of
   // its tooltip (0075).
-  const some = sections.some((sec) => !sec.empty);
+  const some = sections.some(lights);
   btn.classList.remove('hidden');
   const open = panelOpen('reports');
   btn.classList.toggle('dim', !some && !open);
@@ -9993,11 +10006,15 @@ function keepReportPlace(view) {
 function restoreReportPlace(view, place) {
   const scroller = view.querySelector('.reportbody, .jobs-body');
   if (!place || !scroller) return;
+  // Show all first: a list drawn again brings folds of its own, whose state
+  // is then put back from a fresh look at the folds.
+  for (const d of scroller.querySelectorAll('details')) {
+    const more = place.all && place.all[reportFoldKey(d)] && d.querySelector('.showall');
+    if (more) more.click();
+  }
   for (const d of scroller.querySelectorAll('details')) {
     const key = reportFoldKey(d);
     if (key in place.open) d.open = place.open[key];
-    const more = place.all && place.all[key] && d.querySelector('.showall');
-    if (more) more.click();
   }
   scroller.scrollTop = place.scroll;
 }
@@ -10021,7 +10038,8 @@ async function showReportSection(key) {
   const again = () => showReportSection(key);
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again)
-      : key === 'macros' ? await macrosSection(again) : await jobsCoverageSection(again);
+      : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again)
+        : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
   view.replaceChildren(...drawn);
@@ -10255,6 +10273,106 @@ async function macrosSection(again) {
     body.append(d);
   }
   return [head(about), body];
+}
+
+/* The tool's own checks, apart from what dbt would warn of: one fold per
+   rule with its count, open while it lists fifty or fewer, rows grouped by
+   folder as the job coverage groups its own. A name opens the node with its
+   Catalog tab, as the other reports' rows do (0116). */
+const CHECKS = [
+  { key: 'sources_without_freshness', title: 'Sources without freshness',
+    why: 'No freshness threshold dbt counts: neither warn_after nor error_after holds both a count and a period, on the table or inherited from its source.' },
+  { key: 'models_without_test', title: 'Models with no test',
+    why: 'No generic test declared on the model or one of its columns, no singular test selecting from it and no unit test of it. A test that only points at it, a relationships target, does not count.' },
+  { key: 'models_without_description', title: 'Models with no description',
+    why: 'An empty description once doc blocks are resolved.' },
+  { key: 'sources_not_read', title: 'Sources no node reads',
+    why: 'No node has it as a parent, a test of it aside: a model, snapshot, analysis or exposure reading it counts.' },
+];
+
+async function checksSection(again) {
+  const about = "this tool's own rules, read off the manifest: dbt warns of none of them";
+  const head = () => reportHead({ title: 'Checks', tool: 'dbt', about, again });
+  let r;
+  try { r = await api.get('/api/reports/checks'); }
+  catch (e) { return [head(), jel('div', 'compiled-empty', e.message)]; }
+  const body = jel('div', 'reportbody');
+  body.append(jel('p', 'runnote', "Only the project's own enabled models and sources are looked at, never an installed package's."));
+  for (const c of CHECKS) {
+    // `rows` is what the server sent, at most its cap of the `total` found.
+    const { total = 0, rows = [] } = r[c.key] || {};
+    if (!total) continue;
+    const d = jel('details', 'reportfinding');
+    d.open = total <= 50;
+    const sum = jel('summary', '');
+    sum.append(jel('span', 'rtitle', c.title), jel('span', 'rcount', String(total)));
+    const groups = jel('div', '');
+    const draw = (shown) => groups.replaceChildren(...checkGroups(rows, shown, d.open));
+    d.append(sum, jel('p', 'rlever', c.why), groups);
+    // A list of thousands draws its first rows, a button the rest, as Slowest
+    // does: the folds that are closed would draw them all the same.
+    const rest = rows.length - CHECK_SHOWN;
+    draw(CHECK_SHOWN);
+    if (rest > 0 || total > rows.length) {
+      const more = jel('ul', 'rentries');
+      if (rest > 0) {
+        const li = jel('li', 'muted');
+        const all = jel('button', 'btn sm showall', `Show all ${rows.length}`);
+        all.addEventListener('click', () => {
+          d.dataset.all = '1';
+          draw(rows.length);
+          li.remove();
+        });
+        li.append(all);
+        more.append(li);
+      }
+      if (total > rows.length) more.append(jel('li', 'muted', `and ${total - rows.length} more`));
+      d.append(more);
+    }
+    body.append(d);
+  }
+  if (body.children.length === 1) body.append(jel('p', 'runnote', 'Nothing to list: every check comes out clean.'));
+  return [head(), body];
+}
+
+/* How many rows of a check are drawn before Show all. */
+const CHECK_SHOWN = 100;
+
+/* The first `shown` of a check's rows, by folder as the job coverage groups its
+   own. The folders are made of every row the server sent, so a folder's count
+   is the whole of it, drawn or not. */
+function checkGroups(rows, shown, open) {
+  const out = [];
+  const drawn = new Set(rows.slice(0, shown).map((r) => r.id));
+  for (const g of jobsCoverageGroups(rows)) {
+    const here = g.rows.filter((r) => drawn.has(r.id));
+    if (!here.length) continue;
+    // A folder of one is no level to unfold: the row is listed bare.
+    if (g.rows.length === 1 || !g.folder) {
+      const ul = jel('ul', 'rentries');
+      for (const row of here) ul.append(checkRow(row, row.folder));
+      out.push(ul);
+      continue;
+    }
+    const folder = jel('details', 'checkfolder');
+    folder.open = open;
+    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
+    const ul = jel('ul', 'rentries');
+    for (const row of here) ul.append(checkRow(row, row.rest));
+    folder.append(ul);
+    out.push(folder);
+  }
+  return out;
+}
+
+function checkRow(row, path) {
+  const li = jel('li', '');
+  const name = jel('a', 'filelink', row.name);
+  name.title = row.file ? `${row.id} · ${row.file}` : row.id;
+  name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(row.id); });
+  li.append(name);
+  if (path) li.append(jel('span', 'muted', ' · ' + path));
+  return li;
 }
 
 /* A macro card's first line: the Reports panel, on the nodes reaching it. */
@@ -14249,7 +14367,7 @@ async function startTour() {
   t.steps = tourSteps({
     model, mac: IS_MAC, jobs,
     manifest: !!(S.meta && S.meta.manifest_mtime),
-    reports: reportsNow().sections.filter((sec) => !sec.empty).map((sec) => sec.label),
+    reports: reportsNow().sections.filter(lights).map((sec) => sec.label),
     // A tool picked is not yet edges on screen: collin running or failed has none.
     cll: (S.meta && S.meta.cll_file) || sidecarOn() ? pick.name : '',
     snowflake: !!(S.features && S.features.snowflake),

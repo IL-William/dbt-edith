@@ -2,6 +2,7 @@
 //! Editor + terminal + lineage, served from one self-contained binary.
 
 mod api;
+mod checks;
 mod clone;
 mod collin;
 mod collin_compare;

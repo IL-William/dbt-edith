@@ -76,9 +76,12 @@ itself: every named selector and a list of typed expressions, asked of the box
 and of the command line, and the nodes drawn around each model at one, two and
 twenty levels, resolved by dbt-edith and by `dbt ls`, have to name the same
 nodes. The Warnings report's config paths that apply to nothing are compared
-with the warning dbt gives as it parses, path for path (0103). It runs on a
+with the warning dbt gives as it parses, path for path (0103), and the four
+lists of the Checks report with the same lists worked out in Python from the
+manifest dbt wrote (0116). It runs on a
 copy of dbt Labs' Jaffle Shop in `tests/fixtures/`, a second copy given such
-paths, and Fivetran's Shopify package, cloned at the tag
+paths, a third given sources, models and tests of every shape the checks tell
+apart, and Fivetran's Shopify package, cloned at the tag
 `tests/fixtures/shopify/` names. It needs dbt-core and dbt-duckdb, and skips
 itself without them; without git or the network it skips Shopify:
 
