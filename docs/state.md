@@ -2070,13 +2070,18 @@ of its own, and each panel updates the tour, its page under
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110);
     - a `selectors` line on a node's card, the named selectors that select it.
-21. **Where the sources file goes after a save.** The form writes
-    `.dbt-edith/jobs.yml` when asked to keep the sources in the project (0115)
-    and says nothing more, so the file shows up untracked and is committed
-    without anyone having decided it. After that save the form would ask:
-    - **keep it for me**, which adds `.dbt-edith/` to the repository's
-      `info/exclude`, the untracked ignore list, so the file never shows in
-      `git status` and never reaches a commit;
+21. **Where the sources file goes after a save.** The form already offers
+    `.dbt-edith/jobs.yml` (shared, committed) beside "For me only" (0115),
+    but the command line and MCP read only the file, never the settings, so
+    someone who wants an agent to see the sources without sharing them must
+    write the file and then keep it out of git. After a save that leaves the
+    file untracked (`??` in `git status --porcelain -- .dbt-edith/jobs.yml`;
+    nothing is asked when it is tracked or ignored) the form would ask:
+    - **keep it for me**, which adds `/<prefix>.dbt-edith/` to the
+      repository's `info/exclude`, the untracked ignore list, so the file never
+      shows in `git status` and never reaches a commit; the entry is anchored
+      to the project's folder by the `--show-prefix` that `src/git.rs` already
+      reads, since a bare `.dbt-edith/` would match at any depth;
     - **share it with the team**, which does nothing more: the file is there to
       commit.
 
@@ -2085,9 +2090,11 @@ of its own, and each panel updates the tour, its page under
     without it reads no source. The traps: the exclude file is found by
     `git rev-parse --git-path info/exclude`, not by `.git/info`, because in a
     worktree `.git` is a file and the list is shared by the main checkout; it is
-    the first write under a `.git` folder dbt-edith makes, which wants its own
-    decision (0007 goes through the git CLI); and nothing may ever add to
-    a tracked ignore file, which is the repository's.
+    the first file dbt-edith writes there itself (0007 goes through the git
+    CLI), and the write cannot go through `files::resolve` (0094), which
+    refuses paths outside the project, where the git folder lies in a worktree
+    or when the dbt project sits in a subfolder; and nothing may ever add to a
+    tracked ignore file, which is the repository's.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
