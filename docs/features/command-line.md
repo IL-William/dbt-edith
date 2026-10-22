@@ -482,13 +482,14 @@ Six habits keep the answers small and true:
 - **Put several `--exclude` terms in one quoted value, and know what
   `--count-by` counts.** The flag takes one value, as in `--exclude
   'resource_type:test resource_type:source'`. A count includes the sources,
-  the seeds and the node the selection starts from, so those are excluded to
-  count models, and the start is subtracted when it is selected.
+  the seeds, the exposures a downstream selection reaches and the node the
+  selection starts from, so those are excluded to count models, and the start
+  is subtracted when it is selected.
 - **For the jobs that touch a set of nodes, or the models no job runs, go job
-  by job.** `--overview --output json` names every job, where the text stops at
-  fifteen, `--job` lists the nodes each one runs, and the agent intersects them
-  with the selection or subtracts them from it. It costs one call per job, so an
-  agent with many says which it did not check.
+  by job.** `--overview --depth 0 --output json` names every job, where the
+  text stops at fifteen, `--job` lists the nodes each one runs, and the agent
+  intersects them with the selection or subtracts them from it. It costs one
+  call per job, so an agent with many says which it did not check.
 
 Start from these commands, or from the skill that wraps them
 ([below](#the-skill)). Use MCP only where there is no terminal to run them in;
@@ -526,12 +527,11 @@ one-line description was not loaded where one that names the questions it
 answers was, so the shipped one lists them, the kinds of node, the lineage in
 both directions, the column lineage, the jobs that run a node and the
 overview, and says to use it before grepping SQL or running `dbt ls`. Change it
-with care. It describes the card's
-per-`.env` lines as [the card](#the-card) does, the config before the
-`generate_*_name` macros and not where dbt builds. An agent that has no
-terminal, or whose client lists tools rather than skills, needs no skill: it
-can ask the same questions [over MCP](#over-mcp), where `help` is the reference
-and `--skill` is refused.
+with care. It describes the card's per-`.env` lines as [the card](#the-card)
+does, the config before the `generate_*_name` macros and not where dbt builds.
+An agent that has no terminal, or whose client lists tools rather than skills,
+needs no skill: it can ask the same questions [over MCP](#over-mcp), where
+`help` is the reference and `--skill` is refused.
 
 ## Over MCP
 
