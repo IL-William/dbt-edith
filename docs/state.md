@@ -1733,6 +1733,10 @@ edited, so find an item by its title.
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
+   - **A "Checks" section in Reports, apart from Warnings:** sources without
+     freshness, project models with no test, no description, and sources no
+     model reads. dbt warns of none of these. It needs `freshness` read from
+     the manifest, and its own decision.
 7. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
@@ -2437,8 +2441,9 @@ Left by the MCP server (0110, 1.44.0), unranked:
 - ~~**A test to watch:**
   `the_end_of_input_kills_a_run_of_collin_and_the_server_ends` (`src/mcp.rs`)
   failed once in a first run and passed alone and on a rerun; possibly
-  flaky.~~ Settled in 1.49.1: the stand-in wrote its pid after the file the
-  test waits on.
+  flaky.~~ Closed in 1.49.1: a race that could explain it (the stand-in wrote
+  its pid after the file the test waits on), reproduced by pausing between the
+  two writes; the original failure was never observed.
 
 Left by the card's per-file locations (0113, 1.47.0), unranked:
 
@@ -2474,6 +2479,11 @@ Left by the count (0112, 1.46.0), unranked:
 - ~~**Over MCP**, an invalid `--count-by` value is refused without clap's
   `[possible values]` line.~~ Settled in 1.49.1: the refusal keeps that line for
   `--count-by`, `--output` and `--column-tool`.
+- **Over MCP the `[possible values: ...]` line** is kept whichever flag the
+  error names, not checked against the allowed flags. Harmless today, but a
+  terminal-only enum flag would list its values before being refused; clap's
+  `ContextKind::InvalidArg` and `ValidValue` would be sturdier than parsing the
+  text (`src/mcp_line.rs`).
 - **Count mode** still sorts the selection by name before counting; linear and
   harmless.
 
@@ -2511,6 +2521,28 @@ Left by the agent skill (0114, 1.48.0), unranked:
   still weigh the one-line skill.
 - **Skill against MCP tool** was tried with Claude Code only, whose deferral of
   MCP tools is the client's setting; Copilot and the others were not tried.
+
+Left by the pull requests of 2026-10-22 (#103 to #105, 1.49.1 to 1.50.0), each
+a known limit, unranked:
+
+- **`SKILL.md` is 4082 of its 4096 bytes** (the test's limit), so the next
+  recipe needs a cut. The warning to say which steps were not resolved was
+  dropped for lack of room.
+- **The MCP variant of the skill** (a `SKILL.md` telling an agent to load the
+  edith tool and call it) is documented, not shipped, and was tried with Claude
+  Code only.
+- **Show all and the zero-count Job coverage groups are untested**, since no
+  harness slices `runSection` or `renderCoverage` (0013).
+- **"Read again" folds Slowest back to five rows**, while a redraw from the
+  panel keeps the full list.
+- **A kind tile whose statuses include an unknown one is amber**, like the dot.
+- **A new status word goes in two places:** the index run entry carries error,
+  fail, warn, partial, ok and other (`counts()` in `src/run_results.rs`), and
+  the page head recomputes the same from `run.statuses` (`runEndCounts` in
+  `web/app.js`).
+- **README pictures must be retaken** with `COLLIN` set to a 0.10 build and a
+  dbt 1.12 venv, never the collin found on PATH when it is older;
+  `scripts/take_shots.py` uses whichever it finds.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
