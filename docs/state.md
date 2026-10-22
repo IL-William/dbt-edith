@@ -2070,6 +2070,24 @@ of its own, and each panel updates the tour, its page under
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110);
     - a `selectors` line on a node's card, the named selectors that select it.
+21. **Where the sources file goes after a save.** The form writes
+    `.dbt-edith/jobs.yml` when asked to keep the sources in the project (0115)
+    and says nothing more, so the file shows up untracked and is committed
+    without anyone having decided it. After that save the form would ask:
+    - **keep it for me**, which adds `.dbt-edith/` to the repository's
+      `info/exclude`, the untracked ignore list, so the file never shows in
+      `git status` and never reaches a commit;
+    - **share it with the team**, which does nothing more: the file is there to
+      commit.
+
+    Either way it says that a relative path such as `../orchestration/dags`
+    only works where that folder is cloned at the same place, so a teammate
+    without it reads no source. The traps: the exclude file is found by
+    `git rev-parse --git-path info/exclude`, not by `.git/info`, because in a
+    worktree `.git` is a file and the list is shared by the main checkout; it is
+    the first write under a `.git` folder dbt-edith makes, which wants its own
+    decision (0007 goes through the git CLI); and nothing may ever add to
+    a tracked ignore file, which is the repository's.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
