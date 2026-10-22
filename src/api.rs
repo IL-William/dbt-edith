@@ -5131,7 +5131,7 @@ mod tests {
         assert!(run.contains(r#""unknown":{"items":["test.shop.gone.x"],"of":1}"#), "{run}");
         assert!(!run.contains("hunter2"), "{run}");
         let index = response_of(port, get("/api/reports", &h)).await;
-        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0,"partial":0}}"#)), "{index}");
+        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0,"partial":0,"ok":0,"other":0}}"#)), "{index}");
         let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
 

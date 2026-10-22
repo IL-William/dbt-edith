@@ -197,9 +197,11 @@ names the command and its selection, then counts what ran of each kind against
 what the manifest holds, and lists the errors and failed tests with dbt's
 message, the warnings, the skipped nodes and the slowest, five of which show
 at first, **Show all** giving the rest. The status dot of the section,
-in the list and in its head, says how the command ended: red on an error or a
-failed test, amber on a warning or a partial success, green otherwise; the
-other sections keep their tool's colour. A model opens with its Run tab, the
+in the list and in its head, says how the command ended, in words as well on
+hover: red on an error or a failed test, amber on a warning, a partial success
+or a status this tool does not know, green when something ran and all of it
+passed. A run that ran no node, or only skipped, keeps the tool's colour, as do
+the other sections. A model opens with its Run tab, the
 SQL dbt executed; a test opens at its line in its YAML, and a unit
 test at its YAML. A node the
 command did not reach is counted, never listed: not run says nothing about it.

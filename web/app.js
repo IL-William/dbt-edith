@@ -9000,7 +9000,7 @@ function renderCoverage(body, cov) {
   if (!cov.configured) return jobsNoSource(body);
   const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
   const short = (n) => n <= 50;
-  // A group with nothing in it is not drawn: the line above already says so.
+  // A group with nothing in it is not drawn.
   if (cov.never.length) {
     out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
   }
@@ -9558,7 +9558,8 @@ function reportsSections(index, focus) {
   ];
   const has = (key) => !!(index && index[key]);
   // The last run's dot says how it ended, from the counts the index carries;
-  // none while dbt is still writing the file and the index lists its time alone.
+  // none while dbt is still writing the file and the index lists its time alone,
+  // nor when the run did nothing a pass could be said of.
   const run = index && index.run;
   if (run && typeof run.error === 'number') all.find((s) => s.key === 'run').tone = runEndTone(run);
   // A card's focus lists the macros all the same, `empty` unless one lights
@@ -9728,11 +9729,32 @@ function runNotes(run) {
   return warn.map((text) => ({ tone: 'warn', text })).concat(dim.map((text) => ({ tone: '', text })));
 }
 
-/* How a set of outcomes reads, by status counts (the run's, a kind's, or the
-   index's, which carries error, fail, warn and partial): bad on an error or a
-   failed test, warn on a warning or a partial success, ok otherwise. */
-function runEndTone(st) {
-  return st.error || st.fail ? 'bad' : st.warn || st.partial ? 'warn' : 'ok';
+/* The counts of a status map (the run's or a kind's, word to count) in the
+   shape the index carries: error, fail, warn, partial, ok for what passed,
+   was reused or had nothing to do, and other for a word this page does not
+   know. A skipped result is none of them. */
+function runEndCounts(st) {
+  const c = { error: 0, fail: 0, warn: 0, partial: 0, ok: 0, other: 0 };
+  for (const [word, n] of Object.entries(st || {})) {
+    if (['error', 'fail', 'warn', 'partial'].includes(word)) c[word] += n;
+    else if (['ok', 'noop', 'reused'].includes(word)) c.ok += n;
+    else if (word !== 'skipped') c.other += n;
+  }
+  return c;
+}
+
+/* How a run ended, from those counts: bad on an error or a failed test, warn
+   on a warning, a partial success or a status nobody here knows, ok when
+   something ran and all of it passed (what it skipped does not spoil that),
+   and none, '', when nothing ran or all it did was skip: the dot then keeps
+   its tool's colour rather than claim a pass. */
+function runEndTone(c) {
+  return c.error || c.fail ? 'bad' : c.warn || c.partial || c.other ? 'warn' : c.ok ? 'ok' : '';
+}
+
+/* The words for a tone, on the dot and in the rail row's tooltip. */
+function runEndWords(tone) {
+  return { bad: 'Ended with errors or failed tests', warn: 'Not everything passed', ok: 'All passed' }[tone] || '';
 }
 
 /* The figures over the section: a tile per kind that ran, then the time. */
@@ -9741,7 +9763,7 @@ function runTiles(run) {
     const st = k.statuses || {};
     const sub = Object.keys(st).sort((a, b) => runStatusRank(a) - runStatusRank(b))
       .map((s) => `${st[s]} ${runStatusWord(s)}`).join(' · ');
-    const end = runEndTone(st);
+    const end = runEndTone(runEndCounts(st));
     const tone = end === 'ok' ? '' : end;
     return { label: runKindPlural(k.kind, true), value: k.of ? `${k.ran} of ${k.of}` : String(k.ran), sub, tone };
   });
@@ -9887,7 +9909,14 @@ function paintReportsNav() {
     if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
-    if (sec.tone) dot.dataset.tone = sec.tone;
+    const words = runEndWords(sec.tone);
+    if (words) {
+      // Inside a button, the dot is not read: the row's title says the outcome.
+      dot.dataset.tone = sec.tone;
+      dot.setAttribute('aria-hidden', 'true');
+      dot.title = words;
+      row.title += '\n' + words;
+    }
     row.append(dot, jel('span', '', sec.label));
     if (sourceless) row.append(jel('span', 'rhint', 'add a source'));
     // The rail is narrow: the count alone, the words being on the button.
@@ -9914,7 +9943,13 @@ function reportHead({ title, tool, tone, about, again, extra = [] }) {
   const row = jel('div', 'diff-title');
   const dot = jel('span', 'tooldot');
   dot.dataset.tool = tool;
-  if (tone) dot.dataset.tone = tone;
+  const words = runEndWords(tone);
+  if (words) {
+    dot.dataset.tone = tone;
+    dot.setAttribute('role', 'img');
+    dot.setAttribute('aria-label', words);
+    dot.title = words;
+  }
   row.append(dot, jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
   const read = jel('button', 'btn sm reports-again', 'Read again');
   read.addEventListener('click', again);
@@ -10066,7 +10101,7 @@ async function runSection(again) {
     d.append(sum, ul);
     body.append(d);
   }
-  return [reportHead({ title: 'Last run', tool: 'dbt', tone: runEndTone(run.statuses || {}), about, again }), body];
+  return [reportHead({ title: 'Last run', tool: 'dbt', tone: runEndTone(runEndCounts(run.statuses)), about, again }), body];
 }
 
 /* One node of the run: its name opens it, then how it ended, then dbt's
