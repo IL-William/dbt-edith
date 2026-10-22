@@ -510,7 +510,8 @@ MCP too. They do not check what a recipe means.
 What the description says decides whether an agent loads the skill at all: a
 one-line description was not loaded where one that names the questions it
 answers was, so the shipped one lists them, the kinds of node, the lineage in
-both directions, the column lineage and the overview, and says to use it before
+both directions, the column lineage, the jobs that run a node and the
+overview, and says to use it before
 grepping SQL or running `dbt ls`. Change it with care. It describes the card's
 per-`.env` lines as [the card](#the-card) does, the config before the
 `generate_*_name` macros and not where dbt builds. An agent that has no
@@ -627,3 +628,13 @@ weighed is in [0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-too
 
 A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
 `--output compact`, or a narrower selection.
+
+On a large project the manifest load dominates a command-line call, which reads
+it again each time. The server keeps the graph, and the jobs read, between
+calls, so the later calls are the cheaper ones.
+
+A client that defers MCP tools can pair the server with a small skill that
+tells the agent to load the `edith` tool (with ToolSearch) and call it. That
+variant, a `SKILL.md` using the tool instead of the commands, is not shipped. It
+was tried only with Claude Code on Jaffle Shop: with it an agent used 1 to 3
+calls where, without a skill, it used 9, and it did not fall back to `dbt ls` in those runs.
