@@ -2569,6 +2569,27 @@ a known limit, unranked:
   dbt 1.12 venv, never the collin found on PATH when it is older;
   `scripts/take_shots.py` uses whichever it finds.
 
+Left by the Checks section (0116, 1.51.0), unranked:
+
+- **Fusion's manifest shape for `freshness` is unverified.** A source whose
+  manifest has no key gets no verdict; where Fusion writes `null` for no
+  threshold, the source reads as having none.
+- **A source's test with a custom `name:`** in a manifest with neither
+  `file_key_name` nor `attached_node` still falls to the file rule (0116).
+- **Show all inside an open check** redraws every folder with the check fold's
+  open state, so folders closed before it reopen. That is intended, as the
+  comment in `web/app.js` says.
+- **Two tables of one source in one file, with a relationships test between
+  them,** both match `sources.<name>`, the first by id wins, and the column
+  chip can hang on the wrong table. This is older than Checks and the same on
+  main; Checks counts models only, so it is unaffected.
+- **dbt-project-evaluator's definition of a tested model was not read.** The
+  rule names are borrowed from its documentation.
+- **Sources group under their YAML file's folder,** which reads "models" when
+  they are kept there.
+- **A new section that must not light the button or open the panel** sets
+  `quiet` through `lights(sec)` in `web/app.js`.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by any edge kind, beyond stop
