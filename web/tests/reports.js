@@ -33,6 +33,22 @@ check('last, after the coverage', keys(reportsSections({ macros: { unexplained: 
       ['run', 'jobs', 'macros']);
 check('not before either', keys(reportsSections({}, '')), ['jobs']);
 
+print('\n--- the last run\'s dot ---');
+function tones(index) { return reportsSections(index).map(function (s) { return s.key + ':' + (s.tone || '-'); }); }
+check('ok when nothing errored, failed or warned',
+      tones({ run: { at: 9, command: 'build', error: 0, fail: 0, warn: 0 } }), ['run:ok', 'jobs:-']);
+check('warn on a warning', tones({ run: { at: 9, error: 0, fail: 0, warn: 2 } })[0], 'run:warn');
+check('warn on a partial success alone', tones({ run: { at: 9, error: 0, fail: 0, warn: 0, partial: 1 } })[0], 'run:warn');
+check('bad on an error', tones({ run: { at: 9, error: 1, fail: 0, warn: 0 } })[0], 'run:bad');
+check('bad on a failed test, before a warning', tones({ run: { at: 9, error: 0, fail: 1, warn: 3 } })[0], 'run:bad');
+check('none while the file is still being written and the index has its time alone', tones({ run: { at: 9 } })[0], 'run:-');
+check('and no other section carries one',
+      tones({ run: { at: 9, error: 1, fail: 1, warn: 1 }, warnings: { at: 1, manifest_at: 1, unused: 2 }, collin: { at: 5 },
+        jobs: { sources: 1, at: 3 }, macros: { unexplained: 1, at: 3 } }),
+      ['run:bad', 'warnings:-', 'collin:-', 'jobs:-', 'macros:-']);
+check('the head reads the run\'s own statuses by the same rule', [runEndTone({ ok: 4 }), runEndTone({ ok: 4, partial: 1 }), runEndTone({ warn: 1, fail: 1 }), runEndTone({})],
+      ['ok', 'warn', 'bad', 'ok']);
+
 print('\n--- what is new ---');
 check('nothing from collin, nothing new', reportsNews(null), []);
 var badge = { text: '3 to investigate', short: '3', title: 'collin\'s last run names 3 models or tables to look at.' };

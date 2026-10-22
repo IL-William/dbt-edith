@@ -100,7 +100,7 @@ const S = {
   reportsShown: null,         // the index entry the section on screen was read at
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
-  reportsPlace: {},           // per section, its open folds and its scroll, for when it is shown again
+  reportsPlace: {},           // per section, its open folds, the lists shown whole and its scroll, for when it is shown again
   settingsSection: '',        // the section of the settings on screen, or last on screen this session (0100)
   settingsKept: {},           // per section holding a form, its body as it was left, until the panel rolls up
   settingsFrom: '',           // the panel the settings took the place of, '' for none
@@ -9000,9 +9000,14 @@ function renderCoverage(body, cov) {
   if (!cov.configured) return jobsNoSource(body);
   const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
   const short = (n) => n <= 50;
-  out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
-  out.push(jobsSection('Only in unscheduled jobs', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
-    'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
+  // A group with nothing in it is not drawn: the line above already says so.
+  if (cov.never.length) {
+    out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
+  }
+  if (cov.unscheduled.length) {
+    out.push(jobsSection('Only in unscheduled jobs', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
+      'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
+  }
   const unread = cov.unread || [];
   if (unread.length) {
     out.push(jobsSection('Only in jobs whose schedule is not read', jobsCoverageGroups(unread), unread.length, short(unread.length), JOBS_UNREAD_WHY));
@@ -9010,8 +9015,8 @@ function renderCoverage(body, cov) {
   if (cov.ephemeral.length) {
     out.push(jobsSection('Ephemeral, so never run on their own', jobsCoverageGroups(cov.ephemeral), cov.ephemeral.length, false));
   }
-  out.push(jobsStepList('Steps that select nothing they act on', cov.empty));
-  out.push(jobsStepList('Steps not resolved', cov.unresolved));
+  if (cov.empty.length) out.push(jobsStepList('Steps that select nothing they act on', cov.empty));
+  if (cov.unresolved.length) out.push(jobsStepList('Steps not resolved', cov.unresolved));
   const jobs = jel('details', 'jobs-sec');
   jobs.append(jel('summary', '', `Jobs read (${cov.jobs.length})`));
   for (const j of jobsByStart(cov.jobs, (j) => j)) {
@@ -9552,6 +9557,10 @@ function reportsSections(index, focus) {
       title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
   ];
   const has = (key) => !!(index && index[key]);
+  // The last run's dot says how it ended, from the counts the index carries;
+  // none while dbt is still writing the file and the index lists its time alone.
+  const run = index && index.run;
+  if (run && typeof run.error === 'number') all.find((s) => s.key === 'run').tone = runEndTone(run);
   // A card's focus lists the macros all the same, `empty` unless one lights
   // the button: what lights it is the user's rule, not a click (0105).
   const listed = (key) => key === 'jobs' || has(key) || (key === 'macros' && !!focus);
@@ -9719,13 +9728,21 @@ function runNotes(run) {
   return warn.map((text) => ({ tone: 'warn', text })).concat(dim.map((text) => ({ tone: '', text })));
 }
 
+/* How a set of outcomes reads, by status counts (the run's, a kind's, or the
+   index's, which carries error, fail, warn and partial): bad on an error or a
+   failed test, warn on a warning or a partial success, ok otherwise. */
+function runEndTone(st) {
+  return st.error || st.fail ? 'bad' : st.warn || st.partial ? 'warn' : 'ok';
+}
+
 /* The figures over the section: a tile per kind that ran, then the time. */
 function runTiles(run) {
   const tiles = (run.kinds || []).map((k) => {
     const st = k.statuses || {};
     const sub = Object.keys(st).sort((a, b) => runStatusRank(a) - runStatusRank(b))
       .map((s) => `${st[s]} ${runStatusWord(s)}`).join(' · ');
-    const tone = st.error || st.fail ? 'bad' : st.warn || st.partial ? 'warn' : '';
+    const end = runEndTone(st);
+    const tone = end === 'ok' ? '' : end;
     return { label: runKindPlural(k.kind, true), value: k.of ? `${k.ran} of ${k.of}` : String(k.ran), sub, tone };
   });
   if (run.elapsed > 0) tiles.push({ label: 'Took', value: runSecs(run.elapsed), sub: 'for the whole command', tone: '' });
@@ -9870,6 +9887,7 @@ function paintReportsNav() {
     if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
     const dot = jel('span', 'tooldot');
     dot.dataset.tool = sec.tool;
+    if (sec.tone) dot.dataset.tone = sec.tone;
     row.append(dot, jel('span', '', sec.label));
     if (sourceless) row.append(jel('span', 'rhint', 'add a source'));
     // The rail is narrow: the count alone, the words being on the button.
@@ -9891,11 +9909,12 @@ function paintReportStale() {
 
 /* The head every section shares: what it is, what it was read from, and its
    buttons, Read again saying when the file has changed since. */
-function reportHead({ title, tool, about, again, extra = [] }) {
+function reportHead({ title, tool, tone, about, again, extra = [] }) {
   const head = jel('div', 'diff-head');
   const row = jel('div', 'diff-title');
   const dot = jel('span', 'tooldot');
   dot.dataset.tool = tool;
+  if (tone) dot.dataset.tone = tone;
   row.append(dot, jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
   const read = jel('button', 'btn sm reports-again', 'Read again');
   read.addEventListener('click', again);
@@ -9927,8 +9946,13 @@ function keepReportPlace(view) {
   const scroller = view.querySelector('.reportbody, .jobs-body');
   if (!scroller) return null;
   const open = {};
-  for (const d of scroller.querySelectorAll('details')) open[reportFoldKey(d)] = d.open;
-  return { open, scroll: scroller.scrollTop };
+  const all = {}; // the folds whose capped list was shown whole
+  for (const d of scroller.querySelectorAll('details')) {
+    const key = reportFoldKey(d);
+    open[key] = d.open;
+    if (d.dataset.all) all[key] = true;
+  }
+  return { open, all, scroll: scroller.scrollTop };
 }
 
 function restoreReportPlace(view, place) {
@@ -9937,6 +9961,8 @@ function restoreReportPlace(view, place) {
   for (const d of scroller.querySelectorAll('details')) {
     const key = reportFoldKey(d);
     if (key in place.open) d.open = place.open[key];
+    const more = place.all && place.all[key] && d.querySelector('.showall');
+    if (more) more.click();
   }
   scroller.scrollTop = place.scroll;
 }
@@ -10001,7 +10027,8 @@ async function runSection(again) {
     if (n.tone) p.dataset.tone = n.tone;
     body.append(p);
   }
-  const group = (title, list, open, tone) => {
+  // `cap` lists the first rows only, and a button under them the rest.
+  const group = (title, list, open, tone, cap = Infinity) => {
     if (!list.of) return;
     const d = jel('details', 'reportfinding');
     d.open = open;
@@ -10009,7 +10036,18 @@ async function runSection(again) {
     const sum = jel('summary', '');
     sum.append(jel('span', 'rtitle', title), jel('span', 'rcount', String(list.of)));
     const ul = jel('ul', 'rentries');
-    for (const e of list.items) ul.append(runEntryRow(e));
+    for (const e of list.items.slice(0, cap)) ul.append(runEntryRow(e));
+    if (list.items.length > cap) {
+      const more = jel('li', 'muted');
+      const all = jel('button', 'btn sm showall', `Show all ${list.items.length}`);
+      all.addEventListener('click', () => {
+        d.dataset.all = '1';
+        more.remove();
+        for (const e of list.items.slice(cap)) ul.append(runEntryRow(e));
+      });
+      more.append(all);
+      ul.append(more);
+    }
     if (list.of > list.items.length) ul.append(jel('li', 'muted', `and ${list.of - list.items.length} more`));
     d.append(sum, ul);
     body.append(d);
@@ -10017,7 +10055,7 @@ async function runSection(again) {
   group('Errors and failed tests', run.problems, true, 'bad');
   group('Warnings', run.warned, run.warned.of <= 20, 'warn');
   group('Skipped', run.skipped, run.skipped.of <= 20, '');
-  group('Slowest', { items: run.slowest, of: run.slowest.length }, false, '');
+  group('Slowest', { items: run.slowest, of: run.slowest.length }, true, '', 5);
   if (run.unknown.of) {
     const d = jel('details', 'reportfinding');
     const sum = jel('summary', '');
@@ -10028,7 +10066,7 @@ async function runSection(again) {
     d.append(sum, ul);
     body.append(d);
   }
-  return [reportHead({ title: 'Last run', tool: 'dbt', about, again }), body];
+  return [reportHead({ title: 'Last run', tool: 'dbt', tone: runEndTone(run.statuses || {}), about, again }), body];
 }
 
 /* One node of the run: its name opens it, then how it ended, then dbt's
