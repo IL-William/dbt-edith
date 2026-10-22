@@ -2095,6 +2095,24 @@ of its own, and each panel updates the tour, its page under
     refuses paths outside the project, where the git folder lies in a worktree
     or when the dbt project sits in a subfolder; and nothing may ever add to a
     tracked ignore file, which is the repository's.
+22. **Job coverage from the command line.** The page's Job coverage report
+    (which of the project's own models no scheduled job runs, which run only in
+    unscheduled jobs, the steps that select nothing) is reachable by an agent
+    only at one `--job` call per job (the names from `--overview --output
+    json`) and a comparison it does itself. A single call for the report is
+    missing. Ideas: `--count-by job` or `dag`, or a coverage mode. Trap: it
+    needs the jobs read, which is off when there is no sources file.
+23. **A cap on the size of an answer.** Over MCP a client cuts a long answer (a
+    compact list of a whole folder of a large project) and the file it saves
+    cannot be opened. The server could cut itself at a stated size and say how
+    to narrow, with `--count-by` or a narrower selection. Trap: the answers of
+    the command line and of MCP are byte-identical (0110), which
+    `walk_mcp.py` compares.
+24. **A skill for a client that defers tools.** Print the MCP variant of the
+    skill (`--skill mcp`?), which tells the agent to load the `edith` tool and
+    call it. 0114 says the shipped skill is printed, never installed, and
+    `--skill` is refused over MCP. The variant was tried only with Claude Code
+    and has to be tried with other clients, Copilot among them.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -2416,9 +2434,11 @@ Left by the MCP server (0110, 1.44.0), unranked:
   the warm call on a project in a repository. Keeping one git answer for a
   second or two would take it well under a millisecond on Shopify, and make
   the line late.
-- **A test to watch:**
+- ~~**A test to watch:**
   `the_end_of_input_kills_a_run_of_collin_and_the_server_ends` (`src/mcp.rs`)
-  failed once in a first run and passed alone and on a rerun; possibly flaky.
+  failed once in a first run and passed alone and on a rerun; possibly
+  flaky.~~ Settled in 1.49.1: the stand-in wrote its pid after the file the
+  test waits on.
 
 Left by the card's per-file locations (0113, 1.47.0), unranked:
 
@@ -2451,9 +2471,9 @@ Left by the count (0112, 1.46.0), unranked:
 
 - **One key per call:** `--count-by` with two keys is refused, and a node's tags
   can add up to more than `(all)`, which is documented.
-- **Over MCP**, an invalid `--count-by` value is refused without clap's
-  `[possible values]` line, as are `--output` and `--column-tool`; `help` lists
-  the values.
+- ~~**Over MCP**, an invalid `--count-by` value is refused without clap's
+  `[possible values]` line.~~ Settled in 1.49.1: the refusal keeps that line for
+  `--count-by`, `--output` and `--column-tool`.
 - **Count mode** still sorts the selection by name before counting; linear and
   harmless.
 

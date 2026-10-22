@@ -23,6 +23,16 @@ newest dated heading has to be the version `Cargo.toml` names.
   for the rest.
 - Leave the groups of the job coverage with nothing in them undrawn.
 
+## 1.49.2 - 2026-10-22
+
+- Teach the shipped skill the limits of a big project and the jobs questions
+  (0114).
+
+## 1.49.1 - 2026-10-22
+
+- List the accepted values in an MCP refusal of an invalid `--count-by`,
+  `--output` or `--column-tool`, as the command line does.
+
 ## 1.49.0 - 2026-10-21
 
 - Keep the job sources in the project's `.dbt-edith/jobs.yml`, which the Jobs

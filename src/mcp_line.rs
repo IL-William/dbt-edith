@@ -184,8 +184,8 @@ fn flag_of(arg: &clap::Arg) -> String {
     }
 }
 
-/// What clap said, cut to its `error:` line and the `tip:` after it, without
-/// the usage, which names the whole command line. A tip is kept only when it
+/// What clap said, cut to its `error:` line, the `[possible values: …]` line
+/// that follows it and the `tip:` after it, without the usage, which names the whole command line. A tip is kept only when it
 /// points at what a line may carry: clap suggests `--port` for `--prot`, and
 /// the server refuses it.
 fn clap_said(text: &str, command: &clap::Command) -> String {
@@ -197,6 +197,10 @@ fn clap_said(text: &str, command: &clap::Command) -> String {
         while let Some(item) = rest.next_if(|l| l.starts_with("  ") && !l.trim_start().starts_with("tip:")) {
             said.push_str(&format!("\n{}", item.trim_end()));
         }
+    }
+    // A value that is not one of a few lists them on the next line.
+    if let Some(values) = rest.next_if(|l| l.trim_start().starts_with("[possible values:")) {
+        said.push_str(&format!("\n{}", values.trim_end()));
     }
     match rest.find(|l| l.trim_start().starts_with("tip:")).filter(|tip| tip_is_allowed(tip, command)) {
         Some(tip) => format!("{said}\n{}", tip.trim_end()),
@@ -478,6 +482,15 @@ mod tests {
         assert!(refused("--column a.b --up lots").contains("lots is neither a number of levels nor all"));
         assert!(refused("--output xml --overview").starts_with("error: invalid value 'xml' for '--output <FORMAT>'"));
         assert!(refused("--overview -s orders").contains("cannot be used with"));
+        for line in ["--count-by nope -s orders", "--column a.b --column-tool nope", "--output xml --overview"] {
+            let said = refused(line);
+            let mut lines = said.lines();
+            assert!(lines.next().unwrap().starts_with("error: invalid value"), "{said}");
+            assert!(lines.next().unwrap().starts_with("  [possible values: "), "{said}");
+        }
+        // The values come before a tip about a similar value, which is kept.
+        let said = refused("--output jsn --overview");
+        assert!(said.contains("  [possible values: name, json, compact]\n  tip: a similar value exists: 'json'"), "{said}");
         let said = refused("--sql");
         assert!(said.starts_with("error: the following required arguments were not provided:\n  --describe"), "{said}");
     }

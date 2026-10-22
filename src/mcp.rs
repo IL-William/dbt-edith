@@ -1265,7 +1265,9 @@ mod tests {
             (dir, bin)
         }
 
-        const WAITS: &str = "echo partial > \"$out\"\n: > \"$here/started\"\necho $$ > \"$here/pid\"\nexec sleep 60";
+        // The pid is written before `started` appears: `started()` reads it as soon as
+        // that file exists.
+        const WAITS: &str = "echo partial > \"$out\"\necho $$ > \"$here/pid\"\n: > \"$here/started\"\nexec sleep 60";
 
         #[test]
         fn a_cancelled_run_of_collin_is_killed_and_leaves_the_old_cache_and_no_temporary_file() {
