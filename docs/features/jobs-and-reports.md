@@ -172,8 +172,9 @@ the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
 the last dbt command's results once dbt has written them, the warnings dbt
 would give as it parses once there is one, collin's report once collin has
-written one, the coverage of your jobs once the Jobs tab has a source, and the
-project's macros while one is reached by no node and nothing explains it.
+written one, the coverage of your jobs once the Jobs tab has a source, the
+project's macros while one is reached by no node and nothing explains it, and
+this tool's own checks while one finds a node, which never light the button.
 The sidebar stays, and anything that shows a file or a dock tab rolls the
 panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
@@ -256,3 +257,23 @@ is listed, and lights the button, only while one of the first three reasons
 holds, or a materialization or strategy macro no node names, and the panel
 then opens on it rather than on an empty coverage; it carries no chip, since
 the count would never go (0105).
+
+**Checks** lists four rules that are this tool's own, apart from Warnings, which
+is what dbt itself would warn of: dbt says nothing of any of these. The sources
+that have no freshness threshold, as dbt-core counts one: `warn_after` or
+`error_after` with both a count and a period, written on the table or on its
+source, which its tables inherit; `freshness: null` on a table switches it off,
+and half a threshold is none. The models no test counts for: no generic test
+declared on the model or one of its columns, no singular test selecting from it,
+no unit test of it, a `relationships` test that merely points at it not
+counting. The models whose description is empty once doc blocks are resolved.
+And the sources no node reads: no node has it as a parent, a model, snapshot,
+analysis or exposure reading it counting, a test not. Each rule is a fold with
+its count, open while it lists fifty or fewer, its rows grouped by folder as the
+job coverage groups its own, and a name opens the node with its Catalog tab.
+Only the project's own enabled models and sources are looked at, an installed
+package's being the package's to document, test and read. A source whose
+manifest says nothing of freshness, as another producer's may, is given no
+verdict. The section is listed in the panel while one of the four lists a node,
+but never lights the button, carries no chip, since the count would rarely go
+down, and is never the section the panel opens on (0116).

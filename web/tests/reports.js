@@ -243,3 +243,32 @@ check('on the first there is when all are empty, a focus listing the macros last
       reportsDefaultSection(reportsSections({}, 'macro.shop.cents'), [], 'macros'), 'jobs');
 check('the tooltip names both', reportsButtonTitle(reportsSections({ macros: { unexplained: 1, at: 3 }, warnings: { unused: 1 } }), [], 'K').split('\n')[0],
       'Reports on the whole project: Warnings, Macros (K)');
+
+print('\n--- the checks (0116) ---');
+var checks = { checks: { count: 4, at: 3 } };
+check('listed only while the index has them', [keys(reportsSections({})), keys(reportsSections(checks))],
+      [['jobs'], ['jobs', 'checks']]);
+check('in the rail as any section with something, not hollow, and quiet', [empty(reportsSections(checks)), reportsSections(checks)[1].quiet,
+      reportsSections({ run: { at: 9 } })[0].quiet], [['jobs:empty', 'checks'], true, undefined]);
+function lit(sections) { return sections.some(lights); }
+check('the button stays dimmed with only them, and lit by any other section',
+      [lit(reportsSections(checks)), lit(reportsSections(Object.assign({ run: { at: 9 } }, checks))), lit(reportsSections({}))], [false, true, false]);
+check('not by a macro card\'s focus', keys(reportsSections({}, 'macro.shop.cents')), ['jobs', 'macros']);
+check('last, after the macros', keys(reportsSections({ checks: { count: 1, at: 3 }, macros: { unexplained: 1, at: 3 }, warnings: { at: 4, manifest_at: 3, unused: 2 },
+      run: { at: 9 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 } })), ['run', 'warnings', 'collin', 'jobs', 'macros', 'checks']);
+check('under the dbt tool, with a title saying they are the tool\'s own checks and not dbt\'s warnings',
+      [reportsSections(checks)[1].tool, /own checks/.test(reportsSections(checks)[1].title), /warn/.test(reportsSections(checks)[1].title)], ['dbt', true, true]);
+check('no dot tone, which is the last run\'s alone',
+      tones(Object.assign({ run: { at: 9, error: 1, fail: 0, warn: 0 } }, checks)), ['run:bad', 'jobs:-', 'checks:-']);
+check('never the section the panel opens on: the first with something else, or the empty coverage',
+      [reportsDefaultSection(reportsSections(Object.assign({ run: { at: 9 } }, checks)), [], ''), reportsDefaultSection(reportsSections(checks), [], ''),
+        reportsDefaultSection(reportsSections(Object.assign({ macros: { unexplained: 1, at: 3 } }, checks)), [], '')],
+      ['run', 'jobs', 'macros']);
+check('nor the one read last',
+      [reportsDefaultSection(reportsSections(Object.assign({ run: { at: 9 } }, checks)), [], 'checks'), reportsDefaultSection(reportsSections(checks), [], 'checks')], ['run', 'jobs']);
+check('the tooltip is the one it would be without them',
+      [reportsButtonTitle(reportsSections(checks), [], 'K'), reportsButtonTitle(reportsSections(Object.assign({ run: { at: 9 } }, checks)), [], 'K')],
+      [reportsButtonTitle(reportsSections({}), [], 'K'), reportsButtonTitle(reportsSections({ run: { at: 9 } }), [], 'K')]);
+check('stale once the manifest they were read in is behind', [reportsStale({ count: 4, at: 3 }, { checks: { count: 4, at: 3 } }, 'checks'),
+      reportsStale({ count: 4, at: 3 }, { checks: { count: 4, at: 5 } }, 'checks'), reportsStale({ count: 4, at: 3 }, { checks: { count: 2, at: 3 } }, 'checks'),
+      reportsStale({ count: 4, at: 3 }, {}, 'checks')], [false, true, true, true]);

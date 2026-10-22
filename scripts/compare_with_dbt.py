@@ -31,6 +31,12 @@ resource, which dbt warns of as it parses, are compared with what the
 Warnings report works out without a run (0103). A third copy, of Jaffle Shop
 with such paths added, makes that comparison say something.
 
+On each project, the four lists of the Checks report (0116) are worked out
+again in Python from the manifest dbt wrote, by the rules dbt-core's own code
+gives them, and compared with what the report lists. A fourth copy, of Jaffle
+Shop with sources, models and tests of every shape those rules tell apart,
+makes that comparison say something.
+
 The lineage of every model is compared with --every-model, which CI passes.
 Without it, a project with more than 40 models has every eighth compared,
 which keeps this step of check.sh to about twenty seconds here.
@@ -221,6 +227,108 @@ JAFFLE_VERSIONS = {
                            "      - v: 3\n",
 }
 
+# Added to a copy of Jaffle Shop for the Checks report (0116): sources whose
+# freshness comes from the source, from the table, from a `config:` block, from
+# nothing, from `null`, from `{}` and from half a threshold, one a model reads,
+# one tested and read by none, a test of it pointing at a model of the same
+# file, and one disabled; and models that are described
+# or not, tested by a test they declare, only pointed at by one, selected from
+# by a singular test, targeted by a unit test, or by nothing, and one disabled.
+JAFFLE_CHECKS = {
+    "models/probe/sources_probe.yml": """version: 2
+sources:
+  - name: s_top
+    loaded_at_field: ts
+    freshness:
+      warn_after: {count: 1, period: day}
+    tables:
+      - name: inherits
+      - name: overrides_null
+        freshness: null
+      - name: own
+        freshness:
+          error_after: {count: 2, period: hour}
+      - name: empty_own
+        freshness: {}
+  - name: s_none
+    tables:
+      - name: bare
+      - name: cfg_style
+        config:
+          freshness:
+            warn_after: {count: 3, period: day}
+          loaded_at_field: ts
+      - name: retired
+        config:
+          enabled: false
+  - name: s_partial
+    freshness:
+      warn_after: {count: 1}
+    tables:
+      - name: half
+        columns:
+          - name: id
+            data_tests:
+              - not_null
+              # Declared by a source, and pointing at a model of the same file,
+              # which it does not test.
+              - relationships:
+                  arguments:
+                    to: ref('probe_reader')
+                    field: id
+
+models:
+  - name: probe_pointer
+    description: Declares a relationships test that points at probe_target.
+    columns:
+      - name: id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('probe_target')
+                field: id
+  - name: probe_target
+    description: Only that relationships test points at it.
+  - name: probe_singular
+    description: Only a singular test selects from it.
+  - name: probe_unit
+    description: Only a unit test targets it.
+  - name: probe_reader
+    description: Reads a source, and nothing tests it.
+
+unit_tests:
+  - name: probe_unit_keeps_its_id
+    model: probe_unit
+    given: []
+    expect:
+      rows:
+        - {id: 1}
+""",
+    "models/probe/probe_pointer.sql": "select 1 as id\n",
+    "models/probe/probe_target.sql": "select 1 as id\n",
+    "models/probe/probe_singular.sql": "select 1 as id\n",
+    "models/probe/probe_unit.sql": "select 1 as id\n",
+    "models/probe/probe_reader.sql": "select * from {{ source('s_top', 'inherits') }}\n",
+    "models/probe/probe_undescribed.sql": "select 1 as id\n",
+    "models/probe/probe_off.sql": "{{ config(enabled=false) }}\nselect 1 as id\n",
+    "tests/probe_singular_check.sql": "select * from {{ ref('probe_singular') }} where false\n",
+}
+
+# What the rules give on that copy, written by hand from them and not read off
+# the manifest, so a manifest the comparison read wrongly cannot agree with
+# itself: the staging models of Jaffle Shop have no description.
+JAFFLE_CHECKS_FOUND = {
+    "sources_without_freshness": ["source.jaffle_shop.s_none.bare", "source.jaffle_shop.s_partial.half",
+                                  "source.jaffle_shop.s_top.overrides_null"],
+    "models_without_test": ["model.jaffle_shop.probe_reader", "model.jaffle_shop.probe_target",
+                            "model.jaffle_shop.probe_undescribed"],
+    "models_without_description": ["model.jaffle_shop.probe_undescribed", "model.jaffle_shop.stg_customers",
+                                   "model.jaffle_shop.stg_orders", "model.jaffle_shop.stg_payments"],
+    "sources_not_read": ["source.jaffle_shop.s_none.bare", "source.jaffle_shop.s_none.cfg_style",
+                         "source.jaffle_shop.s_partial.half", "source.jaffle_shop.s_top.empty_own",
+                         "source.jaffle_shop.s_top.overrides_null", "source.jaffle_shop.s_top.own"],
+}
+
 # What Shopify has and Jaffle Shop does not: a package under a root project,
 # sources, ephemeral and incremental models, folders three deep, and disabled
 # models and sources. `*` and the fqn prefixes are what showed that the fqn
@@ -408,6 +516,13 @@ class Edith:
         if "unused" not in body:
             return [f"error: {body}"]
         return sorted(".".join([u["block"]] + u["chain"]) for u in body["unused"])
+
+    def checks(self):
+        """The Checks report's four lists, as sorted unique ids, or a reason it cannot say."""
+        body = self.get("/api/reports/checks")
+        if "manifest_at" not in body:
+            return {"error": [f"error: {body}"]}
+        return {k: sorted(r["id"] for r in rows) for k, rows in body.items() if k != "manifest_at"}
 
     def lineage(self, unique_id, up, down, tests):
         """The names the canvas draws around a model, or a reason it cannot say."""
@@ -616,6 +731,7 @@ def compare_project(tally, binary, project, work, expressions, every_model, jobs
     asked = agreed = 0
     try:
         tally.check("config paths dbt_project.yml applies to nothing", edith.unused_paths(), sorted(oracle.unused))
+        compare_checks_lists(tally, edith, parsed)
         listed = edith.get("/api/selectors")["selectors"]
         if sorted(s["name"] for s in listed) != recorded:
             tally.fail("/api/selectors lists what the manifest records")
@@ -678,6 +794,61 @@ def compare_project(tally, binary, project, work, expressions, every_model, jobs
     return tally.compared - before
 
 
+def has_freshness(threshold):
+    """dbt-core's `bool(FreshnessThreshold)`: `warn_after` or `error_after`
+    holds both a count and a period. `null`, `{}` and half a threshold are none."""
+    if not isinstance(threshold, dict):
+        return False
+    return any(isinstance(threshold.get(k), dict) and threshold[k].get("count") is not None
+               and threshold[k].get("period") is not None for k in ("warn_after", "error_after"))
+
+
+def checks_in_manifest(manifest):
+    """The Checks report's four lists from the manifest dbt wrote, by the
+    rules of 0116 read off dbt's own fields: the project's own enabled models
+    and sources, a test counting for the node it is attached to, a singular
+    test for the nodes it selects from, a unit test for the model it targets."""
+    project = manifest["metadata"]["project_name"]
+
+    def own(node):
+        return node["package_name"] == project and node.get("config", {}).get("enabled", True) is not False
+
+    nodes = manifest["nodes"]
+    tested = set()
+    for n in nodes.values():
+        if n["resource_type"] != "test":
+            continue
+        if n.get("test_metadata"):
+            if n.get("attached_node"):
+                tested.add(n["attached_node"])
+        else:
+            tested.update(n["depends_on"]["nodes"])
+    for u in manifest.get("unit_tests", {}).values():
+        tested.update(u["depends_on"]["nodes"])
+    models = {k: n for k, n in nodes.items() if n["resource_type"] == "model" and own(n)}
+    sources = {k: n for k, n in manifest["sources"].items() if own(n)}
+
+    def read(source_id):
+        return any(not c.startswith(("test.", "unit_test.")) for c in manifest["child_map"].get(source_id, []))
+
+    return {
+        "sources_without_freshness": sorted(k for k, n in sources.items() if not has_freshness(n.get("freshness"))),
+        "models_without_test": sorted(k for k in models if k not in tested),
+        "models_without_description": sorted(k for k, n in models.items() if not n["description"].strip()),
+        "sources_not_read": sorted(k for k in sources if not read(k)),
+    }
+
+
+def compare_checks_lists(tally, edith, parsed, label=""):
+    """The report's lists against the ones worked out from the manifest alone.
+    Returns the latter, for a fixture that knows what it should hold."""
+    theirs = checks_in_manifest(parsed)
+    ours = edith.checks()
+    for key, ids in theirs.items():
+        tally.check(f"checks{label}: {key.replace('_', ' ')}", ours.get(key, ours.get("error")), ids)
+    return theirs
+
+
 def compare_unused(tally, binary, work):
     """Jaffle Shop with JAFFLE_UNUSED added: dbt's warning, path for path."""
     project = work / "project"
@@ -701,6 +872,28 @@ def compare_unused(tally, binary, work):
         tally.check("config paths dbt_project.yml applies to nothing", edith.unused_paths(), sorted(oracle.unused))
     finally:
         edith.stop()
+
+
+def compare_checks(tally, binary, work):
+    """Jaffle Shop with JAFFLE_CHECKS added: the four lists, id for id."""
+    project = work / "project"
+    shutil.copytree(JAFFLE, project)
+    for name, text in JAFFLE_CHECKS.items():
+        (project / name).parent.mkdir(parents=True, exist_ok=True)
+        (project / name).write_text(text)
+    oracle = Dbt(project, work)
+    oracle.parse()
+    manifest = work / "target" / "manifest.json"
+    parsed = json.loads(manifest.read_text())
+    edith = Edith(binary, project, manifest, work)
+    try:
+        found = compare_checks_lists(tally, edith, parsed)
+    finally:
+        edith.stop()
+    # Written by hand from the rules: a project this reads wrongly would still
+    # agree with itself.
+    for key, ids in JAFFLE_CHECKS_FOUND.items():
+        tally.check(f"the rules by hand: {key.replace('_', ' ')}", found[key], ids)
 
 
 def main():
@@ -727,6 +920,9 @@ def main():
 
         print("== Jaffle Shop, with config paths that apply to nothing")
         compare_unused(tally, binary, work / "unused")
+
+        print("== Jaffle Shop, with sources, models and tests of every shape the checks tell apart")
+        compare_checks(tally, binary, work / "checks")
 
         print(f"== Shopify {SHOPIFY_TAG} ({SHOPIFY_COMMIT[:7]})")
         try:

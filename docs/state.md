@@ -1722,21 +1722,25 @@ edited, so find an item by its title.
 6. **More warnings worked out here, without a run.** They hold for dbt-core
    and Fusion alike, and when no log is there. The Warnings section of Reports
    lists the first, the config paths of `dbt_project.yml` that apply to no
-   resource (0103); each of these would join it, checked against dbt the same
-   way in `scripts/compare_with_dbt.py`.
+   resource (0103), and the Checks section the tool's own rules (0116); each
+   of these would join the one that fits it, checked against dbt the same way
+   in `scripts/compare_with_dbt.py`.
    - **Others worth ranking:**
-     - sources no model reads;
-     - sources without a freshness config, which `dbt source freshness`
-       skips;
-     - models with no test or no description;
+     - ~~sources no model reads;~~ Settled in 1.51.0 (0116), in Checks.
+     - ~~sources without a freshness config, which `dbt source freshness`
+       skips;~~ Settled in 1.51.0 (0116), in Checks.
+     - ~~models with no test or no description;~~ Settled in 1.51.0 (0116), in
+       Checks.
      - vars `dbt_project.yml` defines that no `var()` call reads, from 0018's
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-   - **A "Checks" section in Reports, apart from Warnings:** sources without
+   - ~~**A "Checks" section in Reports, apart from Warnings:** sources without
      freshness, project models with no test, no description, and sources no
      model reads. dbt warns of none of these. It needs `freshness` read from
-     the manifest, and its own decision.
+     the manifest, and its own decision.~~ Settled in 1.51.0 (0116). Left
+     over: dbt Fusion's manifest shape for `freshness` was not looked at, and
+     the checks hold only the root project's own nodes.
 7. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:

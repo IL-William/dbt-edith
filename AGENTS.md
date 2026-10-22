@@ -25,15 +25,16 @@ about it when online. GitHub Actions runs the Rust tests and both audits on
 every push and every Monday, never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
-The selection engine and the lineage are compared with `dbt ls`, and the
-unused config paths with dbt's warning (0103), on
-`tests/fixtures/jaffle_shop` and on Fivetran's Shopify, cloned at a pinned tag,
-which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to a Python that has
-them, or `DBT` to a dbt executable. It skips itself without either, and skips
-Shopify without git or the network; CI runs it on every model for two versions
-of dbt-core (0033, 0056). The MCP server is driven over its stdio on the same
-Jaffle Shop by `scripts/walk_mcp.py` and compared with the command line's
-answers; it needs the same dbt, skips itself without it, and CI runs it (0110).
+The selection engine and the lineage are compared with `dbt ls`, and the unused
+config paths with dbt's warning (0103) and the Checks lists with what the
+manifest says (0116), on `tests/fixtures/jaffle_shop` and on Fivetran's Shopify,
+cloned at a pinned tag, which needs dbt-core and dbt-duckdb: set `DBT_PYTHON` to
+a Python that has them, or `DBT` to a dbt executable. It skips itself without
+either, and skips Shopify without git or the network; CI runs it on every model
+for two versions of dbt-core (0033, 0056). The MCP server is driven over its
+stdio on the same Jaffle Shop by `scripts/walk_mcp.py` and compared with the
+command line's answers; it needs the same dbt, skips itself without it, and CI
+runs it (0110).
 The guided tour is walked step by step in headless Chrome on the same Jaffle
 Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
@@ -224,6 +225,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | change what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands | [0084](docs/decisions/0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) |
 | say who calls a macro, or that nothing does, or read `depends_on.macros` | [0105](docs/decisions/0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md) |
+| add a rule to the Checks section of Reports, or read a source's `freshness` | [0116](docs/decisions/0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
 | hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | change what a column box's badge says, or read a field of collin's cache other than its edges | [0096](docs/decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md), [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) |
@@ -301,6 +303,7 @@ src/freshness.rs      whether manifest.json still matches the files dbt would pa
 src/envs.rs           .env parsing and location resolution per environment
 src/project.rs        the vars: and dispatch: blocks of dbt_project.yml, read by hand
 src/unused_paths.rs   the config paths of dbt_project.yml no fqn of the manifest begins, as dbt warns of them
+src/checks.rs         the tool's own checks: sources without freshness, models with no test or description, sources no node reads
 src/profiles.rs       where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs         the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs            working tree status and the git commands the UI can run

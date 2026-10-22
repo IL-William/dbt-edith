@@ -319,6 +319,10 @@ pub struct Node {
     /// that have none.
     pub namespace: String,
     pub warn: bool,
+    /// Sources only: whether dbt would count the table as having a freshness
+    /// threshold, `Some` once the manifest says so, even as `null`, and None
+    /// when it says nothing, which gives no verdict (0116).
+    pub freshness: Option<bool>,
     /// Test nodes only, and empty on most: a boxed slice, so none costs no
     /// allocation and less than a Vec on every node.
     pub settings: Box<[Setting]>,
@@ -643,23 +647,38 @@ pub struct Graph {
 pub struct UnitTest {
     pub name: String,
     pub file: String,
+    /// The ids of the models it tests, as the manifest's `depends_on.nodes`
+    /// names them (0116).
+    pub targets: Vec<String>,
 }
 
 /// The node whose YAML declares test `t`: dbt's `attached_node`, or else the
 /// parent declared in the test's own file, which is how a source test reads
 /// under dbt-core, where it has no `attached_node`. A singular test is a file
 /// of its own, so it has none.
-fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u32> {
+pub(crate) fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u32> {
     if let Some(&i) = index.get(&t.attached) {
         return Some(i);
     }
     if t.file.is_empty() {
         return None;
     }
-    t.parents.iter().copied().find(|&p| {
+    // A source's test has no `attached_node`, and a `relationships` one has the
+    // model it points at as a parent too, which may sit in the same file: a
+    // test named `source_...`, dbt's prefix for them, is declared by the
+    // source. Any other keeps the first parent in the file, a model's test
+    // pointing at a source of its file staying on the model.
+    let here = |&p: &u32| {
         let p = &nodes[p as usize];
         p.file == t.file || p.yml == t.file
-    })
+    };
+    let source = |&p: &u32| nodes[p as usize].kind == Kind::Source;
+    let first = t.parents.iter().copied().find(here);
+    if t.name.starts_with("source_") {
+        t.parents.iter().copied().filter(source).find(here).or(first)
+    } else {
+        first
+    }
 }
 
 /// Whether `n` is a later version of its model than `prev`, as a `ref()` that
@@ -760,7 +779,10 @@ impl Graph {
         let unit_tests = raw
             .unit_tests
             .into_iter()
-            .map(|(id, u)| (id, UnitTest { name: u.name, file: u.original_file_path.replace('\\', "/") }))
+            .map(|(id, u)| {
+                let targets = u.depends_on.map(|d| d.nodes).unwrap_or_default();
+                (id, UnitTest { name: u.name, file: u.original_file_path.replace('\\', "/"), targets })
+            })
             .collect();
         // What each macro calls, taken before `Macros::build` consumes them.
         let macro_calls: Vec<(String, Vec<String>)> = raw
@@ -832,6 +854,13 @@ impl Graph {
                     .as_ref()
                     .and_then(|v| v.as_str())
                     .is_some_and(|s| s.eq_ignore_ascii_case("warn"));
+            // The top-level key first, then the config's, which dbt-core
+            // writes the same.
+            let freshness = if kind == Kind::Source {
+                raw_node.freshness.as_ref().or(raw_node.config.freshness.as_ref()).map(|f| crate::manifest::has_freshness(f))
+            } else {
+                None
+            };
             let settings = if kind == Kind::Test { test_settings(&raw_node.config) } else { Box::default() };
             let search_key = format!("{}\u{0}{}", name.to_lowercase(), file.to_lowercase());
             index.insert(id.clone(), nodes.len() as u32);
@@ -917,6 +946,7 @@ impl Graph {
                 column: raw_node.column_name.unwrap_or_default(),
                 namespace,
                 warn,
+                freshness,
                 settings,
                 attached: raw_node.attached_node.unwrap_or_default(),
                 parents: Vec::new(),

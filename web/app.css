@@ -832,6 +832,11 @@ kbd {
 .rentries .rcol { cursor: pointer; color: var(--fg); }
 .rentries .rcol:hover { text-decoration: underline; }
 .rentries .rwhy { color: var(--fg-dim); margin: 0 0 4px; max-width: 900px; }
+/* A folder inside a check's fold: a level of its own, with its own arrow, not the fold's. */
+.reportfinding .checkfolder > summary { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 2px 18px; padding: 0; }
+.reportfinding .checkfolder > summary::before { content: "\25b8"; }
+.reportfinding .checkfolder[open] > summary::before { content: "\25be"; }
+.checkfolder > .rentries { padding-left: 54px; }
 /* Two collin versions side by side: tables of figures, the moved rows bright. */
 .versionpick { font: 12px var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
 .cmptable { border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; min-width: 420px; }

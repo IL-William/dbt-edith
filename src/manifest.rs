@@ -59,6 +59,11 @@ pub struct RawUnitTest {
     pub original_file_path: String,
     #[serde(default)]
     pub fqn: Vec<String>,
+    /// The model it tests, which is all dbt-core puts in `depends_on.nodes`
+    /// (0116). An Option: a null in a section read for the first time here
+    /// must not cost the whole manifest.
+    #[serde(default)]
+    pub depends_on: Option<RawDependsOn>,
 }
 
 #[derive(serde::Deserialize)]
@@ -152,6 +157,12 @@ pub struct RawNode {
     pub attached_node: Option<String>,
     #[serde(default)]
     pub test_metadata: Option<RawTestMeta>,
+    /// Sources only: the threshold dbt resolved for the table, which a table
+    /// inherits from its source. Some even when written `null`, which says
+    /// there is none; None when the key is absent, as in a manifest of
+    /// another producer (0116).
+    #[serde(default, deserialize_with = "present")]
+    pub freshness: Option<Box<serde_json::Value>>,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -211,6 +222,25 @@ pub struct RawConfig {
     pub warn_if: Option<Box<serde_json::Value>>,
     #[serde(default)]
     pub error_if: Option<Box<serde_json::Value>>,
+    /// Sources only, where dbt-core also writes it, read when the top-level
+    /// key is absent (0116).
+    #[serde(default, deserialize_with = "present")]
+    pub freshness: Option<Box<serde_json::Value>>,
+}
+
+/// A value kept when its key is there, `null` included, which `Option` alone
+/// reads as absent.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Box<serde_json::Value>>, D::Error> {
+    Ok(Some(Box::new(serde::Deserialize::deserialize(d)?)))
+}
+
+/// Whether a freshness threshold counts for dbt-core, as its `__bool__` has it:
+/// `warn_after` or `error_after` holds both a count and a period. A half
+/// threshold, `{}` and `null` are none (0116).
+pub fn has_freshness(v: &serde_json::Value) -> bool {
+    ["warn_after", "error_after"].iter().any(|k| {
+        v.get(k).is_some_and(|t| t.get("count").is_some_and(|c| !c.is_null()) && t.get("period").is_some_and(|p| !p.is_null()))
+    })
 }
 
 /// The three location keys, and nothing else, out of `unrendered_config`.

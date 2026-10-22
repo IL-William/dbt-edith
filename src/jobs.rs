@@ -2120,7 +2120,7 @@ pub struct Coverage {
     pub jobs: Vec<JobView>,
 }
 
-fn folder(graph: &Graph, i: u32) -> String {
+pub(crate) fn folder(graph: &Graph, i: u32) -> String {
     let n = &graph.nodes[i as usize];
     let dir = n.file.rsplit_once('/').map_or("", |(d, _)| d);
     if !graph.meta.project.is_empty() && n.package != graph.meta.project {
