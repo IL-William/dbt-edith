@@ -460,7 +460,7 @@ are safe to run unasked.
 | what a DAG or dbt Cloud job runs | `dbt-edith . --job name`, step by step |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
-Three habits keep the answers small and true:
+Six habits keep the answers small and true:
 
 - **Leave the tests out unless they are the question.** A test joins a
   selection whenever its parent is selected, as it does in `dbt ls`, and a
@@ -475,6 +475,20 @@ Three habits keep the answers small and true:
   a run, a drop or a deletion acts on a selection, `dbt ls` with the same line
   says what dbt itself selects
   ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md)).
+- **On a big project, count and then narrow.** A list of hundreds of nodes, or
+  several cards, can pass the limit a client puts on an answer. `--count-by
+  folder` or `tag` says how much there is, then a narrow selection is listed
+  and two or three names are described per call.
+- **Put several `--exclude` terms in one quoted value, and know what
+  `--count-by` counts.** The flag takes one value, as in `--exclude
+  'resource_type:test resource_type:source'`. A count includes the sources,
+  the seeds and the node the selection starts from, so those are excluded to
+  count models, and the start is subtracted when it is selected.
+- **For the jobs that touch a set of nodes, or the models no job runs, go job
+  by job.** `--overview --output json` names every job, where the text stops at
+  fifteen, `--job` lists the nodes each one runs, and the agent intersects them
+  with the selection or subtracts them from it. It costs one call per job, so an
+  agent with many says which it did not check.
 
 Start from these commands, or from the skill that wraps them
 ([below](#the-skill)). Use MCP only where there is no terminal to run them in;
@@ -511,8 +525,8 @@ What the description says decides whether an agent loads the skill at all: a
 one-line description was not loaded where one that names the questions it
 answers was, so the shipped one lists them, the kinds of node, the lineage in
 both directions, the column lineage, the jobs that run a node and the
-overview, and says to use it before
-grepping SQL or running `dbt ls`. Change it with care. It describes the card's
+overview, and says to use it before grepping SQL or running `dbt ls`. Change it
+with care. It describes the card's
 per-`.env` lines as [the card](#the-card) does, the config before the
 `generate_*_name` macros and not where dbt builds. An agent that has no
 terminal, or whose client lists tools rather than skills, needs no skill: it
@@ -637,4 +651,5 @@ A client that defers MCP tools can pair the server with a small skill that
 tells the agent to load the `edith` tool (with ToolSearch) and call it. That
 variant, a `SKILL.md` using the tool instead of the commands, is not shipped. It
 was tried only with Claude Code on Jaffle Shop: with it an agent used 1 to 3
-calls where, without a skill, it used 9, and it did not fall back to `dbt ls` in those runs.
+calls where, without a skill, it used 9, and it did not fall back to `dbt ls`
+in those runs.
