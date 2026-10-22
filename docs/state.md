@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-21.
+belongs here. Last updated 2026-10-22.
 
 ## Shipped
 
@@ -2444,6 +2444,18 @@ Left by the job sources in the project (0115, 1.49.0), unranked:
   once the skill is loaded.
 - **A step that compiles** is not listed under `--job`'s nodes, and a job's
   `nodes N` counts what the steps that run, build, test or check act on.
+- **With the sources file present**, every `--describe` of a command-line run
+  reads the jobs, once per run and once per MCP session; a flag or a lazy read
+  would make it opt-in.
+- **Saving a path that does not exist** says "nothing at ..." rather than the
+  precise refusal (hidden, absolute, too far), because the existence check runs
+  first.
+- **The `git pull` race** between the atomic rename and the next save is closed
+  by the stamp the save returns, but no test covers it, for lack of a seam.
+- **Two form states** were not driven in headless Chrome: the reason under the
+  place choice for a path the file may not hold, and Save held during a save.
+- **The Windows hidden and system attribute branch** is compiled and never run;
+  the macOS `UF_HIDDEN` branch is tested.
 
 Left by the agent skill (0114, 1.48.0), unranked:
 
