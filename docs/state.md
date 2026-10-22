@@ -2434,9 +2434,11 @@ Left by the MCP server (0110, 1.44.0), unranked:
   the warm call on a project in a repository. Keeping one git answer for a
   second or two would take it well under a millisecond on Shopify, and make
   the line late.
-- **A test to watch:**
+- ~~**A test to watch:**
   `the_end_of_input_kills_a_run_of_collin_and_the_server_ends` (`src/mcp.rs`)
-  failed once in a first run and passed alone and on a rerun; possibly flaky.
+  failed once in a first run and passed alone and on a rerun; possibly
+  flaky.~~ Settled in 1.49.1: the stand-in wrote its pid after the file the
+  test waits on.
 
 Left by the card's per-file locations (0113, 1.47.0), unranked:
 
@@ -2469,9 +2471,9 @@ Left by the count (0112, 1.46.0), unranked:
 
 - **One key per call:** `--count-by` with two keys is refused, and a node's tags
   can add up to more than `(all)`, which is documented.
-- **Over MCP**, an invalid `--count-by` value is refused without clap's
-  `[possible values]` line, as are `--output` and `--column-tool`; `help` lists
-  the values.
+- ~~**Over MCP**, an invalid `--count-by` value is refused without clap's
+  `[possible values]` line.~~ Settled in 1.49.1: the refusal keeps that line for
+  `--count-by`, `--output` and `--column-tool`.
 - **Count mode** still sorts the selection by name before counting; linear and
   harmless.
 
