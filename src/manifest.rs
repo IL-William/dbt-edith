@@ -155,6 +155,11 @@ pub struct RawNode {
     pub column_name: Option<String>,
     #[serde(default)]
     pub attached_node: Option<String>,
+    /// Tests only: `{yaml key}.{name}` of the resource whose YAML declares the
+    /// test, `sources.crm` or `models.orders`, which dbt-core writes on every
+    /// generic test (0116).
+    #[serde(default)]
+    pub file_key_name: Option<String>,
     #[serde(default)]
     pub test_metadata: Option<RawTestMeta>,
     /// Sources only: the threshold dbt resolved for the table, which a table

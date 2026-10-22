@@ -270,7 +270,9 @@ counting. The models whose description is empty once doc blocks are resolved.
 And the sources no node reads: no node has it as a parent, a model, snapshot,
 analysis or exposure reading it counting, a test not. Each rule is a fold with
 its count, open while it lists fifty or fewer, its rows grouped by folder as the
-job coverage groups its own, and a name opens the node with its Catalog tab.
+job coverage groups its own, the first hundred drawn and **Show all** giving the
+rest, up to a thousand, "and N more" saying how many are left, and a name opens
+the node with its Catalog tab.
 Only the project's own enabled models and sources are looked at, an installed
 package's being the package's to document, test and read. A source whose
 manifest says nothing of freshness, as another producer's may, is given no

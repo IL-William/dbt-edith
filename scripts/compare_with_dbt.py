@@ -276,6 +276,17 @@ sources:
                   arguments:
                     to: ref('probe_reader')
                     field: id
+              # The same, named after the root project's own namespace, which
+              # dbt prefixes to the generated name, and given a name of the
+              # user's: neither starts with `source_`.
+              - jaffle_shop.probe_ref_check:
+                  arguments:
+                    to: ref('probe_reader')
+              - relationships:
+                  name: probe_custom_named_check
+                  arguments:
+                    to: ref('probe_target')
+                    field: id
 
 models:
   - name: probe_pointer
@@ -304,6 +315,7 @@ unit_tests:
       rows:
         - {id: 1}
 """,
+    "macros/probe_tests.sql": "{% test probe_ref_check(model, column_name, to) %}\nselect 1 where false\n{% endtest %}\n",
     "models/probe/probe_pointer.sql": "select 1 as id\n",
     "models/probe/probe_target.sql": "select 1 as id\n",
     "models/probe/probe_singular.sql": "select 1 as id\n",
@@ -522,7 +534,12 @@ class Edith:
         body = self.get("/api/reports/checks")
         if "manifest_at" not in body:
             return {"error": [f"error: {body}"]}
-        return {k: sorted(r["id"] for r in rows) for k, rows in body.items() if k != "manifest_at"}
+        found = {k: check for k, check in body.items() if k != "manifest_at"}
+        # Every row is sent below the cap, so the total has to be the rows'.
+        for k, check in found.items():
+            if len(check["rows"]) < 1000 and check["total"] != len(check["rows"]):
+                return {"error": [f"error: {k} counts {check['total']} and lists {len(check['rows'])}"]}
+        return {k: sorted(r["id"] for r in check["rows"]) for k, check in found.items()}
 
     def lineage(self, unique_id, up, down, tests):
         """The names the canvas draws around a model, or a reason it cannot say."""
@@ -813,6 +830,15 @@ def checks_in_manifest(manifest):
     def own(node):
         return node["package_name"] == project and node.get("config", {}).get("enabled", True) is not False
 
+    def threshold(source):
+        """The top-level key, else the config's, as the report reads it; None
+        when neither is there, which gives no verdict."""
+        if "freshness" in source:
+            return source["freshness"], True
+        if "freshness" in source.get("config", {}):
+            return source["config"]["freshness"], True
+        return None, False
+
     nodes = manifest["nodes"]
     tested = set()
     for n in nodes.values():
@@ -832,7 +858,8 @@ def checks_in_manifest(manifest):
         return any(not c.startswith(("test.", "unit_test.")) for c in manifest["child_map"].get(source_id, []))
 
     return {
-        "sources_without_freshness": sorted(k for k, n in sources.items() if not has_freshness(n.get("freshness"))),
+        "sources_without_freshness": sorted(k for k, n in sources.items()
+                                            if threshold(n)[1] and not has_freshness(threshold(n)[0])),
         "models_without_test": sorted(k for k in models if k not in tested),
         "models_without_description": sorted(k for k, n in models.items() if not n["description"].strip()),
         "sources_not_read": sorted(k for k in sources if not read(k)),

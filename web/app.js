@@ -10006,11 +10006,15 @@ function keepReportPlace(view) {
 function restoreReportPlace(view, place) {
   const scroller = view.querySelector('.reportbody, .jobs-body');
   if (!place || !scroller) return;
+  // Show all first: a list drawn again brings folds of its own, whose state
+  // is then put back from a fresh look at the folds.
+  for (const d of scroller.querySelectorAll('details')) {
+    const more = place.all && place.all[reportFoldKey(d)] && d.querySelector('.showall');
+    if (more) more.click();
+  }
   for (const d of scroller.querySelectorAll('details')) {
     const key = reportFoldKey(d);
     if (key in place.open) d.open = place.open[key];
-    const more = place.all && place.all[key] && d.querySelector('.showall');
-    if (more) more.click();
   }
   scroller.scrollTop = place.scroll;
 }
@@ -10295,33 +10299,70 @@ async function checksSection(again) {
   const body = jel('div', 'reportbody');
   body.append(jel('p', 'runnote', "Only the project's own enabled models and sources are looked at, never an installed package's."));
   for (const c of CHECKS) {
-    const rows = r[c.key] || [];
-    if (!rows.length) continue;
+    // `rows` is what the server sent, at most its cap of the `total` found.
+    const { total = 0, rows = [] } = r[c.key] || {};
+    if (!total) continue;
     const d = jel('details', 'reportfinding');
-    d.open = rows.length <= 50;
+    d.open = total <= 50;
     const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', c.title), jel('span', 'rcount', String(rows.length)));
-    d.append(sum, jel('p', 'rlever', c.why));
-    for (const g of jobsCoverageGroups(rows)) {
-      // A folder of one is no level to unfold: the row is listed bare.
-      if (g.rows.length === 1 || !g.folder) {
-        const ul = jel('ul', 'rentries');
-        for (const row of g.rows) ul.append(checkRow(row, row.folder));
-        d.append(ul);
-        continue;
+    sum.append(jel('span', 'rtitle', c.title), jel('span', 'rcount', String(total)));
+    const groups = jel('div', '');
+    const draw = (shown) => groups.replaceChildren(...checkGroups(rows, shown, d.open));
+    d.append(sum, jel('p', 'rlever', c.why), groups);
+    // A list of thousands draws its first rows, a button the rest, as Slowest
+    // does: the folds that are closed would draw them all the same.
+    const rest = rows.length - CHECK_SHOWN;
+    draw(CHECK_SHOWN);
+    if (rest > 0 || total > rows.length) {
+      const more = jel('ul', 'rentries');
+      if (rest > 0) {
+        const li = jel('li', 'muted');
+        const all = jel('button', 'btn sm showall', `Show all ${rows.length}`);
+        all.addEventListener('click', () => {
+          d.dataset.all = '1';
+          draw(rows.length);
+          li.remove();
+        });
+        li.append(all);
+        more.append(li);
       }
-      const folder = jel('details', 'checkfolder');
-      folder.open = d.open;
-      folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
-      const ul = jel('ul', 'rentries');
-      for (const row of g.rows) ul.append(checkRow(row, row.rest));
-      folder.append(ul);
-      d.append(folder);
+      if (total > rows.length) more.append(jel('li', 'muted', `and ${total - rows.length} more`));
+      d.append(more);
     }
     body.append(d);
   }
   if (body.children.length === 1) body.append(jel('p', 'runnote', 'Nothing to list: every check comes out clean.'));
   return [head(), body];
+}
+
+/* How many rows of a check are drawn before Show all. */
+const CHECK_SHOWN = 100;
+
+/* The first `shown` of a check's rows, by folder as the job coverage groups its
+   own. The folders are made of every row the server sent, so a folder's count
+   is the whole of it, drawn or not. */
+function checkGroups(rows, shown, open) {
+  const out = [];
+  const drawn = new Set(rows.slice(0, shown).map((r) => r.id));
+  for (const g of jobsCoverageGroups(rows)) {
+    const here = g.rows.filter((r) => drawn.has(r.id));
+    if (!here.length) continue;
+    // A folder of one is no level to unfold: the row is listed bare.
+    if (g.rows.length === 1 || !g.folder) {
+      const ul = jel('ul', 'rentries');
+      for (const row of here) ul.append(checkRow(row, row.folder));
+      out.push(ul);
+      continue;
+    }
+    const folder = jel('details', 'checkfolder');
+    folder.open = open;
+    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
+    const ul = jel('ul', 'rentries');
+    for (const row of here) ul.append(checkRow(row, row.rest));
+    folder.append(ul);
+    out.push(folder);
+  }
+  return out;
 }
 
 function checkRow(row, path) {

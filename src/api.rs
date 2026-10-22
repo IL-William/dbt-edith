@@ -5658,10 +5658,11 @@ mod tests {
         let report = json(&response_of(port, get("/api/reports/checks", &h)).await);
         let row = |id: &str, name: &str, file: &str, folder: &str| serde_json::json!({ "id": id, "name": name, "file": file, "folder": folder });
         assert_eq!(report["manifest_at"], 7);
-        assert_eq!(report["sources_without_freshness"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models")]));
-        assert_eq!(report["models_without_test"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts")]));
-        assert_eq!(report["models_without_description"][0]["name"], "orders");
-        assert_eq!(report["sources_not_read"], serde_json::json!([]));
+        assert_eq!(report["sources_without_freshness"]["total"], 1);
+        assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models")]));
+        assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts")]));
+        assert_eq!(report["models_without_description"]["rows"][0]["name"], "orders");
+        assert_eq!(report["sources_not_read"], serde_json::json!({ "total": 0, "rows": [] }));
         assert!(status_of(port, keyless(get("/api/reports/checks", &h))).await.ends_with("401 Unauthorized"));
 
         // The model described and tested, and the source read: only its
@@ -5675,7 +5676,7 @@ mod tests {
             Some(Box::new(serde_json::json!({ "warn_after": { "count": 1, "period": "day" } })));
         *st.graph.write().await = Arc::new(Graph::build(all, &path, 9, 0));
         assert!(json(&response_of(port, get("/api/reports", &h)).await).get("checks").is_none());
-        assert_eq!(json(&response_of(port, get("/api/reports/checks", &h)).await)["models_without_test"], serde_json::json!([]));
+        assert_eq!(json(&response_of(port, get("/api/reports/checks", &h)).await)["models_without_test"]["total"], 0);
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

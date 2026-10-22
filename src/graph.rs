@@ -327,6 +327,8 @@ pub struct Node {
     /// allocation and less than a Vec on every node.
     pub settings: Box<[Setting]>,
     attached: String,
+    /// Test nodes only: dbt's `file_key_name`, empty when the manifest has none.
+    declared_in: String,
     pub parents: Vec<u32>,
     pub children: Vec<u32>,
     pub tests: Vec<u32>,
@@ -652,9 +654,10 @@ pub struct UnitTest {
     pub targets: Vec<String>,
 }
 
-/// The node whose YAML declares test `t`: dbt's `attached_node`, or else the
-/// parent declared in the test's own file, which is how a source test reads
-/// under dbt-core, where it has no `attached_node`. A singular test is a file
+/// The node whose YAML declares test `t`: dbt's `attached_node`, or else, for a
+/// source's test, which dbt-core gives none, the parent its `file_key_name`
+/// names (`sources.crm`, `models.orders`), and where the manifest has no such
+/// key the parent declared in the test's own file. A singular test is a file
 /// of its own, so it has none.
 pub(crate) fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) -> Option<u32> {
     if let Some(&i) = index.get(&t.attached) {
@@ -663,18 +666,32 @@ pub(crate) fn declaring(nodes: &[Node], index: &HashMap<String, u32>, t: &Node) 
     if t.file.is_empty() {
         return None;
     }
-    // A source's test has no `attached_node`, and a `relationships` one has the
-    // model it points at as a parent too, which may sit in the same file: a
-    // test named `source_...`, dbt's prefix for them, is declared by the
-    // source. Any other keeps the first parent in the file, a model's test
-    // pointing at a source of its file staying on the model.
     let here = |&p: &u32| {
         let p = &nodes[p as usize];
         p.file == t.file || p.yml == t.file
     };
     let source = |&p: &u32| nodes[p as usize].kind == Kind::Source;
+    // A `relationships` test has the node it points at as a parent too, which
+    // may sit in the same file, so the first parent of the file is not always
+    // the one declaring it. dbt says which: `sources.<source>` or
+    // `<yaml key>.<name>`, a versioned model by its name without the version.
+    if let Some((key, rest)) = t.declared_in.split_once('.') {
+        let named = |&p: &u32| {
+            let n = &nodes[p as usize];
+            if key == "sources" { n.kind == Kind::Source && n.source_name == rest } else { n.kind != Kind::Source && n.base_name() == rest }
+        };
+        let named: Vec<u32> = t.parents.iter().copied().filter(named).collect();
+        if let Some(&p) = named.iter().find(|p| here(p)).or(named.first()) {
+            return Some(p);
+        }
+    }
     let first = t.parents.iter().copied().find(here);
-    if t.name.starts_with("source_") {
+    // Without that key, or where it names no parent, as another producer may
+    // write it, a test named `source_...` or `<package>_source_...`, the
+    // prefixes dbt generates, is a source's; a custom `name:` is not known for
+    // one, and falls to the first parent of the file.
+    let generated = t.name.starts_with("source_") || (!t.namespace.is_empty() && t.name.starts_with(&format!("{}_source_", t.namespace)));
+    if generated {
         t.parents.iter().copied().filter(source).find(here).or(first)
     } else {
         first
@@ -949,6 +966,7 @@ impl Graph {
                 freshness,
                 settings,
                 attached: raw_node.attached_node.unwrap_or_default(),
+                declared_in: raw_node.file_key_name.unwrap_or_default(),
                 parents: Vec::new(),
                 children: Vec::new(),
                 tests: Vec::new(),

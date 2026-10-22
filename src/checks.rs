@@ -24,13 +24,25 @@ pub struct Row {
     pub folder: String,
 }
 
-/// The four lists, each by folder, then file, then name.
+/// More rows of one check than a report sends: a project with thousands of
+/// undescribed models would otherwise send and draw every one. The count says
+/// how many there are.
+pub const MAX_ROWS: usize = 1000;
+
+/// One check: how many nodes it finds, and the first `MAX_ROWS` of them by
+/// folder, then file, then name.
+#[derive(serde::Serialize, Debug, Default)]
+pub struct Check {
+    pub total: usize,
+    pub rows: Vec<Row>,
+}
+
 #[derive(serde::Serialize, Debug, Default)]
 pub struct Checks {
-    pub sources_without_freshness: Vec<Row>,
-    pub models_without_test: Vec<Row>,
-    pub models_without_description: Vec<Row>,
-    pub sources_not_read: Vec<Row>,
+    pub sources_without_freshness: Check,
+    pub models_without_test: Check,
+    pub models_without_description: Check,
+    pub sources_not_read: Check,
 }
 
 /// The nodes of each list, by index in the graph.
@@ -102,7 +114,7 @@ fn found(graph: &Graph) -> Found {
 }
 
 /// How many nodes the four lists hold in all, without building a row: the
-/// Reports index asks it on every poll.
+/// Reports index asks it whenever it is read.
 pub fn count(graph: &Graph) -> usize {
     let f = found(graph);
     f.no_freshness.len() + f.no_test.len() + f.no_description.len() + f.not_read.len()
@@ -111,6 +123,7 @@ pub fn count(graph: &Graph) -> usize {
 pub fn checks(graph: &Graph) -> Checks {
     let f = found(graph);
     let rows = |list: Vec<u32>| {
+        let total = list.len();
         let mut rows: Vec<Row> = list
             .into_iter()
             .map(|i| {
@@ -121,7 +134,8 @@ pub fn checks(graph: &Graph) -> Checks {
         rows.sort_by(|a, b| {
             a.folder.cmp(&b.folder).then_with(|| a.file.cmp(&b.file)).then_with(|| a.name.cmp(&b.name)).then_with(|| a.id.cmp(&b.id))
         });
-        rows
+        rows.truncate(MAX_ROWS);
+        Check { total, rows }
     };
     Checks {
         sources_without_freshness: rows(f.no_freshness),
@@ -190,7 +204,7 @@ mod tests {
         }));
         let c = checks(&g);
         // `customers` is only the target of the test declared on `orders`.
-        assert_eq!(names(&c.models_without_test), ["customers", "lonely"]);
+        assert_eq!(names(&c.models_without_test.rows), ["customers", "lonely"]);
     }
 
     #[test]
@@ -207,7 +221,7 @@ mod tests {
             },
             "parent_map": { "test.shop.assert_orders_match": ["model.shop.customers", "model.shop.orders"] },
         }));
-        assert_eq!(names(&checks(&g).models_without_test), ["lonely"]);
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["lonely"]);
     }
 
     #[test]
@@ -225,7 +239,7 @@ mod tests {
             },
             "parent_map": { "test.shop.not_null_orders_id": ["model.shop.orders"] },
         }));
-        assert_eq!(names(&checks(&g).models_without_test), ["lonely"]);
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["lonely"]);
     }
 
     #[test]
@@ -243,7 +257,7 @@ mod tests {
             "sources": { "source.shop.crm.customers": customers },
             "parent_map": { "test.shop.rel_customers_orders": ["model.shop.orders", "source.shop.crm.customers"] },
         }));
-        assert_eq!(names(&checks(&g).models_without_test), ["orders"]);
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["orders"]);
     }
 
     #[test]
@@ -261,7 +275,103 @@ mod tests {
             "sources": { "source.shop.crm.customers": customers },
             "parent_map": { "test.shop.rel_orders_customers": ["model.shop.orders", "source.shop.crm.customers"] },
         }));
-        assert!(checks(&g).models_without_test.is_empty());
+        assert!(checks(&g).models_without_test.rows.is_empty());
+    }
+
+    /// A model `orders` and a source table `customers` in one YAML file, and a
+    /// test of `test_name` with no attached node, pointing at both.
+    fn same_file(test_name: &str, file_key_name: Option<&str>, namespace: Option<&str>) -> Graph {
+        let mut test = generic(test_name, None);
+        test["column_name"] = json!("id");
+        if let Some(k) = file_key_name {
+            test["file_key_name"] = json!(k);
+        }
+        if let Some(n) = namespace {
+            test["test_metadata"]["namespace"] = json!(n);
+        }
+        let mut orders = model("orders", "shop", "x");
+        orders["patch_path"] = json!("shop://models/schema.yml");
+        let mut customers = source("customers", "shop", json!({}));
+        customers["original_file_path"] = json!("models/schema.yml");
+        build(json!({
+            "nodes": { "model.shop.orders": orders, "test.shop.t": test },
+            "sources": { "source.shop.crm.customers": customers },
+            "parent_map": { "test.shop.t": ["model.shop.orders", "source.shop.crm.customers"] },
+        }))
+    }
+
+    #[test]
+    fn a_source_test_is_the_sources_by_the_key_dbt_writes_whatever_it_is_named() {
+        // A package's generic, which prefixes its namespace, and a `name:` of
+        // the user's: neither has the `source_` prefix at its start.
+        for name in ["kit_source_relationships_where_customers_id", "my_own_check"] {
+            let g = same_file(name, Some("sources.crm"), Some("kit"));
+            assert_eq!(names(&checks(&g).models_without_test.rows), ["orders"], "{name}");
+        }
+    }
+
+    #[test]
+    fn a_model_test_stays_on_the_model_with_the_key_and_without() {
+        let g = same_file("relationships_orders_id__id__source_crm_customers_", Some("models.orders"), None);
+        assert!(checks(&g).models_without_test.rows.is_empty());
+        // A custom name that starts like a source's, and a key that says otherwise.
+        let g = same_file("source_check", Some("models.orders"), None);
+        assert!(checks(&g).models_without_test.rows.is_empty());
+        let g = same_file("relationships_orders_id__id__source_crm_customers_", None, None);
+        assert!(checks(&g).models_without_test.rows.is_empty());
+    }
+
+    #[test]
+    fn a_key_that_names_no_parent_leaves_the_name_to_say() {
+        // Another producer's shape: the table too, which no source is named.
+        let g = same_file("source_relationships_crm_customers_id", Some("sources.crm.customers"), None);
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["orders"]);
+        // And with a name that says nothing, the first parent of the file.
+        let g = same_file("my_own_check", Some("sources.crm.customers"), None);
+        assert!(checks(&g).models_without_test.rows.is_empty());
+    }
+
+    #[test]
+    fn without_the_key_a_namespaced_source_name_is_still_a_sources() {
+        let g = same_file("kit_source_relationships_where_customers_id", None, Some("kit"));
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["orders"]);
+        // The prefix after any other word is not dbt's.
+        let g = same_file("a_source_of_trouble", None, Some("kit"));
+        assert!(checks(&g).models_without_test.rows.is_empty());
+    }
+
+    #[test]
+    fn a_versioned_model_is_named_by_the_key_without_its_version() {
+        let version = |v: u32| {
+            let mut m = model("orders", "shop", "x");
+            m["version"] = json!(v);
+            m["patch_path"] = json!("shop://models/schema.yml");
+            m
+        };
+        let mut test = generic("not_null_orders_id", None);
+        test["file_key_name"] = json!("models.orders");
+        let g = build(json!({
+            "nodes": { "model.shop.orders.v1": version(1), "model.shop.orders.v2": version(2), "test.shop.t": test },
+            "parent_map": { "test.shop.t": ["model.shop.orders.v2"] },
+        }));
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["orders.v1"]);
+    }
+
+    #[test]
+    fn a_check_sends_the_first_thousand_rows_and_says_how_many_there_are() {
+        let mut nodes = serde_json::Map::new();
+        for i in 0..MAX_ROWS + 5 {
+            nodes.insert(format!("model.shop.m{i:04}"), model(&format!("m{i:04}"), "shop", ""));
+        }
+        let g = build(json!({ "nodes": nodes }));
+        let c = checks(&g);
+        assert_eq!(c.models_without_description.total, MAX_ROWS + 5);
+        assert_eq!(c.models_without_description.rows.len(), MAX_ROWS);
+        // The first by path, not the first read.
+        assert_eq!(c.models_without_description.rows[MAX_ROWS - 1].name, format!("m{:04}", MAX_ROWS - 1));
+        assert_eq!(c.models_without_test.total, MAX_ROWS + 5);
+        // The index counts every node, not the rows sent.
+        assert_eq!(count(&g), 2 * (MAX_ROWS + 5));
     }
 
     #[test]
@@ -280,7 +390,7 @@ mod tests {
                 "unit_test.shop.orders.nothing": { "name": "nothing", "depends_on": null },
             },
         }));
-        assert_eq!(names(&checks(&g).models_without_test), ["lonely"]);
+        assert_eq!(names(&checks(&g).models_without_test.rows), ["lonely"]);
     }
 
     #[test]
@@ -293,7 +403,7 @@ mod tests {
             "nodes": { "snapshot.shop.history": snapshot, "seed.shop.raw_orders": seed },
         }));
         let c = checks(&g);
-        assert!(c.models_without_test.is_empty() && c.models_without_description.is_empty());
+        assert!(c.models_without_test.rows.is_empty() && c.models_without_description.rows.is_empty());
     }
 
     #[test]
@@ -305,7 +415,7 @@ mod tests {
                 "model.shop.c": model("c", "shop", "Orders, one a row."),
             },
         }));
-        assert_eq!(names(&checks(&g).models_without_description), ["a", "b"]);
+        assert_eq!(names(&checks(&g).models_without_description.rows), ["a", "b"]);
     }
 
     #[test]
@@ -336,7 +446,7 @@ mod tests {
                 "source.shop.crm.unsaid": source("unsaid", "shop", json!({})),
             },
         }));
-        assert_eq!(names(&checks(&g).sources_without_freshness), ["crm.empty", "crm.half", "crm.nothing", "crm.switched_off"]);
+        assert_eq!(names(&checks(&g).sources_without_freshness.rows), ["crm.empty", "crm.half", "crm.nothing", "crm.switched_off"]);
     }
 
     #[test]
@@ -364,7 +474,7 @@ mod tests {
                 "exposure.shop.dash": ["source.shop.crm.exposed"],
             },
         }));
-        assert_eq!(names(&checks(&g).sources_not_read), ["crm.alone", "crm.only_tested"]);
+        assert_eq!(names(&checks(&g).sources_not_read.rows), ["crm.alone", "crm.only_tested"]);
     }
 
     #[test]
@@ -392,10 +502,10 @@ mod tests {
             },
         }));
         let c = checks(&g);
-        assert_eq!(names(&c.models_without_test), ["kept"]);
-        assert_eq!(names(&c.models_without_description), ["kept"]);
-        assert_eq!(names(&c.sources_without_freshness), ["crm.kept"]);
-        assert_eq!(names(&c.sources_not_read), ["crm.kept"]);
+        assert_eq!(names(&c.models_without_test.rows), ["kept"]);
+        assert_eq!(names(&c.models_without_description.rows), ["kept"]);
+        assert_eq!(names(&c.sources_without_freshness.rows), ["crm.kept"]);
+        assert_eq!(names(&c.sources_not_read.rows), ["crm.kept"]);
         assert_eq!(count(&g), 4);
     }
 
@@ -414,7 +524,7 @@ mod tests {
                 "model.shop.top": model("top", "shop", ""),
             },
         }));
-        let rows = checks(&g).models_without_description;
+        let rows = checks(&g).models_without_description.rows;
         let seen: Vec<(&str, &str)> = rows.iter().map(|r| (r.folder.as_str(), r.name.as_str())).collect();
         assert_eq!(seen, [("models", "top"), ("models/marts", "z"), ("models/staging", "a"), ("models/staging", "b")]);
         assert_eq!(rows[1].id, "model.shop.z");

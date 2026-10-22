@@ -1670,6 +1670,27 @@ copy: no file, saved into the project, reopened on the file, and a file that
 does not read. Not driven: the reason shown under the choice for a path the
 file may not hold, and Save held while a save is on its way.
 
+The tool's own checks (0116, 1.51.0): a Checks section in Reports, apart from
+Warnings, listing the root project's own enabled nodes that four rules pick
+out: sources with no freshness threshold as dbt-core counts one (read from the
+source's `freshness`, else its config, and given no verdict where the manifest
+has neither), models no test counts for (a generic test declared on one, found
+by dbt's `attached_node` or, for a source's test, its `file_key_name`; a
+singular test selecting from one; a unit test of one), models with no
+description, and sources no node reads. Each rule is a fold with its count,
+its rows grouped by folder, the first hundred drawn and a button for the
+rest, and the server sends at most a thousand rows of each with its total. The
+section is quiet: listed in the rail, never lighting the button, carrying a
+chip or opening the panel, so 0075 holds. Checked with `cargo test` on an
+invented graph (each rule, a relationships target, a source's test with a
+package prefix or a name of the user's, a versioned model, a disabled node, a
+package's, a key absent, the cap and the total, the route and the index) and by
+`scripts/compare_with_dbt.py`, which works the four lists out again in Python
+from the manifest dbt-core 1.12.6 wrote, on Jaffle Shop, Shopify and a copy of
+Jaffle Shop given sources, models and tests of every shape. Not checked: dbt
+Fusion's manifest for `freshness` and for `file_key_name`, and the Reports
+panel with the lists of a project of many thousands of nodes.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and

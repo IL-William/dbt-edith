@@ -38,9 +38,9 @@ they would read as dbt's.
   the key is there, `null` included, and `None` when it is not, as in another
   producer's manifest: such a source is never listed as missing a threshold.
 - **A model with no test is one no test counts for**: a generic test declared
-  on it or one of its columns, by the test's `attached_node`, else the node
-  whose YAML declares it as the column tests do; a singular test, which has no
-  attached node, for each model it selects from; a unit test for the model its
+  on it or one of its columns, by the test's `attached_node`, else, for a
+  source's test, the node its `file_key_name` names; a singular test, which has
+  no attached node, for each model it selects from; a unit test for the model its
   `depends_on.nodes` names. A `relationships` test also has the model it points
   at as a parent, and does not count for it. Models only: a seed or a snapshot
   is left alone. dbt-project-evaluator's rules about tests were not read for
@@ -83,17 +83,25 @@ they would read as dbt's.
 
 ## Consequences
 
-A manifest with no `attached_node` on a model's tests, which dbt-core always
-writes, falls back on the node whose YAML file declares the test: two models in
-one file read the first of them as declaring a `relationships` test the other
-holds. A test named `source_...`, dbt's prefix, prefers a source of its file to
-a model, so a source's test with a custom `name:` and no `attached_node` still
-falls to the previous rule, the first parent in the file. A unit test is read through all of its `depends_on.nodes`, which in
-dbt-core 1.12.6 holds the tested model alone: a producer that adds its inputs
-would read them as tested. dbt Fusion's manifest was not looked at: where it
-writes `freshness` otherwise, or not at all, its sources are given no verdict
-rather than a wrong one, and where it writes `null` for one with no threshold
-they read as having none. Checks does not light the button, so 0075 and 0070 hold
+dbt-core writes no `attached_node` on a source's tests, and a `relationships`
+test also has the model it points at as a parent, which may sit in the same
+YAML file. Every generic test carries `file_key_name`, `sources.crm` or
+`models.orders`, and that names the declaring node, a package's prefix or a
+`name:` of the user's changing nothing; a versioned model is matched by its
+name without the version. Where a manifest has no such key, or its key names no
+parent, as another producer may write it, a test named `source_...` or
+`<namespace>_source_...` is a source's, and the first parent in the test's file
+is the declarer otherwise: a source's test with a custom `name:` there reads
+as its model's, the model of the same file counting as tested, and two models
+in one file read the first of them as declaring a `relationships` test the
+other holds. A unit test is read through all of its
+`depends_on.nodes`, which in dbt-core 1.12.6 holds the tested model alone: a
+producer that adds its inputs would read them as tested. dbt Fusion's manifest
+was not looked at: where it writes `freshness` or `file_key_name` otherwise, or
+not at all, its sources are given no verdict rather than a wrong one, and where
+it writes `null` for one with no threshold they read as having none. The
+server sends at most a thousand rows of each check with its total, and the page
+draws a hundred. Checks does not light the button, so 0075 and 0070 hold
 unchanged: the button stays dimmed while no run, warning, collin report, macro
 finding or job source gives it something, a click on it opens on the job
 coverage as before, and Checks shows in the rail below it.
