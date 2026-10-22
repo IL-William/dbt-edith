@@ -97,9 +97,9 @@ in one file read the first of them as declaring a `relationships` test the
 other holds. A unit test is read through all of its
 `depends_on.nodes`, which in dbt-core 1.12.6 holds the tested model alone: a
 producer that adds its inputs would read them as tested. dbt Fusion's manifest
-was not looked at: where it writes `freshness` or `file_key_name` otherwise, or
-not at all, its sources are given no verdict rather than a wrong one, and where
-it writes `null` for one with no threshold they read as having none. The
+was not looked at: where it writes `freshness` otherwise, or not at all, its
+sources are given no verdict rather than a wrong one, and where it writes
+`null` for one with no threshold they read as having none. The
 server sends at most a thousand rows of each check with its total, and the page
 draws a hundred. Checks does not light the button, so 0075 and 0070 hold
 unchanged: the button stays dimmed while no run, warning, collin report, macro
