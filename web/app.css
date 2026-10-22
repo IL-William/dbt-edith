@@ -107,6 +107,11 @@ kbd {
 /* dbt's own artifacts in the reports: the last run, and what follows it. */
 [data-tool=dbt] { --tool: #ff694b; }
 .tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
+/* How the last run ended, over the tool's colour: a section's own dot, in the
+   reports, says it only when it has an outcome to say. */
+.tooldot[data-tone=ok] { background: var(--ok); }
+.tooldot[data-tone=warn] { background: var(--warn); }
+.tooldot[data-tone=bad] { background: var(--bad); }
 .btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
 .cllpick .tname, .cllnow .tname { color: var(--tool); font-weight: 600; }

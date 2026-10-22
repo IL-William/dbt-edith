@@ -33,6 +33,32 @@ check('last, after the coverage', keys(reportsSections({ macros: { unexplained: 
       ['run', 'jobs', 'macros']);
 check('not before either', keys(reportsSections({}, '')), ['jobs']);
 
+print('\n--- the last run\'s dot ---');
+function tones(index) { return reportsSections(index).map(function (s) { return s.key + ':' + (s.tone || '-'); }); }
+check('ok when nothing errored, failed or warned',
+      tones({ run: { at: 9, command: 'build', error: 0, fail: 0, warn: 0, partial: 0, ok: 4, other: 0 } }), ['run:ok', 'jobs:-']);
+check('ok from a count of results that passed', tones({ run: { at: 9, error: 0, fail: 0, warn: 0, partial: 0, ok: 3, other: 0 } })[0], 'run:ok');
+check('none for a run with no result at all (dbt build -s typo)', tones({ run: { at: 9, error: 0, fail: 0, warn: 0, partial: 0, ok: 0, other: 0 } })[0], 'run:-');
+check('warn on a status the module has no word for', tones({ run: { at: 9, error: 0, fail: 0, warn: 0, partial: 0, ok: 5, other: 1 } })[0], 'run:warn');
+check('warn on a warning', tones({ run: { at: 9, error: 0, fail: 0, warn: 2 } })[0], 'run:warn');
+check('warn on a partial success alone', tones({ run: { at: 9, error: 0, fail: 0, warn: 0, partial: 1 } })[0], 'run:warn');
+check('bad on an error', tones({ run: { at: 9, error: 1, fail: 0, warn: 0 } })[0], 'run:bad');
+check('bad on a failed test, before a warning', tones({ run: { at: 9, error: 0, fail: 1, warn: 3 } })[0], 'run:bad');
+check('none while the file is still being written and the index has its time alone', tones({ run: { at: 9 } })[0], 'run:-');
+check('and no other section carries one',
+      tones({ run: { at: 9, error: 1, fail: 1, warn: 1 }, warnings: { at: 1, manifest_at: 1, unused: 2 }, collin: { at: 5 },
+        jobs: { sources: 1, at: 3 }, macros: { unexplained: 1, at: 3 } }),
+      ['run:bad', 'warnings:-', 'collin:-', 'jobs:-', 'macros:-']);
+function head(st) { return runEndTone(runEndCounts(st)); }
+check('the head reads the run\'s own statuses by the same rule',
+      [head({ ok: 4 }), head({ ok: 4, noop: 1, reused: 1 }), head({ ok: 4, partial: 1 }), head({ warn: 1, fail: 1 }), head({ ok: 2, error: 1 })],
+      ['ok', 'ok', 'warn', 'bad', 'bad']);
+check('and none for no result, or a skipped-only run', [head({}), head(undefined), head({ skipped: 3 })], ['', '', '']);
+check('and warn for an unknown status, skipped or not', [head({ ok: 3, interrupted: 1 }), head({ skipped: 1, interrupted: 1 })], ['warn', 'warn']);
+check('and ok with skipped beside what passed', head({ ok: 2, skipped: 1 }), 'ok');
+check('the words of each tone', [runEndWords('ok'), runEndWords('warn'), runEndWords('bad'), runEndWords('')],
+      ['All passed', 'Not everything passed', 'Ended with errors or failed tests', '']);
+
 print('\n--- what is new ---');
 check('nothing from collin, nothing new', reportsNews(null), []);
 var badge = { text: '3 to investigate', short: '3', title: 'collin\'s last run names 3 models or tables to look at.' };

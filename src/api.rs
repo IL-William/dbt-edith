@@ -935,7 +935,8 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
 
 /// Which reports the panel has something to show in, and when each last
 /// changed (0064). File metadata and the settings, and nothing else but the
-/// last run's counts and the unused config paths, which the button shows:
+/// last run's counts and the unused config paths, which the button shows, the
+/// counts colouring the last run's dot in the rail as well:
 /// collin's report is not parsed, collin never starts (0042) and no job file
 /// is looked at, since a section reads its own when it opens (0063).
 async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
@@ -5130,7 +5131,7 @@ mod tests {
         assert!(run.contains(r#""unknown":{"items":["test.shop.gone.x"],"of":1}"#), "{run}");
         assert!(!run.contains("hunter2"), "{run}");
         let index = response_of(port, get("/api/reports", &h)).await;
-        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0}}"#)), "{index}");
+        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0,"partial":0,"ok":0,"other":0}}"#)), "{index}");
         let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
 

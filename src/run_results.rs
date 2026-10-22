@@ -182,23 +182,32 @@ pub struct Entry {
     pub host: String,
 }
 
-/// The counts the Reports button needs, without the lists.
+/// The counts the Reports button and the last run's dot in the rail need,
+/// without the lists.
 #[derive(serde::Serialize, Clone, PartialEq, Debug)]
 pub struct Counts {
     pub command: String,
     pub error: usize,
     pub fail: usize,
     pub warn: usize,
+    pub partial: usize,
+    /// Results that passed, were reused or had nothing to do.
+    pub ok: usize,
+    /// Results in a status this module has no word for.
+    pub other: usize,
 }
 
 pub fn counts(raw: &Raw) -> Counts {
-    let mut c = Counts { command: command(raw), error: 0, fail: 0, warn: 0 };
+    let mut c = Counts { command: command(raw), error: 0, fail: 0, warn: 0, partial: 0, ok: 0, other: 0 };
     for r in &raw.results {
         match status(r.status.as_str().unwrap_or("")).as_str() {
             "error" => c.error += 1,
             "fail" => c.fail += 1,
             "warn" => c.warn += 1,
-            _ => {}
+            "partial" => c.partial += 1,
+            "ok" | "noop" | "reused" => c.ok += 1,
+            "skipped" => {}
+            _ => c.other += 1,
         }
     }
     c
@@ -531,7 +540,21 @@ mod tests {
         assert_eq!(r.command, "test");
         assert_eq!(r.kinds.len(), 1, "only the tests ran");
         assert_eq!((r.problems.items[0].status.as_str(), r.problems.items[0].failures), ("fail", Some(3)));
-        assert_eq!(counts(&raw), Counts { command: "test".into(), error: 0, fail: 1, warn: 0 });
+        assert_eq!(counts(&raw), Counts { command: "test".into(), error: 0, fail: 1, warn: 0, partial: 0, ok: 0, other: 0 });
+        let part = parse(br#"{"metadata":{},"args":{"which":"build"},"results":[{"unique_id":"model.shop.orders","status":"partial success"}]}"#).unwrap();
+        assert_eq!(counts(&part).partial, 1, "a partial success is counted");
+        let word = |s: &str| {
+            let raw = format!(r#"{{"metadata":{{}},"args":{{"which":"build"}},"results":[{{"unique_id":"model.shop.orders","status":"{s}"}}]}}"#);
+            let c = counts(&parse(raw.as_bytes()).unwrap());
+            (c.ok, c.other, c.error + c.fail + c.warn + c.partial)
+        };
+        assert_eq!(word("success"), (1, 0, 0));
+        assert_eq!(word("no-op"), (1, 0, 0));
+        assert_eq!(word("reused"), (1, 0, 0));
+        assert_eq!(word("Interrupted"), (0, 1, 0), "a status with no word is counted apart, not as passed");
+        assert_eq!(word("skipped"), (0, 0, 0), "a skipped result is neither passed nor a problem");
+        let none = counts(&parse(br#"{"metadata":{},"args":{"which":"build"},"results":[]}"#).unwrap());
+        assert_eq!((none.ok, none.other, none.error + none.fail + none.warn + none.partial), (0, 0, 0), "no results at all");
         let empty = parse(br#"{"metadata":{},"results":[],"args":{"which":"compile"}}"#).unwrap();
         let r = report(&empty, &g, 200, "");
         assert_eq!((r.command.as_str(), r.kinds.len(), r.slowest.len()), ("compile", 0, 0));

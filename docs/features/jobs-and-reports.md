@@ -50,8 +50,8 @@ which run only in jobs whose schedule is not read and in no scheduled one
 which jobs were read.
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed
-on its own. An installed package's models are left out, so the report is about
-the project's own. A job counts as
+on its own. A group with nothing in it is not drawn. An installed package's
+models are left out, so the report is about the project's own. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates,
 whether that DAG runs dbt or not, a dbt Cloud job started by a scheduled job's
@@ -195,8 +195,14 @@ changes underneath, its **Read again** button says so (0064).
 every `build`, `run`, `test`, `seed` or `snapshot`, and after `compile` too. It
 names the command and its selection, then counts what ran of each kind against
 what the manifest holds, and lists the errors and failed tests with dbt's
-message, the warnings, the skipped nodes and the slowest. A model opens with its
-Run tab, the SQL dbt executed; a test opens at its line in its YAML, and a unit
+message, the warnings, the skipped nodes and the slowest, five of which show
+at first, **Show all** giving the rest. The status dot of the section,
+in the list and in its head, says how the command ended, in words as well on
+hover: red on an error or a failed test, amber on a warning, a partial success
+or a status this tool does not know, green when something ran and all of it
+passed. A run that ran no node, or only skipped, keeps the tool's colour, as do
+the other sections. A model opens with its Run tab, the
+SQL dbt executed; a test opens at its line in its YAML, and a unit
 test at its YAML. A node the
 command did not reach is counted, never listed: not run says nothing about it.
 The section says when the manifest was written after the run, or when the run

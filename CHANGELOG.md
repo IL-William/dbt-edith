@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.50.0 - 2026-10-22
+
+- Show how the last run ended on the dot of its section in Reports, red, amber
+  or green, in the list and in its head, with the outcome in words on hover and
+  for a screen reader, and the tool's colour for a run that ran nothing or
+  only skipped.
+- List the slowest nodes of the last run open, the first five with a button
+  for the rest.
+- Leave the groups of the job coverage with nothing in them undrawn.
+
 ## 1.49.2 - 2026-10-22
 
 - Teach the shipped skill the limits of a big project and the jobs questions
