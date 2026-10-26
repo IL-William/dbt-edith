@@ -120,6 +120,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0114](0114-a-skill-is-shipped-and-printed-never-installed.md) | A skill is shipped and printed, never installed | changing `docs/agent-skill/SKILL.md`, `--skill`, or whether the binary writes anything for an agent client |
 | [0115](0115-job-sources-may-live-in-the-project.md) | Job sources may live in the project | changing where the job sources are kept, what `.dbt-edith/jobs.yml` holds or who writes it, or what the command line and MCP read of the orchestrator's jobs |
 | [0116](0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md) | The tool's own checks are listed apart from dbt's warnings | adding a rule to the Checks section of Reports, changing which nodes one of its four looks at, or reading a source's `freshness` for anything else |
+| [0117](0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md) | The last build per environment is read from dbt_artifacts, on a click, and never kept | showing a model's runs read from the warehouse, changing what the builds read selects or sends, or putting a status on a lineage box |
 
 ## Keeping these honest
 

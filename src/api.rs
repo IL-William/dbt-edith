@@ -261,6 +261,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/collineage/source", post(select_cll_source))
         .route("/api/collineage/fetch", post(fetch_col_lineage))
         .route("/api/snowflake/history", post(query_history))
+        .route("/api/snowflake/builds", post(query_builds))
         .route("/api/snowflake/session", post(snowflake_session))
         .route("/api/snowflake/clone", get(clone_plan))
         .route("/api/snowflake/clone/into", post(remember_clone_into))
@@ -685,6 +686,8 @@ struct Features {
     snowflake: bool,
     /// Chosen for this project, rather than following the adapter.
     snowflake_set: bool,
+    /// Days after which a model's last success reads stale in the builds (0117).
+    builds_stale_days: u32,
 }
 
 /// What the page needs to paint the column lineage list and the settings. Every
@@ -754,7 +757,11 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         meta: graph.meta.clone(),
         cll_sources: found.into_iter().filter(|a| collin::offered(a, snowflake)).collect(),
         cll_active,
-        features: Features { snowflake, snowflake_set: chosen.is_some() },
+        features: Features {
+            snowflake,
+            snowflake_set: chosen.is_some(),
+            builds_stale_days: st.settings.load().builds_stale_days(),
+        },
         sidecar: SidecarBody { enabled: live, status: st.sidecar.status() },
         collin,
         profiles: {
@@ -934,6 +941,11 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
     Json(ReportPage { overview: &report.overview, producer }).into_response()
 }
 
+/// The package models the last builds are read from (0117), by their ids in the
+/// manifest.
+const BUILDS_EXECUTIONS: &str = "model.dbt_artifacts.model_executions";
+const BUILDS_INVOCATIONS: &str = "model.dbt_artifacts.invocations";
+
 /// Which reports the panel has something to show in, and when each last
 /// changed (0064). File metadata and the settings, and nothing else but the
 /// last run's counts and the unused config paths, which the button shows, the
@@ -976,12 +988,21 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
         let unreached = graph.macro_use.unreached(&graph.macros);
         (unreached.into_iter().filter(|&m| macro_used(&graph, m).unexplained()).count(), crate::checks::count(&graph))
     };
+    // Whether the builds can be read from the package's two tables. The graph
+    // is looked at again after the awaits above: a manifest rewritten meanwhile
+    // is the one to judge.
+    let builds = {
+        let graph = st.graph.read().await;
+        let has = |id: &str| graph.index.contains_key(id);
+        has(BUILDS_EXECUTIONS) && has(BUILDS_INVOCATIONS)
+    } && st.snowflake_allowed().await;
     Json(ReportsIndex {
         run,
         warnings,
         collin: (report > 0).then_some(Stamp { at: report }),
         jobs: (sources > 0).then_some(JobsIndex { sources, at: manifest_at, counts }),
         macros: (unexplained > 0).then_some(MacrosIndex { unexplained, at: manifest_at }),
+        builds,
         checks: (checks > 0).then_some(ChecksIndex { count: checks, at: manifest_at }),
     })
     .into_response()
@@ -1220,6 +1241,11 @@ struct ReportsIndex {
     jobs: Option<JobsIndex>,
     #[serde(skip_serializing_if = "Option::is_none")]
     macros: Option<MacrosIndex>,
+    /// Snowflake's features are on and the manifest holds the tables of the
+    /// dbt_artifacts package a build is read from (0117). A flag, not a stamp:
+    /// there is no file to watch.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    builds: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     checks: Option<ChecksIndex>,
 }
@@ -1483,6 +1509,9 @@ struct FeaturesBody {
     /// Optional, so a later feature adds a field rather than a route.
     #[serde(default)]
     snowflake: Option<bool>,
+    /// How many days a model may go unbuilt before the builds call it stale.
+    #[serde(default)]
+    builds_stale_days: Option<u32>,
 }
 
 /// Switches a family of features on or off for this project (0031). Turning
@@ -1490,6 +1519,14 @@ struct FeaturesBody {
 /// them off stops its script and takes its edges off the graph, which then
 /// holds what startup would have loaded with Snowflake off.
 async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBody>) -> Response {
+    if let Some(days) = b.builds_stale_days {
+        if !(1..=crate::settings::MAX_STALE_DAYS).contains(&days) {
+            return (StatusCode::BAD_REQUEST, format!("builds_stale_days is a number of days from 1 to {}", crate::settings::MAX_STALE_DAYS)).into_response();
+        }
+        if let Err(e) = st.settings.update(|s| s.builds_stale_days = (days != crate::settings::DEFAULT_STALE_DAYS).then_some(days)).await {
+            eprintln!("  builds threshold not saved: {e}");
+        }
+    }
     if let Some(on) = b.snowflake {
         if let Ok(mut chosen) = st.snowflake_features.lock() {
             *chosen = Some(on);
@@ -1578,10 +1615,16 @@ fn parse_kinds(spec: &str) -> Vec<Kind> {
         .collect()
 }
 
+/// The most nodes one search answers with.
+const SEARCH_MAX: usize = 200_000;
+
 async fn search(State(st): State<Arc<AppState>>, Query(q): Query<SearchQuery>) -> Response {
     let graph = st.graph.read().await.clone();
     let kinds = parse_kinds(&q.kind);
-    let hits = graph.search(&q.q, &kinds, q.limit.unwrap_or(200).min(2000));
+    // A page asks for a few hundred; the builds report asks for every model
+    // of a project, which this bound is far above and only keeps a stray
+    // request from walking the whole vector into a reply.
+    let hits = graph.search(&q.q, &kinds, q.limit.unwrap_or(200).min(SEARCH_MAX));
     let body: Vec<Hit> = hits
         .iter()
         .map(|&i| {
@@ -3714,6 +3757,35 @@ async fn query_history(State(st): State<Arc<AppState>>, Json(b): Json<HistoryBod
     }
 }
 
+#[derive(Deserialize)]
+struct BuildsBody {
+    /// The relations of the package's `model_executions` and `invocations` in
+    /// one environment, as the page placed them (0117).
+    executions: String,
+    invocations: String,
+}
+
+/// The last run of each model in one environment's dbt_artifacts tables,
+/// read live and answered from memory alone (0117): nothing of it is written
+/// or logged. One environment per request, so the script's deadline holds for
+/// each and the page shows them as they arrive. Like the history it needs
+/// Snowflake's features and no pick.
+async fn query_builds(State(st): State<Arc<AppState>>, Json(b): Json<BuildsBody>) -> Response {
+    if !st.snowflake_allowed().await {
+        return (StatusCode::CONFLICT, SNOWFLAKE_OFF).into_response();
+    }
+    if !sidecar::valid_relation(&b.executions) || !sidecar::valid_relation(&b.invocations) {
+        return (StatusCode::BAD_REQUEST, "not a relation of three parts: database.schema.table").into_response();
+    }
+    if let Err(failed) = start_reading(&st).await {
+        return failed;
+    }
+    match st.sidecar.builds(&b.executions, &b.invocations).await {
+        Ok(builds) => Json(builds).into_response(),
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(FetchFailed { error: e.message, phase: e.phase })).into_response(),
+    }
+}
+
 #[derive(serde::Serialize)]
 struct SessionReply {
     session: sidecar::SessionInfo,
@@ -5174,6 +5246,76 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The builds report lists every model of a project, so a search may be
+    /// asked for far more than the 2000 it once stopped at (0117).
+    #[tokio::test]
+    async fn a_search_can_list_every_model_of_a_large_project() {
+        let root = temp_project("search-all");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let nodes: serde_json::Map<String, serde_json::Value> = (0..2300)
+            .map(|i| {
+                let name = format!("m{i}");
+                let node = serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                    "original_file_path": format!("models/{name}.sql"), "fqn": ["shop", name] });
+                (format!("model.shop.{name}"), node)
+            })
+            .collect();
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &target.join("manifest.json"), 0, 0));
+        let all = response_of(port, get("/api/search?kind=model&limit=100000", &h)).await;
+        assert_eq!(all.matches(r#""id":"model.shop."#).count(), 2300);
+        let some = response_of(port, get("/api/search?kind=model", &h)).await;
+        assert_eq!(some.matches(r#""id":"model.shop."#).count(), 200, "the default page is unchanged");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The builds are listed only while Snowflake's features are on and the
+    /// manifest holds both tables of the dbt_artifacts package they are read
+    /// from (0117), and the threshold is refused outside a year.
+    #[tokio::test]
+    async fn the_builds_are_listed_when_the_package_and_snowflake_are_there() {
+        let root = temp_project("builds-index");
+        let target = root.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let graph = |tables: &[&str]| {
+            let nodes: serde_json::Map<String, serde_json::Value> = tables
+                .iter()
+                .map(|t| {
+                    let id = format!("model.dbt_artifacts.{t}");
+                    let node = serde_json::json!({ "name": t, "resource_type": "model", "package_name": "dbt_artifacts",
+                        "original_file_path": format!("models/sources/{t}.sql"), "fqn": ["dbt_artifacts", "sources", t] });
+                    (id, node)
+                })
+                .collect();
+            let raw: RawManifest = serde_json::from_value(serde_json::json!({ "metadata": { "adapter_type": "snowflake" }, "nodes": nodes })).unwrap();
+            Arc::new(Graph::build(raw, &target.join("manifest.json"), 0, 0))
+        };
+
+        *st.graph.write().await = graph(&["model_executions"]);
+        assert!(!response_of(port, get("/api/reports", &h)).await.contains("builds"), "one table is not enough");
+        *st.graph.write().await = graph(&["model_executions", "invocations"]);
+        assert!(response_of(port, get("/api/reports", &h)).await.contains(r#""builds":true"#));
+        *st.snowflake_features.lock().unwrap() = Some(false);
+        assert!(!response_of(port, get("/api/reports", &h)).await.contains("builds"), "off with Snowflake's features");
+
+        for body in [r#"{"builds_stale_days":0}"#, r#"{"builds_stale_days":366}"#, r#"{"builds_stale_days":-1}"#] {
+            let bad = with_json("POST", "/api/features", &[("Host", &host), ("Origin", &own)], body);
+            let status = status_of(port, bad).await;
+            assert!(status.contains(" 400 ") || status.contains(" 422 "), "{body}: {status}");
+        }
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The graph `serve()` builds is empty, so this asserts on status codes and
     /// on the shape of the answer. What a selector actually matches is settled
     /// in `select.rs`, against a graph with nodes in it.
@@ -6181,12 +6323,14 @@ mod tests {
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");
         let fetch = r#"{"id":"model.shop.dim_customers","column":"customer_id","relation":"analytics.marts.dim_customers"}"#;
+        const BUILDS: &str = r#"{"executions":"meta.dbt_artifacts.model_executions","invocations":"meta.dbt_artifacts.invocations"}"#;
 
         for (path, body) in [
             ("/api/collineage/source", r#"{"tool":"snowflake"}"#),
             ("/api/collineage/fetch", fetch),
             ("/api/features", r#"{"snowflake":true}"#),
             ("/api/snowflake/history", "{}"),
+            ("/api/snowflake/builds", BUILDS),
             ("/api/snowflake/session", "{}"),
             ("/api/snowflake/clone/into", r#"{"into":"DEV_DB.dbt_someone"}"#),
         ] {
@@ -6197,6 +6341,7 @@ mod tests {
         assert!(status_of(port, get("/api/collineage/fetch", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/features", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/history", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
+        assert!(status_of(port, get("/api/snowflake/builds", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/session", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/snowflake/clone/into", &[("Host", &host)])).await.ends_with("405 Method Not Allowed"));
         assert!(status_of(port, get("/api/sidecar", &[("Host", &host)])).await.ends_with("200 OK"));
@@ -6222,6 +6367,17 @@ b"}"#,
             let bad = with_json("POST", "/api/snowflake/history", &[("Host", &host), ("Origin", &own)], body);
             assert!(status_of(port, bad).await.ends_with("400 Bad Request"), "{body}");
         }
+        // And so is a build read whose tables are not relations, or are missing.
+        for body in [
+            r#"{"executions":"model_executions","invocations":"meta.dbt_artifacts.invocations"}"#,
+            r#"{"executions":"meta.dbt_artifacts.model_executions","invocations":"meta.dbt_artifacts.inv; drop table x"}"#,
+            r#"{"executions":"","invocations":""}"#,
+        ] {
+            let bad = with_json("POST", "/api/snowflake/builds", &[("Host", &host), ("Origin", &own)], body);
+            assert!(status_of(port, bad).await.ends_with("400 Bad Request"), "{body}");
+        }
+        let missing = with_json("POST", "/api/snowflake/builds", &[("Host", &host), ("Origin", &own)], r#"{"executions":"a.b.c"}"#);
+        assert!(status_of(port, missing).await.starts_with("HTTP/1.1 422"));
         assert_eq!(st.sidecar.status().state, "off");
         assert!(!st.sidecar.wanted());
 
@@ -6317,7 +6473,7 @@ b"}"#,
         let fetch = r#"{"id":"model.demo.orders","column":"id","relation":"analytics.marts.orders"}"#;
 
         let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
-        assert!(meta.contains(r#""features":{"snowflake":false,"snowflake_set":false}"#), "{meta}");
+        assert!(meta.contains(r#""features":{"snowflake":false,"snowflake_set":false,"builds_stale_days":7}"#), "{meta}");
         assert!(meta.contains("column_lineage.collin.json"), "{meta}");
         assert!(!meta.contains("column_lineage.snowflake.json"), "not even listed: {meta}");
         for (path, body) in [
@@ -6325,6 +6481,7 @@ b"}"#,
             ("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#),
             ("/api/collineage/fetch", fetch),
             ("/api/snowflake/history", "{}"),
+            ("/api/snowflake/builds", r#"{"executions":"meta.dbt_artifacts.model_executions","invocations":"meta.dbt_artifacts.invocations"}"#),
             ("/api/snowflake/session", "{}"),
             ("/api/snowflake/clone/into", r#"{"into":"DEV_DB.dbt_someone"}"#),
         ] {
@@ -6345,7 +6502,7 @@ b"}"#,
         *st.base.write().await = load();
         *st.graph.write().await = load();
         let meta = response_of(port, get("/api/meta", &[("Host", &host)])).await;
-        assert!(meta.contains(r#""features":{"snowflake":true,"snowflake_set":false}"#), "{meta}");
+        assert!(meta.contains(r#""features":{"snowflake":true,"snowflake_set":false,"builds_stale_days":7}"#), "{meta}");
         assert!(meta.contains("column_lineage.snowflake.json"), "{meta}");
         // Picked by its file, a cache is read as it is: no script starts.
         let picked = response_of(port, post("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#)).await;
@@ -6358,7 +6515,7 @@ b"}"#,
         let off = response_of(port, post("/api/features", r#"{"snowflake":false}"#)).await;
         assert!(!st.sidecar.wanted());
         assert!(off.starts_with("HTTP/1.1 200"), "{off}");
-        assert!(off.contains(r#""features":{"snowflake":false,"snowflake_set":true}"#), "{off}");
+        assert!(off.contains(r#""features":{"snowflake":false,"snowflake_set":true,"builds_stale_days":7}"#), "{off}");
         assert!(off.contains(r#""cll_active":"column_lineage.collin.json","cll_tool":"collin""#), "{off}");
 
         server.abort();

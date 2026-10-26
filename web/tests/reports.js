@@ -272,3 +272,21 @@ check('the tooltip is the one it would be without them',
 check('stale once the manifest they were read in is behind', [reportsStale({ count: 4, at: 3 }, { checks: { count: 4, at: 3 } }, 'checks'),
       reportsStale({ count: 4, at: 3 }, { checks: { count: 4, at: 5 } }, 'checks'), reportsStale({ count: 4, at: 3 }, { checks: { count: 2, at: 3 } }, 'checks'),
       reportsStale({ count: 4, at: 3 }, {}, 'checks')], [false, true, true, true]);
+
+print('\n--- the head of a section ---');
+// reportHead only builds elements: a tiny fake DOM is all it needs.
+var document = { createElement: function (tag) {
+  return { tag: tag, children: [], dataset: {}, title: '', setAttribute: function () {},
+           addEventListener: function () {}, append: function () { this.children.push.apply(this.children, arguments); } };
+} };
+function jel(tag, className, textContent) { var e = document.createElement(tag); e.className = className; e.textContent = textContent || ''; return e; }
+function runEndWords() { return ''; }
+function keyLabel() { return ''; }
+function closePanel() {}
+var IS_MAC = false;
+eval(app.slice(app.indexOf('function reportHead'), app.indexOf('/* A fold of a section')));
+function buttons(head) { return head.children[0].children.filter(function (c) { return c.tag === 'button'; }).map(function (c) { return c.textContent; }); }
+check('Read again and Close when the section can redraw itself',
+      buttons(reportHead({ title: 'T', tool: 'dbt', again: function () {} })), ['Read again', '×']);
+check('Close alone when it is not given a way to (the builds, whose own button asks Snowflake)',
+      buttons(reportHead({ title: 'T', tool: 'snowflake', extra: [jel('button', '', 'Refresh')] })), ['Refresh', '×']);

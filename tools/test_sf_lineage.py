@@ -14,10 +14,12 @@ import importlib.util
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -77,6 +79,24 @@ def history_rows(params):
     return [tuple(h[c] for c in HISTORY_COLS) for h in rows[: params["limit"]]]
 
 
+# What the last-builds query answers, in its column order: node, target, status,
+# started, completed, invocation, was_full_refresh, rows, message, command,
+# cloud job, cloud run, last success. The fake runs no SQL, so these are the
+# rows after the window and the QUALIFY, and they hold no secret column: the
+# real tables also keep env_vars and adapter_response, which are never asked.
+BUILD_ROWS = [
+    ("model.jaffle.orders", "prod", "SUCCESS", datetime(2026, 10, 20, 3, 0, 5), datetime(2026, 10, 20, 3, 1, 9),
+     "6f1c0c2e-0000-4000-8000-000000000001", "false", 120, None, "build", "4321", "98765",
+     datetime(2026, 10, 20, 3, 1, 9)),
+    ("model.jaffle.customers", "prod", "ERROR", datetime(2026, 10, 21, 3, 0, 5), None,
+     "6f1c0c2e-0000-4000-8000-000000000002", "TRUE", None, "Database Error: object does not exist", "run", None, None,
+     datetime(2026, 10, 14, 3, 1, 9)),
+    ("model.jaffle.customers", "dev", "success", datetime(2026, 10, 21, 9, 30, 0, tzinfo=timezone(timedelta(hours=2))),
+     datetime(2026, 10, 21, 9, 31, 0, tzinfo=timezone(timedelta(hours=2))), "6f1c0c2e-0000-4000-8000-000000000003",
+     False, 7, "", "run", None, None, None),
+]
+
+
 def profiles(**dev_overrides):
     dev = {
         "type": "snowflake",
@@ -111,6 +131,9 @@ class FakeCursor:
             self.result = [("MYORG", "MY_ACCOUNT", "SOMEONE", "TRANSFORMER")]
         elif "current_account_name" in sql:
             self.result = [("MY_ACCOUNT", "SOMEONE", "TRANSFORMER")]
+        elif "identifier(%(exe)s)" in sql:
+            self.conn.builds.append((sql, params))
+            self.result = list(self.conn.build_rows)
         elif "query_history_by_user" in sql:
             self.conn.history.append((sql, params))
             self.result = history_rows(params)
@@ -128,6 +151,8 @@ class FakeConnection:
     def __init__(self, no_org=False):
         self.executed = []
         self.history = []
+        self.builds = []
+        self.build_rows = BUILD_ROWS
         self.asked_who = 0
         self.no_org = no_org
         self.closed = False
@@ -423,6 +448,118 @@ class History(ScriptTest):
     def test_lineage_named_by_its_op_is_unchanged(self):
         answer = self.ask({"id": 1, "op": "lineage", "relation": "ANALYTICS.MARTS.DIM_CUSTOMERS", "column": "CUSTOMER_ID"})[1]
         self.assertEqual(len(answer["rows"]), 1)
+
+
+class Builds(ScriptTest):
+    EXE = "ANALYTICS_META.DBT_ARTIFACTS.MODEL_EXECUTIONS"
+    INV = '"ANALYTICS_META"."DBT_ARTIFACTS"."INVOCATIONS"'
+
+    def ask(self, *requests):
+        code, lines, _ = self.serve(*requests)
+        self.assertEqual(code, 0)
+        return {r["id"]: r for r in self.answers(lines)}
+
+    def request(self, **kwargs):
+        return {"id": 1, "op": "builds", "executions": self.EXE, "invocations": self.INV, **kwargs}
+
+    def test_a_run_is_what_the_page_reads_and_nothing_else(self):
+        answer = self.ask(self.request())[1]
+        self.assertFalse(answer["cut"])
+        orders, failed, dev = answer["rows"]
+        self.assertEqual(
+            orders,
+            {
+                "node": "model.jaffle.orders",
+                "target": "prod",
+                "status": "success",
+                "started": "2026-10-20T03:00:05Z",
+                "completed": "2026-10-20T03:01:09Z",
+                "invocation": "6f1c0c2e-0000-4000-8000-000000000001",
+                "rows": 120,
+                "command": "build",
+                "cloud_job": "4321",
+                "cloud_run": "98765",
+                "last_success": "2026-10-20T03:01:09Z",
+            },
+        )
+        self.assertNotIn("full_refresh", orders, "false is left out")
+        self.assertEqual(failed["status"], "error")
+        self.assertTrue(failed["full_refresh"])
+        self.assertNotIn("completed", failed, "a run that never completed has no end")
+        self.assertEqual(failed["last_success"], "2026-10-14T03:01:09Z", "the last success survives a later failure")
+        self.assertEqual(failed["message"], "Database Error: object does not exist")
+        self.assertEqual(dev["started"], "2026-10-21T07:30:00Z", "a zoned time is written in UTC")
+        self.assertNotIn("message", dev, "an empty message is left out")
+        self.assertNotIn("last_success", dev)
+
+    def test_the_tables_reach_the_sql_only_as_binds(self):
+        self.ask(self.request())
+        sql, params = self.connections[0][1].builds[0]
+        self.assertEqual((params["exe"], params["inv"]), (self.EXE, self.INV))
+        self.assertIn("from identifier(%(exe)s) e", sql)
+        self.assertIn("join identifier(%(inv)s) i", sql)
+        for relation in ("ANALYTICS_META", "MODEL_EXECUTIONS", "INVOCATIONS"):
+            self.assertNotIn(relation, sql, "a name is never formatted into the statement")
+        self.assertEqual((params["days"], params["limit"], params["text"]), (90, 50001, 600), "the window, one row past the cap, the message cut")
+
+    def test_the_secret_columns_are_never_selected(self):
+        self.ask(self.request())
+        sql = self.connections[0][1].builds[0][0].lower()
+        for column in ("env_vars", "dbt_vars", "dbt_custom_envs", "invocation_args", "adapter_response", "target_schema", "dbt_cloud_run_reason"):
+            self.assertNotIn(column, sql)
+        self.assertIn("partition by e.node_id, i.target_name", sql, "one row per model and target")
+        self.assertIn("coalesce(e.query_completed_at, e.compile_started_at, e.run_started_at) desc, e.command_invocation_id desc", sql,
+                      "the last attempt is when the model ran, not when its invocation started, and two runs ending together still pick one")
+
+    def test_a_success_is_matched_whatever_its_case(self):
+        self.ask(self.request())
+        sql = self.connections[0][1].builds[0][0]
+        self.assertIn("lower(e.status) = 'success'", sql, "the engine spells the status as it likes, and Snowflake compares case-sensitively")
+
+    def test_the_page_names_the_same_window_as_the_script(self):
+        # "No run in N days" is said by the page about the window the script reads.
+        app = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text(encoding="utf-8")
+        found = re.search(r"function buildsWindowDays\(\) \{\s*return (\d+);", app)
+        self.assertIsNotNone(found, "buildsWindowDays is a constant in web/app.js")
+        self.assertEqual(int(found.group(1)), sf.BUILDS_DAYS, "the page and the script read the same number of days")
+
+    def test_a_table_past_the_cap_says_it_was_cut(self):
+        many = [("model.jaffle.m%d" % i, "prod", "success", datetime(2026, 10, 20), None, "x", None, None, None, None, None, None, None)
+                for i in range(sf.BUILDS_MAX + 1)]
+        cur = FakeCursor(FakeConnection())
+        cur.conn.build_rows = many
+        rows, cut = sf.last_builds(cur, self.EXE, self.INV)
+        self.assertEqual((len(rows), cut), (sf.BUILDS_MAX, True))
+        cur.conn.build_rows = many[:3]
+        rows, cut = sf.last_builds(cur, self.EXE, self.INV)
+        self.assertEqual((len(rows), cut), (3, False))
+
+    def test_a_relation_that_is_not_three_parts_is_refused_before_connecting(self):
+        answers = self.ask(
+            self.request(id=1, executions="MODEL_EXECUTIONS"),
+            self.request(id=2, executions="a.b"),
+            self.request(id=3, executions="a.b.c.d"),
+            self.request(id=4, executions="a.b.c; drop table x"),
+            self.request(id=5, invocations="a.b.c' or 1=1 --"),
+            self.request(id=6, invocations=None),
+            self.request(id=7, executions="a.b." + "c" * 401),
+            self.request(id=8, invocations='a."b\nc".d'),
+            self.request(id=9, executions=""),
+        )
+        self.assertEqual({a["phase"] for a in answers.values()}, {"request"})
+        self.assertIn("executions must be a relation", answers[1]["error"])
+        self.assertIn("invocations must be a relation", answers[5]["error"])
+        self.assertEqual(self.connections, [])
+
+    def test_a_quoted_part_may_hold_a_dot_and_a_quote(self):
+        self.assertEqual(sf.builds_request(self.request(executions='"my.db"."sch""ema".events', invocations="a.b.c")),
+                         ('"my.db"."sch""ema".events', "a.b.c"))
+
+    def test_a_failing_read_is_a_reply_with_its_phase(self):
+        self.refuse_connection = "Incorrect username or password was specified."
+        answer = self.ask(self.request())[1]
+        self.assertEqual(answer["phase"], "connect")
+        self.assertIn("Incorrect username", answer["error"])
 
 
 class HistoryPages(unittest.TestCase):

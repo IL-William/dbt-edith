@@ -294,6 +294,8 @@ var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\
 ok('the canvas rules are where this test looks for them', rules.length >= 17);
 ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
   && rules.some(function (l) { return /^\.band-name \{/.test(l); }));
+ok('the last builds\' dots are the page\'s own: the snapshot takes them off, and no rule of theirs is copied',
+  /g\.querySelectorAll\('\.bdot'\)\.forEach\(\(x\) => x\.remove\(\)\)/.test(lin) && /\.bdot/.test(css) && copied.indexOf('bdot') < 0);
 ok('and none of the Halloween look comes with them', copied.indexOf('halloween') < 0 && exportPageCss('landscape').indexOf('halloween') < 0);
 check('every one of them is copied as it is',
   rules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);

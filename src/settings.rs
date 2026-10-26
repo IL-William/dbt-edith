@@ -57,10 +57,25 @@ pub struct Settings {
     /// by side. None runs the one beside dbt-edith or on the PATH (0060).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collin_version: Option<String>,
+    /// Days since a model's last success after which the builds call it stale.
+    /// None is the default of `DEFAULT_STALE_DAYS`, which is not written (0117).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builds_stale_days: Option<u32>,
     /// Where the orchestrator's jobs are read from, in the order the user
     /// listed them (0063).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub job_sources: Vec<JobSource>,
+}
+
+/// A week without a success is stale until the user says otherwise; the
+/// settings take up to a year.
+pub const DEFAULT_STALE_DAYS: u32 = 7;
+pub const MAX_STALE_DAYS: u32 = 365;
+
+impl Settings {
+    pub fn builds_stale_days(&self) -> u32 {
+        self.builds_stale_days.filter(|d| (1..=MAX_STALE_DAYS).contains(d)).unwrap_or(DEFAULT_STALE_DAYS)
+    }
 }
 
 /// One place the orchestrator's jobs are read from (0063). Paths and key
@@ -639,6 +654,23 @@ mod tests {
         let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
         assert!(!text.contains("clone_into"), "cleared, the profile decides again: {text}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_stale_threshold_is_a_week_until_chosen_and_the_default_is_not_written() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-settings-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store { path: Some(dir.join("p.json")), project: "/work/shop".into(), lock: Default::default() };
+        assert_eq!(store.load().builds_stale_days(), 7);
+        store.update(|s| s.builds_stale_days = Some(14)).await.unwrap();
+        assert_eq!(store.load().builds_stale_days(), 14);
+        store.update(|s| s.builds_stale_days = None).await.unwrap();
+        let text = std::fs::read_to_string(dir.join("p.json")).unwrap();
+        assert!(!text.contains("builds_stale_days"), "the default is not written: {text}");
+        let odd = Settings { builds_stale_days: Some(0), ..Default::default() };
+        assert_eq!(odd.builds_stale_days(), 7, "a number out of range reads as the default");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]

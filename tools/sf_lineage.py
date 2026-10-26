@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Snowflake for dbt-edith: column-level lineage and the user's query history.
+"""Snowflake for dbt-edith: column-level lineage, the user's query history and
+the last build of each model per environment.
 
 dbt-edith is a single static binary with no HTTP client, no TLS and no credential
 handling, and it has to stay that way to keep cross-compiling to one dependency
@@ -18,7 +19,9 @@ Column lineage comes from SNOWFLAKE.CORE.GET_LINEAGE with the COLUMN domain,
 which takes one column per call. A whole project is hundreds of thousands of
 calls, so `serve` is the normal mode and `dump` is always scoped. The query
 history comes from INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER, which any role can
-read for its own user, live and for the last seven days.
+read for its own user, live and for the last seven days. The last builds come
+from the tables of the dbt_artifacts package, when the project has it, read on
+a click and never kept (docs/decisions/0117).
 """
 
 import argparse
@@ -48,6 +51,13 @@ HISTORY_PAGE = 20
 HISTORY_SCAN = 10000
 # Enough of a statement to recognise it; Snowsight has the rest.
 HISTORY_TEXT = 10000
+
+# The last-build read keeps this many days of runs, and sends this many models
+# at most: a table of a very busy project is cut, and the answer says so.
+BUILDS_DAYS = 90
+BUILDS_MAX = 50000
+# Enough of dbt's message to say what went wrong; the run itself has the rest.
+BUILDS_MESSAGE = 600
 
 # The target keys this script reads, and so the ones checked for Jinja.
 PROFILE_KEYS = (
@@ -425,6 +435,91 @@ def history_row(r):
     return {k: v for k, v in row.items() if v is not None and v != ""}
 
 
+# One part of a relation name: unquoted, or quoted with "" for a quote.
+RELATION_PART = r'(?:[A-Za-z_][A-Za-z0-9_$]*|"(?:[^"\x00-\x1f]|"")+")'
+RELATION = re.compile(rf"{RELATION_PART}\.{RELATION_PART}\.{RELATION_PART}")
+
+
+def builds_request(req):
+    """(executions, invocations) out of one builds request, or ValueError.
+
+    Two relations of three parts each, which reach the query as bind values of
+    identifier() and are never formatted into it: this check is for a request
+    that is not what the page sends, not what keeps the SQL safe.
+    """
+    found = []
+    for key in ("executions", "invocations"):
+        value = req.get(key)
+        if not isinstance(value, str) or len(value) > 400 or not RELATION.fullmatch(value):
+            raise ValueError(f"{key} must be a relation of three parts: database.schema.table")
+        found.append(value)
+    return tuple(found)
+
+
+BUILD_COLUMNS = (
+    "node", "target", "status", "started", "completed", "invocation", "full_refresh", "rows",
+    "message", "command", "cloud_job", "cloud_run", "last_success",
+)
+
+
+def last_builds(cur, executions: str, invocations: str):
+    """The last run of each model, once per target, and whether the table held more.
+
+    Only the columns named here leave Snowflake: dbt_artifacts also keeps the
+    invocation's env_vars, dbt_vars, dbt_custom_envs and invocation_args, and each
+    model's adapter_response, which can hold secrets and are never selected (0117). The
+    window is over the whole 90 days, so the last success is known even when a
+    later run failed. The last attempt is ordered by when the model ran:
+    run_started_at is the invocation's start, so a 02:00 nightly that fails the
+    model at 04:30 would lose to a 03:00 hourly that succeeded at 03:05.
+    """
+    sql = (
+        "select e.node_id, i.target_name, e.status, e.run_started_at, e.query_completed_at, "
+        "e.command_invocation_id, e.was_full_refresh, e.rows_affected, left(e.message, %(text)s), "
+        "i.dbt_command, i.dbt_cloud_job_id, i.dbt_cloud_run_id, "
+        "max(iff(lower(e.status) = 'success', coalesce(e.query_completed_at, e.run_started_at), null)) "
+        "over (partition by e.node_id, i.target_name) as last_success_at "
+        "from identifier(%(exe)s) e "
+        "left join identifier(%(inv)s) i on e.command_invocation_id = i.command_invocation_id "
+        "where e.run_started_at >= dateadd(day, -%(days)s, current_timestamp()) "
+        "qualify row_number() over (partition by e.node_id, i.target_name order by coalesce(e.query_completed_at, e.compile_started_at, e.run_started_at) desc, e.command_invocation_id desc) = 1 "
+        "order by e.node_id, i.target_name "
+        "limit %(limit)s"
+    )
+    cur.execute(sql, {"exe": executions, "inv": invocations, "text": BUILDS_MESSAGE,
+                      "days": BUILDS_DAYS, "limit": BUILDS_MAX + 1})
+    rows = [build_row(r) for r in cur.fetchall()]
+    return rows[:BUILDS_MAX], len(rows) > BUILDS_MAX
+
+
+def utc_text(value):
+    """A timestamp as UTC to the second. dbt_artifacts stores UTC, without a zone."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(timezone.utc)
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return str(value)
+
+
+def build_row(r):
+    """One run as the page reads it, without the columns Snowflake left empty."""
+    row = dict(zip(BUILD_COLUMNS, r))
+    for key in ("started", "completed", "last_success"):
+        row[key] = utc_text(row[key])
+    if row["status"]:
+        row["status"] = str(row["status"]).lower()
+    # The package writes it as text on some adapters, a boolean on others.
+    row["full_refresh"] = str(row["full_refresh"]).lower() == "true" or None
+    if row["rows"] is not None:
+        row["rows"] = int(row["rows"])
+    for key in ("cloud_job", "cloud_run"):
+        if row[key] is not None:
+            row[key] = str(row[key])
+    return {k: v for k, v in row.items() if v is not None and v != ""}
+
+
 # ----------------------------------------------------------------- probe ----
 PROBE_SQL = [
     (
@@ -527,11 +622,15 @@ def cmd_serve(args):
               {"id": 2, "op": "history", "role": "R" | "*" | null,
                "before": {"at": "<epoch ns>", "query_id": "..."} | null};
               {"id": 3, "op": "session"}, for the account a Snowsight link
-               names; or {"op": "quit"}.
+               names;
+              {"id": 4, "op": "builds", "executions": "DB.SCHEMA.TABLE",
+               "invocations": "DB.SCHEMA.TABLE"}, the last run of each model
+               in one environment's dbt_artifacts tables; or {"op": "quit"}.
     Replies:  {"event": "profiles", "path": ...} and {"event": "ready", ...}
               once each, then {"id": 1, "rows": [...]} for lineage,
               {"id": 2, "session": {...}, "rows": [...], "more": bool} for
-              history, {"id": 3, "session": {...}} for session, or
+              history, {"id": 3, "session": {...}} for session,
+              {"id": 4, "rows": [...], "cut": bool} for builds, or
               {"id": 1, "error": "...", "phase": "connect" | "query"}.
 
     The phase says whether the profile is to blame or not: a connection that
@@ -590,6 +689,8 @@ def cmd_serve(args):
                 asked = lineage_request(req)
             elif op == "history":
                 asked = history_request(req)
+            elif op == "builds":
+                asked = builds_request(req)
             elif op == "session":
                 asked = None
             else:
@@ -606,6 +707,9 @@ def cmd_serve(args):
                 try:
                     if op == "lineage":
                         answer = {"rows": rows_to_raw(column_lineage(cur, *asked))}
+                    elif op == "builds":
+                        rows, cut = last_builds(cur, *asked)
+                        answer = {"rows": rows, "cut": cut}
                     else:
                         if session is None:
                             session = session_info(cur)

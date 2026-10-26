@@ -1053,6 +1053,13 @@ kbd {
 .nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }
 .nd .t2 .struck { opacity: .6; text-decoration: line-through; }
 .nd .more { fill: var(--fg-dim); font-size: 9px; }
+/* The last build of a model in the environment picked (0117). Named apart from
+   .nd, so the export harness does not ask for it: the snapshot takes it off. */
+.bdot { stroke: var(--bg-3); stroke-width: 1; }
+.bdot.ok { fill: var(--ok); }
+.bdot.stale { fill: var(--warn); }
+.bdot.error { fill: var(--bad); }
+.bdot.none { fill: none; stroke: var(--fg-dim); }
 /* What find on the canvas matched (0081): amber, as a match in the editor is,
    and the one the view was brought to thicker and filled. Under #graph, which
    outranks the focus and the selection while the bar is open, and keeps these
@@ -1802,6 +1809,36 @@ kbd {
 .clonepanel p.clonenote { margin: 4px 0 0; font-size: 11px; color: var(--fg-dim); }
 .clonepanel pre.clonesql { max-height: 26vh; overflow: auto; margin: 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; font: 11.5px var(--mono); white-space: pre; }
 
+
+/* ----------------------------------------------------------- last builds -- */
+.daysinput { width: 64px; background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; font: 12px var(--mono); }
+.cat-body .cat-builds > .sechead { flex-wrap: wrap; }
+.buildsabout { font-size: 11.5px; }
+.buildenv { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.buildenv:first-of-type { border-top: 0; }
+.buildname { display: inline-flex; align-items: center; gap: 6px; min-width: 84px; }
+.buildname .envdot { align-self: center; }
+.buildrun { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-left: 90px; }
+.buildenv > .runnote, .buildenv > .muted { flex: 1 1 60%; margin: 0; }
+.bstate { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .4px; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line); }
+.bstate[data-status=ok] { color: var(--ok); border-color: rgba(78, 199, 141, .5); }
+.bstate[data-status=error] { color: var(--bad); border-color: rgba(224, 108, 117, .55); }
+.binv { font: 11px var(--mono); color: var(--fg-dim); }
+.buildrun .icon { padding: 0 3px; }
+.buildrun .rmsg { flex: 1 1 100%; }
+.buildsenv { display: flex; align-items: center; gap: 8px; margin: 18px 0 6px; font-size: 13px; }
+.buildsgrid { margin-top: 22px; }
+.buildstools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.buildsfilter { background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; font: 12px var(--ui); min-width: 180px; }
+.buildspk { font-size: 12px; color: var(--fg-dim); }
+.buildstable { border-collapse: collapse; font-size: 12px; }
+.buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+.buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid rgba(42, 51, 64, .5); }
+.buildstable td.bname { font-family: var(--mono); font-size: 11.5px; }
+.buildstable td[data-verdict=ok] { color: var(--ok); }
+.buildstable td[data-verdict=stale] { color: var(--warn); }
+.buildstable td[data-verdict=error] { color: var(--bad); }
+.buildstable td[data-verdict=none], .buildstable td.bnone { color: var(--fg-dim); }
 
 /* ------------------------------------------------------ halloween look -- */
 /* Everything of the Halloween look lives under body.halloween (0106), so

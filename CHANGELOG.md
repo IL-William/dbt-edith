@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.52.0 - 2026-10-26
+
+- Show when each model was last built in each environment, and how that run
+  ended, in the Catalog, as a dot on the lineage and in Reports, read on a
+  click from the tables of the dbt_artifacts package (0117).
+
 ## 1.51.0 - 2026-10-22
 
 - List the tool's own checks in a Checks section of Reports, apart from dbt's
