@@ -197,6 +197,22 @@ level is the same depth on every band, so a folder holding a single sub-folder
 still draws it, and each level costs columns
 ([0080](../decisions/0080-a-band-may-be-cut-by-its-sub-folders.md)).
 
+### Last built, as a dot
+
+Once the Catalog's Last built (or Reports' Builds by environment) has been read,
+each model box carries a small dot in its top right corner for the environment
+the `env` pill names, the manifest's own build when none is picked: green when
+its last success is within the threshold, amber when it is older, red when its
+last attempt failed, and an empty ring when no run is recorded. Pausing on the
+dot says the environment, the status and how long ago, the target, and the last
+success. When the table holds runs of several targets, the dot takes the worst
+of them, error before stale before not built before ok, and says each. Picking another environment repaints the dots without drawing the graph
+again; an environment that was not read, or whose read failed, paints none, and
+neither do ephemeral or disabled models, tests or the column mode. An export and
+a copied image never carry the dots: a live read of other environments is not
+kept, and a file is
+([0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
+
 ## Sharing the graph
 
 Three buttons at the right of the bar above the canvas, each with a glyph

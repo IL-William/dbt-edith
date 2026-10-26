@@ -1698,8 +1698,9 @@ Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
 edited, so find an item by its title.
 
 1. **Run status on the canvas.** The last run is read since 1.11.0, in
-   Reports (0065); what is left is its status as the box stroke in the graph,
-   which waits on seeing whether the section is used, and has to say when the
+   Reports (0065), and a dot per box shows the last build of one environment
+   since 1.52.0 (0117); what is left is the last run's status as the box
+   stroke in the graph, which waits on seeing whether the section is used, and has to say when the
    run is for another target or older than the manifest, as the section does.
    A history across commands is not planned: dbt rewrites the file each time,
    and this tool keeps nothing of the project's. Per-node freshness would
@@ -2142,6 +2143,35 @@ of its own, and each panel updates the tour, its page under
     call it. 0114 says the shipped skill is printed, never installed, and
     `--skill` is refused over MCP. The variant was tried only with Claude Code
     and has to be tried with other clients, Copilot among them.
+25. **When a table last changed, from Snowflake's metadata.** The last
+    builds (0117) say when dbt ran a model, which is the package's word. What
+    Snowflake says of the table itself, `LAST_ALTERED` in the schema's
+    `INFORMATION_SCHEMA.TABLES`, is a different question (the table changed,
+    not dbt ran) and would answer it for a project without the package. It
+    needs its own read per environment and its own privilege, and would show
+    beside the package's answer, not instead of it, since the two disagree on
+    a model changed by hand.
+26. **Seeds, snapshots and tests in the builds.** The package keeps
+    `seed_executions`, `snapshot_executions` and `test_executions` beside
+    `model_executions` (0117), with the same `node_id` and the same invocation.
+    The read joins the models' table alone, so a seed or a snapshot box carries
+    no dot and a test's last result is not in the section. Each is one more
+    query per environment, and a test's status words (`pass`, `fail`) are
+    already in the verdict.
+27. **The package's schema is the config before `generate_schema_name`.**
+    The builds place the package's tables with the relation the Location
+    table resolves (0113), which is the config as written. A project whose
+    `generate_schema_name` rewrites the package's schema sends the query to a
+    table that is not there, and the section shows Snowflake's error for the
+    relation it asked. Fixing it means evaluating that macro, which this tool
+    does not do (the `generate_*_name` note below).
+28. **Runs of one target by several people.** An `.env` file that sets
+    `DBT_TARGET` keeps that target's runs (0117), and every run under one
+    target is one, whoever ran it: two developers building `dev` into their
+    own schemas share one last attempt. Telling them apart needs the model's
+    `schema` column to leave the warehouse (who built where) and the schema
+    each environment really builds into, which `generate_schema_name` decides
+    and this tool does not evaluate (0113).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

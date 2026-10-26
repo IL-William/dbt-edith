@@ -2,8 +2,8 @@
 //!
 //! The binary never talks to a warehouse. It starts the script only once a
 //! Snowflake feature wants it: Snowflake picked as the column lineage tool
-//! (0031), the query history opened (0048), or a relation's Snowsight menu
-//! (0051). It stops once none does. The
+//! (0031), the query history opened (0048), a relation's Snowsight menu
+//! (0051), or the last builds read (0117). It stops once none does. The
 //! script connects on its first request, so a sign-in tab can only ever follow
 //! a click (0016).
 //!
@@ -172,9 +172,105 @@ pub struct History {
     pub more: bool,
 }
 
+/// The last run of one model in one target, as dbt_artifacts recorded it.
+/// Named field by field, like `HistoryRow`: the tables also hold the
+/// invocation's env_vars, dbt_vars and invocation_args and each model's
+/// adapter_response, which the script never selects and this build would not
+/// pass on if it did (0117).
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct BuildRow {
+    /// The manifest's unique id, which `node_id` holds as dbt wrote it.
+    pub node: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status: String,
+    /// UTC, to the second.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub started: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub completed: String,
+    /// When the model began, which a run that failed while it ran has instead
+    /// of an end.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub compiled: String,
+    /// When the last run that succeeded finished, whatever came after it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub last_success: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub invocation: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub full_refresh: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<u64>,
+    /// dbt's message, cut by the script.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub command: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cloud_job: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub cloud_run: String,
+}
+
+/// The last run of each model in one environment's tables.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Builds {
+    #[serde(default)]
+    pub rows: Vec<BuildRow>,
+    /// The table held more models than the script sends.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+}
+
+/// Whether a text is a relation of three parts, each unquoted or in double
+/// quotes with `""` for a quote: what the script accepts, held here too so a
+/// body it would refuse never starts it.
+pub fn valid_relation(text: &str) -> bool {
+    if text.len() > 400 {
+        return false;
+    }
+    let mut chars = text.chars().peekable();
+    for part in 0..3 {
+        match chars.peek() {
+            Some('"') => {
+                chars.next();
+                let mut any = false;
+                loop {
+                    match chars.next() {
+                        Some('"') if chars.peek() == Some(&'"') => {
+                            chars.next();
+                            any = true;
+                        }
+                        Some('"') => break,
+                        Some(c) if !c.is_control() => any = true,
+                        _ => return false,
+                    }
+                }
+                if !any {
+                    return false;
+                }
+            }
+            Some(c) if c.is_ascii_alphabetic() || *c == '_' => {
+                while chars.peek().is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '$') {
+                    chars.next();
+                }
+            }
+            _ => return false,
+        }
+        match (part, chars.next()) {
+            (2, None) | (0 | 1, Some('.')) => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Why a query failed, and whose fault it points at: a connection Snowflake
 /// refused is about the profile, a query it rejected is about the object or
-/// the role, and a request this build got wrong is neither.
+/// the role, and a script that stopped, timed out or sent what this build
+/// cannot read is `script`: no later request to it is likelier to succeed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryError {
     pub message: String,
@@ -183,7 +279,7 @@ pub struct QueryError {
 
 impl QueryError {
     fn own(message: impl Into<String>) -> QueryError {
-        QueryError { message: message.into(), phase: String::new() }
+        QueryError { message: message.into(), phase: "script".into() }
     }
 }
 
@@ -548,6 +644,13 @@ impl Sidecar {
         serde_json::from_value(self.ask(request).await?).map_err(unreadable)
     }
 
+    /// The last run of each model in one environment's dbt_artifacts tables,
+    /// named by their relations (0117).
+    pub async fn builds(&self, executions: &str, invocations: &str) -> Result<Builds, QueryError> {
+        let request = serde_json::json!({ "op": "builds", "executions": executions, "invocations": invocations });
+        serde_json::from_value(self.ask(request).await?).map_err(unreadable)
+    }
+
     /// Who the connection is and on which account, connecting first if it has
     /// not yet: what a Snowsight link names.
     pub async fn session(&self) -> Result<SessionInfo, QueryError> {
@@ -794,7 +897,8 @@ done
 
         assert_eq!(car.stop().await.state, "off");
         assert!(gone(&dir));
-        assert!(car.query("X.Y.Z", "c", "UPSTREAM", 1).await.is_err());
+        let gone = car.query("X.Y.Z", "c", "UPSTREAM", 1).await.unwrap_err();
+        assert_eq!(gone.phase, "script", "a script that is not running is the script's, not a query's");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -842,6 +946,56 @@ done
 
         car.stop().await;
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_last_builds_are_read_and_only_the_named_fields_pass() {
+        let body = r#"echo '{"event":"ready","profile":"shop","target":"dev"}'
+while IFS= read -r line; do
+  case "$line" in
+    *'"op":"builds"'*)
+      printf '%s\n' "$line" > "$(dirname "$0")/asked"
+      echo '{"id":1,"rows":[{"node":"model.jaffle.orders","target":"prod","status":"error","started":"2026-10-21T03:00:05Z","compiled":"2026-10-21T03:00:40Z","last_success":"2026-10-14T03:01:09Z","invocation":"6f1c-0001","full_refresh":true,"rows":7,"message":"Database Error","command":"build","cloud_job":"4321","env_vars":"{\"TOKEN\":\"hunter2\"}","adapter_response":"not for the page"}],"cut":true}' ;;
+    *'"op":"quit"'*) exit 0 ;;
+  esac
+done
+"#;
+        let (dir, script) = fake("builds", body);
+        let car = Sidecar::new(false, quick());
+        car.set_reading(true);
+        assert_eq!(car.start(&sh(), &script, &dir).await.state, "ready");
+
+        let read = car.builds("ANALYTICS_META.DBT_ARTIFACTS.MODEL_EXECUTIONS", "ANALYTICS_META.DBT_ARTIFACTS.INVOCATIONS").await.unwrap();
+        let asked = std::fs::read_to_string(dir.join("asked")).unwrap();
+        assert!(asked.contains(r#""executions":"ANALYTICS_META.DBT_ARTIFACTS.MODEL_EXECUTIONS""#), "{asked}");
+        assert!(asked.contains(r#""invocations":"ANALYTICS_META.DBT_ARTIFACTS.INVOCATIONS""#), "{asked}");
+        assert!(read.cut);
+        assert_eq!(read.rows.len(), 1);
+        let row = &read.rows[0];
+        assert_eq!((row.node.as_str(), row.target.as_str(), row.status.as_str()), ("model.jaffle.orders", "prod", "error"));
+        assert_eq!((row.full_refresh, row.rows), (true, Some(7)));
+        assert_eq!(row.last_success, "2026-10-14T03:01:09Z");
+        assert_eq!(row.compiled, "2026-10-21T03:00:40Z", "the start of a model that never ended");
+        let sent = serde_json::to_string(&read).unwrap();
+        assert!(!sent.contains("hunter2") && !sent.contains("env_vars") && !sent.contains("adapter_response"), "a field this build does not name stays here: {sent}");
+        assert!(!sent.contains("completed"), "an empty field is left out: {sent}");
+
+        car.stop().await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_relation_is_three_parts_quoted_or_not() {
+        for ok in ["a.b.c", "ANALYTICS_META.dbt_artifacts.model_executions", r#""my.db"."sch""ema".t"#, "_a$.b1.c_", r#""a"."b"."c""#] {
+            assert!(valid_relation(ok), "{ok}");
+        }
+        for bad in [
+            "", "a", "a.b", "a.b.c.d", "a..c", ".b.c", "a.b.", "1a.b.c", "a b.c.d", "a.b.c;", "a.b.c' or 1=1", r#"a."".c"#,
+            r#"a."b.c"#, "a.\"b\nc\".d", "a-b.c.d",
+        ] {
+            assert!(!valid_relation(bad), "{bad:?}");
+        }
+        assert!(!valid_relation(&format!("a.b.{}", "c".repeat(401))), "too long");
     }
 
     #[tokio::test]

@@ -94,6 +94,24 @@ parsed config and the built location, which come from the same parse. Case
 alone is never counted as a move, since Snowflake folds unquoted identifiers,
 and neither is a pair of literal quotes that dbt drops.
 
+## Last built
+
+With Snowflake's features on and the dbt_artifacts package in the project, a
+model's Catalog has a **Last built** section after its location: one block per
+environment, the manifest's own first, with the last run's status (success, error
+or another word as dbt wrote it), how long ago, the last success when the last
+run was not that, the target, the dbt command, whether it was a full refresh,
+rows affected, the invocation id with a Copy button and, for dbt Cloud, the job
+and run ids. A failed run shows dbt's message under it; hover the time for the
+clock time. An environment that cannot place the package's tables says why, one
+with no run says "no run recorded in the last 90 days".
+
+Nothing is asked until you press **Read from Snowflake** in the section's head,
+which then says when it was read and offers **Refresh**. The same read feeds the
+dots on the lineage and the Reports section, and is dropped when the page
+closes ([snowflake.md](snowflake.md),
+[0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
+
 ## Environments
 
 The `env` pill in the status bar says which of the project's `.env` files the

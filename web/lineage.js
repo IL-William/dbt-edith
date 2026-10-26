@@ -1917,6 +1917,38 @@ const Lineage = (() => {
     return L;
   }
 
+  /* The last build of each model in the environment the page names, as a dot
+     on its box (0117): `spec.of(id)` gives a verdict and the words for a
+     model, asked only for the boxes drawn. Painted over what is drawn, without
+     a layout, so choosing another environment costs a few circles; kept in
+     the options, so a redraw keeps it. The words go in the box's aria-label
+     and the hover card, not a <title>, whose native tooltip would land over
+     the card. Not in a file: snapshotOf takes the dots off, since an export
+     must not carry a live read of other environments. */
+  const labelBase = new WeakMap();
+  function paintBuilds(spec) {
+    lastOpts = Object.assign({}, lastOpts, { builds: spec || null });
+    if (!root || !data) return;
+    root.querySelectorAll('.bdot').forEach((x) => x.remove());
+    data.nodes.forEach((n, i) => {
+      const g = nodeEls[i];
+      // The label a box was drawn with, kept apart from what a dot adds to it.
+      if (g && !labelBase.has(g)) labelBase.set(g, g.getAttribute('aria-label') || '');
+      if (g && labelBase.get(g)) g.setAttribute('aria-label', labelBase.get(g));
+    });
+    if (!spec || data.mode === 'column') return;
+    data.nodes.forEach((n, i) => {
+      const g = nodeEls[i], b = place[i];
+      // An ephemeral model, a disabled one and anything but a model has no
+      // table the package could have recorded.
+      if (!g || !b || b.rider || n.kind !== 'model' || n.disabled || matLabel(n) === 'ephemeral') return;
+      const got = spec.of(n.id);
+      if (!got) return;
+      g.appendChild(el('circle', { class: `bdot ${got.verdict}`, cx: b.w - 11, cy: 11, r: 3.5 }));
+      g.setAttribute('aria-label', `${labelBase.get(g)}, last build: ${got.title.split('\n').join('; ')}`);
+    });
+  }
+
   /* `opts.folders` draws the canvas by folder: the project's package, '' when
      it is not known, or null for the usual canvas (0029), and `opts.levels`
      how many levels of folders, 1 when left out (0080). What comes back says
@@ -2132,6 +2164,8 @@ const Lineage = (() => {
 
     paintArt();
     if (!opts.keepView) fit(); else apply();
+    // After the art, so a dot sits over it as well as over the box.
+    paintBuilds(opts.builds);
     select(selected);
     if (finding) refind();
     paintPick();
@@ -2459,6 +2493,8 @@ const Lineage = (() => {
     if (!g.getAttribute('class')) g.removeAttribute('class');
     // The art is the page's own look: its <use> would point at defs the file does not have.
     g.querySelectorAll('.hw-art, .hw-beads, .hw-web').forEach((x) => x.remove());
+    // Nor the last builds: a live read of other environments is not kept, and a file is.
+    g.querySelectorAll('.bdot').forEach((x) => x.remove());
     // The names the art cut short go back to the plain look's cuts before anything is
     // measured, so that a themed canvas measures, and writes, what a plain one does.
     if (texted) {
@@ -2606,7 +2642,7 @@ const Lineage = (() => {
   };
 
   return {
-    init, render, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
+    init, render, paintBuilds, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
     testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, isRowKind, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked, setSkin,
   };

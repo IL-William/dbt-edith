@@ -173,8 +173,9 @@ with what speaks of the whole project, a section each, listed on its left:
 the last dbt command's results once dbt has written them, the warnings dbt
 would give as it parses once there is one, collin's report once collin has
 written one, the coverage of your jobs once the Jobs tab has a source, the
-project's macros while one is reached by no node and nothing explains it, and
-this tool's own checks while one finds a node, which never light the button.
+project's macros while one is reached by no node and nothing explains it, this
+tool's own checks while one finds a node, which never light the button, and the
+builds of each environment once the dbt_artifacts package is there.
 The sidebar stays, and anything that shows a file or a dock tab rolls the
 panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
@@ -279,3 +280,23 @@ manifest says nothing of freshness, as another producer's may, is given no
 verdict. The section is listed in the panel while one of the four lists a node,
 but never lights the button, carries no chip, since the count would rarely go
 down, and is never the section the panel opens on (0116).
+
+**Builds by environment** is listed once Snowflake's features are on and the
+manifest holds the dbt_artifacts package's `model_executions` and `invocations`
+models. Nothing is asked until you press **Read from Snowflake** in its head
+(**Refresh** after), which reads each environment's tables one after the other,
+drawing each as it lands. It carries no chip on the button: there is no file
+written to watch. Per environment, with its colour: tiles for the models in
+**error** (the last attempt failed), **stale** (no success within the
+threshold, set in the Snowflake section of the settings), **not built** (no run
+in the last 90 days) and fine, and a fold for each of the first three listing
+the models, which open on click, with dbt's message under an error. A model
+built under several targets counts by the worst of them. Under them, a table
+of every model against every environment, its last status and how long
+ago in each cell, filtered by name, the project's own models unless you tick
+include packages. An environment that cannot place the package's tables says
+why instead of showing numbers, and one the read failed on says what Snowflake
+said, with a link to the profile when the connection is to blame. Every enabled
+model is listed, by name, and the section stays where it is in the list and
+leaves the button dimmed until it has been read ([snowflake.md](snowflake.md),
+[0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).

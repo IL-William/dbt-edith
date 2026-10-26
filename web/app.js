@@ -71,7 +71,7 @@ const S = {
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
   cllActive: '',              // file name of the one the graph holds, '' for none
   cllTool: '',                // fusion | collin | snowflake | '' for another producer or none
-  features: null,             // { snowflake, snowflake_set }: which feature families are on
+  features: null,             // { snowflake, snowflake_set, builds_stale_days }: which feature families are on
   profiles: null,             // { path, found }: where dbt looks for its profile, null with nowhere to look
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
   colDraw: 0,                 // bumped per column request and on leaving column mode: only the last answer is drawn
@@ -116,6 +116,9 @@ const S = {
   jobsFor: null,              // the node a Catalog chip opened the Jobs tab on, when not the focus, while the Catalog shows it
   catJobs: new Map(),         // per node, the jobs answer its Catalog section drew, until the jobs may have changed
   catJobsGen: 0,              // counts those changes, so an answer asked for before one is dropped
+  builds: null,               // the last read of dbt_artifacts: { readAt, targets, byEnv, pending, failed }, never kept (0117)
+  buildsBusy: false,          // a read is on its way, one environment's tables at a time
+  buildsPackages: false,      // the Reports grid lists the packages' models too
   tour: null,                 // the guided tour on screen: its steps, the one shown, and the page as it was (0074)
   tourOfferHeld: false,       // the offer waits for a manifest with a model, and is asked for again when one lands (0078)
 };
@@ -4285,6 +4288,7 @@ function canvasOptions() {
     folders: foldersOn() ? ((S.meta && S.meta.project) || '') : null,
     levels: folderLevels(),
     adapter: (S.meta && S.meta.adapter) || '',
+    builds: buildsSpec(),
   };
 }
 
@@ -6190,9 +6194,14 @@ function applyLineage(info) {
   S.cllSources = info.cll_sources || [];
   S.cllActive = info.cll_active || '';
   S.cllTool = info.cll_tool || '';
+  const sfWas = !!(S.features && S.features.snowflake), firstLoad = S.features === null;
   S.features = info.features || null;
   S.profiles = info.profiles || null;
   if (info.sidecar) S.sidecar = info.sidecar;
+  // The builds follow the switch: the Reports entry is the index's to say, the
+  // Catalog's section is drawn from it, and a read does not outlive the switch.
+  // Not on the first load, which the page's start reads the index after anyway.
+  if (!firstLoad && sfWas !== !!(S.features && S.features.snowflake)) followBuildsSwitch();
   const collinWas = S.collin && S.collin.state;
   if (info.collin) S.collin = info.collin;
   paintSidecar(was);
@@ -6200,6 +6209,14 @@ function applyLineage(info) {
   paintSettingsButton();
   repaintSettings();
   paintHistoryTab();
+}
+
+function followBuildsSwitch() {
+  if (!(S.features && S.features.snowflake)) S.builds = null;
+  loadReportsIndex().then(() => {
+    if (S.node) renderCatalog(S.node);
+    paintLineageBuilds();
+  });
 }
 
 /* The gear: lit while its panel is down, with a dot while the profile is
@@ -6508,12 +6525,29 @@ function paintSetSnowflake(box) {
   warn.append(el('b', '', 'Alpha.'), document.createTextNode(
     ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
     + 'Expect rough edges, and check what they show against Snowflake itself.'));
+  // After how many days without a success the builds call a model stale (0117).
+  const days = el('div', 'setrow setpick');
+  const field = Object.assign(document.createElement('input'), {
+    type: 'number', min: '1', max: '365', step: '1', value: String(f.builds_stale_days || 7), className: 'daysinput',
+  });
+  field.setAttribute('aria-label', 'Days without a success after which a model reads stale');
+  field.addEventListener('change', () => {
+    const n = Number(field.value);
+    if (!Number.isInteger(n) || n < 1 || n > 365) {
+      field.value = String(f.builds_stale_days || 7);
+      return toast('stale after: a whole number of days from 1 to 365', 'err');
+    }
+    setStaleDays(n);
+  });
+  days.append(el('span', 'setlbl', 'Stale after'), field, el('span', 'muted', 'days without a success'));
   box.replaceChildren(row,
     note(featureNote(f, S.meta && S.meta.adapter)),
     note('Column lineage from Snowflake, fetched on click; the Query history tab, read from Snowflake '
       + 'when it opens; a Snowsight menu beside each relation in the Catalog; and Clone into my schema, '
       + 'under a model\'s location, which writes the statements that copy it and its direct parents '
-      + 'from an environment into your schema, for you to run.'),
+      + 'from an environment into your schema, for you to run. With the dbt_artifacts package in the '
+      + 'project, Last built in the Catalog and Builds by environment in Reports, read when asked.'),
+    ...(f.snowflake ? [days] : []),
     warn);
 }
 
@@ -6539,6 +6573,22 @@ async function setFeatures(body) {
   } catch (e) {
     toast('settings: ' + e.message, 'err');
   }
+}
+
+/* The threshold of the builds, posted once the spinner rests: each click of it
+   fires a change, and the last value wins. Nothing but the builds reads it, so
+   they are painted again and the canvas is not drawn (0117). */
+let staleDaysTimer = 0;
+function setStaleDays(n) {
+  clearTimeout(staleDaysTimer);
+  staleDaysTimer = setTimeout(async () => {
+    try {
+      applyInfo(await api.send('/api/features', 'POST', { builds_stale_days: n }));
+      repaintBuilds();
+    } catch (e) {
+      toast('settings: ' + e.message, 'err');
+    }
+  }, 400);
 }
 
 /* The profile lives outside the project, so it has its own route rather than a
@@ -9541,10 +9591,13 @@ function escapePanel() {
    once a source is named, the macros while one of the project's is reached by
    no node and nothing explains it, and, empty, once a macro's card asked for
    its callers, `focus` (0105), and last the tool's own checks while one finds
-   a node, `quiet`: listed, but it never lights the button nor opens the panel
-   (0116). Before that the coverage is listed all the same, `empty`, as the
-   place a source is added from (0070), but it is not opened on for itself, and
-   the button stays dimmed (0075). */
+   a node (0116) and the builds of each environment once the index says
+   Snowflake is on and the manifest holds the dbt_artifacts tables (0117),
+   each `quiet`: listed, but it never lights the button nor opens the panel
+   (0116, 0117). Before
+   that the coverage is listed all the same, `empty`, as the place a source is
+   added from (0070), but it is not opened on for itself, and the button stays
+   dimmed (0075). */
 function reportsSections(index, focus) {
   const all = [
     { key: 'run', label: 'Last run', tool: 'dbt',
@@ -9559,6 +9612,8 @@ function reportsSections(index, focus) {
       title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
     { key: 'checks', label: 'Checks', tool: 'dbt',
       title: "This tool's own checks on the project, which dbt warns of none of: sources without freshness, models with no test or no description, sources no node reads" },
+    { key: 'builds', label: 'Builds by environment', tool: 'snowflake',
+      title: "When each model last ran in each environment and how it ended, read from Snowflake when asked, from the tables of the dbt_artifacts package" },
   ];
   const has = (key) => !!(index && index[key]);
   // The last run's dot says how it ended, from the counts the index carries;
@@ -9570,9 +9625,12 @@ function reportsSections(index, focus) {
   // the button: what lights it is the user's rule, not a click (0105).
   const listed = (key) => key === 'jobs' || has(key) || (key === 'macros' && !!focus);
   // The checks are listed in the rail and never light the button or open the
-  // panel, `quiet`: they would be there on nearly every project (0116).
+  // panel, `quiet`: they would be there on nearly every project (0116). The
+  // builds are too, since they hold nothing until the user's click reads them,
+  // which is no file's news (0117).
+  const quiet = (key) => key === 'checks' || key === 'builds';
   return all.filter((sec) => listed(sec.key))
-    .map((sec) => Object.assign(sec, has(sec.key) ? (sec.key === 'checks' ? { quiet: true } : {}) : { empty: true }));
+    .map((sec) => Object.assign(sec, has(sec.key) ? (quiet(sec.key) ? { quiet: true } : {}) : { empty: true }));
 }
 
 /* Whether a section lights the button and may be the one the panel opens on:
@@ -9964,13 +10022,16 @@ function reportHead({ title, tool, tone, about, again, extra = [] }) {
     dot.title = words;
   }
   row.append(dot, jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
-  const read = jel('button', 'btn sm reports-again', 'Read again');
-  read.addEventListener('click', again);
   const close = jel('button', 'icon', '×');
   close.title = `Close the reports (${keyLabel('Escape', IS_MAC)})`;
   close.setAttribute('aria-label', 'Close the reports');
   close.addEventListener('click', () => closePanel({ restore: true }));
-  row.append(read, close);
+  if (typeof again === 'function') {
+    const read = jel('button', 'btn sm reports-again', 'Read again');
+    read.addEventListener('click', again);
+    row.append(read);
+  }
+  row.append(close);
   head.append(row);
   return head;
 }
@@ -10039,6 +10100,7 @@ async function showReportSection(key) {
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again)
       : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again)
+        : key === 'builds' ? await buildsSection()
         : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
@@ -10981,6 +11043,14 @@ function fillNodeCard(el, id, seed) {
         className: 'hc-note' + (f.warn ? ' warn' : '') + (f.muted ? ' muted' : ''), textContent: f.text,
       }));
     }
+    // The last build in the environment the canvas shows (0117), a line a
+    // target: the dot has no title of its own, which would land over the card.
+    const spec = n.kind === 'model' && !n.disabled && n.materialized !== 'ephemeral' ? buildsSpec() : null;
+    if (spec) {
+      for (const line of spec.of(id).title.split('\n')) {
+        el.append(Object.assign(document.createElement('div'), { className: 'hc-note muted', textContent: line }));
+      }
+    }
     if (!full) return;
 
     // A test keeps no description and has no columns, downstream or tests of
@@ -11358,6 +11428,8 @@ function selectEnv(file) {
   S.env = file;
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
+  // The dots follow the environment, painted over the canvas as it stands (0117).
+  paintLineageBuilds();
   // Remembered as the starting point for the next tab; failure is harmless.
   api.send('/api/envs/select', 'POST', { file: file || null }).catch(() => {});
 }
@@ -11841,6 +11913,235 @@ function lineageRelation(n, env) {
   if (!file) return { text: n.relation, file: '', reason: '' };
   const rel = resolvedRelation(locationRows(n.location, file), n.relation, file);
   return { text: rel.text, file, reason: rel.reason };
+}
+
+/* The last build of each model per environment is read on a click from the
+   tables of the dbt_artifacts package (0117). The pure part runs from here to
+   catalogLocation, which web/tests/builds.js slices with the location code
+   above: where the two tables are in each environment, what the rows of a
+   model add up to, and how that reads on a box. */
+
+/* The package's two models the read joins, by their ids in the manifest. A
+   function, not a constant, which a harness's eval would not keep. */
+function buildsIds() {
+  return { executions: 'model.dbt_artifacts.model_executions', invocations: 'model.dbt_artifacts.invocations' };
+}
+
+/* Where the two tables are in the manifest's own build ('') and in each .env
+   file, each placed the way the Location table places any relation. A file
+   that cannot place them carries why and is shown, not asked: the package's
+   schema comes from config before generate_schema_name runs, so a placement
+   the table could not make would be a guess (0113). */
+function buildsTargets(execNode, invNode, envFiles) {
+  const envs = [{ env: '', name: 'manifest', target: '' }]
+    .concat((envFiles || []).map((f) => ({ env: f.file, name: f.name || f.file, target: f.target || '' })));
+  return envs.map(({ env, name, target }) => {
+    const place = (n, table) => {
+      if (!n) return { text: '', reason: `${table} is not in the manifest` };
+      const rel = lineageRelation(n, env);
+      if (rel.reason) return { text: '', reason: rel.reason };
+      // A file the package's model was not resolved against falls back to the
+      // built relation there, which says nothing about this environment.
+      if (env && rel.file !== env) return { text: '', reason: `${table} was not resolved against ${env}` };
+      return { text: rel.text, reason: '' };
+    };
+    const exe = place(execNode, 'model_executions'), inv = place(invNode, 'invocations');
+    const reason = exe.reason || inv.reason;
+    return { env, name, target, executions: reason ? '' : exe.text, invocations: reason ? '' : inv.text, reason };
+  });
+}
+
+/* One query per distinct pair of tables, with the environments it answers for:
+   two files that place the package in one schema are read once. */
+function buildsQueries(targets) {
+  const byKey = new Map();
+  for (const t of targets) {
+    if (t.reason) continue;
+    const key = t.executions + '\n' + t.invocations;
+    if (!byKey.has(key)) byKey.set(key, { executions: t.executions, invocations: t.invocations, envs: [] });
+    byKey.get(key).envs.push(t.env);
+  }
+  return [...byKey.values()];
+}
+
+/* The rows of an answer by node id: one per target that built it. */
+function buildsByNode(rows) {
+  const by = new Map();
+  for (const r of rows || []) {
+    if (!by.has(r.node)) by.set(r.node, []);
+    by.get(r.node).push(r);
+  }
+  return by;
+}
+
+/* The rows of a file that sets DBT_TARGET: only the runs under that target,
+   since dbt runs with it when the file is loaded (0117). A model left with
+   none is dropped, so it reads as not built there. A new map: the answer is
+   shared by every file that placed the tables in the same schema. */
+function buildsOfTarget(rowsByNode, target) {
+  const out = new Map();
+  for (const [id, rows] of rowsByNode) {
+    const kept = rows.filter((r) => r.target === target);
+    if (kept.length) out.set(id, kept);
+  }
+  return out;
+}
+
+/* The names of the targets a table holds runs of besides `target`, sorted, for
+   the note that says which runs a file kept to its target left out. A file
+   whose DBT_TARGET no run used (an orchestrator's own target name, or a value
+   left unexpanded) would otherwise read as never built (0117). */
+function buildsOtherTargets(rowsByNode, target) {
+  const names = new Set();
+  for (const rows of rowsByNode.values()) {
+    for (const r of rows) if (r.target && r.target !== target) names.add(r.target);
+  }
+  return [...names].sort();
+}
+
+/* That note, or nothing: what an environment kept to `target` left out of its
+   rows, `rows` being how many models it kept runs of. */
+function buildsOthersNote(target, others, rows) {
+  if (!target || !others || !others.length) return '';
+  const names = others.join(', ');
+  return rows
+    ? `The table also holds runs under target ${names}, not counted here.`
+    : `No run under target ${target} in the table, which holds runs under ${names}: not counted.`;
+}
+
+/* When a run happened, the clock the script orders by: the end of the model,
+   else its start (a model that failed while it ran has no end), else the
+   invocation's, which is the earliest the run can have been. */
+function buildsWhen(r) {
+  return r.completed || r.compiled || r.started || '';
+}
+
+/* An environment as the Reports section and the Catalog name it: the target
+   its file keeps the runs to, when it sets one. */
+function buildsEnvLabel(t) {
+  return t.target ? `${t.name} · target ${t.target}` : t.name;
+}
+
+/* What a run that did not end well is called. Skipped is not one: it built
+   nothing that time, and the last success still decides. A partial success is
+   one (dbt 1.9's microbatch): some of the batches failed, so the table is
+   missing rows. */
+function buildsFailed(status) {
+  return ['error', 'fail', 'runtime error', 'partial success'].includes(status);
+}
+
+/* One model in one environment: error when its last attempt failed, stale
+   when its last success is older than `staleDays` or there is none in the
+   window, ok, or none when no run is recorded. `now` is in milliseconds. */
+function buildVerdict(rows, staleDays, now) {
+  const list = rows || [];
+  if (!list.length) return { verdict: 'none', last: null, success: '' };
+  const at = (r) => Date.parse(buildsWhen(r)) || 0;
+  const last = list.reduce((a, b) => (at(b) > at(a) ? b : a));
+  let success = list.map((r) => r.last_success || '').reduce((a, b) => (Date.parse(b) > (Date.parse(a) || 0) ? b : a), '');
+  if (!success && last.status === 'success') success = buildsWhen(last);
+  if (buildsFailed(last.status)) return { verdict: 'error', last, success };
+  const t = Date.parse(success);
+  const old = !(t > 0) || now - t > staleDays * 86400000;
+  return { verdict: old ? 'stale' : 'ok', last, success };
+}
+
+/* The same for a model one table holds runs of several targets for: each
+   target is judged on its own, and the worst of them is the model's, in the
+   order error, stale, none, ok, since a box has room for one colour. `parts`
+   keeps each, by target name, for the words a box's hover card lists. */
+function buildsWorst(rows, staleDays, now) {
+  const by = new Map();
+  for (const r of rows || []) {
+    const key = r.target || '';
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(r);
+  }
+  if (!by.size) return buildVerdict([], staleDays, now);
+  const parts = [...by.keys()].sort().map((k) => buildVerdict(by.get(k), staleDays, now));
+  const rank = { error: 0, stale: 1, none: 2, ok: 3 };
+  const worst = parts.reduce((a, b) => (rank[b.verdict] < rank[a.verdict] ? b : a));
+  return Object.assign({}, worst, { parts });
+}
+
+/* How long ago, in the words the cache ages use. */
+function buildsAge(iso, now) {
+  const t = Date.parse(iso || '');
+  if (!(t > 0)) return '';
+  const secs = Math.max(0, Math.floor((now - t) / 1000));
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return `${Math.floor(secs / 60)}min ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
+}
+
+/* What "no run" says: under which target when the environment was kept to
+   one, since the table may hold runs of others (0117). */
+function buildsNoRun(target) {
+  return `no run ${target ? `under target ${target}` : 'recorded'} in the last ${buildsWindowDays()} days`;
+}
+
+/* The line a dot's hover card and a Catalog row open with: the last attempt,
+   and the last success when it was not that one. `kept` is the target the
+   environment was kept to, if any. */
+function buildsSaid(v, envName, now, kept) {
+  if (v.parts && v.parts.length > 1) return v.parts.map((p) => buildsSaid(p, envName, now, kept)).join('\n');
+  if (v.verdict === 'none') return `${envName}: ${buildsNoRun(kept)}`;
+  const l = v.last;
+  const target = l.target ? ` (target ${l.target})` : '';
+  const head = `${envName}: ${l.status || 'unknown'} ${buildsAge(buildsWhen(l), now)}${target}`;
+  const apart = v.success && (buildsFailed(l.status) || l.status === 'skipped' || v.verdict === 'stale');
+  return apart ? `${head}, last success ${buildsAge(v.success, now)}` : head;
+}
+
+/* The same without the environment's name, each target's line in one: a line
+   of a list under that environment's own heading. */
+function buildsSaidBare(v, envName, now, kept) {
+  return buildsSaid(v, envName, now, kept).split('\n').map((l) => l.replace(`${envName}: `, '')).join(' · ');
+}
+
+/* The days of runs the script reads, which a "no run" answer is about. */
+function buildsWindowDays() {
+  return 90;
+}
+
+/* What the canvas paints for one environment: `of(id)` gives the worst
+   verdict across a model's targets and its words, or "none" for a model the
+   read has no rows for. Judged when a box asks, once each, since a canvas
+   draws a few boxes of a read that may hold every model. Null when that
+   environment was not read, or was read with an error, so a canvas never says
+   "no run" of a table it could not ask. */
+function buildsDots(read, env, staleDays, envName, now) {
+  const got = read && read.byEnv && read.byEnv[env];
+  if (!got || got.error || !got.rows) return null;
+  const memo = new Map();
+  return {
+    of(id) {
+      if (!memo.has(id)) {
+        const v = buildsWorst(got.rows.get(id), staleDays, now);
+        memo.set(id, { verdict: v.verdict, title: buildsSaid(v, envName, now, got.target) });
+      }
+      return memo.get(id);
+    },
+  };
+}
+
+/* The Reports section's numbers and lists for one environment: the models
+   whose last attempt failed, the stale ones, those with no run, and how many
+   are fine. `models` is the project's list ({id, name, package}), `own` the
+   package to count, or '' for all of them. */
+function buildsVerdicts(got, models, own, staleDays, now) {
+  const out = { error: [], stale: [], none: [], ok: [], total: 0 };
+  if (!got || got.error || !got.rows) return out;
+  for (const m of models) {
+    if (own && m.package !== own) continue;
+    const v = buildsWorst(got.rows.get(m.id), staleDays, now);
+    out[v.verdict].push(Object.assign({ v }, m));
+    out.total++;
+  }
+  const byAge = (a, b) => (Date.parse(a.v.success) || 0) - (Date.parse(b.v.success) || 0);
+  out.stale.sort(byAge);
+  return out;
 }
 
 function catalogLocation(body, n) {
@@ -12551,6 +12852,7 @@ function catalogPreview(body, n) {
   totals.textContent = `${n.upstream_total} models upstream in total, ${n.downstream_total} downstream (whole graph).`;
   body.append(stats, totals);
   catalogLocation(body, n);
+  catalogBuilds(body, n);
   catalogJobs(body, n);
 
   catalogTags(body, n);
@@ -12773,6 +13075,386 @@ function paintCatalogJobs(box, view) {
   }
   if (!chips.length) list.prepend(jel('span', 'muted', 'No job read runs it.'));
   box.replaceChildren(h3('jobs'), list);
+}
+
+/* ---------------------------------------------------------- last builds -- */
+/* The read is the user's: a button in the Catalog or in Reports asks
+   Snowflake once per distinct pair of tables, one after the other, and each
+   answer is drawn as it lands. It lives in S.builds until the page closes and
+   is written nowhere (0117). */
+
+const buildsStaleDays = () => (S.features && S.features.builds_stale_days) || 7;
+
+/* Whether there is anything to read: Snowflake's features are on and the
+   manifest holds the package's two tables, which the index says. */
+const buildsOffered = () => !!(S.features && S.features.snowflake && S.reports && S.reports.builds);
+
+function buildsEnvName(env) {
+  return env ? envDisplayName(env) : 'manifest';
+}
+
+async function readBuilds() {
+  if (S.buildsBusy || !buildsOffered()) return;
+  S.buildsBusy = true;
+  const next = { readAt: Date.now(), byEnv: {}, targets: [], pending: true, failed: '' };
+  S.builds = next;
+  repaintBuilds();
+  try {
+    const ids = buildsIds();
+    const [exe, inv] = await Promise.all([nodeDetail({ id: ids.executions }), nodeDetail({ id: ids.invocations })]);
+    const files = envsInUse() ? S.envs.files.filter((f) => !f.hidden) : [];
+    next.targets = buildsTargets(exe, inv, files);
+    for (const t of next.targets) if (t.reason) next.byEnv[t.env] = { error: t.reason, placed: false, rows: new Map() };
+    repaintBuilds();
+    const queries = buildsQueries(next.targets);
+    for (let i = 0; i < queries.length; i++) {
+      const q = queries[i];
+      let entry;
+      try {
+        const r = await api.send('/api/snowflake/builds', 'POST', { executions: q.executions, invocations: q.invocations });
+        S.colAnswered = true;
+        entry = { relation: q.executions, cut: !!r.cut, rows: buildsByNode(r.rows) };
+      } catch (e) {
+        entry = { relation: q.executions, error: e.message, phase: e.phase || '', rows: new Map() };
+      }
+      // A file that sets DBT_TARGET keeps that target's runs; one that does not
+      // (and the manifest's own build) keeps every target (0117).
+      for (const env of q.envs) {
+        const t = next.targets.find((x) => x.env === env);
+        next.byEnv[env] = t && t.target ? Object.assign({}, entry, {
+          rows: buildsOfTarget(entry.rows, t.target), target: t.target, others: buildsOtherTargets(entry.rows, t.target),
+        }) : entry;
+      }
+      repaintBuilds();
+      // A connection Snowflake refuses, a script that would not start, or one
+      // that stopped or timed out would fail the rest the same way, and a
+      // sign-in could open for each: they are not asked. A query's own failure,
+      // or a request refused for one odd relation, says nothing of the next.
+      if (entry.error && ['connect', 'start', 'script'].includes(entry.phase)) {
+        for (const later of queries.slice(i + 1)) {
+          const skipped = { relation: later.executions, error: entry.error, phase: entry.phase, skipped: true, rows: new Map() };
+          for (const env of later.envs) next.byEnv[env] = skipped;
+        }
+        break;
+      }
+    }
+  } catch (e) {
+    next.failed = e.message;
+  } finally {
+    next.pending = false;
+    S.buildsBusy = false;
+    repaintBuilds();
+    // The script may have just started for this, which the settings show.
+    loadSidecar();
+  }
+}
+
+/* Everything that shows the read, drawn again from memory: the Catalog's
+   section, the Reports section when it is the one on screen, and the dots. */
+function repaintBuilds() {
+  const box = $('#catalog .cat-builds');
+  if (box) paintCatalogBuilds(box);
+  if (panelOpen('reports') && S.reportsSection === 'builds') {
+    // The grid is drawn again as each environment lands: a filter being typed
+    // in keeps its focus and its caret.
+    const f = document.activeElement;
+    const typing = f && f.classList && f.classList.contains('buildsfilter') ? [f.selectionStart, f.selectionEnd] : null;
+    showReportSection('builds').then(() => {
+      const again = typing && $('#reports-view .buildsfilter');
+      if (again) { again.focus(); again.setSelectionRange(typing[0], typing[1]); }
+    });
+  } else paintReportsButton();
+  paintLineageBuilds();
+}
+
+/* What the canvas paints for the environment this tab picked, or nothing. */
+function buildsSpec() {
+  if (!S.builds || !(S.features && S.features.snowflake)) return null;
+  return buildsDots(S.builds, S.env, buildsStaleDays(), buildsEnvName(S.env), Date.now());
+}
+
+function paintLineageBuilds() {
+  Lineage.paintBuilds(buildsSpec());
+}
+
+/* The button both places share: Read before any, Refresh after. */
+function buildsReadButton() {
+  const label = S.buildsBusy ? 'Reading…' : S.builds ? 'Refresh' : 'Read from Snowflake';
+  const b = jel('button', 'btn sm sfopen', '');
+  b.type = 'button';
+  b.dataset.tool = 'snowflake';
+  b.append(snowflakeIcon(), document.createTextNode(label));
+  b.disabled = !!S.buildsBusy;
+  b.title = 'Ask the dbt_artifacts tables of each environment in Snowflake when each model last ran. '
+    + 'Asked now and only now: nothing is kept past this page, and a sign-in tab may open if the session needs one.';
+  b.addEventListener('click', () => readBuilds());
+  return b;
+}
+
+/* A refused connection or a script that could not start is the profile's
+   business, so the file is one click away. */
+function buildsFailure(entry) {
+  const p = jel('p', 'runnote', '');
+  p.dataset.tone = 'warn';
+  // An environment that could not place the tables was never asked, and one
+  // after a failed connection was spared: neither is Snowflake's answer.
+  const said = entry.placed === false ? entry.error
+    : entry.skipped ? `Not asked, since an earlier environment could not be reached: ${entry.error}`
+      : `Snowflake did not answer for ${entry.relation || 'this environment'}: ${entry.error}`;
+  p.append(document.createTextNode(said));
+  const link = (entry.phase === 'connect' || entry.phase === 'start') && profileLink();
+  if (link) p.append(document.createTextNode(' The connection comes from '), link, document.createTextNode('.'));
+  return p;
+}
+
+/* The Catalog's section, after the location: one block per environment, the
+   last attempt on its first line and the last success beside it. */
+function catalogBuilds(body, n) {
+  if (!buildsOffered() || n.kind !== 'model' || n.disabled || n.materialized === 'ephemeral') return;
+  const box = jel('div', 'cat-builds');
+  box.dataset.node = n.id;
+  body.appendChild(box);
+  paintCatalogBuilds(box);
+}
+
+function paintCatalogBuilds(box) {
+  const id = box.dataset.node;
+  const read = S.builds;
+  const head = jel('div', 'sechead');
+  const about = read
+    ? (read.pending ? 'reading…' : `read ${buildsAge(new Date(read.readAt).toISOString(), Date.now())}`)
+    : 'not read';
+  head.append(h3('last built'), jel('span', 'muted buildsabout', about), buildsReadButton());
+  const parts = [head];
+  if (!read) {
+    parts.push(jel('p', 'muted', 'When this model last ran in each environment, read from the dbt_artifacts tables in Snowflake. '
+      + 'Nothing is asked until you press the button.'));
+  } else if (read.failed) {
+    parts.push(buildsFailure({ error: read.failed }));
+  } else {
+    const now = Date.now();
+    for (const t of read.targets) {
+      const got = read.byEnv[t.env];
+      const block = jel('div', 'buildenv');
+      const name = jel('span', 'buildname');
+      const dot = jel('span', 'envdot');
+      dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
+      name.append(dot, jel('b', '', buildsEnvLabel(t)));
+      if (!got) {
+        block.append(name, jel('span', 'muted', read.pending ? 'waiting for Snowflake…' : ''));
+      } else if (got.error) {
+        block.append(name);
+        block.append(buildsFailure(got));
+      } else {
+        const rows = (got.rows.get(id) || []).slice().sort((a, b) => (Date.parse(buildsWhen(b)) || 0) - (Date.parse(buildsWhen(a)) || 0));
+        const v = buildsWorst(rows, buildsStaleDays(), now);
+        block.dataset.verdict = v.verdict;
+        block.append(name);
+        const note = buildsOthersNote(got.target, got.others, got.rows.size);
+        if (note) block.append(jel('div', 'muted', note));
+        if (!rows.length) {
+          block.append(jel('span', 'muted', buildsNoRun(got.target)
+            + (got.cut ? ', but the table held more models than are read' : '')));
+        } else {
+          rows.forEach((r) => block.append(buildRunLine(r, v, now)));
+        }
+      }
+      parts.push(block);
+    }
+  }
+  box.replaceChildren(...parts);
+}
+
+/* One run: how it ended and when, then what the invocation says of itself. */
+function buildRunLine(r, v, now) {
+  const line = jel('div', 'buildrun');
+  const when = buildsWhen(r);
+  const state = jel('span', 'bstate', r.status || 'unknown');
+  state.dataset.status = buildsFailed(r.status) ? 'error' : r.status === 'success' ? 'ok' : 'other';
+  const ago = jel('span', '', buildsAge(when, now));
+  // run_started_at is the invocation's, not this model's: said as such.
+  ago.title = [r.started && `invocation started ${new Date(r.started).toLocaleString()}`,
+    r.compiled && `model started ${new Date(r.compiled).toLocaleString()}`,
+    r.completed && `model finished ${new Date(r.completed).toLocaleString()}`].filter(Boolean).join('\n');
+  line.append(state, ago);
+  const bits = [];
+  if (r.last_success && (r.status !== 'success')) bits.push(`last success ${buildsAge(r.last_success, now)}`);
+  if (r.target) bits.push(`target ${r.target}`);
+  if (r.command) bits.push(`dbt ${r.command}`);
+  if (r.full_refresh) bits.push('full refresh');
+  if (typeof r.rows === 'number') bits.push(`${r.rows} rows`);
+  if (r.cloud_job) bits.push(`dbt Cloud job ${r.cloud_job}${r.cloud_run ? `, run ${r.cloud_run}` : ''}`);
+  if (bits.length) line.append(jel('span', 'muted', '· ' + bits.join(' · ')));
+  if (r.invocation) {
+    line.append(jel('code', 'binv', r.invocation), copyGlyph(r.invocation, 'Copy the invocation id'));
+  }
+  if (r.message && buildsFailed(r.status)) line.append(jel('div', 'rmsg', r.message));
+  return line;
+}
+
+/* Every model the project builds, by name, asked once per read: each
+   environment that lands redraws the section, and a list fetched again each
+   time would be a request per environment for the same answer. The server's
+   bound is far above any project, and `cut` says when the raw answer reached
+   it, before the disabled and ephemeral are filtered out. */
+const BUILDS_MODELS_MAX = 200000;
+
+function buildsModels(read) {
+  if (!read.modelsAsked) {
+    read.modelsAsked = api.get(`/api/search?kind=model&limit=${BUILDS_MODELS_MAX}`).then((hits) => ({
+      modelsCut: hits.length >= BUILDS_MODELS_MAX,
+      models: hits.filter((h) => !h.disabled && h.materialized !== 'ephemeral')
+        .map((h) => ({ id: h.id, name: h.name, package: h.id.split('.')[1] || '' }))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    })).catch((e) => { read.modelsAsked = null; throw e; });
+  }
+  return read.modelsAsked;
+}
+
+/* The Reports section: per environment, what needs looking at, then every
+   model against every environment. Nothing in it asks Snowflake but the
+   button, so showing it again is free. */
+async function buildsSection() {
+  const read = S.builds;
+  const days = buildsStaleDays();
+  const about = read
+    ? `${read.pending ? 'reading…' : `read ${buildsAge(new Date(read.readAt).toISOString(), Date.now())}`} · stale after ${counted(days, 'day', 'days')}`
+    : 'not read';
+  const head = reportHead({ title: 'Builds by environment', tool: 'snowflake', about, extra: [buildsReadButton()] });
+  const body = jel('div', 'reportbody');
+  if (!read) {
+    body.append(jel('p', 'runnote', 'When each model last ran in each environment and how it ended, from the model_executions and '
+      + 'invocations tables of the dbt_artifacts package, in the schema each environment places it in. Nothing is asked until you '
+      + 'press the button, and nothing of the answer is kept past this page.'));
+    return [head, body];
+  }
+  if (read.failed) {
+    body.append(buildsFailure({ error: read.failed }));
+    return [head, body];
+  }
+  let models, modelsCut;
+  try {
+    ({ models, modelsCut } = await buildsModels(read));
+  } catch (e) {
+    body.append(jel('p', 'runnote', `The list of models could not be read: ${e.message}`));
+    return [head, body];
+  }
+  const own = (S.meta && S.meta.project) || '';
+  const now = Date.now();
+  for (const t of read.targets) {
+    const got = read.byEnv[t.env];
+    const title = jel('h3', 'buildsenv', '');
+    const dot = jel('span', 'envdot');
+    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
+    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
+    body.append(title);
+    if (!got) { body.append(jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : '')); continue; }
+    if (got.error) { body.append(buildsFailure(got)); continue; }
+    const others = buildsOthersNote(got.target, got.others, got.rows.size);
+    if (others) body.append(jel('p', 'runnote', others));
+    if (got.cut) body.append(jel('p', 'runnote', 'The table held more models than are read, so some below may read as not built.'));
+    const lists = buildsVerdicts(got, models, own, days, now);
+    const tiles = jel('div', 'reporttiles');
+    for (const [label, key, tone, sub2] of [
+      ['Errored', 'error', 'bad', 'last attempt failed'],
+      ['Stale', 'stale', 'warn', `no success in ${counted(days, 'day', 'days')}`],
+      ['Not built', 'none', '', `no run in ${buildsWindowDays()} days`],
+      ['Fine', 'ok', '', 'built within the threshold'],
+    ]) {
+      const tile = jel('div', 'reporttile');
+      if (tone && lists[key].length) tile.dataset.tone = tone;
+      tile.append(jel('div', 'rlabel', label), jel('div', 'rvalue', String(lists[key].length)), jel('div', 'rsub', sub2));
+      tiles.append(tile);
+    }
+    body.append(tiles);
+    for (const [title2, key, tone, open] of [
+      ['Errored', 'error', 'bad', true], ['Stale', 'stale', 'warn', lists.stale.length <= 20], ['Not built', 'none', '', false],
+    ]) {
+      if (!lists[key].length) continue;
+      const d = jel('details', 'reportfinding');
+      d.open = open;
+      if (tone) d.dataset.tone = tone;
+      const summary = jel('summary', '');
+      summary.append(jel('span', 'rtitle', title2), jel('span', 'rcount', String(lists[key].length)));
+      const ul = jel('ul', 'rentries');
+      for (const item of lists[key].slice(0, 300)) {
+        const li = jel('li', '');
+        const link = jel('a', 'filelink', item.name);
+        link.title = item.id;
+        link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(item.id); });
+        li.append(link);
+        if (key !== 'none') li.append(jel('span', 'muted', ' · ' + buildsSaidBare(item.v, t.name, now, got.target)));
+        if (key === 'error' && item.v.last.message) li.append(jel('div', 'rmsg', item.v.last.message));
+        ul.append(li);
+      }
+      if (lists[key].length > 300) ul.append(jel('li', 'muted', `and ${lists[key].length - 300} more`));
+      d.append(summary, ul);
+      body.append(d);
+    }
+  }
+  body.append(buildsGrid(read, models, own, days));
+  if (modelsCut) body.append(jel('p', 'runnote', 'The project holds more models than the server lists at once, so the rest are left out.'));
+  return [head, body];
+}
+
+/* Every model against every environment: its last attempt and how long ago,
+   filtered by name, the project's own models unless the packages are asked
+   for. Only the rows on screen are made. */
+function buildsGrid(read, models, own, days) {
+  const wrap = jel('div', 'buildsgrid');
+  const tools = jel('div', 'buildstools');
+  const filter = jel('input', 'buildsfilter');
+  filter.type = 'search';
+  filter.placeholder = 'Filter models';
+  filter.setAttribute('aria-label', 'Filter the models by name');
+  // Kept in the read, since each environment landing draws the section again.
+  filter.value = read.filter || '';
+  const pk = jel('label', 'buildspk');
+  const box = jel('input', '');
+  box.type = 'checkbox';
+  box.checked = !!S.buildsPackages;
+  pk.append(box, document.createTextNode(' include packages'));
+  const count = jel('span', 'muted', '');
+  tools.append(jel('b', '', 'Every model'), filter, pk, count);
+  const table = jel('table', 'buildstable');
+  wrap.append(tools, table);
+  const envs = read.targets;
+  const draw = () => {
+    S.buildsPackages = box.checked;
+    read.filter = filter.value;
+    const q = filter.value.trim().toLowerCase();
+    const now = Date.now();
+    const shown = models.filter((m) => (box.checked || !own || m.package === own) && (!q || m.name.toLowerCase().includes(q)));
+    const head = jel('tr', '');
+    head.append(jel('th', '', 'model'));
+    envs.forEach((t) => head.append(jel('th', '', buildsEnvLabel(t))));
+    const rows = shown.slice(0, 500).map((m) => {
+      const tr = jel('tr', '');
+      const link = jel('a', 'filelink', m.name);
+      link.title = m.id;
+      link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(m.id); });
+      const first = jel('td', 'bname', '');
+      first.append(link);
+      tr.append(first);
+      envs.forEach((t) => {
+        const got = read.byEnv[t.env];
+        const td = jel('td', '', '');
+        if (!got || got.error) { td.className = 'bnone'; td.textContent = got ? 'not read' : ''; tr.append(td); return; }
+        const v = buildsWorst(got.rows.get(m.id), days, now);
+        td.dataset.verdict = v.verdict;
+        td.title = buildsSaid(v, t.name, now, got.target);
+        td.textContent = v.verdict === 'none' ? '-' : `${v.last.status} ${buildsAge(buildsWhen(v.last), now)}`;
+        tr.append(td);
+      });
+      return tr;
+    });
+    table.replaceChildren(head, ...rows);
+    count.textContent = shown.length > 500 ? `${shown.length} models, 500 shown: filter to see the rest` : counted(shown.length, 'model', 'models');
+  };
+  filter.addEventListener('input', draw);
+  box.addEventListener('change', draw);
+  draw();
+  return wrap;
 }
 
 /* The Jobs tab on a node, which may not be the focus, at the step a chip

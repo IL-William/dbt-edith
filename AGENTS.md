@@ -67,8 +67,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Never run dbt.** The binary never talks to a warehouse either:
   `tools/sf_lineage.py` does, started by the server only once the user picks
   Snowflake as the column lineage tool, opens the query history or a
-  relation's Snowsight menu, with Snowflake's features on for the project,
-  under their own credentials (0002, 0016, 0031, 0048, 0051). collin, which
+  relation's Snowsight menu, or reads the last builds, with Snowflake's
+  features on for the project, under their own credentials (0002, 0016, 0031,
+  0048, 0051, 0117). collin, which
   parses the compiled SQL and reaches nothing, is started only once Collin is
   picked, a column is clicked or Regenerate pressed, never at startup (0042),
   and from the command line only when `--column` is asked with `--run-collin`
@@ -186,6 +187,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | add a column lineage tool, or anything that only works on Snowflake | [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |
 | show anything read from Snowflake besides lineage, link to Snowsight, or change when the script runs | [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0051](docs/decisions/0051-a-relation-opens-in-snowsight-by-its-name.md) |
+| show when a model last ran per environment, change what the builds read selects or sends, or put a status on a lineage box | [0117](docs/decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md), [0048](docs/decisions/0048-the-query-history-is-read-live-and-never-kept.md), [0113](docs/decisions/0113-the-card-resolves-a-location-per-env-file.md) |
 | start collin, change when it runs or where it is looked for, or bundle a lineage producer | [0042](docs/decisions/0042-collin-runs-on-demand-beside-the-binary.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0043](docs/decisions/0043-collin-is-updated-by-the-command-that-installs-it.md), [0047](docs/decisions/0047-collin-numbers-restart-at-0-1-0.md), [0060](docs/decisions/0060-collin-versions-sit-side-by-side-and-one-is-picked.md), [0098](docs/decisions/0098-collin-is-wanted-at-0-8-0-and-a-version-installed-by-tag-is-never-called-older.md), [0109](docs/decisions/0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md) |
 | change collin's report, its news on the Reports button, or what a run leaves of the report | [0059](docs/decisions/0059-collins-report-is-filed-here-from-the-lists-every-collin-writes.md), [0062](docs/decisions/0062-the-report-page-shows-collins-own-findings-when-it-writes-them.md) |
 | show a warning dbt gives as it parses, or judge whether a key of `dbt_project.yml` applies to anything | [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
@@ -294,7 +296,7 @@ src/jobs.rs           the orchestrator's jobs, read from the folders named (in t
 src/command.rs        a dbt command line, read into what it runs and what it selects
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree
 src/clone.rs          which nodes a clone into your schema copies: the model, its direct parents, through ephemerals
-src/sidecar.rs        the Snowflake script: started once Snowflake is picked or the history read, one request at a time
+src/sidecar.rs        the Snowflake script: started once Snowflake is picked, or the history or the last builds read, one request at a time
 src/compiled.rs       the compiled/ and run/ SQL under target/, and how fresh each is
 src/macros.rs         macros from the manifest, and which one a call in the editor reaches
 src/macro_use.rs      which nodes reach each macro, through the macros calling it, and why one no node reaches may still run
