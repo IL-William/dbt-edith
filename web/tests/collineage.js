@@ -605,20 +605,54 @@ check('as a column with an edge does', columnOpens({ up: 0, down: 2 }, false), t
 check('and a column with neither does not', columnOpens({ up: 0, down: 0 }, false), false);
 check('the row asks the same', /if \(columnOpens\(c, live\)\) \{\s*tr\.classList\.add\('c-linked'\)/.test(app), true);
 
-print('\n--- what keeps a column\'s rows (0097) ---');
+print('\n--- what keeps a column\'s rows, and what it keeps the rows of (0097, 0118) ---');
 eval(lin.slice(lin.indexOf('  const ROW_KINDS'), lin.indexOf('  function roleColor(')));
-// The names come from the server, `rows_by`, drawn or not, so the card says
-// them with the indirect button off as well.
+// The pairs come from the server, `rows_by` and `rows_of`, drawn or not, so
+// the card says them with the indirect button off as well; the page names the
+// clause, collin's word staying the command line's.
 var kept = rowsKept({ nodes: [
   { id: 'seed.shop.raw_orders::status', name: 'status' },
   { id: 'model.shop.stg_orders::loaded_at', name: 'loaded_at',
-    rows_by: ['raw_orders.status (filter)', 'stg_payments.order_id (join_key)'], rows_by_more: 2 },
-  { id: 'model.shop.stg_orders::id', name: 'id', rows_by: ['raw_orders.status (filter)'] },
+    rows_by: [['raw_orders.status', 'filter'], ['stg_payments.order_id', 'join_key']], rows_by_more: 2 },
+  { id: 'model.shop.stg_orders::id', name: 'id', rows_by: [['raw_orders.status', 'filter']] },
+  { id: 'model.shop.stg_orders::status', name: 'status',
+    rows_of: [['customers', 'join_key'], ['orders', 'dedup_key']], rows_of_more: 1 },
+  { id: 'model.shop.orders::order_id', name: 'order_id', rows_by: [['stg_orders.status', 'dedup_key']], rows_of: [['customers', 'filter']] },
+  { id: 'model.shop.orders::amount', name: 'amount', rows_by: [['stg_orders.status', 'rowwise']] },
 ], edges: [] });
-check('the indirect edges into a column, each with its role, and how many more',
-      kept[1], 'rows kept by: raw_orders.status (filter), stg_payments.order_id (join_key), and 2 more');
-check('one alone', kept[2], 'rows kept by: raw_orders.status (filter)');
-check('a column no indirect edge reaches says nothing', kept[0], '');
+check('the indirect edges into a column, each with its clause, and how many more',
+      kept[1], 'rows kept by: raw_orders.status (WHERE / HAVING), stg_payments.order_id (JOIN), and 2 more');
+check('one alone', kept[2], 'rows kept by: raw_orders.status (WHERE / HAVING)');
+check('a column no indirect edge reaches or leaves says nothing', kept[0], '');
+check('the models it keeps the rows of, each with its clause, and how many more',
+      kept[3], 'keeps the rows of: customers (JOIN), orders (QUALIFY), and 1 more');
+check('both, on two lines', kept[4], 'rows kept by: stg_orders.status (QUALIFY)\nkeeps the rows of: customers (WHERE / HAVING)');
+check('a role this build does not know is said as it came', kept[5], 'rows kept by: stg_orders.status (rowwise)');
+check('the clause is spelled in one place', [clauseOf('dedup_key'), clauseOf('JOIN_KEY'), clauseOf('filter'), clauseOf('rename')].join('|'),
+      'QUALIFY|JOIN|WHERE / HAVING|');
+check('the box\'s label carries both lines on one', /\(kept\[i\] \|\| ''\)\.replace\(\/\\n\/g, ', '\)/.test(lin), true);
+
+print('\n--- the cap on a column canvas (0118) ---');
+eval(app.slice(app.indexOf('function colAskKey'), app.indexOf('/* Every control that used to re-run')));
+var capped = { mode: 'column', truncated: true, most: 3000, nodes: new Array(1000) };
+check('a canvas cut at the cap offers the most the server draws', colCapOffer(capped, 0).label, 'Draw up to 3000');
+check('as many as the server says', colCapOffer(capped, 0).max, 3000);
+check('and says what it costs', colCapOffer(capped, 0).hint, 'slower to zoom and pan');
+check('and that it is this time only', /this time only/.test(colCapOffer(capped, 0).title), true);
+check('a whole canvas offers nothing', colCapOffer({ mode: 'column', truncated: false, most: 3000, nodes: new Array(40) }, 0), null);
+check('nor one drawn at the most already', colCapOffer({ mode: 'column', truncated: true, most: 3000, nodes: new Array(3000) }, 3000), null);
+check('nor an answer that names no most', colCapOffer({ mode: 'column', truncated: true, nodes: new Array(1000) }, 0), null);
+var askKey = colAskKey('model.shop.orders', 'status', 2, 1, new Set(['window', 'aggregate']), true);
+check('a request is the column, its depths, its stops and the button', askKey, 'model.shop.orders|status|2|1|aggregate,window|1');
+check('stops in any order are one request', colAskKey('model.shop.orders', 'status', 2, 1, new Set(['aggregate', 'window']), true), askKey);
+check('the lifted cap is for that request', colRaiseFor({ key: askKey, max: 3000 }, askKey), 3000);
+check('and no other: a deeper one is cut at the cap again', colRaiseFor({ key: askKey, max: 3000 }, colAskKey('model.shop.orders', 'status', 2, 2, new Set(['window', 'aggregate']), true)), 0);
+check('nothing lifted, nothing asked', colRaiseFor(null, askKey), 0);
+check('the request carries the lifted cap only then', /\+ \(raise \? `&max=\$\{raise\}` : ''\)\);/.test(app), true);
+check('a click draws this column again, at that cap',
+  /paintColCap\(colCapOffer\(sub, raise\), \(max\) => \{\s*S\.colRaise = \{ key, max \};\s*focusColumn\(id, column\);/.test(app), true);
+check('leaving column mode takes the offer down and forgets the lifted cap',
+  /if \(S\.graphMode !== 'column'\) \{\s*S\.colRaise = null;\s*paintColCap\(null\);/.test(app), true);
 
 print('\n--- the indirect button (0097) ---');
 var Lineage = { isRowKind: isRowKind };
@@ -626,17 +660,25 @@ eval(app.slice(app.indexOf('function cacheHasIndirect'), app.indexOf('/* The ind
 var meta = [{ kind: 'passthrough', edges: 9 }, { kind: 'join_key', edges: 4 }, { kind: 'filter', edges: 2 }];
 check('it shows for a cache with indirect edges', cacheHasIndirect(meta), true);
 check('and not for one without', cacheHasIndirect([{ kind: 'passthrough', edges: 9 }]) || cacheHasIndirect(null), false);
-check('off, stop at offers no indirect role', stopAtKinds(meta, false).map(function (k) { return k.kind; }).join(), 'passthrough');
-check('on, it offers them all', stopAtKinds(meta, true).length, 3);
+check('stop at offers no indirect role', stopAtKinds(meta).map(function (k) { return k.kind; }).join(), 'passthrough');
+check('with the button on or off: an indirect edge ends on its model\'s box, past which nothing is walked',
+      /stopAtRoles\(stopAtKinds\(S\.meta && S\.meta\.cll_kinds\), S\.colSub/.test(app), true);
 check('a cell says its figures leave the indirect edges out',
       columnReach({ up: 1, down: 0 }, { up: 2, down: 0 }, true).title.split('\n')[2],
       'indirect edges left out, as on the canvas with its indirect button off');
 check('and says nothing of them for a cache without', columnReach({ up: 1, down: 0 }, { up: 2, down: 0 }, false).title.split('\n').length, 2);
+check('the indirect edges drawn have a line of their own, which no stop applies to',
+  indirectDrawn(roleCounts(['rename', 'dedup_key', 'JOIN_KEY', 'filter', 'passthrough', ''])), 3);
+check('so the menu adds up to the status line again with the button on',
+  stopAtRoles(meta.filter(function (k) { return !isRowKind(k.kind); }), ['passthrough', 'filter', 'join_key', 'passthrough', ''], new Set())
+    .reduce(function (s, r) { return s + r.here; }, 0)
+  + unroled(roleCounts(['passthrough', 'filter', 'join_key', 'passthrough', '']))
+  + indirectDrawn(roleCounts(['passthrough', 'filter', 'join_key', 'passthrough', ''])), 5);
+check('the menu says it', /which no stop applies to/.test(app), true);
 check('the request asks for them only when it is on', /\+ \(S\.colIndirect \? '&indirect=1' : ''\)/.test(app), true);
 check('it starts off', /colIndirect: false,/.test(app), true);
 var ticked = new Set(['window', 'filter', 'JOIN_KEY']);
-check('off, a stop at an indirect role goes, and the others stay', [...cutsKept(ticked, false)].join(), 'window');
-check('on, every tick stays', [...cutsKept(ticked, true)].join(), 'window,filter,JOIN_KEY');
+check('a stop at an indirect role goes, whatever the button says, and the others stay', [...cutsKept(ticked)].join(), 'window');
 check('and the set given is left as it was', ticked.size, 3);
 check('a column only indirect edges reach still opens from the Catalog', columnOpens({ up: 0, down: 0, indirect: true }, false), true);
 check('and gets the Lineage column', lineageColumnShown([{ name: 'loaded_at', up: 0, down: 0, indirect: true }], false, new Map()), true);

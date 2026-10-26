@@ -1018,6 +1018,9 @@ kbd {
    `.edge.hi`, which keeps the dashes and takes the stroke. */
 .edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }
 .edge.hi { stroke: var(--accent); stroke-width: 2; }
+/* An indirect edge lit keeps its role's hue, which the legend says: the dash
+   and the width are all `.edge.hi` changes of it (0118). */
+.edge.indirect.hi { stroke: var(--edge-col); }
 /* An edge drawn against its direction, where column lineage loops: with no
    arrowheads, left to right is the only direction a reader has (0027). */
 .edge.back { stroke-dasharray: 5 4; }
@@ -1025,6 +1028,9 @@ kbd {
 .edge.test.back { stroke-dasharray: 5 3 1 3; }
 /* An indirect edge against the direction: a long dash between pairs of short ones. */
 .edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }
+/* The clause an indirect edge comes from, QUALIFY, JOIN or WHERE / HAVING, along
+   the edge (0118), in its role's hue. A label never takes the pointer. */
+.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, #33445c); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
 .nd:hover rect.box { stroke: var(--fg-dim); }
 .nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
@@ -1099,6 +1105,12 @@ kbd {
   color: var(--fg-dim); background: #12161dcc; padding: 2px 8px; border-radius: 4px;
   pointer-events: none;
 }
+/* Over the status line, which it never covers: a click here is not a pan. */
+.graph-cap {
+  position: absolute; right: 10px; bottom: 34px; display: flex; align-items: center; gap: 8px;
+  font: 10px var(--mono); color: var(--fg-dim); background: #12161dcc; padding: 3px 8px; border-radius: 4px;
+}
+.graph-cap .btn { flex: none; }
 
 .legend {
   position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px;
@@ -1118,7 +1130,7 @@ kbd {
 /* A legend entry picked: what it names stays as drawn and the rest fades,
    still readable on hover. Not copied into an exported file, which never
    carries a pick. */
-#graph g.picking .nd:not(.kept), #graph g.picking .edge:not(.kept) { opacity: .2; transition: opacity .12s; }
+#graph g.picking .nd:not(.kept), #graph g.picking .edge:not(.kept), #graph g.picking .edgelabel:not(.kept) { opacity: .2; transition: opacity .12s; }
 #graph g.picking .nd:not(.kept):hover { opacity: .6; }
 
 /* Amber like a selector's warning: the canvas is still right about the model
@@ -1861,7 +1873,7 @@ body.halloween {
 }
 body.halloween ::-webkit-scrollbar-thumb { background: #4a3420; }
 body.halloween ::-webkit-scrollbar-thumb:hover { background: #6a4a2c; }
-body.halloween .legend, body.halloween .graph-status { background: #0f0b08cc; }
+body.halloween .legend, body.halloween .graph-status, body.halloween .graph-cap { background: #0f0b08cc; }
 
 /* A ghost behind Edith's E: the name is painted over it (a positioned box after it in the markup), so the letter keeps its full colour inside a pale halo, lit while a newer release is out, and after
    dark (hw-night, from the browser's own clock). */

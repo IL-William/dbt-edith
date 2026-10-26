@@ -398,6 +398,48 @@ pub fn is_row_role(kind: &str) -> bool {
 /// model joined many times over brings a join key from each.
 pub const ROWS_BY: usize = 8;
 
+/// How strong a role is among the three indirect ones, for the one a model's
+/// box takes when a column reaches it by several: the key that dedups says
+/// more about which rows exist than the one that joins, and that more than a
+/// filter. Zero for any other role.
+pub fn row_rank(kind: &str) -> u8 {
+    ROW_ROLES.iter().position(|r| r.eq_ignore_ascii_case(kind)).map_or(0, |i| i as u8 + 1)
+}
+
+/// The models the indirect edges leaving `c` reach, each with the strongest
+/// role among those edges, by model. An edge into `c`'s own model is left out:
+/// a model reading itself keeps no rows of another. A column's edges are
+/// sorted by the column they reach, so a model's are together and only the
+/// last one found can be the model of the next.
+fn row_models(cll: &ColLineage, c: ColRef, rank: &impl Fn(u8) -> u8) -> Vec<(u32, u8)> {
+    let mut by_model: Vec<(u32, u8)> = Vec::new();
+    for e in cll.outgoing(c).iter().filter(|e| cll.is_indirect(e) && e.to.node != c.node) {
+        match by_model.last_mut().filter(|(m, _)| *m == e.to.node) {
+            Some((_, kind)) => {
+                if rank(e.kind) > rank(*kind) {
+                    *kind = e.kind;
+                }
+            }
+            None => by_model.push((e.to.node, e.kind)),
+        }
+    }
+    by_model
+}
+
+/// What a column walk does with collin's indirect edges (0097, 0118).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RowEdges {
+    /// Left out of the walk, the edges drawn and every count, as if the cache
+    /// had none.
+    Hidden,
+    /// Crossed column to column both ways, one edge per column reached: what
+    /// `--column --indirect` has always answered.
+    ToColumns,
+    /// The page's: upstream as `ToColumns`, downstream one box for each model
+    /// a column keeps the rows of, never an edge to each of its columns.
+    ToModels,
+}
+
 #[derive(Clone, Copy)]
 pub struct ColEdge {
     pub from: ColRef,
@@ -1462,11 +1504,17 @@ impl Graph {
     /// `hidden_down`, so the +N badge says something goes on. Upstream is left
     /// whole: the question is "how is this column used, up to its window", not
     /// where it came from.
-    /// `indirect` crosses collin's indirect edges, a filter's, a join key's
-    /// or a dedup key's, in both directions; without it they are left out of
+    /// `row_edges` says what the walk does with collin's indirect edges, a
+    /// filter's, a join key's or a dedup key's. `Hidden` leaves them out of
     /// the walk, the edges drawn and every count, as if the cache had none
     /// (0097), and only their names reach each column, for its card.
-    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[&str], indirect: bool) -> Lineage<'_> {
+    /// `ToColumns` crosses them in both directions, an edge to each column.
+    /// `ToModels` crosses them upstream the same way, but downstream draws one
+    /// box for each model a column keeps the rows of, a leaf at the depth of
+    /// the column's next step: collin writes such an edge to every column of
+    /// the model, and a wide one would fill the cap at its first level (0118).
+    /// A cut never applies to them there, nor does the walk follow one.
+    pub fn column_lineage(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[&str], row_edges: RowEdges) -> Lineage<'_> {
         // The handler already refuses this case; the guard keeps the borrow of
         // `cll` tied to `self` so the returned Lineage can reference its kinds.
         let Some(cll) = self.cll.as_ref() else {
@@ -1482,20 +1530,31 @@ impl Graph {
                 starts: 0,
                 roots_known: false,
                 indirect_hidden: false,
+                most: 0,
             };
         };
+        let to_models = row_edges == RowEdges::ToModels;
+        let indirect = row_edges != RowEdges::Hidden;
         let cut: Vec<u8> = (0..cll.kinds.len().min(256))
             .filter(|&k| cut.contains(&cll.kinds[k].as_str()))
             .map(|k| k as u8)
             .collect();
         // An edge the walk may cross: an indirect one only when asked for.
         let shown = |e: &ColEdge| cll.crossed(e, indirect);
+        // One it follows to the column it reaches downstream: not an indirect
+        // one when a model's box stands for them.
+        let follows = |e: &ColEdge| shown(e) && !(to_models && cll.is_indirect(e));
+        let rank = |kind: u8| row_rank(cll.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
         let mut depth: HashMap<ColRef, i32> = HashMap::new();
         // Reached downstream only through a cut edge: drawn, not walked from.
         let mut stopped: HashSet<ColRef> = HashSet::new();
         // The level each column below the focus was walked from: a stop's own
         // depth stays its distance, but the walk on from it counts from here.
         let mut walked: HashMap<ColRef, i32> = HashMap::new();
+        // `ToModels`: the models boxed, with the step each was first reached
+        // at, and the edge from each column to a box, with its strongest role.
+        let mut boxes: HashMap<u32, i32> = HashMap::new();
+        let mut box_edges: HashMap<(ColRef, u32), u8> = HashMap::new();
         let mut truncated = false;
         depth.insert(focus, 0);
         walked.insert(focus, 0);
@@ -1514,7 +1573,7 @@ impl Graph {
                     let neighbours: Vec<ColRef> = if upstream {
                         cll.incoming(cur).filter(|e| shown(e)).map(|e| e.from).collect()
                     } else {
-                        cll.outgoing(cur).iter().filter(|e| shown(e) && !cut.contains(&e.kind)).map(|e| e.to).collect()
+                        cll.outgoing(cur).iter().filter(|e| follows(e) && !cut.contains(&e.kind)).map(|e| e.to).collect()
                     };
                     for nb in neighbours {
                         // A stop reached around the cut takes no room, so the
@@ -1533,7 +1592,7 @@ impl Graph {
                         // On to the next neighbour rather than out: a stop among
                         // them is still taken back. Nothing more is added, so
                         // without a cut the answer is the one it always was.
-                        if depth.len() >= max_nodes {
+                        if depth.len() + boxes.len() >= max_nodes {
                             truncated = true;
                             continue;
                         }
@@ -1546,16 +1605,34 @@ impl Graph {
                 }
                 if !upstream && !cut.is_empty() && !truncated {
                     'stop: for &cur in &frontier {
-                        for e in cll.outgoing(cur).iter().filter(|e| shown(e) && cut.contains(&e.kind)) {
+                        for e in cll.outgoing(cur).iter().filter(|e| follows(e) && cut.contains(&e.kind)) {
                             if depth.contains_key(&e.to) {
                                 continue;
                             }
-                            if depth.len() >= max_nodes {
+                            if depth.len() + boxes.len() >= max_nodes {
                                 truncated = true;
                                 break 'stop;
                             }
                             depth.insert(e.to, step);
                             stopped.insert(e.to);
+                        }
+                    }
+                }
+                // The models this level's columns keep the rows of, after the
+                // columns, so a cap drops a box before a column. Only the
+                // focus and the columns walked from, never an upstream member
+                // or a stop, which nothing is walked from.
+                if to_models && !upstream {
+                    for &cur in &frontier {
+                        for (model, kind) in row_models(cll, cur, &rank) {
+                            if !boxes.contains_key(&model) {
+                                if depth.len() + boxes.len() >= max_nodes {
+                                    truncated = true;
+                                    continue;
+                                }
+                                boxes.insert(model, step);
+                            }
+                            box_edges.insert((cur, model), kind);
                         }
                     }
                 }
@@ -1569,11 +1646,31 @@ impl Graph {
         let mut members: Vec<ColRef> = depth.keys().copied().collect();
         members.sort_unstable();
         let pos: HashMap<ColRef, usize> = members.iter().enumerate().map(|(p, &c)| (c, p)).collect();
+        // The boxes follow the columns, by model, and sit past the deepest
+        // column that reaches each, so no edge runs back to one.
+        let mut box_models: Vec<u32> = boxes.keys().copied().collect();
+        box_models.sort_unstable();
+        let box_pos: HashMap<u32, usize> = box_models.iter().enumerate().map(|(k, &m)| (m, members.len() + k)).collect();
+        let mut box_depth = boxes;
+        for &(c, m) in box_edges.keys() {
+            if let Some(d) = box_depth.get_mut(&m) {
+                *d = (*d).max(depth[&c] + 1);
+            }
+        }
         // Nothing leaves a column the walk stopped at, even to a column drawn
         // for another reason: that edge is past the cut, and both ends count it
-        // in their badges.
-        let drawn =
-            |e: &ColEdge| shown(e) && pos.contains_key(&e.from) && pos.contains_key(&e.to) && !stopped.contains(&e.from);
+        // in their badges. Under `ToModels` an indirect edge between two
+        // columns is drawn only into the focus's side: past it, its model's box
+        // is the edge.
+        let drawn = |e: &ColEdge| {
+            shown(e)
+                && pos.contains_key(&e.from)
+                && pos.contains_key(&e.to)
+                && !stopped.contains(&e.from)
+                && !(to_models && cll.is_indirect(e) && depth[&e.to] > 0)
+        };
+        // An indirect edge a box draws in its place, whatever column it reaches.
+        let boxed = |e: &ColEdge| to_models && cll.is_indirect(e) && box_edges.contains_key(&(e.from, e.to.node));
 
         let mut pairs: Vec<([usize; 2], u8)> = Vec::new();
         for (p, &c) in members.iter().enumerate() {
@@ -1585,6 +1682,9 @@ impl Graph {
                     pairs.push(([p, q], e.kind));
                 }
             }
+        }
+        for (&(c, m), &kind) in &box_edges {
+            pairs.push(([pos[&c], box_pos[&m]], kind));
         }
         pairs.sort_unstable();
         pairs.dedup_by(|a, b| a.0 == b.0);
@@ -1610,6 +1710,76 @@ impl Graph {
             .collect();
 
         let focus_node = &self.nodes[focus.node as usize];
+        let mut nodes: Vec<LineageNode<'_>> = members
+            .iter()
+            .map(|&c| {
+                let owner = &self.nodes[c.node as usize];
+                let column = &owner.columns[c.col as usize];
+                let (up_n, mut down_n) = cll.degree(c, indirect);
+                if to_models {
+                    // A model counts once, as it is drawn once.
+                    down_n = cll.degree(c, false).1 + row_models(cll, c, &rank).len();
+                }
+                let mut sub = owner.name.clone();
+                if !column.data_type.is_empty() {
+                    sub.push_str("  ·  ");
+                    sub.push_str(&column.data_type);
+                }
+                // Past the walk, an indirect edge to a model counts once for
+                // the model, and none for a model whose box this column's own
+                // edge reaches: another column's box does not draw it.
+                let mut hidden_down = 0;
+                let mut models: Vec<u32> = Vec::new();
+                for e in cll.outgoing(c).iter().filter(|e| shown(e) && !drawn(e)) {
+                    if !(to_models && cll.is_indirect(e)) {
+                        hidden_down += 1;
+                    } else if e.to.node != c.node && !box_edges.contains_key(&(c, e.to.node)) && !models.contains(&e.to.node) {
+                        models.push(e.to.node);
+                    }
+                }
+                LineageNode {
+                    id: std::borrow::Cow::Owned(format!("{}::{}", owner.id, column.name)),
+                    name: &column.name,
+                    kind: owner.kind,
+                    file: owner.on_disk(),
+                    schema: &owner.schema,
+                    materialized: &owner.materialized,
+                    disabled: owner.disabled,
+                    context: false,
+                    attached: None,
+                    test_name: "",
+                    column: "",
+                    namespace: "",
+                    warn: false,
+                    host: "",
+                    depth: depth[&c],
+                    sub,
+                    incremental: StrategyFacts::default(),
+                    unique_key: &[],
+                    tests: column.tests.len(),
+                    parents: up_n,
+                    children: down_n,
+                    // What a +N opens: an indirect edge counts only when
+                    // the walk may cross it.
+                    hidden_up: cll.incoming(c).filter(|e| shown(e) && !drawn(e) && !boxed(e)).count(),
+                    hidden_up_rows: cll.incoming(c).filter(|e| shown(e) && !drawn(e) && !boxed(e) && cll.is_indirect(e)).count(),
+                    hidden_down: hidden_down + models.len(),
+                    // Filled by `name_rows_by` for the page's card; a
+                    // caller that prints none, `--column`, pays nothing.
+                    rows_by: Vec::new(),
+                    rows_by_more: 0,
+                    rows_of: Vec::new(),
+                    rows_of_more: 0,
+                    at: Some(c),
+                    generated: cll.root(c),
+                    // Without roots the page badges every start `raw`, so
+                    // the mark would say nothing and change the answer.
+                    outside: !cll.roots.is_empty() && cll.outside(c),
+                }
+            })
+            .collect();
+        nodes.extend(box_models.iter().map(|&m| self.whole_model_node(m, box_depth[&m])));
+
         Lineage {
             focus: Some(pos[&focus]),
             truncated,
@@ -1618,87 +1788,83 @@ impl Graph {
             stopped_at,
             starts: 0,
             roots_known: !cll.roots.is_empty(),
-            indirect_hidden: !indirect && cll.has_indirect(),
+            indirect_hidden: row_edges == RowEdges::Hidden && cll.has_indirect(),
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
-            nodes: members
-                .iter()
-                .map(|&c| {
-                    let owner = &self.nodes[c.node as usize];
-                    let column = &owner.columns[c.col as usize];
-                    let (up_n, down_n) = cll.degree(c, indirect);
-                    let mut sub = owner.name.clone();
-                    if !column.data_type.is_empty() {
-                        sub.push_str("  ·  ");
-                        sub.push_str(&column.data_type);
-                    }
-                    LineageNode {
-                        id: std::borrow::Cow::Owned(format!("{}::{}", owner.id, column.name)),
-                        name: &column.name,
-                        kind: owner.kind,
-                        file: owner.on_disk(),
-                        schema: &owner.schema,
-                        materialized: &owner.materialized,
-                        disabled: owner.disabled,
-                        context: false,
-                        attached: None,
-                        test_name: "",
-                        column: "",
-                        namespace: "",
-                        warn: false,
-                        host: "",
-                        depth: depth[&c],
-                        sub,
-                        incremental: StrategyFacts::default(),
-                        unique_key: &[],
-                        tests: column.tests.len(),
-                        parents: up_n,
-                        children: down_n,
-                        // What a +N opens: an indirect edge counts only when
-                        // the walk may cross it.
-                        hidden_up: cll.incoming(c).filter(|e| shown(e) && !drawn(e)).count(),
-                        hidden_up_rows: cll.incoming(c).filter(|e| shown(e) && !drawn(e) && cll.is_indirect(e)).count(),
-                        hidden_down: cll.outgoing(c).iter().filter(|e| shown(e) && !drawn(e)).count(),
-                        // Filled by `name_rows_by` for the page's card; a
-                        // caller that prints none, `--column`, pays nothing.
-                        rows_by: Vec::new(),
-                        rows_by_more: 0,
-                        at: Some(c),
-                        generated: cll.root(c),
-                        // Without roots the page badges every start `raw`, so
-                        // the mark would say nothing and change the answer.
-                        outside: !cll.roots.is_empty() && cll.outside(c),
-                    }
-                })
-                .collect(),
+            most: 0,
+            nodes,
             edges,
         }
     }
 
+    /// A model drawn as one box on a column canvas, standing for every column
+    /// of it an indirect edge reaches (0118): the model's own box, double
+    /// clicked into its lineage, and a leaf, with no +N of its own.
+    fn whole_model_node(&self, i: u32, depth: i32) -> LineageNode<'_> {
+        let n = &self.nodes[i as usize];
+        let sub = if n.materialized.is_empty() { "whole model".to_string() } else { format!("{}  ·  whole model", n.materialized) };
+        LineageNode {
+            id: std::borrow::Cow::Borrowed(&n.id),
+            name: &n.name,
+            kind: n.kind,
+            file: n.on_disk(),
+            schema: &n.schema,
+            materialized: &n.materialized,
+            disabled: n.disabled,
+            context: false,
+            attached: None,
+            test_name: "",
+            column: "",
+            namespace: "",
+            warn: false,
+            host: "",
+            incremental: n.strategy_facts(),
+            unique_key: n.box_key(),
+            depth,
+            sub,
+            tests: n.tests.len(),
+            parents: n.parents.len(),
+            children: n.children.len(),
+            hidden_up: 0,
+            hidden_up_rows: 0,
+            rows_by: Vec::new(),
+            rows_by_more: 0,
+            rows_of: Vec::new(),
+            rows_of_more: 0,
+            hidden_down: 0,
+            at: None,
+            generated: None,
+            outside: false,
+        }
+    }
+
     /// Names, on each column box of `lineage`, the columns whose indirect
-    /// edges reach it, for the page's card (0097). Apart from the walk, which
-    /// `--column` shares and which prints no card.
+    /// edges reach it and the models it keeps the rows of, for the page's card
+    /// (0097, 0118). Apart from the walk, which `--column` shares and which
+    /// prints no card.
     pub fn name_rows_by(&self, lineage: &mut Lineage<'_>) {
         let Some(cll) = self.cll.as_ref() else { return };
         for n in &mut lineage.nodes {
             if let Some(c) = n.at {
                 (n.rows_by, n.rows_by_more) = self.rows_by(cll, c);
+                (n.rows_of, n.rows_of_more) = self.rows_of(cll, c);
             }
         }
     }
 
-    /// The columns whose indirect edges reach `c`, named as a box names them,
-    /// `model.column (role)`, the first `ROWS_BY` in order and how many more.
-    fn rows_by(&self, cll: &ColLineage, c: ColRef) -> (Vec<String>, usize) {
+    /// The columns whose indirect edges reach `c`, as `["model.column",
+    /// role]` pairs for the page to word, the first `ROWS_BY` in order and how
+    /// many more.
+    fn rows_by(&self, cll: &ColLineage, c: ColRef) -> (Vec<[String; 2]>, usize) {
         if !cll.has_indirect() {
             return (Vec::new(), 0);
         }
-        let mut named: Vec<String> = cll
+        let mut named: Vec<[String; 2]> = cll
             .incoming(c)
             .filter(|e| e.from != c && cll.is_indirect(e))
             .map(|e| {
                 let owner = &self.nodes[e.from.node as usize];
                 let role = cll.kinds.get(e.kind as usize).map(String::as_str).unwrap_or("");
-                format!("{}.{} ({role})", owner.name, owner.columns[e.from.col as usize].name)
+                [format!("{}.{}", owner.name, owner.columns[e.from.col as usize].name), role.to_string()]
             })
             .collect();
         named.sort_unstable();
@@ -1706,6 +1872,25 @@ impl Graph {
         let more = named.len().saturating_sub(ROWS_BY);
         named.truncate(ROWS_BY);
         (named, more)
+    }
+
+    /// The models `c`'s indirect edges reach, as `["model", role]` pairs, the
+    /// strongest role of the edges into each, the first `ROWS_BY` in order and
+    /// how many more. Whether the canvas draws them or not, as `rows_by` is.
+    fn rows_of(&self, cll: &ColLineage, c: ColRef) -> (Vec<[String; 2]>, usize) {
+        if !cll.has_indirect() {
+            return (Vec::new(), 0);
+        }
+        let rank = |kind: u8| row_rank(cll.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
+        // Cut before the names are copied: a column can reach hundreds of models.
+        let mut named: Vec<(&str, &str)> = row_models(cll, c, &rank)
+            .into_iter()
+            .map(|(m, kind)| (self.nodes[m as usize].name.as_str(), cll.kinds.get(kind as usize).map(String::as_str).unwrap_or("")))
+            .collect();
+        named.sort_unstable();
+        let more = named.len().saturating_sub(ROWS_BY);
+        named.truncate(ROWS_BY);
+        (named.into_iter().map(|(m, role)| [m.to_string(), role.to_string()]).collect(), more)
     }
 
     /// Folds catalog.json into the graph: fills in missing data types and adds
@@ -1940,6 +2125,7 @@ impl Graph {
             starts: 0,
             roots_known: false,
             indirect_hidden: false,
+            most: 0,
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -1970,6 +2156,8 @@ impl Graph {
                         hidden_up_rows: 0,
                         rows_by: Vec::new(),
                         rows_by_more: 0,
+                        rows_of: Vec::new(),
+                        rows_of_more: 0,
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
@@ -2248,6 +2436,7 @@ impl Graph {
             starts: starts_drawn,
             roots_known: false,
             indirect_hidden: false,
+            most: 0,
             nodes: members
                 .iter()
                 .enumerate()
@@ -2279,6 +2468,8 @@ impl Graph {
                         hidden_up_rows: 0,
                         rows_by: Vec::new(),
                         rows_by_more: 0,
+                        rows_of: Vec::new(),
+                        rows_of_more: 0,
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
@@ -2327,6 +2518,11 @@ pub struct Lineage<'a> {
     /// them out, so the status line and an export can say so (0097).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub indirect_hidden: bool,
+    /// Column mode, from the page's route only: the most nodes one more click
+    /// may ask it to draw, so the page never offers past it (0118). Not sent
+    /// when zero, so every other answer is as it was.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub most: usize,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -2393,10 +2589,19 @@ pub struct LineageNode<'a> {
     /// `model.column (role)`, sorted, at most `ROWS_BY` of them, whether the
     /// canvas draws those edges or not, for the card's "rows kept by" (0097).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub rows_by: Vec<String>,
+    pub rows_by: Vec<[String; 2]>,
     /// How many more there are than `rows_by` names.
     #[serde(skip_serializing_if = "is_zero")]
     pub rows_by_more: usize,
+    /// Column mode only: the models this column's indirect edges reach, as
+    /// `[model, role]`, the strongest role of its edges into each, sorted, at
+    /// most `ROWS_BY` of them, whether the canvas draws those edges or not,
+    /// for the card's "keeps the rows of" (0118).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rows_of: Vec<[String; 2]>,
+    /// How many more there are than `rows_of` names.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rows_of_more: usize,
     pub hidden_down: usize,
     /// Column mode only: the column itself, so a caller other than the page
     /// reads its node and its slot rather than parsing `id` (0088).
@@ -2597,16 +2802,16 @@ mod tests {
         assert!(!cll.outside(at(dim, "tier")), "a filter on a table no node owns is no read of the column");
         assert_eq!(g.meta.cll_dropped, 3, "the dropped edge ends still count, and a root naming no node is none");
 
-        let drawn = serde_json::to_string(&g.column_lineage(at(stg, "customer_id"), 0, 1, 100, &[], true)).unwrap();
+        let drawn = serde_json::to_string(&g.column_lineage(at(stg, "customer_id"), 0, 1, 100, &[], RowEdges::ToColumns)).unwrap();
         assert!(drawn.contains(r#""name":"loaded_at""#) && drawn.contains(r#""generated":["current_timestamp()"]"#), "{drawn}");
         assert!(drawn.ends_with(r#""roots_known":true}"#), "{drawn}");
-        let region = serde_json::to_string(&g.column_lineage(at(dim, "region"), 0, 0, 100, &[], false)).unwrap();
+        let region = serde_json::to_string(&g.column_lineage(at(dim, "region"), 0, 0, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(region.contains(r#""outside":true"#) && !region.contains("generated"), "{region}");
 
         let mut plain = graph();
         plain.merge_col_lineage(cache(vec![edge("customer_id", "customer_id")]), 1);
         let focus = ColRef { node: plain.index["model.shop.stg_customers"], col: plain.col_slot(plain.index["model.shop.stg_customers"], "customer_id").unwrap() };
-        let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[], false)).unwrap();
+        let drawn = serde_json::to_string(&plain.column_lineage(focus, 1, 1, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(!drawn.contains("generated") && !drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
 
         // Without roots, a column read from a table no node owns carries no
@@ -2615,7 +2820,7 @@ mod tests {
         old.merge_col_lineage(cache(vec![to_dim("rel:RAW.CRM.CODES", "region")]), 1);
         let dim = old.index["model.shop.dim_customers"];
         let region = ColRef { node: dim, col: old.col_slot(dim, "region").unwrap() };
-        let drawn = serde_json::to_string(&old.column_lineage(region, 0, 0, 100, &[], false)).unwrap();
+        let drawn = serde_json::to_string(&old.column_lineage(region, 0, 0, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(!drawn.contains("outside") && !drawn.contains("roots_known"), "{drawn}");
     }
 
@@ -2639,17 +2844,17 @@ mod tests {
         );
         let dim = g.index["model.shop.dim_customers"];
         let at = ColRef { node: dim, col: g.col_slot(dim, "customer_id").unwrap() };
-        let lone = serde_json::to_string(&g.column_lineage(at, 0, 0, 100, &[], true)).unwrap();
+        let lone = serde_json::to_string(&g.column_lineage(at, 0, 0, 100, &[], RowEdges::ToColumns)).unwrap();
         assert!(lone.contains(r#""hidden_up":3,"hidden_up_rows":2,"#), "{lone}");
-        let drawn = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], true)).unwrap();
+        let drawn = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], RowEdges::ToColumns)).unwrap();
         assert!(!drawn.contains("hidden_up_rows") && !drawn.contains("indirect_hidden"), "nothing hidden once drawn: {drawn}");
 
         // By default the indirect edges are not walked, not drawn and not
         // counted, and only their names reach the column, for its card.
-        let hidden = named(&g, g.column_lineage(at, 1, 0, 100, &[], false));
-        let bare = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], false)).unwrap();
+        let hidden = named(&g, g.column_lineage(at, 1, 0, 100, &[], RowEdges::Hidden));
+        let bare = serde_json::to_string(&g.column_lineage(at, 1, 0, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(!bare.contains("rows_by"), "the walk alone names nothing, as --column wants: {bare}");
-        assert!(hidden.contains(r#""parents":1,"children":0,"hidden_up":0,"rows_by":["stg_customers.id (join_key)","stg_customers.status (filter)"]"#), "{hidden}");
+        assert!(hidden.contains(r#""parents":1,"children":0,"hidden_up":0,"rows_by":[["stg_customers.id","join_key"],["stg_customers.status","filter"]]"#), "{hidden}");
         assert!(hidden.contains(r#""edge_kinds":["rename"]"#) && hidden.ends_with(r#""indirect_hidden":true}"#), "{hidden}");
         let cll = g.cll.as_ref().unwrap();
         assert_eq!((cll.degree(at, false), cll.degree(at, true)), ((1, 0), (3, 0)));
@@ -2658,7 +2863,9 @@ mod tests {
         assert_eq!((cll.reach_all(&[status], false, false), cll.reach_all(&[status], false, true)), (vec![0], vec![1]));
         // Downstream too: from the column filtered on, nothing is reached
         // with the indirect edges hidden, and the filtered column with them.
-        let down = |indirect: bool| g.column_lineage(status, 0, 3, 100, &[], indirect).nodes.len();
+        let down = |indirect: bool| {
+            g.column_lineage(status, 0, 3, 100, &[], if indirect { RowEdges::ToColumns } else { RowEdges::Hidden }).nodes.len()
+        };
         assert_eq!((down(false), down(true)), (1, 2));
     }
 
@@ -2675,19 +2882,252 @@ mod tests {
         g.merge_col_lineage(cache(edges), 1);
         let dim = g.index["model.shop.dim_customers"];
         let at = ColRef { node: dim, col: g.col_slot(dim, "customer_id").unwrap() };
-        let mut l = g.column_lineage(at, 1, 0, 100, &[], false);
+        let mut l = g.column_lineage(at, 1, 0, 100, &[], RowEdges::Hidden);
         assert_eq!((l.nodes.len(), l.indirect_hidden), (1, true), "an upper-case FILTER is hidden as a filter is");
         g.name_rows_by(&mut l);
         let n = &l.nodes[0];
         assert_eq!((n.rows_by.len(), n.rows_by_more), (ROWS_BY, 3));
-        assert_eq!(n.rows_by[0], "stg_customers.k00 (join_key)");
+        assert_eq!(n.rows_by[0], ["stg_customers.k00".to_string(), "join_key".to_string()]);
 
         let mut plain = graph();
         plain.merge_col_lineage(cache(vec![edge("customer_key", "customer_id")]), 1);
         let dim = plain.index["model.shop.dim_customers"];
         let at = ColRef { node: dim, col: plain.col_slot(dim, "customer_id").unwrap() };
-        let lone = serde_json::to_string(&plain.column_lineage(at, 0, 0, 100, &[], false)).unwrap();
+        let lone = serde_json::to_string(&plain.column_lineage(at, 0, 0, 100, &[], RowEdges::Hidden)).unwrap();
         assert!(lone.contains(r#""hidden_up":1,"hidden_down""#) && !lone.contains("rows") && !lone.contains("indirect"), "{lone}");
+    }
+
+    /// A Jaffle Shop whose models carry no column in their YAML, the cache
+    /// naming them, with the indirect edges of one filtered column: `status`
+    /// of `stg_orders` decides which rows of `orders` and `customers` exist.
+    fn shop(extra: usize) -> Graph {
+        let mut nodes = serde_json::Map::new();
+        for name in ["raw_orders", "stg_orders", "orders", "customers"].into_iter().map(String::from).chain((0..extra).map(|i| format!("mart_{i:02}"))) {
+            nodes.insert(
+                format!("model.shop.{name}"),
+                serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop", "config": { "materialized": "table" } }),
+            );
+        }
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes })).unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    fn link(from: &str, from_col: &str, to: &str, to_col: &str, kind: &str) -> RawColEdge {
+        RawColEdge {
+            from: format!("model.shop.{from}"),
+            from_col: from_col.into(),
+            to: format!("model.shop.{to}"),
+            to_col: to_col.into(),
+            kind: kind.into(),
+        }
+    }
+
+    fn col(g: &Graph, model: &str, column: &str) -> ColRef {
+        let node = g.index[&format!("model.shop.{model}")];
+        ColRef { node, col: g.col_slot(node, column).unwrap() }
+    }
+
+    /// Where an indirect edge goes, the page draws one box for the model, not
+    /// an edge to each of its columns, named by the strongest role among the
+    /// column's edges into it (0118).
+    #[test]
+    fn a_column_keeps_the_rows_of_a_model_in_one_box() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("raw_orders", "status", "stg_orders", "status", "filter"),
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("stg_orders", "status", "orders", "order_id", "dedup_key"),
+                link("stg_orders", "status", "orders", "amount", "filter"),
+                link("stg_orders", "status", "customers", "customer_id", "join_key"),
+                link("stg_orders", "status", "customers", "status", "filter"),
+                // A model reading itself keeps no rows of another.
+                link("stg_orders", "status", "stg_orders", "order_id", "filter"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = g.column_lineage(focus, 1, 1, 100, &[], RowEdges::ToModels);
+        let ids: Vec<&str> = l.nodes.iter().map(|n| n.id.as_ref()).collect();
+        assert_eq!(
+            ids,
+            ["model.shop.orders::status", "model.shop.raw_orders::status", "model.shop.stg_orders::status", "model.shop.customers", "model.shop.orders"],
+            "the columns by model, then a box a model: two upstream, one the value reaches"
+        );
+        let box_of = |id: &str| l.nodes.iter().position(|n| n.id == id).unwrap();
+        let (orders, customers) = (box_of("model.shop.orders"), box_of("model.shop.customers"));
+        let (raw, fed) = (box_of("model.shop.raw_orders::status"), box_of("model.shop.orders::status"));
+        assert_eq!((l.nodes[orders].depth, l.nodes[customers].depth), (1, 1));
+        assert_eq!((l.nodes[orders].sub.as_str(), l.nodes[orders].at), ("table  ·  whole model", None));
+        let focus_at = l.focus.unwrap();
+        let edge = |a: usize, b: usize| l.edges.iter().position(|e| *e == [a, b]).map(|i| l.edge_kinds[i]);
+        assert_eq!(edge(focus_at, orders), Some("dedup_key"), "the strongest of its edges into orders");
+        assert_eq!(edge(focus_at, customers), Some("join_key"));
+        assert_eq!(edge(raw, focus_at), Some("filter"), "upstream an indirect edge is drawn column to column");
+        assert_eq!(edge(focus_at, fed), Some("rename"), "and the value edge is drawn, the indirect one beside it is not");
+        assert_eq!(l.edges.len(), 4, "no edge to the other columns of orders, nor to the focus's own model: {:?}", l.edge_kinds);
+        for b in [orders, customers] {
+            let n = &l.nodes[b];
+            assert_eq!((n.hidden_up, n.hidden_down, n.hidden_up_rows), (0, 0, 0), "a leaf, with no +N of its own");
+        }
+        let f = &l.nodes[focus_at];
+        assert_eq!((f.hidden_down, f.hidden_up), (0, 0), "every indirect edge is drawn, by its box or a column");
+        assert_eq!(f.children, 3, "a model counts once, as it is drawn once: one value edge and two models");
+        assert!(!l.indirect_hidden && !l.truncated);
+
+        // The command line's walk is the one it always was: an edge to each column.
+        let wide = g.column_lineage(focus, 1, 1, 100, &[], RowEdges::ToColumns);
+        let mut names: Vec<String> = wide.nodes.iter().map(|n| n.id.to_string()).collect();
+        names.sort();
+        assert_eq!(names.len(), 8, "{names:?}");
+        assert!(wide.nodes.iter().all(|n| n.at.is_some()), "no box of a whole model");
+
+        // A role a stop names never applies to an indirect edge, and the walk
+        // follows none past a box.
+        let cut = g.column_lineage(focus, 1, 2, 100, &["filter", "dedup_key"], RowEdges::ToModels);
+        assert!(cut.stopped_at.is_empty());
+        assert_eq!(cut.nodes.len(), 5);
+    }
+
+    /// A box counts toward the cap and is dropped before any column of its
+    /// level; a model left without one counts once in the column's +N, not
+    /// once for each of its columns.
+    #[test]
+    fn a_box_counts_toward_the_cap_and_a_model_without_one_counts_once() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("stg_orders", "status", "orders", "order_id", "filter"),
+                link("stg_orders", "status", "orders", "amount", "filter"),
+                link("stg_orders", "status", "customers", "customer_id", "join_key"),
+                link("stg_orders", "status", "customers", "status", "join_key"),
+                link("stg_orders", "status", "customers", "email", "join_key"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let full = g.column_lineage(focus, 0, 1, 3, &[], RowEdges::ToModels);
+        assert_eq!((full.nodes.len(), full.truncated), (3, true), "the focus, the column it feeds and one box");
+        assert_eq!(full.nodes.iter().filter(|n| n.at.is_none()).count(), 1);
+        let f = &full.nodes[full.focus.unwrap()];
+        assert_eq!(f.hidden_down, 1, "the model with no box, once, not for each of its three columns");
+        let roomy = g.column_lineage(focus, 0, 1, 4, &[], RowEdges::ToModels);
+        assert_eq!((roomy.nodes.len(), roomy.truncated, roomy.nodes[roomy.focus.unwrap()].hidden_down), (4, false, 0));
+        // Nothing is drawn of an indirect edge past the walk's own depth.
+        let lone = g.column_lineage(focus, 0, 0, 100, &[], RowEdges::ToModels);
+        assert_eq!((lone.nodes.len(), lone.nodes[0].hidden_down), (1, 3), "one value edge and two models");
+    }
+
+    /// A box takes a column's indirect edges off its +N only when the box is
+    /// that column's: another column's does not draw them. Both ends of an
+    /// edge no box draws say so.
+    #[test]
+    fn a_box_of_another_column_does_not_draw_this_columns_edges() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("raw_orders", "status", "stg_orders", "status", "filter"),
+                link("raw_orders", "status", "orders", "status", "filter"),
+                link("raw_orders", "status", "customers", "customer_id", "filter"),
+                link("stg_orders", "status", "customers", "customer_id", "join_key"),
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("orders", "status", "customers", "email", "filter"),
+                link("orders", "status", "customers", "status", "filter"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = g.column_lineage(focus, 1, 1, 100, &[], RowEdges::ToModels);
+        let at = |id: &str| l.nodes.iter().position(|n| n.id == id).unwrap();
+        assert!(l.nodes.iter().any(|n| n.id == "model.shop.customers"), "the focus's join key draws a box");
+        // At the depth asked, no box of its own: the model counts once for its two edges.
+        assert_eq!(l.nodes[at("model.shop.orders::status")].hidden_down, 1);
+        // An upstream member has no box edge either, and counts each model once.
+        assert_eq!(l.nodes[at("model.shop.raw_orders::status")].hidden_down, 2);
+        // The column it reaches counts the edge no box draws, and says it is an indirect one.
+        let target = &l.nodes[at("model.shop.orders::status")];
+        assert_eq!((target.hidden_up, target.hidden_up_rows), (1, 1));
+        // The focus's own box does draw its edge.
+        assert_eq!(l.nodes[l.focus.unwrap()].hidden_down, 0);
+    }
+
+    /// A box sits past the deepest column that reaches it, so no edge runs
+    /// back to it, and nothing is walked from it.
+    #[test]
+    fn a_box_sits_past_every_column_that_reaches_it() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("stg_orders", "status", "customers", "customer_id", "join_key"),
+                link("orders", "status", "customers", "customer_id", "filter"),
+                link("orders", "status", "customers", "status", "rename"),
+                link("stg_orders", "status", "customers", "status", "join_key"),
+                link("customers", "customer_id", "raw_orders", "customer_id", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = g.column_lineage(focus, 0, 2, 100, &[], RowEdges::ToModels);
+        let customers = l.nodes.iter().position(|n| n.id == "model.shop.customers").unwrap();
+        assert_eq!(l.nodes[customers].depth, 2, "the filter on orders.status is a level past the focus's join key");
+        let mut into: Vec<(i32, &str)> = l.edges.iter().zip(&l.edge_kinds).filter(|(e, _)| e[1] == customers).map(|(e, k)| (l.nodes[e[0]].depth, *k)).collect();
+        into.sort();
+        assert_eq!(into, [(0, "join_key"), (1, "filter")]);
+        assert!(l.nodes.iter().all(|n| n.id != "model.shop.raw_orders::customer_id"), "no column of a box's model is walked from it");
+        // The focus's join key reaches a column of customers the value walk
+        // reached too: the box draws that edge, and leaves it no +N.
+        let fed = l.nodes.iter().position(|n| n.id == "model.shop.customers::status").unwrap();
+        assert_eq!((l.nodes[fed].depth, l.nodes[fed].hidden_up, l.nodes[fed].hidden_up_rows), (2, 0, 0));
+        assert_eq!(l.edges.len(), 4, "two value edges and the box's two: {:?}", l.edge_kinds);
+    }
+
+    /// The card says which models a column keeps the rows of, the strongest
+    /// role of each, eight at most with the rest counted, with the indirect
+    /// button on or off.
+    #[test]
+    fn a_card_names_the_models_a_column_keeps_the_rows_of() {
+        let mut g = shop(9);
+        let mut edges = vec![
+            link("raw_orders", "status", "stg_orders", "status", "filter"),
+            link("stg_orders", "status", "stg_orders", "order_id", "filter"),
+        ];
+        edges.extend((0..9).map(|i| link("stg_orders", "status", &format!("mart_{i:02}"), "id", "filter")));
+        g.merge_col_lineage(cache(edges), 1);
+        let focus = col(&g, "stg_orders", "status");
+        for edges in [RowEdges::Hidden, RowEdges::ToModels, RowEdges::ToColumns] {
+            let mut l = g.column_lineage(focus, 0, 0, 100, &[], edges);
+            g.name_rows_by(&mut l);
+            let n = &l.nodes[l.focus.unwrap()];
+            assert_eq!((n.rows_of.len(), n.rows_of_more), (ROWS_BY, 1), "{edges:?}: its own model is none it keeps the rows of");
+            assert_eq!(n.rows_of[0], ["mart_00".to_string(), "filter".to_string()]);
+            assert_eq!(n.rows_of[ROWS_BY - 1], ["mart_07".to_string(), "filter".to_string()]);
+        }
+
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("raw_orders", "status", "stg_orders", "status", "filter"),
+                link("stg_orders", "status", "orders", "order_id", "join_key"),
+                link("stg_orders", "status", "orders", "status", "dedup_key"),
+                link("stg_orders", "status", "customers", "status", "filter"),
+            ]),
+            1,
+        );
+        let mut l = g.column_lineage(col(&g, "stg_orders", "status"), 0, 0, 100, &[], RowEdges::Hidden);
+        g.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l.nodes[0]).unwrap();
+        assert!(json.contains(r#""rows_by":[["raw_orders.status","filter"]]"#), "{json}");
+        assert!(json.contains(r#""rows_of":[["customers","filter"],["orders","dedup_key"]]"#), "the strongest role into each: {json}");
+        assert!(!json.contains("rows_of_more"), "{json}");
+
+        let mut plain = shop(0);
+        plain.merge_col_lineage(cache(vec![link("stg_orders", "status", "orders", "status", "rename")]), 1);
+        let mut l = plain.column_lineage(col(&plain, "stg_orders", "status"), 0, 1, 100, &[], RowEdges::ToModels);
+        plain.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l).unwrap();
+        assert!(!json.contains("rows_of") && !json.contains("rows_by") && !json.contains("most"), "a cache with no indirect edge answers as before: {json}");
     }
 
     // stg.x feeds int.x, which feeds fct.x through a window and wide.x through
@@ -2722,13 +3162,13 @@ mod tests {
         };
         let hidden = |l: &Lineage, name: &str| l.nodes.iter().find(|n| n.sub == name).unwrap().hidden_down;
 
-        let whole = g.column_lineage(at(&g, "int"), 3, 3, 100, &[], false);
+        let whole = g.column_lineage(at(&g, "int"), 3, 3, 100, &[], RowEdges::Hidden);
         assert_eq!(whole.nodes.len(), 4, "{:?}", names(&whole));
-        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], false);
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], RowEdges::Hidden);
         assert_eq!(names(&cut), ["fct", "int", "stg"], "the window stays drawn, rpt past it goes");
         assert_eq!(cut.edge_kinds, ["window", "window"]);
         assert_eq!((hidden(&cut, "int"), hidden(&cut, "fct")), (0, 1), "the badge is on the column past the window");
-        let unknown = g.column_lineage(at(&g, "int"), 3, 3, 100, &["no_such_role"], false);
+        let unknown = g.column_lineage(at(&g, "int"), 3, 3, 100, &["no_such_role"], RowEdges::Hidden);
         assert_eq!(unknown.nodes.len(), 4);
 
         // fct.x is reached through the window and around it, through wide.x:
@@ -2741,7 +3181,7 @@ mod tests {
             link("fct", "rpt", "rename"),
         ];
         g.merge_col_lineage(cache(around), 2);
-        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], false);
+        let cut = g.column_lineage(at(&g, "int"), 3, 3, 100, &["window"], RowEdges::Hidden);
         assert_eq!(names(&cut), ["fct", "int", "rpt", "stg", "wide"]);
         assert!(cut.edge_kinds.contains(&"window"));
         assert_eq!(hidden(&cut, "fct"), 0);
@@ -2927,12 +3367,12 @@ mod tests {
         };
 
         g.merge_col_lineage(cache(vec![link("f", "a", "window"), link("f", "b", "rename"), link("a", "b", "rename")]), 1);
-        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
+        let l = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&l), ["a", "b", "f"]);
         assert_eq!(l.edges.len(), 2, "a to b is past the window");
         assert_eq!((node(&l, "a"), node(&l, "b")), ((0, 1), (1, 0)), "both ends of it count it");
         assert_eq!(l.stopped_at, ["window"]);
-        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[], false).stopped_at.is_empty());
+        assert!(g.column_lineage(at(&g, "f"), 0, 3, 100, &[], RowEdges::Hidden).stopped_at.is_empty());
 
         let around = vec![
             link("f", "s", "window"),
@@ -2942,15 +3382,15 @@ mod tests {
             link("s", "x", "rename"),
         ];
         g.merge_col_lineage(cache(around), 2);
-        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"], false);
+        let two = g.column_lineage(at(&g, "f"), 0, 2, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&two), ["b", "c", "f", "s"], "within two levels s is reached only past the window");
         assert_eq!(node(&two, "s").1, 1);
-        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&three), ["b", "c", "f", "s"], "at three, s is reached around it, on the last level");
-        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], false);
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&four), ["b", "c", "f", "s", "x"]);
         // The same depths with nothing stopped, for contrast: x comes at two.
-        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[], false)), ["b", "c", "f", "s", "x"]);
+        assert_eq!(drawn(&g.column_lineage(at(&g, "f"), 0, 2, 100, &[], RowEdges::Hidden)), ["b", "c", "f", "s", "x"]);
     }
 
     // The second review's probes: under a cap the stop next to the focus
@@ -2998,10 +3438,10 @@ mod tests {
             ]),
             1,
         );
-        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"], false);
+        let capped = g.column_lineage(at(&g, "f"), 0, 3, 4, &["window"], RowEdges::Hidden);
         assert!(capped.truncated);
         assert_eq!(drawn(&capped), [d("a1", 1), d("a2", 2), d("f", 0), d("w", 1)]);
-        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"], false);
+        let far = g.column_lineage(at(&g, "m05"), 0, 3, 100, &["window", "aggregate"], RowEdges::Hidden);
         assert_eq!(drawn(&far), [d("m01", 2), d("m05", 0), d("m06", 1), d("m07", 2), d("m09", 1)]);
         assert_eq!(far.stopped_at, ["window"], "aggregate is ticked, but nothing stopped at one");
     }
@@ -3043,7 +3483,7 @@ mod tests {
             cache(vec![link("f", "s1", "window"), link("f", "s2", "window"), link("s1", "s2", "aggregate")]),
             1,
         );
-        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"], false);
+        let two = g.column_lineage(at(&g, "f"), 0, 1, 100, &["window", "aggregate"], RowEdges::Hidden);
         assert_eq!(two.stopped_at, ["window"], "the aggregate between the two stops is not drawn");
         assert_eq!(two.edge_kinds, ["window", "window"]);
 
@@ -3056,8 +3496,8 @@ mod tests {
             ]),
             2,
         );
-        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], true);
-        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], true);
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], RowEdges::ToColumns);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], RowEdges::ToColumns);
         assert!(!roomy.truncated && roomy.stopped_at.is_empty());
         assert_eq!((full.edges.len(), &full.stopped_at), (roomy.edges.len(), &roomy.stopped_at), "a cap that holds every column");
 
@@ -3074,8 +3514,8 @@ mod tests {
             ]),
             4,
         );
-        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], true);
-        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], true);
+        let roomy = g.column_lineage(at(&g, "f"), 0, 2, 200, &["window"], RowEdges::ToColumns);
+        let full = g.column_lineage(at(&g, "f"), 0, 2, 3, &["window"], RowEdges::ToColumns);
         assert!(!roomy.truncated && roomy.stopped_at.is_empty() && roomy.edge_kinds.contains(&"filter"));
         assert!(full.truncated, "b is turned away");
         assert_eq!(
@@ -3094,10 +3534,10 @@ mod tests {
             ]),
             3,
         );
-        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
+        let three = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&three), [d("a", 1), d("b", 2), d("f", 0), d("p", 1)]);
         assert!(three.stopped_at.is_empty(), "p is reached around the window: not a stop");
-        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], false);
+        let four = g.column_lineage(at(&g, "f"), 0, 4, 100, &["window"], RowEdges::Hidden);
         assert_eq!(drawn(&four), [d("a", 1), d("b", 2), d("f", 0), d("p", 1), d("t", 4)]);
 
         // A diamond: p is met from a, then from b with the cap full of it.
@@ -3111,9 +3551,9 @@ mod tests {
             5,
         );
         for (focus, up, down) in [("f", 0, 2), ("p", 2, 0)] {
-            let whole = g.column_lineage(at(&g, focus), up, down, 4, &[], false);
+            let whole = g.column_lineage(at(&g, focus), up, down, 4, &[], RowEdges::Hidden);
             assert_eq!((whole.nodes.len(), whole.truncated), (4, false), "{focus} {up}+{down}, every column drawn");
-            let cut = g.column_lineage(at(&g, focus), up, down, 3, &[], false);
+            let cut = g.column_lineage(at(&g, focus), up, down, 3, &[], RowEdges::Hidden);
             assert_eq!((cut.nodes.len(), cut.truncated), (3, true), "{focus} {up}+{down}");
         }
 
@@ -3131,8 +3571,8 @@ mod tests {
             ]),
             6,
         );
-        let roomy = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], false);
-        let full = g.column_lineage(at(&g, "f"), 0, 3, 5, &["window"], false);
+        let roomy = g.column_lineage(at(&g, "f"), 0, 3, 100, &["window"], RowEdges::Hidden);
+        let full = g.column_lineage(at(&g, "f"), 0, 3, 5, &["window"], RowEdges::Hidden);
         assert!(roomy.stopped_at.is_empty() && !roomy.truncated);
         assert!(!full.truncated && full.stopped_at.is_empty(), "nothing cut, nothing stopped");
         assert_eq!((drawn(&full), full.edges.len()), (drawn(&roomy), roomy.edges.len()));

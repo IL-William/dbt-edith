@@ -11,7 +11,7 @@
 //! name. stdout carries the answer and nothing else.
 
 use crate::collin::{self, iso_utc, Available, RawColLineage};
-use crate::graph::{ColRef, Graph, Kind, Lineage};
+use crate::graph::{ColRef, Graph, Kind, Lineage, RowEdges};
 use crate::ls::{self, Output, ANSWERED, CANNOT_RUN, REFUSED};
 use crate::{collin_run, files, profiles};
 use std::collections::{BTreeMap, HashMap};
@@ -71,12 +71,11 @@ pub struct Ask {
 
 /// What `--run-collin` hands collin besides the manifest: the catalog and the
 /// folder of compiled SQL the user named, each found beside the manifest
-/// otherwise, where dbt writes them, and `--indirect`, since an answer asked
-/// to cross indirect edges has none unless collin writes them.
+/// otherwise, where dbt writes them. collin always writes the indirect edges
+/// (0118), so an answer asked to cross them has them.
 pub struct Produce {
     pub catalog: Option<PathBuf>,
     pub compiled: Option<PathBuf>,
-    pub indirect: bool,
 }
 
 /// `--up` and `--down`: a number of levels, or `all`.
@@ -295,7 +294,6 @@ fn produce(
         manifest: whole(manifest),
         catalog: whole(&p.catalog.clone().unwrap_or_else(|| folder.join("catalog.json"))),
         compiled: p.compiled.as_deref().map(whole),
-        indirect: p.indirect,
         out: whole(&out),
         report: whole(&report),
     };
@@ -390,7 +388,10 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
     }
     // No cap: a caller asking for every level wants all of them, as
     // `--select` prints a whole selection.
-    let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut, ask.indirect);
+    // Per column, the walk the command line has always answered: the page's
+    // box for a whole model is no row of this answer (0118).
+    let row_edges = if ask.indirect { RowEdges::ToColumns } else { RowEdges::Hidden };
+    let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut, row_edges);
     let models = reached(graph, &lineage, ask);
     if output == Output::Compact && !models.is_empty() {
         writeln!(out, "{COMPACT_HEADER}")?;
@@ -1310,7 +1311,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         let manifest = folder.join("manifest.json");
         std::fs::write(&manifest, "{}").unwrap();
         std::fs::create_dir_all(dir.join("sql")).unwrap();
-        let p = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
+        let p = Produce { catalog: None, compiled: Some(dir.join("sql")) };
         let mut err = Vec::new();
         let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
         // The names the page's own run writes, so the page shows this run.
@@ -1325,13 +1326,13 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         assert!(args.starts_with(&format!("generate {}", named("--compiled", dir.join("sql")))), "{args}");
         assert!(args.contains(&named("--manifest", manifest.clone())), "{args}");
         assert!(args.contains(&named("--catalog", folder.join("catalog.json"))), "the catalog beside the manifest: {args}");
-        assert!(!args.contains("--indirect"), "{args}");
+        assert!(args.contains(" --indirect "), "collin always writes the indirect edges the page draws: {args}");
         assert!(args.contains(&named("--project", dir.clone())), "a manifest under the project gets it: {args}");
 
         // A catalog named is the one handed over, and no folder is unless
-        // named; an answer crossing indirect edges has collin write them.
+        // named.
         std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
-        let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None, indirect: true };
+        let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None };
         produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
@@ -1349,7 +1350,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 
         // A collin older than WANTS still runs, and says what updating brings.
         let mut err = Vec::new();
-        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None, indirect: false }, stand_in(&dir, "0.0.9", WRITES), &AtomicBool::new(false), &mut err)
+        produce(&dir, &manifest, &folder, &Produce { catalog: None, compiled: None }, stand_in(&dir, "0.0.9", WRITES), &AtomicBool::new(false), &mut err)
             .unwrap()
             .unwrap();
         let said = String::from_utf8(err).unwrap();
@@ -1361,7 +1362,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         let aside = r#"echo '{"version":1,"source":"collin","edges":[]}' > "$out"
 echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
         let mut err = Vec::new();
-        let p = Produce { catalog: None, compiled: None, indirect: false };
+        let p = Produce { catalog: None, compiled: None };
         produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
@@ -1378,10 +1379,10 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
             produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.10.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
             String::from_utf8(err).unwrap()
         };
-        let said = warned(&Produce { catalog: None, compiled: None, indirect: false });
+        let said = warned(&Produce { catalog: None, compiled: None });
         assert!(said.contains("found no compiled file in /ci/target/compiled for 2 of the models"), "{said}");
         assert!(said.contains("--compiled DIR names the folder dbt compiled into"), "{said}");
-        let said = warned(&Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false });
+        let said = warned(&Produce { catalog: None, compiled: Some(dir.join("sql")) });
         assert!(said.contains("for 2 of the models") && said.contains("check that it is the folder"), "{said}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1399,7 +1400,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         });
         std::fs::write(dir.join("target").join("manifest.json"), manifest.to_string()).unwrap();
         let mut a = ask("nope.amount", 0, 1);
-        a.produce = Some(Produce { catalog: None, compiled: None, indirect: false });
+        a.produce = Some(Produce { catalog: None, compiled: None });
         assert_eq!(run(&dir, None, &a, Output::Name), REFUSED);
         assert!(!dir.join("target").join("column_lineage.collin.json").exists(), "collin never ran");
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1413,7 +1414,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         std::fs::write(&manifest, "{}").unwrap();
         let cache = dir.join("column_lineage.collin.json");
         std::fs::write(&cache, r#"{"version":1,"source":"collin","producer":"collin 0.8.0","edges":[]}"#).unwrap();
-        let both = Produce { catalog: None, compiled: Some(dir.join("sql")), indirect: false };
+        let both = Produce { catalog: None, compiled: Some(dir.join("sql")) };
         let said = |p: &Produce, collin: collin_run::Located| {
             let mut err = Vec::new();
             let got = produce(&dir, &manifest, &dir, p, collin, &AtomicBool::new(false), &mut err).unwrap();
@@ -1427,7 +1428,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         let (got, err) = said(&both, stand_in(&dir, "0.10.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --compiled") && err.contains("not a folder"), "{err}");
-        let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None, indirect: false };
+        let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None };
         let (got, err) = said(&no_catalog, stand_in(&dir, "0.10.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --catalog") && err.contains("not a file"), "{err}");

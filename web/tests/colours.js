@@ -159,13 +159,18 @@ var noRoots = { nodes: [{ name: 'loaded_at', kind: 'model' }, { name: 'code', ki
 check('without roots in the cache, a model\'s or a snapshot\'s column with nothing feeding it stays raw',
       nodeRoles(noRoots).join(','), 'raw,raw,raw,rename');
 
-print('\n--- indirect edges: dashed, and read by no badge (0097) ---');
+print('\n--- indirect edges: dashed, a hue each, and read by no badge (0097, 0118) ---');
 // collin's filter, join key and dedup key edges say which rows a model keeps,
-// not where a value comes from: one colour, one dash, and no badge from them.
-check('the three indirect roles share one colour', [roleColor('filter'), roleColor('join_key'), roleColor('DEDUP_KEY')].join(),
-      [roleColor('indirect'), roleColor('indirect'), roleColor('indirect')].join());
+// not where a value comes from: one dash and no badge from them, and a hue
+// each, since the page names them by their SQL clause.
+var ROWS = ['filter', 'join_key', 'dedup_key'];
+check('each indirect role has a hue of its own',
+      ROWS.map(roleColor).filter(function (c, i, all) { return all.indexOf(c) === i; }).length, 3);
+check('in any case', [roleColor('FILTER'), roleColor('Join_Key'), roleColor('DEDUP_KEY')].join(), ROWS.map(roleColor).join());
 check('which no value role and no badge uses',
-      ROLES.concat(['raw', 'generated', '']).filter(function (r) { return roleColor(r) === roleColor('indirect'); }).join(), '');
+      ROLES.concat(['raw', 'generated', '']).filter(function (r) { return ROWS.indexOf(r) < 0 && ROWS.map(roleColor).indexOf(roleColor(r)) >= 0; }).join(), '');
+check('and the legend\'s indirect entry, which lights all three, is none of them',
+      ROWS.filter(function (r) { return roleColor(r) === roleColor('indirect'); }).join(), '');
 var rowsIn = { roots_known: true, nodes: [
   { name: 'status', kind: 'seed' }, { name: 'loaded_at', kind: 'model' }, { name: 'id', kind: 'model' },
   { name: 'amount', kind: 'model' }, { name: 'at', kind: 'model', generated: ['now()'] },
@@ -189,6 +194,9 @@ check('every dash is its own: a test, a back edge, an indirect edge and both', d
   return v && dashes.indexOf(v) === i; }).length, 5);
 check('an indirect edge is drawn before .edge.hi, which keeps its dash and takes the stroke',
       css.indexOf('.edge.indirect {') < css.indexOf('.edge.hi {') && !/\.edge\.hi \{[^}]*dasharray/.test(css), true);
+check('a lit indirect edge keeps its role\'s hue, after .edge.hi, and still its dash',
+      css.indexOf('.edge.hi {') < css.indexOf('.edge.indirect.hi {') && /\.edge\.indirect\.hi \{[^}]*stroke:\s*var\(--edge-col\)/.test(css)
+      && !/\.edge\.indirect\.hi \{[^}]*dasharray/.test(css), true);
 check('the canvas gives an indirect edge its class', /isRowKind\(d\.edge_kinds && d\.edge_kinds\[i\]\) \? ' indirect' : ''/.test(lin), true);
 
 print('\n--- a seed does not pass for a table ---');
@@ -241,6 +249,7 @@ ROLES.forEach(function (r) { beside['the ' + r + ' role'] = roleColor(r); });
 beside['the raw badge'] = roleColor('raw');
 beside['the generated badge'] = roleColor('generated');
 beside['the indirect edges'] = roleColor('indirect');
+ROWS.forEach(function (r) { beside['the ' + r + ' edges'] = roleColor(r); });
 Object.keys(beside).forEach(function (k) {
   var seen = apart(seed, beside[k]);
   var redGreen = Math.min(apart(seed, beside[k], CVD.protan), apart(seed, beside[k], CVD.deutan));
@@ -248,6 +257,23 @@ Object.keys(beside).forEach(function (k) {
   print((ok ? 'PASS  ' : 'FAIL  ') + 'a seed stands apart from ' + k + ': ' + seen.toFixed(1)
         + ', and ' + redGreen.toFixed(1) + ' to a red-green colour-blind eye' + (ok ? '' : '   expected 15 and 8'));
 });
+
+// The three indirect hues sit side by side wherever a model is filtered,
+// joined and deduplicated, so they are held apart from each other, to a
+// red-green colour-blind eye too, and from every colour a box or an edge of
+// another role may have. The palette is crowded: ten is as far as three more
+// hues go from each other, six and a half from the rest (0118).
+var rowHues = ROWS.map(roleColor);
+var rowPairs = [[0, 1], [0, 2], [1, 2]].map(function (p) {
+  return Math.min(apart(rowHues[p[0]], rowHues[p[1]]), apart(rowHues[p[0]], rowHues[p[1]], CVD.protan), apart(rowHues[p[0]], rowHues[p[1]], CVD.deutan));
+});
+check('the three indirect hues are ' + Math.min.apply(null, rowPairs).toFixed(1) + ' from each other at least, ten at that',
+      Math.min.apply(null, rowPairs) >= 10, true);
+var elsewhere = boxColours.concat(ROLES.map(roleColor), [roleColor('raw'), roleColor('generated'), roleColor('')]);
+var rowNearest = Math.min.apply(null, rowHues.map(function (c) {
+  return Math.min.apply(null, elsewhere.map(function (o) { return apart(c, o); }));
+}));
+check('and ' + rowNearest.toFixed(1) + ' from every other colour, six and a half at least', rowNearest >= 6.5, true);
 
 // The two badges of a start sit side by side wherever a model reads a source
 // beside a literal, so they are held to a seed's floors against each other.

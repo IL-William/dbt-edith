@@ -422,9 +422,6 @@ pub struct Job {
     /// The folder dbt compiled into, when the user named one; collin's own
     /// default, `compiled/` beside the manifest, otherwise.
     pub compiled: Option<PathBuf>,
-    /// collin's `--indirect`: its filter, join key and dedup key edges, which
-    /// it writes only when told. The page never asks for them.
-    pub indirect: bool,
     pub out: PathBuf,
     pub report: PathBuf,
 }
@@ -823,9 +820,10 @@ pub fn run_stoppable(job: &Job, deadline: Duration, stop: &AtomicBool) -> Result
     if let Some(dir) = &job.compiled {
         command.arg("--compiled").arg(dir);
     }
-    if job.indirect {
-        command.arg("--indirect");
-    }
+    // Always: the page draws the indirect edges as one box a model, and the
+    // command line crosses them when asked, so a cache without them would
+    // leave either to strip what the other wrote (0118).
+    command.arg("--indirect");
     // Only when the manifest is the project's: collin reads the project's
     // seeds for it, and another project's manifest must not get them (0109).
     if manifest_in_project(&job.manifest, &job.project) {
@@ -955,7 +953,6 @@ pub(crate) mod tests {
             manifest: dir.join("manifest.json"),
             catalog: dir.join("catalog.json"),
             compiled: None,
-            indirect: false,
             out: dir.join("column_lineage.collin.json"),
             report: dir.join(REPORT),
         }

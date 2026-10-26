@@ -15,6 +15,12 @@ column filtered on.
 
 ## Decision
 
+*Amended by [0118](0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md):
+the page always runs collin with `--indirect`; downstream, an indirect edge
+ends on one box for its model, each of the three roles has a hue and is named
+by its SQL clause, the card says what a column keeps the rows of, and stop at
+lists no indirect role.*
+
 - **Hidden by default.** Off, the server crosses none of them in either
   direction, and no +N, status line or Catalog figure counts them; the status
   line and an export say `indirect edges hidden`. An `indirect` button, an eye

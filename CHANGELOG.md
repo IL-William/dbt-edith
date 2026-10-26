@@ -13,6 +13,22 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.53.0 - 2026-10-26
+
+- Draw a column's indirect edges, the ones a `WHERE`, a `JOIN` or a `QUALIFY`
+  makes, as one dashed edge to a box for the whole model, named by its clause
+  and in a hue of its own, where they were never asked of collin and so never
+  seen. Regenerate once after updating, since the page now always asks collin
+  for them (0118).
+- Say on a column's card which models it keeps the rows of, beside which
+  columns keep its own.
+- Draw up to 1000 boxes for a column, up from 200, with a button to draw up to
+  3000 for that column alone.
+- Leave the indirect roles out of the stop at menu, whether the indirect
+  button is on or not.
+- Compare two kept collin runs without their indirect edges when only one of
+  them holds any, and say so.
+
 ## 1.52.0 - 2026-10-26
 
 - Show when each model was last built in each environment, and how that run

@@ -5,7 +5,7 @@
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor,
-  edgeLegendLabel: edgeLegendLabel, legendSwatch: legendSwatch };
+  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function legendEntries'), src.indexOf('function paintLegend')));
@@ -84,20 +84,40 @@ var lone = { mode: 'column', roots_known: true, nodes: [
 check('a root drawn alone puts generated in the legend', labels(legendEntries(lone)), ['generated', 'table']);
 check('and picking it keeps that column', keeps(lone, 'generated'), { nodes: [0], edges: [] });
 
-print('\n--- column mode: the indirect edges (0097) ---');
-// A filter, a join key and a dedup key are one entry, indirect, drawn dashed.
+print('\n--- column mode: the indirect edges (0097, 0118) ---');
+// An `indirect` entry that lights the three, then a clause for each one drawn,
+// all of them dashed and at the end of the list.
 var rowSub = { mode: 'column', roots_known: true, nodes: [
   { name: 'status', kind: 'seed' }, { name: 'order_id', kind: 'model' }, { name: 'id', kind: 'model' },
   { name: 'loaded_at', kind: 'model', generated: ['now()'] },
 ], edges: [[0, 3], [1, 2], [0, 2], [2, 3]], edge_kinds: ['filter', 'join_key', 'rename', 'dedup_key'] };
-check('the three indirect roles are one entry, collin\'s word for them', labels(legendEntries(rowSub)), ['generated', 'indirect', 'raw', 'rename']);
-check('in their colour', legendEntries(rowSub)[1][1], roleColor('filter'));
+check('the value roles in order, then collin\'s word for the indirect ones and each clause',
+  labels(legendEntries(rowSub)), ['generated', 'raw', 'rename', 'indirect', 'QUALIFY', 'JOIN', 'WHERE / HAVING']);
+check('each in the colour of its role', legendEntries(rowSub).slice(4).map(function (e) { return e[1]; }),
+  [roleColor('dedup_key'), roleColor('join_key'), roleColor('filter')]);
 check('picking indirect keeps each indirect edge and the columns it joins', keeps(rowSub, 'indirect'), { nodes: [0, 1, 2, 3], edges: [0, 1, 3] });
+check('a clause keeps its own edges and the columns they join', keeps(rowSub, 'QUALIFY'), { nodes: [2, 3], edges: [3] });
+check('JOIN the same', keeps(rowSub, 'JOIN'), { nodes: [1, 2], edges: [1] });
+check('WHERE / HAVING the same', keeps(rowSub, 'WHERE / HAVING'), { nodes: [0, 3], edges: [0] });
 check('picking a value role leaves the indirect edges out', keeps(rowSub, 'rename'), { nodes: [0, 2], edges: [2] });
+check('only the clauses on the canvas are listed',
+  labels(legendEntries({ mode: 'column', roots_known: true, nodes: [{ name: 'a', kind: 'seed' }, { name: 'b', kind: 'model' }],
+    edges: [[0, 1]], edge_kinds: ['join_key'] })), ['raw', 'indirect', 'JOIN']);
+check('and every clause swatch is a dash, as its edges are', ['indirect', 'QUALIFY', 'JOIN', 'WHERE / HAVING', 'rename']
+  .map(function (l) { return legendSwatch(l, '#123456').cls; }), ['dash', 'dash', 'dash', 'dash', '']);
+// A model's box on the canvas stands for columns and starts nothing: no raw
+// badge on it, with or without roots in the cache.
+var boxed = { mode: 'column', roots_known: true, nodes: [
+  { id: 'model.shop.stg_orders::status', name: 'status', kind: 'model' },
+  { id: 'model.shop.orders', name: 'orders', kind: 'model', sub: 'table  ·  whole model' },
+], edges: [[0, 1]], edge_kinds: ['dedup_key'] };
+check('a model\'s box carries no badge', nodeRoles(boxed), ['', '']);
+check('with no roots in the cache either', nodeRoles({ nodes: boxed.nodes, edges: boxed.edges, edge_kinds: boxed.edge_kinds }), ['raw', '']);
+check('picking its clause lights the box and the column', keeps(boxed, 'QUALIFY'), { nodes: [0, 1], edges: [0] });
 
 print('\n--- the legend never lists an entry that lights nothing ---');
 function labels(entries) { return entries.map(function (e) { return e[0]; }); }
-[['model', modelSub], ['tests', testSub], ['column', colSub], ['bare column', bare], ['lone root', lone], ['rows', rowSub]].forEach(function (f) {
+[['model', modelSub], ['tests', testSub], ['column', colSub], ['bare column', bare], ['lone root', lone], ['rows', rowSub], ['a model box', boxed]].forEach(function (f) {
   var dark = labels(legendEntries(f[1])).filter(function (l) { return legendKeeps(f[1], l).nodes.size === 0; });
   check(f[0] + ': every entry keeps a box', dark, []);
 });
@@ -137,6 +157,16 @@ check('the status line names the roles stopped at',
 check('and says nothing when nothing stopped',
   canvasStatus({ mode: 'column', focus_column: 'order_date', nodes: [{}, {}], edges: [[0, 1]] }, null),
   'order_date · 2 columns · 1 edges');
+check('a model\'s box is counted apart from the columns, as a model',
+  canvasStatus({ mode: 'column', focus_column: 'status', nodes: [{ id: 'model.shop.stg_orders::status' }, { id: 'model.shop.orders::status' },
+    { id: 'model.shop.orders' }], edges: [[0, 1], [0, 2]] }, null),
+  'status · 2 columns · 1 model · 2 edges');
+check('two of them', canvasStatus({ mode: 'column', focus_column: 'status', nodes: [{ id: 'a::x' }, { id: 'b' }, { id: 'c' }], edges: [] }, null),
+  'status · 1 columns · 2 models · 0 edges');
+check('a column canvas cut at the cap says where',
+  canvasStatus({ mode: 'column', focus_column: 'status', nodes: new Array(1000).fill({ id: 'a::x' }), edges: [], truncated: true }, null),
+  'status · 1000 columns · 0 edges · truncated at 1000');
+check('a model canvas says only that it was cut', canvasStatus({ mode: 'model', nodes: [{}], edges: [], truncated: true }, null), '1 nodes · 0 edges · truncated');
 ok('ticks in a row draw only the last answer',
   /const ask = \+\+S\.colDraw;[\s\S]{0,400}if \(ask !== S\.colDraw\) return;/.test(src));
 ok('leaving column mode drops a column answer still on its way',
