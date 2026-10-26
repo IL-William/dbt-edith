@@ -457,7 +457,7 @@ def builds_request(req):
 
 
 BUILD_COLUMNS = (
-    "node", "target", "status", "started", "completed", "invocation", "full_refresh", "rows",
+    "node", "target", "status", "started", "completed", "compiled", "invocation", "full_refresh", "rows",
     "message", "command", "cloud_job", "cloud_run", "last_success",
 )
 
@@ -471,13 +471,15 @@ def last_builds(cur, executions: str, invocations: str):
     window is over the whole 90 days, so the last success is known even when a
     later run failed. The last attempt is ordered by when the model ran:
     run_started_at is the invocation's start, so a 02:00 nightly that fails the
-    model at 04:30 would lose to a 03:00 hourly that succeeded at 03:05.
+    model at 04:30 would lose to a 03:00 hourly that succeeded at 03:05. A model
+    that fails while it runs has no query_completed_at, so compile_started_at, when
+    it began, stands in for it, in the order and in the last success, and is sent.
     """
     sql = (
-        "select e.node_id, i.target_name, e.status, e.run_started_at, e.query_completed_at, "
+        "select e.node_id, i.target_name, e.status, e.run_started_at, e.query_completed_at, e.compile_started_at, "
         "e.command_invocation_id, e.was_full_refresh, e.rows_affected, left(e.message, %(text)s), "
         "i.dbt_command, i.dbt_cloud_job_id, i.dbt_cloud_run_id, "
-        "max(iff(lower(e.status) = 'success', coalesce(e.query_completed_at, e.run_started_at), null)) "
+        "max(iff(lower(e.status) = 'success', coalesce(e.query_completed_at, e.compile_started_at, e.run_started_at), null)) "
         "over (partition by e.node_id, i.target_name) as last_success_at "
         "from identifier(%(exe)s) e "
         "left join identifier(%(inv)s) i on e.command_invocation_id = i.command_invocation_id "
@@ -506,7 +508,7 @@ def utc_text(value):
 def build_row(r):
     """One run as the page reads it, without the columns Snowflake left empty."""
     row = dict(zip(BUILD_COLUMNS, r))
-    for key in ("started", "completed", "last_success"):
+    for key in ("started", "completed", "compiled", "last_success"):
         row[key] = utc_text(row[key])
     if row["status"]:
         row["status"] = str(row["status"]).lower()

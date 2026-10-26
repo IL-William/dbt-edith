@@ -26,25 +26,30 @@ this machine did.
   statement, and a request not made of two three-part relations is refused
   before it connects. The server holds the same check (`valid_relation`).
 - **What leaves the warehouse (amends 0017, 0048)**: per model and target, the
-  last run's status, start, end and last success, the invocation id, whether
-  it was a full refresh, rows affected, dbt's message cut to 600 characters,
-  the dbt command, the target's name and the dbt Cloud job and run ids. Other
-  people's runs now reach the page, behind the same guard (0015). Never
-  selected: `env_vars`, `dbt_vars`, `dbt_custom_envs`, `invocation_args`,
-  `adapter_response` and the schema and reason columns, which can hold secrets. The Rust structs name
-  every field, so a column the script starts to send reaches the page only
-  once this build lets it.
+  last run's status, start (the invocation's), when the model began and ended,
+  the last success, the invocation id, whether it was a full refresh, rows
+  affected, dbt's message cut to 600 characters, the dbt command, the target's
+  name and the dbt Cloud job and run ids. Other people's runs now reach the
+  page, behind the same guard (0015). Never selected: `env_vars`, `dbt_vars`,
+  `dbt_custom_envs`, `invocation_args`, `adapter_response` and the schema and
+  reason columns, which can hold secrets. The Rust structs name every field, so
+  a column the script starts to send reaches the page only once this build lets
+  it.
 - **One row per model and target, over 90 days**, the last attempt, with the
-  last success kept across a later failure. One metadata table may hold
-  several targets. An `.env` file that sets `DBT_TARGET` (the one value of a
-  file allowed to leave, 0012) stands for that target, the one dbt runs with
-  when the file is loaded (`--target` reads it), so its environment keeps only
-  that target's runs and is named with it. Without it, and for the manifest's
-  own build, each target is shown by name. A lineage dot, which
+  last success kept across a later failure. One metadata table may hold several
+  targets. An `.env` file that sets `DBT_TARGET` (the one value of a file
+  allowed to leave, 0012) stands for that target, the one dbt runs with when
+  the file is loaded (`--target` reads it), so its environment keeps only that
+  target's runs and is named with it. Without it, and for the manifest's own
+  build, each target is shown by name. The runs under other targets are not
+  counted, but their names are shown beside the environment, so a file whose
+  `DBT_TARGET` no run used (an orchestrator's own target name, a value left
+  unexpanded) says so instead of reading as never built. A lineage dot, which
   has room for one colour, takes the worst of a model's targets (error, then
-  stale, then not built, then ok) and its tooltip lists each; the Catalog lists
-  every target's run and the Reports section counts the worst. At most 50 000
-  rows (a model and a target each), and an answer says when it was cut.
+  stale, then not built, then ok) and the box's hover card lists each; the
+  Catalog lists every target's run and the Reports section counts the worst. At
+  most 50 000 rows (a model and a target each), and an answer says when it was
+  cut.
 - **On a click only, one environment after the other.** Nothing at startup,
   nothing polled. The answer lives in the page (`S.builds`) until it closes;
   the server writes none of it and logs no row. The script's 60 s deadline then

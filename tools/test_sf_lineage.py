@@ -80,19 +80,20 @@ def history_rows(params):
 
 
 # What the last-builds query answers, in its column order: node, target, status,
-# started, completed, invocation, was_full_refresh, rows, message, command,
+# started, completed, compiled, invocation, was_full_refresh, rows, message, command,
 # cloud job, cloud run, last success. The fake runs no SQL, so these are the
 # rows after the window and the QUALIFY, and they hold no secret column: the
 # real tables also keep env_vars and adapter_response, which are never asked.
 BUILD_ROWS = [
     ("model.jaffle.orders", "prod", "SUCCESS", datetime(2026, 10, 20, 3, 0, 5), datetime(2026, 10, 20, 3, 1, 9),
-     "6f1c0c2e-0000-4000-8000-000000000001", "false", 120, None, "build", "4321", "98765",
+     datetime(2026, 10, 20, 3, 0, 8), "6f1c0c2e-0000-4000-8000-000000000001", "false", 120, None, "build", "4321", "98765",
      datetime(2026, 10, 20, 3, 1, 9)),
     ("model.jaffle.customers", "prod", "ERROR", datetime(2026, 10, 21, 3, 0, 5), None,
-     "6f1c0c2e-0000-4000-8000-000000000002", "TRUE", None, "Database Error: object does not exist", "run", None, None,
+     datetime(2026, 10, 21, 3, 0, 40), "6f1c0c2e-0000-4000-8000-000000000002", "TRUE", None, "Database Error: object does not exist", "run", None, None,
      datetime(2026, 10, 14, 3, 1, 9)),
     ("model.jaffle.customers", "dev", "success", datetime(2026, 10, 21, 9, 30, 0, tzinfo=timezone(timedelta(hours=2))),
-     datetime(2026, 10, 21, 9, 31, 0, tzinfo=timezone(timedelta(hours=2))), "6f1c0c2e-0000-4000-8000-000000000003",
+     datetime(2026, 10, 21, 9, 31, 0, tzinfo=timezone(timedelta(hours=2))), None,
+     "6f1c0c2e-0000-4000-8000-000000000003",
      False, 7, "", "run", None, None, None),
 ]
 
@@ -474,6 +475,7 @@ class Builds(ScriptTest):
                 "status": "success",
                 "started": "2026-10-20T03:00:05Z",
                 "completed": "2026-10-20T03:01:09Z",
+                "compiled": "2026-10-20T03:00:08Z",
                 "invocation": "6f1c0c2e-0000-4000-8000-000000000001",
                 "rows": 120,
                 "command": "build",
@@ -486,6 +488,8 @@ class Builds(ScriptTest):
         self.assertEqual(failed["status"], "error")
         self.assertTrue(failed["full_refresh"])
         self.assertNotIn("completed", failed, "a run that never completed has no end")
+        self.assertEqual(failed["compiled"], "2026-10-21T03:00:40Z", "but it says when the model began")
+        self.assertNotIn("compiled", dev, "an empty time is left out")
         self.assertEqual(failed["last_success"], "2026-10-14T03:01:09Z", "the last success survives a later failure")
         self.assertEqual(failed["message"], "Database Error: object does not exist")
         self.assertEqual(dev["started"], "2026-10-21T07:30:00Z", "a zoned time is written in UTC")
@@ -508,6 +512,8 @@ class Builds(ScriptTest):
         for column in ("env_vars", "dbt_vars", "dbt_custom_envs", "invocation_args", "adapter_response", "target_schema", "dbt_cloud_run_reason"):
             self.assertNotIn(column, sql)
         self.assertIn("partition by e.node_id, i.target_name", sql, "one row per model and target")
+        self.assertIn("max(iff(lower(e.status) = 'success', coalesce(e.query_completed_at, e.compile_started_at, e.run_started_at)", sql,
+                      "the last success is dated by the same clock as the last attempt")
         self.assertIn("coalesce(e.query_completed_at, e.compile_started_at, e.run_started_at) desc, e.command_invocation_id desc", sql,
                       "the last attempt is when the model ran, not when its invocation started, and two runs ending together still pick one")
 
@@ -524,7 +530,7 @@ class Builds(ScriptTest):
         self.assertEqual(int(found.group(1)), sf.BUILDS_DAYS, "the page and the script read the same number of days")
 
     def test_a_table_past_the_cap_says_it_was_cut(self):
-        many = [("model.jaffle.m%d" % i, "prod", "success", datetime(2026, 10, 20), None, "x", None, None, None, None, None, None, None)
+        many = [("model.jaffle.m%d" % i, "prod", "success", datetime(2026, 10, 20), None, None, "x", None, None, None, None, None, None, None)
                 for i in range(sf.BUILDS_MAX + 1)]
         cur = FakeCursor(FakeConnection())
         cur.conn.build_rows = many

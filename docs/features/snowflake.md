@@ -102,26 +102,29 @@ It is read **only when you press Read from Snowflake** (Refresh once there is a
 read), one environment after the other, and a sign-in tab may open for the
 first. Nothing is read at startup or polled, and nothing is kept: the answer is
 in the page until it closes. Per model and target it brings the last run's
-status, when it started and ended, the last success, the invocation id, whether
-it was a full refresh, rows affected, dbt's message (cut to 600 characters),
-the dbt command, the target's name and the dbt Cloud job and run ids. It never
-reads the invocation's `env_vars`, `dbt_vars`, `dbt_custom_envs` or
-`invocation_args`, nor a model's `adapter_response`. The last 90 days are
-looked at, and at most 50 000 rows (a model and a target each) per
-environment; past that the answer says it was cut. A read stops at the first
-environment whose connection or script fails, since the rest would fail the
-same way and could each open a sign-in tab; the ones not asked say so.
+status, when the invocation started and when the model began and ended, the
+last success, the invocation id, whether it was a full refresh, rows affected,
+dbt's message (cut to 600 characters), the dbt command, the target's name and
+the dbt Cloud job and run ids. It never reads the invocation's `env_vars`,
+`dbt_vars`, `dbt_custom_envs` or `invocation_args`, nor a model's
+`adapter_response`. The last 90 days are looked at, and at most 50 000 rows (a
+model and a target each) per environment; past that the answer says it was cut.
+A read stops at the first environment whose connection or script fails, since
+the rest would fail the same way and could each open a sign-in tab; the ones
+not asked say so.
 
 An environment whose `.env` file cannot place the package says why and is not
 asked. Several files that place it in one schema are asked once. One table may
-hold the runs of several targets. A file that sets `DBT_TARGET` stands for
-that target, the one dbt runs with when the file is loaded, so its environment
-keeps only that target's runs and is named with it ("DEV · target dev").
-Without it, and for the manifest's own build, each target's run is shown by
-name, and a lineage dot takes the worst of them (error, then stale, then not
-built, then ok), its tooltip listing each. Every run under one target is one,
-whoever ran it: two developers building `dev` into their own schemas share one
-last attempt.
+hold the runs of several targets. A file that sets `DBT_TARGET` stands for that
+target, the one dbt runs with when the file is loaded, so its environment keeps
+only that target's runs and is named with it ("DEV · target dev"). Without it,
+and for the manifest's own build, each target's run is shown by name, and a
+lineage dot takes the worst of them (error, then stale, then not built, then
+ok), the box's hover card listing each. The runs under other targets are not
+counted, but their names are shown beside the environment, so a file whose
+`DBT_TARGET` no run used says so instead of reading as never built. Every run
+under one target is one, whoever ran it: two developers building `dev` into
+their own schemas share one last attempt.
 
 A model is **stale** when its last success is older than the threshold, 7 days
 until you change **Stale after** in the Snowflake section of the settings (1 to

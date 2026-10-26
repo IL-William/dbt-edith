@@ -144,10 +144,33 @@ check('a model left with none is dropped', Array.from(onlyDev.keys()), ['model.j
 check('another target keeps its own nodes', Array.from(buildsOfTarget(all, 'stg').keys()), ['model.jaffle.orders', 'model.jaffle.customers']);
 check('the answer shared by several files is not changed', all.get('model.jaffle.orders').length, 3);
 check('a target nobody ran under keeps nothing', buildsOfTarget(all, 'uat').size, 0);
+check('and the names it dropped are reported, not lost', buildsOtherTargets(all, 'uat'), ['dev', 'prod', 'stg']);
+check('the other targets are sorted, without the one kept', buildsOtherTargets(all, 'dev'), ['prod', 'stg']);
+check('a target without a name is not one', buildsOtherTargets(buildsByNode([run('success', '', '', { target: '' }), prod]), 'prod'), []);
+check('a table of one target has no others', buildsOtherTargets(buildsByNode([prod]), 'prod'), []);
+check('a table with nothing has none', buildsOtherTargets(new Map(), 'prod'), []);
+check('a note says what was left out, beside runs that matched', buildsOthersNote('prod', ['default'], 3),
+  'The table also holds runs under target default, not counted here.');
+check('and when none matched, that the table has runs under others', buildsOthersNote('prod', ['default', 'qa'], 0),
+  'No run under target prod in the table, which holds runs under default, qa: not counted.');
+check('no note without others, or for an environment kept to no target', [buildsOthersNote('prod', [], 3), buildsOthersNote('', ['default'], 3), buildsOthersNote('prod', undefined, 3)], ['', '', '']);
+var kept = buildsDots({ byEnv: { '.env.prod': { target: 'prod', rows: new Map() } } }, '.env.prod', 7, 'PROD', now);
+check('the words of a model with no run name the target the environment is kept to', kept.of('model.jaffle.orders').title,
+  'PROD: no run under target prod in the last 90 days');
+check('and say recorded when it is kept to none', buildsNoRun(''), 'no run recorded in the last 90 days');
 check('and an environment kept to it reads its verdict alone', buildsWorst(onlyDev.get('model.jaffle.orders'), 7, now).parts.length, 1);
 var tf = buildsTargets(both[0], both[1], [{ file: '.env.prod', name: 'PROD', target: 'prod' }, { file: '.env.uat', name: 'UAT' }]);
 check('a file that sets DBT_TARGET carries it, the manifest and the others none', tf.map(function (t) { return t.target; }), ['', 'prod', '']);
 check('named with the target it is kept to, when it has one', tf.map(buildsEnvLabel), ['manifest', 'PROD · target prod', 'UAT']);
+
+print('\n--- the clock of a run ---');
+var crashed = run('error', '2026-10-22T02:00:00Z', '', { compiled: '2026-10-22T04:30:00Z' });
+check('a model that never ended is dated by when it began', buildsWhen(crashed), '2026-10-22T04:30:00Z');
+check('an end comes first', buildsWhen(run('success', '2026-10-22T02:00:00Z', '', { compiled: '2026-10-22T02:01:00Z', completed: '2026-10-22T02:05:00Z' })), '2026-10-22T02:05:00Z');
+check('the invocation\'s start is the last resort', buildsWhen(run('success', '2026-10-22T02:00:00Z', '')), '2026-10-22T02:00:00Z');
+check('a nightly failing at 04:30 beats an hourly that succeeded at 03:05',
+  buildVerdict([run('success', '2026-10-22T03:00:00Z', '2026-10-22T03:05:00Z'), crashed], 7, now).verdict, 'error');
+check('its age counts from when it began', buildsSaid(buildVerdict([crashed], 7, now), 'PROD', now), 'PROD: error 7h ago (target prod)');
 
 print('\n--- a list line under its environment ---');
 check('the name is stripped from every target\'s line, and they are joined', buildsSaidBare(buildsWorst([prod, run('success', '2026-10-01T03:00:00Z', '2026-10-01T03:01:00Z', { target: 'stg' })], 7, now), 'PROD', now),

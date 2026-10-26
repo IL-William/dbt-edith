@@ -11987,6 +11987,35 @@ function buildsOfTarget(rowsByNode, target) {
   return out;
 }
 
+/* The names of the targets a table holds runs of besides `target`, sorted, for
+   the note that says which runs a file kept to its target left out. A file
+   whose DBT_TARGET no run used (an orchestrator's own target name, or a value
+   left unexpanded) would otherwise read as never built (0117). */
+function buildsOtherTargets(rowsByNode, target) {
+  const names = new Set();
+  for (const rows of rowsByNode.values()) {
+    for (const r of rows) if (r.target && r.target !== target) names.add(r.target);
+  }
+  return [...names].sort();
+}
+
+/* That note, or nothing: what an environment kept to `target` left out of its
+   rows, `rows` being how many models it kept runs of. */
+function buildsOthersNote(target, others, rows) {
+  if (!target || !others || !others.length) return '';
+  const names = others.join(', ');
+  return rows
+    ? `The table also holds runs under target ${names}, not counted here.`
+    : `No run under target ${target} in the table, which holds runs under ${names}: not counted.`;
+}
+
+/* When a run happened, the clock the script orders by: the end of the model,
+   else its start (a model that failed while it ran has no end), else the
+   invocation's, which is the earliest the run can have been. */
+function buildsWhen(r) {
+  return r.completed || r.compiled || r.started || '';
+}
+
 /* An environment as the Reports section and the Catalog name it: the target
    its file keeps the runs to, when it sets one. */
 function buildsEnvLabel(t) {
@@ -12007,10 +12036,10 @@ function buildsFailed(status) {
 function buildVerdict(rows, staleDays, now) {
   const list = rows || [];
   if (!list.length) return { verdict: 'none', last: null, success: '' };
-  const at = (r) => Date.parse(r.started || '') || 0;
+  const at = (r) => Date.parse(buildsWhen(r)) || 0;
   const last = list.reduce((a, b) => (at(b) > at(a) ? b : a));
   let success = list.map((r) => r.last_success || '').reduce((a, b) => (Date.parse(b) > (Date.parse(a) || 0) ? b : a), '');
-  if (!success && last.status === 'success') success = last.completed || last.started || '';
+  if (!success && last.status === 'success') success = buildsWhen(last);
   if (buildsFailed(last.status)) return { verdict: 'error', last, success };
   const t = Date.parse(success);
   const old = !(t > 0) || now - t > staleDays * 86400000;
@@ -12020,7 +12049,7 @@ function buildVerdict(rows, staleDays, now) {
 /* The same for a model one table holds runs of several targets for: each
    target is judged on its own, and the worst of them is the model's, in the
    order error, stale, none, ok, since a box has room for one colour. `parts`
-   keeps each, by target name, for the tooltip. */
+   keeps each, by target name, for the words a box's hover card lists. */
 function buildsWorst(rows, staleDays, now) {
   const by = new Map();
   for (const r of rows || []) {
@@ -12046,22 +12075,29 @@ function buildsAge(iso, now) {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-/* The line a dot's tooltip and a Catalog row open with: the last attempt, and
-   the last success when it was not that one. */
-function buildsSaid(v, envName, now) {
-  if (v.parts && v.parts.length > 1) return v.parts.map((p) => buildsSaid(p, envName, now)).join('\n');
-  if (v.verdict === 'none') return `${envName}: no run recorded in the last ${buildsWindowDays()} days`;
+/* What "no run" says: under which target when the environment was kept to
+   one, since the table may hold runs of others (0117). */
+function buildsNoRun(target) {
+  return `no run ${target ? `under target ${target}` : 'recorded'} in the last ${buildsWindowDays()} days`;
+}
+
+/* The line a dot's hover card and a Catalog row open with: the last attempt,
+   and the last success when it was not that one. `kept` is the target the
+   environment was kept to, if any. */
+function buildsSaid(v, envName, now, kept) {
+  if (v.parts && v.parts.length > 1) return v.parts.map((p) => buildsSaid(p, envName, now, kept)).join('\n');
+  if (v.verdict === 'none') return `${envName}: ${buildsNoRun(kept)}`;
   const l = v.last;
   const target = l.target ? ` (target ${l.target})` : '';
-  const head = `${envName}: ${l.status || 'unknown'} ${buildsAge(l.completed || l.started, now)}${target}`;
+  const head = `${envName}: ${l.status || 'unknown'} ${buildsAge(buildsWhen(l), now)}${target}`;
   const apart = v.success && (buildsFailed(l.status) || l.status === 'skipped' || v.verdict === 'stale');
   return apart ? `${head}, last success ${buildsAge(v.success, now)}` : head;
 }
 
 /* The same without the environment's name, each target's line in one: a line
    of a list under that environment's own heading. */
-function buildsSaidBare(v, envName, now) {
-  return buildsSaid(v, envName, now).split('\n').map((l) => l.replace(`${envName}: `, '')).join(' · ');
+function buildsSaidBare(v, envName, now, kept) {
+  return buildsSaid(v, envName, now, kept).split('\n').map((l) => l.replace(`${envName}: `, '')).join(' · ');
 }
 
 /* The days of runs the script reads, which a "no run" answer is about. */
@@ -12070,7 +12106,7 @@ function buildsWindowDays() {
 }
 
 /* What the canvas paints for one environment: `of(id)` gives the worst
-   verdict across a model's targets and a tooltip, or "none" for a model the
+   verdict across a model's targets and its words, or "none" for a model the
    read has no rows for. Judged when a box asks, once each, since a canvas
    draws a few boxes of a read that may hold every model. Null when that
    environment was not read, or was read with an error, so a canvas never says
@@ -12083,7 +12119,7 @@ function buildsDots(read, env, staleDays, envName, now) {
     of(id) {
       if (!memo.has(id)) {
         const v = buildsWorst(got.rows.get(id), staleDays, now);
-        memo.set(id, { verdict: v.verdict, title: buildsSaid(v, envName, now) });
+        memo.set(id, { verdict: v.verdict, title: buildsSaid(v, envName, now, got.target) });
       }
       return memo.get(id);
     },
@@ -13085,7 +13121,9 @@ async function readBuilds() {
       // (and the manifest's own build) keeps every target (0117).
       for (const env of q.envs) {
         const t = next.targets.find((x) => x.env === env);
-        next.byEnv[env] = t && t.target ? Object.assign({}, entry, { rows: buildsOfTarget(entry.rows, t.target) }) : entry;
+        next.byEnv[env] = t && t.target ? Object.assign({}, entry, {
+          rows: buildsOfTarget(entry.rows, t.target), target: t.target, others: buildsOtherTargets(entry.rows, t.target),
+        }) : entry;
       }
       repaintBuilds();
       // A connection Snowflake refuses, a script that would not start, or one
@@ -13208,12 +13246,14 @@ function paintCatalogBuilds(box) {
         block.append(name);
         block.append(buildsFailure(got));
       } else {
-        const rows = (got.rows.get(id) || []).slice().sort((a, b) => (Date.parse(b.completed || b.started) || 0) - (Date.parse(a.completed || a.started) || 0));
+        const rows = (got.rows.get(id) || []).slice().sort((a, b) => (Date.parse(buildsWhen(b)) || 0) - (Date.parse(buildsWhen(a)) || 0));
         const v = buildsWorst(rows, buildsStaleDays(), now);
         block.dataset.verdict = v.verdict;
         block.append(name);
+        const note = buildsOthersNote(got.target, got.others, got.rows.size);
+        if (note) block.append(jel('div', 'muted', note));
         if (!rows.length) {
-          block.append(jel('span', 'muted', `no run recorded in the last ${buildsWindowDays()} days`
+          block.append(jel('span', 'muted', buildsNoRun(got.target)
             + (got.cut ? ', but the table held more models than are read' : '')));
         } else {
           rows.forEach((r) => block.append(buildRunLine(r, v, now)));
@@ -13228,12 +13268,13 @@ function paintCatalogBuilds(box) {
 /* One run: how it ended and when, then what the invocation says of itself. */
 function buildRunLine(r, v, now) {
   const line = jel('div', 'buildrun');
-  const when = r.completed || r.started;
+  const when = buildsWhen(r);
   const state = jel('span', 'bstate', r.status || 'unknown');
   state.dataset.status = buildsFailed(r.status) ? 'error' : r.status === 'success' ? 'ok' : 'other';
   const ago = jel('span', '', buildsAge(when, now));
   // run_started_at is the invocation's, not this model's: said as such.
   ago.title = [r.started && `invocation started ${new Date(r.started).toLocaleString()}`,
+    r.compiled && `model started ${new Date(r.compiled).toLocaleString()}`,
     r.completed && `model finished ${new Date(r.completed).toLocaleString()}`].filter(Boolean).join('\n');
   line.append(state, ago);
   const bits = [];
@@ -13309,6 +13350,8 @@ async function buildsSection() {
     body.append(title);
     if (!got) { body.append(jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : '')); continue; }
     if (got.error) { body.append(buildsFailure(got)); continue; }
+    const others = buildsOthersNote(got.target, got.others, got.rows.size);
+    if (others) body.append(jel('p', 'runnote', others));
     if (got.cut) body.append(jel('p', 'runnote', 'The table held more models than are read, so some below may read as not built.'));
     const lists = buildsVerdicts(got, models, own, days, now);
     const tiles = jel('div', 'reporttiles');
@@ -13340,7 +13383,7 @@ async function buildsSection() {
         link.title = item.id;
         link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(item.id); });
         li.append(link);
-        if (key !== 'none') li.append(jel('span', 'muted', ' · ' + buildsSaidBare(item.v, t.name, now)));
+        if (key !== 'none') li.append(jel('span', 'muted', ' · ' + buildsSaidBare(item.v, t.name, now, got.target)));
         if (key === 'error' && item.v.last.message) li.append(jel('div', 'rmsg', item.v.last.message));
         ul.append(li);
       }
@@ -13399,8 +13442,8 @@ function buildsGrid(read, models, own, days) {
         if (!got || got.error) { td.className = 'bnone'; td.textContent = got ? 'not read' : ''; tr.append(td); return; }
         const v = buildsWorst(got.rows.get(m.id), days, now);
         td.dataset.verdict = v.verdict;
-        td.title = buildsSaid(v, t.name, now);
-        td.textContent = v.verdict === 'none' ? '-' : `${v.last.status} ${buildsAge(v.last.completed || v.last.started, now)}`;
+        td.title = buildsSaid(v, t.name, now, got.target);
+        td.textContent = v.verdict === 'none' ? '-' : `${v.last.status} ${buildsAge(buildsWhen(v.last), now)}`;
         tr.append(td);
       });
       return tr;

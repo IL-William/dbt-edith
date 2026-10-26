@@ -17,7 +17,9 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 - Show when each model was last built in each environment, and how that run
   ended, in the Catalog, as a dot on the lineage and in Reports, read on a
-  click from the tables of the dbt_artifacts package (0117).
+  click from the tables of the dbt_artifacts package (0117). An environment
+  whose file sets DBT_TARGET keeps that target's runs and names the others the
+  table holds.
 
 ## 1.51.0 - 2026-10-22
 

@@ -190,6 +190,10 @@ pub struct BuildRow {
     pub started: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub completed: String,
+    /// When the model began, which a run that failed while it ran has instead
+    /// of an end.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub compiled: String,
     /// When the last run that succeeded finished, whatever came after it.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub last_success: String,
@@ -951,7 +955,7 @@ while IFS= read -r line; do
   case "$line" in
     *'"op":"builds"'*)
       printf '%s\n' "$line" > "$(dirname "$0")/asked"
-      echo '{"id":1,"rows":[{"node":"model.jaffle.orders","target":"prod","status":"error","started":"2026-10-21T03:00:05Z","last_success":"2026-10-14T03:01:09Z","invocation":"6f1c-0001","full_refresh":true,"rows":7,"message":"Database Error","command":"build","cloud_job":"4321","env_vars":"{\"TOKEN\":\"hunter2\"}","adapter_response":"not for the page"}],"cut":true}' ;;
+      echo '{"id":1,"rows":[{"node":"model.jaffle.orders","target":"prod","status":"error","started":"2026-10-21T03:00:05Z","compiled":"2026-10-21T03:00:40Z","last_success":"2026-10-14T03:01:09Z","invocation":"6f1c-0001","full_refresh":true,"rows":7,"message":"Database Error","command":"build","cloud_job":"4321","env_vars":"{\"TOKEN\":\"hunter2\"}","adapter_response":"not for the page"}],"cut":true}' ;;
     *'"op":"quit"'*) exit 0 ;;
   esac
 done
@@ -971,6 +975,7 @@ done
         assert_eq!((row.node.as_str(), row.target.as_str(), row.status.as_str()), ("model.jaffle.orders", "prod", "error"));
         assert_eq!((row.full_refresh, row.rows), (true, Some(7)));
         assert_eq!(row.last_success, "2026-10-14T03:01:09Z");
+        assert_eq!(row.compiled, "2026-10-21T03:00:40Z", "the start of a model that never ended");
         let sent = serde_json::to_string(&read).unwrap();
         assert!(!sent.contains("hunter2") && !sent.contains("env_vars") && !sent.contains("adapter_response"), "a field this build does not name stays here: {sent}");
         assert!(!sent.contains("completed"), "an empty field is left out: {sent}");
