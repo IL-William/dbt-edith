@@ -2651,6 +2651,32 @@ Left by the indirect edges' boxes (0118, 1.53.0), unranked:
   edges stay column to column and can still fill a cap on a model with many
   keys.
 
+Left by the pull requests of 2026-10-26 (#111 and #112, 1.52.0 and 1.53.0),
+each a known limit, unranked:
+
+- **A `DBT_TARGET` left unexpanded** (`${X}` in an `.env` file) is taken as
+  written, since `src/envs.rs` keeps interpolation as text and warns about it.
+  The environment is named with that value and no run matches it. When the table
+  holds other targets' runs, the note names them. Expanding the reference, or
+  treating such a value as unset, would change `src/envs.rs` (0117).
+- **A run with no invocation row** has no target after the join, so an
+  environment kept to its target drops it and its note does not count it. The
+  package uploads both tables at the end of the same run, so this is rare.
+- **The lineage dots are small,** 7 px across at zoom 1 and less when zoomed
+  out, and the hollow ring of a model never built is easy to miss. Whether they
+  should grow is open.
+- **The hover card can cover the right end of the status bar,** as it already
+  did before 1.52.0.
+- **The pictures of the builds** need a Jaffle Shop copy with dbt_artifacts
+  installed (`+schema: dbt_artifacts`, its database from an `.env` file) and
+  `/api/snowflake/builds` answered by a stand-in. Nothing in the repository
+  builds either, unlike `scripts/take_shots.py` for the README.
+- **The export list's heading** ("Columns and models") is checked by a test on
+  the source text only: no harness runs `exportLineage`.
+- **`rows_by` merges two columns whose model and column names match in different
+  packages,** which is older than 0118, and `rows_of` now lists two models of
+  the same name twice.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by any edge kind, beyond stop
