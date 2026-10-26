@@ -54,6 +54,10 @@ wants answered.
   to where the command was typed.
   *Amended by [0109](0109-collin-is-given-the-project-only-for-a-manifest-lying-in-it.md):
   `--project <folder>` too, but only when the manifest lies under the folder.*
+  *Amended by [0118](0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md):
+  `--indirect` always, not only when the answer crosses indirect edges: the
+  page reads the same cache and draws them, so every `--column` answer without
+  `--indirect` over such a cache says on stderr that they were left out.*
 - **`--compiled` needs collin 0.9.0**, the first to read it. A collin older
   than that is never started with the folder, and stderr gives the update
   command. `WANTS` is not raised for it: someone who never names a folder is

@@ -196,8 +196,9 @@ the column, the whole chain in the lineage loaded: `←0 10→` is nothing
 upstream and ten columns downstream, however many levels down. With Snowflake
 picked, that is what the clicks have fetched so far. Hovering it adds how many
 of them sit one level away, which is what the canvas opens on at a depth of 1.
-The canvas draws 200 columns at most, so past that it says `truncated` and
-draws fewer than the cell counts. With no edges and Snowflake not picked,
+The canvas draws 1000 boxes at most, so past that it says `truncated at 1000`
+and draws fewer than the cell counts, with a button to draw up to 3000 (see
+the indirect edges below). With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
 
@@ -227,25 +228,62 @@ literal or a union it read in part. Its row opens the column even when
 nothing reads it, drawn alone. The legend lists each tag on the canvas, with
 or without a role on an edge, and a click on it lights its columns.
 
-**Indirect edges are hidden unless asked for.** Under collin's
-`--indirect`, a `filter`, a `join_key` or a `dedup_key` edge runs from a
-column that decided which rows a model keeps to every column of that model.
-It says nothing of a value, so the canvas leaves it out: the walk does not
-cross it, upstream or down, and neither the +N nor the status line counts
-it; the status line, and an export, say `indirect edges hidden`
+**Indirect edges are hidden unless asked for, and end on their model's box.**
+A `filter`, a `join_key` or a `dedup_key` edge, which collin writes under
+`--indirect`, runs from a column that decided which rows a model keeps to every
+column of that model. It says nothing of a value, so the canvas leaves it out
+until asked: the walk does not cross it, upstream or down, and neither the +N
+nor the status line counts it; the status line, and an export, say `indirect
+edges hidden`
 ([0097](../decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md)).
+The page always has them to show: Regenerate runs collin with `--indirect`
+every time, so a cache written by an older version needs one Regenerate
+([0118](../decisions/0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md)).
+
 The **indirect** button beside stop at, an eye like the tests one, shown only
-when the cache holds such edges, walks and draws them: thin, in short dashes
-and a teal of its own, under one dashed `indirect` entry in the legend. It
-stays as set while you move from column to column, and is off again after a
-reload. No badge reads an indirect edge: a column only they reach is tagged
-as one nothing feeds. Hovering a column they reach says what keeps its rows,
-apart from where its value comes from, with the button on or off:
-`rows kept by: raw_orders.status (filter)`, eight at most and how many more.
-While they are hidden, stop at offers none of the three roles, and the
-Lineage cell's counts, and its one level on hover, leave them out and say so;
-a column only they reach or leave reads `indirect only` there, and still
-opens from its row, onto its box, with its card when they reach it.
+when the cache holds such edges, draws them, thin and in short dashes, each
+role in a hue of its own, which stays when the edge is lit. Each is named by
+the SQL clause it comes from: `QUALIFY` for a dedup key, `JOIN` for a join key,
+`WHERE / HAVING` for a filter. Upstream, an edge runs from column to column,
+as any other, and carries no label: neighbouring columns are too close for one,
+and the legend and the card say the clause. Downstream it runs to one box for
+the whole model, drawn like a model's own box and reading `table  ·  whole
+model`, not to each of its
+columns: `stg_orders.status` filtered on in `orders` has one dashed `WHERE /
+HAVING` edge to an `orders` box, however wide `orders` is, with its clause
+written along it. A box ends the walk.
+Where a column reaches a model by several roles the edge says the strongest,
+`QUALIFY` before `JOIN` before `WHERE / HAVING`. A click on a box previews its
+file, and a double-click draws it in Models mode. The status line counts
+columns and models apart: `status · 3 columns · 1 model · 4 edges`.
+
+The legend lists `indirect` and each clause on the canvas after the other
+entries, and a click on `indirect` lights all three. The button stays as set
+while you move from column to column, and is off again after a reload. No badge
+reads an indirect edge: a column only they reach is tagged as one nothing
+feeds.
+
+Hovering a column says what keeps its rows, apart from where its value comes
+from, and what it keeps the rows of, with the button on or off:
+
+```
+rows kept by: raw_orders.status (WHERE / HAVING)
+keeps the rows of: orders (QUALIFY), customers (JOIN)
+```
+
+Eight names at most on each line, and how many more. Stop at offers none of
+the three roles, on or off: an edge that ends on a box has nothing past it to
+stop. The Lineage cell's counts, and its one level on hover, leave the indirect
+edges out and say so; a column only they reach or leave reads `indirect only`
+there, and still opens from its row, onto its box, with its card when they
+reach it.
+
+**The column canvas draws 1000 boxes**, a box for a column or a model. A
+canvas cut there says so in its status line, and a **Draw up to 3000** button
+draws that many for that column, depth, stops and indirect button alone,
+as the selection's does for its own cap. It cannot say how many there were:
+the walk stops when it is full. Past the cap every step of zoom and pan is
+slower, which is why the cap is not the default.
 
 ## From the command line
 
@@ -268,7 +306,11 @@ with neither, only the column itself is printed. `--stop-at` stops the walk
 downstream at the roles named, as the stop at menu does on the canvas.
 `--indirect` crosses collin's indirect edges too, which the answer leaves out
 by default, as the canvas does with its indirect button off (0097). The walk is
-the canvas's own, with no cap.
+the canvas's own, with no cap, except that an indirect edge is crossed to each
+column of its model as it always was, where the canvas draws one box for the
+model (0118). An answer without `--indirect` over a cache holding indirect
+edges says so on stderr, which is every cache the page or `--run-collin`
+writes.
 
 `--output name` prints `model.column`, one per line, upstream first, then the
 column, then downstream. `--output json` prints one line per model reached,
@@ -344,9 +386,10 @@ compiled SQL of the models the manifest has none for from `--compiled`, the
 folder dbt compiled into, one folder per package (`target/compiled`), else
 from `compiled/` beside the manifest. `--compiled` needs collin 0.9.0 or
 later, and a folder that is not there is refused before collin runs, as is a
-`--catalog` named and not there. With
-`--indirect`, collin is told to write its indirect edges too, which it does
-only when asked, so that the answer has some to cross. The cache and the
+`--catalog` named and not there. collin is always told to write its
+indirect edges too, which it does only when asked, so that the cache has the
+ones the page draws and `--indirect` has some to cross; `--indirect` still
+decides whether the answer crosses them, column by column. The cache and the
 report go beside the manifest, under the names the page's Regenerate writes,
 so the page shows that run too; a failed run leaves the cache that was there.
 A model the manifest does not have is refused before collin runs, so a

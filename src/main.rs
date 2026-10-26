@@ -273,7 +273,6 @@ fn question_of(args: &Args) -> Option<Question> {
             produce: args.run_collin.then(|| ls_column::Produce {
                 catalog: args.catalog.clone(),
                 compiled: args.compiled.clone(),
-                indirect: args.indirect,
             }),
         })
     })
@@ -762,7 +761,7 @@ mod tests {
                 ask.up,
                 ask.down,
                 ask.stop_at,
-                ask.produce.as_ref().is_some_and(|p| p.indirect)
+                ask.produce.is_some()
             ),
             None => "page".to_string(),
         };
@@ -776,6 +775,7 @@ mod tests {
         assert_eq!(text("--job jaffle_daily"), "job jaffle_daily");
         assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");
         assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
+        assert_eq!(text("--column orders.amount --run-collin"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text(""), "page");
     }
 

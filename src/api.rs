@@ -7,7 +7,7 @@ use crate::envs;
 use crate::files::{self, mtime_secs};
 use crate::freshness;
 use crate::git::{self, GitInfo};
-use crate::graph::{ColRef, Graph, Kind, Place};
+use crate::graph::{ColRef, Graph, Kind, Place, RowEdges};
 use crate::macro_use::call_of;
 use crate::manifest::{RawCatalog, RawManifest};
 use crate::pty::{FromPty, PtySession, ShellSpec};
@@ -1346,7 +1346,6 @@ async fn collin_job(st: &Arc<AppState>) -> Option<collin_run::Job> {
         manifest: st.manifest_path.clone(),
         catalog: st.catalog_path.clone(),
         compiled: None,
-        indirect: false,
         out: collin::path_for(&st.target_dir, "collin"),
         report: st.target_dir.join(collin_run::REPORT),
     })
@@ -2265,7 +2264,9 @@ struct SelectorBody<'a> {
     /// named selector's answer is dbt's whatever the box says.
     #[serde(skip_serializing_if = "is_zero")]
     hidden_tests: usize,
-    /// The most nodes the page may ask this route to draw.
+    /// The most nodes the page may ask this route to draw. The flattened
+    /// `Lineage` has a `most` too, which a selection leaves at 0 and so never
+    /// sends: only the column route sets it, and the keys never duplicate.
     most: usize,
 }
 
@@ -3093,8 +3094,15 @@ struct ColLineageQuery {
     indirect: u8,
 }
 
-/// Column-level lineage around one column. Columns fan out harder than models,
-/// hence the lower default cap.
+/// How many nodes a column's lineage is drawn with unless the page asks for
+/// more: columns fan out harder than models, hence the cap under a selection's.
+const COL_DRAWN: usize = 1000;
+
+/// The most one click may ask a column's lineage to draw, sent with every
+/// answer so the page never offers more (0118).
+const COL_MOST: usize = 3000;
+
+/// Column-level lineage around one column.
 async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineageQuery>) -> Response {
     let graph = st.graph.read().await.clone();
     if graph.cll.is_none() {
@@ -3110,10 +3118,11 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
         ColRef { node: idx, col },
         q.up.min(20),
         q.down.min(20),
-        q.max.unwrap_or(200).min(2000),
+        q.max.unwrap_or(COL_DRAWN).min(COL_MOST),
         &q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>(),
-        q.indirect == 1,
+        if q.indirect == 1 { RowEdges::ToModels } else { RowEdges::Hidden },
     );
+    sub.most = COL_MOST;
     graph.name_rows_by(&mut sub);
     Json(sub).into_response()
 }
@@ -4837,10 +4846,19 @@ mod tests {
 
         let hidden = response_of(port, get("/api/collineage?id=model.demo.mart&column=x&up=1&down=0", &h)).await;
         assert!(!hidden.contains(r#""name":"y""#) && hidden.contains(r#""indirect_hidden":true"#), "{hidden}");
-        assert!(hidden.contains(r#""rows_by":["stg.y (filter)"]"#), "the card's names come anyway: {hidden}");
+        assert!(hidden.contains(r#""rows_by":[["stg.y","filter"]]"#), "the card's names come anyway: {hidden}");
+        assert!(hidden.contains(r#""most":3000"#), "the page learns how far one click may go: {hidden}");
         let shown = response_of(port, get("/api/collineage?id=model.demo.mart&column=x&up=1&down=0&indirect=1", &h)).await;
         assert!(shown.contains(r#""name":"y""#) && shown.contains(r#""edge_kinds":["rename","filter"]"#), "{shown}");
         assert!(!shown.contains("indirect_hidden"), "{shown}");
+        // Downstream, one box for the model stands for the edge to each of its
+        // columns, drawn only when asked, and the card names it either way.
+        let off = response_of(port, get("/api/collineage?id=model.demo.stg&column=y&up=0&down=1", &h)).await;
+        assert!(!off.contains(r#""id":"model.demo.mart""#) && off.contains(r#""rows_of":[["mart","filter"]]"#), "{off}");
+        let boxed = response_of(port, get("/api/collineage?id=model.demo.stg&column=y&up=0&down=1&indirect=1", &h)).await;
+        assert!(boxed.contains(r#""id":"model.demo.mart""#) && boxed.contains(r#""sub":"whole model""#), "{boxed}");
+        assert!(!boxed.contains(r#""id":"model.demo.mart::x""#) && boxed.contains(r#""edge_kinds":["filter"]"#), "one edge, not one a column: {boxed}");
+        assert!(boxed.contains(r#""rows_of":[["mart","filter"]]"#) && !boxed.contains("indirect_hidden"), "{boxed}");
         // A column only indirect edges reach counts none, and still opens.
         let node = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
         assert!(node.contains(r#""name":"y","data_type":"","description":"","undeclared":false,"up":0,"down":0,"indirect":true"#), "{node}");

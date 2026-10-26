@@ -11,6 +11,7 @@
 
 use crate::collin::{RawColEdge, RawColLineage};
 use crate::collin_run::{is_version, Report};
+use crate::graph::is_row_role;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -147,6 +148,11 @@ pub struct Comparison {
     pub models: Vec<ModelMove>,
     /// How many models that was before the cut.
     pub models_moved: usize,
+    /// Only one run holds indirect edges (a run from before the page asked
+    /// collin for them, against one after), so both are compared without them:
+    /// else an upgrade would read as hundreds of thousands of edges gained.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub rows_left_out: bool,
 }
 
 fn origin(from: &str) -> &'static str {
@@ -219,12 +225,29 @@ fn read(target_dir: &Path, version: &str) -> Result<Read, String> {
 /// Compares the runs `a` and `b` kept, B against A: gained is what B has and A
 /// lacks.
 pub fn compare(target_dir: &Path, a: &str, b: &str) -> Result<Comparison, String> {
-    let (ra, rb) = (read(target_dir, a)?, read(target_dir, b)?);
+    let (mut ra, mut rb) = (read(target_dir, a)?, read(target_dir, b)?);
+    // A run kept from before the page always asked for them holds no indirect
+    // edge, a new one holds thousands: left out of both, and said so (0118).
+    let has_rows = |r: &Read| r.edges.values().any(|k| is_row_role(k));
+    let rows_left_out = has_rows(&ra) != has_rows(&rb);
+    if rows_left_out {
+        for r in [&mut ra, &mut rb] {
+            r.edges.retain(|_, kind| !is_row_role(kind));
+            r.side.edges = r.edges.len();
+        }
+    }
     let totals = |r: &Read| -> BTreeMap<String, u64> {
-        r.report
+        let mut t: BTreeMap<String, u64> = r
+            .report
             .as_ref()
             .map(|rep| rep.overview.totals.iter().filter_map(|(k, v)| Some((k.clone(), v.as_u64()?))).collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Only one of the runs was asked for indirect edges, so this count differs
+        // by the flag alone. collin counts the reads that decide rows either way.
+        if rows_left_out {
+            t.remove("edges_indirect");
+        }
+        t
     };
     let findings = |r: &Read| -> BTreeMap<String, u64> {
         r.report
@@ -307,6 +330,7 @@ pub fn compare(target_dir: &Path, a: &str, b: &str) -> Result<Comparison, String
         changed_edges: changed,
         models,
         models_moved,
+        rows_left_out,
         a: ra.side,
         b: rb.side,
     })
@@ -402,6 +426,33 @@ mod tests {
         );
         assert_eq!(c.models[0].id, "model.p.m", "the model where the most moved comes first");
         assert_eq!((c.a.edges, c.b.edges, c.a.report), (3, 3, true));
+    }
+
+    #[test]
+    fn a_run_with_indirect_edges_is_compared_without_them_to_one_with_none() {
+        let t = dir("rows");
+        let value = ("model.p.a", "id", "model.p.m", "id", "passthrough");
+        let report = |indirect: u64| Some(serde_json::json!({ "totals": { "models": 3, "edges_indirect": indirect, "row_deciding_reads": 4 }, "models": [] }));
+        run(&t, "0.9.0", &[value], report(0));
+        run(&t, "0.10.0", &[value, ("model.p.a", "status", "model.p.m", "id", "filter"), ("model.p.a", "status", "model.p.m", "n", "dedup_key")], report(2));
+        let c = compare(&t, "0.9.0", "0.10.0").unwrap();
+        assert!(c.rows_left_out);
+        assert!(c.totals.iter().any(|d| d.key == "models"), "{:?}", c.totals);
+        assert!(c.totals.iter().any(|d| d.key == "row_deciding_reads"), "collin counts it with or without indirect edges: {:?}", c.totals);
+        assert!(c.totals.iter().all(|d| d.key != "edges_indirect"), "{:?}", c.totals);
+        assert_eq!((c.gained, c.lost, c.changed), (0, 0, 0), "an upgrade is no wave of edges gained");
+        assert_eq!((c.a.edges, c.b.edges), (1, 1));
+        assert!(c.kinds.iter().all(|d| d.key == "passthrough"), "{:?}", c.kinds);
+        assert!(serde_json::to_string(&c).unwrap().contains(r#""rows_left_out":true"#));
+
+        // Both with them, or both without: every edge is compared, and the
+        // answer says nothing of it.
+        run(&t, "0.11.0", &[value, ("model.p.a", "status", "model.p.m", "id", "join_key")], None);
+        let both = compare(&t, "0.10.0", "0.11.0").unwrap();
+        assert!(!both.rows_left_out && (both.gained, both.lost, both.changed) == (0, 1, 1), "{both:?}");
+        assert!(!serde_json::to_string(&both).unwrap().contains("rows_left_out"));
+        run(&t, "0.8.0", &[], None);
+        assert!(!compare(&t, "0.8.0", "0.9.0").unwrap().rows_left_out);
     }
 
     #[test]

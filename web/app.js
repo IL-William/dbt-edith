@@ -42,6 +42,7 @@ const S = {
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
   cardAsk: 0,                 // bumped per box clicked and per card closed, so only the latest box's Catalog shows (0101)
+  colRaise: null,             // {key, max} a click asked a column's canvas to draw past the cap, for that request only (0118)
   selectRaise: null,          // {expr, tests, max} a click asked to draw past the cap, for that line only
   selectBack: null,           // while the selection's panel is down: where what it took from the dock goes back, and the mode
   selectHistory: [],          // expressions typed this session, newest first
@@ -4247,18 +4248,29 @@ async function focusColumn(id, column) {
   S.colFocus = { id, column };
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
+  // Drawing past the cap was asked for this request and no other: any change
+  // of column, depth, stop or indirect button is cut at the cap again, so a
+  // slow canvas never becomes the default (0118).
+  const key = colAskKey(id, column, up, down, S.colCut, S.colIndirect);
+  const raise = colRaiseFor(S.colRaise, key);
+  if (!raise) S.colRaise = null;
   const ask = ++S.colDraw;
   try {
     const sub = await api.get(
       `/api/collineage?id=${encodeURIComponent(id)}&column=${encodeURIComponent(column)}&up=${up}&down=${down}`
       + (S.colCut.size ? `&cut=${encodeURIComponent([...S.colCut].join(','))}` : '')
-      + (S.colIndirect ? '&indirect=1' : ''));
+      + (S.colIndirect ? '&indirect=1' : '')
+      + (raise ? `&max=${raise}` : ''));
     if (ask !== S.colDraw) return;            // a later tick or click already asked
     S.colSub = sub;
     if (stopAtMenu) stopAtMenu.recount(sub.edge_kinds);
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
+    paintColCap(colCapOffer(sub, raise), (max) => {
+      S.colRaise = { key, max };
+      focusColumn(id, column);
+    });
     paintLegend(sub);
     paintTestsCount(sub);
     showDock('lineage');
@@ -4271,6 +4283,55 @@ async function focusColumn(id, column) {
     closeStopAt();
     paintMode();
   }
+}
+
+/* What a request for a column's canvas is, for the cap a click lifted: the
+   column, how far each way, the roles stopped at and the indirect button.
+   Anything else changed is another request. */
+function colAskKey(id, column, up, down, cut, indirect) {
+  return [id, column, up, down, [...cut].sort().join(','), indirect ? 1 : 0].join('|');
+}
+
+/* The ceiling a click lifted, `prev` being {key, max}: for that request and
+   nothing else (0118), as raiseFor() is for a selection. */
+function colRaiseFor(prev, key) {
+  return prev && prev.key === key ? prev.max : 0;
+}
+
+/* The button beside a column canvas cut at the cap: the most the server says
+   it draws, `most`, this time only, since past the cap every step of zoom and
+   pan slows (0118, as capOffer() is for a selection). Nothing once it was
+   drawn at that. Draws up to it, never "all": the walk does not know the
+   total, only that it was turned away. */
+function colCapOffer(sub, asked) {
+  const most = (sub && sub.most) || 0;
+  if (!sub || !sub.truncated || !most || asked >= most) return null;
+  return {
+    max: most,
+    label: `Draw up to ${most}`,
+    hint: 'slower to zoom and pan',
+    title: `Draws up to ${most} boxes of this column's lineage, the most there is, this time only. `
+      + 'Past the cap, zooming and panning slow down, a lot on a slow machine; '
+      + 'another column, depth or stop cuts it at the cap again.',
+  };
+}
+
+/* The offer's button, over the status line, or nothing. */
+function paintColCap(offer, draw) {
+  const host = $('#lineage-cap');
+  if (!host) return;
+  host.textContent = '';
+  host.classList.toggle('hidden', !offer);
+  if (!offer) return;
+  const button = Object.assign(document.createElement('button'), {
+    type: 'button', className: 'btn sm', textContent: offer.label, title: offer.title,
+  });
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    button.textContent = 'Drawing…';
+    draw(offer.max);
+  });
+  host.append(button, Object.assign(document.createElement('span'), { className: 'caphint', textContent: offer.hint }));
 }
 
 /* Every control that used to re-run focusNode has to respect the current mode. */
@@ -4684,9 +4745,14 @@ function canvasStatus(sub, drawn) {
   const stopped = (sub.stopped_at || []).length ? ` · stopped downstream at ${sub.stopped_at.join(', ')}` : '';
   // collin's indirect edges, left out unless the indirect button is on (0097).
   const indirect = sub.indirect_hidden ? ' · indirect edges hidden' : '';
-  const tail = `${sub.edges.length} edges${stopped}${indirect}${sub.truncated ? ' · truncated' : ''}`;
+  // A column canvas is cut at a number of boxes the line names, the one a
+  // click on its button lifts (0118); a model's, at the depth boxes.
+  const cut = sub.truncated ? (sub.mode === 'column' ? ` · truncated at ${sub.nodes.length}` : ' · truncated') : '';
+  const tail = `${sub.edges.length} edges${stopped}${indirect}${cut}`;
+  // The indirect edges' boxes stand for a model each, which no column is.
+  const models = sub.mode === 'column' ? sub.nodes.filter((n) => n.id && !String(n.id).includes('::')).length : 0;
   return (sub.mode === 'column'
-    ? `${sub.focus_column} · ${sub.nodes.length} columns · ${tail}`
+    ? `${sub.focus_column} · ${sub.nodes.length - models} columns${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
 }
 
@@ -6083,7 +6149,8 @@ function collinComparePane(key, view, pair) {
   };
 
   const edges = section('Edges', `B has ${view.gained} edge${view.gained === 1 ? '' : 's'} A lacks, A has ${view.lost} B lacks, `
-    + `and ${view.changed} ${view.changed === 1 ? 'is' : 'are'} read with another role.`);
+    + `and ${view.changed} ${view.changed === 1 ? 'is' : 'are'} read with another role.`
+    + (view.rows_left_out ? ' Only one run holds the indirect edges, a filter\'s, a join key\'s or a dedup key\'s, so both are compared without them.' : ''));
   edges.append(table(collinDeltaRows(view.kinds), 'By role'), table(collinDeltaRows(view.origins,
     (k) => ({ rel: 'a table no node owns' }[k] || k)), 'From'));
 
@@ -7106,11 +7173,14 @@ function legendEntries(sub) {
       if (!seen.has(label)) seen.set(label, Lineage.nodeColor(n));
     }
   }
-  // The three indirect roles share one dashed entry, `indirect` (0097).
+  // The indirect roles are told by their SQL clause and listed apart, at the
+  // end, behind an `indirect` entry that lights all three (0097, 0118).
+  const rows = Lineage.rowLegend(kinds);
+  const apart = new Set(rows.map(([label]) => label));
   for (const k of kinds.map(Lineage.edgeLegendLabel).concat(badges)) {
-    if (k && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
+    if (k && !apart.has(k) && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
   }
-  return [...seen].sort((a, b) => a[0].localeCompare(b[0]));
+  return [...seen].sort((a, b) => a[0].localeCompare(b[0])).concat(rows);
 }
 
 function paintLegend(sub) {
@@ -7170,17 +7240,18 @@ function cacheHasIndirect(cllKinds) {
   return (cllKinds || []).some((k) => Lineage.isRowKind(k.kind));
 }
 
-/* The roles the stop at menu offers: the indirect ones only while they are
-   walked, since a stop at an edge the canvas leaves out stops nothing. */
-function stopAtKinds(cllKinds, indirect) {
-  return (cllKinds || []).filter((k) => indirect || !Lineage.isRowKind(k.kind));
+/* The roles the stop at menu offers: never an indirect one, whether the
+   button is on or not. Downstream such an edge ends on its model's box and
+   walks no further, so a stop at it would stop nothing (0118). */
+function stopAtKinds(cllKinds) {
+  return (cllKinds || []).filter((k) => !Lineage.isRowKind(k.kind));
 }
 
-/* The stop at roles kept as the indirect button turns: off, an indirect role
-   ticked while they showed goes, since it would stop nothing and the menu no
-   longer lists it. A new set, the one given left as it was. */
-function cutsKept(cut, indirect) {
-  return new Set([...cut].filter((r) => indirect || !Lineage.isRowKind(r)));
+/* The stop at roles kept as the indirect button turns: an indirect role
+   ticked, by a version that offered it, goes, since it would stop nothing and
+   the menu no longer lists it. A new set, the one given left as it was. */
+function cutsKept(cut) {
+  return new Set([...cut].filter((r) => !Lineage.isRowKind(r)));
 }
 
 /* The indirect button, in column mode only, and only when the cache holds
@@ -7192,8 +7263,8 @@ function paintIndirectToggle() {
   b.classList.toggle('hidden', !shown);
   b.setAttribute('aria-pressed', String(S.colIndirect));
   b.title = S.colIndirect
-    ? 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are walked and drawn dashed: they say which rows a model keeps. Click to leave them out'
-    : 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are left out: the walk, the edges and the counts are the values\' alone. Click to walk and draw them';
+    ? 'collin\'s indirect edges are drawn dashed, upstream from column to column, downstream to one box for the whole model, each named by its SQL clause: QUALIFY, JOIN or WHERE / HAVING. They say which rows a model keeps. Click to leave them out'
+    : 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are left out: the walk, the edges and the counts are the values\' alone. Click to draw them';
   b.replaceChildren(testsEye(S.colIndirect), Object.assign(document.createElement('span'), { textContent: 'indirect' }));
 }
 
@@ -7221,6 +7292,15 @@ function unroled(here) {
   return (here.get('') || 0) + (here.get('unknown') || 0);
 }
 
+/* The indirect edges drawn, which the menu lists no role for: an edge that
+   ends on a model's box has nothing past it to stop (0118). A line of their
+   own, so the menu still adds up to the status line's edge count. */
+function indirectDrawn(here) {
+  let n = 0;
+  for (const [role, count] of here) if (Lineage.isRowKind(role)) n += count;
+  return n;
+}
+
 let stopAtMenu = null;
 function closeStopAt({ refocus = false } = {}) {
   if (!stopAtMenu) return;
@@ -7233,14 +7313,17 @@ function closeStopAt({ refocus = false } = {}) {
 
 function openStopAt(anchor) {
   if (stopAtMenu) return closeStopAt();
-  const roles = stopAtRoles(stopAtKinds(S.meta && S.meta.cll_kinds, S.colIndirect), S.colSub && S.colSub.edge_kinds, S.colCut);
+  const roles = stopAtRoles(stopAtKinds(S.meta && S.meta.cll_kinds), S.colSub && S.colSub.edge_kinds, S.colCut);
   // Each item's count, repainted when the graph a tick asked for arrives.
   const counts = [];
   const bare = Object.assign(document.createElement('div'), { className: 'menunote' });
+  const rows = Object.assign(document.createElement('div'), { className: 'menunote' });
   const countBare = (here) => {
-    const n = unroled(here);
+    const n = unroled(here), m = indirectDrawn(here);
     bare.textContent = n ? `${n} edge${n === 1 ? '' : 's'} with no role` : '';
     bare.classList.toggle('hidden', !n);
+    rows.textContent = m ? `${m} indirect edge${m === 1 ? '' : 's'}, which no stop applies to` : '';
+    rows.classList.toggle('hidden', !m);
   };
   const el = document.createElement('div');
   el.className = 'envmenu stopmenu';
@@ -7282,7 +7365,7 @@ function openStopAt(anchor) {
     el.appendChild(b);
   });
   countBare(roleCounts(S.colSub && S.colSub.edge_kinds));
-  el.appendChild(bare);
+  el.append(bare, rows);
   document.body.appendChild(el);
   const place = placeFloating(anchor.getBoundingClientRect(), el.getBoundingClientRect(),
     { width: window.innerWidth, height: window.innerHeight }, 4);
@@ -7343,6 +7426,12 @@ function paintMode() {
   // expression carries it, and two places to set one would contradict.
   $('#up').disabled = $('#down').disabled = selecting;
   paintStopAt();
+  // A column canvas's offer, and the cap a click lifted, are for that canvas
+  // alone, as a selection's is (0118).
+  if (S.graphMode !== 'column') {
+    S.colRaise = null;
+    paintColCap(null);
+  }
   const chip = $('#col-chip');
   chip.classList.toggle('hidden', !S.colFocus);
   if (S.colFocus) {
@@ -7422,7 +7511,7 @@ function relinkTools() {
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
   $('#indirect-btn').addEventListener('click', () => {
     S.colIndirect = !S.colIndirect;
-    S.colCut = cutsKept(S.colCut, S.colIndirect);
+    S.colCut = cutsKept(S.colCut);
     closeStopAt();
     paintStopAt();
     rerender();
@@ -7668,9 +7757,11 @@ function exportCanvasCss() {
     '.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
     '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
+    '.edge.indirect.hi { stroke: var(--edge-col); }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
     '.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }',
+    '.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, #33445c); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }',
     '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
     '.nd:hover rect.box { stroke: var(--fg-dim); }',
     '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
@@ -7972,7 +8063,7 @@ function exportLineage() {
     .sort((a, b) => a.name.localeCompare(b.name));
   const html = exportDocument({
     heading, facts, nodes, legend: legendEntries(sub), svg: shot.svg, frame: shot.frame,
-    noun: sub.mode === 'column' ? 'Columns' : 'Nodes',
+    noun: sub.mode !== 'column' ? 'Nodes' : sub.nodes.some((n) => Lineage.isModelBox(n)) ? 'Columns and models' : 'Columns',
   });
   const name = exportFileName(heading, localDay(new Date()));
   saveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), name);
@@ -11011,14 +11102,16 @@ function hoverLeave() {
 
 /* A column's box, when it has more to say than the box shows: what the SQL
    sets a generated column to (0096), and apart from it what keeps the rows
-   it is in (0097), so "from no column" and a filter on another column are
-   two facts rather than one contradiction. All in the box's payload, so it
+   it is in (0097), and the models it keeps the rows of (0118), so "from no
+   column" and a filter on another column are two facts rather than one
+   contradiction. All in the box's payload, so it
    paints once. */
 function fillColumnCard(el, n, rows) {
   const tone = Object.assign(document.createElement('span'), { className: 'dot' });
   tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
   hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
-  const lines = (Array.isArray(n.generated) ? [Lineage.generatedSaid(n.generated).long] : []).concat(rows ? [rows] : []);
+  // The card's two lines of rows, kept by and kept of (0118), one box each.
+  const lines = (Array.isArray(n.generated) ? [Lineage.generatedSaid(n.generated).long] : []).concat(rows ? rows.split('\n') : []);
   for (const line of lines) el.append(Object.assign(document.createElement('div'), { className: 'hc-note', textContent: line }));
 }
 

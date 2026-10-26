@@ -6,7 +6,7 @@ var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 eval(lin.slice(lin.indexOf('function subtitle(n)'), lin.indexOf('  function init(')));
 var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor, subtitle: subtitle,
-  edgeLegendLabel: edgeLegendLabel, legendSwatch: legendSwatch };
+  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function selectKindCounts'), src.indexOf('async function loadSidecar')));
@@ -236,7 +236,9 @@ ok('a large one stays within the memory budget', 6000 * 6000 * Math.pow(pngScale
 print('\n--- the file ---');
 var nasty = '</script><img src=x onerror=alert(1)> & "q" \'s';
 var svgText = '<svg xmlns="http://www.w3.org/2000/svg" id="graph" viewBox="0 0 1000 560">'
-  + '<g><g class="nd" data-id="model.p.a"><text class="t1">a</text></g></g></svg>';
+  + '<g><path class="edge indirect" id="edge-3" d="M0,0 L100,0"/>'
+  + '<text class="edgelabel"><textPath href="#edge-3" startOffset="50%" text-anchor="middle">QUALIFY</textPath></text>'
+  + '<g class="nd" data-id="model.p.a"><text class="t1">a</text></g></g></svg>';
 function doc(text, frame) {
   return exportDocument({
     heading: text, noun: 'Nodes', svg: svgText, frame: frame || { x: 0, y: 0, w: 1000, h: 560 },
@@ -260,20 +262,40 @@ var expected = '(' + exportViewer + ')(' + zoomViewBox + ');';
 ok('and it is the same text whatever is drawn', script(hostile) === expected && script(plain) === expected);
 // The indirect entry is a dash in the file as on screen, its colour kept (0097).
 var rowsDoc = exportDocument({ heading: 'x', noun: 'Columns', svg: svgText, frame: { x: 0, y: 0, w: 1000, h: 560 },
-  legend: [['indirect', roleColor('indirect')], ['rename', roleColor('rename')]],
+  legend: [['rename', roleColor('rename')], ['indirect', roleColor('indirect')], ['QUALIFY', roleColor('dedup_key')]],
   facts: { kicker: 'Column', lines: [], warnings: [], undrawn: [], command: '' }, nodes: [] });
 ok('an exported legend draws indirect as a dash', rowsDoc.indexOf('<i class="dash" style="background:repeating-linear-gradient(90deg,'
   + roleColor('indirect') + ' 0 3px,transparent 3px 5px)"></i>indirect') > 0
   && rowsDoc.indexOf('<i style="background:' + roleColor('rename') + '"></i>rename') > 0);
+ok('and so is a clause, in the colour of its role', rowsDoc.indexOf('<i class="dash" style="background:repeating-linear-gradient(90deg,'
+  + roleColor('dedup_key') + ' 0 3px,transparent 3px 5px)"></i>QUALIFY') > 0);
+// The list under the picture is headed for what it holds: model boxes join the columns (0118).
+ok('the export heads its list Columns and models when a model box is drawn',
+  /sub\.nodes\.some\(\(n\) => Lineage\.isModelBox\(n\)\) \? 'Columns and models' : 'Columns'/.test(src) && /subJoin, adapterName, nodeColor, matLabel,[^}]*isModelBox/.test(lin));
+// The clause on an edge travels with the picture (0118): a label along the
+// path, the path named for it, and the style the file copies.
+ok('an indirect edge\'s clause is written along its own path', /id: `edge-\$\{i\}`/.test(lin)
+  && /el\('textPath', \{ href: `#edge-\$\{i\}`, startOffset: '50%'/.test(lin) && /class: 'edgelabel'/.test(lin));
+ok('the only reference in it is to the file itself', !/href: [^#`]/.test(lin.slice(lin.indexOf("el('textPath'"), lin.indexOf("el('textPath'") + 120)));
+ok('and a lit indirect edge keeps its hue there too', exportCanvasCss().indexOf('.edge.hi {') < exportCanvasCss().indexOf('.edge.indirect.hi {'));
+ok('the label is drawn on an edge that ends on a model\'s box only', /isRowKind\(kind\) && !L\.back\[i\] && isModelBox\(d\.nodes\[b\]\)/.test(lin));
+ok('and the file styles the label', exportCanvasCss().split('\n').some(function (l) { return /^\.edgelabel \{/.test(l); }));
 ok('and the file styles that dash', rowsDoc.indexOf('.legend i.dash {') > 0);
 // Quoted values are blanked first: the hostile text is still in them, escaped,
 // and `onerror=` inside a data-id is only text.
 ok('no handler in any tag', !(hostile.match(/<[a-z][^>]*>/gi) || []).some(function (tag) {
   return /\son[a-z]+\s*=/i.test(tag.replace(/"[^"]*"/g, '""'));
 }));
-var bare = plain.replace('http://www.w3.org/2000/svg', '');
-ok('no address, source, import or link besides the SVG namespace',
-  !/https?:|src=|href=|url\(|@import|<link|<img/i.test(bare));
+// The one reference allowed is a label's textPath to the edge it runs along,
+// in the file itself (0118): anything else with an href is a link.
+function foreign(html) {
+  return /https?:|src=|href=|url\(|@import|<link|<img/i.test(
+    html.replace('http://www.w3.org/2000/svg', '').replace(/<textPath href="#edge-\d+"/g, '<textPath'));
+}
+ok('no address, source, import or link besides the SVG namespace and a label on its edge', !foreign(plain));
+ok('the label is in the file, along its edge', plain.indexOf('<textPath href="#edge-3"') > 0 && plain.indexOf('id="edge-3"') > 0);
+ok('and any other href still fails the check', foreign(plain.replace('href="#edge-3"', 'href="#elsewhere"'))
+  && foreign(plain.replace('<textPath href="#edge-3"', '<a href="#edge-3"')) && foreign(plain.replace('href="#edge-3"', 'href="https://x.test/edge-3"')));
 ok('the picture goes in as it came', plain.indexOf(svgText) > 0);
 ok('a tall graph prints in portrait', plain.indexOf('size: portrait') > 0);
 ok('a wide one in landscape', hostile.indexOf('size: landscape') > 0);

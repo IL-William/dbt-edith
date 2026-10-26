@@ -79,13 +79,16 @@ column mode the legend names what happened to each column instead, and
 `raw`, `generated` and `mixed` leave the columns wearing that badge, and
 `indirect`, the dashed entry for collin's filter, join key and dedup key
 edges, shown once the indirect button is on, leaves those edges and the
-columns they join. Click it again to see
+columns or model boxes they join, and `QUALIFY`, `JOIN` and `WHERE / HAVING`
+leave the edges of one role. Click it again to see
 everything. The pick stays while you move around the graph, as
 long as the legend still lists it, and an exported graph is drawn without it.
 
 In column mode, **stop at** beside the depth boxes lists the roles the column
-lineage holds, each with how many of its edges the canvas draws. A line under
-them counts the edges drawn with no role, so the menu adds up to the edges the
+lineage holds, except the three indirect ones, each with how many of its edges
+the canvas draws. A line under them counts the edges drawn with no role, and,
+with the indirect button on, another the indirect edges, which no stop applies
+to since each ends on a model's box, so the menu adds up to the edges the
 status line counts. A role the canvas has none of is dimmed, and hovering a
 role adds its count in the whole project. Tick `window` and each window edge
 below the focused column is still drawn, with the column it reaches, so you

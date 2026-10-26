@@ -2249,7 +2249,7 @@ written in its pull request or left by its review, unranked:
 - **The column counts (0089):**
   - with Snowflake picked, a cell counts what the clicks have fetched, and
     grows with each click;
-  - past 200 columns the canvas draws fewer than the cell counts, and the
+  - past 1000 boxes the canvas draws fewer than the cell counts, and the
     cell counts the whole chain whatever stop is ticked;
   - on a cycle of two columns each counts the other on both sides, where the
     canvas draws it on one;
@@ -2358,7 +2358,8 @@ written in its pull request, unranked:
   - until a Windows build finds `windres`, every change of `PATH` rebuilds the
     crate.
 - **Indirect edges (0097):**
-  - shown, stop at lists the three indirect roles one by one;
+  - ~~shown, stop at lists the three indirect roles one by one;~~ Settled in
+    1.53.0 (0118): it lists none, and an indirect edge ends on its model's box;
   - `--column --indirect` lists an indirect edge in `from` with its role, and
     `--output name` prints that column with none;
   - a card opens on nearly every column, button on or off, since join keys
@@ -2619,6 +2620,36 @@ Left by the Checks section (0116, 1.51.0), unranked:
   they are kept there.
 - **A new section that must not light the button or open the panel** sets
   `quiet` through `lights(sec)` in `web/app.js`.
+
+Left by the indirect edges' boxes (0118, 1.53.0), unranked:
+
+- **WHERE and HAVING share one label,** `WHERE / HAVING`, since collin merges
+  them into `filter`. Telling them apart needs a fourth role from collin.
+- **A column in two clauses of one model shows one,** the strongest by
+  collin's order (`QUALIFY`, then `JOIN`, then `WHERE / HAVING`); the card's
+  `keeps the rows of` has the same single role.
+- **The command line answers per column where the page draws per model,** so
+  `--column --indirect` lists every column an indirect edge reaches, as it
+  always did, and `--output name` is not what the canvas shows.
+- **A cache written before 0118 needs one Regenerate** to hold indirect edges
+  at all: its modified time says nothing of a missing flag, so staleness does
+  not offer it.
+- **The MCP server merges the cache again for every column question,** and
+  `--column` on every call (the figures are in 0118). Keeping the merged graph
+  per cache path, size and modified time in `src/mcp_graphs.rs` would spare the
+  MCP server that.
+- **Every `--column` without `--indirect` now says on stderr** that the
+  indirect edges were left out, since every cache the page or `--run-collin`
+  writes holds them.
+- **`Draw up to 3000` does not know the total.** The walk stops when it is full
+  and counts nothing it turned away, so the button cannot say how much is left,
+  or that 3000 will be enough.
+- **A box's own +N is never drawn,** since nothing is walked from it: the
+  column of its model an indirect edge reaches is opened from Models mode.
+- **An indirect edge into a column the value walk reached too** is drawn by
+  the model's box alone, and the column's +N leaves it out. Upstream, the
+  edges stay column to column and can still fill a cap on a model with many
+  keys.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
