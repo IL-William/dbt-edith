@@ -2797,10 +2797,11 @@ each a known limit, unranked:
 - **A `target/` cargo did not create.** It has no `CACHEDIR.TAG`, so every clean
   refuses it (exit 101) and it keeps growing, with cargo's error in the terminal
   as the only sign (0120); the menu could point it out.
-- **The release job's publish path first ran with v1.56.0.** `gh release create`
-  with the four files and the `releases/latest/download` .sha256 check had only
-  run up to the build on pull requests. A failed check is fixed in the next
-  release, since published releases are immutable (0123).
+- **Releases are not immutable.** The repository's setting is off, though
+  `release.yml`'s error line and 0123 say a published release is, so a failed
+  check of the served `.sha256` files could be mended by editing the release.
+  Turning the setting on is the owner's call; otherwise the error line is
+  reworded in a later change, and 0123 stays as merged.
 - **No test makes a PowerShell `Move-Item` fail under `Stop`.** The real-shells
   test sets `$ErrorActionPreference='Stop'` on the swap, mismatch and 404 paths,
   but only the sh test covers a rename that fails.
