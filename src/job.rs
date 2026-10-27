@@ -1,5 +1,6 @@
 //! The `--job` mode: one DAG or dbt Cloud job, step by step, with the nodes
-//! each step runs, printed, and the process ends (0115).
+//! each step runs and the order its files declare, printed, and the process
+//! ends (0115, 0124).
 //!
 //! Invariants: the jobs are the ones the project's own `.dbt-edith/jobs.yml`
 //! names, read by `jobs::known`, so the command line answers as the Jobs tab
@@ -114,6 +115,9 @@ fn write_text(a: &jobs::JobAnswer, out: &mut impl Write) -> io::Result<()> {
     let head = if a.kind == jobs::AIRFLOW { format!("DAG {}", a.name) } else { format!("job {}", a.name) };
     let ident = if a.ident.is_empty() { String::new() } else { format!(" [[{}]]", a.ident) };
     writeln!(out, "{}", clean(&format!("{head}{ident}  {}  {}:{}", a.schedule, a.file, a.line)))?;
+    for line in a.order_lines() {
+        writeln!(out, "{}", clean(&line))?;
+    }
     for s in &a.steps {
         let mut line = format!("  {}  {}", s.label, s.command);
         if !s.unresolved.is_empty() {
@@ -124,6 +128,11 @@ fn write_text(a: &jobs::JobAnswer, out: &mut impl Write) -> io::Result<()> {
             line.push_str(&format!("  ({})", if s.node_count == 1 { "1 node".to_string() } else { format!("{} nodes", s.node_count) }));
         }
         writeln!(out, "{}", clean(&line))?;
+        // Marked, so it never reads as a node line (`    kind name`) below.
+        let order = s.order();
+        if !order.is_empty() {
+            writeln!(out, "{}", clean(&format!("    order: {order}")))?;
+        }
         for w in &s.warnings {
             writeln!(out, "{}", clean(&format!("    note: {w}")))?;
         }
@@ -198,6 +207,8 @@ mod tests {
                 kind: kind.to_string(),
                 path: format!("jobs/{dir}"),
                 label: label.to_string(),
+                // The fixture names its own keys.
+                keys: if *dir == "airflow_renamed" { jobs::RENAMED_KEYS.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect() } else { Default::default() },
                 ..Default::default()
             })
             .collect();
@@ -220,15 +231,19 @@ mod tests {
             out,
             "DAG jaffle_daily  scheduled 0 6 * * *  jaffle_daily.yml:2\n\
              \x20 task load_seeds  dbt seed  (1 node)\n\
+             \x20   order: before stage\n\
              \x20   seed raw_orders\n\
              \x20 task stage  dbt run --select tag:staging  (2 nodes)\n\
+             \x20   order: after load_seeds · before marts\n\
              \x20   model stg_customers\n\
              \x20   model stg_orders\n\
              \x20 task marts  dbt run -s +customers orders --exclude tag:staging  (2 nodes)\n\
+             \x20   order: after stage · before reconcile · updates jaffle_marts, which starts jaffle_on_marts\n\
              \x20   model customers\n\
              \x20   model orders\n\
              \x20 task reconcile  dbt test --selector recon_tests  not resolved: no selector named `recon_tests` in this manifest; \
              the Selectors menu lists the ones it records\n\
+             \x20   order: after marts\n\
              nodes 5\n"
         );
         // Compact reads as the text does.
@@ -311,5 +326,112 @@ mod tests {
         let (_, err, code) = ask(&root, "nothing_like_it", Output::Name);
         assert_eq!(code, REFUSED);
         assert!(err.contains("; 1 of 2 sources (nothing at this path) not read\n"), "{err}");
+    }
+
+    /// A DAG of its own beside the fixtures: a task that names a sensor in
+    /// `depends_on`, a whole-run sensor, a sensor with no id, and a task with
+    /// no dbt command that updates an asset another DAG is scheduled on.
+    fn with_gated_dag(root: &Path) {
+        let dir = root.join("jobs").join("gated");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("jaffle_gated.yml"),
+            "dag_id: jaffle_gated\nschedule: null\nsensors:\n  - task_id: wait_stage\n    external_dag_id: jaffle_daily\n    external_task_id: stage\n  \
+             - task_id: wait_all\n    external_dag_id: jaffle_daily\n  - external_dag_id: jaffle_daily\n    external_task_id: marts\n\
+             tasks:\n  - task_id: publish\n    command: dbt run -s customers\n    depends_on: [wait_stage, load_raw]\n  \
+             - task_id: load_raw\n    python_callable: load\n    outlets: [raw_loaded]\n  \
+             - task_id: load_more\n    python_callable: load\n    outlets: [raw_loaded]\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("jaffle_next.yml"), "dag_id: jaffle_next\nschedule: [raw_loaded]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n").unwrap();
+        let list = [JobSource { kind: "airflow".into(), path: "jobs/airflow".into(), ..Default::default() }, JobSource { kind: "airflow".into(), path: "jobs/gated".into(), ..Default::default() }];
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
+    }
+
+    #[test]
+    fn a_dag_says_what_its_sensors_wait_for_and_a_task_what_awaits_it() {
+        let root = project("sensors", &[("airflow", "airflow", ""), ("airflow", "airflow_renamed", "")]);
+        let (out, _, _) = ask(&root, "jaffle_reports", Output::Name);
+        assert!(out.starts_with("DAG jaffle_reports  manual  jaffle_reports.yml:4\n  sensor wait_marts  waits for jaffle_daily › marts\n  task refresh  "), "{out}");
+        assert!(!out.contains("order:"), "no task of it names another: {out}");
+        let (out, _, _) = ask(&root, "jaffle_daily", Output::Name);
+        assert!(out.contains("    order: after stage · before reconcile · awaited by jaffle_reports › wait_marts · updates jaffle_marts, which starts jaffle_on_marts\n"), "{out}");
+    }
+
+    #[test]
+    fn a_task_names_its_sensor_a_whole_run_sensor_holds_every_task_and_a_nameless_one_is_the_dag() {
+        let root = project("gated", &[]);
+        with_gated_dag(&root);
+        let (out, err, code) = ask(&root, "jaffle_gated", Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert!(
+            out.starts_with(
+                "DAG jaffle_gated  manual  jaffle_gated.yml:1\n\
+                 \x20 sensor wait_stage  waits for jaffle_daily › stage\n\
+                 \x20 sensor wait_all  waits for jaffle_daily\n\
+                 \x20 sensor waits for jaffle_daily › marts\n\
+                 \x20 updates raw_loaded, which starts jaffle_next\n\
+                 \x20 task publish  dbt run -s customers  (1 node)\n\
+                 \x20   order: after wait_stage, load_raw\n"
+            ),
+            "{out}"
+        );
+        let (out, _, _) = ask(&root, "jaffle_daily", Output::Name);
+        assert!(out.contains("    order: before stage · awaited by jaffle_gated › wait_all (whole run)\n"), "{out}");
+        assert!(out.contains("    order: after load_seeds · before marts · awaited by jaffle_gated › wait_stage, jaffle_gated › wait_all (whole run)\n"), "{out}");
+        // The nameless sensor is the DAG alone, with no separator after it.
+        assert!(out.contains(" · awaited by jaffle_gated › wait_all (whole run), jaffle_gated · updates jaffle_marts"), "{out}");
+
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_gated", Output::Json).0).unwrap();
+        assert_eq!(
+            json["sensors"],
+            json!([
+                {"id": "wait_stage", "dag": "jaffle_daily", "task": "stage"},
+                {"id": "wait_all", "dag": "jaffle_daily"},
+                {"dag": "jaffle_daily", "task": "marts"},
+            ])
+        );
+        assert_eq!((&json["outlets"], &json["feeds"]), (&json!(["raw_loaded"]), &json!(["jaffle_next"])));
+        assert_eq!(json["steps"][0]["upstream"], json!(["wait_stage", "load_raw"]));
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_daily", Output::Json).0).unwrap();
+        assert_eq!(json["steps"][2]["waited_by"], json!(["jaffle_gated › wait_all (whole run)", "jaffle_gated"]));
+    }
+
+    #[test]
+    fn a_job_answer_in_json_carries_the_order_and_leaves_out_what_is_empty() {
+        let root = project("order-json", &[("airflow", "airflow", ""), ("airflow", "airflow_renamed", "")]);
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_daily", Output::Json).0).unwrap();
+        let steps = &json["steps"];
+        assert!(steps[0].get("upstream").is_none(), "load_seeds waits for nothing: {steps}");
+        assert_eq!(steps[0]["downstream"], json!(["stage"]));
+        assert_eq!((&steps[1]["upstream"], &steps[1]["downstream"]), (&json!(["load_seeds"]), &json!(["marts"])));
+        assert_eq!(steps[2]["waited_by"], json!(["jaffle_reports › wait_marts"]));
+        assert_eq!((&steps[2]["outlets"], &steps[2]["feeds"]), (&json!(["jaffle_marts"]), &json!(["jaffle_on_marts"])));
+        // The notify task has no dbt command, so it is no step and no `before`.
+        assert_eq!(steps[3]["upstream"], json!(["marts"]));
+        assert!(steps[3].get("downstream").is_none(), "{}", steps[3]);
+        for absent in ["sensors", "assets", "assets_unread", "after", "after_unread", "triggers", "outlets", "feeds"] {
+            assert!(json.get(absent).is_none(), "{absent}: {json}");
+        }
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_on_marts", Output::Json).0).unwrap();
+        assert_eq!(json["assets"], json!(["jaffle_marts"]));
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_reports", Output::Json).0).unwrap();
+        assert_eq!(json["sensors"], json!([{"id": "wait_marts", "dag": "jaffle_daily", "task": "marts"}]));
+    }
+
+    #[test]
+    fn a_dbt_cloud_job_says_which_jobs_its_end_starts() {
+        let root = project("starts", &[("dbt_cloud", "dbt_cloud", "")]);
+        let (out, _, _) = ask(&root, "Nightly build", Output::Name);
+        assert_eq!(out.lines().nth(1), Some("  starts Exports when it ends"), "{out}");
+        // The started job's head says it, the order lines do not say it twice.
+        let (out, _, _) = ask(&root, "Exports", Output::Name);
+        assert!(out.starts_with("job Exports [[exports]]  scheduled after Nightly build  "), "{out}");
+        assert!(!out.contains("starts") && !out.contains("order:"), "{out}");
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "Nightly build", Output::Json).0).unwrap();
+        assert_eq!(json["triggers"], json!(["Exports"]));
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "Exports", Output::Json).0).unwrap();
+        assert_eq!(json["after"], "Nightly build");
+        assert!(json.get("triggers").is_none());
     }
 }

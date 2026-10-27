@@ -147,7 +147,7 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
     overview: bool,
 
-    /// Print one DAG or dbt Cloud job, step by step, with the nodes each step runs, and exit, without serving: its id or name. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    /// Print one DAG or dbt Cloud job, step by step, with the nodes each step runs and what it waits for, and exit, without serving: its id or name. Needs .dbt-edith/jobs.yml, which the Jobs settings write
     #[arg(long, value_name = "NAME", conflicts_with_all = ["select", "selector", "column", "describe", "overview"])]
     job: Option<String>,
 

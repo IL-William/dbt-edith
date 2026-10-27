@@ -325,8 +325,10 @@ names, and leaves out every key that is empty:
 ## A job
 
 `--job NAME` prints one DAG or dbt Cloud job step by step, with the nodes each
-step runs, the question the other way round from a card's `jobs` line
-([0115](../decisions/0115-job-sources-may-live-in-the-project.md)):
+step runs and the order its files declare, the question the other way round
+from a card's `jobs` line
+([0115](../decisions/0115-job-sources-may-live-in-the-project.md),
+[0124](../decisions/0124-a-jobs-answer-carries-its-order-as-the-files-write-it.md)):
 
 ```
 dbt-edith path/to/project --job jaffle_daily
@@ -344,14 +346,18 @@ reason and line. The call never runs dbt.
 ```
 DAG jaffle_daily  scheduled 0 6 * * *  jaffle_daily.yml:2
   task load_seeds  dbt seed  (1 node)
+    order: before stage
     seed raw_orders
   task stage  dbt run --select tag:staging  (2 nodes)
+    order: after load_seeds · before marts
     model stg_customers
     model stg_orders
   task marts  dbt run -s +customers orders --exclude tag:staging  (2 nodes)
+    order: after stage · before reconcile · updates jaffle_marts, which starts jaffle_on_marts
     model customers
     model orders
   task reconcile  dbt test --selector recon_tests  not resolved: no selector named ...
+    order: after marts
 nodes 5
 ```
 
@@ -370,12 +376,37 @@ instead; one that only compiles, lists or previews says `dbt compile runs no
 node`. `nodes N` closes the answer: the distinct nodes the steps run, once
 however many steps run them.
 
+What the files say of the order is printed, nothing more: it is not followed
+from job to job and nothing is checked. Under a DAG's first line come its
+sensors, `sensor wait_marts  waits for jaffle_daily › marts` (the sensor's id,
+which a task's `depends_on` names it by, then the DAG and the task it waits for,
+the DAG alone when it waits for the whole run; a sensor written without an id
+leaves the id out), then `updates X, which starts D` for what its tasks with no
+dbt command update and the DAGs scheduled on it, and for a dbt Cloud job
+`starts A, B when it ends`. Under a step, an `order:` line, left out when it
+has nothing to say: `after` the tasks its `depends_on` names, as written, a
+sensor's id or a task that runs no dbt included; `before` the tasks that run
+dbt and name it, a task that runs none left out as the Jobs tab leaves it;
+`awaited by` the sensors of other DAGs (`dag › sensor`) that wait for it, a
+sensor on the whole run marked `(whole run)` on every task of the DAG instead of
+read as that many waits; `updates` the assets it writes and the DAGs scheduled
+on them. The file's order is not the run order: every task with no `after` starts
+with the DAG's run. A sensor may also hold back tasks that do not name it, which the
+factory that builds the DAG decides: dbt-edith prints what the file says. A dbt
+Cloud job's steps do run in the order they are listed.
+
 `--output json` prints one object: `kind`, `name`, `source`, `ident` (a dbt Cloud
 job's), `file`, `line`, `schedule`, `steps` (each `n`, `name`, `line`,
-`command`, `unresolved`, `runs_nothing`, `warnings`, `node_count` and `nodes`,
-a list of `id`, `kind` and `name`) and `nodes`, the total, and `not_read`
-when a source was not read: the text answer then ends on a `not read:` line, and
-a refusal for a name no job has says it too, since the job may be in that source.
+`command`, `unresolved`, `runs_nothing`, `warnings`, `upstream`, `downstream`,
+`waited_by`, `outlets`, `feeds`, `node_count` and `nodes`, a list of `id`,
+`kind` and `name`) and `nodes`, the total, and `not_read` when a source was not
+read: the text answer then ends on a `not read:` line, and a refusal for a name
+no job has says it too, since the job may be in that source. At the job's level
+`sensors` (each `id`, `dag` and `task`, structured: a `task` absent is a sensor
+on the whole run of `dag`), `assets` with `assets_unread`, `after` with
+`after_unread`, `triggers`, `outlets` and `feeds`, each left out when empty.
+The step's `waited_by` is a list of `dag › sensor` strings, the Jobs tab's
+wording, with `(whole run)` after a sensor on the whole run.
 The file is the one [Jobs](jobs-and-reports.md#jobs) describes: paths from the
 project, never hidden, never a profile, never the home folder, a link along the
 path included.
@@ -457,7 +488,7 @@ are safe to run unasked.
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
 | which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
-| what a DAG or dbt Cloud job runs | `dbt-edith . --job name`, step by step |
+| what a DAG or dbt Cloud job runs, and what each step waits for | `dbt-edith . --job name`, step by step |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
 Six habits keep the answers small and true:
@@ -489,7 +520,10 @@ Six habits keep the answers small and true:
   by job.** `--overview --depth 0 --output json` names every job, where the
   text stops at fifteen, `--job` lists the nodes each one runs, and the agent
   intersects them with the selection or subtracts them from it. It costs one
-  call per job, so an agent with many says which it did not check.
+  call per job, so an agent with many says which it did not check. `--job` also
+  gives each step's order, the sensors a DAG waits on and what its tasks update,
+  as the files write them: the input for a question about the order between
+  jobs, which it does not answer itself.
 
 Start from these commands, or from the skill that wraps them
 ([below](#the-skill)). Use MCP only where there is no terminal to run them in;
