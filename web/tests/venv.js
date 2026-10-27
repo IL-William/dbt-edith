@@ -162,4 +162,10 @@ check('none in the terminal either', venvStatus(none, '').title.split('\n'), [
   'none activated in the terminal, and none found in the project',
   'committed to the repository, so never run by dbt-edith: shipped',
 ]);
+var unsure = { committed: ['shipped', 'mine'], unsure: 'git is paused here: this repository\'s own configuration names a program (filter.x.clean). git in the terminal is unaffected.' };
+check('a venv set aside for want of an answer does not claim to be committed', venvStatus(unsure, '').title.split('\n'), [
+  'none activated in the terminal, and none found in the project',
+  'never run by dbt-edith, as git cannot say here whether they are committed: shipped, mine',
+  'git is paused here: this repository\'s own configuration names a program (filter.x.clean). git in the terminal is unaffected.',
+]);
 check('a committed venv the terminal activates is only named', venvStatus(none, '/c/p/shipped').text, 'venv shipped');

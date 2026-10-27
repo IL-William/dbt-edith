@@ -19,6 +19,12 @@ pub struct VenvInfo {
     /// repository: listed, never run, and never the one reported (0053).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub committed: Vec<String>,
+    /// Why git could not say whether a venv set aside is committed (the first
+    /// such error, a pause or a refusal): those in `committed` it did not
+    /// answer for were set aside because not knowing is not a no. Empty when
+    /// git answered for every one listed in `committed`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unsure: String,
     /// Every environment found in the project that git does not track, the
     /// reported one included, best first: what the status bar can name when the
     /// terminal reports one of them (0069).
@@ -182,16 +188,24 @@ fn is_adapter(dist_info: &Path) -> bool {
 /// Whether git tracks this venv, which no venv anyone made for themselves is:
 /// one that arrived with a clone was put there by whoever wrote the repository,
 /// and its `python` is theirs to have written too. Asked of git rather than
-/// guessed, and false outside a repository, where there is nobody to ask.
-fn committed(root: &Path, venv: &Path) -> bool {
+/// guessed. Outside a repository, where there is nobody to ask, the answer is
+/// no. Inside one, an answer git cannot give (it is paused, 0121) sets the
+/// venv aside, as `collin_run` does for a collin: not knowing is not a no. That
+/// case is an `Err` carrying what git said, for the page to tell it from a
+/// venv git does track.
+fn committed(root: &Path, venv: &Path) -> Result<bool, String> {
     let Ok(rel) = venv.strip_prefix(root) else {
-        return false;
+        return Ok(false);
     };
     let rel = rel.to_string_lossy().replace('\\', "/");
     if rel.is_empty() {
-        return false;
+        return Ok(false);
     }
-    crate::git::tracks(root, &rel) == Ok(true)
+    match crate::git::tracks(root, &rel) {
+        Ok(tracked) => Ok(tracked),
+        Err(why) if crate::git::in_repository(root) => Err(why),
+        Err(_) => Ok(false),
+    }
 }
 
 /// The interpreter inside a virtual environment.
@@ -241,8 +255,21 @@ fn detect_with(root: &Path, active: Option<PathBuf>) -> VenvInfo {
     }
     // A committed venv is named so its absence is explained, and offered to
     // nothing that would run it: not the status bar, not the Snowflake script.
-    let (committed, kept): (Vec<PathBuf>, Vec<PathBuf>) = found.into_iter().partition(|p| committed(root, p));
-    info.committed = committed.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    let mut kept: Vec<PathBuf> = Vec::new();
+    let mut set_aside: Vec<PathBuf> = Vec::new();
+    for p in found {
+        match committed(root, &p) {
+            Ok(false) => kept.push(p),
+            Ok(true) => set_aside.push(p),
+            Err(why) => {
+                if info.unsure.is_empty() {
+                    info.unsure = why;
+                }
+                set_aside.push(p);
+            }
+        }
+    }
+    info.committed = set_aside.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
     let mut found = kept;
     // A bare venv with no dbt in it is the least useful answer, so rank those last.
     found.sort_by_key(|p| (!bin(p, "dbt").exists(), p.clone()));
@@ -462,6 +489,7 @@ mod tests {
 
         let info = detect_with(&root, None);
         assert_eq!(info.committed, ["shipped"]);
+        assert!(info.unsure.is_empty(), "git answered, so nothing is unsure: {}", info.unsure);
         assert_eq!(info.chosen.name, "mine", "first by name, but set aside since git tracks it");
         let found: Vec<&str> = info.found.iter().map(|v| v.name.as_str()).collect();
         assert_eq!(found, ["mine"], "nor offered to the terminal's report");
@@ -475,5 +503,26 @@ mod tests {
         assert!(detect_with(&loose, None).committed.is_empty());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&loose);
+    }
+    /// A repository git is paused in cannot say what it tracks, and not
+    /// knowing is not a no: the venv stays set aside and its `python` is not
+    /// offered to anything (0121). A key that names a program pauses it.
+    #[test]
+    fn a_venv_in_a_paused_repository_stays_set_aside() {
+        let root = project("paused");
+        let git = |args: &[&str]| crate::git::run(&root, args, &[], std::time::Duration::from_secs(20));
+        assert!(git(&["init", "-q"]).ok);
+        venv(&root, "shipped", "version = 3.12.4\n", &["dbt_core-1.8.7"]);
+        assert!(git(&["add", "shipped"]).ok);
+        assert_eq!(detect_with(&root, None).committed, ["shipped"]);
+
+        let config = std::process::Command::new("git").arg("-C").arg(&root).args(["config", "filter.x.clean", "cat"]).status().unwrap();
+        assert!(config.success());
+        let info = detect_with(&root, None);
+        assert_eq!(info.committed, ["shipped"], "a pause was read as not tracked");
+        assert!(info.unsure.contains("git is paused here") && info.unsure.contains("filter.x.clean"), "{}", info.unsure);
+        let programs = crate::sidecar::interpreters(&info);
+        assert!(programs.iter().all(|i| !i.program.starts_with(root.join("shipped"))), "{programs:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -13,6 +13,23 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.55.0 - 2026-10-27
+
+- Keep a repository's own configuration from naming a program edith runs:
+  every git call switches the file-system monitor off, what runs on a timer
+  switches hooks off too, and a repository whose configuration holds a key
+  outside a list of data-only ones, a `credential.helper` or a `filter.*` for
+  one, is left alone, the Git panel and the freshness card saying so and
+  naming the key (0121). The timed fetch, and a checkout, which may fetch
+  what a partial clone lacks, speak https, http and ssh only: a remote on a
+  local path, a `git://` one or one behind a remote helper (a `codecommit::`
+  URL) is no longer refreshed by the timer.
+- Send the launch key in a header from the page instead of keeping it in a
+  cookie, so no other server on the machine is ever sent it (0122). The
+  terminal's socket takes it in its address.
+- List only the `.env` files that are inside the project, so a link to a file
+  elsewhere is no longer read.
+
 ## 1.54.1 - 2026-10-27
 
 - Empty the clone's build folder once an update has installed, so updates no

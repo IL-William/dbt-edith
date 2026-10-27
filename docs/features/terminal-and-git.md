@@ -50,7 +50,7 @@ A third sidebar tab stages, commits, pulls and pushes, and the branch name in
 its header (and in the status bar) opens a filtered branch switcher rather than a
 list, since a long-lived repository easily carries hundreds of branches.
 
-Two rules hold across the whole git surface:
+Three rules hold across the whole git surface:
 
 - **Nothing destroys work.** There is no `-f`, no `--hard`, no `clean`, no
   `push --force` anywhere in `src/git.rs`. The worst any button can do is create
@@ -62,6 +62,28 @@ Two rules hold across the whole git surface:
   in seconds instead of waiting forever on a prompt nobody can answer. Every
   command has a deadline, and both pipes are drained by their own threads so a
   chatty hook cannot deadlock.
+- **A repository's own configuration never names a program git runs.** A
+  project copied with its `.git` brings its `config` and its hooks, and the
+  status is polled every five seconds. Every call switches the file-system
+  monitor off, and what runs on a timer, the status, the freshness badge's
+  questions and its fetch, also switches hooks off. Before any call, the keys
+  of the repository's own `config` and `config.worktree` are read, which runs
+  nothing, and held to a list of data-only ones: remotes, branches, identity,
+  signing format, submodule addresses and the like. One outside it, a
+  `credential.helper`, a `filter.*`, a `core.pager`, a
+  `remote.*.uploadpack`, a proxy or an `include`, pauses git in that
+  repository (as does a configuration git cannot list at all, naming git's
+  reason): the
+  Git panel and the freshness card say that git is paused because the
+  repository's own configuration names a program, and name the key, and no git
+  is run until it is gone. git in the terminal is unaffected. The timed fetch,
+  and a checkout, speak https, http and ssh only, so a remote on a local path,
+  a `git://` one or one behind a remote helper (a `codecommit::` URL) is not
+  refreshed by the timer. The gate needs git 2.26 or later (an older git is
+  paused in every repository as unreadable, and asked again at each poll), and
+  the refusal to take a bare-looking folder for a repository needs 2.38 or
+  later
+  ([0121](../decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md)).
 
 Commit fetches first, so the ahead/behind counts next to it are current; a
 failing fetch never blocks the commit. Hooks always run: pre-commit hooks can take

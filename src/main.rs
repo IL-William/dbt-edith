@@ -423,7 +423,7 @@ async fn main() -> anyhow::Result<()> {
     // Origin against the port actually taken, which may not be the one asked for.
     let listener = bind(args.port).await?;
     // The key is in the link and nowhere else: whoever opens the page from it
-    // gets the cookie the API asks for, and nobody else can (0052).
+    // holds the key the API asks for, and nobody else can (0052, 0122).
     let key = api::new_key();
     let url = format!("http://{}/?key={key}", listener.local_addr()?);
     let config_dir = settings::config_dir(|key| std::env::var_os(key), cfg!(windows));

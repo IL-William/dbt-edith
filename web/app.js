@@ -135,14 +135,77 @@ function apiError(text, fallback) {
   return new Error(text || fallback);
 }
 
+/* The launch key (0122). The printed link carries it as `key`; the page keeps
+   it in this origin's own storage, so another port of the same host never
+   sees it, and takes it out of the address bar. A key from the address is
+   stored only once the server has accepted it, so a stale link, a bookmark
+   from an earlier launch, cannot overwrite the one a newer tab stored. Storage
+   can be refused (a private window, blocked site data), and the key then
+   lives in `launchKey` alone, for as long as the page does. */
+const KEY_STORE = 'dbt-edith-key';
+let launchKey = '';     // the one in use
+let keyPending = '';    // one from the address that no answer has vouched for yet
+
+function storedKey() {
+  try { return localStorage.getItem(KEY_STORE) || ''; } catch { return ''; }
+}
+
+function takeLaunchKey() {
+  const params = new URLSearchParams(location.search);
+  const given = params.get('key');
+  if (given) {
+    params.delete('key');
+    const rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    keyPending = given;
+  }
+  launchKey = given || storedKey();
+  return launchKey;
+}
+
+/* The server took the key: now it is kept. */
+function keyAccepted() {
+  if (!keyPending || keyPending !== launchKey) return;
+  try { localStorage.setItem(KEY_STORE, keyPending); } catch { /* kept for this page only */ }
+  keyPending = '';
+}
+
+/* The server refused the key. A newer launch, in another tab on this port,
+   may have stored another: true when one differing from this page's was found
+   and taken, and the request is worth one more try. */
+function keyRefused() {
+  const stored = storedKey();
+  if (!stored || stored === launchKey) return false;
+  launchKey = stored;
+  keyPending = '';
+  return true;
+}
+
+takeLaunchKey();
+
+/* Sent on every request: a header is not a cookie, so only this page's own
+   code, and no other server on the host, ever carries it. */
+function keyHeaders() {
+  return launchKey ? { authorization: 'Bearer ' + launchKey } : {};
+}
+
+async function request(path, init = {}) {
+  for (let again = true; ; again = false) {
+    const r = await fetch(path, { ...init, headers: { ...init.headers, ...keyHeaders() } });
+    if (r.status === 401 && again && keyRefused()) continue;
+    if (r.ok) keyAccepted();
+    return r;
+  }
+}
+
 const api = {
   async get(path) {
-    const r = await fetch(path);
+    const r = await request(path);
     if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
   },
   async send(path, method, body) {
-    const r = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await request(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw apiError(await refusal(r), r.statusText);
     return r.json();
   },
@@ -3648,7 +3711,7 @@ function applyGit(info) {
   S.gitModDirs = ancestorsOf(info.modified);
   S.gitUntDirs = ancestorsOf(info.untracked);
   for (const pre of S.gitPrefixes) S.gitUntDirs.add(pre.replace(/\/$/, ''));
-  $('#status-branch').textContent = info.repo ? 'git ' + (info.branch || 'detached') : '';
+  $('#status-branch').textContent = info.repo ? 'git ' + (info.branch || 'detached') : info.paused ? 'git paused' : '';
   paintTree();
 }
 
@@ -3888,7 +3951,7 @@ async function showGitFailure(title, res) {
 function renderGit(info) {
   const host = $('#git-body');
   if (!host) return;
-  $('#branch-name').textContent = info.repo ? (info.branch || 'detached HEAD') : 'no repository';
+  $('#branch-name').textContent = info.repo ? (info.branch || 'detached HEAD') : info.paused ? 'git paused' : 'no repository';
   const badge = $('#git-badge');
   const changes = info.staged.length + info.unstaged.length + info.untracked.length + info.conflicted.length;
   badge.textContent = String(changes);
@@ -3901,7 +3964,8 @@ function renderGit(info) {
 
   host.textContent = '';
   if (!info.repo) {
-    host.append(Object.assign(document.createElement('div'), { className: 'git-empty', textContent: 'Not a git repository.' }));
+    const said = info.paused ? gitPausedNote(info.paused) : 'Not a git repository.';
+    host.append(Object.assign(document.createElement('div'), { className: 'git-empty', textContent: said }));
     return;
   }
 
@@ -8303,6 +8367,19 @@ function artifactBar(info, name, isTest) {
   };
 }
 
+/* What the Git panel and the freshness card say when the repository's own
+   configuration names a program, so dbt-edith runs no git in it (0121). The key
+   is named so that whoever wrote it can find it. */
+function gitPausedNote(key) {
+  // The server's word for a configuration it could not list at all.
+  if (key.startsWith('unreadable: ')) {
+    return 'git is paused here: this repository\'s own configuration could not be read (' + key.slice(12)
+      + '), so dbt-edith runs no git in it. git in the terminal is unaffected.';
+  }
+  return 'git is paused here: this repository\'s own configuration names a program (' + key
+    + '), so dbt-edith runs no git in it. git in the terminal is unaffected.';
+}
+
 /* What the badge before the manifest's reload shows, and what its hover card says.
    The dot's colour answers one question only, the one that decides whether the
    lineage on screen can be trusted: does this manifest still match the files
@@ -8357,6 +8434,7 @@ function freshnessBadge(f) {
   const d = f.drift || {};
   const h = f.head || {};
   const facts = [];
+  if (f.git_paused) facts.push(gitPausedNote(f.git_paused));
   if (n('committed')) facts.push('A checkout, a pull or a merge brought them in.');
   if (h.sha) facts.push('This branch sits at ' + h.sha + (h.subject ? ', "' + h.subject + '"' : '') + '.');
   let drift = '';
@@ -14789,7 +14867,9 @@ function copyTermSelection() {
 
 function connectTerm() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  S.ws = new WebSocket(`${proto}://${location.host}/ws/pty?cols=${S.term.cols}&rows=${S.term.rows}`);
+  // A browser cannot set a header on a socket, so the key rides in its address (0122).
+  const key = launchKey ? '&key=' + encodeURIComponent(launchKey) : '';
+  S.ws = new WebSocket(`${proto}://${location.host}/ws/pty?cols=${S.term.cols}&rows=${S.term.rows}${key}`);
   S.ws.binaryType = 'arraybuffer';
   S.ws.onmessage = (e) => {
     if (typeof e.data === 'string') S.term.write(e.data);
@@ -17246,10 +17326,14 @@ function venvOffer(v) {
 
 /* A venv git tracks came with the repository, so whoever wrote the repository
    wrote its python too: the server never runs it, and this says why it is not
-   the one shown (0053). */
+   the one shown (0053). When git could not say whether they are committed
+   (`unsure`, the pause note), they were set aside for want of an answer, and
+   the note says that, with git's reason, instead of claiming they are. */
 function committedNote(v) {
   const names = v.committed || [];
-  return names.length ? `committed to the repository, so never run by dbt-edith: ${names.join(', ')}` : '';
+  if (!names.length) return '';
+  if (v.unsure) return `never run by dbt-edith, as git cannot say here whether they are committed: ${names.join(', ')}\n${v.unsure}`;
+  return `committed to the repository, so never run by dbt-edith: ${names.join(', ')}`;
 }
 
 // Without the key the bar at the top already says why, once.

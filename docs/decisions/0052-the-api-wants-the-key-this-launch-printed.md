@@ -1,6 +1,6 @@
 # 0052. The API wants the key this launch printed
 
-Date: 2026-10-10 · Status: accepted · Amends 0015
+Date: 2026-10-10 · Status: accepted, amended by 0122 · Amends 0015
 
 **Trigger:** read before adding a route, changing what the printed link holds,
 or letting anything reach the API without the key.
