@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.59.0 - 2026-10-28
+
+- Show the dependencies the jobs do not order in a Job order section of
+  Reports, beside the job coverage: the pairs `--job-order` lists, in their
+  three groups, each model a link that opens it with the Jobs tab, never
+  lighting the Reports button (0126).
+
 ## 1.58.0 - 2026-10-28
 
 - Add `--job-order`, which lists the dbt dependencies between the steps of the

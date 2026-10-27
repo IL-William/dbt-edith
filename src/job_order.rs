@@ -218,9 +218,9 @@ pub struct OrderAnswer {
     /// no job read at all.
     pub configured: bool,
     /// How many steps were looked at: those of jobs that start on their own
-    /// that build a node. The text says what an empty answer holds by it.
-    #[serde(skip)]
-    checked: usize,
+    /// that build a node. An empty answer says what it holds by it, in the
+    /// text and on the page.
+    pub checked: usize,
     pub counts: Counts,
     pub pairs: Vec<Pair>,
     /// In-scope steps that could not be resolved, which could hide more pairs.
@@ -1299,6 +1299,16 @@ mod tests {
         assert!(out.starts_with("pairs 0\nno pair among the steps resolved\n1 step not resolved"), "{out}");
         // Everything looked at.
         assert!(dags("empty-all", &[("stage", STAGE)]).starts_with("pairs 0\nevery step waits for the steps that build its parents\n"));
+        // The count behind the sentence is in the JSON: only steps that build a node are looked at.
+        let checked = |tag: &str, files: &[(&str, &str)]| {
+            let files: Vec<(String, &str)> = files.iter().map(|(n, t)| (format!("dags/{n}.yml"), *t)).collect();
+            let borrowed: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), *t)).collect();
+            let (out, _, _) = ask(&project(tag, &[("airflow", "dags", "")], &borrowed), Output::Json);
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()["checked"].as_u64()
+        };
+        assert_eq!(checked("checked-none", &[("manual", manual)]), Some(0));
+        assert_eq!(checked("checked-lost", &[("stage", STAGE), ("lost", lost)]), Some(1));
+        assert_eq!(checked("checked-two", &[("stage", STAGE), ("marts", MARTS)]), Some(2));
     }
 
     #[test]

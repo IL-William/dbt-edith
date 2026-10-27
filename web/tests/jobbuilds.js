@@ -288,11 +288,11 @@ check('nothing at all', jobBuildsJobs([], undefined), []);
 print('\n--- the section is listed from the index ---');
 function sec(list) { return list.map(function (s) { return s.key + (s.empty ? ':empty' : '') + (s.quiet ? ':quiet' : ''); }); }
 check('with the builds and the jobs, after the builds, quiet like them',
-  sec(reportsSections({ builds: true, jobs: { sources: 1, at: 3 } })), ['jobs', 'builds:quiet', 'jobbuilds:quiet']);
+  sec(reportsSections({ builds: true, jobs: { sources: 1, at: 3 } })), ['jobs', 'joborder:quiet', 'builds:quiet', 'jobbuilds:quiet']);
 check('never lighting the button', reportsSections({ builds: true, jobs: { sources: 1, at: 3 } }).filter(lights).map(function (s) { return s.key; }), ['jobs']);
-check('in Snowflake\'s colour', reportsSections({ builds: true, jobs: { sources: 1, at: 3 } })[2].tool, 'snowflake');
+check('in Snowflake\'s colour', reportsSections({ builds: true, jobs: { sources: 1, at: 3 } })[3].tool, 'snowflake');
 check('without a source named, not at all', sec(reportsSections({ builds: true })), ['jobs:empty', 'builds:quiet']);
-check('without the builds, not at all', sec(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs']);
+check('without the builds, not at all', sec(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs', 'joborder:quiet']);
 check('nor from an index of its own key', sec(reportsSections({ jobbuilds: true })), ['jobs:empty']);
 check('after the macros and the checks', reportsSections({ builds: true, jobs: { sources: 1, at: 3 }, checks: { count: 2, at: 3 } }).map(function (s) { return s.key; }),
-  ['jobs', 'checks', 'builds', 'jobbuilds']);
+  ['jobs', 'joborder', 'checks', 'builds', 'jobbuilds']);

@@ -16,21 +16,27 @@ function empty(sections) { return sections.map(function (s) { return s.key + (s.
 check('the job coverage alone, empty, before the index is read', empty(reportsSections(null)), ['jobs:empty']);
 check('and while nothing was written or named, as where a source is added', empty(reportsSections({})), ['jobs:empty']);
 check('collin once a run wrote a report', empty(reportsSections({ collin: { at: 5 } })), ['collin', 'jobs:empty']);
-check('the jobs once a source is named', empty(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs']);
+check('the jobs once a source is named, and the order of their steps with them (0126)', empty(reportsSections({ jobs: { sources: 1, at: 3 } })), ['jobs', 'joborder']);
 check('in the order they are worked through, whatever the index says',
-      keys(reportsSections({ jobs: { sources: 1, at: 3 }, collin: { at: 5 } })), ['collin', 'jobs']);
+      keys(reportsSections({ jobs: { sources: 1, at: 3 }, collin: { at: 5 } })), ['collin', 'jobs', 'joborder']);
 check('a key this page does not know is left out', keys(reportsSections({ later: { at: 1 } })), ['jobs']);
 check('each in its tool\'s colour', reportsSections({ collin: { at: 5 } })[0].tool, 'collin');
 check('an index read twice is not marked empty by the first', empty(reportsSections({}).concat(reportsSections({ jobs: { sources: 1, at: 3 } }))),
-      ['jobs:empty', 'jobs']);
+      ['jobs:empty', 'jobs', 'joborder']);
 check('the macros while one of the project\'s is reached by no node and nothing explains it (0105)',
       empty(reportsSections({ macros: { unexplained: 2, at: 3 } })), ['jobs:empty', 'macros']);
 check('or once a card asked for a macro\'s callers, empty: a click lights nothing',
       empty(reportsSections({}, 'macro.shop.cents')), ['jobs:empty', 'macros:empty']);
 check('and lit by the macros alone when one is unexplained',
       empty(reportsSections({ macros: { unexplained: 1, at: 3 } }, 'macro.shop.cents')), ['jobs:empty', 'macros']);
-check('last, after the coverage', keys(reportsSections({ macros: { unexplained: 1, at: 3 }, run: { at: 9 }, jobs: { sources: 1, at: 3 } })),
-      ['run', 'jobs', 'macros']);
+check('last, after the coverage and the order of the steps', keys(reportsSections({ macros: { unexplained: 1, at: 3 }, run: { at: 9 }, jobs: { sources: 1, at: 3 } })),
+      ['run', 'jobs', 'joborder', 'macros']);
+check('nor before the index is read, nor while it holds no jobs, as the builds of a job are not (0119)',
+      [keys(reportsSections(null)), keys(reportsSections({})), keys(reportsSections({ collin: { at: 5 } }))].map(function (k) { return k.indexOf('joborder'); }), [-1, -1, -1]);
+check('quiet: listed, and it never lights the button (0126)',
+      reportsSections({ jobs: { sources: 1, at: 3 } }).filter(function (s) { return s.key === 'joborder'; }).map(function (s) { return [!!s.quiet, !!s.empty, lights(s)]; }),
+      [[true, false, false]]);
+check('in the colour of the jobs', reportsSections({ jobs: { sources: 1, at: 3 } })[1].tool, 'jobs');
 check('not before either', keys(reportsSections({}, '')), ['jobs']);
 
 print('\n--- the last run\'s dot ---');
@@ -48,7 +54,7 @@ check('none while the file is still being written and the index has its time alo
 check('and no other section carries one',
       tones({ run: { at: 9, error: 1, fail: 1, warn: 1 }, warnings: { at: 1, manifest_at: 1, unused: 2 }, collin: { at: 5 },
         jobs: { sources: 1, at: 3 }, macros: { unexplained: 1, at: 3 } }),
-      ['run:bad', 'warnings:-', 'collin:-', 'jobs:-', 'macros:-']);
+      ['run:bad', 'warnings:-', 'collin:-', 'jobs:-', 'joborder:-', 'macros:-']);
 function head(st) { return runEndTone(runEndCounts(st)); }
 check('the head reads the run\'s own statuses by the same rule',
       [head({ ok: 4 }), head({ ok: 4, noop: 1, reused: 1 }), head({ ok: 4, partial: 1 }), head({ warn: 1, fail: 1 }), head({ ok: 2, error: 1 })],
@@ -69,6 +75,9 @@ print('\n--- where it opens ---');
 var both = reportsSections({ collin: { at: 5 }, jobs: { sources: 1, at: 3 } });
 check('on the first section with nothing new and nothing read yet', reportsDefaultSection(both, [], ''), 'collin');
 check('on the section read last this session', reportsDefaultSection(both, [], 'jobs'), 'jobs');
+check('never on the order of the steps, last read or only one listed (0126)',
+      [reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 }, collin: { at: 5 } }), [], 'joborder'), reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 } }), [], 'joborder')],
+      ['collin', 'jobs']);
 check('on news before the last section read', reportsDefaultSection(both, reportsNews(badge), 'jobs'), 'collin');
 check('not on a section that has gone', reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 } }), [], 'collin'), 'jobs');
 check('news for a section that is not there opens the first', reportsDefaultSection(reportsSections({ jobs: { sources: 1, at: 3 } }), reportsNews(badge), ''), 'jobs');
@@ -101,6 +110,9 @@ check('a later run is', reportsStale({ at: 5 }, { collin: { at: 9 } }, 'collin')
 check('a report gone is', reportsStale({ at: 5 }, {}, 'collin'), true);
 check('the jobs after a manifest reload are', reportsStale({ sources: 1, at: 3 }, { jobs: { sources: 1, at: 4 } }, 'jobs'), true);
 check('and after a source is added', reportsStale({ sources: 1, at: 3 }, { jobs: { sources: 2, at: 3 } }, 'jobs'), true);
+check('the order of the steps follows the coverage\'s entry, which it has none of its own (0126)',
+      [reportsEntry('joborder'), reportsEntry('jobs'), reportsEntry('collin'), reportsStale({ sources: 1, at: 3 }, { jobs: { sources: 1, at: 4 } }, 'joborder'),
+        reportsStale({ sources: 1, at: 3 }, { jobs: { sources: 1, at: 3 } }, 'joborder')], ['jobs', 'jobs', 'collin', true, false]);
 check('another section moving is not this one\'s news',
       reportsStale({ sources: 1, at: 3 }, { collin: { at: 9 }, jobs: { sources: 1, at: 3 } }, 'jobs'), false);
 
@@ -255,7 +267,7 @@ check('the button stays dimmed with only them, and lit by any other section',
       [lit(reportsSections(checks)), lit(reportsSections(Object.assign({ run: { at: 9 } }, checks))), lit(reportsSections({}))], [false, true, false]);
 check('not by a macro card\'s focus', keys(reportsSections({}, 'macro.shop.cents')), ['jobs', 'macros']);
 check('last, after the macros', keys(reportsSections({ checks: { count: 1, at: 3 }, macros: { unexplained: 1, at: 3 }, warnings: { at: 4, manifest_at: 3, unused: 2 },
-      run: { at: 9 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 } })), ['run', 'warnings', 'collin', 'jobs', 'macros', 'checks']);
+      run: { at: 9 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 } })), ['run', 'warnings', 'collin', 'jobs', 'joborder', 'macros', 'checks']);
 check('under the dbt tool, with a title saying they are the tool\'s own checks and not dbt\'s warnings',
       [reportsSections(checks)[1].tool, /own checks/.test(reportsSections(checks)[1].title), /warn/.test(reportsSections(checks)[1].title)], ['dbt', true, true]);
 check('no dot tone, which is the last run\'s alone',

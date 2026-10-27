@@ -2861,7 +2861,10 @@ carries a tag, for which a job source would need a key naming the tag and the
 DAG's tags key; and counting tests as readers of the models they test, which
 the first needs, since a DAG that gates its tests on a tag is one the mode now
 sees none of. Not started either: the per-task schedules a factory interprets, a
-sensor's lookback or `execution_delta`, and which of two crons runs first.
+sensor's lookback or `execution_delta`, and which of two crons runs first. The
+Job order section of Reports (0126) has no chip: one for the pairs the files
+order the other way alone, which are rarely meant, would be the first to earn
+a place on the button.
 
 Also unranked, since nobody has asked for it: the terminal's venv in the status
 bar under zsh, fish or PowerShell. They take prompt hooks from their startup

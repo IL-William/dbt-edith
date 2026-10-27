@@ -195,10 +195,12 @@ the pointer, rolls a panel down over the editor and the dock
 with what speaks of the whole project, a section each, listed on its left:
 the last dbt command's results once dbt has written them, the warnings dbt
 would give as it parses once there is one, collin's report once collin has
-written one, the coverage of your jobs once the Jobs tab has a source, the
-project's macros while one is reached by no node and nothing explains it, this
-tool's own checks while one finds a node, which never light the button, and the
-builds of each environment once the dbt_artifacts package is there.
+written one, the coverage of your jobs once the Jobs tab has a source, and the
+order of their steps with it, the project's macros while one is reached by no
+node and nothing explains it, this tool's own checks while one finds a node, and
+the builds of each environment once the dbt_artifacts package is there. The
+order of the steps, the checks and the builds are listed but never light the
+button.
 The sidebar stays, and anything that shows a file or a dock tab rolls the
 panel up again: a name in a report, a file in the
 tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
@@ -253,6 +255,43 @@ key reached through a YAML alias is marked at the alias, and keys sharing a
 line share one mark, whose card lists each. A `dbt_project.yml`
 this cannot read, a key written twice for one, lists the section to say at
 which line (0103).
+
+**Job order** is listed beside the coverage once a source is named, and never
+lights the button nor opens the panel: it is a question asked, and a project
+with jobs would nearly always have an answer, some of them meant, such as two
+DAGs on different crons. It answers what `dbt-edith --job-order` answers
+([command-line.md](command-line.md#the-order-between-jobs),
+[0125](../decisions/0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md)):
+which steps of the jobs that start on their own build a model whose dbt parent
+another job's step builds, with nothing in the job files making it wait for that
+step. A first line counts the pairs, `3 pairs: 1 nothing orders them, 1 only the
+clock, 1 the other way`, or, with none, says only what holds: that a source was
+not read, that no pair was found among the steps resolved, since some could not
+be, that no step of a job that starts on its own builds a node, or that every
+step waits for the steps that build its parents. Below, a fold for each kind of
+pair that has one, **Nothing orders them**, **Only the clock orders them** (the
+crons differ, and the files order nothing) and **Ordered the other way**, open
+while it holds fifty or fewer. A pair names the step and the steps it should
+wait for (one of them, when several build the parent), both schedules with their
+zones, the file of the step, which a click copies, and the models: `orders reads
+stg_orders through int_orders`, each name a link that opens the model with the
+Jobs tab, which lists the steps that build it. Ten edges are drawn for a pair, a
+button giving the rest. A sensor the DAG holds and the step does not depend on,
+a sensor on a task group, whose tasks are not read, and the steps it should wait
+for that the files run after it, are said under the pair. After the folds come
+the steps not resolved, which could hide more pairs, the DAGs whose `depends_on`
+loops and so are left out, the jobs nothing starts, left out too, and the
+sources that were not read. The job files are looked at again as the section
+opens, and by **Read again**. Its head says "Newer results" when the manifest
+moved, or when what the jobs read elsewhere changed (the sources, or the
+coverage's counts); an edit of a job file that leaves those alone, a new sensor
+or `depends_on`, is not noticed until the section is read again.
+
+The page reads the sources in force, the project's `.dbt-edith/jobs.yml` or, when
+the project has none, the ones kept in the settings; the command line reads the
+project's file alone, so a source kept for you only is in the section and not in
+the command's answer
+([0126](../decisions/0126-job-order-is-a-quiet-section-of-reports.md)).
 
 **Macros** lists the project's own macros that no node reaches, from what the
 manifest records each node and each macro calling, and from each node's SQL
