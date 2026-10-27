@@ -77,3 +77,15 @@ clean --release` in the clone. cargo writes `CACHEDIR.TAG` only when it creates
 the folder, so a `target/` made some other way is refused by every clean (exit
 101) and keeps growing; that is harmless to the update, since the closing line
 still prints.
+
+A `build.target` or `CARGO_BUILD_TARGET` the user set makes the install build
+into `target/<triple>/release`, which `cargo clean --release` leaves even with
+the same setting in force (checked on cargo 1.98.1): for them the folder keeps
+growing as before, and "an install builds nothing else" holds only for the
+host's own folder.
+
+The menu, the pill and the installed card learn the install from the binary's
+time, which changes before the clean runs, so they can say installed while it
+is still running. Stopping dbt-edith then ends the clean midway with the
+terminal it runs in, which is harmless: what it left is emptied by the next
+update.
