@@ -182,7 +182,9 @@ fn is_adapter(dist_info: &Path) -> bool {
 /// Whether git tracks this venv, which no venv anyone made for themselves is:
 /// one that arrived with a clone was put there by whoever wrote the repository,
 /// and its `python` is theirs to have written too. Asked of git rather than
-/// guessed, and false outside a repository, where there is nobody to ask.
+/// guessed. Outside a repository, where there is nobody to ask, the answer is
+/// no. Inside one, an answer git cannot give (it is paused, 0121) sets the
+/// venv aside, as `collin_run` does for a collin: not knowing is not a no.
 fn committed(root: &Path, venv: &Path) -> bool {
     let Ok(rel) = venv.strip_prefix(root) else {
         return false;
@@ -191,7 +193,10 @@ fn committed(root: &Path, venv: &Path) -> bool {
     if rel.is_empty() {
         return false;
     }
-    crate::git::tracks(root, &rel) == Ok(true)
+    match crate::git::tracks(root, &rel) {
+        Ok(tracked) => tracked,
+        Err(_) => crate::git::in_repository(root),
+    }
 }
 
 /// The interpreter inside a virtual environment.
@@ -475,5 +480,25 @@ mod tests {
         assert!(detect_with(&loose, None).committed.is_empty());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&loose);
+    }
+    /// A repository git is paused in cannot say what it tracks, and not
+    /// knowing is not a no: the venv stays set aside and its `python` is not
+    /// offered to anything (0121). A key that names a program pauses it.
+    #[test]
+    fn a_venv_in_a_paused_repository_stays_set_aside() {
+        let root = project("paused");
+        let git = |args: &[&str]| crate::git::run(&root, args, &[], std::time::Duration::from_secs(20));
+        assert!(git(&["init", "-q"]).ok);
+        venv(&root, "shipped", "version = 3.12.4\n", &["dbt_core-1.8.7"]);
+        assert!(git(&["add", "shipped"]).ok);
+        assert_eq!(detect_with(&root, None).committed, ["shipped"]);
+
+        let config = std::process::Command::new("git").arg("-C").arg(&root).args(["config", "filter.x.clean", "cat"]).status().unwrap();
+        assert!(config.success());
+        let info = detect_with(&root, None);
+        assert_eq!(info.committed, ["shipped"], "a pause was read as not tracked");
+        let programs = crate::sidecar::interpreters(&info);
+        assert!(programs.iter().all(|i| !i.program.starts_with(root.join("shipped"))), "{programs:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

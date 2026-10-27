@@ -166,12 +166,6 @@ fn unsure_until(why: &str) -> Instant {
     Instant::now() + if why.contains("took longer than") { TIMED_OUT_FOR } else { UNSURE_FOR }
 }
 
-/// Whether a folder sits in what looks like a repository: a `.git` in it or
-/// above it, which is what git itself looks for.
-fn in_repository(dir: &Path) -> bool {
-    dir.ancestors().any(|d| d.join(".git").exists())
-}
-
 /// Why this collin must not run, or None when it is the user's own. Asked of
 /// git in the file's own folder (`git::tracks`): one that arrived with a
 /// clone was put there by whoever wrote the repository, as 0053 says of a
@@ -196,7 +190,7 @@ fn refusal(bin: &Path) -> Option<Refusal> {
         }
     }
     let (Some(dir), Some(name)) = (bin.parent(), bin.file_name().and_then(|n| n.to_str())) else { return None };
-    let repository = in_repository(dir);
+    let repository = crate::git::in_repository(dir);
     let (refusal, index, until) = match crate::git::tracks(dir, name) {
         Ok(tracked) if !repository => (tracked.then_some(Refusal::Tracked), None, None),
         Ok(tracked) => match crate::git::index_of(dir) {
@@ -1057,7 +1051,7 @@ pub(crate) mod tests {
         std::fs::write(project.join(".git"), "gitdir: elsewhere\n").unwrap();
         let bin = project.join("bin").join(exe_name());
         executable(&bin, "#!/bin/sh\n");
-        assert!(in_repository(&project.join("bin")));
+        assert!(crate::git::in_repository(&project.join("bin")));
         match refusal(&bin) {
             Some(Refusal::Unsure(why)) => assert!(!why.is_empty()),
             other => panic!("{other:?}"),
@@ -1065,7 +1059,7 @@ pub(crate) mod tests {
         assert_eq!(locate_in(Some(&project.join("bin")), None, refusal).bin, None);
         let loose = d.join("loose");
         std::fs::create_dir_all(&loose).unwrap();
-        assert!(!in_repository(&loose));
+        assert!(!crate::git::in_repository(&loose));
     }
 
     #[test]

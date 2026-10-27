@@ -152,6 +152,12 @@ fn exec(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration, aut
     // A repository's submodules have configurations of their own that the
     // gate never reads, and a checkout that recurses into one runs its filters.
     cmd.args(["-c", "submodule.recurse=false"]);
+    // A folder that looks like a bare repository (HEAD, refs, objects, a
+    // config) is one git would use implicitly, and the gate looks for a
+    // working tree's `.git`. Only a repository named by `--git-dir` or
+    // `GIT_DIR` is taken, as `tag_subjects` names its own (git 2.38 or later;
+    // an older git ignores the key).
+    cmd.args(["-c", "safe.bareRepository=explicit"]);
     cmd.args(args);
     cmd.env("GIT_SSH_COMMAND", SSH_BATCH);
     // A partial clone fetches a missing object from its promisor remote
@@ -269,34 +275,59 @@ fn verdicts() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Verdict>> {
     CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Git's own test of a git directory: a `HEAD` (a file or a link, even a
+/// dangling one) and an `objects` and a `refs` that merely exist. What they
+/// hold is not looked at, so a plain file called `objects` passes, as it does
+/// for git.
+fn is_git_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path.join("HEAD")).is_ok() && path.join("objects").exists() && path.join("refs").exists()
+}
+
 /// The repository git would find from `root`, found by looking rather than by
 /// asking: this runs before every call, and the poll must not pay a process
-/// for it. A linked worktree or a submodule has a `.git` file naming its
-/// directory; a bare repository is its own.
+/// for it. In each folder from `root` upward git tries a `.git` file (a
+/// linked worktree or a submodule names its directory there), then a `.git`
+/// directory that passes `is_git_dir` (one that does not is skipped and the
+/// search goes on), then the folder itself, a bare repository.
 fn locate(root: &Path) -> Option<Repo> {
     for dir in root.ancestors() {
         let dot = dir.join(".git");
         if let Ok(meta) = std::fs::metadata(&dot) {
             if meta.is_dir() {
-                return Some(Repo { git_dir: dot.clone(), common_dir: dot, gitfile: None });
+                if is_git_dir(&dot) {
+                    return Some(Repo { git_dir: dot.clone(), common_dir: dot, gitfile: None });
+                }
+            } else {
+                let named = std::fs::read_to_string(&dot)
+                    .ok()
+                    .and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
+                // A file git cannot read fails every call on its own; its stamp
+                // still stands for it, so mending it is noticed.
+                let git_dir = named.unwrap_or_else(|| dot.clone());
+                let common_dir = match std::fs::read_to_string(git_dir.join("commondir")) {
+                    Ok(c) => git_dir.join(c.trim()),
+                    Err(_) => git_dir.clone(),
+                };
+                return Some(Repo { git_dir, common_dir, gitfile: Some(dot) });
             }
-            let named = std::fs::read_to_string(&dot)
-                .ok()
-                .and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
-            // A file git cannot read fails every call on its own; its stamp
-            // still stands for it, so mending it is noticed.
-            let git_dir = named.unwrap_or_else(|| dot.clone());
-            let common_dir = match std::fs::read_to_string(git_dir.join("commondir")) {
-                Ok(c) => git_dir.join(c.trim()),
-                Err(_) => git_dir.clone(),
-            };
-            return Some(Repo { git_dir, common_dir, gitfile: Some(dot) });
         }
-        if dir.join("HEAD").is_file() && dir.join("objects").is_dir() {
+        if is_git_dir(dir) {
             return Some(Repo { git_dir: dir.to_path_buf(), common_dir: dir.to_path_buf(), gitfile: None });
         }
     }
     None
+}
+
+/// Whether git finds a repository from `dir`, by the test it uses (`locate`):
+/// what decides that a call it could not answer is a refusal, not an
+/// outside-a-repository no.
+pub fn in_repository(dir: &Path) -> bool {
+    locate(dir).is_some()
+}
+
+/// Whether two paths name the same place; false when either cannot be resolved.
+fn same_place(a: &Path, b: &Path) -> bool {
+    matches!((a.canonicalize(), b.canonicalize()), (Ok(a), Ok(b)) if a == b)
 }
 
 /// The first key of the repository's own configuration outside `allowed`, as
@@ -312,7 +343,9 @@ fn locate(root: &Path) -> Option<Repo> {
 /// `include` is not followed: the key itself pauses git, so no file it names
 /// can change a verdict. A file written in the last two seconds is not trusted
 /// to have changed its stamp, on a file system that rounds to them, and is read
-/// again next time.
+/// again next time. The configuration read is the one git itself uses for
+/// `root`, and a verdict is kept only when git names the same directories as
+/// `locate` did: a disagreement is answered for the call, not remembered.
 fn paused(root: &Path) -> Option<String> {
     let repo = locate(root)?;
     if let Some(v) = verdicts().get(root) {
@@ -323,6 +356,22 @@ fn paused(root: &Path) -> Option<String> {
     let mut files: Vec<PathBuf> = vec![repo.common_dir.join("config"), repo.git_dir.join("config.worktree")];
     files.extend(repo.gitfile.clone());
     let mut key = None;
+    // Which repository git really uses, so a verdict is never kept against a
+    // configuration it does not read. A bare-looking folder it refuses fails
+    // here, and the repository is paused as unreadable.
+    let at = exec(root, &["rev-parse", "--absolute-git-dir", "--git-common-dir"], ENGLISH, Duration::from_secs(10), true);
+    if !at.ok {
+        verdicts().remove(root);
+        // Git found no repository where the search by eye did (a `HEAD` that
+        // is no reference): every call it is given fails the same way.
+        if at.stderr.contains("not a git repository") {
+            return None;
+        }
+        return Some(format!("{UNREAD}{}", reason(&at)));
+    }
+    let mut lines = at.stdout.lines().map(str::trim);
+    let (used_git, used_common) = (lines.next().unwrap_or(""), lines.next().unwrap_or(""));
+    let agrees = same_place(&repo.git_dir, Path::new(used_git)) && same_place(&repo.common_dir, &root.join(used_common));
     let args = ["config", "--list", "--show-scope", "--name-only"];
     let r = exec(root, &args, &[], Duration::from_secs(10), true);
     if !r.ok {
@@ -339,7 +388,7 @@ fn paused(root: &Path) -> Option<String> {
     let files: Vec<(PathBuf, Stamp)> = files.into_iter().map(|p| { let s = stamp(&p); (p, s) }).collect();
     let recent = SystemTime::now() - Duration::from_secs(2);
     let settled = files.iter().all(|(_, s)| s.is_none_or(|(at, _)| at < recent));
-    if settled {
+    if settled && agrees {
         verdicts().insert(root.to_path_buf(), Verdict { repo, files, key: key.clone() });
     } else {
         verdicts().remove(root);
@@ -426,9 +475,25 @@ fn allowed(key: &str) -> bool {
                         | "symlinks" | "autocrlf" | "safecrlf" | "eol" | "longpaths" | "fscache" | "untrackedcache"
                         | "sparsecheckout" | "sparsecheckoutcone" | "splitindex" | "commitgraph" | "multipackindex"
                         | "checkstat" | "trustctime" | "quotepath" | "abbrev" | "worktree" | "fsmonitor" | "hookspath"
-                        | "sshcommand"
+                        | "sshcommand" | "excludesfile" | "preloadindex" | "whitespace"
                 )
         }
+        // Left by git gui on exit and by everyday habits; each is read as
+        // data (git-config(1)), none names a program. Not `gui.editor`,
+        // `gui.*` otherwise being git gui's own business.
+        "gui" => sub.is_none() && matches!(name, "wmstate" | "geometry"),
+        "blame" => {
+            sub.is_none()
+                && matches!(
+                    name,
+                    "ignorerevsfile" | "markignoredlines" | "markunblamablelines" | "coloring" | "date" | "showemail"
+                        | "showroot" | "blankboundary"
+                )
+        }
+        "rerere" => sub.is_none() && matches!(name, "enabled" | "autoupdate"),
+        "i18n" => sub.is_none() && matches!(name, "commitencoding" | "logoutputencoding"),
+        // Only switches for help messages.
+        "advice" => sub.is_none(),
         "commit" | "tag" | "pull" | "push" | "fetch" | "rebase" | "merge" | "status" | "log" | "init" | "pack" | "index"
         | "feature" => sub.is_none(),
         "diff" => sub.is_none() && name != "external",
@@ -934,11 +999,15 @@ pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(S
     std::fs::create_dir(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     let ceiling = scratch.to_str().unwrap_or("");
     let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
+    // The repository just made is bare, which `exec` refuses to find on its
+    // own; `.` is `dir` itself, as git runs there.
+    let named = [env.as_slice(), &[("GIT_DIR", ".")]].concat();
     let answer = (|| {
         let init = exec(&dir, &["init", "--bare", "-q", "."], &env, Duration::from_secs(10), true);
         if !init.ok {
             return Err(reason(&init));
         }
+        let env = named;
         let specs: Vec<String> = tags.iter().map(|t| format!("refs/tags/{t}:refs/tags/{t}")).collect();
         let mut args = vec!["fetch", "-q", "--depth=1", "--filter=tree:0", "--no-tags", url];
         args.extend(specs.iter().map(String::as_str));
@@ -1390,7 +1459,11 @@ mod tests {
             "submodule.a.b.url", "submodule.recurse", "url.git@example.com:.insteadOf", "diff.algorithm", "gc.auto",
             "color.ui", "lfs.url", "lfs.pushurl", "lfs.https://x.example/info/lfs.access", "lfs.locksverify",
             "lfs.fetchinclude", "http.postBuffer", "http.https://x.example/.lowSpeedLimit", "remote.origin.gh-resolved",
-            "alias.st", "safe.directory", "pull.ff", "REMOTE.origin.URL", "tag.gpgsign",
+            "alias.st", "safe.directory", "pull.ff", "REMOTE.origin.URL", "tag.gpgsign", "gui.wmstate", "gui.geometry",
+            "blame.ignoreRevsFile", "blame.markIgnoredLines", "blame.markUnblamableLines", "blame.coloring", "blame.date",
+            "blame.showEmail", "blame.showRoot", "blame.blankBoundary", "rerere.enabled", "rerere.autoUpdate",
+            "core.excludesFile", "core.preloadIndex", "core.whitespace", "i18n.commitEncoding", "i18n.logOutputEncoding",
+            "advice.detachedHead", "advice.statusHints",
         ] {
             assert!(allowed(key), "{key} should be allowed");
         }
@@ -1403,7 +1476,7 @@ mod tests {
             "trailer.x.cmd", "mergetool.x.cmd", "difftool.x.cmd", "gc.recentObjectsHook", "sequence.editor", "core",
             "ssh.variant", "http", "unknown.key", "include.path", "includeIf.gitdir:~/work/.path", "lfs.extension.x.clean",
             "lfs.customtransfer.x.path", "http.proxy", "http.sslVerify", "http.cookieFile", "http.https://x.example/.proxy",
-            "remote.origin.proxy", "remote.origin.proxyAuthMethod",
+            "remote.origin.proxy", "remote.origin.proxyAuthMethod", "gui.editor", "gui.fontui", "blame.x.date",
         ] {
             assert!(!allowed(key), "{key} should pause git");
         }
@@ -1500,5 +1573,138 @@ mod tests {
         assert!(!marks.join("ssh").exists(), "the repository's ssh command ran");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&marks);
+    }
+    /// A project folder that is itself a repository's insides, a `HEAD`, `refs`,
+    /// an `objects` that git is content to find, a config naming a filter and
+    /// a working tree: git takes it for a bare repository, the search by eye
+    /// must not miss it, and nothing may run (0121). The `objects` file is
+    /// there to be what the old search, which wanted a directory, missed.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_is_a_repositorys_insides_runs_no_filter() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("embedded");
+        let marks = scratch("embedded-marks");
+        let clean = script(&marks, "clean.sh", &marks.join("filter"), "cat");
+        git(&dir, &["init", "-q", "-b", "main"]);
+        write(&dir, "models/a.sql", "select 1\n");
+        write(&dir, ".gitattributes", "*.sql filter=x\n");
+        git(&dir, &["add", "."]);
+        for e in std::fs::read_dir(dir.join(".git")).unwrap().flatten() {
+            std::fs::rename(e.path(), dir.join(e.file_name())).unwrap();
+        }
+        std::fs::remove_dir(dir.join(".git")).unwrap();
+        for (k, v) in [("core.bare", "false"), ("core.worktree", "."), ("filter.x.clean", clean.to_str().unwrap())] {
+            git(&dir, &["config", "--file", "config", k, v]);
+        }
+        // Git asks only that `objects` can be entered, which a file marked
+        // executable passes.
+        std::fs::remove_dir_all(dir.join("objects")).unwrap();
+        std::fs::write(dir.join("objects"), "").unwrap();
+        std::fs::set_permissions(dir.join("objects"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        // The stat of the file no longer matches the index, so a status reads it.
+        std::thread::sleep(Duration::from_millis(1100));
+        write(&dir, "models/a.sql", "select 1\n");
+
+        let found = Command::new("git").arg("-C").arg(&dir).args(["status", "--porcelain"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap();
+        assert!(found.status.success(), "{}", String::from_utf8_lossy(&found.stderr));
+        assert!(marks.join("filter").exists(), "git should take this folder for a repository and run its filter");
+        let _ = std::fs::remove_file(marks.join("filter"));
+
+        assert!(locate(&dir).is_some(), "the search missed what git finds");
+        assert!(paused(&dir).is_some());
+        let info = status(&dir);
+        assert!(!info.paused.is_empty());
+        assert!(!run(&dir, &["status"], &[], Duration::from_secs(20)).ok);
+        assert!(!marks.join("filter").exists(), "the repository's filter ran");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&marks);
+    }
+
+    /// The same refusal without the pieces that need a Unix: a bare repository
+    /// in the project folder is one git would use by itself, and is not used.
+    #[test]
+    fn a_bare_repository_in_the_project_folder_is_not_used_implicitly() {
+        let dir = scratch("bare-folder");
+        git(&dir, &["init", "-q", "--bare"]);
+        git(&dir, &["config", "filter.x.clean", "true"]);
+        let said = paused(&dir).expect("paused");
+        assert!(said.starts_with(UNREAD), "{said}");
+        assert!(!status(&dir).paused.is_empty());
+        assert!(!run(&dir, &["status"], &[], Duration::from_secs(20)).ok);
+        assert!(!verdicts().contains_key(&dir), "a refusal was kept as an answer");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Where git looks, and in the order it looks (`locate`).
+    #[test]
+    fn the_search_for_a_repository_follows_git() {
+        let canon = |p: &Path| p.canonicalize().unwrap();
+
+        // A bare repository is its own git directory.
+        let bare = scratch("locate-bare");
+        git(&bare, &["init", "-q", "--bare"]);
+        let at = locate(&bare).expect("bare");
+        assert_eq!((canon(&at.git_dir), canon(&at.common_dir), at.gitfile), (canon(&bare), canon(&bare), None));
+
+        // A linked worktree: a `.git` file, and the configuration of the main repository.
+        let main = scratch("locate-main");
+        repo(&main);
+        let linked = scratch("locate-linked");
+        git(&main, &["worktree", "add", "-q", "-b", "side", linked.to_str().unwrap()]);
+        let at = locate(&linked).expect("linked");
+        assert_eq!(at.gitfile.as_deref(), Some(linked.join(".git").as_path()));
+        assert_eq!(canon(&at.common_dir), canon(&main.join(".git")));
+        assert_ne!(canon(&at.git_dir), canon(&main.join(".git")));
+
+        // A submodule: a `.git` file with a relative path into the superproject.
+        let top = scratch("locate-top");
+        git(&top, &["init", "-q"]);
+        let module = top.join(".git/modules/x");
+        std::fs::create_dir_all(top.join("x")).unwrap();
+        git(&top, &["init", "-q", "--bare", module.to_str().unwrap()]);
+        std::fs::write(top.join("x/.git"), "gitdir: ../.git/modules/x\n").unwrap();
+        let at = locate(&top.join("x")).expect("submodule");
+        assert_eq!(canon(&at.git_dir), canon(&module));
+        assert_eq!(canon(&at.common_dir), canon(&module));
+        assert_eq!(at.gitfile.as_deref(), Some(top.join("x/.git").as_path()));
+
+        // A `.git` directory that is no git directory is passed over, as git does.
+        let parent = scratch("locate-invalid");
+        git(&parent, &["init", "-q"]);
+        std::fs::create_dir_all(parent.join("child/.git")).unwrap();
+        let at = locate(&parent.join("child")).expect("parent's");
+        assert_eq!(canon(&at.git_dir), canon(&parent.join(".git")));
+        assert!(status(&parent.join("child")).repo, "git should find the parent's repository too");
+
+        for d in [bare, main, linked, top, parent] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    /// A linked worktree reads the main repository's `config`, so a key added
+    /// there is seen from the worktree.
+    #[test]
+    fn a_change_of_the_main_configuration_is_seen_from_a_linked_worktree() {
+        let main = scratch("shared-main");
+        repo(&main);
+        let linked = scratch("shared-linked");
+        git(&main, &["worktree", "add", "-q", "-b", "side", linked.to_str().unwrap()]);
+        // Old enough to be trusted: a stamp from this second is read again.
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        for file in [main.join(".git/config"), linked.join(".git")] {
+            std::fs::OpenOptions::new().write(true).open(file).unwrap().set_modified(old).unwrap();
+        }
+        assert_eq!(paused(&linked), None);
+        assert!(verdicts().contains_key(&linked), "a clean verdict was not kept");
+
+        let mut text = std::fs::read_to_string(main.join(".git/config")).unwrap();
+        text.push_str("[filter \"x\"]\n\tclean = cat\n");
+        std::fs::write(main.join(".git/config"), text).unwrap();
+        std::thread::sleep(Duration::from_millis(2100));
+        assert_eq!(paused(&linked).as_deref(), Some("filter.x.clean"));
+        assert!(!status(&linked).paused.is_empty());
+        let _ = std::fs::remove_dir_all(&main);
+        let _ = std::fs::remove_dir_all(&linked);
     }
 }

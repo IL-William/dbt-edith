@@ -20,8 +20,10 @@ newest dated heading has to be the version `Cargo.toml` names.
   switches hooks off too, and a repository whose configuration holds a key
   outside a list of data-only ones, a `credential.helper` or a `filter.*` for
   one, is left alone, the Git panel and the freshness card saying so and
-  naming the key (0121). A remote on a local path is no longer refreshed by
-  the timed fetch.
+  naming the key (0121). The timed fetch, and a checkout, which may fetch
+  what a partial clone lacks, speak https, http and ssh only: a remote on a
+  local path, a `git://` one or one behind a remote helper (a `codecommit::`
+  URL) is no longer refreshed by the timer.
 - Send the launch key in a header from the page instead of keeping it in a
   cookie, so no other server on the machine is ever sent it (0122). The
   terminal's socket takes it in its address.

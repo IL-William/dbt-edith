@@ -76,9 +76,13 @@ Three rules hold across the whole git surface:
   reason): the
   Git panel and the freshness card say that git is paused because the
   repository's own configuration names a program, and name the key, and no git
-  is run until it is gone. git in the terminal is unaffected. The timed fetch
-  speaks https, http and ssh only, so a remote on a local path is not
-  refreshed by it
+  is run until it is gone. git in the terminal is unaffected. The timed fetch,
+  and a checkout, speak https, http and ssh only, so a remote on a local path,
+  a `git://` one or one behind a remote helper (a `codecommit::` URL) is not
+  refreshed by the timer. The gate needs git 2.26 or later (an older git is
+  paused in every repository as unreadable, and asked again at each poll), and
+  the refusal to take a bare-looking folder for a repository needs 2.38 or
+  later
   ([0121](../decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md)).
 
 Commit fetches first, so the ahead/behind counts next to it are current; a

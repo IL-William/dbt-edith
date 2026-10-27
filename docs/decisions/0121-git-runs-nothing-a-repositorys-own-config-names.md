@@ -17,10 +17,18 @@ configuration names: `core.fsmonitor` to ask which files changed,
 hashes, `credential.helper`, `remote.*.uploadpack` or `core.sshCommand` on the
 timed fetch, a `protocol.ext.allow`. Opening the folder was enough.
 
+Below, the configuration is held for a click and for the poll alike, but hooks
+only for what runs without a click: a commit or a pull from the Git panel runs
+the hooks the repository holds, copied ones included, which is the limit of
+clicking in a repository one did not make.
+
 ## Decision
 
-- **Every call** passes `-c core.fsmonitor=false` and `-c
-  submodule.recurse=false`, sets `GIT_SSH_COMMAND` to the batch-mode ssh the
+- **Every call** passes `-c core.fsmonitor=false`, `-c
+  submodule.recurse=false` and `-c safe.bareRepository=explicit` (a folder
+  holding a `HEAD`, `refs`, `objects` and a `config` is one git takes for a
+  bare repository, and is refused unless named; `tag_subjects` names its own
+  with `GIT_DIR`), sets `GIT_SSH_COMMAND` to the batch-mode ssh the
   network calls already used, which wins over the repository's
   `core.sshCommand`, and sets `GIT_NO_LAZY_FETCH=1` unless it is a fetch, a
   pull, a push or a checkout (which, like the timed fetch, is held to the
@@ -39,9 +47,16 @@ timed fetch, a `protocol.ext.allow`. Opening the folder was enough.
   a list of data-only keys (`allowed` in `src/git.rs`). One outside it pauses
   git for that repository: no call is made, the Git panel and the freshness
   card say so and name the key, and `tracks` answers an error, so a collin is
-  refused as for any git that gives no answer. A venv is not: `venv::committed`
-  reads that error as not tracked, as it does for an archive with no `.git`
-  (0053). A repository whose configuration cannot be listed at all is paused
+  refused as for any git that gives no answer. A venv is set aside the same way:
+  inside a repository `venv::committed` reads that error as tracked, as
+  `collin_run` does for a collin, so a venv the user made in a paused repository
+  is set aside too, and the pause note says why; outside one it stays not
+  tracked (0053). The repository is found by git's own test (`locate` in
+  `src/git.rs`: a `.git` file, a `.git` directory with a `HEAD`, `objects` and
+  `refs`, or the folder itself), and the verdict is kept only when `git
+  rev-parse --absolute-git-dir --git-common-dir` names the directories the
+  search found, so it is never tied to a configuration git does not read. A
+  repository whose configuration cannot be listed at all is paused
   with git's reason and the pause is not remembered. git in the terminal is
   unaffected. The verdict is kept per root against the mtime and size of
   `config` and `config.worktree`, so the poll adds no process; a file written
@@ -73,4 +88,12 @@ a proxy in its own configuration is paused until the key moves to the user's
 global one. A remote on a local path is not refreshed by the timer. Where the
 user's own `core.sshCommand` set a key or an option, git run from here no
 longer uses it; the network calls already did not. The bare `Not a git
-repository` is replaced by the sentence naming the key.
+repository` is replaced by the sentence naming the key. A bare repository
+opened as the project is paused as unreadable, git having been told not to
+take it on its own.
+
+The gate needs git 2.26 or later, for `--show-scope`: an older git cannot list
+the configuration, so every repository is paused as unreadable and asked again
+at each poll. The refusal of a bare-looking folder needs 2.38 or later, for
+`safe.bareRepository`; an older git ignores the key and relies on the search
+alone. There is no fallback for either.

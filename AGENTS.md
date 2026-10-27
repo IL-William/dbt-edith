@@ -101,9 +101,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 - **Nothing in the project runs on its own.** Learn about a venv from its files,
   never by running it, and never run one git tracks (0053), nor a collin git
   tracks, beside the binary or on the PATH (0094). Git itself runs nothing a
-  repository's own configuration names: its monitor and hooks are switched
-  off on a timer, and a key outside a list of data-only ones pauses git there
-  (0121). A link the repository
+  repository's own configuration names: its monitor is switched off on every
+  call and its hooks on what runs without a click, and a key outside a list of
+  data-only ones pauses git there (0121). A link the repository
   commits is held to the project, a `profiles.yml` included; one the user made
   outside it, a dotfiles one, is followed and kept (0094).
 - **Bump the version in `Cargo.toml`** for anything anyone installs, and turn
