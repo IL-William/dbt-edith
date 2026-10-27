@@ -53,7 +53,7 @@ the audit fetches to check, never one taken on the copied file.
 ```
 cargo run -- /path/to/dbt-project --port 4399 --no-open    # debug: serves web/ from disk
 cargo build --release --locked                             # release: embeds web/
-./scripts/build_windows.sh                                 # the VM's .exe, and its SHA-256
+./scripts/build_windows.sh                                 # a Windows .exe cross-built here, and its SHA-256
 ```
 
 Debug reads `web/` from disk, so edit and refresh. Release embeds it, so a
@@ -86,12 +86,13 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   and which is written on the person's click only (0115). Their `.yml` and
   `.yaml` files only, and only what was parsed from them leaves, never a
   `--vars` value (0063). To pick one, the sources form lists any folder, by the
-  names of its folders and YAML files only (0070). Whether this binary was installed by
-  cargo or built in a clone is told from which files exist beside it, never
-  from inside them (0068), and whether another was installed in its place from
-  the time its own file was written (0095). A path the manifest records for a
-  compiled file is
-  held to the target directory, as a path the browser sends is to the project.
+  names of its folders and YAML files only (0070). Whether this binary was
+  installed by cargo or built in a clone is told from which files exist beside
+  it, never from inside them (0068), unless it is a release's own `.exe`, which
+  CI built with a flag and which downloads its update (0123), and whether
+  another was installed in its place from the time its own file was written
+  (0095). A path the manifest records for a compiled file is held to the target
+  directory, as a path the browser sends is to the project.
 - **Treat this repository as public.** Fixtures and examples are invented, never
   taken from a real project (0014).
 - **The browser is not trusted.** Every route sits behind the Host and Origin
@@ -253,7 +254,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the agent skill, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
-| build the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
+| get, build or install the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
 | change what the `.exe`'s properties say, or what a Windows build does without `windres` | [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md) |
 | change what a feature does, or check what it does now | its page in [docs/features/](docs/features/) |
 | add a picture to the README, or retake them | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md) |
@@ -263,6 +264,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | make dbt-edith reach the network on its own, or change the update offer | [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change when a newer release is looked for, or what Edith's menu shows | [0079](docs/decisions/0079-an-update-is-looked-for-hourly-through-the-paris-night-and-on-demand.md), [0068](docs/decisions/0068-a-newer-dbt-edith-is-looked-for-once-a-day-through-git.md) |
 | change what the update types, or what the menu offers once it has run | [0095](docs/decisions/0095-the-update-says-when-it-is-installed-and-brings-its-tags.md), [0111](docs/decisions/0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md), [0120](docs/decisions/0120-the-update-empties-the-clones-target-once-installed.md) |
+| change what a release carries, how the Windows `.exe` is built, or what the update types for a binary that came from a release | [0123](docs/decisions/0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md), [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md), [0111](docs/decisions/0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md) |
 | open a menu under the pointer, or change what closes or holds one | [0086](docs/decisions/0086-edith-s-menu-opens-under-the-pointer.md) |
 | change the Halloween look, its switch or its sounds | [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
 | change what the Halloween look draws on a lineage box, how many boxes, or what an export measures | [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md), [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
@@ -314,7 +316,7 @@ src/checks.rs         the tool's own checks: sources without freshness, models w
 src/profiles.rs       where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs         the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs            working tree status and the git commands the UI can run
-src/update.rs         whether a newer release is out, asked through git hourly through the Paris night or on demand, and the command that installs it
+src/update.rs         whether a newer release is out, asked through git hourly through the Paris night or on demand, and the command that installs it, or downloads the release's `.exe`
 src/tour.rs           the guided tour's model, and whether it was offered on this machine
 src/look.rs           the Halloween look's choices (look, sound, apparitions, box style), kept per machine in look.json
 src/settings.rs       per-project settings, kept outside the project

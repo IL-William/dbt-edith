@@ -97,15 +97,19 @@ To update, `git pull` and run the same `cargo install` again, then
 `cargo clean --release` in the clone, which empties the `target/release` folder
 the build leaves there. dbt-edith asks GitHub, through git, whether a newer
 release is out, every hour from midnight to 09:00 Paris time, and offers that
-command in the status bar when one is.
+command in the status bar when one is (for a release's own Windows `.exe`, a
+download of the next one).
 **Check for updates**, in the menu under Edith at the top left, asks at once
 ([docs/features/updates.md](docs/features/updates.md)).
 
 ### On Windows
 
 Running the `.exe` needs no administrator rights and nothing installed. There
-are two ways to get one, both in [docs/windows.md](docs/windows.md):
+are three ways to get one, all in [docs/windows.md](docs/windows.md):
 
+- download `dbt-edith.exe` (or `dbt-edith-arm64.exe` for Windows on ARM) from
+  the latest [release](https://github.com/IL-William/dbt-edith/releases) and check
+  it against the `.sha256` beside it; Update then downloads the next one;
 - cross-compile it on a Mac or Linux with `./scripts/build_windows.sh`, copy it
   over, and check that `certutil -hashfile dbt-edith.exe SHA256` gives the hash
   the script printed;

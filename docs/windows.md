@@ -1,7 +1,52 @@
 # dbt-edith on Windows
 
-Two routes lead to the same `.exe`: build it elsewhere and copy it over, or build
-it on the Windows machine. Either way, running it needs nothing installed.
+Three routes lead to an `.exe`: download the one each release carries, build it
+elsewhere and copy it over, or build it on the Windows machine. Whichever, running
+it needs nothing installed.
+
+## Download it
+
+Each release on the [releases page](https://github.com/IL-William/dbt-edith/releases)
+carries two files, built by CI on Windows, each with its SHA-256 beside it:
+
+- `dbt-edith.exe`, for x64: nearly every Windows PC. It also runs on Windows on
+  ARM, under emulation.
+- `dbt-edith-arm64.exe`, native to Windows on ARM.
+
+To tell which machine this is, open Settings, System, About, and read System
+type: "x64-based processor" or "ARM-based processor". Or, in PowerShell:
+
+```
+Get-ComputerInfo | Select-Object OsArchitecture, CsSystemType
+```
+
+`CsSystemType` reads `x64-based PC` or `ARM64-based PC`; it takes a few seconds.
+From Git Bash, the same is
+`powershell -c "Get-ComputerInfo | Select-Object OsArchitecture, CsSystemType"`.
+
+Download the file and its `.sha256`, and before running it check that the hash
+is the published one:
+
+```
+certutil -hashfile dbt-edith.exe SHA256
+```
+
+It must match the `.sha256` file. The file is built with Microsoft's toolchain and
+carries no version resource. Keep it in a folder of your own on your `PATH`, as
+the next section shows, and run it. Update, in the menu under Edith, then
+downloads the next release, checks its SHA-256 and replaces the file, with the
+running one renamed to `dbt-edith.exe.old` or `dbt-edith-arm64.exe.old` until you
+restart; it keeps fetching the file of the architecture it was built for.
+Nothing is built, so Rust is not needed for dbt-edith.
+
+To move from a build made on the machine, press Update in Edith's menu and pick
+**Download the release's .exe**: it replaces that file where it is, so nothing
+changes on your `PATH`. A build older than 1.56.0 offers cargo alone, so the
+first move is either one more update with cargo, which brings 1.56.0, or the
+manual download above, which is only for a first install: in that case run
+`cargo uninstall dbt-edith` too, or `~/.cargo/bin` may come first on your `PATH`
+and keep starting the old one. collin is still built with cargo when asked for,
+so Rust stays useful there.
 
 ## Build it on a Mac or Linux, then copy it
 

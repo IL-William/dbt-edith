@@ -13,6 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.56.0 - 2026-10-27
+
+- Attach to every release a Windows `dbt-edith.exe`, and `dbt-edith-arm64.exe`
+  for Windows on ARM, each with its SHA-256 and built by CI on Windows, so a
+  Windows machine downloads the file instead of building it (0123).
+- Offer on Windows a button that downloads the release's `.exe` of this build's
+  architecture, checks its SHA-256 and swaps it in, first in Edith's menu and
+  the settings, beside the cargo update for a binary cargo installed, which
+  compiles on this machine. A binary run from its clone's `target` folder is
+  offered neither. The running one is put back if the swap fails.
+
 ## 1.55.0 - 2026-10-27
 
 - Keep a repository's own configuration from naming a program edith runs:

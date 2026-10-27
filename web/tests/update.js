@@ -23,8 +23,8 @@ check('switched off', updateOffer({ current: '1.11.0', off: true }), null);
 print('\n--- installed by cargo, from a clone on this machine ---');
 var installed = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  how: { command: 'git -C "/src/dbt-edith" pull --ff-only origin main && cargo install --locked --path "/src/dbt-edith"',
-    kind: 'install', source: '/src/dbt-edith', exe: 'dbt-edith' },
+  hows: [{ command: 'git -C "/src/dbt-edith" pull --ff-only origin main && cargo install --locked --path "/src/dbt-edith"',
+    kind: 'install', source: '/src/dbt-edith', exe: 'dbt-edith' }],
 });
 check('the pill names the release', installed.label, '1.12.0 available');
 check('the menu says both versions', installed.head, 'dbt-edith 1.12.0 · this is 1.11.0');
@@ -41,16 +41,58 @@ ok('says nothing of Windows elsewhere', !says(installed, 'Windows'));
 print('\n--- built in place ---');
 var built = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  how: { command: 'git -C "/src/dbt-edith" pull --ff-only origin main && ...', kind: 'build', source: '/src/dbt-edith',
-    exe: 'dbt-edith' },
+  hows: [{ command: 'git -C "/src/dbt-edith" pull --ff-only origin main && ...', kind: 'build', source: '/src/dbt-edith',
+    exe: 'dbt-edith' }],
 });
 ok('says it builds rather than installs', says(built, 'builds it again with cargo build --release'));
+
+print('\n--- the release\'s own .exe, on Windows (0123) ---');
+var downloaded = updateOffer({
+  current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
+  hows: [{ command: 'Invoke-WebRequest ...', kind: 'download',
+    source: 'https://github.com/IL-William/dbt-edith/releases/latest/download', exe: 'dbt-edith.exe', renames: true }],
+});
+check('the pill and the button name the release as ever', [downloaded.label, downloaded.button], ['1.12.0 available', 'Update to 1.12.0']);
+ok('says it downloads the .exe and checks its SHA-256',
+  says(downloaded, 'It downloads the .exe CI built for this release, of this build\'s architecture, checks its SHA-256 against the one published beside it, and replaces the running .exe with it.'));
+ok('and not that it builds or installs with cargo', !says(downloaded, 'cargo') && !says(downloaded, 'pulls main'));
+ok('the running .exe still steps aside, and comes back if the swap fails',
+  says(downloaded, 'dbt-edith.exe steps aside as dbt-edith.exe.old first') && says(downloaded, 'comes back if the swap fails'));
+check('the step promises no minute or two', downloaded.step,
+  'It types the update into the terminal below. Press Enter there to run it, then stop dbt-edith where you started it '
+    + 'and start it again: until then, 1.11.0 serves this page.');
+
+print('\n--- a choice: the download first, cargo beside it (0123) ---');
+var choice = updateOffer({
+  current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
+  hows: [
+    { command: 'Invoke-WebRequest ...', kind: 'download', exe: 'dbt-edith.exe', renames: true,
+      source: 'https://github.com/IL-William/dbt-edith/releases/latest/download' },
+    { command: 'git -C "C:/src/dbt-edith" pull ... && cargo install ...', kind: 'install', source: 'C:/src/dbt-edith',
+      exe: 'dbt-edith.exe', renames: true },
+  ],
+});
+check('one button per command, the recommended first',
+  choice.options.map(function (o) { return [o.kind, o.button]; }),
+  [['download', 'Download the release\'s .exe'], ['install', 'Update to 1.12.0 with cargo']]);
+check('each types its own command', choice.options.map(function (o) { return o.command; }),
+  ['Invoke-WebRequest ...', 'git -C "C:/src/dbt-edith" pull ... && cargo install ...']);
+check('the offer stands for the first', [choice.command, choice.button], ['Invoke-WebRequest ...', 'Download the release\'s .exe']);
+ok('the download says what it replaces and checks', says(choice, 'checks its SHA-256 against the one published beside it'));
+ok('cargo says it compiles here', says(choice, 'installs it again with cargo install, compiling it on this machine'));
+check('one step says how either goes', choice.step,
+  'Either types the update into the terminal below. Press Enter there to run it: the download takes seconds, cargo a minute or two. '
+    + 'Then stop dbt-edith where you started it and start it again: until then, 1.11.0 serves this page.');
+ok('and the rename is said once, for the swap or the build', choice.lines.filter(function (l) { return l.indexOf('steps aside') >= 0; }).length === 1
+  && says(choice, 'comes back if the swap or the build fails'));
+check('the pill is the same', choice.label, '1.12.0 available');
+check('installed, a choice is no choice', updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, replaced: true, hows: choice.options.map(function (o) { return { command: o.command, kind: o.kind }; }) }).options, []);
 
 print('\n--- installed by cargo, on Windows ---');
 var renamed = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  how: { command: 'git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
-    source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true },
+  hows: [{ command: 'git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
+    source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true }],
 });
 ok('says why the running .exe steps aside', says(renamed, 'Windows will not replace a running .exe but lets it be renamed: dbt-edith.exe steps aside as dbt-edith.exe.old first'));
 ok('that it goes on serving the page', says(renamed, 'goes on serving this page'));
@@ -59,8 +101,8 @@ ok('and that it comes back on a failure', says(renamed, 'comes back if the build
 print('\n--- installed, not yet restarted (0095) ---');
 var waiting = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes, replaced: true,
-  how: { command: 'git -C "C:/src/dbt-edith" fetch --tags --force origin; git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
-    source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true },
+  hows: [{ command: 'git -C "C:/src/dbt-edith" fetch --tags --force origin; git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
+    source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true }],
 });
 check('the pill says to restart, naming no version, since which went in is not known', waiting.label, 'restart to update');
 check('nor does the menu\'s heading, whose newest release may have come out since', waiting.head,
@@ -80,10 +122,17 @@ check('still offered', carried.label, '1.12.0 available');
 check('with no command', carried.command, '');
 check('nor a step to follow', carried.step, '');
 ok('carried from another machine: says where to rebuild it', says(carried, 'pull and rebuild it where it was built'));
+var carriedWin = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'elsewhere' }, 'windows');
+ok('on Windows it points to the download, not the README', says(carriedWin, 'download the release\'s .exe by hand, as docs/windows.md says under Download it.') && !says(carriedWin, 'README'));
 var locked = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'locked' });
 ok('built in place on Windows: says to stop it first', says(locked, 'stop it, then pull and build it again'));
 var shell = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'shell' });
 ok('another shell: says which ones it is typed for', says(shell, 'typed for sh, bash, zsh and PowerShell'));
+var windowsShell = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'shell' }, 'windows');
+ok('on Windows a shell refusal points to the download, not the clone', says(windowsShell, 'download the release\'s .exe by hand, as docs/windows.md says under Download it.') && !says(windowsShell, 'README'));
+var windowsPath = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' }, 'windows');
+ok('so does a path refusal', says(windowsPath, 'download the release\'s .exe by hand') && !says(windowsPath, 'pull the clone'));
+ok('elsewhere they point to the clone', says(shell, 'pull the clone and install it again by hand') && says(updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' }, 'macos'), 'as the README says'));
 var path = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' });
 ok('an odd path: says so, not that it was built elsewhere', says(path, 'a character a shell would read') && !says(path, 'where it was built'));
 
@@ -147,6 +196,7 @@ check('and links every release for them', capped.older, { label: 'and 5 older', 
 
 print('\n--- the cards of the update flow (0111) ---');
 var typed = updateNotice('typed');
+ok('a download takes seconds, not a minute or two', updateNotice('typed', 'download').body.indexOf('a few seconds') >= 0 && typed.body.indexOf('a minute or two') >= 0);
 check('after the button: press Enter', typed.title, 'Press Enter in the terminal to run the update');
 check('and what comes after', typed.body,
   'It takes a minute or two. When it ends, stop dbt-edith where you started it and start it again.');

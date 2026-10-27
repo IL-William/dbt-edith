@@ -11,7 +11,8 @@ pill opens the same in the Updates section of the settings:
 the version and build you run, every release since yours by the title of the
 pull request that released it, each linked to its notes, and, for a binary
 installed or built from a clone on that machine, the pull of `main` and the
-install typed into the terminal for you to run; restart dbt-edith once it
+install typed into the terminal for you to run, or for a release's own Windows
+`.exe` the download of the next one (below); restart dbt-edith once it
 finishes. Otherwise it says why it has no command. The menu also says when
 GitHub last answered, or what git said when it could not reach it, and when it
 asks next, and Check for updates asks again at once. Nothing about your project
@@ -53,7 +54,38 @@ until a click elsewhere, a second click on Edith or Escape. While another menu
 is open, the GitHub one or a breadcrumb's say, resting on Edith opens nothing
 (0086).
 
-## On Windows
+## On Windows, a download or a build
+
+Each release carries a Windows `dbt-edith.exe`, and `dbt-edith-arm64.exe` for
+Windows on ARM, built by CI with the SHA-256 of each beside it
+([windows.md](../windows.md)). On Windows the menu offers a choice of buttons,
+the first the recommended one:
+
+- **Download the release's .exe**, offered to every binary there but one run
+  from anywhere under its clone's `target`, a developer's build, which it would
+  replace. A build outside that folder is offered it too, and it overwrites it:
+  one made with a custom `CARGO_TARGET_DIR`, or in a clone moved or renamed
+  since, whose path the binary no longer finds. It types a download of the next
+  release's file, of the architecture this one was built for, taken from the
+  latest release, checked against its published SHA-256 and swapped in. In Git
+  Bash `curl` is held to HTTPS on every redirect; PowerShell starts on HTTPS,
+  but the command does not restrict where it is redirected. The `.sha256` comes
+  from the same release and server, so it catches a truncated or corrupted
+  download, not a tampered release. Nothing is replaced when the download fails
+  or the hash differs; the terminal says so for a hash, and the command then
+  ends with no closing line. A release published between the two downloads fails
+  the check, and pressing the button again fetches the new one. It needs `curl`
+  and `sha256sum` in Git Bash, which Git for Windows brings, or PowerShell 5.1.
+  Git Bash's `curl` reads the proxy environment variables (`HTTPS_PROXY`), not
+  Windows' proxy settings, so behind a proxy the PowerShell terminal or the
+  manual download may work where Git Bash does not.
+- **Update to 1.2.3 with cargo**, as below, for a binary cargo installed: it
+  compiles on this machine.
+
+A release's own `.exe` has the download alone. Both put the running `.exe` aside
+as `<name>.old` and back if the swap fails (0123).
+
+## On Windows, built here
 
 To update by hand, stop dbt-edith first, because Windows will not replace an
 `.exe` that is running, then `git pull`, `cargo install --path . --locked` and
