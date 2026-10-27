@@ -131,6 +131,15 @@ check('keys at the proposed shape are not sent, and dbt Cloud sends none', JSON.
       '{"sources":[{"kind":"airflow","path":"../orchestration/dags","label":"prod","keys":{"dag_id":"pipeline.name"}},'
       + '{"kind":"dbt_cloud","path":"jobs.yml","label":"","keys":{}}]}');
 
+var zoned = jobSourcesBody([
+  { kind: 'airflow', path: 'dags', label: '', keys: {}, timezone: ' Europe/London ' },
+  { kind: 'airflow', path: 'more', label: '', keys: {}, timezone: '  ' },
+  { kind: 'dbt_cloud', path: 'jobs.yml', label: '', keys: {}, timezone: 'Europe/London' },
+], DEFAULTS);
+check('an Airflow source sends its time zone, trimmed, and an empty one none; dbt Cloud never', JSON.stringify(zoned),
+      '{"sources":[{"kind":"airflow","path":"dags","label":"","keys":{},"timezone":"Europe/London"},'
+      + '{"kind":"airflow","path":"more","label":"","keys":{}},{"kind":"dbt_cloud","path":"jobs.yml","label":"","keys":{}}]}');
+
 var placed = jobSourcesBody([{ kind: 'dbt_cloud', path: 'jobs.yml', label: '', keys: {} }], DEFAULTS, 'project', '12-345');
 check('where they are kept, and the version of the file the form was shown', JSON.stringify(placed),
       '{"sources":[{"kind":"dbt_cloud","path":"jobs.yml","label":"","keys":{}}],"place":"project","seen":"12-345"}');

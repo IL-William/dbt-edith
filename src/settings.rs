@@ -91,6 +91,11 @@ pub struct JobSource {
     /// Airflow only: the dotted key paths that differ from the proposed shape.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub keys: BTreeMap<String, String>,
+    /// Airflow only: the IANA zone its crons are read in, Airflow's
+    /// `default_timezone`. Empty is UTC. Never read by the server beyond its
+    /// shape: it has no tz database (0003), the page judges it (0119).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub timezone: String,
     /// Read from the project's `.dbt-edith/jobs.yml` and not the settings,
     /// so held to the narrower rules of a file a repository supplies (0115).
     /// Never read from a request or written to the settings.

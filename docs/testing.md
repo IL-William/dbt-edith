@@ -58,6 +58,7 @@ $JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens
 $JSC web/tests/builds.js      # the last build per environment: where the tables are, the verdicts, the dots, the Reports lists
+$JSC web/tests/jobbuilds.js   # builds by job: a cron read in its source's zone, the last start across a clock change, a job's models late, built since, not built
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
 $JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot

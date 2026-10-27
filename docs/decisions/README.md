@@ -122,6 +122,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0116](0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md) | The tool's own checks are listed apart from dbt's warnings | adding a rule to the Checks section of Reports, changing which nodes one of its four looks at, or reading a source's `freshness` for anything else |
 | [0117](0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md) | The last build per environment is read from dbt_artifacts, on a click, and never kept | showing a model's runs read from the warehouse, changing what the builds read selects or sends, or putting a status on a lineage box |
 | [0118](0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md) | An indirect edge ends on its model's box and names its clause | changing what the page asks collin for, how a downstream indirect edge is drawn or walked, what names an indirect role on the page, or how many boxes a column's canvas draws |
+| [0119](0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md) | A job's builds are judged against its own clock, in the zone its source names | changing what Builds by job calls late, reading a cron or a time zone anywhere, or adding a key to a job source |
 
 ## Keeping these honest
 

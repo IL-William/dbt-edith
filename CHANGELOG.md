@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.54.0 - 2026-10-27
+
+- Show each job's last builds in a Builds by job section of Reports, judged
+  against the job's own schedule in the time zone its Airflow source names
+  (0119).
+
 ## 1.53.0 - 2026-10-26
 
 - Draw a column's indirect edges, the ones a `WHERE`, a `JOIN` or a `QUALIFY`
