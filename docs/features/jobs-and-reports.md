@@ -161,13 +161,16 @@ ingestion DAG for instance, which is read for its id, its schedule and its
 outlets alone and is listed nowhere. The form draws the example in your own keys as you
 type them.
 
-An Airflow source also takes a **time zone**, beside its keys: the zone its
-schedules are read in, Airflow's `default_timezone`, such as `Europe/London`
-and UTC when empty. It is no key of the files, since it describes the
-deployment and not the DAG. Only Builds by job uses it, to place a cron on the
-clock. A DAG whose `start_date` carries a zone of its own is read by Airflow
-in that zone, not in `default_timezone`: set that zone on its source. The form
-refuses a name this browser does not know, the server checking
+An Airflow source also takes a **time zone**, beside its keys: the zone the
+schedules of its DAGs run in, such as `Europe/London`, and UTC when empty.
+Airflow takes a DAG's zone from its `start_date`: `default_timezone` for a
+`start_date` with no zone, and with dag-factory the DAG's `timezone` key (or
+`default_args.timezone`), UTC when it has none. One zone holds for every DAG of
+the source, so DAGs in different zones go in sources of their own; a per-DAG
+zone, in those keys or in the Python, is not read. Only Builds by job uses it,
+to place a cron on the clock. A `.dbt-edith/jobs.yml` that sets a `timezone` is
+refused whole by 1.53.0 and earlier, so everyone sharing it needs 1.54.0. The
+form refuses a name this browser does not know, the server checking
 only its shape (letters, digits and `_+-/`, at most 64 characters) since it has
 no time zone database; a dbt Cloud source takes none, its crons being UTC, and
 the file and the server refuse one

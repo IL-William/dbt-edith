@@ -38,15 +38,17 @@ missed run.
   not run at least daily), never an alarm. Error and not built are as in 0117.
   The job's tone is its worst model's.
 - **The cron is read in the zone of its source.** An Airflow source takes a
-  `timezone` (Airflow's `default_timezone`, UTC when empty); a dbt Cloud job's
-  cron is always UTC, so its source takes none and the server refuses one.
+  `timezone` (UTC when empty); a dbt Cloud job's cron is always UTC, so its
+  source takes none and the server refuses one.
   The server holds only the shape (at most 64 characters of letters, digits and
   `_+-/`), having no tz database (0003); the page checks the name with `Intl`,
   and the sources form refuses a name the browser does not know. The key is
   written to `.dbt-edith/jobs.yml` and the settings like the others (0115).
-  A DAG whose `start_date` carries a zone of its own is read by Airflow in
-  that zone, not in `default_timezone`, and this tool does not read the
-  Python: set that zone on its source, which then holds for every DAG of it.
+  Airflow takes a DAG's zone from its `start_date`: `default_timezone` for a
+  `start_date` with no zone, and with dag-factory the DAG's `timezone` key (or
+  `default_args.timezone`), UTC when absent, whatever `default_timezone` says.
+  This tool reads neither the Python nor that key, so one zone holds for every
+  DAG of a source and DAGs in different zones go in sources of their own.
 - **The cron is walked in the browser**, in pure functions (`cronFields`,
   `cronPrevious`): five fields, lists, ranges, steps, month and weekday names,
   Airflow's presets, and a day of the month and a day of the week both set
@@ -83,8 +85,11 @@ missed run.
   known and leaves the judging to the reader.
 - **A server that evaluates the cron**: it would need a tz database or a crate
   (0003), and the page has one.
-- **The timezone as a key of the files**: it describes the deployment, not the
-  DAG; the same files read in another Airflow have another zone.
+- **A zone read per DAG** (dag-factory's `timezone`, `default_args.timezone`, a
+  zoned `start_date` in Python): not read yet. One zone per source covers a
+  deployment that sets one zone, and the keys of the files are the user's own
+  dotted paths, so a zone key would be one more to name. A deployment with
+  DAGs in several zones splits them into sources.
 
 ## Consequences
 

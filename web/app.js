@@ -8739,8 +8739,8 @@ function jobSourcesBody(forms, defaults, place, seen) {
         }
       }
       const source = { kind: f.kind, path: String(f.path || '').trim(), label: String(f.label || '').trim(), keys };
-      // Airflow's default_timezone, where its crons are read; empty is UTC
-      // and is not sent (0119).
+      // The zone the DAGs' crons run in, one for the source; empty is UTC and
+      // is not sent (0119).
       const zone = f.kind === 'airflow' ? String(f.timezone || '').trim() : '';
       if (zone) source.timezone = zone;
       return source;
@@ -9422,11 +9422,12 @@ async function jobSourcesForm(box, { add = false } = {}) {
         }
         // Not a key of the files: the zone their crons are read in.
         const zone = input(f.timezone, 'UTC', (v) => { f.timezone = v; refreshIssue(); }, 'jobsrc-zone');
-        zone.title = "The time zone of this source's schedules, Airflow's default_timezone, such as Europe/London. Empty is UTC. "
-          + "It decides when a job's builds are late in Reports.";
+        zone.title = "The time zone the DAGs' schedules run in, such as Europe/London, one for every DAG of this source. Airflow takes it from each "
+          + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the DAG's timezone key (or default_args.timezone), "
+          + "UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
         zone.setAttribute('aria-label', 'Time zone of the schedules');
         grid.append(jel('label', '', 'time zone'), zone,
-          jel('span', 'jobsrc-zonehint', "Airflow's default_timezone, such as Europe/London. Empty is UTC."));
+          jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or dag-factory's timezone key. Empty is UTC."));
         const cols = jel('div', 'jobsrc-cols');
         cols.append(grid, example);
         card.append(cols);
@@ -12490,6 +12491,26 @@ function jobBuildsJobs(ids, jobs) {
   });
 }
 
+/* What tells apart jobs that share a name (a dbt Cloud job in two projects, a
+   dag_id in two sources), by job: the source, then the job's identifier as the
+   Jobs tab writes it (`[[ident]]`) or its file, then its line. Only the
+   jobs sharing a name have one, and each the shortest that is its own. */
+function jobsTwinTags(jobs) {
+  const count = (key) => {
+    const by = new Map();
+    for (const j of jobs) by.set(key(j), (by.get(key(j)) || 0) + 1);
+    return (j) => by.get(key(j));
+  };
+  const named = count((j) => j.name), inSource = count((j) => `${j.name}\u0000${j.source}`);
+  const inFile = count((j) => `${j.name}\u0000${j.source}\u0000${j.ident || j.file}`);
+  const out = new Map();
+  for (const j of jobs) {
+    if (named(j) < 2) continue;
+    out.set(j, inSource(j) < 2 ? j.source : inFile(j) < 2 ? `${j.source} · ${j.ident ? `[[${j.ident}]]` : j.file}` : `${j.source} · ${j.file}:${j.line}`);
+  }
+  return out;
+}
+
 /* The target a job's runs are kept to: the one it names, none when it names
    none or one only the vars file knows (Jinja, which no run is recorded
    under). */
@@ -12537,15 +12558,17 @@ function jobBuildVerdicts(job, got, clock, staleDays, now, worst) {
       v = buildsWorst(target ? all.filter((r) => r.target === target) : all, staleDays, now);
       if (worst) worst.set(key, v);
     }
-    let bad = null, verdict = '', success = 0;
-    for (const p of v.parts && v.parts.length ? v.parts : [v]) {
+    let bad = null, verdict = '';
+    const parts = v.parts && v.parts.length ? v.parts : [v];
+    for (const p of parts) {
       const at = Date.parse(p.success);
       let late = p.verdict;
       if (late !== 'error' && late !== 'none') late = (judged ? !(at >= judged.before) : p.verdict === 'stale') ? 'late' : 'ok';
       if (bad === null || rank[late] < rank[verdict]) { bad = p; verdict = late; }
-      if (at > success) success = at;
     }
-    const since = !!judged && success >= judged.last;
+    // Built since the start only where every target was, as the verdict is the
+    // worst target's: another target's build is not this one's.
+    const since = !!judged && parts.every((p) => Date.parse(p.success) >= judged.last);
     items.push({ id: m.id, steps: m.steps || [], verdict, since, v, worst: bad });
     counts[verdict]++;
     counts.total++;
@@ -13921,9 +13944,12 @@ function jobBuildsWhen(job, clock) {
 
 /* A job's name, which may break after an underscore, a dot or a dash and
    nowhere else. */
-function jobBreakable(name) {
+function jobBreakable(name, tag) {
   const box = jel('b', 'rtitle', '');
   for (const piece of name.match(/[^_.-]*[_.-]?/g).filter(Boolean)) box.append(document.createTextNode(piece), document.createElement('wbr'));
+  // A name another job has too is told apart, inside the title: the fold is
+  // known by it (reportFoldKey).
+  if (tag) box.append(jel('span', 'jbalso', ` · ${tag}`));
   return box;
 }
 
@@ -14058,12 +14084,13 @@ async function jobBuildsSection() {
   });
   // Every row is made once; the filter only hides them. The detail of a job,
   // the lists of its environments, is made when it is first opened.
+  const twins = jobsTwinTags(cfg.jobs);
   const rows = jobsByStart(cfg.jobs, (j) => j).map((job) => {
     const clock = clocks.get(job);
     const d = jel('details', 'jobbuild');
     const row = jel('summary', 'jbrow');
     const nameBox = jel('span', 'jbname');
-    const nm = jobBreakable(job.name);
+    const nm = jobBreakable(job.name, twins.get(job));
     nm.title = `${job.source} · ${job.file}:${job.line}`;
     nameBox.append(nm, jel('span', 'muted jbtag', job.kind === 'dbt_cloud' ? 'dbt Cloud job' : 'DAG'));
     const meta = jel('span', 'jbmodels', counted(job.models.length, 'model', 'models'));
@@ -14101,7 +14128,7 @@ async function jobBuildsSection() {
       }
       d.append(detail);
     });
-    return { name: job.name.toLowerCase(), el: d };
+    return { name: `${job.name} ${twins.get(job) || ''}`.toLowerCase(), el: d };
   });
   list.replaceChildren(head2, ...rows.map((r) => r.el));
   const apply = () => {

@@ -17,7 +17,8 @@ newest dated heading has to be the version `Cargo.toml` names.
 
 - Show each job's last builds in a Builds by job section of Reports, judged
   against the job's own schedule in the time zone its Airflow source names
-  (0119).
+  (0119). A `.dbt-edith/jobs.yml` that sets a `timezone` is refused whole by
+  1.53.0 and earlier, so everyone sharing it needs 1.54.0.
 
 ## 1.53.0 - 2026-10-26
 

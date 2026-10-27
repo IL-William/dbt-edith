@@ -1873,6 +1873,7 @@ kbd {
 .jbname { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .jbname b { font: 600 12px var(--mono); overflow-wrap: break-word; min-width: 0; }
 .jbtag { flex: 0 0 auto; font-size: 11px; }
+.jbalso { font-weight: 400; color: var(--fg-dim); }
 .jbwhen { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .jbwhen .jobwhen { max-width: 100%; min-width: 0; }
 .jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

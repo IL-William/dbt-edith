@@ -1695,16 +1695,18 @@ Builds by job (0119, 1.54.0): a second Reports section from the same read as
 Builds by environment, one row per DAG or dbt Cloud job with a column per
 environment, judging each job's own models, errored, late, not built, against
 the job's cron in the time zone its source names, and counting those built
-since the last start. An Airflow source gained a `timezone` (Airflow's
-`default_timezone`, UTC when absent; refused on dbt Cloud, whose crons are
-UTC), in the form, `.dbt-edith/jobs.yml` and the settings; the server holds its
-shape and the page checks the name with `Intl`. `GET /api/jobs/models` sends
+since the last start. An Airflow source gained a `timezone` (UTC when
+absent; refused on dbt Cloud, whose crons are UTC), in the form,
+`.dbt-edith/jobs.yml` and the settings; the server holds its shape and the
+page checks the name with `Intl`. `GET /api/jobs/models` sends
 what each job runs. Checked with `cargo test` (`models_by_job` on an invented
 graph: own models only, ephemerals and packages out, step numbers, seeds
 counted apart, the same bytes twice; the zone checked, written and read back;
 the route behind the key) and `web/tests/jobbuilds.js` (the cron, the last
 fire across the clocks changing in London, the verdicts). Its limits: a
-schedule on one task that only a DAG factory knows is not seen; a job started
+schedule on one task that only a DAG factory knows is not seen; a zone set per
+DAG (dag-factory's `timezone` or `default_args.timezone`, or a zoned
+`start_date` in Python) is not read, one zone holds per source; a job started
 by an asset or another job, a manual one, and a cron this cannot read are
 judged on the global threshold, not a clock; and the DAG of an invocation is
 inferred from the job's selections, not read, since `dbt_artifacts` does not

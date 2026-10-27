@@ -225,6 +225,16 @@ check('but for another', iso(jobFires(clock, now + 86400000).last), '2026-10-27T
 check('a job with no clock has none', jobFires(null, now), null);
 check('a cron is parsed once', cronFields('0 5 * * *') === cronFields('0 5 * * *'), true);
 
+print('\n--- built since the start, by every target ---');
+var jobNone = { kind: 'airflow', scheduled: true, cron: '0 5 * * *', models: [mod('a')] };
+var viaProd = row('model.jaffle.a', 'success', '2026-10-25T05:00:00Z', '2026-10-25T05:10:00Z', { target: 'prod' });
+var viaDev = row('model.jaffle.a', 'success', '2026-10-26T09:00:00Z', '2026-10-26T09:05:00Z', { target: 'dev' });
+var mixed = jobBuildVerdicts(jobNone, rowsOf([viaProd, viaDev]), utc, 7, now);
+check('another target\'s build is not counted since the start, and the verdict is as before', [mixed.counts.since, mixed.items[0].since, mixed.items[0].verdict], [0, false, 'ok']);
+var prodToday = row('model.jaffle.a', 'success', '2026-10-26T05:00:00Z', '2026-10-26T05:10:00Z', { target: 'prod' });
+check('both targets built after it count', jobBuildVerdicts(jobNone, rowsOf([prodToday, viaDev]), utc, 7, now).counts.since, 1);
+check('a job naming the target counts that target alone', jobBuildVerdicts(Object.assign({ target: 'dev' }, jobNone), rowsOf([viaProd, viaDev]), utc, 7, now).counts.since, 1);
+
 print('\n--- a model judged once for every job that runs it ---');
 var shared = new Map();
 var j1 = { kind: 'airflow', scheduled: true, cron: '0 5 * * *', models: [mod('a')] }, j2 = { kind: 'airflow', scheduled: true, cron: '0 5 * * *', models: [mod('a')], target: 'prod' };
@@ -247,6 +257,20 @@ check('a clock change in the day is still a daily job', sinceOf('0 5 * * *', 'Eu
 check('a weekly one names the day', sinceOf('0 9 * * 1', 'Europe/London', '2026-10-28T12:00:00Z'), '2 of 5 since Mon 26 Oct 09:00');
 check('a monthly one too', sinceOf('0 6 1 * *', 'UTC', '2026-10-28T12:00:00Z'), '2 of 5 since Thu 1 Oct 06:00');
 check('a weekday job over a weekend', sinceOf('0 6 * * mon-fri', 'UTC', '2026-10-25T12:00:00Z'), '2 of 5 since Fri 23 Oct 06:00');
+
+print('\n--- jobs that share a name ---');
+function jb(name, source, ident, file, line) { return { name: name, source: source, ident: ident || '', file: file || name + '.yml', line: line || 1 }; }
+var alone = jb('shop_daily', 'orchestration'), tw1 = jb('Daily build', 'cloud-a', 'daily'), tw2 = jb('Daily build', 'cloud-b', 'daily');
+var tags = jobsTwinTags([alone, tw1, tw2]);
+check('a name that is its own has no tag', tags.has(alone), false);
+check('twins in two sources are told apart by the source', [tags.get(tw1), tags.get(tw2)], ['cloud-a', 'cloud-b']);
+var s1 = jb('Daily build', 'cloud', 'daily'), s2 = jb('Daily build', 'cloud', 'daily_eu'), d1 = jb('shop', 'dags', '', 'a/shop.yml', 3), d2 = jb('shop', 'dags', '', 'b/shop.yml', 3);
+var tags2 = jobsTwinTags([s1, s2, d1, d2]);
+check('in one source, by the identifier the Jobs tab writes, or by the file', [tags2.get(s1), tags2.get(s2), tags2.get(d1), tags2.get(d2)],
+  ['cloud · [[daily]]', 'cloud · [[daily_eu]]', 'dags · a/shop.yml', 'dags · b/shop.yml']);
+var l1 = jb('shop', 'dags', '', 'shop.yml', 1), l2 = jb('shop', 'dags', '', 'shop.yml', 9);
+check('and by the line when one file holds both', [jobsTwinTags([l1, l2]).get(l1), jobsTwinTags([l1, l2]).get(l2)], ['dags · shop.yml:1', 'dags · shop.yml:9']);
+check('no jobs, no tags', jobsTwinTags([]).size, 0);
 
 print('\n--- the jobs as the server sends them ---');
 var ids = ['model.jaffle.a', 'model.jaffle.b', 'model.jaffle.c'];
