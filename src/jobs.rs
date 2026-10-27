@@ -91,6 +91,14 @@ pub fn check(source: &JobSource) -> Option<String> {
     if source.kind == DBT_CLOUD && !source.keys.is_empty() {
         return Some("dbt Cloud jobs are read in dbt-jobs-as-code's own schema, whose keys do not move".into());
     }
+    if source.kind == DBT_CLOUD && !source.timezone.is_empty() {
+        return Some("dbt Cloud's crons are in UTC, so a source of it has no time zone".into());
+    }
+    // The shape only: the server has no tz database (0003), and the page
+    // knows the name or says it does not (0119).
+    if source.timezone.len() > 64 || !source.timezone.chars().all(|c| c.is_ascii_alphanumeric() || "_+-/".contains(c)) {
+        return Some("a time zone of at most 64 characters, such as Europe/London".into());
+    }
     for (k, v) in &source.keys {
         if !AIRFLOW_KEYS.iter().any(|(name, _)| name == k) {
             return Some(format!("`{k}` is not a key this tool reads"));
@@ -334,6 +342,7 @@ fn parse_entries(text: &str) -> Result<Vec<(JobSource, usize)>, String> {
                 "kind" => (source.kind, has_kind) = (scalar("a kind")?, true),
                 "path" => (source.path, has_path) = (scalar("a path")?, true),
                 "label" => source.label = scalar("a label")?,
+                "timezone" => source.timezone = scalar("a time zone")?,
                 "keys" => match &node.value {
                     Value::Null => {}
                     Value::Map(keys) => {
@@ -349,7 +358,7 @@ fn parse_entries(text: &str) -> Result<Vec<(JobSource, usize)>, String> {
                     }
                     _ => return Err(at_line(node.key_line, "`keys:` is not a mapping")),
                 },
-                _ => return Err(at_line(node.key_line, "a key a source does not have: kind, path, label and keys only")),
+                _ => return Err(at_line(node.key_line, "a key a source does not have: kind, path, label, timezone and keys only")),
             }
         }
         if !has_kind || !has_path {
@@ -448,6 +457,9 @@ pub fn sources_yaml(list: &[JobSource]) -> String {
         out.push_str(&format!("  - kind: {}\n    path: {}\n", quoted(&s.kind), quoted(&s.path)));
         if !s.label.is_empty() {
             out.push_str(&format!("    label: {}\n", quoted(&s.label)));
+        }
+        if !s.timezone.is_empty() {
+            out.push_str(&format!("    timezone: {}\n", quoted(&s.timezone)));
         }
         if !s.keys.is_empty() {
             out.push_str("    keys:\n");
@@ -763,6 +775,8 @@ pub struct SourceRead {
     pub label: String,
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub keys: std::collections::BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub timezone: String,
     /// Where the path led.
     pub resolved: String,
     /// Why nothing was read at all.
@@ -1322,6 +1336,7 @@ pub(crate) fn build(graph: &Graph, root: &Path, sources: &[JobSource]) -> (Read,
             path: src.path.clone(),
             label: src.label.clone(),
             keys: src.keys.clone(),
+            timezone: src.timezone.clone(),
             resolved: base.to_string_lossy().into_owned(),
             ..Default::default()
         };
@@ -1452,6 +1467,10 @@ pub struct JobView {
     pub ident: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub cron: String,
+    /// The zone `cron` is read in: its Airflow source's, empty for UTC and for
+    /// dbt Cloud, whose crons are always UTC (0119).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub timezone: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// The job it runs after, by name, or by id when no file read defines it.
@@ -1565,6 +1584,7 @@ fn job_view(read: &Read, ji: usize) -> JobView {
         name: j.name.clone(),
         ident: if j.kind == DBT_CLOUD { j.ident.clone() } else { String::new() },
         cron: j.cron.clone(),
+        timezone: if j.kind == AIRFLOW { read.sources[j.source].timezone.clone() } else { String::new() },
         assets: j.assets.clone(),
         after,
         after_unread,
@@ -2210,6 +2230,94 @@ pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
     cov
 }
 
+/* ---------------------------------------------------- models by job -- */
+
+/// One step that runs models, with the ones it runs by their place in
+/// `JobModels::ids`. A model several steps run is listed under each; the page
+/// works out a model's steps from this.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct StepModels {
+    pub n: usize,
+    /// The task id, else `step n`.
+    pub name: String,
+    pub models: Vec<usize>,
+}
+
+/// One job and the project's own models its steps run.
+#[derive(serde::Serialize, Debug)]
+pub struct JobBuilds {
+    #[serde(flatten)]
+    pub job: JobView,
+    /// The steps that run models, in order (`steps` is the job's step count).
+    pub by_step: Vec<StepModels>,
+    /// Seeds and snapshots it runs, which no build is read for yet (0117).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub seeds: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub snapshots: usize,
+}
+
+#[derive(serde::Serialize, Debug, Default)]
+pub struct JobModels {
+    pub configured: bool,
+    /// The ids of every model any job runs, sorted and sent once; a job's
+    /// steps name theirs by position (0055).
+    pub ids: Vec<String>,
+    pub jobs: Vec<JobBuilds>,
+}
+
+/// The models each job runs, for judging how each job's last builds went
+/// (0119). Filtered as `coverage` filters: the project's own, enabled,
+/// non-ephemeral models. Every step that executes counts, with the nodes its
+/// selection reached. A job nothing resolves for is listed with none.
+pub fn models_by_job(graph: &Graph, read: &Read) -> JobModels {
+    let root = graph.macros.root();
+    let mine = |i: u32| {
+        let node = &graph.nodes[i as usize];
+        !node.disabled && (root.is_empty() || node.package == root)
+    };
+    let is_model = |i: u32| {
+        let node = &graph.nodes[i as usize];
+        node.kind == Kind::Model && node.materialized != "ephemeral"
+    };
+    let mut all: Vec<u32> = Vec::new();
+    for s in read.steps.iter().filter(|s| s.executes()) {
+        all.extend(s.nodes.iter().copied().filter(|&i| mine(i) && is_model(i)));
+    }
+    all.sort_by(|&a, &b| graph.nodes[a as usize].id.cmp(&graph.nodes[b as usize].id));
+    all.dedup();
+    let position: HashMap<u32, usize> = all.iter().enumerate().map(|(p, &i)| (i, p)).collect();
+    let jobs = (0..read.jobs.len())
+        .map(|ji| {
+            let (mut seeds, mut snapshots) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+            let mut by_step = Vec::new();
+            for s in read.steps.iter().filter(|s| s.job == ji && s.executes()) {
+                let mut models = std::collections::BTreeSet::new();
+                for &i in s.nodes.iter().filter(|&&i| mine(i)) {
+                    match graph.nodes[i as usize].kind {
+                        Kind::Seed => {
+                            seeds.insert(i);
+                        }
+                        Kind::Snapshot => {
+                            snapshots.insert(i);
+                        }
+                        _ if is_model(i) => {
+                            models.insert(position[&i]);
+                        }
+                        _ => {}
+                    }
+                }
+                if !models.is_empty() {
+                    let name = if s.name.is_empty() { format!("step {}", s.n) } else { s.name.clone() };
+                    by_step.push(StepModels { n: s.n, name, models: models.into_iter().collect() });
+                }
+            }
+            JobBuilds { job: job_view(read, ji), by_step, seeds: seeds.len(), snapshots: snapshots.len() }
+        })
+        .collect();
+    JobModels { configured: !read.sources.is_empty(), ids: all.iter().map(|&i| graph.nodes[i as usize].id.clone()).collect(), jobs }
+}
+
 /// What the settings form shows once the sources are read.
 #[derive(serde::Serialize, Debug, Default)]
 pub struct Summary {
@@ -2327,6 +2435,7 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
             label: String::new(),
             keys: keys.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            timezone: String::new(),
             from_file: false,
         }
     }
@@ -3056,6 +3165,7 @@ jobs:
                 path: "../airflow/include/dags".into(),
                 label: "nightly".into(),
                 keys: [("dag_id".to_string(), "pipeline.name".to_string())].into_iter().collect(),
+                timezone: String::new(),
                 from_file: true,
             },
             "a key left empty is the proposed one"
@@ -3347,6 +3457,7 @@ jobs:
             path: "../a \"b\": c # d \\ e\u{e9}\u{4e2d}".into(),
             label: "r\u{e9}: \"x\" # y".into(),
             keys: [("dag_id".to_string(), "pipeline.name".to_string()), ("tasks".to_string(), "steps".to_string())].into_iter().collect(),
+            timezone: "Europe/London".into(),
             from_file: false,
         };
         let plain = JobSource { kind: DBT_CLOUD.into(), path: "jobs/cloud.yml".into(), ..Default::default() };
@@ -3418,6 +3529,103 @@ jobs:
         assert!(unknown(&read, "zzz").contains("the jobs read include Nightly build, shop_after, shop_daily"));
         let listed = listed(&read);
         assert_eq!(listed.iter().map(|j| j.name.as_str()).collect::<Vec<_>>(), ["shop_after", "shop_daily", "Nightly build"]);
+    }
+
+    #[test]
+    fn the_models_each_job_runs_are_the_projects_own_and_named_once() {
+        let d = dir("models-by-job");
+        write(&d, "daily.yml", DAG);
+        write(&d, "after.yml", ON_ASSET);
+        write(
+            &d,
+            "pkg.yml",
+            "dag_id: shop_pkg\nschedule: \"0 7 * * *\"\ntasks:\n  - task_id: both\n    command: dbt run -s package:artifacts orders\n  - task_id: look\n    command: dbt compile -s orders\n",
+        );
+        write(&d, "cloud/jobs.yml", "jobs:\n  nightly:\n    name: Nightly build\n    triggers:\n      schedule: true\n    schedule:\n      cron: \"0 2 * * *\"\n    execute_steps:\n      - dbt build --select orders\n      - dbt compile\n      - dbt run --select tag:nope\n      - dbt run --select orders\n");
+        let g = graph();
+        let sources = [source(AIRFLOW, &d, &[]), source(DBT_CLOUD, &d.join("cloud"), &[])];
+        let (read, _) = build(&g, &d, &sources);
+        let got = models_by_job(&g, &read);
+        assert!(got.configured);
+        let name = |id: usize| g.nodes[g.index[&got.ids[id]] as usize].name.clone();
+        assert_eq!(got.ids, ["model.shop.customers", "model.shop.orders", "model.shop.stg_customers", "model.shop.stg_orders"], "sorted, once, own models only");
+        let job = |n: &str| got.jobs.iter().find(|j| j.job.name == n).unwrap_or_else(|| panic!("{n}"));
+        // Each model with the steps that run it, worked out from the steps as the page does.
+        let ran = |j: &JobBuilds| {
+            let mut by: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+            for step in &j.by_step {
+                for &m in &step.models {
+                    by.entry(m).or_default().push(step.n);
+                }
+            }
+            by.into_iter().map(|(m, steps)| (name(m), steps)).collect::<Vec<_>>()
+        };
+        let step_names = |j: &JobBuilds| j.by_step.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
+
+        let daily = job("shop_daily");
+        // The ephemeral model int_pivot is out, so is the compile-only task.
+        assert_eq!(
+            ran(daily),
+            [("customers".to_string(), vec![2]), ("orders".to_string(), vec![2]), ("stg_customers".to_string(), vec![1]), ("stg_orders".to_string(), vec![1, 2])]
+        );
+        assert_eq!(step_names(daily), ["stage", "marts"]);
+        assert_eq!(daily.job.timezone, "");
+
+        // A package model is the package's; a task that compiles runs nothing.
+        let pkg = job("shop_pkg");
+        assert_eq!(ran(pkg), [("orders".to_string(), vec![1])]);
+        assert_eq!(pkg.by_step.len(), 1);
+
+        // A dbt Cloud step has no task id; the model comes with its step numbers, and the test beside it is no model.
+        let cloud = job("Nightly build");
+        assert_eq!(ran(cloud), [("orders".to_string(), vec![1, 4])]);
+        assert_eq!(step_names(cloud), ["step 1", "step 4"]);
+
+        // Seeds are counted apart, and a job running only them lists no model.
+        let after = job("shop_after");
+        assert!(after.by_step.is_empty());
+        assert_eq!((after.seeds, after.snapshots), (1, 0));
+
+        // A read built again from the same files, not the same one serialised twice.
+        let (read_again, _) = build(&g, &d, &sources);
+        let again = models_by_job(&g, &read_again);
+        assert_eq!(serde_json::to_string(&got).unwrap(), serde_json::to_string(&again).unwrap(), "the same bytes twice (0055)");
+        assert!(!serde_json::to_string(&got).unwrap().contains("timezone"), "an empty zone is not sent");
+    }
+
+    #[test]
+    fn a_source_names_the_zone_its_crons_are_read_in() {
+        let london = JobSource { timezone: "Europe/London".into(), ..source(AIRFLOW, Path::new("dags"), &[]) };
+        assert_eq!(check(&london), None);
+        for ok in ["UTC", "America/Argentina/Buenos_Aires", "Etc/GMT+5"] {
+            assert_eq!(check(&JobSource { timezone: ok.into(), ..london.clone() }), None, "{ok}");
+        }
+        for (tz, want) in [("Europe/Lon don", "time zone"), ("Europe\nLondon", "time zone"), ("\u{e9}t\u{e9}", "time zone"), (&"a".repeat(65), "at most 64")] {
+            let got = check(&JobSource { timezone: tz.into(), ..london.clone() }).unwrap_or_default();
+            assert!(got.contains(want), "{tz:?}: {got}");
+        }
+        let cloud = JobSource { timezone: "UTC".into(), ..source(DBT_CLOUD, Path::new("jobs.yml"), &[]) };
+        assert!(check(&cloud).unwrap_or_default().contains("UTC"));
+
+        // The file carries it, and holds it to the same check.
+        assert_eq!(parse_sources(&sources_yaml(&[london.clone()])), Ok(vec![london.clone()]));
+        assert!(sources_yaml(&[london.clone()]).contains("    timezone: \"Europe/London\"\n"));
+        assert!(!sources_yaml(&[source(AIRFLOW, Path::new("dags"), &[])]).contains("timezone"));
+        let refused = parse_sources("jobs:\n  - kind: dbt_cloud\n    path: x\n    timezone: UTC\n").unwrap_err();
+        assert!(refused.starts_with("line 2:") && refused.contains("UTC"), "{refused}");
+        let odd = parse_sources("jobs:\n  - kind: airflow\n    path: x\n    timezone: \"a b\"\n").unwrap_err();
+        assert!(odd.contains("time zone"), "{odd}");
+
+        // Its jobs carry it, and a dbt Cloud job none.
+        let d = dir("zone-view");
+        write(&d, "dags/daily.yml", DAG);
+        write(&d, "cloud/jobs.yml", "jobs:\n  n:\n    name: N\n    schedule:\n      cron: \"0 2 * * *\"\n    execute_steps:\n      - dbt run\n");
+        let g = graph();
+        let zoned = JobSource { timezone: "Europe/London".into(), ..source(AIRFLOW, &d.join("dags"), &[]) };
+        let (read, _) = build(&g, &d, &[zoned, source(DBT_CLOUD, &d.join("cloud"), &[])]);
+        assert_eq!(read.sources[0].timezone, "Europe/London");
+        assert_eq!((job_view(&read, 0).timezone.as_str(), job_view(&read, 1).timezone.as_str()), ("Europe/London", ""));
+        assert!(serde_json::to_string(&job_view(&read, 1)).unwrap().find("timezone").is_none());
     }
 
     #[test]

@@ -1329,6 +1329,7 @@ kbd {
 .jobsrc-cols { display: flex; gap: 12px; flex-wrap: wrap; }
 .jobsrc-keys { display: grid; grid-template-columns: auto 180px; gap: 3px 8px; align-items: center; font-size: 11px; color: var(--fg-dim); }
 .jobsrc-cols pre { flex: 1 1 240px; }
+.jobsrc-zonehint { grid-column: 1 / -1; font-size: 10.5px; margin-bottom: 2px; }
 .jobs-read { font-size: 11.5px; margin-top: 8px; }
 .jobs-read .jobs-warn { margin: 3px 0 0; font-family: var(--mono); font-size: 11px; }
 .jobsrc-foot { display: flex; gap: 6px; align-items: center; }
@@ -1851,6 +1852,49 @@ kbd {
 .buildstable td[data-verdict=stale] { color: var(--warn); }
 .buildstable td[data-verdict=error] { color: var(--bad); }
 .buildstable td[data-verdict=none], .buildstable td.bnone { color: var(--fg-dim); }
+/* Builds by job (0119): a row per job, a column per environment read. The
+   table takes the panel's width and shrinks to it; many environments scroll it. */
+.jbscroll { overflow-x: auto; }
+.jobbuilds { --cols: minmax(130px, 1.5fr) minmax(150px, 1.3fr) minmax(64px, .6fr) repeat(var(--envs), minmax(120px, 1fr));
+  min-width: calc(370px + var(--envs) * 130px); }
+.jbrow { display: grid; grid-template-columns: var(--cols); gap: 4px 14px; align-items: start; padding: 4px 0; }
+.jbrow > * { min-width: 0; }
+.jbheads { font-size: 12px; font-weight: 600; color: var(--fg-dim); border-bottom: 1px solid var(--line); }
+.jbheads > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jobbuild { border-bottom: 1px solid rgba(42, 51, 64, .5); }
+.jobbuild[hidden] { display: none; }
+.jobbuild > summary { cursor: pointer; list-style: none; }
+.jobbuild > summary::-webkit-details-marker { display: none; }
+/* The chevron of the other folds of Reports (.reportfinding), at their size. */
+.jbname::before { content: "\25b8"; color: var(--fg-dim); width: 10px; flex: 0 0 auto; }
+.jobbuild[open] > summary .jbname::before { content: "\25be"; }
+.jobbuild.empty > summary { cursor: default; }
+.jobbuild.empty > summary .jbname::before { content: ""; }
+.jbname { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.jbname b { font: 600 12px var(--mono); overflow-wrap: break-word; min-width: 0; }
+.jbtag { flex: 0 0 auto; font-size: 11px; }
+.jbalso { font-weight: 400; color: var(--fg-dim); }
+.jbwhen { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.jbwhen .jobwhen { max-width: 100%; min-width: 0; }
+.jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.jbzone { font-size: 11px; color: var(--fg-dim); }
+.jbmodels { font-size: 12px; }
+.jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; }
+.jbcell .jobdot { align-self: center; }
+.jobdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--ok); }
+.jbcell[data-verdict=error] .jobdot { background: var(--bad); }
+.jbcell[data-verdict=late] .jobdot { background: var(--warn); }
+.jbcell[data-verdict=none] .jobdot { background: transparent; border: 1px solid var(--fg-dim); }
+.jbsince { flex: 1 1 100%; padding-left: 14px; font-size: 11px; }
+.jbdetail { margin: 4px 0 10px 18px; padding: 6px 12px 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; }
+.jbrule { margin: 0 0 2px; color: var(--fg-dim); font-size: 12px; }
+.jbenv { margin: 4px 0 6px; padding-top: 4px; border-top: 1px solid var(--line); font-size: 12px; }
+.jbdetail > .jbenv:first-child { border-top: 0; padding-top: 0; }
+.jbrule + .jbenv { border-top: 0; }
+.jbenvhead { display: flex; align-items: center; gap: 8px; }
+.jbenv .rentries { padding-left: 34px; }
+.jbkind { margin: 4px 0 1px 16px; font-size: 11px; color: var(--fg-dim); }
+.jbfine { margin: 2px 0 4px 16px; }
 
 /* ------------------------------------------------------ halloween look -- */
 /* Everything of the Halloween look lives under body.halloween (0106), so

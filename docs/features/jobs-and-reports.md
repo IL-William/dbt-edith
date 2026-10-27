@@ -92,6 +92,7 @@ jobs:
   - kind: airflow
     path: ../orchestration/dags     # from the project
     label: orchestration
+    timezone: Europe/London         # Airflow only: where its crons are read, UTC when absent
     keys:
       dag_id: pipeline.name         # only the keys that differ from the shape below
   - kind: dbt_cloud
@@ -159,6 +160,22 @@ scheduled on them; so do those of a DAG file with no dbt task at all, an
 ingestion DAG for instance, which is read for its id, its schedule and its
 outlets alone and is listed nowhere. The form draws the example in your own keys as you
 type them.
+
+An Airflow source also takes a **time zone**, beside its keys: the zone the
+schedules of its DAGs run in, such as `Europe/London`, and UTC when empty.
+Airflow takes a DAG's zone from its `start_date`: `default_timezone` for a
+`start_date` with no zone, and with dag-factory the `timezone` beside the
+`start_date` it sets (the DAG's own, or `default_args.timezone`), UTC when it
+has none. One zone holds for every DAG of the source, so DAGs in different
+zones go in sources of their own; a per-DAG zone, in those keys or in the
+Python, is not read. Only Builds by job uses it,
+to place a cron on the clock. A `.dbt-edith/jobs.yml` that sets a `timezone` is
+refused whole by 1.53.0 and earlier, so everyone sharing it needs 1.54.0. The
+form refuses a name this browser does not know, the server checking
+only its shape (letters, digits and `_+-/`, at most 64 characters) since it has
+no time zone database; a dbt Cloud source takes none, its crons being UTC, and
+the file and the server refuse one
+([0119](../decisions/0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md)).
 
 What the YAML cannot say, this tab cannot either: tasks a factory builds in
 Python, a paused DAG, a schedule on one task that only the factory interprets,
@@ -300,3 +317,45 @@ said, with a link to the profile when the connection is to blame. Every enabled
 model is listed, by name, and the section stays where it is in the list and
 leaves the button dimmed until it has been read ([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
+
+**Builds by job** is listed beside it once a source is named as well, and is
+filled by the same button and the same read: nothing more is asked of Snowflake.
+It answers whether last night's run built what it should have. One row per job,
+scheduled ones first as in the Jobs tab, with its kind, its schedule and the
+zone that schedule is read in (or Manual, CI, Not read), how many models it runs
+and how many seeds and snapshots it runs that no build is read for, then one
+column per environment read: a dot in the job's worst tone and short counts,
+**errored**, **late**, **not built**, and how many models were built **since
+the last start** (information, never an alarm: a run that began at the last
+start may still be going, and no file says how long a run takes). A row opens a
+fold per environment listing the errored, late and not built models, each a link
+to the model with the task or step that runs it and dbt's message under an
+error. A filter narrows the jobs by name. An environment that could not be read
+says why above the rows, as Builds by environment does.
+
+A model is **late** when it has no success since the fire before the last one:
+a whole scheduled run went by without building it. The cron is read in the
+zone of its source, five fields with lists, ranges, steps, names and Airflow's
+presets, a day of the month and a day of the week both set matching either; a
+dbt Cloud job's is UTC. A job with no clock of its own (manual, CI, a merge, an
+asset or another job starting it, a schedule no file read, a cron this cannot
+read such as `L` or `@once`, a cron that never fires, a zone the browser does not know) is judged like a
+model in Builds by environment: late means no success within the threshold of
+the Snowflake settings, and its tooltip says so; so is a job whose start no
+file reads, a templated dbt Cloud trigger for one, whatever cron it carries. A
+fire is placed as Airflow 2.7 and later place it: a cron whose hour is not
+every hour fires once, at the later instant, when its time happens twice, and
+shifted forward by the gap when the clocks skip it; a cron that runs every
+hour counts elapsed time. The built-since count, which says the zone once in
+the schedule cell and not in each cell, names the day of the start when the
+job does not run at least daily or its last start is more than a day old, as
+in "since Mon 26 Oct 05:00". A dbt Cloud job that names a target (a templated
+one names none, and is ignored) is judged on that target's runs alone, and an
+environment kept to another target says so for it and gives no
+verdict.
+
+What it cannot say is on the page: a model's status is its last build whichever
+job ran it, since the package does not record the DAG, and the models a job owns
+are the ones its commands select. A schedule on one task that only the DAG
+factory knows is not seen, and models only are judged
+([0119](../decisions/0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md)).

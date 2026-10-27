@@ -310,6 +310,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/jobs/browse", get(browse_job_sources))
         .route("/api/jobs/node", get(jobs_for_node))
         .route("/api/jobs/coverage", get(jobs_coverage))
+        .route("/api/jobs/models", get(jobs_models))
         .route("/api/jobs/step", get(job_step))
         .route("/api/reload", post(reload))
         .route("/ws/pty", get(ws_pty))
@@ -2882,6 +2883,7 @@ async fn save_job_sources(State(st): State<Arc<AppState>>, Json(b): Json<JobSour
     for mut s in b.sources {
         s.path = s.path.trim().to_string();
         s.label = s.label.trim().to_string();
+        s.timezone = s.timezone.trim().to_string();
         s.keys.retain(|_, v| !v.trim().is_empty());
         for v in s.keys.values_mut() {
             *v = v.trim().to_string();
@@ -3003,6 +3005,23 @@ async fn jobs_coverage(State(st): State<Arc<AppState>>, Query(q): Query<LookQuer
         Ok((view, sources)) => Json(CoverageBody { view, sources_refused: sources.refused }).into_response(),
         Err(e) => e,
     }
+}
+
+/// The models each job runs, for Reports' builds by job (0119).
+async fn jobs_models(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
+    match with_jobs_sources(&st, q.look, crate::jobs::models_by_job).await {
+        Ok((view, sources)) => Json(ModelsBody { view, sources_refused: sources.refused }).into_response(),
+        Err(e) => e,
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ModelsBody {
+    #[serde(flatten)]
+    view: crate::jobs::JobModels,
+    /// Why the project's sources file is not read, when it is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources_refused: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -5194,6 +5213,7 @@ mod tests {
             path: root.join("no-such-folder").to_string_lossy().into_owned(),
             label: String::new(),
             keys: Default::default(),
+            timezone: String::new(),
             from_file: false,
         });
         let index = response_of(port, get("/api/reports", &h)).await;
@@ -6185,6 +6205,32 @@ mod tests {
         assert!(unlooked.contains(r#""never":[{"id":"model.shop.customers""#), "{unlooked}");
         let looked = response_of(port, get("/api/jobs?look=true", &[("Host", &host)])).await;
         assert!(looked.contains(r#""jobs":2"#), "{looked}");
+
+        // The models each job runs, behind the key, the same bytes twice; the
+        // source's zone reaches its jobs, and a bad one is refused (0119).
+        let models = response_of(port, get("/api/jobs/models?look=true", &[("Host", &host)])).await;
+        assert!(models.starts_with("HTTP/1.1 200"), "{models}");
+        assert!(models.contains(r#""ids":["model.shop.customers","model.shop.orders"]"#), "{models}");
+        assert!(models.contains(r#""name":"shop_added""#) && models.contains(r#""by_step":[{"n":1,"name":"all","models":[0]}]"#), "{models}");
+        assert!(!models.contains("timezone") && !models.contains("hunter2"), "{models}");
+        // The same bytes as a read built again from the same files (0055), not the cached one twice.
+        let (graph, sources) = (st.graph.read().await.clone(), st.job_sources.lock().unwrap().clone());
+        let (fresh, _) = crate::jobs::build(&graph, &st.root, &sources);
+        let want = serde_json::to_string(&ModelsBody { view: crate::jobs::models_by_job(&graph, &fresh), sources_refused: None }).unwrap();
+        assert_eq!(models.split("\r\n\r\n").nth(1), Some(want.as_str()));
+        assert!(status_of(port, keyless(get("/api/jobs/models", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
+        let zoned = |tz: &str| {
+            serde_json::json!({ "sources": [{ "kind": "airflow", "path": path, "keys": keys, "timezone": tz }] }).to_string()
+        };
+        let refused = response_of(port, put(&zoned("Europe/Lon don"))).await;
+        assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("time zone"), "{refused}");
+        let saved = response_of(port, put(&zoned(" Europe/London "))).await;
+        assert!(saved.starts_with("HTTP/1.1 200") && saved.contains(r#""timezone":"Europe/London""#), "{saved}");
+        let models = response_of(port, get("/api/jobs/models", &[("Host", &host)])).await;
+        assert!(models.contains(r#""timezone":"Europe/London""#), "{models}");
+        let cloud = serde_json::json!({ "sources": [{ "kind": "dbt_cloud", "path": path, "timezone": "UTC" }] }).to_string();
+        let refused = response_of(port, put(&cloud)).await;
+        assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("UTC"), "{refused}");
 
         // The form's picker lists a folder outside the project by names alone,
         // never a hidden one's. A temporary folder's path needs no escaping.

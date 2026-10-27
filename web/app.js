@@ -8738,11 +8738,23 @@ function jobSourcesBody(forms, defaults, place, seen) {
           if (v && v !== d) keys[k] = v;
         }
       }
-      return { kind: f.kind, path: String(f.path || '').trim(), label: String(f.label || '').trim(), keys };
+      const source = { kind: f.kind, path: String(f.path || '').trim(), label: String(f.label || '').trim(), keys };
+      // The zone the DAGs' crons run in, one for the source; empty is UTC and
+      // is not sent (0119).
+      const zone = f.kind === 'airflow' ? String(f.timezone || '').trim() : '';
+      if (zone) source.timezone = zone;
+      return source;
     }),
     place,
     seen,
   };
+}
+
+/* Why a source's time zone cannot be saved, or '': this browser has to know
+   the name, which the server, with no tz database, cannot say (0119). */
+function jobsZoneIssue(form) {
+  const zone = form.kind === 'airflow' ? String(form.timezone || '').trim() : '';
+  return zone && !zoneKnown(zone) ? `${zone} is not a time zone this browser knows: write it as Europe/London does.` : '';
 }
 
 /* Why a path may not go in the project's .dbt-edith/jobs.yml, or '' (0115):
@@ -9334,11 +9346,11 @@ async function jobSourcesForm(box, { add = false } = {}) {
   let refusedWhy = summary.refused || '';
   let seen = summary.stamp || '';
   let place = hasFile || summary.from !== 'settings' ? 'project' : 'settings';
-  const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys) }));
+  const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys), timezone: s.timezone || '' }));
   // A source being added has its picker open, and what the picker shows is
   // kept, so that drawing the cards again leaves it as it was without asking
   // the server again.
-  const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, browsing: true, browsed: null });
+  const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, timezone: '', browsing: true, browsed: null });
   if (add) forms.push(fresh('airflow'));
   let reads = summary.sources;
   const body = jel('div', 'jobsrc');
@@ -9367,7 +9379,7 @@ async function jobSourcesForm(box, { add = false } = {}) {
       for (const [v, label] of [['airflow', 'Airflow'], ['dbt_cloud', 'dbt Cloud']]) {
         kind.append(Object.assign(document.createElement('option'), { value: v, textContent: label, selected: f.kind === v }));
       }
-      kind.addEventListener('change', () => { f.kind = kind.value; paint(); });
+      kind.addEventListener('change', () => { f.kind = kind.value; paint(); refreshIssue(); });
       const remove = jel('button', 'btn sm', 'Remove');
       remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; paint(); refreshIssue(); });
       const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; refreshIssue(); }, 'grow');
@@ -9408,6 +9420,14 @@ async function jobSourcesForm(box, { add = false } = {}) {
             example.textContent = jobsExample(f.kind, f.keys, defaults);
           }));
         }
+        // Not a key of the files: the zone their crons are read in.
+        const zone = input(f.timezone, 'UTC', (v) => { f.timezone = v; refreshIssue(); }, 'jobsrc-zone');
+        zone.title = "The time zone the DAGs' schedules run in, such as Europe/London, one for every DAG of this source. Airflow takes it from each "
+          + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the timezone beside the start_date it sets (the DAG's own, "
+          + "or default_args.timezone), UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
+        zone.setAttribute('aria-label', 'Time zone of the schedules');
+        grid.append(jel('label', '', 'time zone'), zone,
+          jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or with dag-factory the timezone beside start_date, UTC when absent. Empty is UTC."));
         const cols = jel('div', 'jobsrc-cols');
         cols.append(grid, example);
         card.append(cols);
@@ -9425,10 +9445,12 @@ async function jobSourcesForm(box, { add = false } = {}) {
   // is picked, which keeps any path.
   const refreshIssue = () => {
     const bad = forms.find((f) => jobsProjectPathIssue(f.path));
-    const why = bad && (hasFile || place === 'project')
+    const pathWhy = bad && (hasFile || place === 'project')
       ? `${bad.path} is ${jobsProjectPathIssue(bad.path)}, which the project's file may not hold. `
         + 'Write the path from the project, or pick "For me only".'
       : '';
+    const odd = forms.find((f) => jobsZoneIssue(f));
+    const why = pathWhy || (odd ? jobsZoneIssue(odd) : '');
     issue.textContent = why;
     issue.hidden = !why;
     save.disabled = jobsSaveDisabled(busy, why);
@@ -9683,9 +9705,10 @@ function escapePanel() {
    no node and nothing explains it, and, empty, once a macro's card asked for
    its callers, `focus` (0105), and last the tool's own checks while one finds
    a node (0116) and the builds of each environment once the index says
-   Snowflake is on and the manifest holds the dbt_artifacts tables (0117),
+   Snowflake is on and the manifest holds the dbt_artifacts tables (0117), and
+   those of each job once a source is named as well (0119),
    each `quiet`: listed, but it never lights the button nor opens the panel
-   (0116, 0117). Before
+   (0116, 0117, 0119). Before
    that the coverage is listed all the same, `empty`, as the place a source is
    added from (0070), but it is not opened on for itself, and the button stays
    dimmed (0075). */
@@ -9705,8 +9728,12 @@ function reportsSections(index, focus) {
       title: "This tool's own checks on the project, which dbt warns of none of: sources without freshness, models with no test or no description, sources no node reads" },
     { key: 'builds', label: 'Builds by environment', tool: 'snowflake',
       title: "When each model last ran in each environment and how it ended, read from Snowflake when asked, from the tables of the dbt_artifacts package" },
+    { key: 'jobbuilds', label: 'Builds by job', tool: 'snowflake',
+      title: "How each job's models last ended in each environment, judged by the job's own schedule, from the same read as the builds by environment" },
   ];
-  const has = (key) => !!(index && index[key]);
+  // The builds of a job want both what the jobs run and the builds' tables,
+  // and are an index entry of neither (0119).
+  const has = (key) => !!(index && (key === 'jobbuilds' ? index.builds && index.jobs : index[key]));
   // The last run's dot says how it ended, from the counts the index carries;
   // none while dbt is still writing the file and the index lists its time alone,
   // nor when the run did nothing a pass could be said of.
@@ -9719,7 +9746,7 @@ function reportsSections(index, focus) {
   // panel, `quiet`: they would be there on nearly every project (0116). The
   // builds are too, since they hold nothing until the user's click reads them,
   // which is no file's news (0117).
-  const quiet = (key) => key === 'checks' || key === 'builds';
+  const quiet = (key) => key === 'checks' || key === 'builds' || key === 'jobbuilds';
   return all.filter((sec) => listed(sec.key))
     .map((sec) => Object.assign(sec, has(sec.key) ? (quiet(sec.key) ? { quiet: true } : {}) : { empty: true }));
 }
@@ -10166,7 +10193,13 @@ function restoreReportPlace(view, place) {
   }
   for (const d of scroller.querySelectorAll('details')) {
     const key = reportFoldKey(d);
-    if (key in place.open) d.open = place.open[key];
+    if (key in place.open) {
+      d.open = place.open[key];
+      // A fold that makes its list when first opened (Builds by job) has to
+      // have it before the scroll is put back, which the event it fires on
+      // its own, a task later, would not.
+      if (d.open) d.dispatchEvent(new Event('toggle'));
+    }
   }
   scroller.scrollTop = place.scroll;
 }
@@ -10191,7 +10224,7 @@ async function showReportSection(key) {
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again)
       : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again)
-        : key === 'builds' ? await buildsSection()
+        : key === 'builds' ? await buildsSection() : key === 'jobbuilds' ? await jobBuildsSection()
         : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
@@ -12237,6 +12270,319 @@ function buildsVerdicts(got, models, own, staleDays, now) {
   return out;
 }
 
+/* ------------------------------------------------------ builds by job -- */
+/* Each job's models against the same read, judged by the job's own clock
+   (0119). Pure, so web/tests/jobbuilds.js slices it with the code above. */
+
+/* A cron expression as sets of what each field allows, or null for what this
+   cannot walk (L, W, #, six fields, @once, @continuous): the caller then
+   judges the job on the global threshold. Five fields, `*`, lists, ranges,
+   `/n` steps, month and weekday names, Sunday as 0 or 7, Airflow's presets,
+   and `?` for a day. A weekday step runs to 6, Sunday being 7 only where it
+   is written. A day of the month and a day of the week are read the way
+   croniter, which Airflow uses, reads them: a field is unrestricted when it
+   is `*` or `?`, or when it spans its whole range and the other field has a
+   `*` in it (every other day of the month with any weekday is every other
+   day, every other weekday with any day every other weekday); both
+   restricted match either.
+   `fixed` is a cron whose hour field is not every hour, which Airflow (2.7
+   and later) places on the wall clock of its zone rather than counts in
+   elapsed time; only a cron that runs every hour counts elapsed time. */
+function cronFields(expr) {
+  const cache = cronFields.cache || (cronFields.cache = new Map());
+  const key = String(expr || '');
+  if (!cache.has(key)) cache.set(key, cronParse(key));
+  return cache.get(key);
+}
+
+function cronParse(expr) {
+  const presets = { '@hourly': '0 * * * *', '@daily': '0 0 * * *', '@midnight': '0 0 * * *', '@weekly': '0 0 * * 0',
+    '@monthly': '0 0 1 * *', '@quarterly': '0 0 1 */3 *', '@yearly': '0 0 1 1 *', '@annually': '0 0 1 1 *' };
+  let text = String(expr || '').trim();
+  if (text.startsWith('@')) text = presets[text.toLowerCase()] || '';
+  const parts = text.split(/\s+/);
+  if (parts.length !== 5) return null;
+  // `?` is `*` for a day, which is the only place croniter takes it.
+  parts[2] = parts[2] === '?' ? '*' : parts[2];
+  parts[4] = parts[4] === '?' ? '*' : parts[4];
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  // `open` is where a range with no end runs to: the weekday's is 6.
+  const parse = (field, min, max, names, first, open) => {
+    const out = new Set();
+    for (const item of field.split(',')) {
+      const m = /^(\*|[a-z0-9]+(?:-[a-z0-9]+)?)(?:\/(\d+))?$/i.exec(item);
+      if (!m) return null;
+      const num = (t) => {
+        if (/^\d+$/.test(t)) return Number(t);
+        const at = names ? names.indexOf(t.toLowerCase()) : -1;
+        return at < 0 ? NaN : at + first;
+      };
+      const end = open === undefined ? max : open;
+      let lo = min, hi = end;
+      if (m[1] !== '*') {
+        const [a, b] = m[1].split('-');
+        lo = num(a);
+        hi = b === undefined ? (m[2] ? end : lo) : num(b);
+      }
+      const step = m[2] === undefined ? 1 : Number(m[2]);
+      if (!(lo >= min && hi <= max && lo <= hi && step >= 1)) return null;
+      for (let v = lo; v <= hi; v += step) out.add(v);
+    }
+    return out;
+  };
+  const minute = parse(parts[0], 0, 59), hour = parse(parts[1], 0, 23), dom = parse(parts[2], 1, 31);
+  const month = parse(parts[3], 1, 12, months, 1), dow = parse(parts[4], 0, 7, days, 0, 6);
+  if (!minute || !hour || !dom || !month || !dow) return null;
+  if (dow.delete(7)) dow.add(0);
+  const domAny = parts[2] === '*' || (dom.size === 31 && parts[4].includes('*'));
+  const dowAny = parts[4] === '*' || (dow.size === 7 && parts[2].includes('*'));
+  return { minute, hour, dom, month, dow, domAny, dowAny, fixed: hour.size < 24 };
+}
+
+/* A zone's wall clock at an instant, as if it were UTC, through a formatter
+   made once per zone: building one costs far more than using it. */
+function zoneWall(tz, ms) {
+  const cache = zoneWall.cache || (zoneWall.cache = new Map());
+  if (!cache.has(tz)) {
+    cache.set(tz, new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric',
+      day: 'numeric', hour: 'numeric', minute: 'numeric' }));
+  }
+  const p = {};
+  for (const x of cache.get(tz).formatToParts(new Date(ms))) p[x.type] = Number(x.value);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute);
+}
+
+/* Whether this browser knows the zone's name. */
+function zoneKnown(tz) {
+  try { zoneWall(tz || 'UTC', 0); return true; } catch (e) { return false; }
+}
+
+/* The last time the cron fires at or before `beforeMs`, in milliseconds, read
+   on the wall clock of `tz`; null when none is found within the bound or the
+   zone is not known. It walks back by what does not match, a month, a day, an
+   hour, then minutes, so a daily job costs a few steps. Where a clock changes
+   it does what Airflow does. A cron whose hour is not every hour is placed
+   on the wall clock: a time the clock repeats fires once, at its later
+   instant, and one it skips fires shifted forward by the gap (01:30 on the
+   night the clocks go forward is 02:30). A cron that runs every hour counts
+   in elapsed time, so a wall time that does not exist is passed over and one
+   that happens twice fires at both instants. */
+function cronPrevious(fields, tz, beforeMs) {
+  if (!fields) return null;
+  const zone = tz || 'UTC';
+  const minute = 60000, day1 = 86400000;
+  let wall;
+  // Begun two hours past the wall clock of that instant: where a clock was put
+  // back, the first pass over an hour lies ahead of the wall time of the
+  // second, and `instants` leaves out whatever is after `beforeMs`.
+  try { wall = Math.floor(zoneWall(zone, beforeMs) / minute) * minute + 2 * 3600000; } catch (e) { return null; }
+  const instants = (w) => {
+    // The offset before and after: a day either side is past any change.
+    const before = w - (zoneWall(zone, w - day1) - (w - day1)), after = w - (zoneWall(zone, w + day1) - (w + day1));
+    const real = [...new Set([before, after])].filter((t) => zoneWall(zone, t) === w).sort((a, b) => b - a);
+    // One time of day: the later of the instants it happens at, and for a wall
+    // time that never happened the one the offset before the gap gives.
+    const found = fields.fixed ? [real.length ? real[0] : Math.max(before, after)] : real;
+    return found.filter((t) => t <= beforeMs);
+  };
+  // Where a clock was put back, a wall time earlier than the one found can be
+  // the later instant, so the walk goes on two hours of wall time past the
+  // first match and keeps the latest instant of them.
+  let best = null, floor = 0;
+  for (let i = 0; i < 12000; i++) {
+    if (best !== null && wall < floor) return best;
+    const d = new Date(wall);
+    const y = d.getUTCFullYear(), mo = d.getUTCMonth(), day = d.getUTCDate(), h = d.getUTCHours();
+    if (!fields.month.has(mo + 1)) { wall = Date.UTC(y, mo, 1) - minute; continue; }
+    const byDom = fields.dom.has(day), byDow = fields.dow.has(d.getUTCDay());
+    const dayOk = fields.domAny && fields.dowAny ? true : fields.domAny ? byDow : fields.dowAny ? byDom : byDom || byDow;
+    if (!dayOk) { wall = Date.UTC(y, mo, day) - minute; continue; }
+    if (!fields.hour.has(h)) { wall = Date.UTC(y, mo, day, h) - minute; continue; }
+    if (!fields.minute.has(d.getUTCMinutes())) { wall -= minute; continue; }
+    const at = instants(wall);
+    if (at.length) {
+      if (best === null) floor = wall - 2 * 3600000;
+      best = best === null ? at[0] : Math.max(best, at[0]);
+    }
+    wall -= minute;
+  }
+  return best;
+}
+
+/* What a job's own clock is: its cron read in its source's zone, UTC when the
+   source names none and for dbt Cloud. Null for a job without one of its own
+   (manual, CI, merge, an asset or another job starting it), for one whose
+   start is not read (a templated trigger), and for one this cannot walk,
+   which are judged on the global threshold. */
+function jobClock(job) {
+  if (!job || !job.cron || !job.scheduled) return null;
+  const fields = cronFields(job.cron);
+  const tz = job.kind === 'airflow' ? (job.timezone || 'UTC') : 'UTC';
+  if (!fields || !zoneKnown(tz)) return null;
+  return { fields, tz, said: `${job.cron} ${tz}` };
+}
+
+/* The last two fires of a clock before `now`, worked out once and kept on the
+   clock: a section judges a job in each environment against the same two. */
+function jobFires(clock, now) {
+  if (!clock) return null;
+  if (clock.at !== now) {
+    clock.at = now;
+    clock.last = cronPrevious(clock.fields, clock.tz, now);
+    clock.before = clock.last === null ? null : cronPrevious(clock.fields, clock.tz, clock.last - 1);
+  }
+  return clock;
+}
+
+/* Why a job with a cron is not judged on it, for a tooltip; '' when it is, or
+   when it has none to speak of. */
+function jobClockWhy(job) {
+  if (!job || !job.cron || jobClock(job)) return '';
+  if (!job.scheduled) return job.schedule_unread ? 'Whether it runs on its cron is not read.' : 'Nothing starts it on its cron.';
+  const tz = job.kind === 'airflow' ? (job.timezone || 'UTC') : 'UTC';
+  return zoneKnown(tz) ? `${job.cron} is a cron this cannot read.` : `${tz} is not a time zone this browser knows.`;
+}
+
+/* The words for a time in the job's zone: 2026-10-26 05:00 Europe/London. */
+function zoneStamp(ms, tz) {
+  const d = new Date(zoneWall(tz || 'UTC', ms));
+  const two = (n) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())} ${tz || 'UTC'}`;
+}
+
+/* The same as a person says it, with the day when the job does not run daily
+   or hourly: "05:00 Europe/London", else "Mon 26 Oct 05:00 Europe/London";
+   `bare` leaves the zone out, which the schedule cell says once. */
+function zoneClock(ms, tz, dated, bare) {
+  const d = new Date(zoneWall(tz || 'UTC', ms));
+  const two = (n) => String(n).padStart(2, '0');
+  const time = `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}${bare ? '' : ' ' + (tz || 'UTC')}`;
+  if (!dated) return time;
+  const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${names[d.getUTCDay()]} ${d.getUTCDate()} ${months[d.getUTCMonth()]} ${time}`;
+}
+
+/* "N of M built since the start", the start named with its day unless the
+   job runs at least daily and that start is the last day's (a day and an
+   hour, for a clock that changed): a weekday job on a Sunday says Friday.
+   The zone is the schedule cell's to say. */
+function jobSinceText(res, tz) {
+  const c = res.counts, day = 25 * 3600000;
+  return `${c.since} of ${c.total} since ${zoneClock(res.last, tz, res.last - res.before > day || res.at - res.last > day, true)}`;
+}
+
+/* A job's models as the page judges them, from what the server sends: the
+   steps that run models, each with the ids (by position in the table `ids`)
+   of the models it runs. Each model comes with the numbers of the steps that
+   run it, in id order. */
+function jobBuildsJobs(ids, jobs) {
+  return (jobs || []).map((j) => {
+    const by = new Map();
+    for (const s of j.by_step || []) {
+      for (const m of s.models) {
+        if (!by.has(m)) by.set(m, []);
+        by.get(m).push(s.n);
+      }
+    }
+    const models = [...by.keys()].sort((a, b) => a - b).map((m) => ({ id: ids[m], steps: by.get(m) }));
+    return Object.assign({}, j, { models, step_names: (j.by_step || []).map((s) => ({ n: s.n, name: s.name })) });
+  });
+}
+
+/* What tells apart jobs that share a name (a dbt Cloud job in two projects, a
+   dag_id in two sources), by job: the source, then the job's identifier as the
+   Jobs tab writes it (`[[ident]]`) or its file, then its line, then its
+   place in the list (two sources of one label over one file). Only the jobs
+   sharing a name have one, and each the shortest that is its own. */
+function jobsTwinTags(jobs) {
+  const count = (key) => {
+    const by = new Map();
+    for (const j of jobs) by.set(key(j), (by.get(key(j)) || 0) + 1);
+    return (j) => by.get(key(j));
+  };
+  const named = count((j) => j.name), inSource = count((j) => `${j.name}\u0000${j.source}`);
+  const inFile = count((j) => `${j.name}\u0000${j.source}\u0000${j.ident || j.file}`);
+  const inLine = count((j) => `${j.name}\u0000${j.source}\u0000${j.file}:${j.line}`);
+  const out = new Map();
+  for (const j of jobs) {
+    if (named(j) < 2) continue;
+    const here = `${j.source} · ${j.file}:${j.line}`;
+    out.set(j, inSource(j) < 2 ? j.source : inFile(j) < 2 ? `${j.source} · ${j.ident ? `[[${j.ident}]]` : j.file}`
+      : inLine(j) < 2 ? here : `${here} · #${jobs.indexOf(j) + 1}`);
+  }
+  return out;
+}
+
+/* The target a job's runs are kept to: the one it names, none when it names
+   none or one only the vars file knows (Jinja, which no run is recorded
+   under). */
+function jobTarget(job) {
+  const t = (job && job.target) || '';
+  return t.includes('{{') || t.includes('{%') ? '' : t;
+}
+
+/* Why an environment says nothing of a job: it keeps the runs of one target
+   (its file sets DBT_TARGET) and the job runs under another, so every model
+   would read as not built. '' when the two agree or either names none. */
+function jobBuildsTargetClash(job, got) {
+  const target = jobTarget(job);
+  return got && got.target && target && got.target !== target
+    ? `runs under target ${target}; this environment keeps ${got.target}` : '';
+}
+
+/* How a job's models stand in one environment. `job.models` are `{id, steps}`
+   with the node id in full. With a clock, a model is late when no success
+   came since the fire before the last one, so a whole scheduled run went by
+   without building it; a run that began at the last fire may still be going,
+   and no file says how long it takes, so whether a model was built since that
+   fire is only counted, never an alarm. Without one, late is no success
+   within `staleDays`. Error is a last attempt that failed and not built is no
+   row in the window, as in buildVerdict. A job that names a target is judged
+   on that target's runs alone, and says nothing of an environment kept to
+   another. `worst` is a map the caller keeps for one answer and one day
+   count, so a model several jobs run is judged once per target. */
+function jobBuildVerdicts(job, got, clock, staleDays, now, worst) {
+  const rank = { error: 0, late: 1, none: 2, ok: 3 };
+  const counts = { error: 0, late: 0, none: 0, ok: 0, since: 0, total: 0 };
+  const clash = jobBuildsTargetClash(job, got);
+  if (clash) return { items: [], counts, tone: 'none', basis: '', last: null, before: null, at: now, clash };
+  const fires = jobFires(clock, now);
+  // A cron with no fire before the last leaves no earlier run to hold a model
+  // to: the global threshold then.
+  const judged = fires && fires.before !== null ? fires : null;
+  const items = [];
+  const target = jobTarget(job);
+  for (const m of job.models || []) {
+    const key = `${target}\u0000${m.id}`;
+    let v = worst && worst.get(key);
+    if (!v) {
+      const all = (got && got.rows && got.rows.get(m.id)) || [];
+      v = buildsWorst(target ? all.filter((r) => r.target === target) : all, staleDays, now);
+      if (worst) worst.set(key, v);
+    }
+    let bad = null, verdict = '';
+    const parts = v.parts && v.parts.length ? v.parts : [v];
+    for (const p of parts) {
+      const at = Date.parse(p.success);
+      let late = p.verdict;
+      if (late !== 'error' && late !== 'none') late = (judged ? !(at >= judged.before) : p.verdict === 'stale') ? 'late' : 'ok';
+      if (bad === null || rank[late] < rank[verdict]) { bad = p; verdict = late; }
+    }
+    // Built since the start only where every target was, as the verdict is the
+    // worst target's: another target's build is not this one's.
+    const since = !!judged && parts.every((p) => Date.parse(p.success) >= judged.last);
+    items.push({ id: m.id, steps: m.steps || [], verdict, since, v, worst: bad });
+    counts[verdict]++;
+    counts.total++;
+    if (since) counts.since++;
+  }
+  const tone = counts.error ? 'error' : counts.late ? 'late' : counts.none ? 'none' : 'ok';
+  items.sort((a, b) => rank[a.verdict] - rank[b.verdict] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return { items, counts, tone, basis: judged ? 'clock' : 'threshold', last: judged ? judged.last : null, before: judged ? judged.before : null, at: now, clash: '' };
+}
+
 function catalogLocation(body, n) {
   // A chosen file this node was not resolved against (none discovered at the
   // time, or the file was removed) quietly falls back to manifest mode.
@@ -13129,6 +13475,10 @@ async function fillCatalogJobs(box) {
 function forgetCatalogJobs() {
   S.catJobs.clear();
   S.catJobsGen++;
+  // What Builds by job holds of the jobs is as old as they are: asked again
+  // by the section on screen, or the next time it is shown (0119).
+  if (S.builds) S.builds.jobsAsked = null;
+  if (panelOpen('reports') && S.reportsSection === 'jobbuilds') showReportSection('jobbuilds');
   const box = $('#catalog .cat-jobs');
   if (!box) return;
   delete box.dataset.asked;
@@ -13247,12 +13597,12 @@ async function readBuilds() {
 function repaintBuilds() {
   const box = $('#catalog .cat-builds');
   if (box) paintCatalogBuilds(box);
-  if (panelOpen('reports') && S.reportsSection === 'builds') {
+  if (panelOpen('reports') && (S.reportsSection === 'builds' || S.reportsSection === 'jobbuilds')) {
     // The grid is drawn again as each environment lands: a filter being typed
     // in keeps its focus and its caret.
     const f = document.activeElement;
     const typing = f && f.classList && f.classList.contains('buildsfilter') ? [f.selectionStart, f.selectionEnd] : null;
-    showReportSection('builds').then(() => {
+    showReportSection(S.reportsSection).then(() => {
       const again = typing && $('#reports-view .buildsfilter');
       if (again) { again.focus(); again.setSelectionRange(typing[0], typing[1]); }
     });
@@ -13548,6 +13898,256 @@ function buildsGrid(read, models, own, days) {
   box.addEventListener('change', draw);
   draw();
   return wrap;
+}
+
+/* ------------------------------------------------------- builds by job -- */
+/* The same read as Builds by environment, cut by job (0119). The jobs ask the
+   server which models each runs; nothing more is asked of Snowflake. */
+
+/* What each job runs, asked once per read for the same reason as the models
+   (buildsModels): each environment landing draws the section again. It is
+   forgotten when the jobs may have changed (forgetCatalogJobs), and carries
+   the verdicts worked out from it, by the answer of each environment. */
+function jobBuildsLoad(read) {
+  if (!read.jobsAsked) {
+    read.jobsAsked = api.get('/api/jobs/models?look=true').then((r) => ({
+      configured: !!r.configured,
+      refused: r.sources_refused || '',
+      jobs: jobBuildsJobs(r.ids || [], r.jobs),
+      memo: new WeakMap(),
+    })).catch((e) => { read.jobsAsked = null; throw e; });
+  }
+  return read.jobsAsked;
+}
+
+/* A job's schedule as the Jobs tab draws its pill, and under it, small, the
+   zone its cron is read in and so what the verdicts are judged against. A job
+   whose cron never fires has a clock and no start to hold a run to, and is
+   judged on the threshold like one with no clock. */
+function jobBuildsWhen(job, clock) {
+  const cell = jel('div', 'jbwhen');
+  const pill = jobsWhen(job);
+  cell.append(pill);
+  const judged = clock && clock.before !== null;
+  const threshold = `Late here means no success in ${counted(buildsStaleDays(), 'day', 'days')}.`;
+  // The pill's own words first, which its ellipsis may cut (a list of assets),
+  // then what the verdicts are judged against.
+  const said = [jobsStart(job) !== 'manual' ? jobsScheduleText(job) : 'Manual', jobsStart(job) === 'unread' ? JOBS_UNREAD_WHY : ''].filter(Boolean).join('. ');
+  let rule;
+  if (judged) {
+    cell.append(jel('span', 'jbzone', clock.tz));
+    rule = `Late here means no success since the run before the last start of ${clock.said}.`;
+  } else if (clock) {
+    rule = `${job.cron} does not fire twice in the years this looks back over, so there is no earlier run to hold a model to. ${threshold}`;
+  } else {
+    rule = `${jobClockWhy(job) || 'No clock of its own.'} ${threshold}`;
+  }
+  pill.title = `${said}\n${rule}`;
+  return cell;
+}
+
+/* A job's name, which may break after an underscore, a dot or a dash and
+   nowhere else. */
+function jobBreakable(name, tag) {
+  const box = jel('b', 'rtitle', '');
+  for (const piece of name.match(/[^_.-]*[_.-]?/g).filter(Boolean)) box.append(document.createTextNode(piece), document.createElement('wbr'));
+  // A name another job has too is told apart, inside the title: the fold is
+  // known by it (reportFoldKey).
+  if (tag) box.append(jel('span', 'jbalso', ` · ${tag}`));
+  return box;
+}
+
+/* How one job stands in one environment, in a few words. */
+function jobBuildsCell(res, clock) {
+  const c = res.counts;
+  const cell = jel('div', 'jbcell');
+  cell.dataset.verdict = res.tone;
+  if (res.clash) { cell.append(jel('span', 'muted', res.clash)); return cell; }
+  if (!c.total) { cell.append(jel('span', 'muted', 'no model')); return cell; }
+  const bits = [];
+  if (c.error) bits.push(`${c.error} errored`);
+  if (c.late) bits.push(`${c.late} late`);
+  if (c.none) bits.push(`${c.none} not built`);
+  cell.append(jel('span', 'jobdot'), jel('span', 'jbsay', bits.length ? bits.join(' · ') : c.total === 1 ? 'built' : `all ${c.total} built`));
+  if (clock && res.last !== null) cell.append(jel('span', 'muted jbsince', jobSinceText(res, clock.tz)));
+  return cell;
+}
+
+/* The models of one environment worth a look: errored, late, not built. */
+function jobBuildsEnv(job, t, res, got, names, now) {
+  const d = jel('div', 'jbenv');
+  const dot = jel('span', 'envdot');
+  dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
+  const head = jel('div', 'jbenvhead');
+  head.append(dot, jel('b', '', buildsEnvLabel(t)));
+  d.append(head);
+  const stepName = new Map((job.step_names || []).map((s) => [s.n, s.name]));
+  let listed = 0;
+  for (const [label, key] of [['Errored', 'error'], ['Late', 'late'], ['Not built', 'none']]) {
+    const items = res.items.filter((i) => i.verdict === key);
+    if (!items.length) continue;
+    listed++;
+    d.append(jel('div', 'jbkind', `${label} (${items.length})`));
+    const ul = jel('ul', 'rentries');
+    for (const item of items.slice(0, 100)) {
+      const li = jel('li', '');
+      const link = jel('a', 'filelink', names.get(item.id) || item.id.split('.').slice(2).join('.'));
+      link.title = item.id;
+      link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(item.id); });
+      li.append(link);
+      const where = item.steps.map((n) => stepName.get(n) || `step ${n}`).join(', ');
+      if (where) li.append(jel('span', 'muted', ` · ${where}`));
+      if (key !== 'none') li.append(jel('span', 'muted', ' · ' + buildsSaidBare(item.v, t.name, now, got.target)));
+      if (key === 'error' && item.worst.last && item.worst.last.message) li.append(jel('div', 'rmsg', item.worst.last.message));
+      ul.append(li);
+    }
+    if (items.length > 100) ul.append(jel('li', 'muted', `and ${items.length - 100} more`));
+    d.append(ul);
+  }
+  if (!listed) d.append(jel('p', 'muted jbfine', res.counts.total === 1 ? 'Built.' : `All ${res.counts.total} models built.`));
+  return d;
+}
+
+async function jobBuildsSection() {
+  const read = S.builds;
+  const days = buildsStaleDays();
+  const about = read
+    ? `${read.pending ? 'reading…' : `read ${buildsAge(new Date(read.readAt).toISOString(), Date.now())}`} · stale after ${counted(days, 'day', 'days')}`
+    : 'not read';
+  const head = reportHead({ title: 'Builds by job', tool: 'snowflake', about, extra: [buildsReadButton()] });
+  const body = jel('div', 'reportbody');
+  body.append(jel('p', 'runnote', (read ? '' : 'How each job\'s models last ended in each environment, against the job\'s own schedule, from the same read '
+    + 'as Builds by environment. Nothing is asked until you press the button. ')
+    + 'A model\'s status is its last build, whichever job ran it: dbt_artifacts does not record which job did, so a job is the models its '
+    + 'selections reach. Late means no success since the run before the last start of the job\'s schedule, in the zone its source names; '
+    + 'a job with no schedule of its own is held to the days set in the Snowflake settings. A model built since the last start is only counted.'));
+  if (!read) return [head, body];
+  if (read.failed) { body.append(buildsFailure({ error: read.failed })); return [head, body]; }
+  let cfg, models;
+  try {
+    [cfg, { models }] = await Promise.all([jobBuildsLoad(read), buildsModels(read)]);
+  } catch (e) {
+    body.append(jel('p', 'runnote', `The jobs could not be read: ${e.message}`));
+    return [head, body];
+  }
+  if (cfg.refused) { body.append(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${cfg.refused}.`)); return [head, body]; }
+  if (!cfg.jobs.length) { body.append(jel('p', 'runnote', 'No job was read from the sources.')); return [head, body]; }
+  const names = new Map(models.map((m) => [m.id, m.name]));
+  const now = Date.now();
+  // An environment that could not be read says so once, above the jobs.
+  for (const t of read.targets) {
+    const got = read.byEnv[t.env];
+    if (got && !got.error) continue;
+    const title = jel('h3', 'buildsenv', '');
+    const dot = jel('span', 'envdot');
+    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
+    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
+    body.append(title, got ? buildsFailure(got) : jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : ''));
+  }
+  const ready = read.targets.filter((t) => read.byEnv[t.env] && !read.byEnv[t.env].error);
+  // What an environment's rows leave out, said as Builds by environment says it.
+  for (const t of ready) {
+    const got = read.byEnv[t.env];
+    const notes = [buildsOthersNote(got.target, got.others, got.rows.size),
+      got.cut ? 'The table held more models than are read, so some models may read as not built.' : ''].filter(Boolean);
+    if (notes.length) body.append(jel('p', 'runnote', `${buildsEnvLabel(t)}: ${notes.join(' ')}`));
+  }
+  // Each job's clock and its last two starts are worked out once for the
+  // section, and its verdicts once per environment's answer: a new answer is
+  // a new object, so an environment landing judges its own and no other.
+  const clocks = new Map(cfg.jobs.map((j) => [j, jobFires(jobClock(j), now)]));
+  const stamp = `${days}|${Math.floor(now / 60000)}`;
+  const verdictsOf = (job, t) => {
+    const got = read.byEnv[t.env];
+    let kept = cfg.memo.get(got);
+    if (!kept || kept.stamp !== stamp) { kept = { stamp, byJob: new Map(), worst: new Map() }; cfg.memo.set(got, kept); }
+    if (!kept.byJob.has(job)) kept.byJob.set(job, jobBuildVerdicts(job, got, clocks.get(job), days, now, kept.worst));
+    return kept.byJob.get(job);
+  };
+  const tools = jel('div', 'buildstools');
+  const filter = jel('input', 'buildsfilter');
+  filter.type = 'search';
+  filter.placeholder = 'Filter jobs';
+  filter.setAttribute('aria-label', 'Filter the jobs by name');
+  filter.value = read.jobFilter || '';
+  const count = jel('span', 'muted', '');
+  tools.append(jel('b', '', 'Every job'), filter, count);
+  const list = jel('div', 'jobbuilds');
+  list.style.setProperty('--envs', String(Math.max(1, ready.length)));
+  // The table takes the panel's width and shrinks to it; many environments
+  // scroll it sideways.
+  const scroll = jel('div', 'jbscroll');
+  scroll.append(list);
+  body.append(tools, scroll);
+  const head2 = jel('div', 'jbrow jbheads');
+  head2.append(jel('span', '', 'job'), jel('span', '', 'schedule'), jel('span', '', 'models'));
+  ready.forEach((t) => {
+    const h = jel('span', '', buildsEnvLabel(t));
+    h.title = h.textContent;
+    head2.append(h);
+  });
+  // Every row is made once; the filter only hides them. The detail of a job,
+  // the lists of its environments, is made when it is first opened.
+  const twins = jobsTwinTags(cfg.jobs);
+  const rows = jobsByStart(cfg.jobs, (j) => j).map((job) => {
+    const clock = clocks.get(job);
+    const d = jel('details', 'jobbuild');
+    const row = jel('summary', 'jbrow');
+    const nameBox = jel('span', 'jbname');
+    const nm = jobBreakable(job.name, twins.get(job));
+    nm.title = `${job.source} · ${job.file}:${job.line}`;
+    nameBox.append(nm, jel('span', 'muted jbtag', job.kind === 'dbt_cloud' ? 'dbt Cloud job' : 'DAG'));
+    const meta = jel('span', 'jbmodels', counted(job.models.length, 'model', 'models'));
+    const apart = (job.seeds || 0) + (job.snapshots || 0);
+    if (apart) meta.append(jel('span', 'muted', ` + ${counted(apart, 'seed or snapshot', 'seeds and snapshots')} not read`));
+    row.append(nameBox, jobBuildsWhen(job, clock), meta);
+    // A job has something to open only where an environment judged its models.
+    let listable = false;
+    for (const t of ready) {
+      const res = verdictsOf(job, t);
+      const cell = jobBuildsCell(res, clock);
+      cell.title = `${buildsEnvLabel(t)}: ${res.clash ? res.clash : res.basis === 'clock' ? 'judged by ' + clock.said : 'judged on the threshold'}`;
+      row.append(cell);
+      if (!res.clash && res.counts.total) listable = true;
+    }
+    d.append(row);
+    if (!listable) {
+      d.classList.add('empty');
+      // Nothing to open: a click on the row does not.
+      row.addEventListener('click', (ev) => ev.preventDefault());
+    }
+    d.addEventListener('toggle', () => {
+      // A fold the place restored on a row with nothing to open now closes.
+      if (d.open && !listable) { d.open = false; return; }
+      if (!d.open || d.dataset.built) return;
+      d.dataset.built = '1';
+      const detail = jel('div', 'jbdetail');
+      // The rule late is judged by is the job's, said once.
+      if (clock && clock.before !== null) {
+        detail.append(jel('div', 'jbrule', `Late: no success since ${zoneStamp(clock.before, clock.tz)}, the run before the last start.`));
+      }
+      for (const t of ready) {
+        const res = verdictsOf(job, t);
+        if (!res.clash && res.counts.total) detail.append(jobBuildsEnv(job, t, res, read.byEnv[t.env], names, now));
+      }
+      d.append(detail);
+    });
+    return { name: `${job.name} ${twins.get(job) || ''}`.toLowerCase(), el: d };
+  });
+  list.replaceChildren(head2, ...rows.map((r) => r.el));
+  const apply = () => {
+    read.jobFilter = filter.value;
+    const q = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const r of rows) {
+      r.el.hidden = !!q && !r.name.includes(q);
+      if (!r.el.hidden) shown++;
+    }
+    count.textContent = counted(shown, 'job', 'jobs');
+  };
+  filter.addEventListener('input', apply);
+  apply();
+  return [head, body];
 }
 
 /* The Jobs tab on a node, which may not be the focus, at the step a chip

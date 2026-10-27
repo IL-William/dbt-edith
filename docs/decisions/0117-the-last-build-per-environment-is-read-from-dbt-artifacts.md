@@ -1,6 +1,6 @@
 # 0117. The last build per environment is read from dbt_artifacts, on a click, and never kept
 
-Date: 2026-10-26 · Status: accepted · Amends 0017, 0048 and 0065
+Date: 2026-10-26 · Status: accepted, amended by 0119 · Amends 0017, 0048 and 0065
 
 **Trigger:** read before showing a model's runs read from the warehouse, before
 changing what the builds read selects or sends, or before putting a status on a
