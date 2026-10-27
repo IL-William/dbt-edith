@@ -149,6 +149,15 @@ check('a file that is never a node says nothing, so the plain hint stays', noNod
 check('nor does a properties file claim one', noNodeHint('models/marts/schema.yml', payload({ state: 'stale' })), '');
 check('nor a .sql file that defines macros', noNodeHint('macros/cents_to_dollars.sql', payload({ state: 'stale' }), { macros: true }), '');
 
+print('\n--- a repository whose own configuration names a program ---');
+var paused = said(freshnessBadge(payload({ git_paused: 'filter.lfs.clean' })));
+ok('the card says git is paused and names the key', paused.indexOf('git is paused here') >= 0 && paused.indexOf('(filter.lfs.clean)') >= 0);
+ok('and that git in the terminal is unaffected', paused.indexOf('git in the terminal is unaffected') >= 0);
+ok('a repository that is not paused says nothing of it', said(freshnessBadge(payload({}))).indexOf('paused') < 0);
+check('the panel says the same words', gitPausedNote('filter.lfs.clean').indexOf('git is paused here: this repository\'s own configuration names a program (filter.lfs.clean)'), 0);
+
+ok('a configuration that could not be listed says so, and gives git\'s reason', gitPausedNote('unreadable: invalid gitfile format').indexOf('could not be read (invalid gitfile format)') >= 0);
+
 print('\n--- the same file, over a canvas still showing another model ---');
 check('names the model on screen, which is easily taken for this one',
   noNodeHint(path, payload({}), { shown: 'orders_by_month' }),

@@ -7,11 +7,22 @@
 //!     prompts disabled and ssh in batch mode, and every command has a deadline.
 //!   - the git that runs is the one on the PATH, never one a repository
 //!     commits beside this binary (0094).
+//!   - a repository's own configuration never gets to name a program edith
+//!     starts (0121). Every call turns the file-system monitor off; the calls
+//!     made on a timer, with no click behind them, also turn hooks off; and no
+//!     call is made at all in a repository whose local or worktree
+//!     configuration holds a key outside `allowed`. That list assumes edith's
+//!     fixed set of commands: all builtins, never an alias, a merge, a diff
+//!     driver, a mergetool, a signature check or a credential prompt of the
+//!     repository's choosing. A command added here that reaches one of those
+//!     has to shrink the list first.
 
+use std::collections::HashMap;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 
 #[derive(serde::Serialize, Clone, Default)]
 pub struct FileChange {
@@ -41,6 +52,11 @@ pub struct GitInfo {
     /// FETCH_HEAD without asking again. Never sent: it can be an absolute path.
     #[serde(skip)]
     pub git_dir: String,
+    /// The first key of the repository's own configuration that names a
+    /// program, when there is one: edith then runs no git here (0121). Empty
+    /// otherwise. `repo` is false meanwhile, as the page has nothing to show.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub paused: String,
 }
 
 #[derive(serde::Serialize, Clone, Default)]
@@ -54,12 +70,36 @@ pub struct GitRun {
     pub blocking: Vec<String>,
 }
 
-const NET_ENV: &[(&str, &str)] = &[
-    ("GIT_TERMINAL_PROMPT", "0"),
-    // Fail fast instead of waiting on a passphrase prompt nobody can answer.
-    // The host alias from ~/.ssh/config still resolves normally.
-    ("GIT_SSH_COMMAND", "ssh -o BatchMode=yes"),
+/// Fail fast instead of waiting on a passphrase prompt nobody can answer. The
+/// host alias from ~/.ssh/config still resolves normally. Set on every call,
+/// not only the network ones: git reaches a remote on its own, to fetch an
+/// object a partial clone left out, and the variable wins over the
+/// repository's `core.sshCommand` (0121).
+const SSH_BATCH: &str = "ssh -o BatchMode=yes";
+
+const NET_ENV: &[(&str, &str)] = &[("GIT_TERMINAL_PROMPT", "0"), ("GIT_SSH_COMMAND", SSH_BATCH)];
+
+/// The transports a remote is reached by, for a call that may fetch on its own
+/// and was not asked to: the repository's own `protocol.*` keys cannot widen
+/// them (0121).
+const TRANSPORTS: [&str; 8] = [
+    "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.http.allow=always", "-c",
+    "protocol.ssh.allow=always",
 ];
+
+/// The subcommand of an argument list: the first argument that is not a
+/// `-c <pair>`.
+fn subcommand<'a>(args: &[&'a str]) -> &'a str {
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if *a == "-c" {
+            it.next();
+        } else {
+            return a;
+        }
+    }
+    ""
+}
 
 /// The git on the PATH: never one beside this binary, which on Windows
 /// `Command` would find first (0094). Kept once found, as the PATH it came
@@ -75,13 +115,52 @@ fn program() -> Option<&'static Path> {
 }
 
 /// Runs git with a deadline, draining both pipes so a chatty hook cannot deadlock.
+/// For what a click asked: hooks run, as the user knows them. Nothing runs in a
+/// repository whose configuration is paused (0121).
 pub fn run(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) -> GitRun {
+    guarded(root, args, env, timeout, false)
+}
+
+/// As `run`, for what nobody clicked: a poll or a timer. Hooks are off, so a
+/// repository that arrived with some cannot run them by being opened (0121).
+fn run_auto(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration) -> GitRun {
+    guarded(root, args, env, timeout, true)
+}
+
+fn guarded(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration, auto: bool) -> GitRun {
+    if let Some(key) = paused(root) {
+        return GitRun { ok: false, code: -1, stdout: String::new(), stderr: pause_note(&key), blocking: Vec::new() };
+    }
+    exec(root, args, env, timeout, auto)
+}
+
+fn exec(root: &Path, args: &[&str], env: &[(&str, &str)], timeout: Duration, auto: bool) -> GitRun {
     let Some(git) = program() else {
         let stderr = "cannot run git: it is not on the PATH".to_string();
         return GitRun { ok: false, code: -1, stdout: String::new(), stderr, blocking: Vec::new() };
     };
     let mut cmd = Command::new(git);
-    cmd.arg("-C").arg(root).args(args);
+    // A repository names a program to ask whether files changed; `false` is
+    // git's own way of saying it must not. On the command line it wins over
+    // the repository's key, and the first thing `status` would do is run it.
+    cmd.arg("-C").arg(root).args(["-c", "core.fsmonitor=false"]);
+    if auto {
+        // On Windows git resolves this to a path that does not exist, which
+        // is all that is wanted: no hooks directory, so no hook.
+        cmd.args(["-c", "core.hooksPath=/dev/null"]);
+    }
+    // A repository's submodules have configurations of their own that the
+    // gate never reads, and a checkout that recurses into one runs its filters.
+    cmd.args(["-c", "submodule.recurse=false"]);
+    cmd.args(args);
+    cmd.env("GIT_SSH_COMMAND", SSH_BATCH);
+    // A partial clone fetches a missing object from its promisor remote
+    // whenever a command wants it, the poll's `status` included. Only the
+    // commands that exist to reach a remote, and a checkout, which needs the
+    // files it writes, may.
+    if !matches!(subcommand(args), "fetch" | "pull" | "push" | "checkout") {
+        cmd.env("GIT_NO_LAZY_FETCH", "1");
+    }
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -153,6 +232,220 @@ fn read(root: &Path, args: &[&str]) -> Option<String> {
     r.ok.then_some(r.stdout)
 }
 
+fn read_auto(root: &Path, args: &[&str]) -> Option<String> {
+    let r = run_auto(root, args, &[], Duration::from_secs(20));
+    r.ok.then_some(r.stdout)
+}
+
+// ------------------------------------------------------------------ gate ----
+
+/// Where a repository keeps what the gate reads.
+#[derive(PartialEq, Clone)]
+struct Repo {
+    git_dir: PathBuf,
+    /// Where `config` lives: the main repository's, for a linked worktree.
+    common_dir: PathBuf,
+    /// A `.git` that is a file, as in a linked worktree or a submodule.
+    gitfile: Option<PathBuf>,
+}
+
+/// mtime and size of a file, or None when it is not there.
+type Stamp = Option<(SystemTime, u64)>;
+
+fn stamp(path: &Path) -> Stamp {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len()))
+}
+
+struct Verdict {
+    repo: Repo,
+    /// Every file the verdict was read from, as it stood.
+    files: Vec<(PathBuf, Stamp)>,
+    key: Option<String>,
+}
+
+fn verdicts() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Verdict>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Verdict>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The repository git would find from `root`, found by looking rather than by
+/// asking: this runs before every call, and the poll must not pay a process
+/// for it. A linked worktree or a submodule has a `.git` file naming its
+/// directory; a bare repository is its own.
+fn locate(root: &Path) -> Option<Repo> {
+    for dir in root.ancestors() {
+        let dot = dir.join(".git");
+        if let Ok(meta) = std::fs::metadata(&dot) {
+            if meta.is_dir() {
+                return Some(Repo { git_dir: dot.clone(), common_dir: dot, gitfile: None });
+            }
+            let named = std::fs::read_to_string(&dot)
+                .ok()
+                .and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
+            // A file git cannot read fails every call on its own; its stamp
+            // still stands for it, so mending it is noticed.
+            let git_dir = named.unwrap_or_else(|| dot.clone());
+            let common_dir = match std::fs::read_to_string(git_dir.join("commondir")) {
+                Ok(c) => git_dir.join(c.trim()),
+                Err(_) => git_dir.clone(),
+            };
+            return Some(Repo { git_dir, common_dir, gitfile: Some(dot) });
+        }
+        if dir.join("HEAD").is_file() && dir.join("objects").is_dir() {
+            return Some(Repo { git_dir: dir.to_path_buf(), common_dir: dir.to_path_buf(), gitfile: None });
+        }
+    }
+    None
+}
+
+/// The first key of the repository's own configuration outside `allowed`, as
+/// git would show it, or None when edith may run git there (0121). Outside a
+/// repository there is nothing to read and no process is started. A repository
+/// whose configuration cannot be listed (git too old for the flags, a timeout)
+/// is paused with git's reason, as `UNREAD` names it, and not remembered: no
+/// answer is not a clean one.
+///
+/// Reading the configuration runs nothing; running git is what runs what it
+/// names. The verdict is kept per root against the stamps of `config` and
+/// `config.worktree`, so the five second poll costs a few `stat`s. An
+/// `include` is not followed: the key itself pauses git, so no file it names
+/// can change a verdict. A file written in the last two seconds is not trusted
+/// to have changed its stamp, on a file system that rounds to them, and is read
+/// again next time.
+fn paused(root: &Path) -> Option<String> {
+    let repo = locate(root)?;
+    if let Some(v) = verdicts().get(root) {
+        if v.repo == repo && v.files.iter().all(|(p, s)| stamp(p) == *s) {
+            return v.key.clone();
+        }
+    }
+    let mut files: Vec<PathBuf> = vec![repo.common_dir.join("config"), repo.git_dir.join("config.worktree")];
+    files.extend(repo.gitfile.clone());
+    let mut key = None;
+    let args = ["config", "--list", "--show-scope", "--name-only"];
+    let r = exec(root, &args, &[], Duration::from_secs(10), true);
+    if !r.ok {
+        verdicts().remove(root);
+        return Some(format!("{UNREAD}{}", reason(&r)));
+    }
+    for line in r.stdout.lines() {
+        let Some((scope, name)) = line.split_once('\t') else { continue };
+        if (scope == "local" || scope == "worktree") && !allowed(name) {
+            key = Some(shown(name));
+            break;
+        }
+    }
+    let files: Vec<(PathBuf, Stamp)> = files.into_iter().map(|p| { let s = stamp(&p); (p, s) }).collect();
+    let recent = SystemTime::now() - Duration::from_secs(2);
+    let settled = files.iter().all(|(_, s)| s.is_none_or(|(at, _)| at < recent));
+    if settled {
+        verdicts().insert(root.to_path_buf(), Verdict { repo, files, key: key.clone() });
+    } else {
+        verdicts().remove(root);
+    }
+    key
+}
+
+/// What `paused` answers in place of a key when the configuration could not be
+/// listed; the reason follows.
+const UNREAD: &str = "unreadable: ";
+
+/// A key as the page shows it. A subsection can be a URL, and a URL can hold
+/// the password a credential section is about, so one with an `@` is not shown.
+fn shown(key: &str) -> String {
+    match (key.split_once('.'), key.rsplit_once('.')) {
+        (Some((section, _)), Some((_, name))) if key.contains('@') && section.len() + name.len() + 1 < key.len() => {
+            format!("{section}.<url>.{name}")
+        }
+        _ => key.to_string(),
+    }
+}
+
+/// What a refused call says, and what the page says of a paused repository.
+fn pause_note(key: &str) -> String {
+    if let Some(why) = key.strip_prefix(UNREAD) {
+        return format!(
+            "git is paused here: this repository's own configuration could not be read ({why}). \
+             git in the terminal is unaffected."
+        );
+    }
+    format!(
+        "git is paused here: this repository's own configuration names a program ({key}). \
+         git in the terminal is unaffected."
+    )
+}
+
+/// Whether a key of a repository's own configuration is only data to the
+/// commands edith runs. Section and key name are compared case-insensitively
+/// and the subsection, which can hold dots, not at all. What is not listed
+/// pauses git, notably `credential.*.helper`, `filter.*`, `core.askpass`,
+/// `core.gitproxy`, `core.pager`, `core.editor`, `remote.*.uploadpack`,
+/// `remote.*.vcs`, `protocol.*`, `diff.*.textconv`, `merge.*.driver`,
+/// `gpg.program`, `submodule.*.update`, `uploadpack.*`, `receive.*`,
+/// `*tool.*.cmd`, `include.path` and `includeIf.*.path` (a file that appears
+/// or an `onbranch` that turns true later would change a verdict kept against
+/// the stamp of `config` alone), `lfs.extension.*` and `lfs.customtransfer.*`,
+/// and the proxies: `http.proxy` and `remote.*.proxy` would send the timed
+/// fetch, and the credentials it finds, through a host the repository names.
+/// `core.fsmonitor`, `core.hooksPath` and `core.sshCommand` are
+/// listed because a command-line key, a hooks-free call or the ssh command
+/// edith sets takes their place, not because they are harmless.
+fn allowed(key: &str) -> bool {
+    let Some((section, rest)) = key.split_once('.') else { return false };
+    let (sub, name) = match rest.rsplit_once('.') {
+        Some((sub, name)) => (Some(sub), name),
+        None => (None, rest),
+    };
+    let section = section.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    let name = name.as_str();
+    match section.as_str() {
+        "branch" | "user" | "author" | "committer" | "color" | "extensions" | "maintenance" | "safe" | "alias" => true,
+        // Transfer tuning only: no proxy, no cookie file, no certificate.
+        "http" => matches!(name, "postbuffer" | "lowspeedlimit" | "lowspeedtime" | "version" | "maxrequests"),
+        // `lfs.extension.*.clean` runs on a status, `lfs.customtransfer.*.path`
+        // on a pull: only the addresses and the filters on what is fetched.
+        "lfs" => match sub {
+            None => matches!(name, "url" | "pushurl" | "repositoryformatversion" | "locksverify" | "fetchinclude" | "fetchexclude"),
+            Some(_) => matches!(name, "access" | "locksverify"),
+        },
+        "remote" => match sub {
+            Some(_) => matches!(
+                name,
+                "url" | "pushurl" | "fetch" | "push" | "tagopt" | "prune" | "prunetags" | "mirror" | "skipdefaultupdate"
+                    | "skipfetchall" | "promisor" | "partialclonefilter" | "gh-resolved"
+            ),
+            None => name == "pushdefault",
+        },
+        "core" => {
+            sub.is_none()
+                && matches!(
+                    name,
+                    "repositoryformatversion" | "filemode" | "bare" | "logallrefupdates" | "ignorecase" | "precomposeunicode"
+                        | "symlinks" | "autocrlf" | "safecrlf" | "eol" | "longpaths" | "fscache" | "untrackedcache"
+                        | "sparsecheckout" | "sparsecheckoutcone" | "splitindex" | "commitgraph" | "multipackindex"
+                        | "checkstat" | "trustctime" | "quotepath" | "abbrev" | "worktree" | "fsmonitor" | "hookspath"
+                        | "sshcommand"
+                )
+        }
+        "commit" | "tag" | "pull" | "push" | "fetch" | "rebase" | "merge" | "status" | "log" | "init" | "pack" | "index"
+        | "feature" => sub.is_none(),
+        "diff" => sub.is_none() && name != "external",
+        "gc" => sub.is_none() && name != "recentobjectshook",
+        "url" => sub.is_some() && matches!(name, "insteadof" | "pushinsteadof"),
+        "gpg" => match sub {
+            None => matches!(name, "format" | "mintrustlevel"),
+            Some(_) => name == "allowedsignersfile",
+        },
+        "credential" => matches!(name, "username" | "usehttppath"),
+        "submodule" => {
+            sub.is_none() || matches!(name, "url" | "active" | "branch" | "fetchrecursesubmodules" | "ignore" | "shallow")
+        }
+        _ => false,
+    }
+}
+
 // ---------------------------------------------------------------- status ----
 
 /// Two git calls, because the status is polled every five seconds: one for
@@ -164,7 +457,11 @@ pub fn status(root: &Path) -> GitInfo {
     // Neither flag touches HEAD, which fails in a repository with no commit
     // yet, and such a repository still has a status worth showing. They print
     // one line each, in the order asked, the prefix being empty at the top.
-    let Some(dirs) = read(root, &["rev-parse", "--show-prefix", "--git-dir"]) else {
+    if let Some(key) = paused(root) {
+        info.paused = key;
+        return info;
+    }
+    let Some(dirs) = read_auto(root, &["rev-parse", "--show-prefix", "--git-dir"]) else {
         return info;
     };
     info.repo = true;
@@ -177,9 +474,12 @@ pub fn status(root: &Path) -> GitInfo {
     // "old path" entry to track while parsing. --branch adds the headers that
     // `branch --show-current`, `rev-parse @{u}` and `rev-list --count` used to
     // answer in three more processes.
-    let raw = run(
+    // Submodules are told by the superproject's index, which holds no config
+    // of theirs: `dirty` stops git from running `status` inside each one,
+    // where a repository nobody checked would be asked.
+    let raw = run_auto(
         root,
-        &["status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--no-renames"],
+        &["status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--no-renames", "--ignore-submodules=dirty"],
         &[],
         Duration::from_secs(30),
     );
@@ -332,7 +632,11 @@ pub fn checkout(root: &Path, branch: &str, stash_first: bool) -> GitRun {
             return stashed;
         }
     }
-    let mut r = run(root, &["checkout", branch], &[], Duration::from_secs(60));
+    // A checkout is let lazy-fetch the files it writes, so it is held to the
+    // transports the timed fetch uses.
+    let mut args = TRANSPORTS.to_vec();
+    args.extend(["checkout", branch]);
+    let mut r = run(root, &args, &[], Duration::from_secs(60));
     if !r.ok {
         r.blocking = parse_blocking(&r.stderr);
     }
@@ -375,7 +679,7 @@ pub fn unstage(root: &Path, paths: &[String]) -> GitRun {
 /// Fetches first, as asked, so the ahead/behind shown next to the commit is
 /// current. A failing fetch never blocks the commit: offline still commits.
 pub fn commit(root: &Path, message: &str) -> (GitRun, Option<String>) {
-    let fetched = run(root, &["fetch", "--quiet"], NET_ENV, Duration::from_secs(120));
+    let fetched = run(root, &["fetch", "--quiet", "--no-recurse-submodules"], NET_ENV, Duration::from_secs(120));
     let fetch_note = (!fetched.ok).then(|| {
         let line = fetched.stderr.lines().next().unwrap_or("fetch failed").trim().to_string();
         format!("fetch failed, committed anyway: {line}")
@@ -398,11 +702,11 @@ pub fn push(root: &Path) -> GitRun {
 /// --ff-only: a pull must never start a merge behind your back. If the branches
 /// have diverged it stops and says so, and you decide what to do.
 pub fn pull(root: &Path) -> GitRun {
-    run(root, &["pull", "--ff-only"], NET_ENV, Duration::from_secs(180))
+    run(root, &["pull", "--ff-only", "--no-recurse-submodules"], NET_ENV, Duration::from_secs(180))
 }
 
 pub fn fetch(root: &Path) -> GitRun {
-    run(root, &["fetch", "--prune"], NET_ENV, Duration::from_secs(120))
+    run(root, &["fetch", "--prune", "--no-recurse-submodules"], NET_ENV, Duration::from_secs(120))
 }
 
 /// The commits a push would send.
@@ -473,7 +777,7 @@ pub struct Head {
 }
 
 pub fn head(root: &Path) -> Head {
-    let Some(line) = read(root, &["log", "-1", "--format=%h%x09%ct%x09%s"]) else {
+    let Some(line) = read_auto(root, &["log", "-1", "--format=%h%x09%ct%x09%s"]) else {
         return Head::default();
     };
     let mut f = line.trim_end().splitn(3, '\t');
@@ -499,14 +803,14 @@ pub struct Drift {
 /// records; a repository initialised locally has no such ref, hence the two
 /// conventional names as a fallback.
 fn base_ref(root: &Path) -> String {
-    if let Some(r) = read(root, &["rev-parse", "--abbrev-ref", "origin/HEAD"]) {
+    if let Some(r) = read_auto(root, &["rev-parse", "--abbrev-ref", "origin/HEAD"]) {
         let r = r.trim();
         if !r.is_empty() && r != "origin/HEAD" {
             return r.to_string();
         }
     }
     for name in ["origin/main", "origin/master"] {
-        if read(root, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{name}")]).is_some() {
+        if read_auto(root, &["rev-parse", "--verify", "--quiet", &format!("refs/remotes/{name}")]).is_some() {
             return name.to_string();
         }
     }
@@ -526,7 +830,7 @@ pub fn drift(root: &Path, git_dir: &str) -> Drift {
     if d.base.is_empty() {
         return d;
     }
-    d.behind = read(root, &["rev-list", "--count", &format!("HEAD..{}", d.base)])
+    d.behind = read_auto(root, &["rev-list", "--count", &format!("HEAD..{}", d.base)])
         .and_then(|c| c.trim().parse().ok())
         .unwrap_or(0);
     d
@@ -537,7 +841,16 @@ pub fn drift(root: &Path, git_dir: &str) -> Drift {
 /// machine whose key needs a passphrase, the badge falls back to refs already
 /// on disk and says when they were last refreshed.
 pub fn fetch_quiet(root: &Path) -> bool {
-    run(root, &["fetch", "--quiet"], NET_ENV, Duration::from_secs(60)).ok
+    // Nobody asked for this one and it reaches the network, so it is held to
+    // the transports a remote is reached by, and told not to start a
+    // maintenance, a gc or a fetch inside the submodules, each of which runs
+    // more of the repository's configuration (0121). A remote on a local path
+    // is not refreshed here: the badge then says when its refs were last
+    // fetched, as it does offline.
+    let mut args = vec!["-c", "maintenance.auto=false", "-c", "gc.auto=0"];
+    args.extend(TRANSPORTS);
+    args.extend(["fetch", "--quiet", "--no-recurse-submodules"]);
+    run_auto(root, &args, NET_ENV, Duration::from_secs(60)).ok
 }
 
 /// The tags a remote holds, as `git ls-remote --tags --refs` lists them, for
@@ -549,7 +862,7 @@ pub fn fetch_quiet(root: &Path) -> bool {
 pub fn ls_remote_tags(dir: &Path, url: &str) -> Result<String, String> {
     let ceiling = dir.parent().and_then(Path::to_str).unwrap_or("");
     let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
-    let r = run(dir, &["ls-remote", "--tags", "--refs", url], &env, Duration::from_secs(30));
+    let r = exec(dir, &["ls-remote", "--tags", "--refs", url], &env, Duration::from_secs(30), true);
     if r.ok {
         return Ok(r.stdout);
     }
@@ -568,7 +881,12 @@ const ENGLISH: &[(&str, &str)] = &[("LC_ALL", "C"), ("LANGUAGE", "")];
 /// repository git refuses (another account's, by `safe.directory`), is the
 /// first line git said, for the caller to judge.
 pub fn tracks(dir: &Path, rel: &str) -> Result<bool, String> {
-    let listed = run(dir, &["ls-files", "--", &format!(":(icase,literal){rel}")], ENGLISH, Duration::from_secs(10));
+    // An answer nobody can give is an error, not a no: whatever it guards
+    // stays refused while git is paused (0121).
+    if let Some(key) = paused(dir) {
+        return Err(pause_note(&key));
+    }
+    let listed = run_auto(dir, &["ls-files", "--", &format!(":(icase,literal){rel}")], ENGLISH, Duration::from_secs(10));
     if listed.ok {
         return Ok(!listed.stdout.trim().is_empty());
     }
@@ -582,7 +900,7 @@ pub fn tracks(dir: &Path, rel: &str) -> Result<bool, String> {
 /// `git rm --cached` rewrite while the files stay as they are: an answer of
 /// `tracks` may be kept while it is unchanged. None outside a repository.
 pub fn index_of(dir: &Path) -> Option<std::path::PathBuf> {
-    let at = run(dir, &["rev-parse", "--git-path", "index"], ENGLISH, Duration::from_secs(10));
+    let at = run_auto(dir, &["rev-parse", "--git-path", "index"], ENGLISH, Duration::from_secs(10));
     at.ok.then(|| dir.join(at.stdout.trim()))
 }
 
@@ -617,21 +935,21 @@ pub fn tag_subjects(scratch: &Path, url: &str, tags: &[String]) -> Result<Vec<(S
     let ceiling = scratch.to_str().unwrap_or("");
     let env = [NET_ENV, &[("GIT_CEILING_DIRECTORIES", ceiling)]].concat();
     let answer = (|| {
-        let init = run(&dir, &["init", "--bare", "-q", "."], &env, Duration::from_secs(10));
+        let init = exec(&dir, &["init", "--bare", "-q", "."], &env, Duration::from_secs(10), true);
         if !init.ok {
             return Err(reason(&init));
         }
         let specs: Vec<String> = tags.iter().map(|t| format!("refs/tags/{t}:refs/tags/{t}")).collect();
         let mut args = vec!["fetch", "-q", "--depth=1", "--filter=tree:0", "--no-tags", url];
         args.extend(specs.iter().map(String::as_str));
-        let fetched = run(&dir, &args, &env, Duration::from_secs(30));
+        let fetched = exec(&dir, &args, &env, Duration::from_secs(30), true);
         if !fetched.ok {
             return Err(reason(&fetched));
         }
         // `*subject` is the commit's under an annotated tag, whose own
         // `subject` is the tag's message; a lightweight tag has only `subject`.
         let format = "--format=%(refname:strip=2)%09%(*subject)%09%(subject)";
-        let listed = run(&dir, &["for-each-ref", format, "refs/tags"], &env, Duration::from_secs(10));
+        let listed = exec(&dir, &["for-each-ref", format, "refs/tags"], &env, Duration::from_secs(10), true);
         if !listed.ok {
             return Err(reason(&listed));
         }
@@ -894,6 +1212,10 @@ mod tests {
     fn a_quick_command_is_not_held_back() {
         let dir = scratch("quick");
         repo(&dir);
+        // The gate reads a configuration written this second again on every
+        // call, which is not what is measured here.
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        std::fs::OpenOptions::new().write(true).open(dir.join(".git/config")).unwrap().set_modified(old).unwrap();
         let fastest = (0..10)
             .map(|_| {
                 let t = Instant::now();
@@ -904,5 +1226,279 @@ mod tests {
             .unwrap();
         assert!(fastest < Duration::from_millis(25), "{fastest:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A script that leaves a marker, to tell whether git ran it.
+    #[cfg(unix)]
+    fn script(dir: &Path, name: &str, marker: &Path, tail: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\ntouch '{}'\n{tail}\n", marker.display())).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// Writing a file with the content it has makes the index stale, which
+    /// `status` mends by writing it, and that is when git runs a hook and asks
+    /// the file-system monitor.
+    fn stale_index(dir: &Path) {
+        write(dir, "README.md", "one\n");
+    }
+
+    /// What a project copied with its `.git` can bring that a clone cannot: a
+    /// monitor and a hook the poll would run (0121). Both are neutralised and
+    /// the repository is not paused, as `core.fsmonitor` is on the list.
+    #[cfg(unix)]
+    #[test]
+    fn status_runs_neither_the_monitor_nor_the_hooks_a_repository_brings() {
+        let dir = scratch("monitor");
+        repo(&dir);
+        let marks = scratch("monitor-marks");
+        let monitor = script(&marks, "monitor.sh", &marks.join("monitor"), "printf '\\0'");
+        let hook = script(&dir.join(".git/hooks"), "post-index-change", &marks.join("hook"), "");
+        git(&dir, &["config", "core.fsmonitor", monitor.to_str().unwrap()]);
+
+        // Without the two flags both marks appear: the test is about them.
+        stale_index(&dir);
+        let bare = Command::new("git").arg("-C").arg(&dir).args(["status", "--porcelain"]).output().unwrap();
+        assert!(bare.status.success());
+        assert!(marks.join("monitor").exists() && marks.join("hook").exists(), "the repository should run both");
+        let _ = std::fs::remove_file(marks.join("monitor"));
+        let _ = std::fs::remove_file(marks.join("hook"));
+        assert!(hook.exists());
+
+        stale_index(&dir);
+        let info = status(&dir);
+        assert!(info.repo && info.paused.is_empty(), "{}", info.paused);
+        assert_eq!(info.branch, "main");
+        assert!(!marks.join("monitor").exists(), "the monitor ran");
+        assert!(!marks.join("hook").exists(), "a hook ran");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&marks);
+    }
+
+    /// A clean filter runs when `status` hashes a file whose stat changed, so
+    /// it is what a key outside the list would be able to do. Git is then not
+    /// run at all, and says why.
+    #[cfg(unix)]
+    #[test]
+    fn a_repository_whose_config_names_a_program_is_paused() {
+        let dir = scratch("paused");
+        repo(&dir);
+        write(&dir, "models/a.sql", "select 1\n");
+        write(&dir, ".gitattributes", "*.sql filter=evil\n");
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", "files"]);
+        let marks = scratch("paused-marks");
+        let clean = script(&marks, "clean.sh", &marks.join("filter"), "cat");
+        git(&dir, &["config", "filter.evil.clean", clean.to_str().unwrap()]);
+        write(&dir, "models/a.sql", "select 1\n");
+
+        let info = status(&dir);
+        assert_eq!(info.paused, "filter.evil.clean");
+        assert!(!info.repo && info.branch.is_empty());
+        assert!(!marks.join("filter").exists(), "git ran in a paused repository");
+        let said = tracks(&dir, "models").unwrap_err();
+        assert!(said.contains("filter.evil.clean") && said.contains("terminal"), "{said}");
+        assert!(!said.contains("not a git repository"));
+        assert!(index_of(&dir).is_none());
+        assert!(head(&dir).sha.is_empty());
+        assert!(!run(&dir, &["status"], &[], Duration::from_secs(20)).ok);
+        assert!(!fetch_quiet(&dir));
+        assert!(!marks.join("filter").exists(), "git ran in a paused repository");
+
+        // The key is the repository's own, whichever way it got there.
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["paused"], "filter.evil.clean");
+
+        // Mending the configuration lifts the pause, the cache notwithstanding.
+        git(&dir, &["config", "--unset", "filter.evil.clean"]);
+        let mended = status(&dir);
+        assert!(mended.repo && mended.paused.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&marks);
+    }
+
+    #[test]
+    fn a_credential_helper_or_an_include_pauses_git_too() {
+        let dir = scratch("paused-keys");
+        repo(&dir);
+        git(&dir, &["config", "credential.https://example.com.helper", "!true"]);
+        assert_eq!(paused(&dir).as_deref(), Some("credential.https://example.com.helper"));
+        git(&dir, &["config", "--unset", "credential.https://example.com.helper"]);
+        assert_eq!(paused(&dir), None);
+
+        // A subsection that is a URL with a password is never shown.
+        git(&dir, &["config", "credential.https://ada:pw@example.com.helper", "!true"]);
+        assert_eq!(paused(&dir).as_deref(), Some("credential.<url>.helper"));
+        git(&dir, &["config", "--remove-section", "credential.https://ada:pw@example.com"]);
+
+        // An include is not followed, so a file that appears later or a
+        // condition that turns true cannot change a verdict: the key pauses.
+        git(&dir, &["config", "include.path", "../extra.cfg"]);
+        assert_eq!(paused(&dir).as_deref(), Some("include.path"));
+        git(&dir, &["config", "--unset", "include.path"]);
+        git(&dir, &["config", "includeIf.onbranch:main.path", "../extra.cfg"]);
+        assert_eq!(paused(&dir).as_deref(), Some("includeif.onbranch:main.path"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The keys a clone, a fork and a signing setup leave in `.git/config`.
+    #[test]
+    fn a_repository_with_only_data_keys_is_not_paused() {
+        let dir = scratch("data-keys");
+        repo(&dir);
+        for (k, v) in [
+            ("remote.origin.url", "https://example.com/jaffle.git"),
+            ("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"),
+            ("branch.main.remote", "origin"),
+            ("branch.main.merge", "refs/heads/main"),
+            ("core.autocrlf", "input"),
+            ("core.fsmonitor", "true"),
+            ("user.name", "Ada"),
+            ("user.email", "ada@example.com"),
+            ("gpg.format", "ssh"),
+            ("commit.gpgsign", "true"),
+            ("submodule.vendor.url", "https://example.com/vendor.git"),
+            ("submodule.vendor.active", "true"),
+        ] {
+            git(&dir, &["config", k, v]);
+        }
+        let info = status(&dir);
+        assert!(info.repo && info.paused.is_empty(), "{}", info.paused);
+        assert_eq!(info.branch, "main");
+        assert_eq!(tracks(&dir, "README.md"), Ok(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn outside_a_repository_nothing_is_paused() {
+        let dir = scratch("not-paused");
+        assert_eq!(paused(&dir), None);
+        assert!(status(&dir).paused.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The list, key by key: what runs a program pauses, what is only read
+    /// does not, and the case of a section or a key counts for nothing.
+    #[test]
+    fn the_list_of_keys_that_are_only_data() {
+        for key in [
+            "core.repositoryformatversion", "core.fsmonitor", "core.hooksPath", "core.sshCommand", "branch.main.merge",
+            "branch.autoSetupMerge", "remote.origin.url", "remote.Origin.pushurl", "user.signingkey", "commit.gpgsign",
+            "gpg.format", "gpg.ssh.allowedSignersFile", "credential.username", "credential.https://x.example.useHttpPath",
+            "submodule.a.b.url", "submodule.recurse", "url.git@example.com:.insteadOf", "diff.algorithm", "gc.auto",
+            "color.ui", "lfs.url", "lfs.pushurl", "lfs.https://x.example/info/lfs.access", "lfs.locksverify",
+            "lfs.fetchinclude", "http.postBuffer", "http.https://x.example/.lowSpeedLimit", "remote.origin.gh-resolved",
+            "alias.st", "safe.directory", "pull.ff", "REMOTE.origin.URL", "tag.gpgsign",
+        ] {
+            assert!(allowed(key), "{key} should be allowed");
+        }
+        for key in [
+            "credential.helper", "credential.https://x.example.helper", "filter.lfs.clean", "filter.lfs.smudge", "core.askpass",
+            "core.gitProxy", "core.editor", "core.pager", "core.alternateRefsCommand", "remote.origin.uploadpack",
+            "remote.origin.receivepack", "remote.origin.vcs", "protocol.allow", "protocol.ext.allow", "diff.external",
+            "diff.word.textconv", "diff.x.command", "merge.x.driver", "gpg.program", "gpg.ssh.program",
+            "gpg.ssh.defaultKeyCommand", "submodule.vendor.update", "uploadpack.packObjectsHook", "receive.denyCurrentBranch",
+            "trailer.x.cmd", "mergetool.x.cmd", "difftool.x.cmd", "gc.recentObjectsHook", "sequence.editor", "core",
+            "ssh.variant", "http", "unknown.key", "include.path", "includeIf.gitdir:~/work/.path", "lfs.extension.x.clean",
+            "lfs.customtransfer.x.path", "http.proxy", "http.sslVerify", "http.cookieFile", "http.https://x.example/.proxy",
+            "remote.origin.proxy", "remote.origin.proxyAuthMethod",
+        ] {
+            assert!(!allowed(key), "{key} should pause git");
+        }
+    }
+
+    /// The verdict is kept while the files it was read from stand as they
+    /// were: a planted answer is what comes back until one of them changes.
+    #[test]
+    fn the_verdict_is_kept_until_the_config_changes() {
+        let dir = scratch("verdict-cache");
+        repo(&dir);
+        // Old enough to be trusted: a stamp from this second is read again.
+        let config = dir.join(".git/config");
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        std::fs::OpenOptions::new().write(true).open(&config).unwrap().set_modified(old).unwrap();
+        assert_eq!(paused(&dir), None);
+        verdicts().get_mut(&dir).unwrap().key = Some("planted.key".into());
+        assert_eq!(paused(&dir).as_deref(), Some("planted.key"), "read again with nothing changed");
+
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str("[user]\n\tname = Ada\n");
+        std::fs::write(&config, text).unwrap();
+        assert_eq!(paused(&dir), None, "not read again after the config changed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// What the keys of a clone made by hand, with ssh, signing and a
+    /// submodule leave behind, nothing more.
+    #[test]
+    fn the_keys_an_ordinary_clone_leaves_do_not_pause_git() {
+        for key in [
+            "core.repositoryformatversion", "core.filemode", "core.bare", "core.logallrefupdates", "core.ignorecase",
+            "core.precomposeunicode", "core.sshcommand", "branch.main.remote", "branch.main.merge", "remote.origin.url",
+            "remote.origin.fetch", "user.name", "user.email", "gpg.format", "gpg.ssh.allowedsignersfile",
+            "commit.gpgsign", "tag.gpgsign", "submodule.vendor.url", "submodule.vendor.active",
+        ] {
+            assert!(allowed(key), "{key} should not pause git");
+        }
+    }
+
+    /// A configuration git cannot list is no clean answer: git is paused with
+    /// git's reason, and the pause is not remembered.
+    #[test]
+    fn a_configuration_that_cannot_be_listed_pauses_git_and_is_not_kept() {
+        let dir = scratch("unreadable");
+        std::fs::write(dir.join(".git"), "not a gitfile\n").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        std::fs::OpenOptions::new().write(true).open(dir.join(".git")).unwrap().set_modified(old).unwrap();
+        let said = paused(&dir).expect("paused");
+        assert!(said.starts_with(UNREAD), "{said}");
+        assert!(pause_note(&said).contains("could not be read"), "{}", pause_note(&said));
+        assert!(!verdicts().contains_key(&dir), "an unread configuration was kept as an answer");
+        assert_eq!(status(&dir).paused, said);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A partial clone fetches what it lacks from its promisor remote, and the
+    /// poll's `status` wants the commit's tree: the repository's own ssh
+    /// command must not be what reaches the remote.
+    #[cfg(unix)]
+    #[test]
+    fn status_in_a_partial_clone_does_not_run_the_repositorys_ssh_command() {
+        let dir = scratch("lazy");
+        repo(&dir);
+        let marks = scratch("lazy-marks");
+        let ssh = script(&marks, "ssh.sh", &marks.join("ssh"), "exit 1");
+        for (k, v) in [
+            ("core.repositoryformatversion", "1"),
+            ("extensions.partialClone", "origin"),
+            ("remote.origin.promisor", "true"),
+            ("remote.origin.partialclonefilter", "blob:none"),
+            ("remote.origin.url", "ssh://example.invalid/jaffle.git"),
+            ("core.sshCommand", ssh.to_str().unwrap()),
+        ] {
+            git(&dir, &["config", k, v]);
+        }
+        let tree = git(&dir, &["rev-parse", "HEAD^{tree}"]).trim().to_string();
+        let object = dir.join(".git/objects").join(&tree[..2]).join(&tree[2..]);
+        let mut mode = std::fs::metadata(&object).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut mode, 0o644);
+        std::fs::set_permissions(&object, mode).unwrap();
+        std::fs::remove_file(&object).unwrap();
+
+        // Without the two variables git reaches for the remote, by that command.
+        let bare = Command::new("git").arg("-C").arg(&dir).args(["status", "--porcelain"]).output().unwrap();
+        assert!(!bare.status.success());
+        assert!(marks.join("ssh").exists(), "the repository should reach for its remote");
+        let _ = std::fs::remove_file(marks.join("ssh"));
+
+        let info = status(&dir);
+        assert!(info.paused.is_empty(), "{}", info.paused);
+        assert!(!marks.join("ssh").exists(), "the repository's ssh command ran");
+        let _ = head(&dir);
+        assert!(!marks.join("ssh").exists(), "the repository's ssh command ran");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&marks);
     }
 }

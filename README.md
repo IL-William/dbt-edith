@@ -143,10 +143,11 @@ of one release are still told apart; the status bar shows it at the bottom
 right of the page, and `dbt-edith --version` prints it without starting
 anything.
 
-Opening the link swaps its key for a cookie and takes it out of the address
-bar, so bookmarks and new tabs work until the browser closes. Every launch
-draws a new key: after a restart, open the new link
-([0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md)).
+Opening the link makes the page keep its key for that port and take it out of
+the address bar, so a reload or a new tab at the same address works. Every
+launch draws a new key: after a restart, open the new link
+([0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md),
+[0122](docs/decisions/0122-the-key-travels-in-a-header-per-origin-never-in-a-cookie.md)).
 `Ctrl+C` stops the server.
 
 ### If something looks off

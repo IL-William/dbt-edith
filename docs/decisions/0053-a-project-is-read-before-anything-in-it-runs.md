@@ -1,6 +1,6 @@
 # 0053. A project is read before anything in it runs
 
-Date: 2026-10-10 · Status: accepted
+Date: 2026-10-10 · Status: accepted, amended by 0121
 
 **Trigger:** read before running any program found in the project, or changing
 how the status bar learns which Python and which dbt a venv holds.

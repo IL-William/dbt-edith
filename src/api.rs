@@ -363,23 +363,22 @@ fn needs_key(path: &str) -> bool {
     path.starts_with("/api/") || path.starts_with("/ws/")
 }
 
-/// The cookie carries the port because cookies are kept per host, not per
-/// port: two dbt-edith on one machine would otherwise overwrite each other's.
-fn key_cookie(port: u16) -> String {
-    format!("dbt_edith_{port}")
-}
-
-/// The key, from this server's cookie or, for a tool such as curl, from an
-/// `Authorization: Bearer` header.
+/// The key, from an `Authorization: Bearer` header, which the page sends on
+/// every request and a tool such as curl can too. A WebSocket handshake cannot
+/// carry a header from a browser, so `/ws/` also takes it as a `key` parameter
+/// of its address. Never from a cookie: cookies are kept per host and not per
+/// port, so any other server on 127.0.0.1 the browser visited would have been
+/// sent it (0122).
 fn carries_key(req: &axum::extract::Request, st: &AppState) -> bool {
-    let name = key_cookie(st.port);
-    let in_cookie = req.headers().get_all(header::COOKIE).iter().filter_map(|v| v.to_str().ok()).any(|line| {
-        line.split(';').filter_map(|pair| pair.trim().split_once('=')).any(|(k, v)| k == name && same_key(v, &st.key))
-    });
     let in_bearer = header_str(req, header::AUTHORIZATION)
         .and_then(|v| v.strip_prefix("Bearer "))
         .is_some_and(|v| same_key(v.trim(), &st.key));
-    in_cookie || in_bearer
+    let in_query = req.uri().path().starts_with("/ws/")
+        && req
+            .uri()
+            .query()
+            .is_some_and(|q| q.split('&').filter_map(|pair| pair.strip_prefix("key=")).any(|v| same_key(v, &st.key)));
+    in_bearer || in_query
 }
 
 /// Compared without stopping at the first difference, so the time a refusal
@@ -480,29 +479,11 @@ async fn guard(State(st): State<Arc<AppState>>, req: axum::extract::Request, nex
     res
 }
 
-#[derive(Deserialize)]
-struct KeyQuery {
-    key: Option<String>,
-}
-
-/// The printed link lands here. A right key becomes this server's cookie, and
-/// the address loses it at once, so it stays neither in the address bar nor in
-/// a bookmark. A wrong or stale one sets nothing: the page loads, and its first
-/// request says what to do.
-async fn index(State(st): State<Arc<AppState>>, Query(q): Query<KeyQuery>, uri: Uri) -> Response {
-    let Some(given) = q.key else {
-        return static_asset(uri).await;
-    };
-    let mut res = (StatusCode::SEE_OTHER, [(header::LOCATION, "/")]).into_response();
-    if same_key(&given, &st.key) {
-        // No Max-Age: the key dies with the process, so the cookie may die
-        // with the browser. Strict, so no other site's request ever carries it.
-        let cookie = format!("{}={}; Path=/; HttpOnly; SameSite=Strict", key_cookie(st.port), st.key);
-        if let Ok(v) = header::HeaderValue::from_str(&cookie) {
-            res.headers_mut().insert(header::SET_COOKIE, v);
-        }
-    }
-    res
+/// The printed link lands here and gets the page like `/` does. The key in it
+/// is read by the page, which keeps it for its own origin and takes it out of
+/// the address (0122); the server sets nothing.
+async fn index(uri: Uri) -> Response {
+    static_asset(uri).await
 }
 
 // ---------------------------------------------------------------- static ----
@@ -4732,7 +4713,7 @@ mod tests {
     }
 
     /// The key `serve` gives its server. Every request built below carries it,
-    /// as the page's cookie would, unless passed through `keyless`.
+    /// as the page's header does, unless passed through `keyless`.
     const TEST_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     fn raw(method: &str, path: &str, headers: &[(&str, &str)]) -> String {
@@ -5989,29 +5970,50 @@ mod tests {
             keyless(get("/ws/pty", &h))
         };
         assert!(status_of(port, ws(None)).await.ends_with("401 Unauthorized"));
-        let wrong = format!("{}=0123", key_cookie(port));
-        assert!(status_of(port, ws(Some(("Cookie", &wrong)))).await.ends_with("401 Unauthorized"));
-        let other_port = format!("{}={}", key_cookie(port.wrapping_add(1)), st.key);
-        assert!(status_of(port, ws(Some(("Cookie", &other_port)))).await.ends_with("401 Unauthorized"));
-        let right = format!("theme=dark; {}={}", key_cookie(port), st.key);
-        assert!(status_of(port, ws(Some(("Cookie", &right)))).await.ends_with("101 Switching Protocols"));
+        // A cookie opens nothing, the old one included: cookies are sent to
+        // every server on the host, whichever port, and are not the key's way (0122).
+        let old = format!("dbt_edith_{port}={}", st.key);
+        assert!(status_of(port, ws(Some(("Cookie", &old)))).await.ends_with("401 Unauthorized"));
+        let cookie_only = keyless(get("/api/meta", &[("Host", &host), ("Cookie", &old)]));
+        assert!(status_of(port, cookie_only).await.ends_with("401 Unauthorized"));
+        // The header is the key's way, and the same for every route.
+        // `get` already carries the right one, so it is taken off and this one put in.
+        let bearer = |key: &str| {
+            let bare = keyless(get("/api/meta", &[("Host", &host)]));
+            bare.replacen("\r\n", &format!("\r\nAuthorization: Bearer {key}\r\n"), 1)
+        };
+        assert!(status_of(port, bearer(&st.key)).await.ends_with("200 OK"));
+        assert!(status_of(port, bearer("0123")).await.ends_with("401 Unauthorized"));
+        assert!(status_of(port, bearer(&st.key[..63])).await.ends_with("401 Unauthorized"));
+        // A socket takes it in its address; the API does not, since an address
+        // ends up in logs and histories a header does not.
+        let in_address = |path: &str| keyless(get(path, &[("Host", &host)]));
+        assert!(status_of(port, in_address(&format!("/api/meta?key={}", st.key))).await.ends_with("401 Unauthorized"));
+        let socket = |query: &str| {
+            let h = [
+                ("Host", host.as_str()),
+                ("Origin", own.as_str()),
+                ("Connection", "Upgrade"),
+                ("Upgrade", "websocket"),
+                ("Sec-WebSocket-Version", "13"),
+                ("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            ];
+            keyless(get(&format!("/ws/pty?cols=80&rows=24{query}"), &h))
+        };
+        assert!(status_of(port, socket(&format!("&key={}", st.key))).await.ends_with("101 Switching Protocols"));
+        assert!(status_of(port, socket(&format!("&key=0123&key={}", st.key))).await.ends_with("101 Switching Protocols"));
+        assert!(status_of(port, socket("&key=0123")).await.ends_with("401 Unauthorized"));
+        assert!(status_of(port, socket(&format!("&xkey={}", st.key))).await.ends_with("401 Unauthorized"));
 
         // The page itself loads without it, so it can say what to do.
         assert!(status_of(port, keyless(get("/", &[("Host", &host)]))).await.ends_with("200 OK"));
         assert!(status_of(port, keyless(get("/app.js", &[("Host", &host)]))).await.ends_with("200 OK"));
 
-        // The printed link: the key becomes a cookie, and leaves the address.
+        // The printed link serves the page and sets nothing: the page keeps
+        // the key itself and drops it from the address.
         let head = head_of(port, keyless(get(&format!("/?key={TEST_KEY}"), &[("Host", &host)]))).await;
-        assert!(head.starts_with("HTTP/1.1 303"), "{head}");
-        assert!(head.to_lowercase().contains("location: /\r\n"), "{head}");
-        let cookie = format!("set-cookie: {}={TEST_KEY}; Path=/; HttpOnly; SameSite=Strict", key_cookie(port));
-        assert!(head.contains(&cookie), "{head}");
-        // A stale link from a previous launch sets nothing.
-        let stale = head_of(port, keyless(get("/?key=0000", &[("Host", &host)]))).await;
-        assert!(stale.starts_with("HTTP/1.1 303") && !stale.to_lowercase().contains("set-cookie"), "{stale}");
-        // And the cookie it sets opens the API.
-        let with_cookie = keyless(get("/api/meta", &[("Host", &host), ("Cookie", &format!("{}={TEST_KEY}", key_cookie(port)))]));
-        assert!(status_of(port, with_cookie).await.ends_with("200 OK"));
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        assert!(!head.to_lowercase().contains("set-cookie") && !head.to_lowercase().contains("location:"), "{head}");
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

@@ -542,16 +542,20 @@ fn name_hidden_reason(file: &str) -> Option<&'static str> {
 }
 
 /// `.env` and `.env.*` files in the project root. Directories are skipped (a
-/// Python virtualenv is often named `.env`) and so is `.envrc`.
+/// Python virtualenv is often named `.env`) and so is `.envrc`. A link to a
+/// file outside the project is skipped too, as every other read is held to the
+/// project: a repository can commit `.env.prod` pointing at a file of the
+/// user's, whose values would otherwise be resolved and shown.
 pub fn discover(root: &Path) -> Vec<EnvFile> {
     let mut found = Vec::new();
     let Ok(entries) = std::fs::read_dir(root) else { return found };
+    let Ok(canon_root) = root.canonicalize() else { return found };
     for entry in entries.flatten() {
         let file = entry.file_name().to_string_lossy().into_owned();
         if file != ".env" && !file.starts_with(".env.") {
             continue;
         }
-        let path = entry.path();
+        let Ok(path) = crate::files::resolve_under(root, &canon_root, &file) else { continue };
         let Ok(meta) = std::fs::metadata(&path) else { continue };
         if !meta.is_file() || meta.len() > MAX_BYTES {
             continue;
@@ -967,5 +971,25 @@ mod tests {
             ]
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `.env` that is a link out of the project is not listed, so nothing in
+    /// the file it names is ever resolved. One that stays inside is.
+    #[cfg(unix)]
+    #[test]
+    fn discover_skips_a_link_that_leaves_the_project() {
+        let base = std::env::temp_dir().join(format!("dbt-edith-envs-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("project");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(base.join("elsewhere.env"), "SECRET=1").unwrap();
+        std::fs::write(dir.join(".env"), "A=1").unwrap();
+        std::fs::write(dir.join("shared.env"), "A=2").unwrap();
+        std::os::unix::fs::symlink(base.join("elsewhere.env"), dir.join(".env.x")).unwrap();
+        std::os::unix::fs::symlink("shared.env", dir.join(".env.inside")).unwrap();
+
+        let names: Vec<String> = discover(&dir).into_iter().map(|f| f.file).collect();
+        assert_eq!(names, [".env", ".env.inside"]);
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

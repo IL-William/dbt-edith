@@ -63,6 +63,7 @@ $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert
 $JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
+$JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header
 $JSC web/tests/halloween.js   # the Halloween look: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
 ```
 

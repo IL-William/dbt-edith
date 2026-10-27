@@ -124,6 +124,8 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0118](0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md) | An indirect edge ends on its model's box and names its clause | changing what the page asks collin for, how a downstream indirect edge is drawn or walked, what names an indirect role on the page, or how many boxes a column's canvas draws |
 | [0119](0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md) | A job's builds are judged against its own clock, in the zone its source names | changing what Builds by job calls late, reading a cron or a time zone anywhere, or adding a key to a job source |
 | [0120](0120-the-update-empties-the-clones-target-once-installed.md) | The update empties the clone's target once installed | changing what the update types after the install, or where a cargo-installed binary's build leaves its files |
+| [0121](0121-git-runs-nothing-a-repositorys-own-config-names.md) | git runs nothing a repository's own configuration names | adding a git command, running git on a timer or in a folder nobody picked, or changing the keys git may find in a repository's configuration |
+| [0122](0122-the-key-travels-in-a-header-per-origin-never-in-a-cookie.md) | The key travels in a header, per origin, never in a cookie | changing how the page or a tool presents the launch key, adding a way in that is not a plain request, or setting a cookie |
 
 ## Keeping these honest
 

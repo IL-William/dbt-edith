@@ -801,6 +801,20 @@ config directory, and makes its repository only where nothing was. A selector
 name from a job file was typed with its control characters. Each has a test
 beside it, the link ones on Unix (0090).
 
+Security pass of 2026-10-27 (0121, 0122, 1.55.0). An audit of `main` found
+nothing critical and three things to close. A project copied with its `.git`
+brought a configuration git acts on from the status poll alone: a file-system
+monitor, a hook, a filter, a credential helper, an upload-pack program. Every
+call now switches the monitor off, what runs on a timer switches hooks off
+too, and a repository whose own configuration holds a key outside a list of
+data-only ones is left alone, the Git panel and the freshness card naming the
+key. The launch key was kept in a cookie, which a browser sends to every
+server on 127.0.0.1 whatever its port; the page now keeps it for its own port
+and sends it as a header, the terminal's socket taking it in its address. A
+`.env` that is a link out of the project is no longer listed. Each has a test
+beside it; the update command's branch, the `.exe`'s hash beside the `.exe`
+and a collin install in a shared folder are in Deferred, items 29 to 31.
+
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
 running it. The update is now a button named after the release, `Update to
@@ -2194,6 +2208,28 @@ of its own, and each panel updates the tour, its page under
     `schema` column to leave the warehouse (who built where) and the schema
     each environment really builds into, which `generate_schema_name` decides
     and this tool does not evaluate (0113).
+29. **The update pulls `main`, not the tag it announced.** The command the menu
+    types fast-forwards the clone to `origin/main` (`update::compose`), where a
+    release is tagged (0045), so a commit merged after the release is built
+    and installed under the release's number, the build stamp being the only
+    thing that tells them apart. Pulling the tag instead means a detached
+    clone, and the later `git pull` of someone who stays on `main` has to cope
+    with that. It was left until 0120, which changes the same command, had
+    landed.
+30. **The `.exe`'s hash travels with the `.exe`.** `build_windows.sh` writes the
+    SHA-256 beside the file (`dbt-edith.exe.sha256`), so whoever can replace
+    one can replace the other: the hash catches a damaged copy, not a swapped
+    one. Closing it means a signature or a hash published on another channel,
+    which goes with the signing question in the paragraph on distribution
+    below (0085, 0093).
+31. **A collin install in a folder others can write to.** The versions
+    installed side by side live under `<config>/collin/<X.Y.Z>/bin/`
+    (`collin_run::installs_dir`), and the one picked is run without checking
+    who may write there. On a host where the configuration folder is shared
+    with another account, that account can replace the binary. The default
+    places are the user's own; checking the folder's owner and mode, and
+    refusing a binary the account does not own, is the fix, with the trap that
+    Windows reports ownership differently (0042, 0060, 0094).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

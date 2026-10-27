@@ -61,6 +61,11 @@ pub struct Freshness {
     pub gone_n: usize,
     pub head: Head,
     pub drift: Drift,
+    /// The key of the repository's own configuration that keeps edith from
+    /// running git there (0121). With it nothing above is known of the repository:
+    /// every newer file reads as an edit, as in a folder with no repository.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub git_paused: String,
     /// Empty when there is nothing to do.
     pub advice: String,
 }
@@ -265,7 +270,14 @@ pub fn check(root: &Path, manifest_at: u64, node_files: &[String], git: &GitInfo
     } else {
         Default::default()
     };
-    let mut f = Freshness { manifest_at, age_secs: now.saturating_sub(manifest_at), head, drift, ..Default::default() };
+    let mut f = Freshness {
+        manifest_at,
+        age_secs: now.saturating_sub(manifest_at),
+        head,
+        drift,
+        git_paused: git.paused.clone(),
+        ..Default::default()
+    };
     if manifest_at == 0 {
         f.state = "missing".into();
         f.age_secs = 0;

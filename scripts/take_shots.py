@@ -169,7 +169,10 @@ class Shots:
         self.js("[...document.querySelectorAll('.tour-offer button')].find((b) => b.textContent === 'Not now').click()")
         # Named through the route the sources form saves with, in the settings
         # so that no file is written into the project.
-        answer = self.js("""fetch('/api/jobs/sources', { method: 'PUT', headers: { 'content-type': 'application/json' },
+        # The page keeps its key in this origin's storage once an answer
+        # has come (0122), and the route wants it as a header.
+        answer = self.js("""fetch('/api/jobs/sources', { method: 'PUT', headers: { 'content-type': 'application/json',
+          authorization: 'Bearer ' + localStorage.getItem('dbt-edith-key') },
           body: JSON.stringify({ place: 'settings', sources: [
             { kind: 'airflow', path: '../orchestration/dags', label: 'airflow', keys: {} },
             { kind: 'dbt_cloud', path: '../orchestration/dbt_cloud', label: 'dbt cloud', keys: {} }] }) })
