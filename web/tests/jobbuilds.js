@@ -270,6 +270,10 @@ check('in one source, by the identifier the Jobs tab writes, or by the file', [t
   ['cloud · [[daily]]', 'cloud · [[daily_eu]]', 'dags · a/shop.yml', 'dags · b/shop.yml']);
 var l1 = jb('shop', 'dags', '', 'shop.yml', 1), l2 = jb('shop', 'dags', '', 'shop.yml', 9);
 check('and by the line when one file holds both', [jobsTwinTags([l1, l2]).get(l1), jobsTwinTags([l1, l2]).get(l2)], ['dags · shop.yml:1', 'dags · shop.yml:9']);
+var p1 = jb('daily', 'prod', '', 'daily.yml', 1), p2 = jb('daily', 'prod', '', 'daily.yml', 1), p3 = jb('other', 'prod');
+var tags3 = jobsTwinTags([p3, p1, p2]);
+check('two sources of one label over one file fall back to the place in the list', [tags3.get(p1), tags3.get(p2), tags3.has(p3)],
+  ['prod · daily.yml:1 · #2', 'prod · daily.yml:1 · #3', false]);
 check('no jobs, no tags', jobsTwinTags([]).size, 0);
 
 print('\n--- the jobs as the server sends them ---');

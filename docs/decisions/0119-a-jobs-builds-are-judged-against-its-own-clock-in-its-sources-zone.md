@@ -45,8 +45,9 @@ missed run.
   and the sources form refuses a name the browser does not know. The key is
   written to `.dbt-edith/jobs.yml` and the settings like the others (0115).
   Airflow takes a DAG's zone from its `start_date`: `default_timezone` for a
-  `start_date` with no zone, and with dag-factory the DAG's `timezone` key (or
-  `default_args.timezone`), UTC when absent, whatever `default_timezone` says.
+  `start_date` with no zone, and with dag-factory the `timezone` beside the
+  `start_date` it sets (the DAG's own, or `default_args.timezone`), UTC when
+  absent, whatever `default_timezone` says.
   This tool reads neither the Python nor that key, so one zone holds for every
   DAG of a source and DAGs in different zones go in sources of their own.
 - **The cron is walked in the browser**, in pure functions (`cronFields`,

@@ -9423,11 +9423,11 @@ async function jobSourcesForm(box, { add = false } = {}) {
         // Not a key of the files: the zone their crons are read in.
         const zone = input(f.timezone, 'UTC', (v) => { f.timezone = v; refreshIssue(); }, 'jobsrc-zone');
         zone.title = "The time zone the DAGs' schedules run in, such as Europe/London, one for every DAG of this source. Airflow takes it from each "
-          + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the DAG's timezone key (or default_args.timezone), "
-          + "UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
+          + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the timezone beside the start_date it sets (the DAG's own, "
+          + "or default_args.timezone), UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
         zone.setAttribute('aria-label', 'Time zone of the schedules');
         grid.append(jel('label', '', 'time zone'), zone,
-          jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or dag-factory's timezone key. Empty is UTC."));
+          jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or with dag-factory the timezone beside start_date, UTC when absent. Empty is UTC."));
         const cols = jel('div', 'jobsrc-cols');
         cols.append(grid, example);
         card.append(cols);
@@ -12493,8 +12493,9 @@ function jobBuildsJobs(ids, jobs) {
 
 /* What tells apart jobs that share a name (a dbt Cloud job in two projects, a
    dag_id in two sources), by job: the source, then the job's identifier as the
-   Jobs tab writes it (`[[ident]]`) or its file, then its line. Only the
-   jobs sharing a name have one, and each the shortest that is its own. */
+   Jobs tab writes it (`[[ident]]`) or its file, then its line, then its
+   place in the list (two sources of one label over one file). Only the jobs
+   sharing a name have one, and each the shortest that is its own. */
 function jobsTwinTags(jobs) {
   const count = (key) => {
     const by = new Map();
@@ -12503,10 +12504,13 @@ function jobsTwinTags(jobs) {
   };
   const named = count((j) => j.name), inSource = count((j) => `${j.name}\u0000${j.source}`);
   const inFile = count((j) => `${j.name}\u0000${j.source}\u0000${j.ident || j.file}`);
+  const inLine = count((j) => `${j.name}\u0000${j.source}\u0000${j.file}:${j.line}`);
   const out = new Map();
   for (const j of jobs) {
     if (named(j) < 2) continue;
-    out.set(j, inSource(j) < 2 ? j.source : inFile(j) < 2 ? `${j.source} · ${j.ident ? `[[${j.ident}]]` : j.file}` : `${j.source} · ${j.file}:${j.line}`);
+    const here = `${j.source} · ${j.file}:${j.line}`;
+    out.set(j, inSource(j) < 2 ? j.source : inFile(j) < 2 ? `${j.source} · ${j.ident ? `[[${j.ident}]]` : j.file}`
+      : inLine(j) < 2 ? here : `${here} · #${jobs.indexOf(j) + 1}`);
   }
   return out;
 }

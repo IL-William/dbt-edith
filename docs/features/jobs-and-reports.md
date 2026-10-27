@@ -164,10 +164,11 @@ type them.
 An Airflow source also takes a **time zone**, beside its keys: the zone the
 schedules of its DAGs run in, such as `Europe/London`, and UTC when empty.
 Airflow takes a DAG's zone from its `start_date`: `default_timezone` for a
-`start_date` with no zone, and with dag-factory the DAG's `timezone` key (or
-`default_args.timezone`), UTC when it has none. One zone holds for every DAG of
-the source, so DAGs in different zones go in sources of their own; a per-DAG
-zone, in those keys or in the Python, is not read. Only Builds by job uses it,
+`start_date` with no zone, and with dag-factory the `timezone` beside the
+`start_date` it sets (the DAG's own, or `default_args.timezone`), UTC when it
+has none. One zone holds for every DAG of the source, so DAGs in different
+zones go in sources of their own; a per-DAG zone, in those keys or in the
+Python, is not read. Only Builds by job uses it,
 to place a cron on the clock. A `.dbt-edith/jobs.yml` that sets a `timezone` is
 refused whole by 1.53.0 and earlier, so everyone sharing it needs 1.54.0. The
 form refuses a name this browser does not know, the server checking
