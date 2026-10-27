@@ -36,7 +36,8 @@ what the command exists to spare it.
 - **A sensor is read for what it waits for**: `external_task_id`, else the
   names of `external_task_ids`, else `external_task_group_id`, the last two
   under Airflow's own names so the sources form's key table does not change.
-  A group's tasks are in no file, so it gates no task here and its line says
+  Which tasks a group holds is not read (a factory may name each task's
+  group, a key this does not read), so it gates no task here and its line says
   so; a sensor naming none of the three waits for the whole run.
 - **A sensor on a DAG's whole run is marked**, `(whole run)` after it in
   `waited_by`, because it counts as awaiting every dbt task of the DAG and four

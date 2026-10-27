@@ -803,8 +803,9 @@ pub struct Sensor {
     /// What it waits for, by task id: `external_task_id`, else the names of
     /// `external_task_ids`.
     pub tasks: Vec<String>,
-    /// A task group, `external_task_group_id`, which no file read lists the
-    /// tasks of. Empty when `tasks` is not.
+    /// A task group, `external_task_group_id`, whose tasks are not read: a
+    /// factory may name each task's group, and that key is not read. Empty
+    /// when `tasks` is not.
     pub group: String,
 }
 
@@ -815,13 +816,13 @@ impl Sensor {
     }
 
     /// What it waits for as the Jobs tab words it, one string each: `dag › task`
-    /// per task, `dag › group g`, or the DAG alone for its whole run.
+    /// per task, `dag › task group g`, or the DAG alone for its whole run.
     fn waits(&self) -> Vec<String> {
         if self.whole() {
             return vec![self.dag.clone()];
         }
         if !self.group.is_empty() {
-            return vec![format!("{} › group {}", self.dag, self.group)];
+            return vec![format!("{} › task group {}", self.dag, self.group)];
         }
         self.tasks.iter().map(|t| format!("{} › {t}", self.dag)).collect()
     }
@@ -1637,7 +1638,7 @@ fn job_view(read: &Read, ji: usize) -> JobView {
 /// The sensors of any DAG, its own included (one on its previous run), that
 /// wait for `task` of the DAG `dag`, each as its DAG, its id and whether it
 /// waits for the whole run, which holds back every task of `dag`. A sensor on a
-/// task group is none of them: its tasks are in no file. The page and `--job`
+/// task group is none of them: which tasks a group holds is not read. The page and `--job`
 /// word the rest differently.
 fn awaiting<'a>(read: &'a Read, dag: &str, task: &str) -> Vec<(&'a str, &'a str, bool)> {
     let mut out = Vec::new();
@@ -2096,7 +2097,7 @@ pub struct SensorAnswer {
     /// Several tasks, from `external_task_ids`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tasks: Vec<String>,
-    /// A task group, whose tasks no file lists.
+    /// A task group, whose tasks are not read.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub task_group: String,
 }
@@ -2104,7 +2105,7 @@ pub struct SensorAnswer {
 impl SensorAnswer {
     fn waits_for(&self) -> String {
         if !self.task_group.is_empty() {
-            format!("{} › task group {}, whose tasks no file lists", self.dag, self.task_group)
+            format!("{} › task group {}, whose tasks are not read", self.dag, self.task_group)
         } else if !self.task.is_empty() {
             format!("{} › {}", self.dag, self.task)
         } else if !self.tasks.is_empty() {
@@ -2789,13 +2790,13 @@ tasks:
         let g = graph();
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
         let at = |name: &str| read.steps.iter().position(|s| s.name == name).unwrap();
-        // The group gates no task, whose names no file lists; a task id wins over a list.
+        // The group gates no task, since its tasks are not read; a task id wins over a list.
         assert_eq!(step_view(&g, &read, at("stage"), None).waited_by, ["shop_watch › both", "shop_watch › one"]);
         assert_eq!(step_view(&g, &read, at("marts"), None).waited_by, ["shop_watch › both", "shop_watch › plain"]);
         let watch = read.jobs.iter().position(|j| j.name == "shop_watch").unwrap();
         assert_eq!(
             job_view(&read, watch).waits_for,
-            ["shop_daily › stage", "shop_daily › marts", "shop_daily › group loading", "shop_daily › stage", "shop_daily › marts"]
+            ["shop_daily › stage", "shop_daily › marts", "shop_daily › task group loading", "shop_daily › stage", "shop_daily › marts"]
         );
         let daily = read.jobs.iter().position(|j| j.name == "shop_daily").unwrap();
         for step in answer(&g, &read, daily).steps {

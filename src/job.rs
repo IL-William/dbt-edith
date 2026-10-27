@@ -435,7 +435,7 @@ mod tests {
         assert!(
             out.contains(
                 "  sensor both  waits for jaffle_daily › stage, marts\n\
-                 \x20 sensor grp  waits for jaffle_daily › task group loading, whose tasks no file lists\n\
+                 \x20 sensor grp  waits for jaffle_daily › task group loading, whose tasks are not read\n\
                  \x20 sensor one  waits for jaffle_daily › stage\n"
             ),
             "{out}"

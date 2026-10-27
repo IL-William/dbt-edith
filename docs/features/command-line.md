@@ -381,7 +381,7 @@ from job to job and nothing is checked. Under a DAG's first line come its
 sensors, `sensor wait_marts  waits for jaffle_daily › marts` (the sensor's id,
 which a task's `depends_on` names it by, then the DAG and the task it waits for,
 `D › a, b` for the tasks of `external_task_ids`, `D › task group g, whose tasks
-no file lists` for an `external_task_group_id`, the DAG alone when it names
+are not read` for an `external_task_group_id`, the DAG alone when it names
 neither and so waits for the whole run; a sensor written without an id leaves
 the id out), then `updates X, which starts D` for what its tasks with no
 dbt command update and the DAGs scheduled on it, and for a dbt Cloud job
@@ -392,7 +392,7 @@ dbt and name it, a task that runs none left out as the Jobs tab leaves it;
 `awaited by` the sensors of any DAG, its own included (a sensor on its
 previous run), as `dag › sensor`, that wait for it, a sensor on the whole run
 marked `(whole run)` on every task of the DAG instead of read as that many
-waits, and a sensor on a task group on none, since its tasks are in no file;
+waits, and a sensor on a task group on none, since which tasks it holds is not read;
 `updates` the assets it writes and the DAGs scheduled on them. The file's order
 is not the run order: every task with no `after` starts with the DAG's run. A
 sensor may also hold back tasks that do not name it, which the factory that
