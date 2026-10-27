@@ -1,6 +1,6 @@
 # 0095. The update says when it is installed, and brings its tags
 
-Date: 2026-10-16 · Status: accepted · Amends 0068, 0079
+Date: 2026-10-16 · Status: accepted, amended by 0111 and 0120 · Amends 0068, 0079
 
 **Trigger:** read before changing what the update types, what Edith's menu
 offers once it has run, or how the build stamp names a release.
