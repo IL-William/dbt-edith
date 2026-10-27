@@ -1708,9 +1708,10 @@ schedule on one task that only a DAG factory knows is not seen; a zone set per
 DAG (dag-factory's `timezone` or `default_args.timezone`, or a zoned
 `start_date` in Python) is not read, one zone holds per source; a job started
 by an asset or another job, a manual one, and a cron this cannot read are
-judged on the global threshold, not a clock; and the DAG of an invocation is
+judged on the global threshold, not a clock; the DAG of an invocation is
 inferred from the job's selections, not read, since `dbt_artifacts` does not
-record it. Seeds, snapshots and tests wait on item 26.
+record it; and a long list of assets is cut short in the schedule pill, whole
+only in its tooltip. Seeds, snapshots and tests wait on item 26.
 
 ## Deferred, in the order they were chosen
 
