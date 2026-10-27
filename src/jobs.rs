@@ -800,7 +800,32 @@ pub struct SourceRead {
 pub struct Sensor {
     pub id: String,
     pub dag: String,
-    pub task: String,
+    /// What it waits for, by task id: `external_task_id`, else the names of
+    /// `external_task_ids`.
+    pub tasks: Vec<String>,
+    /// A task group, `external_task_group_id`, whose tasks are not read: a
+    /// factory may name each task's group, and that key is not read. Empty
+    /// when `tasks` is not.
+    pub group: String,
+}
+
+impl Sensor {
+    /// Neither a task nor a group: it waits for the whole run of the DAG.
+    fn whole(&self) -> bool {
+        self.tasks.is_empty() && self.group.is_empty()
+    }
+
+    /// What it waits for as the Jobs tab words it, one string each: `dag › task`
+    /// per task, `dag › task group g`, or the DAG alone for its whole run.
+    fn waits(&self) -> Vec<String> {
+        if self.whole() {
+            return vec![self.dag.clone()];
+        }
+        if !self.group.is_empty() {
+            return vec![format!("{} › task group {}", self.dag, self.group)];
+        }
+        self.tasks.iter().map(|t| format!("{} › {t}", self.dag)).collect()
+    }
 }
 
 /// Whether something starts a job without anyone asking, as far as the files
@@ -1074,7 +1099,15 @@ fn read_airflow(
     let (sid, sdag, stask) = (key(src, "sensor_id"), key(src, "external_dag_id"), key(src, "external_task_id"));
     for s in doc.at_path(&key(src, "sensors")).and_then(Node::items).unwrap_or_default() {
         if let Some(dag) = text(s.at_path(&sdag)) {
-            job.sensors.push(Sensor { id: text(s.at_path(&sid)).unwrap_or_default(), dag, task: text(s.at_path(&stask)).unwrap_or_default() });
+            // Airflow's own names for the other two, which the sources form
+            // does not rename: a sensor on several tasks or on a group is not
+            // one on the whole run.
+            let tasks = match text(s.at_path(&stask)).filter(|t| !t.is_empty()) {
+                Some(t) => vec![t],
+                None => names(s.at_path("external_task_ids")).into_iter().filter(|t| !t.is_empty()).collect(),
+            };
+            let group = if tasks.is_empty() { text(s.at_path("external_task_group_id")).unwrap_or_default() } else { String::new() };
+            job.sensors.push(Sensor { id: text(s.at_path(&sid)).unwrap_or_default(), dag, tasks, group });
         }
     }
     let ji = jobs.len();
@@ -1596,10 +1629,42 @@ fn job_view(read: &Read, ji: usize) -> JobView {
         assets_unread: j.assets_unread.clone(),
         env: j.env.clone(),
         target: j.target.clone(),
-        waits_for: j.sensors.iter().map(|s| if s.task.is_empty() { s.dag.clone() } else { format!("{} › {}", s.dag, s.task) }).collect(),
+        waits_for: j.sensors.iter().flat_map(Sensor::waits).collect(),
         triggers: read.jobs.iter().filter(|o| o.after_job == Some(ji)).map(|o| o.name.clone()).collect(),
         steps: j.steps.len(),
     }
+}
+
+/// The sensors of any DAG, its own included (one on its previous run), that
+/// wait for `task` of the DAG `dag`, each as its DAG, its id and whether it
+/// waits for the whole run, which holds back every task of `dag`. A sensor on a
+/// task group is none of them: which tasks a group holds is not read. The page and `--job`
+/// word the rest differently.
+fn awaiting<'a>(read: &'a Read, dag: &str, task: &str) -> Vec<(&'a str, &'a str, bool)> {
+    let mut out = Vec::new();
+    for other in read.jobs.iter().filter(|o| o.kind == AIRFLOW) {
+        for sensor in &other.sensors {
+            if sensor.dag == dag && (sensor.whole() || sensor.tasks.iter().any(|t| t == task)) {
+                out.push((other.name.as_str(), sensor.id.as_str(), sensor.whole()));
+            }
+        }
+    }
+    out
+}
+
+/// `dag › sensor`; a sensor written without an id is the DAG alone, since a
+/// separator with nothing after it reads as a lost name.
+fn sensor_text(dag: &str, id: &str) -> String {
+    if id.is_empty() {
+        dag.to_string()
+    } else {
+        format!("{dag} › {id}")
+    }
+}
+
+/// The jobs scheduled on an asset that `outlets` update.
+fn fed_by(read: &Read, outlets: &[String]) -> Vec<String> {
+    read.jobs.iter().filter(|o| o.assets.iter().any(|a| outlets.contains(a))).map(|o| o.name.clone()).collect()
 }
 
 fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepView {
@@ -1632,19 +1697,8 @@ fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepVi
             .filter(|o| o.upstream.iter().any(|u| *u == s.name))
             .map(|o| o.name.clone())
             .collect();
-        for other in read.jobs.iter().filter(|o| o.kind == AIRFLOW) {
-            for sensor in &other.sensors {
-                if sensor.dag == job.name && (sensor.task.is_empty() || sensor.task == s.name) {
-                    view.waited_by.push(format!("{} › {}", other.name, sensor.id));
-                }
-            }
-        }
-        view.feeds = read
-            .jobs
-            .iter()
-            .filter(|o| o.assets.iter().any(|a| s.outlets.contains(a)))
-            .map(|o| o.name.clone())
-            .collect();
+        view.waited_by = awaiting(read, &job.name, &s.name).into_iter().map(|(dag, id, _)| sensor_text(dag, id)).collect();
+        view.feeds = fed_by(read, &s.outlets);
     }
     if let (Some(node), Some(inv)) = (node, &s.inv) {
         view.via = via(graph, inv, node);
@@ -1828,6 +1882,56 @@ impl StepView {
     }
 }
 
+/// `updates a, b`, and which jobs that starts.
+fn updates_text(outlets: &[String], feeds: &[String]) -> String {
+    let starts = if feeds.is_empty() { String::new() } else { format!(", which starts {}", feeds.join(", ")) };
+    format!("updates {}{starts}", outlets.join(", "))
+}
+
+impl StepAnswer {
+    /// Where the task sits among the others, in the page's words
+    /// (`jobsLinkRows`) and joined with ` · `: empty when it sits nowhere.
+    /// `before` lists the tasks that run dbt only, `after` what the file
+    /// wrote, a sensor's id or a task that runs no dbt included.
+    pub fn order(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.upstream.is_empty() {
+            parts.push(format!("after {}", self.upstream.join(", ")));
+        }
+        if !self.downstream.is_empty() {
+            parts.push(format!("before {}", self.downstream.join(", ")));
+        }
+        if !self.waited_by.is_empty() {
+            parts.push(format!("awaited by {}", self.waited_by.join(", ")));
+        }
+        if !self.outlets.is_empty() {
+            parts.push(updates_text(&self.outlets, &self.feeds));
+        }
+        parts.join(" · ")
+    }
+}
+
+impl JobAnswer {
+    /// What the job waits for and starts, one line each, indented as a step
+    /// is: its sensors, the dbt Cloud jobs its end starts, and what its tasks
+    /// with no dbt command update.
+    pub fn order_lines(&self) -> Vec<String> {
+        let mut lines = Vec::new();
+        for s in &self.sensors {
+            let what = s.waits_for();
+            // Without an id the two spaces would stand before nothing.
+            lines.push(if s.id.is_empty() { format!("  sensor waits for {what}") } else { format!("  sensor {}  waits for {what}", s.id) });
+        }
+        if !self.triggers.is_empty() {
+            lines.push(format!("  starts {} when it ends", self.triggers.join(", ")));
+        }
+        if !self.outlets.is_empty() {
+            lines.push(format!("  {}", updates_text(&self.outlets, &self.feeds)));
+        }
+        lines
+    }
+}
+
 /// One step that acts on a node, for the command line.
 #[derive(serde::Serialize, Debug)]
 pub struct Hit {
@@ -1959,10 +2063,57 @@ pub struct StepAnswer {
     pub runs_nothing: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// The tasks it names in `depends_on`, as written: a sensor's id too.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream: Vec<String>,
+    /// The tasks of the DAG that run dbt and name it in `depends_on`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub downstream: Vec<String>,
+    /// `dag › sensor` of the sensors, of any DAG, waiting for it, and
+    /// `(whole run)` after one that waits for the DAG's whole run.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub waited_by: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub outlets: Vec<String>,
+    /// DAGs scheduled on an asset it updates.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub feeds: Vec<String>,
     pub node_count: usize,
     pub nodes: Vec<NodeRef>,
     #[serde(skip)]
     pub label: String,
+}
+
+/// An Airflow sensor of the DAG, as the file writes it.
+#[derive(serde::Serialize, Debug)]
+pub struct SensorAnswer {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    pub dag: String,
+    /// The one task it waits for. Absent with `tasks` and `task_group`: the
+    /// whole run of `dag`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub task: String,
+    /// Several tasks, from `external_task_ids`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tasks: Vec<String>,
+    /// A task group, whose tasks are not read.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub task_group: String,
+}
+
+impl SensorAnswer {
+    fn waits_for(&self) -> String {
+        if !self.task_group.is_empty() {
+            format!("{} › task group {}, whose tasks are not read", self.dag, self.task_group)
+        } else if !self.task.is_empty() {
+            format!("{} › {}", self.dag, self.task)
+        } else if !self.tasks.is_empty() {
+            format!("{} › {}", self.dag, self.tasks.join(", "))
+        } else {
+            self.dag.clone()
+        }
+    }
 }
 
 /// A job as `--job` answers it.
@@ -1976,6 +2127,29 @@ pub struct JobAnswer {
     pub file: String,
     pub line: usize,
     pub schedule: String,
+    /// In file order. The id is what a task's `depends_on` names it by.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sensors: Vec<SensorAnswer>,
+    /// Airflow: the assets it is scheduled on, `schedule` saying so in words.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assets_unread: Vec<String>,
+    /// dbt Cloud: the job it runs after, by name, or by id when no file read
+    /// defines it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub after: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub after_unread: bool,
+    /// dbt Cloud jobs started when this one ends.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<String>,
+    /// What the DAG's tasks with no dbt command update.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub outlets: Vec<String>,
+    /// DAGs scheduled on an asset `outlets` holds.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub feeds: Vec<String>,
     pub steps: Vec<StepAnswer>,
     /// Distinct nodes the steps run, counted once however many steps run them.
     pub nodes: usize,
@@ -2048,6 +2222,16 @@ pub fn answer(graph: &Graph, read: &Read, ji: usize) -> JobAnswer {
         .map(|&si| {
             let s = &read.steps[si];
             let sv = step_view(graph, read, si, None);
+            let label = sv.label(&view);
+            // An Airflow task only: the sensors wait on a DAG's tasks by name.
+            let waited_by = if job.kind == AIRFLOW && !s.name.is_empty() {
+                awaiting(read, &job.name, &s.name)
+                    .into_iter()
+                    .map(|(dag, id, whole)| format!("{}{}", sensor_text(dag, id), if whole { " (whole run)" } else { "" }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let runs = s.executes();
             let nodes: Vec<NodeRef> = if runs {
                 let mut ids = s.nodes.clone();
@@ -2074,14 +2258,27 @@ pub fn answer(graph: &Graph, read: &Read, ji: usize) -> JobAnswer {
                 unresolved: s.unresolved.clone(),
                 runs_nothing,
                 warnings: s.warnings.clone(),
+                upstream: sv.upstream,
+                downstream: sv.downstream,
+                waited_by,
+                outlets: sv.outlets,
+                feeds: sv.feeds,
                 node_count: nodes.len(),
                 nodes,
-                label: sv.label(&view),
+                label,
             }
         })
         .collect();
     distinct.sort_unstable();
     distinct.dedup();
+    // Two tasks may update one asset; said once, in the order first met.
+    let mut outlets: Vec<String> = Vec::new();
+    for o in &job.outlets {
+        if !outlets.contains(o) {
+            outlets.push(o.clone());
+        }
+    }
+    let feeds = fed_by(read, &outlets);
     JobAnswer {
         kind: job.kind,
         name: job.name.clone(),
@@ -2090,6 +2287,27 @@ pub fn answer(graph: &Graph, read: &Read, ji: usize) -> JobAnswer {
         file: job.file.clone(),
         line: job.line,
         schedule: view.start_line(),
+        sensors: job
+            .sensors
+            .iter()
+            .map(|s| {
+                let one = s.tasks.len() == 1;
+                SensorAnswer {
+                    id: s.id.clone(),
+                    dag: s.dag.clone(),
+                    task: if one { s.tasks[0].clone() } else { String::new() },
+                    tasks: if one { Vec::new() } else { s.tasks.clone() },
+                    task_group: s.group.clone(),
+                }
+            })
+            .collect(),
+        assets: view.assets.clone(),
+        assets_unread: view.assets_unread.clone(),
+        after: view.after.clone(),
+        after_unread: view.after_unread,
+        triggers: view.triggers.clone(),
+        outlets,
+        feeds,
         steps,
         nodes: distinct.len(),
         not_read: unread(read),
@@ -2336,6 +2554,21 @@ pub fn summary(read: &Read) -> Summary {
     }
 }
 
+/// The keys `tests/fixtures/jobs/airflow_renamed` renames, for the tests that
+/// read it here and in `job.rs`; `scripts/compare_with_dbt.py` keeps its own copy.
+#[cfg(test)]
+pub(crate) const RENAMED_KEYS: [(&str, &str); 9] = [
+    ("dag_id", "pipeline.name"),
+    ("schedule", "pipeline.cron"),
+    ("tasks", "steps"),
+    ("task_id", "id"),
+    ("command", "dbt"),
+    ("sensors", "waits"),
+    ("sensor_id", "id"),
+    ("external_dag_id", "upstream_dag"),
+    ("external_task_id", "upstream_task"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2509,17 +2742,7 @@ tasks:
         let d = dir("renamed");
         write(&d, "a/shop_daily.yml", DAG);
         write(&d, "b/reports.yaml", RENAMED);
-        let keys = [
-            ("dag_id", "pipeline.name"),
-            ("schedule", "pipeline.cron"),
-            ("tasks", "steps"),
-            ("task_id", "id"),
-            ("command", "dbt"),
-            ("sensors", "waits"),
-            ("sensor_id", "id"),
-            ("external_dag_id", "upstream_dag"),
-            ("external_task_id", "upstream_task"),
-        ];
+        let keys = RENAMED_KEYS;
         let g = graph();
         let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("b"), &keys), source(AIRFLOW, &d.join("a"), &[])]);
         let reports = &read.jobs[0];
@@ -2532,6 +2755,53 @@ tasks:
         assert_eq!(view.waits_for, ["shop_daily › marts"]);
         let marts = read.steps.iter().position(|s| s.name == "marts").unwrap();
         assert_eq!(step_view(&g, &read, marts, None).waited_by, ["shop_reports › wait_daily"]);
+    }
+
+    #[test]
+    fn a_sensor_without_an_id_is_its_dag_alone_and_a_whole_run_sensor_awaits_every_task() {
+        let d = dir("sensor-no-id");
+        write(&d, "daily.yml", DAG);
+        write(&d, "watch.yml", "dag_id: shop_watch\nschedule: null\nsensors:\n  - external_dag_id: shop_daily\n    external_task_id: marts\n  - task_id: any\n    external_dag_id: shop_daily\ntasks:\n  - task_id: t\n    command: dbt run\n");
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        let at = |name: &str| read.steps.iter().position(|s| s.name == name).unwrap();
+        // The page words a whole-run sensor like any other: only `--job` marks it.
+        assert_eq!(step_view(&g, &read, at("marts"), None).waited_by, ["shop_watch", "shop_watch › any"]);
+        assert_eq!(step_view(&g, &read, at("stage"), None).waited_by, ["shop_watch › any"]);
+        let daily = read.jobs.iter().position(|j| j.name == "shop_daily").unwrap();
+        let asked = answer(&g, &read, daily);
+        let marts = asked.steps.iter().find(|s| s.name == "marts").unwrap();
+        assert_eq!(marts.waited_by, ["shop_watch", "shop_watch › any (whole run)"]);
+    }
+
+    #[test]
+    fn a_sensor_on_several_tasks_or_a_group_is_not_one_on_the_whole_run() {
+        let d = dir("sensor-tasks");
+        write(&d, "daily.yml", DAG);
+        write(
+            &d,
+            "watch.yml",
+            "dag_id: shop_watch\nschedule: null\nsensors:\n  - task_id: both\n    external_dag_id: shop_daily\n    external_task_ids: [stage, marts]\n  \
+             - task_id: grp\n    external_dag_id: shop_daily\n    external_task_group_id: loading\n  \
+             - task_id: one\n    external_dag_id: shop_daily\n    external_task_ids: stage\n  \
+             - task_id: plain\n    external_dag_id: shop_daily\n    external_task_id: marts\n    external_task_ids: [stage]\n\
+             tasks:\n  - task_id: t\n    command: dbt run\n",
+        );
+        let g = graph();
+        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        let at = |name: &str| read.steps.iter().position(|s| s.name == name).unwrap();
+        // The group gates no task, since its tasks are not read; a task id wins over a list.
+        assert_eq!(step_view(&g, &read, at("stage"), None).waited_by, ["shop_watch › both", "shop_watch › one"]);
+        assert_eq!(step_view(&g, &read, at("marts"), None).waited_by, ["shop_watch › both", "shop_watch › plain"]);
+        let watch = read.jobs.iter().position(|j| j.name == "shop_watch").unwrap();
+        assert_eq!(
+            job_view(&read, watch).waits_for,
+            ["shop_daily › stage", "shop_daily › marts", "shop_daily › task group loading", "shop_daily › stage", "shop_daily › marts"]
+        );
+        let daily = read.jobs.iter().position(|j| j.name == "shop_daily").unwrap();
+        for step in answer(&g, &read, daily).steps {
+            assert!(step.waited_by.iter().all(|w| !w.contains("whole run")), "{}: {:?}", step.name, step.waited_by);
+        }
     }
 
     #[test]
@@ -3111,20 +3381,9 @@ jobs:
     #[test]
     fn the_job_fixtures_read_whole() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("jobs");
-        let renamed = [
-            ("dag_id", "pipeline.name"),
-            ("schedule", "pipeline.cron"),
-            ("tasks", "steps"),
-            ("task_id", "id"),
-            ("command", "dbt"),
-            ("sensors", "waits"),
-            ("sensor_id", "id"),
-            ("external_dag_id", "upstream_dag"),
-            ("external_task_id", "upstream_task"),
-        ];
         let sources = [
             source(AIRFLOW, &fixtures.join("airflow"), &[]),
-            source(AIRFLOW, &fixtures.join("airflow_renamed"), &renamed),
+            source(AIRFLOW, &fixtures.join("airflow_renamed"), &RENAMED_KEYS),
             source(DBT_CLOUD, &fixtures.join("dbt_cloud"), &[]),
         ];
         let (read, _) = build(&Graph::build(Default::default(), Path::new("manifest.json"), 0, 0), &fixtures, &sources);

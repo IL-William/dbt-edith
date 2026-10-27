@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.57.0 - 2026-10-28
+
+- Print under each step of `--job` what it runs after and before, the sensors
+  that await it, and the assets it updates with the DAGs they start, and under
+  a DAG its sensors by id with what they wait for, in the text and the JSON
+  (0124). A sensor on several tasks (`external_task_ids`) or on a task group
+  (`external_task_group_id`) is read as such and no longer as one on the whole
+  run, and a sensor written without an id no longer shows a dangling `›` in the
+  Jobs tab.
+
 ## 1.56.0 - 2026-10-27
 
 - Attach to every release a Windows `dbt-edith.exe`, and `dbt-edith-arm64.exe`

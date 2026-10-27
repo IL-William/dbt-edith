@@ -37,7 +37,7 @@ pub const HELP: &str = concat!(
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
     "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
     "--selector NAME                 a selector of selectors.yml\n",
-    "--job NAME                      a job's steps and their nodes\n",
+    "--job NAME                      a job's steps, nodes and order\n",
     "--column MODEL.COLUMN           a column's lineage, over the cache beside the manifest\n",
     "  --up N|all --down N|all       how far, 0 by default\n",
     "  --stop-at window,aggregate    roles not walked past downstream\n",

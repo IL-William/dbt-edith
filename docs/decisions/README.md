@@ -127,6 +127,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0121](0121-git-runs-nothing-a-repositorys-own-config-names.md) | git runs nothing a repository's own configuration names | adding a git command, running git on a timer or in a folder nobody picked, or changing the keys git may find in a repository's configuration |
 | [0122](0122-the-key-travels-in-a-header-per-origin-never-in-a-cookie.md) | The key travels in a header, per origin, never in a cookie | changing how the page or a tool presents the launch key, adding a way in that is not a plain request, or setting a cookie |
 | [0123](0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md) | The Windows .exe is built by CI and the update downloads it | changing what a release carries, how the Windows `.exe` is built, or what the update types for a binary that came from a release |
+| [0124](0124-a-jobs-answer-carries-its-order-as-the-files-write-it.md) | A job's answer carries its order as the files write it | changing what `--job` prints of the order between tasks and DAGs, how a sensor or a task's `depends_on` is worded, or whether the order is followed or checked |
 
 ## Keeping these honest
 
