@@ -123,6 +123,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0117](0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md) | The last build per environment is read from dbt_artifacts, on a click, and never kept | showing a model's runs read from the warehouse, changing what the builds read selects or sends, or putting a status on a lineage box |
 | [0118](0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md) | An indirect edge ends on its model's box and names its clause | changing what the page asks collin for, how a downstream indirect edge is drawn or walked, what names an indirect role on the page, or how many boxes a column's canvas draws |
 | [0119](0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md) | A job's builds are judged against its own clock, in the zone its source names | changing what Builds by job calls late, reading a cron or a time zone anywhere, or adding a key to a job source |
+| [0120](0120-the-update-empties-the-clones-target-once-installed.md) | The update empties the clone's target once installed | changing what the update types after the install, or where a cargo-installed binary's build leaves its files |
 
 ## Keeping these honest
 

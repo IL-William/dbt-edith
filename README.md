@@ -93,9 +93,11 @@ without it, cargo picks the newest it may. `cargo build --release --locked`
 leaves the same binary at `target/release/dbt-edith` if you would rather not
 install it.
 
-To update, `git pull` and run the same `cargo install` again. dbt-edith asks
-GitHub, through git, whether a newer release is out, every hour from midnight
-to 09:00 Paris time, and offers that command in the status bar when one is.
+To update, `git pull` and run the same `cargo install` again, then
+`cargo clean --release` in the clone, which empties the `target/release` folder
+the build leaves there. dbt-edith asks GitHub, through git, whether a newer
+release is out, every hour from midnight to 09:00 Paris time, and offers that
+command in the status bar when one is.
 **Check for updates**, in the menu under Edith at the top left, asks at once
 ([docs/features/updates.md](docs/features/updates.md)).
 

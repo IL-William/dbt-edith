@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.54.1 - 2026-10-27
+
+- Empty the clone's build folder once an update has installed, so updates no
+  longer fill the disk (0120). The update to this release is typed by the
+  version before it, which has no clean, so that first one leaves the folder
+  for `cargo clean --release` by hand.
+
 ## 1.54.0 - 2026-10-27
 
 - Show each job's last builds in a Builds by job section of Reports, judged

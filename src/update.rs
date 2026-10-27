@@ -626,9 +626,26 @@ pub fn how(source: &Path, exe: &Path, shell: Option<Shell>, windows: bool) -> Re
     } else {
         ("build", format!("cargo build --release --locked --manifest-path \"{}\"", spell(&source.join("Cargo.toml"))?))
     };
+    // Only an install: a binary built in the clone runs from its `target/`,
+    // which the clean would delete. `--release` because an install builds
+    // nothing else: the clone's `target/debug` and test binaries, which
+    // someone developing in it uses (and an editor may hold open on Windows),
+    // are left alone. `--target-dir` names the clone's own folder, so a
+    // `CARGO_TARGET_DIR` or `build.target-dir` shared with other projects is
+    // never the one emptied; when cargo built elsewhere, this finds nothing to
+    // remove and succeeds (0120).
+    let clean = if installed {
+        Some(format!(
+            "cargo clean --release --manifest-path \"{}\" --target-dir \"{}\"",
+            spell(&source.join("Cargo.toml"))?,
+            spell(&source.join("target"))?
+        ))
+    } else {
+        None
+    };
     let swap = if windows { Some(spell(exe)?) } else { None };
     Ok(How {
-        command: compose(shell, &src, &step, swap.as_deref()),
+        command: compose(shell, &src, &step, clean.as_deref(), swap.as_deref()),
         kind,
         source: src,
         exe: exe.file_name().ok_or(Why::Elsewhere)?.to_string_lossy().into_owned(),
@@ -669,21 +686,35 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
 /// would read the put-back as success and claim an install that never was
 /// (0111). The text holds no quote, `$` or backtick, since it sits inside a
 /// string in either shell.
-fn compose(shell: Shell, source: &str, step: &str, swap: Option<&str>) -> String {
+/// With `clean`, the clone's build folder is emptied once the install worked
+/// (0120), since cargo never removes what an earlier build left in it. It sits
+/// after the restore group, never inside it, and its failure changes nothing:
+/// the install worked, the binary stays, and the closing line is still
+/// printed. A Posix brace group ends its last command on `;`, and PowerShell
+/// goes on after a failed native command by itself.
+fn compose(shell: Shell, source: &str, step: &str, clean: Option<&str>, swap: Option<&str>) -> String {
     let pull =
         format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" pull --ff-only origin main");
+    let printed = format!("printf '\\n%s\\n' '{DONE}'");
+    let closing = match clean {
+        None => printed,
+        Some(clean) => format!("{{ {clean}; {printed}; }}"),
+    };
+    let cleaned = clean.map(|clean| format!("{clean}; ")).unwrap_or_default();
     match (shell, swap) {
-        (Shell::Posix, None) => format!("{pull} && {step} && printf '\\n%s\\n' '{DONE}'"),
+        (Shell::Posix, None) => format!("{pull} && {step} && {closing}"),
         (Shell::Posix, Some(exe)) => {
             format!(
                 "{pull} && mv -f \"{exe}\" \"{exe}.old\" && ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
-                 && printf '\\n%s\\n' '{DONE}'"
+                 && {closing}"
             )
         }
-        (Shell::PowerShell, None) => format!("{pull}; if ($?) {{ {step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} }}"),
+        (Shell::PowerShell, None) => {
+            format!("{pull}; if ($?) {{ {step}; if ($?) {{ {cleaned}Write-Host \"\"; Write-Host \"{DONE}\" }} }}")
+        }
         (Shell::PowerShell, Some(exe)) => format!(
             "{pull}; if ($?) {{ Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
-             if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
+             if ($?) {{ {cleaned}Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
         ),
     }
 }
@@ -1158,10 +1189,27 @@ mod tests {
             how.command,
             format!(
                 "git -C \"{s}\" fetch --tags --force origin; git -C \"{s}\" pull --ff-only origin main && \
-                 cargo install --locked --path \"{s}\" && printf '\\n%s\\n' '{DONE}'"
+                 cargo install --locked --path \"{s}\" && {{ cargo clean --release --manifest-path \"{s}/Cargo.toml\" \
+                 --target-dir \"{s}/target\"; printf '\\n%s\\n' '{DONE}'; }}"
             )
         );
         assert_eq!((how.kind, how.renames, how.exe.as_str()), ("install", false, "dbt-edith"));
+        let _ = std::fs::remove_dir_all(source.parent().unwrap());
+    }
+
+    /// The clean is built by `how()` itself on Windows: in the success branch
+    /// of the install and not in the one that puts the binary back (0120).
+    #[test]
+    fn on_windows_the_clean_is_spelled_by_how_and_runs_after_the_install_only() {
+        let (source, root) = layout("winclean");
+        let exe = root.join("bin").join("dbt-edith");
+        let how = how(&source, &exe, Some(Shell::PowerShell), true).unwrap();
+        let s = quotable(&source, true).unwrap();
+        let clean = format!("cargo clean --release --manifest-path \"{s}/Cargo.toml\" --target-dir \"{s}/target\"");
+        let (ok, failed) = how.command.split_once(" else ").unwrap();
+        assert!(ok.ends_with(&format!("{clean}; Write-Host \"\"; Write-Host \"{DONE}\" }}")), "{}", how.command);
+        assert!(failed.starts_with("{ Move-Item") && !failed.contains("cargo clean"), "{}", how.command);
+        assert_eq!(how.command.matches("cargo clean").count(), 1, "{}", how.command);
         let _ = std::fs::remove_dir_all(source.parent().unwrap());
     }
 
@@ -1173,6 +1221,8 @@ mod tests {
         assert_eq!(built.kind, "build");
         assert!(built.command.contains(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
         assert!(built.command.ends_with(&format!("&& printf '\\n%s\\n' '{DONE}'")));
+        // The binary just built sits in the folder a clean would empty.
+        assert!(!built.command.contains("cargo clean"), "{}", built.command);
         // Not on Windows, where the build would overwrite the running file.
         assert_eq!(how(&source, &exe, Some(Shell::Posix), true), Err(Why::Locked));
         let _ = std::fs::remove_dir_all(source.parent().unwrap());
@@ -1219,7 +1269,7 @@ mod tests {
         let exe = "C:/Users/ada/.cargo/bin/dbt-edith.exe";
         let step = "cargo install --locked --path \"C:/src/dbt-edith\"";
         assert_eq!(
-            compose(Shell::Posix, "C:/src/dbt-edith", step, Some(exe)),
+            compose(Shell::Posix, "C:/src/dbt-edith", step, None, Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
                  git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
@@ -1227,7 +1277,7 @@ mod tests {
             )
         );
         assert_eq!(
-            compose(Shell::PowerShell, "C:/src/dbt-edith", step, Some(exe)),
+            compose(Shell::PowerShell, "C:/src/dbt-edith", step, None, Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
                  git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
@@ -1236,37 +1286,80 @@ mod tests {
             )
         );
         assert_eq!(quotable(Path::new(r"C:\Users\ada\.cargo\bin\dbt-edith.exe"), true).as_deref(), Some(exe));
+        // With the clean, it follows the install in the success branch alone,
+        // outside the group that puts the binary back (0120).
+        let clean = "cargo clean --release --manifest-path \"C:/src/dbt-edith/Cargo.toml\" --target-dir \"C:/src/dbt-edith/target\"";
+        assert_eq!(
+            compose(Shell::Posix, "C:/src/dbt-edith", step, Some(clean), Some(exe)),
+            format!(
+                "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
+                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
+                 ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && \
+                 {{ {clean}; printf '\\n%s\\n' '{DONE}'; }}"
+            )
+        );
+        assert_eq!(
+            compose(Shell::PowerShell, "C:/src/dbt-edith", step, Some(clean), Some(exe)),
+            format!(
+                "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
+                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
+                 Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
+                 if ($?) {{ {clean}; Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
+            )
+        );
     }
 
     /// The closing line is chained after the install in every shell and swap
-    /// combination, and no failure path reaches it (0111).
+    /// combination, and no failure path reaches it (0111). The clean (0120)
+    /// rides with it, and a missing clean leaves every string as it was.
     #[test]
     fn the_closing_line_follows_the_install_alone() {
         assert!(!DONE.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
         let (exe, step) = ("/bin/dbt-edith", "cargo install --locked --path \"/src\"");
-        let posix = compose(Shell::Posix, "/src", step, None);
+        let clean = "cargo clean --release --manifest-path \"/src/Cargo.toml\" --target-dir \"/src/target\"";
+        let posix = compose(Shell::Posix, "/src", step, None, None);
         assert!(posix.ends_with(&format!("{step} && printf '\\n%s\\n' '{DONE}'")), "{posix}");
         // The restore ends in `false`, or the subshell would exit 0 after a
         // failed build and the chain would go on to the line.
-        let swapped = compose(Shell::Posix, "/src", step, Some(exe));
+        let swapped = compose(Shell::Posix, "/src", step, None, Some(exe));
         assert!(swapped.contains(&format!("({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && printf")), "{swapped}");
-        let ps = compose(Shell::PowerShell, "/src", step, None);
+        let ps = compose(Shell::PowerShell, "/src", step, None, None);
         assert!(ps.ends_with(&format!("{{ {step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} }}")), "{ps}");
-        let ps_swapped = compose(Shell::PowerShell, "/src", step, Some(exe));
+        let ps_swapped = compose(Shell::PowerShell, "/src", step, None, Some(exe));
         let (ok, failed) = ps_swapped.split_once(" else ").unwrap();
         assert!(ok.ends_with(&format!("{step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }}")), "{ps_swapped}");
         assert!(failed.starts_with("{ Move-Item") && !failed.contains("Write-Host"), "{ps_swapped}");
+
+        // With the clean: after the install, in a group ending on `;` that the
+        // restore does not contain, before the line.
+        let group = format!("{{ {clean}; printf '\\n%s\\n' '{DONE}'; }}");
+        let posix = compose(Shell::Posix, "/src", step, Some(clean), None);
+        assert!(posix.ends_with(&format!("{step} && {group}")), "{posix}");
+        let swapped = compose(Shell::Posix, "/src", step, Some(clean), Some(exe));
+        assert!(swapped.ends_with(&format!("({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && {group}")), "{swapped}");
+        assert_eq!(swapped.matches("cargo clean").count(), 1, "{swapped}");
+        let line = format!("{{ {clean}; Write-Host \"\"; Write-Host \"{DONE}\" }}");
+        let ps = compose(Shell::PowerShell, "/src", step, Some(clean), None);
+        assert!(ps.ends_with(&format!("{{ {step}; if ($?) {line} }}")), "{ps}");
+        let ps_swapped = compose(Shell::PowerShell, "/src", step, Some(clean), Some(exe));
+        let (ok, failed) = ps_swapped.split_once(" else ").unwrap();
+        assert!(ok.ends_with(&format!("{step}; if ($?) {line}")), "{ps_swapped}");
+        assert!(failed.starts_with("{ Move-Item") && !failed.contains("cargo clean"), "{ps_swapped}");
+        assert_eq!(ps_swapped.matches("cargo clean").count(), 1, "{ps_swapped}");
     }
 
     /// The real sh, with a stand-in for the install step: success prints the
     /// line, a failed step does not, and with the swap the binary is put back
-    /// and the command still fails.
+    /// and the command still fails. The clean (0120) runs after a good
+    /// install only, and a failing one neither hides the line nor puts the
+    /// binary back.
     #[cfg(unix)]
     #[test]
     fn sh_prints_the_closing_line_only_when_the_install_worked() {
         let dir = scratch("closing");
         let exe = dir.join("dbt-edith");
         let repo = dir.join("clone");
+        let marker = dir.join("cleaned");
         let git = |args: &[&str]| {
             let out = std::process::Command::new("git")
                 .args(args)
@@ -1290,13 +1383,35 @@ mod tests {
             (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string())
         };
         let e = exe.to_str().unwrap();
+        let touches = format!("touch \"{}\"", marker.display());
         for swap in [None, Some(e)] {
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "true", swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "true", None, swap));
             assert!(ok && out.contains(DONE), "{swap:?}: {out}");
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "false", swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "false", None, swap));
             assert!(!ok && !out.contains(DONE), "{swap:?}: a failed step must not claim an install: {out}");
+            if swap.is_some() {
+                assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
+            }
+
+            // The install worked and the clean did too: it ran, then the line.
+            let _ = std::fs::remove_file(&marker);
+            std::fs::write(&exe, "old").unwrap();
+            let (ok, out) = run(&compose(Shell::Posix, clone, "true", Some(&touches), swap));
+            assert!(ok && out.contains(DONE) && marker.exists(), "{swap:?}: {out}");
+            // The install worked and the clean failed: the line still comes,
+            // and the binary is not put back over the new one.
+            std::fs::write(&exe, "old").unwrap();
+            let installs = format!("printf new > \"{e}\"");
+            let (ok, out) = run(&compose(Shell::Posix, clone, &installs, Some("false"), swap));
+            assert!(ok && out.contains(DONE), "{swap:?}: a failed clean must not hide the line: {out}");
+            assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new", "{swap:?}: the install stays");
+            // The install failed: the clean never ran.
+            let _ = std::fs::remove_file(&marker);
+            std::fs::write(&exe, "old").unwrap();
+            let (ok, out) = run(&compose(Shell::Posix, clone, "false", Some(&touches), swap));
+            assert!(!ok && !out.contains(DONE) && !marker.exists(), "{swap:?}: {out}");
             if swap.is_some() {
                 assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
             }
@@ -1367,7 +1482,7 @@ mod tests {
         run("git", &["-C", r, "commit", "-q", "--allow-empty", "-m", "two"]);
         run("git", &["-C", r, "tag", "v1.28.0"]);
 
-        run("sh", &["-c", &compose(Shell::Posix, c, "true", None)]);
+        run("sh", &["-c", &compose(Shell::Posix, c, "true", None, None)]);
         assert_eq!(run("git", &["-C", c, "log", "-1", "--format=%s"]), "two", "the clone moved");
         assert_eq!(run("git", &["-C", c, "describe", "--tags"]), "v1.28.0");
         let _ = std::fs::remove_dir_all(&dir);

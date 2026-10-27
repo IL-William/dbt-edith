@@ -1,6 +1,6 @@
 # 0111. The update ends on a line and a card, and a failed build is a failure
 
-Date: 2026-10-21 · Status: accepted · Amends 0095
+Date: 2026-10-21 · Status: accepted, amended by 0120 · Amends 0095
 
 **Trigger:** read before changing what the update command prints or ends on,
 what the page shows once it is typed or installed, or where a message in
