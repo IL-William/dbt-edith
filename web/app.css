@@ -256,6 +256,10 @@ kbd {
 }
 .envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: #2c5a8a; }
 .envmenu button.updrun:focus:not(:focus-visible) { background: var(--accent-dim); }
+/* The second command of a choice, drawn as the menu's other buttons are. */
+.envmenu button.updrun.alt { background: var(--bg-3); border-color: var(--line); font-weight: 500; }
+.envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: #26303e; border-color: #3a475a; }
+.envmenu button.updrun.alt:focus:not(:focus-visible) { background: var(--bg-3); }
 .updmenu .updready { padding: 4px 8px 2px; font: 600 12px var(--ui); color: var(--ok); }
 .updmenu .menunote.updstep { padding-top: 3px; padding-bottom: 6px; color: var(--fg); }
 /* A button among the menu's rows, drawn as the app's other buttons are. */

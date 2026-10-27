@@ -66,7 +66,7 @@ fn parse_shell(line: &str) -> Option<ShellSpec> {
 }
 
 #[cfg(windows)]
-fn find_git_bash() -> Option<PathBuf> {
+pub(crate) fn find_git_bash() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA"] {
         if let Ok(base) = std::env::var(var) {

@@ -24,7 +24,9 @@
 //!   - nothing installs on its own. The update is a command typed into the
 //!     terminal for the user to run, as collin's install is (0042), and only
 //!     for a binary built from a clone on this machine, where updating means a
-//!     pull and a rebuild. Any other, a copy carried from another machine above
+//!     pull and a rebuild, or, on Windows, for the `.exe` a release carries, which
+//!     downloads the next one: offered first, beside the build where there is
+//!     one (0123). Any other, a copy carried from another machine above
 //!     all, is told what is out and why there is no command. Once another
 //!     binary sits at the running one's path, the page says to restart
 //!     rather than offer the command again (0095).
@@ -357,8 +359,9 @@ pub struct Update {
     current: String,
     /// Where the answer is kept. None when there is no config directory.
     file: Option<PathBuf>,
-    /// The command that installs a newer one here, or why there is none.
-    pub how: Result<How, Why>,
+    /// The commands that install a newer one here, the recommended first, or
+    /// why there is none (0123).
+    pub hows: Result<Vec<How>, Why>,
     known: Mutex<Known>,
     spread: u64,
     /// The running binary's path, and when its file was last written as this
@@ -387,12 +390,12 @@ impl Drop for OnItsWay<'_> {
 }
 
 impl Update {
-    pub fn new(off: bool, file: Option<PathBuf>, how: Result<How, Why>) -> Update {
+    pub fn new(off: bool, file: Option<PathBuf>, hows: Result<Vec<How>, Why>) -> Update {
         Update {
             off,
             current: env!("CARGO_PKG_VERSION").to_string(),
             file,
-            how,
+            hows,
             known: Mutex::default(),
             spread: spread(),
             binary: None,
@@ -547,9 +550,10 @@ impl Update {
 pub struct How {
     pub command: String,
     /// `install` for a binary `cargo install` put in place, `build` for one
-    /// `cargo build --release` left in the clone.
+    /// `cargo build --release` left in the clone, `download` for the release's
+    /// own `.exe` (0123).
     pub kind: &'static str,
-    /// The clone it pulls.
+    /// The clone it pulls, or for `download` the folder it downloads from.
     pub source: String,
     /// The running binary's file name.
     pub exe: String,
@@ -565,10 +569,11 @@ pub struct How {
 pub enum Why {
     /// Neither installed by cargo nor built in a clone still on this machine.
     Elsewhere,
-    /// Built in its clone, on Windows. cargo links the binary there from the
-    /// one it writes in `deps/`, the same file under another name, so
-    /// renaming the running one frees its name but not that file, which the
-    /// build must overwrite.
+    /// Built in its clone, on Windows, or anywhere else under the clone's
+    /// `target/`, a developer's build a download would replace (0123). cargo
+    /// links the binary in `target/release` from the one it writes in `deps/`,
+    /// the same file under another name, so renaming the running one frees its
+    /// name but not that file, which the build must overwrite.
     Locked,
     /// The terminal's shell is none the command is written for.
     Shell,
@@ -653,6 +658,42 @@ pub fn how(source: &Path, exe: &Path, shell: Option<Shell>, windows: bool) -> Re
     })
 }
 
+/// Every command that can update this binary here, the recommended first, or
+/// why there is none (0123). Off Windows that is the one `how` gives. On
+/// Windows a download of the release's `.exe` comes first, and the build or the
+/// install `how` gives follows it for a binary cargo installed, so a machine
+/// that can compile still can. A binary anywhere under the clone's `target/`,
+/// `release`, `debug` or a target triple's, is a developer's build, which a
+/// download would replace: no command. A list that comes out empty carries the
+/// first refusal, the download's.
+pub fn hows(source: &Path, exe: &Path, shell: Option<Shell>, windows: bool) -> Result<Vec<How>, Why> {
+    let cargo = how(source, exe, shell, windows);
+    if windows && exe.starts_with(source.join("target")) {
+        return Err(Why::Locked);
+    }
+    if !windows {
+        return cargo.map(|c| vec![c]);
+    }
+    match (download(exe, shell, windows), cargo) {
+        (Ok(d), Ok(c)) => Ok(vec![d, c]),
+        (Ok(d), Err(_)) => Ok(vec![d]),
+        (Err(_), Ok(c)) => Ok(vec![c]),
+        (Err(why), Err(_)) => Err(why),
+    }
+}
+
+/// The commands for a binary whose clone may be gone: `source` is None when
+/// the folder it was built from cannot be found, a copy cross-built elsewhere
+/// or an install whose clone was moved. On Windows the download needs no clone,
+/// so it is still offered (0123); anywhere else there is nothing to pull.
+pub fn hows_from(source: Option<&Path>, exe: &Path, shell: Option<Shell>, windows: bool) -> Result<Vec<How>, Why> {
+    match source {
+        Some(source) => hows(source, exe, shell, windows),
+        None if windows => download(exe, shell, windows).map(|d| vec![d]),
+        None => Err(Why::Elsewhere),
+    }
+}
+
 /// A path as both shells read it inside double quotes: forward slashes on
 /// Windows, which Git Bash and PowerShell both take. None for one holding a
 /// character either would expand or end the quotes on: `!` is bash's and
@@ -721,6 +762,93 @@ fn compose(shell: Shell, source: &str, step: &str, clean: Option<&str>, swap: Op
 
 /// What the command ends on when the install worked (0111).
 const DONE: &str = "dbt-edith is installed. Stop dbt-edith where you started it (Ctrl+C) and start it again to run it.";
+
+/// The file a release carries for the architecture this binary was built for
+/// (0123): the x64 one, which runs on Windows on ARM too, or the native ARM64
+/// one. An update keeps to the architecture it has, so an ARM64 build never
+/// swaps itself for the emulated one.
+fn asset(arm64: bool) -> &'static str {
+    if arm64 { "dbt-edith-arm64.exe" } else { "dbt-edith.exe" }
+}
+
+/// The command that replaces the running `.exe` of a release with the next
+/// one, downloaded from the latest release and checked against its SHA-256
+/// first (0123). `latest` names no version, so the command is the same all the
+/// time and `How` is made once, at start. Only a Windows build is ever the
+/// release's own, so anywhere else there is no command.
+pub fn download(exe: &Path, shell: Option<Shell>, windows: bool) -> Result<How, Why> {
+    download_of(asset(cfg!(target_arch = "aarch64")), exe, shell, windows)
+}
+
+fn download_of(asset: &str, exe: &Path, shell: Option<Shell>, windows: bool) -> Result<How, Why> {
+    if !windows {
+        return Err(Why::Elsewhere);
+    }
+    let shell = shell.ok_or(Why::Shell)?;
+    let base = format!("{REPO}/releases/latest/download");
+    let path = quotable(exe, windows).ok_or(Why::Path)?;
+    Ok(How {
+        command: compose_download(shell, &base, asset, &path),
+        kind: "download",
+        source: base,
+        exe: exe.file_name().ok_or(Why::Elsewhere)?.to_string_lossy().into_owned(),
+        renames: true,
+    })
+}
+
+/// Download `<base>/<asset>` and its hash beside `exe`, whatever `exe` is
+/// called, compare them, and only then swap: the running file steps aside as
+/// `<exe>.old`, the new one takes its name, and the old one comes back if that
+/// fails. A failure anywhere leaves `exe` as it was, removes what was
+/// downloaded and prints no `DONE`, so a failed update is a failure (0111).
+/// `base` is a parameter for the tests, which read a folder through `file://`
+/// and a server on this machine; curl is held to the base's scheme, and its
+/// redirects to HTTPS, which is what guards the file in transit (the hash comes
+/// from the same release, so it catches a truncated download, not a tampered
+/// one). The same rules as `compose` hold for the text: no quote, `$` or
+/// backtick in what is printed.
+fn compose_download(shell: Shell, base: &str, asset: &str, exe: &str) -> String {
+    let (new, sum) = (format!("{exe}.new"), format!("{exe}.sha256"));
+    let (url, sum_url) = (format!("{base}/{asset}"), format!("{base}/{asset}.sha256"));
+    // Quoted: zsh reads an unquoted `=https` as a command to look up.
+    let proto = format!("--proto '={}' --proto-redir '=https'", base.split("://").next().unwrap_or("https"));
+    match shell {
+        Shell::Posix => format!(
+            "(curl -fsSL {proto} -o \"{new}\" \"{url}\" && curl -fsSL {proto} -o \"{sum}\" \"{sum_url}\" && \
+             {{ [ \"$(sha256sum \"{new}\" | cut -d' ' -f1)\" = \"$(cut -d' ' -f1 \"{sum}\")\" ] \
+             || {{ printf '%s\\n' '{MISMATCH}'; false; }}; }} && rm -f \"{sum}\" \
+             || {{ rm -f \"{new}\" \"{sum}\"; false; }}) \
+             && {{ mv -f \"{exe}\" \"{exe}.old\" && (mv -f \"{new}\" \"{exe}\" || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
+             || {{ rm -f \"{new}\"; false; }}; }} \
+             && printf '\\n%s\\n' '{DONE}'"
+        ),
+        // 5.1, which Windows ships, has no `&&`; it also offers TLS 1.0 first
+        // and shows a progress bar that slows the download to a crawl. In a
+        // script block, so neither preference leaks into the user's session,
+        // and a profile's `$ErrorActionPreference='Stop'` cannot make a failed
+        // move throw past the put-back; each call names its `-ErrorAction`,
+        // which a profile's `$PSDefaultParameterValues` does not override. TLS
+        // 1.2 is added to what is on, not set, since that is process-wide; on
+        // the system default (0) it is left alone, which already allows it,
+        // where `0 -bor Tls12` would be Tls12 alone.
+        Shell::PowerShell => format!(
+            "& {{ $ErrorActionPreference='Continue'; $ProgressPreference='SilentlyContinue'; \
+             if ([Net.ServicePointManager]::SecurityProtocol -ne 0) {{ [Net.ServicePointManager]::SecurityProtocol = \
+             [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 }}; \
+             Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{url}\" -OutFile \"{new}\"; if ($?) {{ \
+             Invoke-WebRequest -ErrorAction Continue -UseBasicParsing -Uri \"{sum_url}\" -OutFile \"{sum}\"; if ($?) {{ \
+             if ((Get-FileHash -ErrorAction Continue -Algorithm SHA256 -LiteralPath \"{new}\").Hash -eq ((Get-Content -ErrorAction Continue -LiteralPath \"{sum}\") -split ' ')[0]) {{ \
+             Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ \
+             Move-Item -ErrorAction Continue -Force -LiteralPath \"{new}\" -Destination \"{exe}\"; \
+             if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -ErrorAction Continue -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} \
+             }} else {{ Write-Host \"{MISMATCH}\" }} }} }}; \
+             Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{new}\", \"{sum}\" }}"
+        ),
+    }
+}
+
+/// What the download prints when the hash is not the published one (0123).
+const MISMATCH: &str = "The download does not match its SHA-256, so nothing was replaced.";
 
 /// The page that says what a release changed: its section of CHANGELOG.md,
 /// published by the release workflow (0045).
@@ -1256,6 +1384,7 @@ mod tests {
             let odd = source.parent().unwrap().join(name);
             std::fs::rename(&source, &odd).unwrap();
             assert_eq!(how(&odd, &exe, Some(Shell::Posix), false), Err(Why::Path), "{name}");
+            assert_eq!(download(&odd.join("dbt-edith.exe"), Some(Shell::Posix), true), Err(Why::Path), "{name}");
             std::fs::rename(&odd, &source).unwrap();
         }
         // A bracket is a wildcard to PowerShell, so it counts on Windows alone.
@@ -1307,6 +1436,222 @@ mod tests {
                  if ($?) {{ {clean}; Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
             )
         );
+    }
+
+    #[test]
+    fn a_release_exe_on_windows_downloads_the_next_one() {
+        let exe = Path::new("C:/Users/ada/bin/dbt-edith.exe");
+        let base = "https://github.com/IL-William/dbt-edith/releases/latest/download";
+        let (url, sum_url) = (format!("{base}/dbt-edith.exe"), format!("{base}/dbt-edith.exe.sha256"));
+        let e = "C:/Users/ada/bin/dbt-edith.exe";
+
+        let sh = download_of("dbt-edith.exe", exe, Some(Shell::Posix), true).unwrap();
+        assert_eq!((sh.kind, sh.renames, sh.exe.as_str(), sh.source.as_str()), ("download", true, "dbt-edith.exe", base));
+        let c = &sh.command;
+        // curl may only speak and be redirected to HTTPS, what guards the file in transit.
+        let proto = "--proto '=https' --proto-redir '=https'";
+        assert!(c.starts_with(&format!("(curl -fsSL {proto} -o \"{e}.new\" \"{url}\" && curl -fsSL {proto} -o \"{e}.sha256\" \"{sum_url}\"")), "{c}");
+        assert!(c.contains(&format!("sha256sum \"{e}.new\"")) && c.contains(&format!("cut -d' ' -f1 \"{e}.sha256\"")), "the hash is checked: {c}");
+        // Nothing is swapped before the check, and a failure removes what came down.
+        let (check, swap) = c.split_once(&format!("&& {{ mv -f \"{e}\" \"{e}.old\"")).unwrap();
+        assert!(check.contains(&format!("{{ rm -f \"{e}.new\" \"{e}.sha256\"; false; }}")), "{c}");
+        assert!(check.contains(MISMATCH), "{c}");
+        // The new file takes the name, the old one comes back if that fails,
+        // and that ends in a failure (0111). Whatever fails after the download
+        // removes it.
+        assert!(swap.starts_with(&format!(" && (mv -f \"{e}.new\" \"{e}\" || {{ mv -f \"{e}.old\" \"{e}\"; false; }})")), "{c}");
+        assert!(swap.contains(&format!("|| {{ rm -f \"{e}.new\"; false; }}; }} && printf")), "{c}");
+        assert!(c.ends_with(&format!("&& printf '\\n%s\\n' '{DONE}'")), "DONE last: {c}");
+
+        let ps = download_of("dbt-edith.exe", exe, Some(Shell::PowerShell), true).unwrap();
+        assert_eq!((ps.kind, ps.renames), ("download", true));
+        let c = &ps.command;
+        // In a script block, so a profile's `Stop` cannot throw past the put-back
+        // and nothing set here outlives the command; each call names its own
+        // `-ErrorAction`; TLS 1.2 is added only when a protocol is set, never over the system default (0).
+        assert!(c.starts_with("& { $ErrorActionPreference='Continue'; $ProgressPreference='SilentlyContinue'; "), "{c}");
+        assert!(
+            c.contains(
+                "if ([Net.ServicePointManager]::SecurityProtocol -ne 0) { [Net.ServicePointManager]::SecurityProtocol = \
+                 [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 }; "
+            ),
+            "{c}"
+        );
+        let act = "-ErrorAction Continue";
+        assert!(c.contains(&format!("Invoke-WebRequest {act} -UseBasicParsing -Uri \"{url}\" -OutFile \"{e}.new\"")), "{c}");
+        assert!(c.contains(&format!("Invoke-WebRequest {act} -UseBasicParsing -Uri \"{sum_url}\" -OutFile \"{e}.sha256\"")), "{c}");
+        // Every move names it too, the put-back included, and so do the hash and
+        // the file it is checked against.
+        assert_eq!(c.matches("Move-Item -ErrorAction Continue -Force").count(), 3, "{c}");
+        assert_eq!(c.matches("Move-Item").count(), 3, "{c}");
+        assert!(
+            c.contains(&format!(
+                "(Get-FileHash -ErrorAction Continue -Algorithm SHA256 -LiteralPath \"{e}.new\").Hash -eq ((Get-Content -ErrorAction Continue -LiteralPath \"{e}.sha256\") -split ' ')[0]"
+            )),
+            "{c}"
+        );
+        let (swapped, failed) = c.split_once(" else { Move-Item").unwrap();
+        assert!(swapped.contains(&format!("Move-Item -ErrorAction Continue -Force -LiteralPath \"{e}\" -Destination \"{e}.old\"")), "{c}");
+        assert!(swapped.ends_with(&format!("if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }}")), "DONE after the swap: {c}");
+        // The put-back prints nothing, and a hash that differs says so.
+        assert!(failed.trim_start().starts_with(&format!("-ErrorAction Continue -Force -LiteralPath \"{e}.old\" -Destination \"{e}\" }}")), "{c}");
+        assert!(c.contains(&format!("else {{ Write-Host \"{MISMATCH}\" }}")), "{c}");
+        assert!(c.ends_with(&format!("Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{e}.new\", \"{e}.sha256\" }}")), "{c}");
+        assert!(!MISMATCH.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
+    }
+
+    /// The choice (0123): on Windows the download is offered first, and the
+    /// cargo command beside it for a binary cargo installed; a developer's
+    /// build in the clone is offered neither.
+    #[test]
+    fn on_windows_the_download_comes_first_and_cargo_follows_for_a_binary_it_installed() {
+        let kinds = |r: Result<Vec<How>, Why>| r.map(|h| h.iter().map(|h| h.kind).collect::<Vec<_>>());
+        let (source, root) = layout("choice");
+        let installed = root.join("bin").join("dbt-edith");
+        let posix = Some(Shell::Posix);
+        assert_eq!(kinds(hows(&source, &installed, posix, true)), Ok(vec!["download", "install"]));
+        // Anywhere else, a copy carried here or a clone gone: the download alone.
+        assert_eq!(kinds(hows(&source.join("gone"), &installed, posix, true)), Ok(vec!["download"]));
+        let carried = source.parent().unwrap().join("carried").join("dbt-edith");
+        assert_eq!(kinds(hows(&source, &carried, posix, true)), Ok(vec!["download"]));
+        // The clone's own build is a developer's, which a download would replace.
+        let built = source.join("target").join("release").join("dbt-edith");
+        assert_eq!(hows(&source, &built, posix, true), Err(Why::Locked));
+        // Nor is a debug build, or one for a target triple.
+        for under in [["target", "debug"], ["target", "x86_64-pc-windows-msvc"]] {
+            let dev = under.iter().fold(source.clone(), |p, part| p.join(part)).join("dbt-edith.exe");
+            assert_eq!(hows(&source, &dev, posix, true), Err(Why::Locked), "{under:?}");
+        }
+        let triple = source.join("target").join("x86_64-pc-windows-msvc").join("release").join("dbt-edith.exe");
+        assert_eq!(hows(&source, &triple, posix, true), Err(Why::Locked));
+        // A folder that only starts with the name is not under it.
+        let near = source.join("targets").join("dbt-edith.exe");
+        assert_eq!(kinds(hows(&source, &near, posix, true)), Ok(vec!["download"]));
+        // Off Windows nothing changes.
+        assert_eq!(kinds(hows(&source, &installed, posix, false)), Ok(vec!["install"]));
+        assert_eq!(hows(&source, &carried, posix, false), Err(Why::Elsewhere));
+        let debug = source.join("target").join("debug").join("dbt-edith");
+        assert_eq!(hows(&source, &debug, posix, false), Err(Why::Elsewhere), "off Windows it is as it was");
+        // A refusal drops its command; both refused, the download's is told.
+        assert_eq!(hows(&source, &installed, shell_kind("cmd.exe"), true), Err(Why::Shell));
+        let odd = source.parent().unwrap().join("it's $HOME");
+        std::fs::rename(&source, &odd).unwrap();
+        assert_eq!(kinds(hows(&odd, &installed, posix, true)), Ok(vec!["download"]), "the clone's path alone");
+        assert_eq!(hows(&odd, &odd.join("dbt-edith.exe"), posix, true), Err(Why::Path));
+        std::fs::rename(&odd, &source).unwrap();
+        let _ = std::fs::remove_dir_all(source.parent().unwrap());
+    }
+
+    /// A copy cross-built on another machine, or an install whose clone was
+    /// moved, has no clone to find: on Windows it is still offered the download.
+    #[test]
+    fn a_binary_with_no_clone_is_still_offered_the_download_on_windows() {
+        let kinds = |r: Result<Vec<How>, Why>| r.map(|h| h.iter().map(|h| h.kind).collect::<Vec<_>>());
+        let exe = Path::new("C:/Users/ada/bin/dbt-edith.exe");
+        assert_eq!(kinds(hows_from(None, exe, Some(Shell::Posix), true)), Ok(vec!["download"]));
+        assert_eq!(kinds(hows_from(None, exe, Some(Shell::PowerShell), true)), Ok(vec!["download"]));
+        assert_eq!(hows_from(None, exe, shell_kind("cmd.exe"), true), Err(Why::Shell));
+        assert_eq!(hows_from(None, Path::new("C:/it's $HOME/dbt-edith.exe"), Some(Shell::Posix), true), Err(Why::Path));
+        // Anywhere else, nothing is pulled and nothing downloaded.
+        assert_eq!(hows_from(None, Path::new("/home/ada/bin/dbt-edith"), Some(Shell::Posix), false), Err(Why::Elsewhere));
+        // With a clone it is `hows`.
+        let (source, root) = layout("fromclone");
+        let installed = root.join("bin").join("dbt-edith");
+        assert_eq!(kinds(hows_from(Some(&source), &installed, Some(Shell::Posix), true)), Ok(vec!["download", "install"]));
+        let _ = std::fs::remove_dir_all(source.parent().unwrap());
+    }
+
+    #[test]
+    fn a_release_exe_off_windows_gets_no_command() {
+        let exe = Path::new("/home/ada/bin/dbt-edith");
+        assert_eq!(download(exe, Some(Shell::Posix), false), Err(Why::Elsewhere));
+        // Windows, in a shell neither language is for.
+        let exe = Path::new("C:/Users/ada/bin/dbt-edith.exe");
+        assert_eq!(download(exe, shell_kind("cmd.exe"), true), Err(Why::Shell));
+    }
+
+    /// The architecture decides the file fetched, and the file lands under the
+    /// running one's own name, whatever that is called (0123).
+    #[test]
+    fn an_arm64_build_downloads_the_arm64_file_and_an_x64_one_the_x64_file() {
+        assert_eq!(asset(false), "dbt-edith.exe");
+        assert_eq!(asset(true), "dbt-edith-arm64.exe");
+        let exe = Path::new("C:/Users/ada/bin/edith.exe");
+        let base = "https://github.com/IL-William/dbt-edith/releases/latest/download";
+        for (name, arm) in [("dbt-edith.exe", false), ("dbt-edith-arm64.exe", true)] {
+            for shell in [Shell::Posix, Shell::PowerShell] {
+                let how = download_of(asset(arm), exe, Some(shell), true).unwrap();
+                let c = &how.command;
+                assert!(c.contains(&format!("\"{base}/{name}\"")) && c.contains(&format!("\"{base}/{name}.sha256\"")), "{c}");
+                assert!(c.contains("\"C:/Users/ada/bin/edith.exe.new\""), "{c}");
+                let other = if arm { "dbt-edith.exe" } else { "dbt-edith-arm64.exe" };
+                assert!(!c.contains(&format!("{base}/{other}")), "{c}");
+                assert_eq!(how.exe, "edith.exe");
+            }
+        }
+    }
+
+    /// The real sh and curl, on a folder standing for the release: a hash that
+    /// matches swaps the file in and ends on the line; one that does not, or
+    /// a hash file that is missing, leaves the file as it was, takes back what
+    /// came down and prints no line (0123). Needs `sha256sum`, which macOS
+    /// has from `coreutils` (`brew install coreutils`) if it lacks one.
+    #[cfg(unix)]
+    #[test]
+    fn sh_swaps_in_a_download_whose_hash_matches_and_keeps_the_exe_when_it_does_not() {
+        let dir = scratch("download");
+        let (release, bin) = (dir.join("release"), dir.join("bin"));
+        std::fs::create_dir_all(&release).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let (exe, old) = (bin.join("dbt-edith.exe"), bin.join("dbt-edith.exe.old"));
+        let (asset, sum) = (release.join("dbt-edith.exe"), release.join("dbt-edith.exe.sha256"));
+        std::fs::write(&asset, "the next one").unwrap();
+        let hash = {
+            let out = std::process::Command::new("sha256sum").arg(&asset).output().expect("sha256sum is installed");
+            String::from_utf8_lossy(&out.stdout).split(' ').next().unwrap().to_string()
+        };
+        let command = compose_download(Shell::Posix, &format!("file://{}", release.display()), "dbt-edith.exe", exe.to_str().unwrap());
+        let run = || {
+            let out = std::process::Command::new("sh").args(["-c", &command]).output().unwrap();
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).to_string())
+        };
+        let untouched = |why: &str| {
+            assert_eq!(std::fs::read_to_string(&exe).unwrap(), "the running one", "{why}");
+            assert!(!old.exists(), "{why}");
+            assert!(!bin.join("dbt-edith.exe.new").exists(), "{why}: what came down is removed");
+            assert!(!bin.join("dbt-edith.exe.sha256").exists(), "{why}: so is its hash");
+        };
+
+        std::fs::write(&exe, "the running one").unwrap();
+        std::fs::write(&sum, format!("{hash}  dbt-edith.exe\n")).unwrap();
+        let (ok, out) = run();
+        assert!(ok && out.trim_end().ends_with(DONE), "{out}");
+        assert_eq!(std::fs::read_to_string(&exe).unwrap(), "the next one");
+        assert_eq!(std::fs::read_to_string(&old).unwrap(), "the running one", "the running file steps aside");
+        assert!(!bin.join("dbt-edith.exe.new").exists() && !bin.join("dbt-edith.exe.sha256").exists());
+
+        std::fs::remove_file(&old).unwrap();
+        std::fs::write(&exe, "the running one").unwrap();
+        std::fs::write(&sum, format!("{}  dbt-edith.exe\n", "0".repeat(64))).unwrap();
+        let (ok, out) = run();
+        assert!(!ok && !out.contains(DONE) && out.contains(MISMATCH), "{out}");
+        untouched("a hash that differs");
+
+        std::fs::remove_file(&sum).unwrap();
+        let (ok, out) = run();
+        assert!(!ok && !out.contains(DONE), "{out}");
+        untouched("a hash file that is not there");
+
+        // The running file cannot be moved aside, here for being gone: what
+        // came down is removed all the same, and nothing claims an install.
+        std::fs::write(&sum, format!("{hash}  dbt-edith.exe\n")).unwrap();
+        std::fs::remove_file(&exe).unwrap();
+        let (ok, out) = run();
+        assert!(!ok && !out.contains(DONE), "{out}");
+        assert!(!exe.exists() && !old.exists(), "nothing was swapped");
+        assert!(!bin.join("dbt-edith.exe.new").exists(), "the download is removed when the rename aside fails");
+        assert!(!bin.join("dbt-edith.exe.sha256").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The closing line is chained after the install in every shell and swap
@@ -1415,6 +1760,132 @@ mod tests {
             if swap.is_some() {
                 assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
             }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real download commands in the real Windows shells, Git Bash and
+    /// Windows PowerShell 5.1, against a server on this machine standing for
+    /// GitHub: a matching hash swaps the file in and ends on the line, a wrong
+    /// one replaces nothing and removes what came down (0123). The command goes
+    /// in on the shell's input, as typed at its prompt, which is how it runs
+    /// for the user and spares any quoting of it on a command line.
+    #[cfg(windows)]
+    #[test]
+    fn the_real_windows_shells_download_check_and_swap() {
+        use std::io::{Read, Write};
+        let dir = scratch("windows-download");
+        let bin = dir.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let (exe, old) = (bin.join("dbt-edith.exe"), bin.join("dbt-edith.exe.old"));
+        let new = bin.join("dbt-edith.exe.new");
+        let sum = bin.join("dbt-edith.exe.sha256");
+
+        // The file's hash, from PowerShell's own, as the shell under test would read it.
+        let asset = dir.join("asset.exe");
+        std::fs::write(&asset, "the next one").unwrap();
+        let hash = {
+            let out = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-Command", &format!("(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash", asset.display())])
+                .output()
+                .expect("powershell.exe runs");
+            // CI's `sha256sum` writes it in lower case.
+            String::from_utf8_lossy(&out.stdout).trim().to_ascii_lowercase()
+        };
+        assert_eq!(hash.len(), 64, "{hash}");
+
+        let files = Arc::new(Mutex::new(std::collections::HashMap::<String, Vec<u8>>::new()));
+        files.lock().unwrap().insert("/dbt-edith.exe".into(), b"the next one".to_vec());
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let served = files.clone();
+        // One thread per connection, for as long as the test process lives.
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let served = served.clone();
+                std::thread::spawn(move || {
+                    let mut stream = stream;
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).is_ok_and(|n| n == 1) {
+                        head.push(byte[0]);
+                    }
+                    let head = String::from_utf8_lossy(&head).to_string();
+                    let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                    let body = served.lock().unwrap().get(&path).cloned();
+                    let (status, body) = match body {
+                        Some(body) => ("200 OK", body),
+                        None => ("404 Not Found", Vec::new()),
+                    };
+                    let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    let _ = stream.write_all(&body);
+                });
+            }
+        });
+
+        let e = quotable(&exe, true).expect("a path a shell reads as it is");
+        let bash = crate::pty::find_git_bash().or_else(|| {
+            // Not WSL's launcher, which would read a Windows path as a Linux one.
+            crate::program::on_path("bash").filter(|p| !p.to_string_lossy().to_ascii_lowercase().contains("system32"))
+        });
+        let mut shells: Vec<(&str, Shell, std::process::Command)> = Vec::new();
+        match bash {
+            Some(bash) => {
+                let mut c = std::process::Command::new(bash);
+                c.args(["--noprofile", "--norc"]);
+                shells.push(("Git Bash", Shell::Posix, c));
+            }
+            // A skip that CI would not notice is a test that proves nothing.
+            None if std::env::var_os("CI").is_some() => panic!("CI has no Git Bash, so the test would prove half of it"),
+            None => eprintln!("no Git Bash here: only PowerShell is run"),
+        }
+        let mut ps = std::process::Command::new("powershell.exe");
+        ps.args(["-NoProfile", "-Command", "-"]);
+        shells.push(("PowerShell", Shell::PowerShell, ps));
+
+        for (name, shell, mut shell_cmd) in shells {
+            let command = compose_download(shell, &base, "dbt-edith.exe", &e);
+            // A profile may set `Stop`, which the command must not be at the mercy of.
+            let prelude = if shell == Shell::PowerShell { "$ErrorActionPreference='Stop'\n" } else { "" };
+            let mut run = |sum_text: Option<String>| {
+                std::fs::write(&exe, "the running one").unwrap();
+                // An `.old` left by an earlier update, which the swap overwrites.
+                std::fs::write(&old, "a stale one").unwrap();
+                for left in [&new, &sum] {
+                    let _ = std::fs::remove_file(left);
+                }
+                // None serves no hash at all: a 404.
+                match sum_text {
+                    Some(text) => files.lock().unwrap().insert("/dbt-edith.exe.sha256".into(), text.into_bytes()),
+                    None => files.lock().unwrap().remove("/dbt-edith.exe.sha256"),
+                };
+                let mut child = shell_cmd
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap();
+                child.stdin.take().unwrap().write_all(format!("{prelude}{command}\n").as_bytes()).unwrap();
+                let out = child.wait_with_output().unwrap();
+                String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr)
+            };
+            let out = run(Some(format!("{hash}  dbt-edith.exe\n")));
+            assert!(out.contains(DONE), "{name}: {out}");
+            assert_eq!(std::fs::read_to_string(&exe).unwrap(), "the next one", "{name}: {out}");
+            assert_eq!(std::fs::read_to_string(&old).unwrap(), "the running one", "{name}");
+            assert!(!new.exists() && !sum.exists(), "{name}: nothing is left beside it");
+
+            let out = run(Some(format!("{}  dbt-edith.exe\n", "0".repeat(64))));
+            assert!(!out.contains(DONE) && out.contains(MISMATCH), "{name}: {out}");
+            assert_eq!(std::fs::read_to_string(&exe).unwrap(), "the running one", "{name}: untouched");
+            assert_eq!(std::fs::read_to_string(&old).unwrap(), "a stale one", "{name}: so is the `.old`");
+            assert!(!new.exists() && !sum.exists(), "{name}: and what came down is removed");
+
+            let out = run(None);
+            assert!(!out.contains(DONE) && !out.contains(MISMATCH), "{name}: it stops at the failed download, not at a comparison: {out}");
+            assert_eq!(std::fs::read_to_string(&exe).unwrap(), "the running one", "{name}: untouched by a hash that is not there");
+            assert_eq!(std::fs::read_to_string(&old).unwrap(), "a stale one", "{name}: {out}");
+            assert!(!new.exists() && !sum.exists(), "{name}: nothing left beside it: {out}");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

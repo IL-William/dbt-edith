@@ -1,6 +1,6 @@
 # 0111. The update ends on a line and a card, and a failed build is a failure
 
-Date: 2026-10-21 · Status: accepted, amended by 0120 · Amends 0095
+Date: 2026-10-21 · Status: accepted, amended by 0120 and 0123 · Amends 0095
 
 **Trigger:** read before changing what the update command prints or ends on,
 what the page shows once it is typed or installed, or where a message in
@@ -31,6 +31,9 @@ after it would claim an install that never happened.
   PowerShell the line sits in the success branch of `$?` after the build and
   the restore in the other; `$?` stays true after the restoring `Move-Item`,
   so there a failed build prints no line, but its status is still a success.
+  *Amended by [0123](0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md):
+  the download command ends the same way, on the line only once the swap
+  worked, a failed check or swap replacing nothing.*
 - **A card in the middle of the page** says it too, one at a time, over every
   backdrop like a toast (80), with no backdrop of its own, closed by its button
   or Escape pressed in the terminal (where it stops at the card), on the card or

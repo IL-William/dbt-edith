@@ -838,6 +838,28 @@ Bash on Windows, the binary put back, now ends in failure, where it ended as if
 it had worked; in PowerShell the line is skipped but the status is still a
 success.
 
+The Windows `.exe` is built by CI and the update downloads it (0123, 1.56.0),
+amending 0068, 0093, 0095 and 0111. The release workflow builds an MSVC
+`dbt-edith.exe` (x64, on `windows-latest`) and `dbt-edith-arm64.exe` (on
+`windows-11-arm`), with `DBT_EDITH_RELEASE_ASSET` set, and `release` attaches
+both and their `.sha256` files when it creates the release, then checks the URL
+the update downloads from; a pull request touching the workflow, `Cargo.toml`,
+`Cargo.lock`, `build.rs` or `src/` builds them without publishing. A binary
+built so asks `update::download` for its command: the latest release's file of
+its own architecture, checked against its SHA-256, the running `.exe` renamed to
+`.old` and put back if the swap fails, in Git Bash and PowerShell. On Windows
+the menu offers the download first and, for a binary cargo installed, the cargo
+update beside it (`update::hows`, the `hows` list of `/api/update`); a build
+anywhere under the clone's `target/` gets neither. Checked with `cargo test`
+(both shells' text, both asset names, the choice's order and refusals, and the
+real `sh` and `curl` on a `file://` folder: a matching hash swaps and prints the
+closing line, a wrong or missing one replaces nothing, and so does a running
+file that cannot be moved aside) and the Update menu's sentence by
+`web/tests/update.js`. The real Git Bash and PowerShell 5.1 are driven against a
+local server by a test that only compiles here and runs in both legs of the
+release workflow, which also starts each `.exe`. Not checked: the workflow's
+runs on GitHub until a pull request touching the crate has made them.
+
 A test in the Catalog reads as a test (1.29.0). It was drawn as a model: Mat.
 type `test`, no columns, a location table for a relation dbt never builds for
 it, and "No description in the YAML." It has Preview alone now, which opens on
@@ -2230,6 +2252,20 @@ of its own, and each panel updates the tour, its page under
     places are the user's own; checking the folder's owner and mode, and
     refusing a binary the account does not own, is the fix, with the trap that
     Windows reports ownership differently (0042, 0060, 0094).
+32. **A version resource for the MSVC `.exe` (0123).** The release's file has
+    none, since `rc.exe` is off `PATH` outside a developer prompt (0093). The
+    runner has it; the work is a resource script `build.rs` hands to it, or a
+    step in the workflow, and a check that the properties read as 0093 says.
+33. **Signing the release's `.exe`.** The certificate options are in the
+    release paragraph below: Azure Artifact Signing wants an organisation in
+    Europe and its certificates last three days, SignPath's free plan an OSI
+    licence, and an endpoint's certificate exclusion pins one certificate.
+34. **`collin.exe` as a release asset.** collin is still built with cargo on
+    Windows (0043); its own repository would carry the asset, and the update
+    that installs it (0043, 0060) would download as 0123 does.
+35. **Downloads off Windows.** A macOS or Linux build is installed with cargo
+    from a clone; a release asset for them would need its own build, hash and
+    command, and 0123 gives them none.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -2409,7 +2445,8 @@ written in its pull request, unranked:
     checked by the Rust test only.
 - **The `.exe`'s properties (0093):**
   - the MSVC route builds without the resource and warns on every build;
-  - the file is still unsigned, with no icon and no application manifest;
+  - the file is still unsigned, with no icon and no application manifest, and
+    the release's MSVC one has no resource at all (0123);
   - the fourth version number is always 0, and the build stamp is not in the
     properties;
   - the copyright's year is written in `build.rs`;
@@ -2766,15 +2803,13 @@ Fusion entry already waits for (0031).
 FSL-1.1-MIT with Datadorelix as the licensor (0046). The 0.x versions before
 it were published under MIT from an earlier repository, and their history is
 kept outside this one. Merging a version bump is the release, tagged and
-published with its CHANGELOG.md section by CI (0045). No binary is attached, so
-installing means building from source, as
-[the README](../README.md#getting-started) describes. Attaching binaries is a
-deliberate later step: an unsigned executable download brings its own friction
-on a managed Windows machine. Signing would come with it, a certificate 0085
-leaves to a decision of its own. Looked at on 2026-10-15: Azure Artifact
-Signing takes an organisation in Europe, and SignPath's free plan wants an OSI
-licence, which FSL-1.1-MIT is not (0046). A VERSIONINFO resource came first
-(0093, 1.33.0).
+published with its CHANGELOG.md section by CI (0045). Since 1.56.0 a release
+carries a Windows `.exe` for x64 and one for ARM64 (0123); elsewhere installing
+means building from source, as [the README](../README.md#getting-started)
+describes. The files are unsigned, a certificate 0085 leaves to a decision of
+its own. Looked at on 2026-10-15: Azure Artifact Signing takes an organisation
+in Europe, and SignPath's free plan wants an OSI licence, which FSL-1.1-MIT is
+not (0046). A VERSIONINFO resource came first (0093, 1.33.0).
 
 The binary says which build it is, so `--version` and the status bar
 tell two installs of one release apart. Updating a machine is `git pull` then

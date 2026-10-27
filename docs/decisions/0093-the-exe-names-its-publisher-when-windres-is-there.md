@@ -1,6 +1,6 @@
 # 0093. The .exe names its publisher when windres is there
 
-Date: 2026-10-16 · Status: accepted
+Date: 2026-10-16 · Status: accepted, amended by 0123
 
 **Trigger:** read before changing what the `.exe`'s properties say, how
 `build.rs` finds `windres`, or what a Windows build does without one.
@@ -27,6 +27,9 @@ antivirus nobody here picks. Signing stays deferred in `docs/state.md`.
   makes the `.exe` taken to the VM, refuses one without it.
 - **MSVC gets none, with the warning.** Its `rc.exe` is off `PATH` outside a
   developer prompt, found only through the registry.
+  *Amended by [0123](0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md):
+  the `.exe` a release carries is MSVC, built by CI, and has none; it scanned
+  cleaner than the GNU one with the resource.*
 
 ## Rejected
 

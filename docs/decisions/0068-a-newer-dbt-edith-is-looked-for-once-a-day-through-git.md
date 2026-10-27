@@ -1,6 +1,6 @@
 # 0068. A newer dbt-edith is looked for once a day, through git
 
-Date: 2026-10-12 · Status: accepted, amended by 0079 and 0095
+Date: 2026-10-12 · Status: accepted, amended by 0079, 0095 and 0123
 
 **Trigger:** read before making dbt-edith reach the network on its own, or
 changing when it looks for a release or what the update offer types.
@@ -60,6 +60,9 @@ through git.
   learn the same thing.
 - **Downloading and replacing the binary.** No release carries one (state.md),
   and running an update unasked is what 0042 refuses for collin.
+  *Amended by [0123](0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md):
+  a release now carries the Windows `.exe`, and the update of one downloads the
+  next, as a command the user runs; nothing is run unasked.*
 - **`cargo install --git` at the tag.** It rebuilds from GitHub rather than the
   clone the README installs from, and leaves that clone behind its binary.
 - **Pulling the branch the clone has out.** A clone left on a feature branch

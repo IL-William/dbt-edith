@@ -521,13 +521,19 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The command that updates this binary, from the clone it was built from
-/// when that clone is still on this machine, or why there is none (0068).
-fn update_how(shell: &pty::ShellSpec, exe: Option<&Path>) -> Result<update::How, update::Why> {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().map_err(|_| update::Why::Elsewhere)?;
-    let source = files::plain(source);
+/// The commands that update this binary: from the clone it was built from
+/// when that clone is still on this machine (0068), and on Windows a download
+/// of the release's `.exe` too, or why there is none. The release's own `.exe`
+/// has no clone, CI built it and `CARGO_MANIFEST_DIR` is the runner's path, so
+/// it only downloads (0123).
+fn update_how(shell: &pty::ShellSpec, exe: Option<&Path>) -> Result<Vec<update::How>, update::Why> {
     let exe = exe.ok_or(update::Why::Elsewhere)?;
-    update::how(&source, exe, update::shell_kind(&shell.program), cfg!(windows))
+    if option_env!("DBT_EDITH_RELEASE_ASSET").is_some_and(|v| !v.is_empty()) {
+        return update::download(exe, update::shell_kind(&shell.program), cfg!(windows)).map(|d| vec![d]);
+    }
+    // A clone that cannot be found is no reason to refuse a download.
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).canonicalize().ok().map(files::plain);
+    update::hows_from(source.as_deref(), exe, update::shell_kind(&shell.program), cfg!(windows))
 }
 
 /// Binds to localhost only, walking forward if the port is already in use.

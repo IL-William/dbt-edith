@@ -16688,10 +16688,11 @@ function pinBoxFile(n) {
 /* What the status bar offers for an /api/update answer (0068): nothing until
    a later release is known, then a pill naming it, and a menu with its notes
    and, for a binary built from a clone on this machine, the command that
-   pulls and rebuilds it, or why there is none. Pure, for web/tests/update.js. */
-function updateOffer(u) {
+   pulls and rebuilds it, or why there is none. `os` is the server's, which
+   decides what a refusal points to. Pure, for web/tests/update.js. */
+function updateOffer(u, os) {
   if (!u || !u.newer) return null;
-  const how = u.how || null;
+  const hows = u.hows || [];
   const restart = `stop dbt-edith where you started it and start it again: until then, ${u.current} serves this page.`;
   const head = `dbt-edith ${u.latest} · this is ${u.current}`;
   // Installed in this one's place (0095): what is left is the restart, and
@@ -16707,40 +16708,73 @@ function updateOffer(u) {
       command: '',
       installed: true,
       step: `A new dbt-edith is installed in this one's place. To run it, ${restart}`,
+      options: [],
       lines: [],
     };
   }
-  const lines = [];
-  if (how) {
-    lines.push(how.kind === 'build'
-      ? `It pulls main into ${how.source} and builds it again with cargo build --release.`
-      : `It pulls main into ${how.source} and installs it again with cargo install.`);
-    if (how.renames) {
-      lines.push(`Windows will not replace a running .exe but lets it be renamed: ${how.exe} steps aside as `
-        + `${how.exe}.old first, goes on serving this page, and comes back if the build fails.`);
-    }
-  } else if (u.why === 'locked') {
-    lines.push('This dbt-edith runs from its clone\'s target/release, which a build cannot replace on Windows '
-      + 'while it runs: stop it, then pull and build it again.');
-  } else if (u.why === 'shell') {
-    lines.push('The update is typed for sh, bash, zsh and PowerShell, and this terminal runs another shell: '
-      + 'pull the clone and install it again by hand, as the README says.');
-  } else if (u.why === 'path') {
-    lines.push('A path in the update holds a character a shell would read inside quotes, so none is typed: '
-      + 'pull the clone and install it again by hand, as the README says.');
-  } else {
-    lines.push('This dbt-edith is neither in cargo\'s bin nor in the target/release of a clone on this machine, '
-      + 'so there is no command to offer: pull and rebuild it where it was built, as the README says.');
+  // One option per command the server offered, the recommended first (0123).
+  // With a choice each button says what it does; alone it is the update.
+  const options = hows.map((how) => {
+    const download = how.kind === 'download';
+    return {
+      kind: how.kind,
+      command: how.command,
+      button: hows.length < 2 ? `Update to ${u.latest}`
+        : download ? 'Download the release\'s .exe' : `Update to ${u.latest} with cargo`,
+      step: `It types the update into the terminal below. Press Enter there to run it`
+        + `${download ? ',' : ', a minute or two,'} then ${restart}`,
+      lines: [download
+        ? 'It downloads the .exe CI built for this release, of this build\'s architecture, checks its SHA-256 '
+          + 'against the one published beside it, and replaces the running .exe with it.'
+        : how.kind === 'build'
+          ? `It pulls main into ${how.source} and builds it again with cargo build --release, compiling it on this machine.`
+          : `It pulls main into ${how.source} and installs it again with cargo install, compiling it on this machine.`],
+    };
+  });
+  const lines = options.flatMap((o) => o.lines);
+  // Said once, whichever command is pressed.
+  const stepping = hows.find((how) => how.renames);
+  if (stepping) {
+    const fails = hows.some((how) => how.kind === 'download') && hows.length > 1 ? 'swap or the build'
+      : hows[0].kind === 'download' ? 'swap' : 'build';
+    lines.push(`Windows will not replace a running .exe but lets it be renamed: ${stepping.exe} steps aside as `
+      + `${stepping.exe}.old first, goes on serving this page, and comes back if the ${fails} fails.`);
   }
+  // With a choice, one step says how either goes.
+  if (options.length > 1) {
+    options[0].step = 'Either types the update into the terminal below. Press Enter there to run it: the download '
+      + `takes seconds, cargo a minute or two. Then ${restart}`;
+  }
+  if (!options.length) {
+    // On Windows the way out of a refusal is the file a release carries.
+    const by = os === 'windows'
+      ? 'download the release\'s .exe by hand, as docs/windows.md says under Download it.'
+      : 'pull the clone and install it again by hand, as the README says.';
+    if (u.why === 'locked') {
+      lines.push('This dbt-edith runs from a build in its clone\'s target folder, which an update would replace '
+        + 'and a build cannot while it runs: stop it, then pull and build it again.');
+    } else if (u.why === 'shell') {
+      lines.push(`The update is typed for sh, bash, zsh and PowerShell, and this terminal runs another shell: ${by}`);
+    } else if (u.why === 'path') {
+      lines.push(`A path in the update holds a character a shell would read inside quotes, so none is typed: ${by}`);
+    } else if (os === 'windows') {
+      lines.push(`There is no command to offer for this dbt-edith: ${by}`);
+    } else {
+      lines.push('This dbt-edith is neither in cargo\'s bin nor in the target/release of a clone on this machine, '
+        + 'so there is no command to offer: pull and rebuild it where it was built, as the README says.');
+    }
+  }
+  const first = options[0] || null;
   return {
     label: `${u.latest} available`,
     title: `dbt-edith ${u.latest} is out, and this is ${u.current}`,
     head,
     notes: u.notes || '',
-    command: how ? how.command : '',
-    button: `Update to ${u.latest}`,
-    step: how ? `It types the update into the terminal below. Press Enter there to run it, a minute or two, `
-      + `then ${restart}` : '',
+    // The recommended command stands for the offer, as the only one did.
+    command: first ? first.command : '',
+    button: first ? first.button : undefined,
+    step: first ? first.step : '',
+    options,
     lines,
   };
 }
@@ -16811,9 +16845,11 @@ function releaseRows(u) {
    Null when there is nothing to show. */
 function updateNotice(kind, prev, next) {
   if (kind === 'typed') {
+    // `prev` is the kind of command that was typed.
     return {
       title: 'Press Enter in the terminal to run the update',
-      body: 'It takes a minute or two. When it ends, stop dbt-edith where you started it and start it again.',
+      body: `${prev === 'download' ? 'It takes a few seconds.' : 'It takes a minute or two.'} `
+        + 'When it ends, stop dbt-edith where you started it and start it again.',
       sticky: false, ms: 15000,
     };
   }
@@ -16859,7 +16895,7 @@ function freshenUpdate() {
 function paintUpdateMenu(menu) {
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
   const u = S.update || { current: S.version };
-  const o = updateOffer(u);
+  const o = updateOffer(u, S.os);
   // Drawn anew under the focus, at a click and every two seconds of a look:
   // it goes back to the same row, found by its link since an answer can add
   // rows above it, or to the button, without scrolling the menu to it.
@@ -16874,17 +16910,21 @@ function paintUpdateMenu(menu) {
     // goes right under it: a row like the others read as a heading.
     if (o.installed) {
       menu.append(el('div', 'updready', 'Installed: restart dbt-edith to run it'));
-    } else if (o.command) {
-      const run = el('button', 'updrun', o.button);
-      run.type = 'button';
-      run.setAttribute('role', 'menuitem');
-      run.title = o.command;
-      run.addEventListener('click', () => {
-        closePopup();
-        sendToTerminal(o.command, false, () => notice(updateNotice('typed')));
-        watchInstall();
+    } else {
+      // One button per command, the recommended first and drawn as the
+      // primary; one step under them says how it goes (0123).
+      o.options.forEach((option, i) => {
+        const run = el('button', i ? 'updrun alt' : 'updrun', option.button);
+        run.type = 'button';
+        run.setAttribute('role', 'menuitem');
+        run.title = option.command;
+        run.addEventListener('click', () => {
+          closePopup();
+          sendToTerminal(option.command, false, () => notice(updateNotice('typed', option.kind)));
+          watchInstall();
+        });
+        menu.append(run);
       });
-      menu.append(run);
     }
     if (o.step) menu.append(el('div', 'menunote updstep', o.step));
     const link = (href, className, title) => {
@@ -17018,7 +17058,7 @@ async function refreshUpdate() {
   // Switched off, there will be nothing to hear.
   if (S.update.off) return;
   // Waiting on the update only while there is one to wait on.
-  if (!S.update.newer || !S.update.how || S.update.replaced) S.installSince = 0;
+  if (!S.update.newer || !(S.update.hows || []).length || S.update.replaced) S.installSince = 0;
   const installing = S.installSince && Date.now() - S.installSince < 30 * 60 * 1000;
   S.updatePoll = setTimeout(refreshUpdate, S.update.checking ? 2000 : installing ? 5000 : 600 * 1000);
 }

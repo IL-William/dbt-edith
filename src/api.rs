@@ -3222,9 +3222,10 @@ struct UpdateBody {
     /// The release's notes, while it is newer.
     #[serde(skip_serializing_if = "String::is_empty")]
     notes: String,
-    /// The command that installs it here, while it is newer and there is one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    how: Option<crate::update::How>,
+    /// The commands that install it here, the recommended first, while it is
+    /// newer and there are any (0123).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    hows: Vec<crate::update::How>,
     /// Why there is no command, while it is newer.
     #[serde(skip_serializing_if = "Option::is_none")]
     why: Option<crate::update::Why>,
@@ -3258,15 +3259,15 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
     let crate::update::Status { latest, checked, checking, failed, error, next, releases, older } =
         st.update.status(crate::update::now_secs());
     let newer = crate::update::newer(current, &latest);
-    let (how, why) = match &st.update.how {
-        _ if !newer => (None, None),
-        Ok(how) => (Some(how.clone()), None),
-        Err(why) => (None, Some(*why)),
+    let (hows, why) = match &st.update.hows {
+        _ if !newer => (Vec::new(), None),
+        Ok(hows) => (hows.clone(), None),
+        Err(why) => (Vec::new(), Some(*why)),
     };
     Json(UpdateBody {
         current,
         notes: if newer { crate::update::notes_url(&latest) } else { String::new() },
-        how,
+        hows,
         why,
         replaced: st.update.replaced(),
         latest,
@@ -4610,6 +4611,19 @@ mod tests {
         profiles: crate::profiles::Lookup,
         shell: ShellSpec,
     ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
+        // Looks only when a test asks it to, and from a file the test wrote
+        // first, so no test reaches GitHub.
+        let update = crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere));
+        serve_full(root, profiles, shell, update).await
+    }
+
+    /// With `update` as the server's, for what the update route says of it.
+    async fn serve_full(
+        root: &Path,
+        profiles: crate::profiles::Lookup,
+        shell: ShellSpec,
+        update: crate::update::Update,
+    ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let manifest = root.join("target").join("manifest.json");
@@ -4647,9 +4661,7 @@ mod tests {
             job_sources: std::sync::Mutex::new(Vec::new()),
             jobs: Default::default(),
             run_results: Default::default(),
-            // Looks only when a test asks it to, and from a file the test
-            // wrote first, so no test reaches GitHub.
-            update: crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere)),
+            update,
             // Inside the test's own project, never the developer's config directory.
             tour: crate::tour::Offer { path: Some(root.join("config").join("tour.json")) },
             look: crate::look::Look { path: Some(root.join("config").join("look.json")) },
@@ -5014,6 +5026,42 @@ mod tests {
         // The button's route reaches GitHub, so only its guard is tried here;
         // the look it starts is the unit tests' in update.rs.
         assert!(status_of(port, keyless(raw("POST", "/api/update/check", &h))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The commands the server offers go out as a list, the recommended first
+    /// (0123), and a refusal is not sent beside it.
+    #[tokio::test]
+    async fn the_update_route_lists_the_commands_it_offers() {
+        let root = temp_project("update-hows");
+        let how = |command: &str, kind, source: &str| crate::update::How {
+            command: command.into(),
+            kind,
+            source: source.into(),
+            exe: "dbt-edith.exe".into(),
+            renames: true,
+        };
+        let update = crate::update::Update::new(
+            false,
+            Some(root.join("update.json")),
+            Ok(vec![how("download it", "download", "https://example.com/dl"), how("cargo it", "install", "C:/src/dbt-edith")]),
+        );
+        let (port, st, server) = serve_full(&root, crate::profiles::Lookup::default(), ShellSpec { program: "/bin/sh".into(), args: Vec::new() }, update).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let now = crate::update::now_secs();
+        std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"99.0.0"}}"#)).unwrap();
+        st.update.check().await;
+        let body = response_of(port, get("/api/update", &h)).await;
+        assert!(
+            past_head(&body).contains(concat!(
+                r#""hows":[{"command":"download it","kind":"download","source":"https://example.com/dl","exe":"dbt-edith.exe","renames":true},"#,
+                r#"{"command":"cargo it","kind":"install","source":"C:/src/dbt-edith","exe":"dbt-edith.exe","renames":true}]"#
+            )),
+            "{body}"
+        );
+        assert!(!past_head(&body).contains(r#""why""#) && !past_head(&body).contains(r#""how":"#), "{body}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
