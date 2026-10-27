@@ -50,7 +50,8 @@ clicking in a repository one did not make.
   refused as for any git that gives no answer. A venv is set aside the same way:
   inside a repository `venv::committed` reads that error as tracked, as
   `collin_run` does for a collin, so a venv the user made in a paused repository
-  is set aside too, and the pause note says why; outside one it stays not
+  is set aside too, and its note on the page says git cannot tell whether it
+  is committed, with the pause's reason; outside one it stays not
   tracked (0053). The repository is found by git's own test (`locate` in
   `src/git.rs`: a `.git` file, a `.git` directory with a `HEAD`, `objects` and
   `refs`, or the folder itself), and the verdict is kept only when `git

@@ -17326,10 +17326,14 @@ function venvOffer(v) {
 
 /* A venv git tracks came with the repository, so whoever wrote the repository
    wrote its python too: the server never runs it, and this says why it is not
-   the one shown (0053). */
+   the one shown (0053). When git could not say whether they are committed
+   (`unsure`, the pause note), they were set aside for want of an answer, and
+   the note says that, with git's reason, instead of claiming they are. */
 function committedNote(v) {
   const names = v.committed || [];
-  return names.length ? `committed to the repository, so never run by dbt-edith: ${names.join(', ')}` : '';
+  if (!names.length) return '';
+  if (v.unsure) return `never run by dbt-edith, as git cannot say here whether they are committed: ${names.join(', ')}\n${v.unsure}`;
+  return `committed to the repository, so never run by dbt-edith: ${names.join(', ')}`;
 }
 
 // Without the key the bar at the top already says why, once.

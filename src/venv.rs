@@ -19,6 +19,12 @@ pub struct VenvInfo {
     /// repository: listed, never run, and never the one reported (0053).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub committed: Vec<String>,
+    /// Why git could not say whether a venv set aside is committed (the first
+    /// such error, a pause or a refusal): those in `committed` it did not
+    /// answer for were set aside because not knowing is not a no. Empty when
+    /// git answered for every one listed in `committed`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unsure: String,
     /// Every environment found in the project that git does not track, the
     /// reported one included, best first: what the status bar can name when the
     /// terminal reports one of them (0069).
@@ -184,18 +190,21 @@ fn is_adapter(dist_info: &Path) -> bool {
 /// and its `python` is theirs to have written too. Asked of git rather than
 /// guessed. Outside a repository, where there is nobody to ask, the answer is
 /// no. Inside one, an answer git cannot give (it is paused, 0121) sets the
-/// venv aside, as `collin_run` does for a collin: not knowing is not a no.
-fn committed(root: &Path, venv: &Path) -> bool {
+/// venv aside, as `collin_run` does for a collin: not knowing is not a no. That
+/// case is an `Err` carrying what git said, for the page to tell it from a
+/// venv git does track.
+fn committed(root: &Path, venv: &Path) -> Result<bool, String> {
     let Ok(rel) = venv.strip_prefix(root) else {
-        return false;
+        return Ok(false);
     };
     let rel = rel.to_string_lossy().replace('\\', "/");
     if rel.is_empty() {
-        return false;
+        return Ok(false);
     }
     match crate::git::tracks(root, &rel) {
-        Ok(tracked) => tracked,
-        Err(_) => crate::git::in_repository(root),
+        Ok(tracked) => Ok(tracked),
+        Err(why) if crate::git::in_repository(root) => Err(why),
+        Err(_) => Ok(false),
     }
 }
 
@@ -246,8 +255,21 @@ fn detect_with(root: &Path, active: Option<PathBuf>) -> VenvInfo {
     }
     // A committed venv is named so its absence is explained, and offered to
     // nothing that would run it: not the status bar, not the Snowflake script.
-    let (committed, kept): (Vec<PathBuf>, Vec<PathBuf>) = found.into_iter().partition(|p| committed(root, p));
-    info.committed = committed.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    let mut kept: Vec<PathBuf> = Vec::new();
+    let mut set_aside: Vec<PathBuf> = Vec::new();
+    for p in found {
+        match committed(root, &p) {
+            Ok(false) => kept.push(p),
+            Ok(true) => set_aside.push(p),
+            Err(why) => {
+                if info.unsure.is_empty() {
+                    info.unsure = why;
+                }
+                set_aside.push(p);
+            }
+        }
+    }
+    info.committed = set_aside.iter().filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
     let mut found = kept;
     // A bare venv with no dbt in it is the least useful answer, so rank those last.
     found.sort_by_key(|p| (!bin(p, "dbt").exists(), p.clone()));
@@ -467,6 +489,7 @@ mod tests {
 
         let info = detect_with(&root, None);
         assert_eq!(info.committed, ["shipped"]);
+        assert!(info.unsure.is_empty(), "git answered, so nothing is unsure: {}", info.unsure);
         assert_eq!(info.chosen.name, "mine", "first by name, but set aside since git tracks it");
         let found: Vec<&str> = info.found.iter().map(|v| v.name.as_str()).collect();
         assert_eq!(found, ["mine"], "nor offered to the terminal's report");
@@ -497,6 +520,7 @@ mod tests {
         assert!(config.success());
         let info = detect_with(&root, None);
         assert_eq!(info.committed, ["shipped"], "a pause was read as not tracked");
+        assert!(info.unsure.contains("git is paused here") && info.unsure.contains("filter.x.clean"), "{}", info.unsure);
         let programs = crate::sidecar::interpreters(&info);
         assert!(programs.iter().all(|i| !i.program.starts_with(root.join("shipped"))), "{programs:?}");
         let _ = std::fs::remove_dir_all(&root);

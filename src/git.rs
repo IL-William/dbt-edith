@@ -288,7 +288,10 @@ fn is_git_dir(path: &Path) -> bool {
 /// for it. In each folder from `root` upward git tries a `.git` file (a
 /// linked worktree or a submodule names its directory there), then a `.git`
 /// directory that passes `is_git_dir` (one that does not is skipped and the
-/// search goes on), then the folder itself, a bare repository.
+/// search goes on), then the folder itself, a bare repository. A `.git` that is
+/// neither a file nor a directory is never read, as reading a FIFO blocks for
+/// good: the search goes on past it, and git, which refuses it as not a
+/// regular file, then fails `paused`'s check, so the repository is paused.
 fn locate(root: &Path) -> Option<Repo> {
     for dir in root.ancestors() {
         let dot = dir.join(".git");
@@ -297,19 +300,25 @@ fn locate(root: &Path) -> Option<Repo> {
                 if is_git_dir(&dot) {
                     return Some(Repo { git_dir: dot.clone(), common_dir: dot, gitfile: None });
                 }
-            } else {
+            } else if meta.is_file() {
                 let named = std::fs::read_to_string(&dot)
                     .ok()
                     .and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
                 // A file git cannot read fails every call on its own; its stamp
                 // still stands for it, so mending it is noticed.
                 let git_dir = named.unwrap_or_else(|| dot.clone());
-                let common_dir = match std::fs::read_to_string(git_dir.join("commondir")) {
-                    Ok(c) => git_dir.join(c.trim()),
-                    Err(_) => git_dir.clone(),
+                // Only a regular file is read: a FIFO (a tar archive can carry
+                // one) would block the poll for good.
+                let commondir = git_dir.join("commondir");
+                let common = std::fs::metadata(&commondir).is_ok_and(|m| m.is_file()).then(|| std::fs::read_to_string(&commondir).ok()).flatten();
+                let common_dir = match common {
+                    Some(c) => git_dir.join(c.trim()),
+                    None => git_dir.clone(),
                 };
                 return Some(Repo { git_dir, common_dir, gitfile: Some(dot) });
             }
+            // Anything else (a FIFO, a socket, a device) is not read: reading
+            // it could block for good. git refuses it, which `paused` sees.
         }
         if is_git_dir(dir) {
             return Some(Repo { git_dir: dir.to_path_buf(), common_dir: dir.to_path_buf(), gitfile: None });
@@ -364,7 +373,7 @@ fn paused(root: &Path) -> Option<String> {
         verdicts().remove(root);
         // Git found no repository where the search by eye did (a `HEAD` that
         // is no reference): every call it is given fails the same way.
-        if at.stderr.contains("not a git repository") {
+        if at.stderr.trim_start().starts_with("fatal: not a git repository") {
             return None;
         }
         return Some(format!("{UNREAD}{}", reason(&at)));
@@ -1678,6 +1687,75 @@ mod tests {
         assert!(status(&parent.join("child")).repo, "git should find the parent's repository too");
 
         for d in [bare, main, linked, top, parent] {
+            let _ = std::fs::remove_dir_all(&d);
+        }
+    }
+
+    /// A FIFO named `.git` (a tar archive can carry one) must not block the
+    /// poll: `locate` never reads it and searches on. Where git refuses it,
+    /// the repository is paused rather than trusted. Likewise a FIFO
+    /// `commondir`.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_named_git_or_commondir_is_skipped_not_read() {
+        let fifo = |path: &Path| Command::new("mkfifo").arg(path).status().is_ok_and(|s| s.success());
+        // Both answers come from a thread, so a read that blocks fails the test
+        // instead of hanging it.
+        let promptly = |f: Box<dyn FnOnce() -> (bool, Option<Repo>) + Send>| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(f());
+            });
+            rx.recv_timeout(Duration::from_secs(5)).expect("the search blocked on a FIFO")
+        };
+        let canon = |p: &Path| p.canonicalize().unwrap();
+
+        // Outside any repository: nothing is found, as for git.
+        let loose = scratch("fifo-loose");
+        let project = loose.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        if !fifo(&project.join(".git")) {
+            let _ = std::fs::remove_dir_all(&loose);
+            return;
+        }
+        let dir = project.clone();
+        let (inside, found) = promptly(Box::new(move || (in_repository(&dir), locate(&dir))));
+        assert!(!inside && found.is_none());
+        assert!(!Command::new("git").arg("-C").arg(&project).args(["rev-parse", "--git-dir"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap().status.success());
+
+        // Below a repository: the parent's, as git finds it.
+        let parent = scratch("fifo-parent");
+        git(&parent, &["init", "-q"]);
+        let project = parent.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        assert!(fifo(&project.join(".git")));
+        let dir = project.clone();
+        let (inside, found) = promptly(Box::new(move || (in_repository(&dir), locate(&dir))));
+        assert!(inside);
+        assert_eq!(canon(&found.expect("parent's").git_dir), canon(&parent.join(".git")));
+        // Git skips it in some versions and dies on it ("not a regular file")
+        // in others; either way it never reads it. Where it answers, it is the
+        // parent's repository, as the search found.
+        let at = setup(&project, &["rev-parse", "--absolute-git-dir"]);
+        if at.status.success() {
+            assert_eq!(canon(Path::new(String::from_utf8_lossy(&at.stdout).trim())), canon(&parent.join(".git")));
+        } else {
+            assert!(paused(&project).is_some(), "git refuses the FIFO, so the repository is paused");
+        }
+
+        // A gitfile naming a directory whose `commondir` is a FIFO.
+        let linked = scratch("fifo-commondir");
+        let gitdir = linked.join("gd");
+        std::fs::create_dir_all(&gitdir).unwrap();
+        std::fs::create_dir_all(linked.join("wt")).unwrap();
+        std::fs::write(linked.join("wt/.git"), "gitdir: ../gd\n").unwrap();
+        assert!(fifo(&gitdir.join("commondir")));
+        let dir = linked.join("wt");
+        let (_, found) = promptly(Box::new(move || (false, locate(&dir))));
+        let at = found.expect("gitfile");
+        assert_eq!(at.common_dir, at.git_dir, "a FIFO commondir was read");
+
+        for d in [loose, parent, linked] {
             let _ = std::fs::remove_dir_all(&d);
         }
     }
