@@ -420,6 +420,63 @@ mod tests {
     }
 
     #[test]
+    fn a_sensor_on_several_tasks_or_a_group_is_worded_as_such_in_the_text_and_the_json() {
+        let root = project("sensor-tasks", &[]);
+        with_gated_dag(&root);
+        std::fs::write(
+            root.join("jobs/gated/jaffle_gated.yml"),
+            "dag_id: jaffle_gated\nschedule: null\nsensors:\n  - task_id: both\n    external_dag_id: jaffle_daily\n    external_task_ids: [stage, marts]\n  \
+             - task_id: grp\n    external_dag_id: jaffle_daily\n    external_task_group_id: loading\n  \
+             - task_id: one\n    external_dag_id: jaffle_daily\n    external_task_ids: [stage]\n\
+             tasks:\n  - task_id: publish\n    command: dbt run -s customers\n",
+        )
+        .unwrap();
+        let (out, _, _) = ask(&root, "jaffle_gated", Output::Name);
+        assert!(
+            out.contains(
+                "  sensor both  waits for jaffle_daily › stage, marts\n\
+                 \x20 sensor grp  waits for jaffle_daily › task group loading, whose tasks no file lists\n\
+                 \x20 sensor one  waits for jaffle_daily › stage\n"
+            ),
+            "{out}"
+        );
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_gated", Output::Json).0).unwrap();
+        assert_eq!(
+            json["sensors"],
+            json!([
+                {"id": "both", "dag": "jaffle_daily", "tasks": ["stage", "marts"]},
+                {"id": "grp", "dag": "jaffle_daily", "task_group": "loading"},
+                {"id": "one", "dag": "jaffle_daily", "task": "stage"},
+            ])
+        );
+        let (out, _, _) = ask(&root, "jaffle_daily", Output::Name);
+        assert!(out.contains("order: after load_seeds · before marts · awaited by jaffle_gated › both, jaffle_gated › one\n"), "{out}");
+        assert!(!out.contains("whole run") && !out.contains("jaffle_gated › grp"), "{out}");
+    }
+
+    #[test]
+    fn what_no_file_read_defines_or_updates_is_flagged_beside_its_value_in_the_json() {
+        let root = project("unread-json", &[]);
+        let dir = root.join("jobs/loose");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("orphan.yml"), "dag_id: jaffle_orphan\nschedule: [never_updated]\ntasks:\n  - task_id: build\n    command: dbt run -s orders\n").unwrap();
+        std::fs::write(
+            dir.join("jobs.yml"),
+            "jobs:\n  lone:\n    name: Lone\n    execute_steps:\n      - dbt seed\n    job_completion_trigger_condition:\n      condition:\n        job_id: 4242\n",
+        )
+        .unwrap();
+        let list = [
+            JobSource { kind: "airflow".into(), path: "jobs/loose".into(), ..Default::default() },
+            JobSource { kind: "dbt_cloud".into(), path: "jobs/loose".into(), ..Default::default() },
+        ];
+        std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "jaffle_orphan", Output::Json).0).unwrap();
+        assert_eq!((&json["assets"], &json["assets_unread"]), (&json!(["never_updated"]), &json!(["never_updated"])));
+        let json: serde_json::Value = serde_json::from_str(&ask(&root, "Lone", Output::Json).0).unwrap();
+        assert_eq!((&json["after"], &json["after_unread"]), (&json!("4242"), &json!(true)));
+    }
+
+    #[test]
     fn a_dbt_cloud_job_says_which_jobs_its_end_starts() {
         let root = project("starts", &[("dbt_cloud", "dbt_cloud", "")]);
         let (out, _, _) = ask(&root, "Nightly build", Output::Name);

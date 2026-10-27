@@ -380,20 +380,26 @@ What the files say of the order is printed, nothing more: it is not followed
 from job to job and nothing is checked. Under a DAG's first line come its
 sensors, `sensor wait_marts  waits for jaffle_daily › marts` (the sensor's id,
 which a task's `depends_on` names it by, then the DAG and the task it waits for,
-the DAG alone when it waits for the whole run; a sensor written without an id
-leaves the id out), then `updates X, which starts D` for what its tasks with no
+`D › a, b` for the tasks of `external_task_ids`, `D › task group g, whose tasks
+no file lists` for an `external_task_group_id`, the DAG alone when it names
+neither and so waits for the whole run; a sensor written without an id leaves
+the id out), then `updates X, which starts D` for what its tasks with no
 dbt command update and the DAGs scheduled on it, and for a dbt Cloud job
 `starts A, B when it ends`. Under a step, an `order:` line, left out when it
 has nothing to say: `after` the tasks its `depends_on` names, as written, a
 sensor's id or a task that runs no dbt included; `before` the tasks that run
 dbt and name it, a task that runs none left out as the Jobs tab leaves it;
-`awaited by` the sensors of other DAGs (`dag › sensor`) that wait for it, a
-sensor on the whole run marked `(whole run)` on every task of the DAG instead of
-read as that many waits; `updates` the assets it writes and the DAGs scheduled
-on them. The file's order is not the run order: every task with no `after` starts
-with the DAG's run. A sensor may also hold back tasks that do not name it, which the
-factory that builds the DAG decides: dbt-edith prints what the file says. A dbt
-Cloud job's steps do run in the order they are listed.
+`awaited by` the sensors of any DAG, its own included (a sensor on its
+previous run), as `dag › sensor`, that wait for it, a sensor on the whole run
+marked `(whole run)` on every task of the DAG instead of read as that many
+waits, and a sensor on a task group on none, since its tasks are in no file;
+`updates` the assets it writes and the DAGs scheduled on them. The file's order
+is not the run order: every task with no `after` starts with the DAG's run. A
+sensor may also hold back tasks that do not name it, which the factory that
+builds the DAG decides: dbt-edith prints what the file says. A dbt Cloud job's
+steps do run in the order they are listed. The sensor's task is read from
+`external_task_id` (the key a source may rename), else `external_task_ids`, else
+`external_task_group_id`, the last two under Airflow's own names.
 
 `--output json` prints one object: `kind`, `name`, `source`, `ident` (a dbt Cloud
 job's), `file`, `line`, `schedule`, `steps` (each `n`, `name`, `line`,
@@ -402,8 +408,9 @@ job's), `file`, `line`, `schedule`, `steps` (each `n`, `name`, `line`,
 `kind` and `name`) and `nodes`, the total, and `not_read` when a source was not
 read: the text answer then ends on a `not read:` line, and a refusal for a name
 no job has says it too, since the job may be in that source. At the job's level
-`sensors` (each `id`, `dag` and `task`, structured: a `task` absent is a sensor
-on the whole run of `dag`), `assets` with `assets_unread`, `after` with
+`sensors` (each `id`, `dag` and, structured, `task` for one task, `tasks` for
+several, `task_group` for a group; none of the three is a sensor on the whole
+run of `dag`), `assets` with `assets_unread`, `after` with
 `after_unread`, `triggers`, `outlets` and `feeds`, each left out when empty.
 The step's `waited_by` is a list of `dag › sensor` strings, the Jobs tab's
 wording, with `(whole run)` after a sensor on the whole run.

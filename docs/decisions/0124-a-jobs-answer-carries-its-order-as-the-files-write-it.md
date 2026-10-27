@@ -9,7 +9,7 @@ whether that order is followed from job to job or checked.
 ## Context
 
 The Jobs tab already says, under a task, what it runs `after` and `before`,
-which sensors of other DAGs it is `awaited by`, and which assets it updates and
+which sensors of any DAG it is `awaited by`, and which assets it updates and
 what they start, and on a DAG what its sensors wait for. `--job` (0115) printed
 none of it, though `jobs.rs` had parsed all of it for the tab: an agent asked
 which of two jobs runs first read the orchestrator's YAML by hand, which is
@@ -33,6 +33,11 @@ what the command exists to spare it.
   that is how a reader learns which tasks it gates. The id is kept in `sensors`
   and in `waited_by`; a sensor written without one is the DAG alone, in the
   Jobs tab too, where a `›` with nothing after it read as a lost name.
+- **A sensor is read for what it waits for**: `external_task_id`, else the
+  names of `external_task_ids`, else `external_task_group_id`, the last two
+  under Airflow's own names so the sources form's key table does not change.
+  A group's tasks are in no file, so it gates no task here and its line says
+  so; a sensor naming none of the three waits for the whole run.
 - **A sensor on a DAG's whole run is marked**, `(whole run)` after it in
   `waited_by`, because it counts as awaiting every dbt task of the DAG and four
   tasks would otherwise read as four separate waits. The Jobs tab keeps its

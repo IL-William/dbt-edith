@@ -18,7 +18,9 @@ newest dated heading has to be the version `Cargo.toml` names.
 - Print under each step of `--job` what it runs after and before, the sensors
   that await it, and the assets it updates with the DAGs they start, and under
   a DAG its sensors by id with what they wait for, in the text and the JSON
-  (0124). A sensor written without an id no longer shows a dangling `›` in the
+  (0124). A sensor on several tasks (`external_task_ids`) or on a task group
+  (`external_task_group_id`) is read as such and no longer as one on the whole
+  run, and a sensor written without an id no longer shows a dangling `›` in the
   Jobs tab.
 
 ## 1.56.0 - 2026-10-27
