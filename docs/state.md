@@ -801,6 +801,16 @@ config directory, and makes its repository only where nothing was. A selector
 name from a job file was typed with its control characters. Each has a test
 beside it, the link ones on Unix (0090).
 
+The update cleans after itself (0120, 1.54.1), amending 0095 and 0111. For a
+binary cargo installed, the command runs `cargo clean --release` on the clone's
+own `target/` once the install worked, so the folder no longer grows with every
+dependency bump and every new rustc; a failed clean changes neither the install
+nor the closing line, and a binary built in the clone keeps its folder. Each
+update compiles the dependencies again, a little longer. Its limits: a
+`build.target` or `CARGO_BUILD_TARGET` leaves `target/<triple>/release` as it
+was, a `target/` cargo did not create is refused for want of its `CACHEDIR.TAG`,
+and the update to 1.54.1 itself, typed by 1.54.0, has no clean.
+
 Security pass of 2026-10-27 (0121, 0122, 1.55.0). An audit of `main` found
 nothing critical and three things to close. A project copied with its `.git`
 brought a configuration git acts on from the status poll alone: a file-system
@@ -2771,6 +2781,71 @@ each a known limit, unranked:
 - **`rows_by` merges two columns whose model and column names match in different
   packages,** which is older than 0118, and `rows_of` now lists two models of
   the same name twice.
+
+Left by the pull requests of 2026-10-27 (#115 to #118, 1.54.1 to 1.56.0),
+each a known limit, unranked:
+
+- **A PowerShell run of the update command.** The `$?` chains (swap, restore,
+  clean, closing line) are checked as composed strings only (0111, 0120); pwsh
+  is preinstalled on the Ubuntu CI runners, so a test could run them there, as
+  `sh` already runs the Posix ones.
+- **The clean under a build target.** With `build.target` or
+  `CARGO_BUILD_TARGET` set, the install builds into `target/<triple>/release`,
+  which `cargo clean --release` leaves even with the same setting in force
+  (0120); cleaning it needs the triple the install used, which only the
+  terminal's shell and cargo's config know, not the server.
+- **A `target/` cargo did not create.** It has no `CACHEDIR.TAG`, so every clean
+  refuses it (exit 101) and it keeps growing, with cargo's error in the terminal
+  as the only sign (0120); the menu could point it out.
+- **The release job's publish path first ran with v1.56.0.** `gh release create`
+  with the four files and the `releases/latest/download` .sha256 check had only
+  run up to the build on pull requests. A failed check is fixed in the next
+  release, since published releases are immutable (0123).
+- **No test makes a PowerShell `Move-Item` fail under `Stop`.** The real-shells
+  test sets `$ErrorActionPreference='Stop'` on the swap, mismatch and 404 paths,
+  but only the sh test covers a rename that fails.
+- **Artifacts of the `windows` job last one day on pull requests and the
+  repository default on releases.** Re-running a failed release job after that
+  finds none, so it needs the whole workflow (workflow_dispatch).
+- **VirusTotal is not an endpoint's on-device engine.** The release files scan
+  clean there (0123), but an on-device model and its threshold are not on
+  VirusTotal, so it cannot show what such an engine says of the MSVC file.
+- **The ARM64 `.exe` has only run in CI** (`windows-11-arm`: the shells test and
+  `--version`), never on Windows on ARM in someone's hands.
+- **A build outside `<clone>/target` is offered the download, which overwrites
+  it.** This covers a custom `CARGO_TARGET_DIR` or a clone moved after building
+  (0123).
+- **PowerShell's redirects are not held to HTTPS, as curl's are.** The release's
+  `.sha256` comes from the same server, so it catches truncation, not tampering.
+  This extends item 30 to the release files.
+- **Git Bash's `curl` reads `HTTPS_PROXY` only, not Windows' proxy settings.**
+  Behind a proxy, the PowerShell terminal or a manual download is the way.
+  Reading the system proxy is not done.
+- **A build before 1.56.0 offers cargo alone.** Moving to the release's file
+  takes one more cargo update, or a manual download plus `cargo uninstall
+  dbt-edith`.
+- **The git config gate and the launch key (0121, 0122):**
+  - a repository git refuses for an owner it calls dubious is paused as
+    unreadable, and its venvs are set aside with the rest;
+  - a missed verdict costs two processes (`rev-parse` and `config`), and a
+    repository where the search by eye and `rev-parse` disagree is never cached,
+    so it pays them on every call;
+  - a click still runs the hooks the repository holds, copied ones included
+    (0053);
+  - git older than 2.38 ignores `safe.bareRepository`, so the refusal of a
+    bare-looking folder rests on `locate` alone;
+  - git older than 2.26 cannot list scopes, so every repository is paused as
+    unreadable and asked again at each poll, with no fallback to
+    `--show-origin`;
+  - a key a tool writes into the repository's own config (`git lfs install
+    --local`, a credential helper set per repository) or an `include` pauses git
+    until it moves to the global config;
+  - the gate's read and git's own are not one step: a config changed in between
+    is the one git uses;
+  - a venv the user made in a paused repository is set aside until the pause
+    lifts, its note saying git cannot tell;
+  - `tracks()` still matches "not a git repository" anywhere in git's message,
+    where the gate now matches its start.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
