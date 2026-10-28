@@ -1759,6 +1759,23 @@ inferred from the job's selections, not read, since `dbt_artifacts` does not
 record it; and a long list of assets is cut short in the schedule pill, whole
 only in its tooltip. Seeds, snapshots and tests wait on item 26.
 
+Job order (0124 to 0126, 1.57.0 to 1.59.0): the order the job files declare,
+said three ways. `--job`, and MCP's `job`, carries it (0124): under a DAG each
+sensor and what it waits for (a task, the tasks of an `external_task_ids`, a
+task group whose tasks are not read, or the whole run), and under each step
+what it follows and precedes, the sensors of any DAG awaiting it and the assets
+it updates. `--job-order` takes every dbt dependency between steps of two jobs
+that may start on their own, the nearest ancestor another step builds, walking
+through views, ephemerals and dynamic tables, and says whether a `depends_on`
+chain, a sensor, an asset or a dbt Cloud trigger orders it; the pairs nothing
+orders, those only the clock orders and those ordered the other way are grouped
+apart (0125). Reports gained a Job order section from the same answer, which
+never lights the button (0126). Checked with `cargo test` (DAGs written in the
+tests: sensors of every form, assets with several updaters, DAGs with no dbt
+task, crons across zones, cycles written in any order, the same answer twice;
+the route behind the key, its body the command's) and `web/tests/joborder.js`.
+Its limits are in the list left by these pull requests, below.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
@@ -2797,11 +2814,10 @@ each a known limit, unranked:
 - **A `target/` cargo did not create.** It has no `CACHEDIR.TAG`, so every clean
   refuses it (exit 101) and it keeps growing, with cargo's error in the terminal
   as the only sign (0120); the menu could point it out.
-- **Releases are not immutable.** The repository's setting is off, though
-  `release.yml`'s error line and 0123 say a published release is, so a failed
-  check of the served `.sha256` files could be mended by editing the release.
-  Turning the setting on is the owner's call; otherwise the error line is
-  reworded in a later change, and 0123 stays as merged.
+- **Releases before 1.57.0 are not immutable.** The repository's setting was
+  turned on on 2026-10-28 and holds for releases published since, as
+  `release.yml`'s error line and 0123 say; the files of 1.56.0 and older can
+  still be edited in place.
 - **No test makes a PowerShell `Move-Item` fail under `Stop`.** The real-shells
   test sets `$ErrorActionPreference='Stop'` on the swap, mismatch and 404 paths,
   but only the sh test covers a rename that fails.
@@ -2847,6 +2863,26 @@ each a known limit, unranked:
     lifts, its note saying git cannot tell;
   - `tracks()` still matches "not a git repository" anywhere in git's message,
     where the gate now matches its start.
+
+Left by the job order pull requests of 2026-10-28 (#120 to #122, 1.57.0 to
+1.59.0), each a known limit, unranked:
+
+- **A task's group is not read.** dag-factory names it on each task
+  (`task_group_name`), so a sensor on an `external_task_group_id` gates none of
+  its tasks and its line says so (0124, 0125).
+- **`--job-order` has no `--select`** to narrow the readers; an agent filters
+  the JSON.
+- **A DAG with no dbt task is one point.** Its own sensors and `depends_on` are
+  not read, and one on a cron that updates no asset is not kept, so a sensor on
+  it orders nothing (0125).
+- **Not read:** a `TriggerDagRunOperator` (the DAG it starts reads as manual),
+  an Airflow task starting a dbt Cloud job, and `trigger_rule`.
+- **The Job order section** forgets the edges a "+N more" opened once the user
+  comes back to it, and names a dbt Cloud step without its `[[ident]]`, which
+  the answer does not carry (0126).
+- **`waited_by` holds `(whole run)` inside its string**, as 0124 chose, so an
+  agent reads the flag from the text; and `answer()` works out the steps'
+  sensors a second time where `step_view` already has them.
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
@@ -3286,10 +3322,11 @@ when run again alone:
 - `git::a_quick_command_is_not_held_back`;
 - `scripts/walk_depth.py`, which times out on a wait for the lineage to settle;
 - since 1.25.0, the ring around `#keys-btn` in `scripts/walk_tour.py`, drawn
-  2.6px right of the button. The ring is placed while the ? button still
-  shifts. The likely cause is that the age on the manifest's pill gains a
-  digit during the measure, and moves the buttons to its left. It fails on
-  `main` too, so it is not a branch's doing.
+  2.6px right of the button, and under load the one around `#palette-btn`.
+  The ring is placed while the ? button still shifts. The likely cause is
+  that the age on the manifest's pill gains a digit during the measure, and
+  moves the buttons to its left. It fails on `main` too, so it is not a
+  branch's doing.
 
 `scripts/walk_menu.py` fails now and then in its cleanup, not in a check: the
 temporary Chrome profile it removes is still written to, and the removal
