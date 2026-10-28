@@ -800,6 +800,10 @@ fn write_text(a: &OrderAnswer, out: &mut impl Write) -> io::Result<()> {
         if !a.configured {
             // `jobs: []`, worded as --describe and --overview word it.
             writeln!(out, "no sources in {}", jobs::SOURCES_FILE)?;
+        } else if a.not_read.is_some() {
+            // A source not walked may have held the pair, and a step it held
+            // was not looked at: nothing more is claimed, as the page says.
+            writeln!(out, "no pair in what was read")?;
         } else if !a.unresolved.is_empty() {
             writeln!(out, "no pair among the steps resolved")?;
         } else if a.checked == 0 {
@@ -1452,6 +1456,8 @@ mod tests {
         let (out, _, code) = ask(&root, Output::Name);
         assert_eq!(code, ANSWERED);
         assert!(out.ends_with("not read: 1 of 2 sources (nothing at this path)\n"), "{out}");
+        // A pair is not claimed absent: only what was read is said.
+        assert!(out.starts_with("pairs 0\nno pair in what was read\n"), "{out}");
         let json: serde_json::Value = serde_json::from_str(&ask(&root, Output::Json).0).unwrap();
         assert_eq!(json["not_read"], json!({"sources": 1, "of": 2, "reason": "nothing at this path"}));
     }

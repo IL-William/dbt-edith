@@ -200,7 +200,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a panel, or move a view between the dock and a panel | [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
 | add a setting, or change what the gear or a status bar pill opens | [0100](docs/decisions/0100-the-settings-open-in-a-panel-of-their-own.md), [0091](docs/decisions/0091-what-speaks-of-the-whole-project-opens-in-a-panel.md) |
 | hide the Reports button, or change what it says with no report | [0075](docs/decisions/0075-the-reports-button-stays-in-view-dimmed-while-it-has-nothing.md) |
-| give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
+| give a report news on the Reports button, or change what its chips say | [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md), [0126](docs/decisions/0126-job-order-is-a-quiet-section-of-reports.md) |
 | read `run_results.json`, or change what the Last run section says or sends | [0065](docs/decisions/0065-the-last-run-is-read-from-run-results-as-dbt-left-it.md), [0012](docs/decisions/0012-secrets-and-boundaries.md) |
 | change what a collin run keeps under `target/collin/`, or the comparison of two versions | [0061](docs/decisions/0061-each-collin-version-keeps-its-last-run-to-compare.md) |
 | read a `.yml` file from the server, or reach for a YAML parser | [0018](docs/decisions/0018-project-vars-by-scanner.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |

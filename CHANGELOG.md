@@ -18,7 +18,9 @@ newest dated heading has to be the version `Cargo.toml` names.
 - Show the dependencies the jobs do not order in a Job order section of
   Reports, beside the job coverage: the pairs `--job-order` lists, in their
   three groups, each model a link that opens it with the Jobs tab, never
-  lighting the Reports button (0126).
+  lighting the Reports button (0126). `--job-order --output json` now also
+  carries `checked`, the steps that were looked at, and the text of an empty
+  answer says `no pair in what was read` while a source was not read.
 
 ## 1.58.0 - 2026-10-28
 
