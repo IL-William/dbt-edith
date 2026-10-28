@@ -2856,6 +2856,13 @@ dense a real graph is. Both were listed in the README's "Not there
 yet" and nowhere else for a while, which is how that section came to
 disagree with this one.
 
+Also unranked, from `--job-order` (0125): reading a sensor on every DAG that
+carries a tag, for which a job source would need a key naming the tag and the
+DAG's tags key; and counting tests as readers of the models they test, which
+the first needs, since a DAG that gates its tests on a tag is one the mode now
+sees none of. Not started either: the per-task schedules a factory interprets, a
+sensor's lookback or `execution_delta`, and which of two crons runs first.
+
 Also unranked, since nobody has asked for it: the terminal's venv in the status
 bar under zsh, fish or PowerShell. They take prompt hooks from their startup
 files alone, and 0069 rejected both ways in, a generated `ZDOTDIR` and a typed

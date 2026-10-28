@@ -143,13 +143,19 @@ schedule: "0 6 * * *"        # a cron, a preset, null for manual, or a list of a
 tasks:
   - task_id: build_sales
     command: dbt run --select tag:sales   # `dbt` in front is optional
-    depends_on: [stage_sales]             # optional, as is everything below
+    depends_on: [stage_sales, wait_crm]   # optional, as is everything below
     outlets: [sales_ready]
 sensors:
   - task_id: wait_crm
     external_dag_id: crm_daily
     external_task_id: crm_load
 ```
+
+As in Airflow, a sensor orders only the tasks that name it in `depends_on`,
+directly or through another task's: one that no task names waits for something
+and holds nothing back. `dbt-edith --job-order` lists the dependencies between
+steps that nothing here orders, and says so of such a sensor
+([0125](../decisions/0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md)).
 
 A key is a dotted path, so a factory that writes `pipeline: {name: ...}` and
 calls its tasks `steps` and their command `dbt` is read with `pipeline.name`,

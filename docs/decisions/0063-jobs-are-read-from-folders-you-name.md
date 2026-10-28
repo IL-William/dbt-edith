@@ -1,6 +1,6 @@
 # 0063. Jobs are read from folders you name, outside the project
 
-Date: 2026-10-11 · Status: accepted, amended by 0077, 0103, 0115 and 0119 · Amends 0017 and 0018
+Date: 2026-10-11 · Status: accepted, amended by 0077, 0103, 0115, 0119 and 0125 · Amends 0017 and 0018
 
 **Trigger:** read before changing which job files are read, what leaves them,
 or how a job's dbt command is resolved.

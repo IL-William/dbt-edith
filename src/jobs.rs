@@ -811,13 +811,13 @@ pub struct Sensor {
 
 impl Sensor {
     /// Neither a task nor a group: it waits for the whole run of the DAG.
-    fn whole(&self) -> bool {
+    pub(crate) fn whole(&self) -> bool {
         self.tasks.is_empty() && self.group.is_empty()
     }
 
     /// What it waits for as the Jobs tab words it, one string each: `dag › task`
     /// per task, `dag › task group g`, or the DAG alone for its whole run.
-    fn waits(&self) -> Vec<String> {
+    pub(crate) fn waits(&self) -> Vec<String> {
         if self.whole() {
             return vec![self.dag.clone()];
         }
@@ -866,7 +866,8 @@ pub struct Job {
     asset_unread: bool,
     /// dbt Cloud: runs once this job completes, by its id.
     pub after: String,
-    after_job: Option<usize>,
+    /// The job `after` names, once one file read defines it.
+    pub(crate) after_job: Option<usize>,
     pub ci: bool,
     pub merge: bool,
     /// Why its schedule is not known, when it is not.
@@ -875,6 +876,9 @@ pub struct Job {
     pub steps: Vec<usize>,
     /// What its tasks with no dbt command update, which starts DAGs too.
     outlets: Vec<String>,
+    /// Those tasks one by one, since what orders a dbt task may pass through
+    /// one (`--job-order`).
+    pub links: Vec<TaskLink>,
     /// What its own schedule or trigger says, before any chain.
     own: Start,
     /// What starts it, chains followed (0063, 0077).
@@ -883,10 +887,21 @@ pub struct Job {
     pub assets_unread: Vec<String>,
 }
 
+/// An Airflow task with no dbt command: it runs no node, but a dbt task may
+/// wait for it, and it may update the assets that start other DAGs.
+#[derive(Clone, Debug, Default)]
+pub struct TaskLink {
+    pub name: String,
+    pub upstream: Vec<String>,
+    pub outlets: Vec<String>,
+}
+
 /// A DAG with no dbt task that updates an asset: not a job here, since it
 /// runs no node, but it may be what starts one (0077).
 #[derive(Clone, Debug, Default)]
 pub struct Feeder {
+    /// Its DAG id, which a sensor of another DAG may name.
+    pub dag: String,
     pub assets: Vec<String>,
     asset_unread: bool,
     pub outlets: Vec<String>,
@@ -919,7 +934,7 @@ impl Step {
     fn verb(&self) -> Option<Verb> {
         self.inv.as_ref().map(|i| i.verb)
     }
-    fn executes(&self) -> bool {
+    pub(crate) fn executes(&self) -> bool {
         self.unresolved.is_empty() && self.verb().is_some_and(Verb::executes)
     }
 }
@@ -1069,10 +1084,12 @@ fn read_airflow(
     let (dag_key, outlets_key) = (key(src, "dag_id"), key(src, "outlets"));
     let others: Vec<String> = list.iter().filter(|(_, t)| !is_dbt(t)).flat_map(|(_, t)| names(t.at_path(&outlets_key))).collect();
     if !list.iter().any(|(_, t)| is_dbt(t)) {
-        // Never refused: it is no job, and only what it updates matters.
-        if !others.is_empty() && text(doc.at_path(&dag_key)).is_some_and(|n| !n.is_empty()) {
-            let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
-            feeders.push(Feeder { assets: sched.assets, asset_unread: sched.asset_unread, outlets: others, own: sched.own });
+        // Never refused: it is no job, and only what it updates and what it
+        // runs on matter. One that runs on an asset and updates none starts
+        // nothing, but a sensor of another DAG may wait for it.
+        let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
+        if let Some(dag) = text(doc.at_path(&dag_key)).filter(|n| !n.is_empty()).filter(|_| !others.is_empty() || !sched.assets.is_empty()) {
+            feeders.push(Feeder { dag, assets: sched.assets, asset_unread: sched.asset_unread, outlets: others, own: sched.own });
         }
         return Ok(false);
     }
@@ -1113,8 +1130,11 @@ fn read_airflow(
     let ji = jobs.len();
     let (id_key, deps_key) = (key(src, "task_id"), key(src, "depends_on"));
     for (own, task) in list {
-        let Some(command) = task.at_path(&command_key).filter(|c| !c.is_null()) else { continue };
         let name = text(task.at_path(&id_key)).or_else(|| own.map(str::to_string)).unwrap_or_default();
+        let Some(command) = task.at_path(&command_key).filter(|c| !c.is_null()) else {
+            job.links.push(TaskLink { name, upstream: names(task.at_path(&deps_key)), outlets: names(task.at_path(&outlets_key)) });
+            continue;
+        };
         let mut step = new_step(ji, job.steps.len() + 1, name, command.line, command.str());
         step.upstream = names(task.at_path(&deps_key));
         step.outlets = names(task.at_path(&outlets_key));
@@ -1602,7 +1622,7 @@ fn source_name(read: &Read, si: usize) -> String {
     }
 }
 
-fn job_view(read: &Read, ji: usize) -> JobView {
+pub(crate) fn job_view(read: &Read, ji: usize) -> JobView {
     let j = &read.jobs[ji];
     let (after, after_unread) = match (j.after.is_empty(), j.after_job) {
         (true, _) => (String::new(), false),
@@ -1874,11 +1894,7 @@ impl JobView {
 impl StepView {
     /// `task marts`, `step 2/3`, as the tab names a step.
     pub fn label(&self, job: &JobView) -> String {
-        if job.kind == AIRFLOW {
-            format!("task {}", if self.name.is_empty() { self.n.to_string() } else { self.name.clone() })
-        } else {
-            format!("step {}/{}{}", self.n, job.steps, if self.implicit { ", from run_generate_sources" } else { "" })
-        }
+        label_of(job.kind, self.n, &self.name, self.implicit, job.steps)
     }
 }
 
@@ -1930,6 +1946,22 @@ impl JobAnswer {
         }
         lines
     }
+}
+
+/// `task marts` or `step 2/3`: how a step is named, from its own facts.
+fn label_of(kind: &str, n: usize, name: &str, implicit: bool, steps: usize) -> String {
+    if kind == AIRFLOW {
+        format!("task {}", if name.is_empty() { n.to_string() } else { name.to_string() })
+    } else {
+        format!("step {n}/{steps}{}", if implicit { ", from run_generate_sources" } else { "" })
+    }
+}
+
+/// A step's label without building its whole view, for a list of many.
+pub(crate) fn step_label(read: &Read, si: usize) -> String {
+    let s = &read.steps[si];
+    let job = &read.jobs[s.job];
+    label_of(job.kind, s.n, &s.name, s.implicit, job.steps.len())
 }
 
 /// One step that acts on a node, for the command line.

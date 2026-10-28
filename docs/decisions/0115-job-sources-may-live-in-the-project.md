@@ -1,6 +1,6 @@
 # 0115. Job sources may live in the project
 
-Date: 2026-10-21 · Status: accepted, amended by 0119 and 0124 · Amends 0011, 0057, 0063 and 0110
+Date: 2026-10-21 · Status: accepted, amended by 0119, 0124 and 0125 · Amends 0011, 0057, 0063 and 0110
 
 **Trigger:** read before changing where the job sources are kept, what
 `.dbt-edith/jobs.yml` holds or who writes it, or what the command line and

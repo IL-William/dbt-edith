@@ -6,7 +6,7 @@ description: "Answer questions about a dbt project from its manifest with the `d
 
 # dbt-edith
 
-Run `dbt-edith` from the dbt project root as `dbt-edith . <flags>`. It reads the manifest, never runs dbt or reaches a warehouse, so every call below is safe unasked except `--run-collin`.
+Run `dbt-edith` from the project root as `dbt-edith . <flags>`. It reads the manifest, never runs dbt or reaches a warehouse, so every call below is safe unasked except `--run-collin`.
 
 | To know | Run |
 | --- | --- |
@@ -16,22 +16,22 @@ Run `dbt-edith` from the dbt project root as `dbt-edith . <flags>`. It reads the
 | everything upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact` |
 | the sources feeding a model | `dbt-edith . -s '+model,resource_type:source' --exclude resource_type:test --output compact`; add `--count-by source` to count |
 | a column's sources, or what it feeds | `dbt-edith . --column model.column --up all --output compact`; or `--down all` |
-| which DAGs or jobs run a node; what a job runs | `jobs` line of `--describe name` (needs `.dbt-edith/jobs.yml`); `dbt-edith . --job name` |
+| which DAGs or jobs run a node; what a job runs; what no job orders | `jobs` line of `--describe name` (needs `.dbt-edith/jobs.yml`); `dbt-edith . --job name`; `--job-order` |
 
 `--count-by` counts a selection by `folder` (`--depth N`, layers), `source`, `kind`, `materialized`, `tag` or `package`. Never count with a pipe.
 
-The card's `relation` is the parsed target's, `configured` the config as written; each `.env` line is that config per file, before the `generate_*_name` macros (not evaluated), so say the line may differ (a source's is exact). `<target>`: left to the target. `<VAR not set>`, `<VAR placeholder>`: missing or placeholder. `<hidden>`: a credential. `?`: not evaluated or empty. `~`: one branch of an `if`.
+The card's `relation` is the parsed target's, `configured` the config as written; each `.env` line is that config per file, before the `generate_*_name` macros (not evaluated), so say it may differ (a source's is exact). `<target>`: left to the target. `<VAR not set>`, `<VAR placeholder>`: missing or placeholder. `<hidden>`: a credential. `?`: not evaluated or empty. `~`: one branch of an `if`.
 
-Column lineage reads collin's or Fusion's cache beside the manifest, else fails. `--run-collin` runs collin over compiled SQL and rewrites its cache: ask first. After `dbt parse` alone an empty or partial answer (exit 0) is not the truth.
+Column lineage reads collin's or Fusion's cache beside the manifest, else fails. `--run-collin` runs collin over compiled SQL and rewrites its cache: ask first. After `dbt parse` alone an empty or partial answer (exit 0) is incomplete.
 
 ## Habits
 
 - **Leave the tests out unless asked.** A test joins its parent's selection: `--exclude resource_type:test` drops them, `--describe` lists a node's. Compact for lists, the card for one node.
-- **Big project: count, then narrow.** A long list (hundreds) or several cards can pass an answer limit: `--count-by folder` or `tag` first, list a narrow selection, describe 2-3 names per call.
+- **Big project: count, then narrow.** A long list (hundreds) or several cards can pass an answer limit: `--count-by folder` or `tag` first, list a narrow one, describe 2-3 names per call.
 - **Several `--exclude` terms go in one quoted value.** `--count-by` counts sources, seeds and the start too: `--exclude 'resource_type:test resource_type:source resource_type:seed resource_type:exposure'` counts models, snapshots and analyses; subtract the start if selected.
-- **Jobs touching a set, or models no job runs**: `dbt-edith . --overview --depth 0 --output json` names every job (the text cuts at 15), `--job name` lists the nodes each runs and the steps' order, sensors included; intersect with, or subtract from, the selection. One call per job: with many, say which were not checked.
+- **Jobs touching a set, or models no job runs**: `dbt-edith . --overview --depth 0 --output json` names every job (text cuts at 15), `--job name` lists the nodes each runs and the steps' order, sensors included; intersect with or subtract from the selection. One call per job: with many, say which were skipped.
 - **Confirm before anything irreversible**: `dbt ls` the selection before a run, drop or deletion.
 
 ## Freshness
 
-stderr ends with a `freshness:` line. On `stale`, ask the user to run `dbt parse`, then ask again. A refused flag means dbt-edith is older than this text: update it, or run `dbt-edith --skill`.
+stderr ends with a `freshness:` line. On `stale`, have the user run `dbt parse`, then ask again. A refused flag means dbt-edith is older than this text: update it or run `dbt-edith --skill`.

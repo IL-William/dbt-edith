@@ -149,6 +149,8 @@ QUESTIONS = [
     ("--job nightly", 0),
     ("--job jaffle", 1),
     ("--job no_such_job", 1),
+    ("--job-order", 0),
+    ("--job-order --output json", 0),
 ]
 
 
@@ -681,7 +683,7 @@ def main():
 
         # The help has no command line to be compared with.
         blocks, is_error = blocks_of(server.call("help"))
-        flags = ["--overview", "--describe", "--select", "--selector", "--job", "--column", "--run-collin", "--output"]
+        flags = ["--overview", "--describe", "--select", "--selector", "--job", "--job-order", "--column", "--run-collin", "--output"]
         walk.check(
             blocks is not None and len(blocks) == 1 and not is_error and blocks[0].startswith("dbt-edith ") and all(f in blocks[0] for f in flags),
             "help lists the flags in one block", str(blocks),

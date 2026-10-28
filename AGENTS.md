@@ -208,6 +208,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change where the job sources are kept, what `.dbt-edith/jobs.yml` holds or who writes it, or what the command line and MCP read of the jobs | [0115](docs/decisions/0115-job-sources-may-live-in-the-project.md), [0124](docs/decisions/0124-a-jobs-answer-carries-its-order-as-the-files-write-it.md), [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | change which jobs count as scheduled, or what the job coverage calls unscheduled | [0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md), [0066](docs/decisions/0066-each-report-s-news-is-a-short-chip-on-the-reports-button.md) |
 | judge a job's builds, read a cron or a time zone, or give a job source a key | [0119](docs/decisions/0119-a-jobs-builds-are-judged-against-its-own-clock-in-its-sources-zone.md), [0117](docs/decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md), [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md), [0115](docs/decisions/0115-job-sources-may-live-in-the-project.md) |
+| change what `--job-order` lists, what it counts as ordered, or which jobs it looks at | [0125](docs/decisions/0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md), [0077](docs/decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md), [0063](docs/decisions/0063-jobs-are-read-from-folders-you-name.md) |
 | list a folder outside the project, or change what the sources form's picker shows or writes | [0070](docs/decisions/0070-a-source-is-picked-from-folders-the-server-lists.md) |
 | link anything in `dbt_project.yml`, or read `model-paths` | [0036](docs/decisions/0036-a-config-key-links-to-its-folder.md), [0039](docs/decisions/0039-a-mapping-without-plus-is-a-folder.md) |
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |
@@ -295,6 +296,7 @@ src/selectors.rs      the named selectors of selectors.yml, as the manifest reco
 src/ls.rs             --select and --selector: one selection printed, and no server
 src/describe.rs       --describe and --overview: a node's card and the project's shape printed, and no server
 src/job.rs            --job: one DAG or dbt Cloud job printed step by step, with the nodes each runs and the order its files declare, and no server
+src/job_order.rs      --job-order: the dbt dependencies between jobs' steps that no job file orders, printed, and no server
 src/mcp.rs            --mcp: the stdio JSON-RPC loop and its one tool, over the same answers
 src/mcp_line.rs       the tool's command line: split, parsed by clap, accepted by an allow-list of flags
 src/mcp_graphs.rs     the manifest and the base graph the server keeps, reloaded when their files change

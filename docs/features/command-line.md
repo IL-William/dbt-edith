@@ -1,16 +1,16 @@
 # Command line
 
-Five questions dbt-edith answers without a page: what a selection matches, what
-a column reaches, what a node is, what the project holds, and what a job runs.
-Each reads the
+Six questions dbt-edith answers without a page: what a selection matches, what
+a column reaches, what a node is, what the project holds, what a job runs, and
+which dependencies the jobs leave unordered. Each reads the
 manifest dbt already wrote, prints and exits, so a script or an AI agent can
 ask with one command and read the answer in few tokens. An agent with no
 terminal can ask the same questions [over MCP](#over-mcp).
 
 ## Without a server
 
-`--select` and `--selector`, `--column`, `--describe`, `--overview` and `--job`
-have this in common
+`--select` and `--selector`, `--column`, `--describe`, `--overview`, `--job`
+and `--job-order` have this in common
 ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md),
 [0102](../decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md)):
 
@@ -29,7 +29,7 @@ have this in common
   | --- | --- |
   | 0 | answered, an empty answer included, which stderr says |
   | 1 | refused: a selection or a name it cannot resolve, with the reason on stderr; `--describe` still prints the names it could |
-  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag; for `--job`, no `.dbt-edith/jobs.yml`, or one that does not read |
+  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag; for `--job` and `--job-order`, no `.dbt-edith/jobs.yml`, or one that does not read |
 
   A flag that belongs to another mode is a wrong flag: `--sql` beside
   `--overview` or `--depth` beside `--describe` is refused, naming the mode it
@@ -42,8 +42,8 @@ have this in common
   relative to where the command is typed, not to the project.
 - **`--output`** picks what is printed: `name`, the default, one name per
   line; `json`, one object per node; `compact`, tab-separated lines under a
-  header. `--describe`, `--overview` and `--job` print a text card unless it is
-  `json`: a card is read, so `compact` prints the same text.
+  header. `--describe`, `--overview`, `--job` and `--job-order` print text
+  unless it is `json`: a card is read, so `compact` prints the same text.
 
 A call costs one process start and one read of the artifacts: the manifest for
 a selection or a column, and for `--describe` and `--overview` the catalog and
@@ -418,6 +418,145 @@ The file is the one [Jobs](jobs-and-reports.md#jobs) describes: paths from the
 project, never hidden, never a profile, never the home folder, a link along the
 path included.
 
+## The order between jobs
+
+`--job-order` lists the dbt dependencies between the steps of the jobs that
+start on their own which the job files do not order
+([0125](../decisions/0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md)):
+a step that builds a model whose parent another step builds, with nothing in
+the files making it wait for that step. It is the question an agent otherwise
+answers by joining `--job` for every DAG with the parents `--describe` gives and
+the YAML, by hand.
+
+```
+dbt-edith path/to/project --job-order
+dbt-edith path/to/project --job-order --output json
+```
+
+It reads the jobs as `--job` does, from the project's own `.dbt-edith/jobs.yml`,
+and exits 2 in the same cases, with the same sentences. An answer exits 0
+whether it finds a pair or none. It never runs dbt.
+
+```
+pairs 2: 1 nothing orders them, 1 only the clock, 0 the other way
+nothing orders them  1
+  DAG jaffle_marts › task build  should wait for  DAG jaffle_stage › task stage
+    scheduled 0 6 * * *  ·  scheduled 0 6 * * *
+    customers reads stg_customers
+    orders reads stg_orders through int_orders
+only the clock orders them  1
+  DAG jaffle_late › task build  should wait for one of  DAG a › task x, DAG b › task y
+    scheduled 0 7 * * *  ·  scheduled 0 6 * * *, scheduled 0 5 * * *
+    orders reads stg_orders
+2 steps not resolved, which could hide more
+1 job nothing starts left out: jaffle_full_refresh
+```
+
+**What counts as a dependency.** A step is a consumer of the nodes it builds and
+a producer of the same, where a built node is a model that is not a view, an
+ephemeral or a dynamic table, a seed or a snapshot, and not disabled. A
+materialized view is built: dbt refreshes it on every run, so the step that
+runs it is the one a reader waits for. Each parent of a consumed
+model is looked at. When the step builds the parent itself, dbt orders them. When
+another step builds it, that step is one it should wait for. When the parent is
+a view, an ephemeral or a dynamic table, whoever selects it, the walk goes on
+through it to its own parents (an ephemeral is inlined into the model that reads
+it, a view reads its parents live, and a dynamic table refreshes on its own
+lag); what is crossed is named after `through`. A source, or a table or incremental model that no step builds, ends
+the walk. Tests are neither consumers nor producers, and a step that only
+re-creates one of them consumes nothing.
+
+**What counts as ordered.** The files order a step after another when the second
+is an ancestor of the first in a graph made of:
+
+- an Airflow DAG's tasks, the tasks with no dbt command, its sensors and a start
+  per DAG: each task after its DAG's start, and after the tasks its
+  `depends_on` names;
+- a sensor, after each task it names in the DAG it names (`external_task_id`,
+  or every one of `external_task_ids`), or after every task of that DAG only
+  when it names neither a task nor a group. A sensor on a task group
+  (`external_task_group_id`) orders nothing, since which tasks the group holds is
+  not read, and is never taken for the whole run. **A sensor orders only the tasks that name it,
+  directly or through `depends_on`**, which is Airflow's rule: a sensor in the
+  DAG waits, but holds back only the tasks that depend on it. Whenever the files
+  put a sensor of this DAG after a step the pair should wait for (its task, the
+  DAG, or a later task of it) and this task does not depend on it, the pair says
+  so in a `note:` (`idle_sensors` in JSON; a sensor with no id, which no task can
+  name, is always one, and reads "a sensor" in the note). A sensor on its own DAG waits
+  for the previous run and adds no order within this one. When the step depends
+  on a sensor that waits for a task group of a DAG holding a step it should wait
+  for, the pair says so in a `note:` too (`group_sensors` in JSON), since the
+  group may well hold that step and its tasks are not read;
+- a DAG scheduled on assets, after the tasks of any DAG that update one of them,
+  and after a DAG with no dbt task that does. An asset updated by several tasks
+  starts a run on the first update, so only what all of them are after is before
+  it; across the DAG's assets it waits for all;
+- a dbt Cloud job's steps, each after the one written before it, and a job
+  started by another's end, after that job's last step.
+
+A step is never compared with itself. A DAG whose `depends_on` loops is not one
+Airflow loads: it is left out as a consumer and as a producer, and listed as
+`DAG x has a depends_on cycle, which Airflow does not load: left out`.
+
+**The three kinds of pair.**
+
+| Group | Meaning |
+| --- | --- |
+| `none`, "nothing orders them" | Nothing the files say, and not a clock either: the same DAG or job, the same cron in the same zone, a side scheduled on an asset or a trigger, or a schedule that was not read. |
+| `clock`, "only the clock orders them" | A step it should wait for is in another job, both jobs have a cron, and the (cron, zone) differ. Both schedules are shown; the tool never works out which cron runs first. |
+| `reversed`, "ordered the other way" | Every step it should wait for runs after it, by the files: the model reads what a later step builds. When only some do, the pair keeps its group and lists them (`later` in JSON, `T runs after it` in text). |
+
+A cron is compared with its spaces collapsed and a preset spelled out
+(`@daily` is `0 0 * * *`), in the zone of its Airflow source, UTC when it has
+none, and a dbt Cloud job's is UTC ([Jobs](jobs-and-reports.md#jobs)). A
+schedule is shown with its zone when that is not UTC. Pairs are listed by group
+as above, then by the consumer's job and step, then by what it should wait for.
+A pair lists its edges, `orders reads stg_orders`, at most five in text and then
+`+N more`; JSON lists them all.
+
+**Scope.** Only the steps that execute (`run`, `build`, `test`, `seed`,
+`snapshot`, `source freshness`) of jobs that may start on their own count, a
+job a clock starts, or one only a schedule not read, an asset or a trigger may
+start. A job nothing starts (manual, CI, merge) is left out on both sides, or a
+single ad hoc run of `+x` would flag the whole project; the last line of the
+answer names them. `N steps not resolved` counts the steps of the scoped jobs
+that could build a node and could not be read, since each could hide a pair,
+and `not read:` says when a source was not read, as `--job` does. On a project
+with many jobs the text answer is long: its first line gives the counts, so a
+cut answer still says how much was cut, and `--output json` is the shape to
+filter.
+
+**Approximations**, none of them coded:
+
+- a DAG with no dbt task that updates an asset is one point, and its own
+  sensors and `depends_on` are not read; a sensor on any of its tasks, or on
+  its whole run, counts as after all of it;
+- a DAG started by a `TriggerDagRunOperator` reads as manual and is left out,
+  and an Airflow task that starts a dbt Cloud job is not read;
+- a sensor between two different crons, without the `execution_delta` or
+  lookback that fits them, may wait for a run that never comes, and still
+  counts as ordering;
+- `trigger_rule` is not read, so a task that runs on a failed upstream counts
+  as after it;
+- an asset updated by several tasks is as above, not the update that really
+  started the run.
+
+`--output json` prints one object: `configured` (the sources file names at
+least one source, which tells an empty answer from no job read at all),
+`counts` (`none`, `clock`, `reversed`), `pairs`, `unresolved`, `left_out` (each
+`source`, `job`), `cyclic` (the same) and `not_read`, when a source was not
+read. An `unresolved` entry has `source`, `job`, `label`, `shown` (the command as
+parsed), `file`, `line` and `why`, to be listed and checked by hand. A pair has
+`group` (`none`, `clock` or `reversed`), `step` and `waits_for` (a list), each
+side being `kind`, `job`, `source`, `label` (`task build`, `step 2/3`),
+`schedule`, `cron`, `timezone` (empty ones left out), `file` and `line`;
+`edges`, each with `node`, `node_name`, `parent`, `parent_name` and `through`, a
+list of `id` and `name`; and, when there are some, `later` (sides),
+`idle_sensors` (each `id`, absent for a sensor written without one, and `waits`,
+what it waits for as the Jobs tab words it) and `group_sensors` (the same, and
+`task`, the step's task that depends on it). The text's notes are built from
+these.
+
 ## The project
 
 `--overview` prints what the project holds on one screen, the first thing to
@@ -496,6 +635,7 @@ are safe to run unasked.
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
 | which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
 | what a DAG or dbt Cloud job runs, and what each step waits for | `dbt-edith . --job name`, step by step |
+| the dbt dependencies the jobs do not order | `dbt-edith . --job-order`, then `--output json` to filter |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
 Six habits keep the answers small and true:
@@ -529,8 +669,8 @@ Six habits keep the answers small and true:
   intersects them with the selection or subtracts them from it. It costs one
   call per job, so an agent with many says which it did not check. `--job` also
   gives each step's order, the sensors a DAG waits on and what its tasks update,
-  as the files write them: the input for a question about the order between
-  jobs, which it does not answer itself.
+  as the files write them; whether the jobs run what feeds a model before it is
+  no job-by-job question, and `--job-order` answers it for all of them at once.
 
 Start from these commands, or from the skill that wraps them
 ([below](#the-skill)). Use MCP only where there is no terminal to run them in;
@@ -612,6 +752,7 @@ project.
 --overview
 --describe orders --sql
 --job jaffle_daily
+--job-order
 -s 'stg_orders+1' --exclude resource_type:test --output compact
 --column stg_payments.amount --down all --output compact
 ```
