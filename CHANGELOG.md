@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.58.0 - 2026-10-28
+
+- Add `--job-order`, which lists the dbt dependencies between the steps of the
+  jobs that start on their own which the job files do not order: a step that
+  builds a model whose parent another step builds, with the views and
+  ephemerals between them named, in text and JSON and over MCP. It tells apart
+  what nothing orders, what only the clock may, and what the files order the
+  other way, and notes a sensor that no task depends on (0125).
+
 ## 1.57.0 - 2026-10-28
 
 - Print under each step of `--job` what it runs after and before, the sensors

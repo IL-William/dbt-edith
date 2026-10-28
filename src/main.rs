@@ -18,6 +18,7 @@ mod git;
 mod graph;
 mod incremental;
 mod job;
+mod job_order;
 mod jobs;
 mod ls;
 mod look;
@@ -151,6 +152,10 @@ struct Args {
     #[arg(long, value_name = "NAME", conflicts_with_all = ["select", "selector", "column", "describe", "overview"])]
     job: Option<String>,
 
+    /// Print the dbt dependencies between steps of jobs that start on their own which the job files do not order, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job"])]
+    job_order: bool,
+
     /// Count what --select or --selector matched instead of listing it, one row per value of KEY and a total
     #[arg(long, value_enum, value_name = "KEY")]
     count_by: Option<ls::CountBy>,
@@ -159,7 +164,7 @@ struct Args {
     #[arg(long, value_name = "N")]
     depth: Option<usize>,
 
-    /// What --select, --selector, --column, --describe, --overview and --job print: one name per line, one JSON object per node (per model for --column, one for --overview or --job), or compact tab-separated lines; --describe, --overview and --job print a text card unless json; with --count-by, json prints one object and name and compact print the same table
+    /// What --select, --selector, --column, --describe, --overview, --job and --job-order print: one name per line, one JSON object per node (per model for --column, one for --overview, --job or --job-order), or compact tab-separated lines; --describe, --overview, --job and --job-order print a text card unless json; with --count-by, json prints one object and name and compact print the same table
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
 
@@ -168,7 +173,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
@@ -178,8 +183,8 @@ struct Args {
         long,
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
-            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "count_by",
-            "depth", "output", "mcp",
+            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order",
+            "count_by", "depth", "output", "mcp",
         ]
     )]
     skill: bool,
@@ -209,7 +214,7 @@ fn stray(args: &Args) -> Option<String> {
             "--column-lineage",
             "--column, or the page",
             args.column.is_some()
-                || (args.describe.is_empty() && !args.overview && args.job.is_none() && args.select.is_none() && args.selector.is_none()),
+                || (args.describe.is_empty() && !args.overview && args.job.is_none() && !args.job_order && args.select.is_none() && args.selector.is_none()),
         ),
     ];
     let stray = flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"));
@@ -230,13 +235,14 @@ enum Question {
     Describe { names: Vec<String>, sql: bool },
     Overview { depth: usize },
     Job { name: String },
+    JobOrder,
     Column(ls_column::Ask),
 }
 
 /// The question the arguments ask, or None for the page. One mapping from
 /// flags to mode, so the command line and the MCP tool cannot read the same
 /// flags two ways. A selection is looked at first, then a name to describe,
-/// the overview, a job and the column, which is the order the modes were added in.
+/// the overview, a job, the order between jobs and the column, which is the order the modes were added in.
 fn question_of(args: &Args) -> Option<Question> {
     // The depth's 3 is applied here, as the overview's is below.
     let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
@@ -260,6 +266,9 @@ fn question_of(args: &Args) -> Option<Question> {
     }
     if let Some(name) = &args.job {
         return Some(Question::Job { name: name.clone() });
+    }
+    if args.job_order {
+        return Some(Question::JobOrder);
     }
     args.column.as_ref().map(|column| {
         Question::Column(ls_column::Ask {
@@ -287,6 +296,7 @@ impl Question {
             Question::Describe { names, sql } => describe::run_describe(project, manifest, catalog, names, *sql, args.output),
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
             Question::Job { name } => job::run_job(project, manifest, catalog, name, args.output),
+            Question::JobOrder => job_order::run_job_order(project, manifest, catalog, args.output),
             Question::Column(ask) => ls_column::run(project, manifest, ask, args.output),
         }
     }
@@ -611,6 +621,10 @@ mod tests {
             ("--job jaffle_daily --count-by kind", "--count-by goes with --select or --selector"),
             ("--job jaffle_daily --up 1", "--up goes with --column"),
             ("--job jaffle_daily --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+            ("--job-order --depth 2", "--depth goes with --overview or --count-by folder"),
+            ("--job-order --count-by kind", "--count-by goes with --select or --selector"),
+            ("--job-order --up 1", "--up goes with --column"),
+            ("--job-order --column-lineage n.json", "--column-lineage goes with --column, or the page"),
         ] {
             assert_eq!(stray(&asked(line)).as_deref(), Some(flag), "{line}");
         }
@@ -652,6 +666,7 @@ mod tests {
             ("--sql", "--mcp --sql"),
             ("--overview", "--mcp --overview"),
             ("--job", "--mcp --job jaffle_daily"),
+            ("--job-order", "--mcp --job-order"),
             ("--count-by", "--mcp --count-by kind"),
             ("--depth", "--mcp --depth 2"),
             ("--output", "--mcp --output json"),
@@ -691,6 +706,7 @@ mod tests {
             "--skill --describe orders",
             "--skill --overview",
             "--skill --job jaffle_daily",
+            "--skill --job-order",
             "--skill --output json",
             "--skill --mcp",
             "--mcp --skill",
@@ -746,6 +762,8 @@ mod tests {
             "--overview",
             "--job jaffle_daily",
             "--job jaffle_daily --output json",
+            "--job-order",
+            "--job-order --output json",
             "",
         ] {
             assert_eq!(stray(&asked(line)), None, "{line}");
@@ -761,6 +779,7 @@ mod tests {
             Some(Question::Describe { names, sql }) => format!("describe {} {sql}", names.join(",")),
             Some(Question::Overview { depth }) => format!("overview {depth}"),
             Some(Question::Job { name }) => format!("job {name}"),
+            Some(Question::JobOrder) => "job-order".to_string(),
             Some(Question::Column(ask)) => format!(
                 "column {} {} {} {:?} produce={}",
                 ask.column,
@@ -779,6 +798,7 @@ mod tests {
         assert_eq!(text("--overview"), "overview 3");
         assert_eq!(text("--overview --depth 1"), "overview 1");
         assert_eq!(text("--job jaffle_daily"), "job jaffle_daily");
+        assert_eq!(text("--job-order"), "job-order");
         assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");
         assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text("--column orders.amount --run-collin"), "column orders.amount 0 0 [] produce=true");
@@ -787,7 +807,19 @@ mod tests {
 
     #[test]
     fn a_job_goes_alone_among_the_questions() {
-        for line in ["--job a --overview", "--job a --describe orders", "--job a -s orders", "--job a --selector s", "--job a --column a.b"] {
+        for line in [
+            "--job a --overview",
+            "--job a --describe orders",
+            "--job a -s orders",
+            "--job a --selector s",
+            "--job a --column a.b",
+            "--job a --job-order",
+            "--job-order --overview",
+            "--job-order --describe orders",
+            "--job-order -s orders",
+            "--job-order --selector s",
+            "--job-order --column a.b",
+        ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
                 Err(e) => e.to_string(),

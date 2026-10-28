@@ -1,6 +1,6 @@
 # 0077. A start no file says is neither scheduled nor unscheduled
 
-Date: 2026-10-14 · Status: accepted · Amends 0063 and 0066
+Date: 2026-10-14 · Status: accepted, amended by 0125 · Amends 0063 and 0066
 
 **Trigger:** read before changing which jobs count as scheduled, what a DAG
 file with no dbt task leaves behind, or what the coverage calls unscheduled.

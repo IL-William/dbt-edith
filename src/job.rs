@@ -107,7 +107,7 @@ fn job(root: &Path, graph: &Graph, kept: Option<&Known>, name: &str, output: Out
 /// A line with every control character but the tab left out: the names and
 /// commands are the project's text, and an escape sequence in one would be
 /// the terminal's to run, not the reader's to see.
-fn clean(text: &str) -> String {
+pub(crate) fn clean(text: &str) -> String {
     text.chars().filter(|&c| c == '\t' || !c.is_control()).collect()
 }
 
