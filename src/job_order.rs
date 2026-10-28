@@ -800,10 +800,10 @@ fn write_text(a: &OrderAnswer, out: &mut impl Write) -> io::Result<()> {
         if !a.configured {
             // `jobs: []`, worded as --describe and --overview word it.
             writeln!(out, "no sources in {}", jobs::SOURCES_FILE)?;
-        } else if a.checked == 0 {
-            writeln!(out, "no step of a job that starts on its own builds a node")?;
         } else if !a.unresolved.is_empty() {
             writeln!(out, "no pair among the steps resolved")?;
+        } else if a.checked == 0 {
+            writeln!(out, "no step of a job that starts on its own builds a node")?;
         } else {
             writeln!(out, "every step waits for the steps that build its parents")?;
         }
@@ -1275,6 +1275,10 @@ mod tests {
             let out = dags(tag, &[("stage", stage), ("bridge", bridge), ("marts", &marts(wait))]);
             assert!(out.starts_with("pairs 0\n"), "{tag}: {out}");
         }
+        // A DAG that runs on the asset and updates none is a feeder all the same.
+        let quiet = bridge.replace("    outlets: [bridged]\n", "");
+        let out = dags("feeder-quiet", &[("stage", stage), ("bridge", &quiet), ("marts", &marts("    external_task_id: bridge\n"))]);
+        assert!(out.starts_with("pairs 0\n"), "{out}");
         // Not named by the task: the pair stays.
         let loose = marts("    external_task_id: bridge\n").replace("    depends_on: [wait]\n", "");
         assert!(dags("feeder-loose", &[("stage", stage), ("bridge", bridge), ("marts", &loose)]).starts_with("pairs 1:"));
@@ -1287,6 +1291,9 @@ mod tests {
         // Nothing in scope builds a node.
         let out = dags("empty-none", &[("manual", manual)]);
         assert!(out.starts_with("pairs 0\nno step of a job that starts on its own builds a node\n"), "{out}");
+        // Every step in scope not resolved: the pairs found are none, among those read.
+        let out = dags("empty-only-lost", &[("lost", lost)]);
+        assert!(out.starts_with("pairs 0\nno pair among the steps resolved\n1 step not resolved"), "{out}");
         // Some steps looked at, one not resolved.
         let out = dags("empty-lost", &[("stage", STAGE), ("lost", lost)]);
         assert!(out.starts_with("pairs 0\nno pair among the steps resolved\n1 step not resolved"), "{out}");

@@ -1084,9 +1084,11 @@ fn read_airflow(
     let (dag_key, outlets_key) = (key(src, "dag_id"), key(src, "outlets"));
     let others: Vec<String> = list.iter().filter(|(_, t)| !is_dbt(t)).flat_map(|(_, t)| names(t.at_path(&outlets_key))).collect();
     if !list.iter().any(|(_, t)| is_dbt(t)) {
-        // Never refused: it is no job, and only what it updates matters.
-        if let Some(dag) = text(doc.at_path(&dag_key)).filter(|n| !n.is_empty()).filter(|_| !others.is_empty()) {
-            let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
+        // Never refused: it is no job, and only what it updates and what it
+        // runs on matter. One that runs on an asset and updates none starts
+        // nothing, but a sensor of another DAG may wait for it.
+        let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
+        if let Some(dag) = text(doc.at_path(&dag_key)).filter(|n| !n.is_empty()).filter(|_| !others.is_empty() || !sched.assets.is_empty()) {
             feeders.push(Feeder { dag, assets: sched.assets, asset_unread: sched.asset_unread, outlets: others, own: sched.own });
         }
         return Ok(false);
