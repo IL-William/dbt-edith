@@ -1760,12 +1760,12 @@ record it; and a long list of assets is cut short in the schedule pill, whole
 only in its tooltip. Seeds, snapshots and tests wait on item 26.
 
 Job order (0124 to 0126, 1.57.0 to 1.59.0): the order the job files declare,
-said three ways. `--job`, and MCP's `job`, carries it (0124): under a DAG each
-sensor and what it waits for (a task, the tasks of an `external_task_ids`, a
-task group whose tasks are not read, or the whole run), and under each step
+said three ways. `--job`, and MCP's `--job` line, carry it (0124): under a DAG
+each sensor and what it waits for (a task, the tasks of an `external_task_ids`,
+a task group whose tasks are not read, or the whole run), and under each step
 what it follows and precedes, the sensors of any DAG awaiting it and the assets
-it updates. `--job-order` takes every dbt dependency between steps of two jobs
-that may start on their own, the nearest ancestor another step builds, walking
+it updates. `--job-order` takes every dbt dependency between steps of jobs that
+may start on their own, the nearest ancestor another step builds, walking
 through views, ephemerals and dynamic tables, and says whether a `depends_on`
 chain, a sensor, an asset or a dbt Cloud trigger orders it; the pairs nothing
 orders, those only the clock orders and those ordered the other way are grouped
@@ -2814,8 +2814,8 @@ each a known limit, unranked:
 - **A `target/` cargo did not create.** It has no `CACHEDIR.TAG`, so every clean
   refuses it (exit 101) and it keeps growing, with cargo's error in the terminal
   as the only sign (0120); the menu could point it out.
-- **Releases before 1.57.0 are not immutable.** The repository's setting was
-  turned on on 2026-10-28 and holds for releases published since, as
+- **Releases before 1.57.0 are not immutable.** The repository's setting has
+  been on since 2026-10-27 and holds for releases published since, as
   `release.yml`'s error line and 0123 say; the files of 1.56.0 and older can
   still be edited in place.
 - **No test makes a PowerShell `Move-Item` fail under `Stop`.** The real-shells
@@ -2873,8 +2873,8 @@ Left by the job order pull requests of 2026-10-28 (#120 to #122, 1.57.0 to
 - **`--job-order` has no `--select`** to narrow the readers; an agent filters
   the JSON.
 - **A DAG with no dbt task is one point.** Its own sensors and `depends_on` are
-  not read, and one on a cron that updates no asset is not kept, so a sensor on
-  it orders nothing (0125).
+  not read, and one that neither updates an asset nor runs on one is not kept,
+  so a sensor on it orders nothing (0125).
 - **Not read:** a `TriggerDagRunOperator` (the DAG it starts reads as manual),
   an Airflow task starting a dbt Cloud job, and `trigger_rule`.
 - **The Job order section** forgets the edges a "+N more" opened once the user
