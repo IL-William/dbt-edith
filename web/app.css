@@ -1305,6 +1305,19 @@ kbd {
 .jobs-path { font: 10.5px var(--mono); color: var(--fg-dim); margin-left: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jobs-sec > .jobs-row { padding-left: 12px; }
 .jobs-row:hover .jobs-name { color: var(--accent); text-decoration: underline solid; }
+/* A pair of Job order (0126): the step to be ordered, and the models it reads
+   from the steps it should wait for, each a link to the model. */
+.jobs-pair { margin: 8px 0 0 10px; padding-left: 8px; border-left: 2px solid var(--line); min-width: 0; }
+.jobs-pairhead { font-size: 12px; }
+.jobs-pair .joblink { padding-left: 0; }
+.jobs-edges { margin-top: 2px; }
+.jobs-sec ~ .jobs-line, .jobs-sec ~ .jobs-warn { margin-top: 12px; }
+.jobs-edges > .btn { margin-top: 4px; }
+.jobs-model {
+  background: none; border: 0; padding: 0; color: var(--fg); font: inherit; cursor: pointer;
+  text-decoration: underline dotted var(--fg-dim); text-underline-offset: 3px;
+}
+.jobs-model:hover, .jobs-model:focus-visible { color: var(--accent); text-decoration: underline solid; outline: none; }
 .jobs-ref { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0 10px; min-width: 0; font-size: 12px; }
 .jobs-none {
   min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column;

@@ -9784,9 +9784,10 @@ function escapePanel() {
    its callers, `focus` (0105), and last the tool's own checks while one finds
    a node (0116) and the builds of each environment once the index says
    Snowflake is on and the manifest holds the dbt_artifacts tables (0117), and
-   those of each job once a source is named as well (0119),
+   those of each job once a source is named as well (0119), and the order of
+   the jobs' steps once a source is named (0126),
    each `quiet`: listed, but it never lights the button nor opens the panel
-   (0116, 0117, 0119). Before
+   (0116, 0117, 0119, 0126). Before
    that the coverage is listed all the same, `empty`, as the place a source is
    added from (0070), but it is not opened on for itself, and the button stays
    dimmed (0075). */
@@ -9800,6 +9801,8 @@ function reportsSections(index, focus) {
       title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
       title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
+    { key: 'joborder', label: 'Job order', tool: 'jobs',
+      title: "Which steps build a model whose dbt parent another job's step builds, without the job files ordering that step first" },
     { key: 'macros', label: 'Macros', tool: 'dbt',
       title: "The project's macros no node reaches, and who calls a macro, from what the manifest records each node and macro calling" },
     { key: 'checks', label: 'Checks', tool: 'dbt',
@@ -9810,8 +9813,10 @@ function reportsSections(index, focus) {
       title: "How each job's models last ended in each environment, judged by the job's own schedule, from the same read as the builds by environment" },
   ];
   // The builds of a job want both what the jobs run and the builds' tables,
-  // and are an index entry of neither (0119).
-  const has = (key) => !!(index && (key === 'jobbuilds' ? index.builds && index.jobs : index[key]));
+  // and are an index entry of neither (0119). The order of the steps wants the
+  // jobs and is no entry of its own: the index is polled, and it would work
+  // the order out on every poll (0126).
+  const has = (key) => !!(index && (key === 'jobbuilds' ? index.builds && index.jobs : key === 'joborder' ? index.jobs : index[key]));
   // The last run's dot says how it ended, from the counts the index carries;
   // none while dbt is still writing the file and the index lists its time alone,
   // nor when the run did nothing a pass could be said of.
@@ -9823,8 +9828,10 @@ function reportsSections(index, focus) {
   // The checks are listed in the rail and never light the button or open the
   // panel, `quiet`: they would be there on nearly every project (0116). The
   // builds are too, since they hold nothing until the user's click reads them,
-  // which is no file's news (0117).
-  const quiet = (key) => key === 'checks' || key === 'builds' || key === 'jobbuilds';
+  // which is no file's news (0117). The order of the steps is a question
+  // asked, and a project with jobs would nearly always have an answer, so it
+  // is no news either (0126).
+  const quiet = (key) => key === 'checks' || key === 'builds' || key === 'jobbuilds' || key === 'joborder';
   return all.filter((sec) => listed(sec.key))
     .map((sec) => Object.assign(sec, has(sec.key) ? (quiet(sec.key) ? { quiet: true } : {}) : { empty: true }));
 }
@@ -10077,7 +10084,14 @@ function reportsButtonTitle(sections, news, key) {
    (0059). A section whose report has gone is stale too. */
 function reportsStale(shown, index, key) {
   if (!shown) return false;
-  return JSON.stringify(shown) !== JSON.stringify((index && index[key]) || null);
+  return JSON.stringify(shown) !== JSON.stringify((index && index[reportsEntry(key)]) || null);
+}
+
+/* The index entry a section is kept fresh against: the order of the steps is
+   read from the same files as the coverage, so it moves with the coverage's
+   entry (0126). */
+function reportsEntry(key) {
+  return key === 'joborder' ? 'jobs' : key;
 }
 
 async function loadReportsIndex() {
@@ -10297,13 +10311,14 @@ async function showReportSection(key) {
     view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
     S.reportsDrawn = '';
   }
-  const shown = (S.reports && S.reports[key]) || null;
+  const shown = (S.reports && S.reports[reportsEntry(key)]) || null;
   const again = () => showReportSection(key);
   const drawn = key === 'run' ? await runSection(again) : key === 'warnings' ? await warningsSection(again)
     : key === 'collin' ? await collinSection(again)
       : key === 'macros' ? await macrosSection(again) : key === 'checks' ? await checksSection(again)
         : key === 'builds' ? await buildsSection() : key === 'jobbuilds' ? await jobBuildsSection()
-        : await jobsCoverageSection(again);
+          : key === 'joborder' ? await jobOrderSection(again)
+            : await jobsCoverageSection(again);
   if (ask !== S.reportsAsk) return;
   S.reportsShown = shown;
   view.replaceChildren(...drawn);
@@ -10314,12 +10329,15 @@ async function showReportSection(key) {
   if (key === 'warnings') S.warningsSeen = shown ? shown.unused : 0;
   // The coverage is counted by the index only once the jobs were read, which
   // this section has just done: read again, so the counts it shows are seen.
-  if (key === 'jobs') {
+  // The order of the steps reads the same files and is kept fresh against the
+  // same entry, but it is not the coverage: what the button says of the
+  // coverage stays unseen (0126).
+  if (key === 'jobs' || key === 'joborder') {
     await loadReportsIndex();
     if (ask !== S.reportsAsk) return;
     const jobs = S.reports && S.reports.jobs;
     S.reportsShown = jobs || null;
-    if (jobs && typeof jobs.never === 'number') S.jobsSeen = jobs.never + (jobs.unscheduled || 0);
+    if (key === 'jobs' && jobs && typeof jobs.never === 'number') S.jobsSeen = jobs.never + (jobs.unscheduled || 0);
   }
   paintReportsButton();
   paintReportsNav();
@@ -10663,6 +10681,180 @@ async function jobsCoverageSection(again) {
   forgetCatalogJobs();
   const body = jel('div', 'jobs-body');
   renderCoverage(body, cov);
+  return [head, body];
+}
+
+/* Job order (0126): the steps of jobs that start on their own which build a
+   model whose dbt parent another job's step builds, with no task, sensor or
+   start of the files putting that step after it. The answer is the command
+   line's --job-order, drawn. The lines it says are pure functions, and
+   web/tests/joborder.js slices them and the drawing, from jobOrderLine to
+   jobOrderSection. */
+
+/* The first line: how many pairs, and of which kind. With none, only what
+   holds is said, as the command line says it: a step not looked at waits for
+   nothing known. */
+function jobOrderLine(a) {
+  const c = a.counts;
+  if (!a.pairs.length) {
+    // A source that could not be walked may have held the pair, and a step it
+    // held was not looked at: nothing else is claimed.
+    if (a.not_read) return 'No pair in what was read';
+    if (a.unresolved && a.unresolved.length) return 'No pair among the steps resolved';
+    if (!a.checked) return 'No step of a job that starts on its own builds a node';
+    return 'Every step waits for the steps that build its parents';
+  }
+  return `${jobsPlural(a.pairs.length, 'pair')}: ${c.none} nothing orders them, ${c.clock} only the clock, ${c.reversed} the other way`;
+}
+
+/* The groups there are, in the order the answer lists them, each with the
+   pairs of it and whether it is open. */
+function jobOrderGroups(a) {
+  const kinds = [
+    { key: 'none', title: 'Nothing orders them',
+      hint: 'No task, sensor or start of the job files puts the first step after the second' },
+    { key: 'clock', title: 'Only the clock orders them',
+      hint: 'The crons differ, so the clock may order them; nothing in the files does' },
+    { key: 'reversed', title: 'Ordered the other way',
+      hint: 'The files order them, the other way round' },
+  ];
+  return kinds.map((k) => Object.assign({ pairs: a.pairs.filter((p) => p.group === k.key) }, k))
+    .filter((g) => g.pairs.length)
+    .map((g) => Object.assign(g, { open: g.pairs.length <= 50 }));
+}
+
+/* A step as the Jobs tab names it: its job and itself. */
+function jobOrderSide(side) {
+  return `${jobsJobLabel({ kind: side.kind, name: side.job })} › ${side.label}`;
+}
+
+function jobOrderSensor(id) {
+  return id ? 'sensor ' + id : 'a sensor';
+}
+
+/* Which schedule is whose: the step's, then those of the steps it should wait
+   for, each under its job's name when there are several. */
+function jobOrderSchedules(p) {
+  const many = p.waits_for.length > 1;
+  const waits = p.waits_for.map((s) => (many ? `${s.job}: ` : '') + s.schedule).join(', ');
+  return `this step: ${p.step.schedule}  ·  waits for: ${waits}`;
+}
+
+/* What a pair has to say beyond its edges, a line each. */
+function jobOrderNotes(p) {
+  return (p.later || []).map((s) => `${jobOrderSide(s)} runs after it`)
+    .concat((p.idle_sensors || []).map((s) =>
+      `Note: ${jobOrderSensor(s.id)} of this DAG waits for ${s.waits.join(', ')}; this task does not depend on it`))
+    .concat((p.group_sensors || []).map((s) =>
+      `Note: ${s.task} depends on ${jobOrderSensor(s.id)}, which waits for ${s.waits.join(', ')}, whose tasks are not read`));
+}
+
+/* The sources that could not be read, as the command line words them. */
+function jobOrderUnread(u) {
+  const which = u.sources === u.of ? (u.of === 1 ? 'the source' : `all ${u.of} sources`) : `${u.sources} of ${u.of} sources`;
+  return `${which} (${u.reason})`;
+}
+
+/* What the answer leaves out, a line each: the DAGs that loop, the jobs
+   nothing starts, the sources not read. A job is named with its source when
+   two sources hold one of the name. */
+function jobOrderCaveats(a) {
+  const named = (list, l) => (list.filter((o) => o.job === l.job).length > 1 ? `${l.source}: ${l.job}` : l.job);
+  const out = (a.cyclic || []).map((c) => ({ warn: true,
+    text: `DAG ${named(a.cyclic, c)} has a depends_on cycle, which Airflow does not load: left out` }));
+  const left = a.left_out || [];
+  if (left.length) {
+    const names = left.map((l) => named(left, l));
+    const more = names.length > 5 ? `, +${names.length - 5} more` : '';
+    out.push({ warn: false,
+      text: `${left.length} ${left.length === 1 ? 'job' : 'jobs'} nothing starts left out: ${names.slice(0, 5).join(', ')}${more}` });
+  }
+  if (a.not_read) out.push({ warn: true, text: 'Not read: ' + jobOrderUnread(a.not_read) });
+  return out;
+}
+
+function renderJobOrder(body, a) {
+  if (a.sources_refused) return jobsRefusedFile(body, a.sources_refused);
+  if (!a.configured) return jobsNoSource(body);
+  const out = [jel('div', 'jobs-line', jobOrderLine(a))];
+  for (const g of jobOrderGroups(a)) {
+    const sec = jel('details', 'jobs-sec');
+    sec.open = g.open;
+    const head = jel('summary', '', `${g.title} (${g.pairs.length})`);
+    head.title = g.hint;
+    sec.append(head);
+    for (const p of g.pairs) sec.append(jobOrderPair(p));
+    out.push(sec);
+  }
+  // The steps not resolved are listed as the coverage lists its own.
+  if (a.unresolved && a.unresolved.length) {
+    out.push(jobsStepList('Steps not resolved, which could hide more pairs',
+      // An Airflow task by its id, as the coverage names it; a dbt Cloud step
+      // keeps its place, which it has no name for.
+      a.unresolved.map((u) => Object.assign({}, u, { name: u.label.replace(/^task /, '') }))));
+  }
+  for (const c of jobOrderCaveats(a)) out.push(jel('div', c.warn ? 'jobs-warn' : 'jobs-line', c.text));
+  body.replaceChildren(...out);
+}
+
+/* A model of an edge, opened in the editor with the Jobs tab, which lists the
+   steps that build it. */
+function jobOrderModel(id, name) {
+  const link = jel('button', 'jobs-model', name);
+  link.title = `Open ${name}, with the Jobs tab listing its jobs`;
+  link.addEventListener('click', () => openFromReport(id, { dock: 'jobs' }));
+  return link;
+}
+
+function jobOrderEdge(e) {
+  const row = jel('div', 'joblink');
+  row.append(jobOrderModel(e.node, e.node_name), ' reads ', jobOrderModel(e.parent, e.parent_name));
+  // The views and ephemerals between them open too: one is often what to look at.
+  (e.through || []).forEach((t, i) => row.append(i ? ', ' : ' through ', jobOrderModel(t.id, t.name)));
+  return row;
+}
+
+/* One pair: the step, the steps it should wait for, the clocks of both, what
+   else the files say, and the models it reads from them, the first ten with
+   a button for the rest (the JSON has them all). */
+function jobOrderPair(p) {
+  const box = jel('div', 'jobs-pair');
+  const head = jel('div', 'jobs-pairhead');
+  head.append(jel('b', '', jobOrderSide(p.step)), p.waits_for.length === 1 ? ' should wait for ' : ' should wait for one of ',
+    jel('b', '', p.waits_for.map(jobOrderSide).join(', ')));
+  box.append(head);
+  box.append(jel('div', 'joblink', jobOrderSchedules(p)));
+  const where = jel('button', 'jobfile', `${p.step.source} · ${p.step.file}:${p.step.line}`);
+  where.title = 'Outside the project, so it does not open here. Click to copy where it is.';
+  where.addEventListener('click', () => copyText(`${p.step.file}:${p.step.line}`));
+  box.append(where);
+  for (const note of jobOrderNotes(p)) box.append(jel('div', 'joblink', note));
+  const edges = jel('div', 'jobs-edges');
+  for (const e of p.edges.slice(0, 10)) edges.append(jobOrderEdge(e));
+  if (p.edges.length > 10) {
+    const more = jel('button', 'btn sm', `+${p.edges.length - 10} more`);
+    more.addEventListener('click', () => {
+      more.remove();
+      for (const e of p.edges.slice(10)) edges.append(jobOrderEdge(e));
+    });
+    edges.append(more);
+  }
+  box.append(edges);
+  return box;
+}
+
+async function jobOrderSection(again) {
+  const head = reportHead({ title: 'Job order', tool: 'jobs', about: 'what each step builds, against what the job files order before it', again });
+  // The job files are looked at as the section opens, never on a click in it
+  // (0063).
+  let order;
+  try { order = await api.get('/api/jobs/order?look=true'); }
+  catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
+  // The look may have read the files again. Nothing else is drawn again for
+  // it: the section is read again on every showing.
+  forgetCatalogJobs();
+  const body = jel('div', 'jobs-body');
+  renderJobOrder(body, order);
   return [head, body];
 }
 

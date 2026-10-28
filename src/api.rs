@@ -310,6 +310,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/jobs/browse", get(browse_job_sources))
         .route("/api/jobs/node", get(jobs_for_node))
         .route("/api/jobs/coverage", get(jobs_coverage))
+        .route("/api/jobs/order", get(jobs_order))
         .route("/api/jobs/models", get(jobs_models))
         .route("/api/jobs/step", get(job_step))
         .route("/api/reload", post(reload))
@@ -2988,6 +2989,17 @@ async fn jobs_coverage(State(st): State<Arc<AppState>>, Query(q): Query<LookQuer
     }
 }
 
+/// The dependencies between jobs' steps that no job file orders, for Reports'
+/// Job order (0126): the answer `--job-order` prints as JSON, over the sources
+/// in force, which are the project's file else the settings (the command line
+/// reads the file alone).
+async fn jobs_order(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
+    match with_jobs_sources(&st, q.look, crate::job_order::order).await {
+        Ok((view, sources)) => Json(OrderBody { view, sources_refused: sources.refused }).into_response(),
+        Err(e) => e,
+    }
+}
+
 /// The models each job runs, for Reports' builds by job (0119).
 async fn jobs_models(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>) -> Response {
     match with_jobs_sources(&st, q.look, crate::jobs::models_by_job).await {
@@ -3000,6 +3012,15 @@ async fn jobs_models(State(st): State<Arc<AppState>>, Query(q): Query<LookQuery>
 struct ModelsBody {
     #[serde(flatten)]
     view: crate::jobs::JobModels,
+    /// Why the project's sources file is not read, when it is not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources_refused: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct OrderBody {
+    #[serde(flatten)]
+    view: crate::job_order::OrderAnswer,
     /// Why the project's sources file is not read, when it is not.
     #[serde(skip_serializing_if = "Option::is_none")]
     sources_refused: Option<String>,
@@ -6425,6 +6446,68 @@ mod tests {
         assert!(emptied.starts_with("HTTP/1.1 200") && emptied.contains(r#""from":"project""#), "{emptied}");
         assert!(file.exists() && std::fs::read_to_string(&file).unwrap().contains("jobs: []"));
         server.abort();
+    }
+
+    /// The page's Job order is the command line's JSON answer plus why the
+    /// sources file is not read, behind the key, over the project's file (0126).
+    #[tokio::test]
+    async fn the_job_order_is_answered_as_the_command_line_does() {
+        let root = temp_project("job-order");
+        let (port, st, server) = serve(&root).await;
+        let model = |name: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop",
+                "original_file_path": format!("models/{name}.sql"), "fqn": ["shop", name], "config": { "materialized": "table" } })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": { "model.shop.stg_orders": model("stg_orders"), "model.shop.orders": model("orders") },
+            "parent_map": { "model.shop.orders": ["model.shop.stg_orders"] },
+        }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let ask = || async { response_of(port, get("/api/jobs/order?look=true", &[("Host", &host)])).await };
+
+        // No sources: a configured flag the page words "no source" from.
+        let none = json_of(&ask().await);
+        assert_eq!((none["configured"].as_bool(), none["pairs"].as_array().map(Vec::len)), (Some(false), Some(0)), "{none}");
+
+        // Two DAGs on one clock, the second reading what the first builds.
+        let dag = |id: &str, task: &str, select: &str| {
+            format!("dag_id: {id}\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: {task}\n    command: dbt run --select {select}\n")
+        };
+        std::fs::create_dir_all(root.join("dags")).unwrap();
+        std::fs::write(root.join("dags/stage.yml"), dag("shop_stage", "stage", "stg_orders")).unwrap();
+        std::fs::write(root.join("dags/marts.yml"), dag("shop_marts", "build", "orders")).unwrap();
+        std::fs::create_dir_all(root.join(".dbt-edith")).unwrap();
+        let file = root.join(".dbt-edith").join("jobs.yml");
+        std::fs::write(&file, "jobs:\n  - kind: airflow\n    path: \"dags\"\n").unwrap();
+        let answer = json_of(&ask().await);
+        assert_eq!((answer["configured"].as_bool(), answer["counts"]["none"].as_u64()), (Some(true), Some(1)), "{answer}");
+        assert_eq!(answer["checked"].as_u64(), Some(2), "the steps looked at, for the page's empty line: {answer}");
+        let pair = &answer["pairs"][0];
+        assert_eq!((pair["group"].as_str(), pair["step"]["job"].as_str()), (Some("none"), Some("shop_marts")), "{pair}");
+        // Node ids the page can open, and the view or table between them.
+        let edge = &pair["edges"][0];
+        assert_eq!((edge["node"].as_str(), edge["parent"].as_str()), (Some("model.shop.orders"), Some("model.shop.stg_orders")), "{edge}");
+        assert!(answer.get("sources_refused").is_none(), "{answer}");
+        // The same bytes as the command line's answer over the same files (0055).
+        let (graph, sources) = (st.graph.read().await.clone(), st.job_sources.lock().unwrap().clone());
+        let (fresh, _) = crate::jobs::build(&graph, &st.root, &crate::jobs::sources(&st.root, &sources).list);
+        let mut want = serde_json::to_value(crate::job_order::order(&graph, &fresh)).unwrap();
+        assert_eq!(answer, {
+            want.as_object_mut().unwrap().remove("sources_refused");
+            want
+        });
+
+        // A file that does not read gives no source, and the route says why.
+        std::fs::write(&file, "jobs:\n  - kind: airflow\n").unwrap();
+        let broken = json_of(&ask().await);
+        assert_eq!(broken["configured"].as_bool(), Some(false), "{broken}");
+        assert!(broken["sources_refused"].as_str().unwrap().contains("line 2"), "{broken}");
+
+        assert!(status_of(port, keyless(get("/api/jobs/order", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     // Every route that can lead to warehouse queries under the user's own

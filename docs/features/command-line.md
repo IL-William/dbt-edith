@@ -420,6 +420,9 @@ path included.
 
 ## The order between jobs
 
+(Reports' Job order section draws the same answer, over the sources in force,
+the settings' included: [jobs-and-reports.md](jobs-and-reports.md#reports).)
+
 `--job-order` lists the dbt dependencies between the steps of the jobs that
 start on their own which the job files do not order
 ([0125](../decisions/0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md)):
@@ -543,7 +546,9 @@ filter.
 
 `--output json` prints one object: `configured` (the sources file names at
 least one source, which tells an empty answer from no job read at all),
-`counts` (`none`, `clock`, `reversed`), `pairs`, `unresolved`, `left_out` (each
+`checked` (how many steps were looked at: those of jobs that start on their own
+that build a node, which tells an empty answer that holds from one that looked
+at nothing), `counts` (`none`, `clock`, `reversed`), `pairs`, `unresolved`, `left_out` (each
 `source`, `job`), `cyclic` (the same) and `not_read`, when a source was not
 read. An `unresolved` entry has `source`, `job`, `label`, `shown` (the command as
 parsed), `file`, `line` and `why`, to be listed and checked by hand. A pair has
