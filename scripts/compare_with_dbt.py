@@ -237,7 +237,9 @@ JAFFLE_VERSIONS = {
 # and, for the key rules (0127), an incremental model whose unique_key one
 # not_null half covers and no uniqueness test checks, a unique test with no
 # not_null, a unique_key checked and covered, a unique test limited by a where,
-# a unique_key written as an expression, and a bare unique_combination_of_columns
+# a unique_key written as an expression, one a model-level unique test checks
+# on the same text, a key written under its model whose column is only in the
+# kwargs, an append that ignores its unique_key unless a test declares it, and a bare unique_combination_of_columns
 # (the macro is the project's, with dbt_utils' SQL) that checks a unique_key
 # listed in another order, and one with a column no not_null covers.
 JAFFLE_CHECKS = {
@@ -358,6 +360,33 @@ models:
       - name: order_id
         data_tests:
           - not_null
+  - name: probe_model_level
+    description: A key written under the model, whose column is only in the kwargs.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: id
+      - not_null:
+          arguments:
+            column_name: id
+  - name: probe_key_expression_tested
+    description: Its unique_key expression is checked by a unique test on the same text.
+    data_tests:
+      - unique:
+          arguments:
+            column_name: "order_id || '-' || line_number"
+  - name: probe_key_append
+    description: An append ignores its unique_key, which nothing tests.
+    columns:
+      - name: id
+        data_tests:
+          - not_null
+  - name: probe_key_append_unique
+    description: An append whose unique_key a unique test also declares.
+    columns:
+      - name: id
+        data_tests:
+          - unique
   - name: probe_combo_checked
     description: Its unique_key is checked by a combination test in another order.
     columns:
@@ -382,13 +411,17 @@ models:
           arguments:
             combination_of_columns: [a, b]
 """,
-    "models/probe/probe_key_merge.sql": "{{ config(materialized='incremental', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_key_merge.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
     "models/probe/probe_key_unique.sql": "select 1 as id\n",
-    "models/probe/probe_key_covered.sql": "{{ config(materialized='incremental', unique_key='id') }}\nselect 1 as id\n",
+    "models/probe/probe_key_covered.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert', unique_key='id') }}\nselect 1 as id\n",
     "models/probe/probe_key_where.sql": "select 1 as id\n",
-    "models/probe/probe_combo_checked.sql": "{{ config(materialized='incremental', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_combo_checked.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
     "models/probe/probe_combo_nullable.sql": "select 1 as a, 1 as b\n",
-    "models/probe/probe_key_expression.sql": "{{ config(materialized='incremental', unique_key=\"order_id || '-' || line_number\") }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_model_level.sql": "select 1 as id\n",
+    "models/probe/probe_key_expression_tested.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert', unique_key=\"order_id || '-' || line_number\") }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_key_append.sql": "{{ config(materialized='incremental', incremental_strategy='append', unique_key='id') }}\nselect 1 as id\n",
+    "models/probe/probe_key_append_unique.sql": "{{ config(materialized='incremental', incremental_strategy='append', unique_key='id') }}\nselect 1 as id\n",
+    "models/probe/probe_key_expression.sql": "{{ config(materialized='incremental', incremental_strategy='delete+insert', unique_key=\"order_id || '-' || line_number\") }}\nselect 1 as order_id, 1 as line_number\n",
     "macros/probe_tests.sql": "{% test probe_ref_check(model, column_name, to) %}\nselect 1 where false\n{% endtest %}\n"
                               "{% test unique_combination_of_columns(model, combination_of_columns) %}\n"
                               "select {{ combination_of_columns | join(', ') }} from {{ model }}\n"
@@ -417,11 +450,12 @@ JAFFLE_CHECKS_FOUND = {
                          "source.jaffle_shop.s_partial.half", "source.jaffle_shop.s_top.empty_own",
                          "source.jaffle_shop.s_top.overrides_null", "source.jaffle_shop.s_top.own"],
     # A key row is the model and the key's columns, lower case and sorted.
-    "keys_maybe_null": ["model.jaffle_shop.probe_combo_nullable|a,b", "model.jaffle_shop.probe_key_merge|line_number,order_id",
-                        "model.jaffle_shop.probe_key_unique|id"],
+    "keys_maybe_null": ["model.jaffle_shop.probe_combo_nullable|a,b", "model.jaffle_shop.probe_key_append_unique|id",
+                        "model.jaffle_shop.probe_key_merge|line_number,order_id", "model.jaffle_shop.probe_key_unique|id"],
     "unique_keys_untested": ["model.jaffle_shop.probe_key_expression|order_id || '-' || line_number",
                              "model.jaffle_shop.probe_key_merge|line_number,order_id"],
-    "models_without_key": ["model.jaffle_shop.probe_key_expression", "model.jaffle_shop.probe_key_merge",
+    "models_without_key": ["model.jaffle_shop.probe_key_append", "model.jaffle_shop.probe_key_expression",
+                           "model.jaffle_shop.probe_key_merge",
                            "model.jaffle_shop.probe_key_where", "model.jaffle_shop.probe_pointer",
                            "model.jaffle_shop.probe_reader", "model.jaffle_shop.probe_singular",
                            "model.jaffle_shop.probe_target", "model.jaffle_shop.probe_undescribed",
@@ -949,16 +983,27 @@ def keys_in_manifest(node, tests):
         meta = t.get("test_metadata") or {}
         if str(t.get("config", {}).get("where") or "").strip():
             continue
-        name, namespace, column = meta.get("name"), meta.get("namespace"), t.get("column_name")
+        kwargs = meta.get("kwargs") or {}
+        # A test written under its model has a null `column_name`, and names its column in the kwargs.
+        column = t.get("column_name") or (kwargs.get("column_name") if isinstance(kwargs.get("column_name"), str) else None)
+        name, namespace = meta.get("name"), meta.get("namespace")
         if name == "unique" and namespace in (None, "dbt") and column:
             add([column], "unique")
         elif name == "unique_combination_of_columns" and namespace in (None, "dbt_utils"):
-            columns = (meta.get("kwargs") or {}).get("combination_of_columns")
+            columns = kwargs.get("combination_of_columns")
             if isinstance(columns, list) and columns and all(isinstance(c, str) for c in columns):
                 add(columns, "combination")
         elif name == "not_null" and namespace in (None, "dbt") and column:
             covered.add(norm_column(column))
     return keys, covered
+
+
+def ignores_unique_key(node):
+    """Whether dbt ignores the model's unique_key: `append` and `insert_overwrite` insert
+    without matching. Only the strategy the model configures is read here, so the probes
+    that have a key configure theirs."""
+    config = node.get("config", {})
+    return config.get("materialized") == "incremental" and str(config.get("incremental_strategy")).lower() in ("append", "insert_overwrite")
 
 
 def checks_in_manifest(manifest):
@@ -1006,10 +1051,13 @@ def checks_in_manifest(manifest):
     nullable_key, untested_key, no_key = [], [], []
     for k, n in models.items():
         keys, covered = keys_in_manifest(n, attached.get(k, []))
+        ignored = ignores_unique_key(n)
         for columns, key in keys.items():
+            if ignored and key["how"] == {"unique_key"}:
+                continue
             if any(is_column(e) and norm_column(e) not in covered for e in key["entries"]):
                 nullable_key.append(k + "|" + ",".join(sorted(columns)))
-        if n.get("config", {}).get("materialized") == "incremental":
+        if n.get("config", {}).get("materialized") == "incremental" and not ignored:
             for columns, key in keys.items():
                 if "unique_key" in key["how"] and key["how"] == {"unique_key"}:
                     untested_key.append(k + "|" + ",".join(sorted(columns)))

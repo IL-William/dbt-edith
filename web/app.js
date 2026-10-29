@@ -10572,9 +10572,9 @@ const CHECKS = [
   { key: 'sources_not_read', title: 'Sources no node reads',
     why: 'No node has it as a parent, a test of it aside: a model, snapshot, analysis or exposure reading it counts.' },
   { key: 'keys_maybe_null', title: 'Keys with a column not tested not_null',
-    why: 'A key is a unique_key, a unique test or a unique_combination_of_columns test, composites included. dbt\'s unique skips nulls and a merge on a null key matches nothing and inserts the row again, so each column of a key wants an enabled not_null test with no where. A row opens the first column left.' },
+    why: 'A key is a unique_key, a unique test or a unique_combination_of_columns test, composites included. dbt\'s unique skips nulls and a merge on a null key matches nothing and inserts the row again, so each column of a key wants an enabled not_null test with no where. A model that appends or overwrites a partition ignores its unique_key, so one only the config declares is not looked at. A row opens the first column left.' },
   { key: 'unique_keys_untested', title: 'Incremental unique_key no uniqueness test checks',
-    why: 'No unique test on the column, nor unique_combination_of_columns on the same columns in any order, so a duplicate the merge lets in is not caught. A unique_key written as an expression is checked only by a unique test written on the same text.' },
+    why: 'No unique test on the column, nor unique_combination_of_columns on the same columns in any order, so a duplicate the merge lets in is not caught. A unique_key written as an expression is checked only by a unique test written on the same text. A model that appends or overwrites a partition ignores its unique_key and is not listed.' },
   { key: 'models_without_key', title: 'Models with no key test',
     why: 'No enabled unique test on a column and no unique_combination_of_columns test, a test with a where aside. A unique_key alone does not count: nothing checks it.' },
 ];
@@ -14826,12 +14826,14 @@ function catalogColumns(body, n) {
       if (!here.some((h) => h.ki === ki)) keyed.set(name, here.concat({ key, letter, ki, at }));
     });
   });
-  // Kept from node to node like the others; a node without a key has no Key
-  // button, and sorts A-Z until the next one that has.
-  const sort = S.colSort === 'key' && !keys.length ? 'az' : S.colSort;
+  // Kept from node to node like the others; a node with no key naming a column
+  // of the table, an expression or a column listed nowhere, has no Key button
+  // that would move nothing, and sorts A-Z until the next one that has.
+  const keyShown = keys.some((k) => keyColumns(k.entries, n.columns).some((e) => e.column));
+  const sort = S.colSort === 'key' && !keyShown ? 'az' : S.colSort;
   tools.append(Object.assign(document.createElement('div'), { className: 'grow' }));
   tools.appendChild(document.createTextNode('Sort by'));
-  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keys.length ? [['key', 'Key']] : [])]) {
+  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keyShown ? [['key', 'Key']] : [])]) {
     const b = document.createElement('button');
     b.className = 'btn sm';
     b.textContent = label;

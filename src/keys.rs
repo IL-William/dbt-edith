@@ -86,6 +86,12 @@ fn is_generic(t: &Node, generic: &str, package: &str) -> bool {
     t.test_name == generic && (t.namespace.is_empty() || t.namespace == package)
 }
 
+/// The column a `unique` or `not_null` test names: the node's own, else the
+/// kwarg of a test written under its model. Empty when it names none.
+fn column_of(t: &Node) -> &str {
+    if t.column.trim().is_empty() { t.column_arg.trim() } else { t.column.trim() }
+}
+
 /// Whether the test checks every row: a `where:` limits it to some.
 fn whole(t: &Node) -> bool {
     !t.settings.iter().any(|s| s.key == "where")
@@ -126,6 +132,16 @@ fn add<'a>(drafts: &mut Vec<Draft<'a>>, entries: Vec<&'a str>, from: (&'static s
     }
 }
 
+/// Whether dbt ignores the model's `unique_key`: the strategy as the box shows
+/// it, else the configured one, is `append` or `insert_overwrite`, which insert
+/// without matching on a key. An unread or custom strategy is not assumed to,
+/// nor is microbatch, which merges on the key on some adapters. The Columns tag
+/// keeps the key all the same; the checks leave a key only the config declares.
+pub fn config_ignored(n: &Node) -> bool {
+    let strategy = n.shown.as_ref().map(|s| s.shown.as_str()).unwrap_or(n.strategy.as_str());
+    n.is_incremental() && ["append", "insert_overwrite"].iter().any(|s| strategy.eq_ignore_ascii_case(s))
+}
+
 /// The keys of node `i` and the columns its `not_null` tests cover, from the
 /// tests it declares and its `unique_key`; none for a node dbt never runs.
 fn gather(graph: &Graph, i: u32) -> (Vec<Draft<'_>>, BTreeSet<String>) {
@@ -153,12 +169,13 @@ fn gather(graph: &Graph, i: u32) -> (Vec<Draft<'_>>, BTreeSet<String>) {
         if !whole(t) {
             continue;
         }
-        if is_generic(t, "unique", "dbt") && !t.column.trim().is_empty() {
-            add(&mut drafts, vec![t.column.as_str()], ("unique", Some(t)));
+        let column = column_of(t);
+        if is_generic(t, "unique", "dbt") && !column.is_empty() {
+            add(&mut drafts, vec![column], ("unique", Some(t)));
         } else if is_generic(t, "unique_combination_of_columns", "dbt_utils") && !t.combination.is_empty() {
             add(&mut drafts, t.combination.iter().map(String::as_str).collect(), ("combination", Some(t)));
-        } else if is_generic(t, "not_null", "dbt") && !t.column.trim().is_empty() {
-            covered.insert(norm(&t.column));
+        } else if is_generic(t, "not_null", "dbt") && !column.is_empty() {
+            covered.insert(norm(column));
         }
     }
     (drafts, covered)
@@ -206,9 +223,10 @@ pub struct Tally {
 
 pub fn tally(graph: &Graph, i: u32) -> Tally {
     let (drafts, covered) = gather(graph, i);
+    let ignored = config_ignored(&graph.nodes[i as usize]);
     Tally {
-        nullable: drafts.iter().filter(|d| d.nullable(&covered).next().is_some()).count(),
-        config_untested: drafts.iter().any(|d| d.in_config() && !d.tested()),
+        nullable: drafts.iter().filter(|d| !(ignored && d.in_config() && !d.tested()) && d.nullable(&covered).next().is_some()).count(),
+        config_untested: !ignored && drafts.iter().any(|d| d.in_config() && !d.tested()),
         tested: drafts.iter().any(Draft::tested),
     }
 }
@@ -411,5 +429,53 @@ mod tests {
         let g = graph(incremental("orders", json!("id")), vec![not_null("n", "id")]);
         let v = serde_json::to_value(orders(&g)).unwrap();
         assert_eq!(v, json!([{ "entries": ["id"], "from": [{ "kind": "unique_key" }] }]));
+    }
+
+    /// dbt-core writes a test under the model's own `data_tests:` with a null
+    /// `column_name`: the column is only in the kwargs.
+    fn under_model(id: &str, generic: &str, column: Value) -> (String, Value) {
+        test(id, generic, None, None, json!({ "column_name": column }))
+    }
+
+    #[test]
+    fn a_test_written_under_its_model_names_its_column_in_the_kwargs() {
+        let g = graph(model("orders", json!({})), vec![under_model("u", "unique", json!("id")), under_model("n", "not_null", json!("ID"))]);
+        let k = orders(&g);
+        assert_eq!(kinds(&k[0]), ["unique"]);
+        assert!(k[0].nullable.is_empty());
+        // A kwarg that is no string names no column.
+        let g = graph(model("orders", json!({})), vec![under_model("u", "unique", json!(["id"])), under_model("v", "unique", Value::Null)]);
+        assert!(orders(&g).is_empty());
+        // The node's own column wins, and the chips still read `column`.
+        let mut both = under_model("u", "unique", json!("other"));
+        both.1["column_name"] = json!("id");
+        assert_eq!(orders(&graph(model("orders", json!({})), vec![both]))[0].entries, ["id"]);
+    }
+
+    #[test]
+    fn a_unique_key_expression_merges_with_a_model_level_unique_on_the_same_text() {
+        let expression = "order_id || '-' || line";
+        let g = graph(incremental("orders", json!([expression])), vec![under_model("u", "unique", json!(expression))]);
+        let k = orders(&g);
+        assert_eq!(k.len(), 1);
+        assert_eq!(kinds(&k[0]), ["unique_key", "unique"]);
+        assert!(k[0].nullable.is_empty(), "an expression is no column");
+    }
+
+    #[test]
+    fn append_and_insert_overwrite_ignore_a_unique_key_and_nothing_else_does() {
+        let strategy = |name: &str| {
+            let mut m = incremental("orders", json!("id"));
+            m["config"]["incremental_strategy"] = json!(name);
+            graph(m, vec![])
+        };
+        let ignored = |g: &Graph| config_ignored(&g.nodes[g.index["model.shop.orders"] as usize]);
+        assert!(ignored(&strategy("append")) && ignored(&strategy("Insert_Overwrite")));
+        assert!(!ignored(&strategy("merge")) && !ignored(&strategy("microbatch")) && !ignored(&strategy("my_own")));
+        // The Columns tag keeps the key, and the tally leaves it out.
+        let g = strategy("append");
+        assert_eq!(orders(&g).len(), 1);
+        let t = tally(&g, g.index["model.shop.orders"]);
+        assert_eq!((t.nullable, t.config_untested), (0, false));
     }
 }

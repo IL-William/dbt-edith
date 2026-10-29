@@ -192,6 +192,11 @@ pub struct RawTestKwargs {
     /// else, or Jinja left unrendered, can be told from a list.
     #[serde(default)]
     pub combination_of_columns: Option<serde_json::Value>,
+    /// The column of a generic test written under the model's own
+    /// `data_tests:`, where dbt-core leaves the test node's `column_name`
+    /// null and the column is only here. Anything but a string is ignored.
+    #[serde(default)]
+    pub column_name: Option<serde_json::Value>,
 }
 
 #[derive(serde::Deserialize, Default)]

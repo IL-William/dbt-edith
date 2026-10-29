@@ -131,11 +131,13 @@ fn keys_of(graph: &Graph, i: u32, f: &mut Found, rows: bool) {
         return;
     }
     let keys = crate::keys::keys(graph, i);
-    for k in keys.iter().filter(|k| !k.nullable.is_empty()) {
+    // A `unique_key` dbt ignores, and no test declares, is no key to check.
+    let ignored = crate::keys::config_ignored(&graph.nodes[i as usize]);
+    for k in keys.iter().filter(|k| !k.nullable.is_empty() && !(ignored && k.in_config() && !k.tested())) {
         let detail = format!("key {}: no not_null on {}", k.entries.join(", "), k.nullable.join(", "));
         f.nullable_key.push(Hit { node: i, detail, column: k.nullable[0].clone(), key: k.entries.clone() });
     }
-    if graph.nodes[i as usize].is_incremental() {
+    if graph.nodes[i as usize].is_incremental() && !ignored {
         if let Some(k) = keys.iter().find(|k| k.in_config()).filter(|k| !k.tested()) {
             f.untested_key.push(Hit { node: i, detail: format!("unique_key {}", k.entries.join(", ")), column: String::new(), key: k.entries.clone() });
         }
@@ -718,5 +720,23 @@ mod tests {
             }] },
         }));
         assert!(checks(&g).models_without_key.rows.is_empty());
+    }
+
+    #[test]
+    fn a_unique_key_dbt_ignores_is_not_checked_unless_a_test_declares_it() {
+        let append = json!({ "materialized": "incremental", "incremental_strategy": "append", "unique_key": "id" });
+        let g = keyed(append.clone(), vec![]);
+        let c = checks(&g);
+        assert!(c.unique_keys_untested.rows.is_empty() && c.keys_maybe_null.rows.is_empty());
+        let total = |c: &Checks| {
+            c.sources_without_freshness.total + c.models_without_test.total + c.models_without_description.total + c.sources_not_read.total
+                + c.keys_maybe_null.total + c.unique_keys_untested.total + c.models_without_key.total
+        };
+        assert_eq!(count(&g), total(&c), "the count leaves it out too");
+        // A test of the same column makes it a key the checks look at.
+        let g = keyed(append, vec![("u", "unique", Some("id"), json!({}))]);
+        assert_eq!(checks(&g).keys_maybe_null.total, 1);
+        let merge = json!({ "materialized": "incremental", "incremental_strategy": "merge", "unique_key": "id" });
+        assert_eq!(checks(&keyed(merge, vec![])).unique_keys_untested.total, 1);
     }
 }

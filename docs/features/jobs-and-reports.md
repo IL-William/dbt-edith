@@ -337,7 +337,9 @@ keys, a key being a `unique_key`, a `unique` test or a
 column no enabled `not_null` test covers, composites included, one row for each
 key that says its columns and the ones left, and opening the Columns tab on the
 first of them; the incremental models whose `unique_key` no `unique` or
-combination test checks; and the models with no `unique` and no combination
+combination test checks (a model that appends or overwrites a partition
+ignores its `unique_key`, so neither rule looks at one only the config
+declares); and the models with no `unique` and no combination
 test (0127). Each rule is a fold with
 its count, open while it lists fifty or fewer, its rows grouped by folder as the
 job coverage groups its own, the first hundred drawn and **Show all** giving the
