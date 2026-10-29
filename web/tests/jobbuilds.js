@@ -6,6 +6,7 @@ var src = read('web/app.js');
 eval(src.slice(src.indexOf('function locationRows'), src.indexOf('function catalogLocation')));
 eval(src.slice(src.indexOf('function reportsSections'), src.indexOf('function reportsNews')));
 eval(src.slice(src.indexOf('function jobsZoneIssue'), src.indexOf('function jobsProjectPathIssue')));
+eval(src.slice(src.indexOf('function jobBuildsPick'), src.indexOf('function jobBuildsEnv')));
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -296,3 +297,19 @@ check('without the builds, not at all', sec(reportsSections({ jobs: { sources: 1
 check('nor from an index of its own key', sec(reportsSections({ jobbuilds: true })), ['jobs:empty']);
 check('after the macros and the checks', reportsSections({ builds: true, jobs: { sources: 1, at: 3 }, checks: { count: 2, at: 3 } }).map(function (s) { return s.key; }),
   ['jobs', 'joborder', 'checks', 'builds', 'jobbuilds']);
+
+print('--- which environment a row opens on ---');
+var col = function (key, tone) { return { key: key, tone: tone }; };
+var cols = [col('', 'ok'), col('CI', 'late'), col('DEV', 'error'), col('QA', 'none')];
+check('the pick made on the row wins', jobBuildsPick(cols, 'QA', 'CI'), 'QA');
+check('the last pick anywhere comes next', jobBuildsPick(cols, undefined, 'CI'), 'CI');
+check('the worst otherwise, an error over the rest', jobBuildsPick(cols, undefined, null), 'DEV');
+check('late over not built over built', [
+  jobBuildsPick([col('A', 'ok'), col('B', 'none'), col('C', 'late')], null, null),
+  jobBuildsPick([col('A', 'ok'), col('B', 'none')], null, null),
+  jobBuildsPick([col('A', 'ok'), col('B', 'ok')], null, null)], ['C', 'B', 'A']);
+check('a tie takes the first column', jobBuildsPick([col('A', 'late'), col('B', 'late'), col('C', 'error'), col('D', 'error')], null, null), 'C');
+check('the manifest column has an empty key and can be picked', jobBuildsPick(cols, '', 'CI'), '');
+check('a row pick with nothing to list falls through to the last', jobBuildsPick(cols, 'UAT', 'CI'), 'CI');
+check('a last pick with nothing to list falls through to the worst', jobBuildsPick(cols, null, 'UAT'), 'DEV');
+check('nothing listable gives null', jobBuildsPick([], 'CI', 'DEV'), null);

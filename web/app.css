@@ -1896,12 +1896,19 @@ kbd {
 .jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .jbzone { font-size: 11px; color: var(--fg-dim); }
 .jbmodels { font-size: 12px; }
-.jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; }
+.jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 1px 4px; border-radius: 4px; }
+.jbheads > .jbenvh { padding: 0 4px; }
 .jbcell .jobdot { align-self: center; }
 .jobdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--ok); }
 .jbcell[data-verdict=error] .jobdot { background: var(--bad); }
 .jbcell[data-verdict=late] .jobdot { background: var(--warn); }
 .jbcell[data-verdict=none] .jobdot { background: transparent; border: 1px solid var(--fg-dim); }
+/* A cell with models to list is the click target of its environment: it reads
+   as the tab of the box below once picked. */
+.jbcell.pick { cursor: pointer; }
+.jbcell.pick:hover { background: var(--bg-2); }
+.jbcell.pick:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.jbcell.picked { background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--line); }
 .jbsince { flex: 1 1 100%; padding-left: 14px; font-size: 11px; }
 .jbdetail { margin: 4px 0 10px 18px; padding: 6px 12px 4px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; }
 .jbrule { margin: 0 0 2px; color: var(--fg-dim); font-size: 12px; }

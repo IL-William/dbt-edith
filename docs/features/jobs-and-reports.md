@@ -372,11 +372,18 @@ and how many seeds and snapshots it runs that no build is read for, then one
 column per environment read: a dot in the job's worst tone and short counts,
 **errored**, **late**, **not built**, and how many models were built **since
 the last start** (information, never an alarm: a run that began at the last
-start may still be going, and no file says how long a run takes). A row opens a
-fold per environment listing the errored, late and not built models, each a link
-to the model with the task or step that runs it and dbt's message under an
-error. A filter narrows the jobs by name. An environment that could not be read
-says why above the rows, as Builds by environment does.
+start may still be going, and no file says how long a run takes). A cell with
+models to list is a button: a click on it opens the row on that environment
+alone, listing the errored, late and not built models, each a link to the model
+with the task or step that runs it and dbt's message under an error. Another
+cell of the row switches to its environment, the same cell again closes the
+row, and every column stays, for comparing. A click on the job's name opens the
+environment last picked by a cell in the section, or the job's worst one (an
+error, then late, then not built, the first column on a tie) when none was
+picked or the last has nothing to list for this job. Coming back from a model
+finds the row open on its environment, and the last pick survives a Refresh. A
+filter narrows the jobs by name. An environment that could not be read says why
+above the rows, as Builds by environment does.
 
 A model is **late** when it has no success since the fire before the last one:
 a whole scheduled run went by without building it. The cron is read in the
