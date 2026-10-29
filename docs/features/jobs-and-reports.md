@@ -372,12 +372,13 @@ and how many seeds and snapshots it runs that no build is read for, then one
 column per environment read: a dot in the job's worst tone and short counts,
 **errored**, **late**, **not built**, and how many models were built **since
 the last start** (information, never an alarm: a run that began at the last
-start may still be going, and no file says how long a run takes). A cell with
-models to list is a button: a click on it opens the row on that environment
+start may still be going, and no file says how long a run takes). A cell that
+judged any model is a button: a click on it opens the row on that environment
 alone, listing the errored, late and not built models, each a link to the model
-with the task or step that runs it and dbt's message under an error. Another
-cell of the row switches to its environment, the same cell again closes the
-row, and every column stays, for comparing. A click on the job's name opens the
+with the task or step that runs it and dbt's message under an error (or saying
+that all of them were built). Another cell of the row switches to its
+environment, the same cell again closes the row, and every column stays, for
+comparing. A click elsewhere on the row, the job's name for one, opens the
 environment last picked by a cell in the section, or the job's worst one (an
 error, then late, then not built, the first column on a tie) when none was
 picked or the last has nothing to list for this job. Coming back from a model

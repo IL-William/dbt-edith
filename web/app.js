@@ -14246,7 +14246,7 @@ function jobBuildsCell(res, clock) {
   cell.classList.add('pick');
   cell.setAttribute('role', 'button');
   cell.tabIndex = 0;
-  cell.setAttribute('aria-pressed', 'false');
+  cell.setAttribute('aria-expanded', 'false');
   return cell;
 }
 
@@ -14401,7 +14401,7 @@ async function jobBuildsSection() {
     const nameKey = `${job.name} ${twins.get(job) || ''}`.toLowerCase();
     // Case-sensitive and per file, unlike the filter's name: two jobs that differ
     // only in case must not share a pick.
-    const pickKey = `${job.source}|${job.file}:${job.line}|${job.name}`;
+    const pickKey = `${job.source}|${job.file}:${job.line}|${job.name}|${twins.get(job) || ''}`;
     const listable = [];
     const cells = new Map();
     for (const t of ready) {
@@ -14438,7 +14438,7 @@ async function jobBuildsSection() {
       detail.append(jobBuildsEnv(job, e.t, e.res, read.byEnv[e.t.env], names, now));
       for (const [k, cell] of cells) {
         cell.classList.toggle('picked', k === key);
-        cell.setAttribute('aria-pressed', k === key ? 'true' : 'false');
+        cell.setAttribute('aria-expanded', k === key ? 'true' : 'false');
       }
     };
     for (const [key, cell] of cells) {
@@ -14446,27 +14446,38 @@ async function jobBuildsSection() {
         // Else the summary the cell sits in toggles the row on its own.
         ev.preventDefault();
         ev.stopPropagation();
-        if (d.open && picks.rows[pickKey] === key) { d.open = false; return; }
+        if (d.open && detail && detail.dataset.env === key) { d.open = false; return; }
         picks.rows[pickKey] = key;
         picks.last = key;
         draw(key);
         d.open = true;
       };
       cell.addEventListener('click', act);
-      cell.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') act(ev); });
+      cell.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        // A held key must not open and close the row in turn.
+        if (ev.repeat) { ev.preventDefault(); return; }
+        act(ev);
+      });
     }
-    d.addEventListener('toggle', () => {
+    d.addEventListener('toggle', (ev) => {
       // A fold the place restored on a row with nothing to open now closes.
       if (d.open && !listable.length) { d.open = false; return; }
       if (!d.open) {
         delete picks.rows[pickKey];
         if (detail) { detail.remove(); detail = null; }
-        for (const cell of cells.values()) { cell.classList.remove('picked'); cell.setAttribute('aria-pressed', 'false'); }
+        for (const cell of cells.values()) { cell.classList.remove('picked'); cell.setAttribute('aria-expanded', 'false'); }
         return;
       }
-      // Opened by the row, or restored by the place: the pick made on this
-      // row, else the last one, else the worst.
-      const key = jobBuildsPick(listable, picks.rows[pickKey], picks.last);
+      // Already drawn: the native toggle that follows a cell click or the
+      // place's own dispatch.
+      if (detail) return;
+      // Only restoreReportPlace dispatches a toggle by hand, and it reopens
+      // only folds that were open when the place was kept: so an entry in
+      // picks.rows, which a draw that dropped the rows without closing them
+      // may have left stale, is read only there, where it is not stale. A
+      // click on the row, the name included, takes the last pick or the worst.
+      const key = jobBuildsPick(listable, ev.isTrusted ? null : picks.rows[pickKey], picks.last);
       if (key === null) return;
       picks.rows[pickKey] = key;
       draw(key);

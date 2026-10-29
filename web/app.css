@@ -1896,7 +1896,7 @@ kbd {
 .jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .jbzone { font-size: 11px; color: var(--fg-dim); }
 .jbmodels { font-size: 12px; }
-.jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 1px 4px; border-radius: 4px; }
+.jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 0 4px; border-radius: 4px; }
 .jbheads > .jbenvh { padding: 0 4px; }
 .jbcell .jobdot { align-self: center; }
 .jobdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--ok); }
