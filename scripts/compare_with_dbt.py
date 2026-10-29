@@ -985,7 +985,7 @@ def keys_in_manifest(node, tests):
             continue
         kwargs = meta.get("kwargs") or {}
         # A test written under its model has a null `column_name`, and names its column in the kwargs.
-        column = t.get("column_name") or (kwargs.get("column_name") if isinstance(kwargs.get("column_name"), str) else None)
+        column = t.get("column_name") or (kwargs.get("column_name") if isinstance(kwargs.get("column_name"), str) and "{{" not in kwargs["column_name"] else None)
         name, namespace = meta.get("name"), meta.get("namespace")
         if name == "unique" and namespace in (None, "dbt") and column:
             add([column], "unique")
@@ -999,11 +999,13 @@ def keys_in_manifest(node, tests):
 
 
 def ignores_unique_key(node):
-    """Whether dbt ignores the model's unique_key: `append` and `insert_overwrite` insert
-    without matching. Only the strategy the model configures is read here, so the probes
-    that have a key configure theirs."""
+    """Whether dbt ignores the model's unique_key: `append`, `insert_overwrite`,
+    `replace_where` and, off Postgres (Jaffle runs on DuckDB), `microbatch` insert without
+    matching. Only the strategy the model configures is read here, so the probes that have
+    a key configure theirs."""
     config = node.get("config", {})
-    return config.get("materialized") == "incremental" and str(config.get("incremental_strategy")).lower() in ("append", "insert_overwrite")
+    strategy = str(config.get("incremental_strategy")).lower()
+    return config.get("materialized") == "incremental" and strategy in ("append", "insert_overwrite", "replace_where", "microbatch")
 
 
 def checks_in_manifest(manifest):

@@ -47,7 +47,8 @@ against the manifests of dbt-core and Fusion 2.0, which both write the test's
   four (0116).
 - **Only what the manifest says.** A test with a `where:` checks part of the
   rows and declares nothing, and a `not_null` with one covers nothing; a kwarg
-  that is not a list of strings is Jinja left unrendered; a combination test
+  that is not a list of strings is Jinja left unrendered, and a `column_name` kwarg
+  holding `{{` is the same: dbt keeps it as written and it names no column; a combination test
   named through a namespace other than `dbt_utils`, or a `unique` or `not_null`
   through one other than `dbt`, is another package's test of the same name.
   Disabled tests never reach the graph (0116).
@@ -58,12 +59,15 @@ against the manifests of dbt-core and Fusion 2.0, which both write the test's
   string only. `Node.column` stays what the node says, for the Tests chips and
   the column a test hangs on.
 - **A `unique_key` dbt ignores is not checked.** An incremental model whose
-  strategy, as its box shows it, else as configured, is `append` or
-  `insert_overwrite` inserts without matching, so the two rules on a
-  `unique_key` (not tested `not_null`, no uniqueness test) skip a key only the
-  config declares; a test that also declares it keeps it listed. The Columns tag
-  keeps the key. Microbatch is not skipped, since some adapters merge on the
-  key, nor is a strategy that could not be read or is the project's own.
+  strategy, as its box shows it, else as configured, is `append`,
+  `insert_overwrite` or Databricks' `replace_where` inserts without matching,
+  and so does `microbatch` on every adapter but Postgres, whose own merges on
+  the key (Snowflake and Redshift delete+insert by event time, BigQuery
+  replaces partitions, Databricks uses `replace_where`). The two rules on a
+  `unique_key` (not tested `not_null`, no uniqueness test) then skip a key only
+  the config declares; a test that also declares it keeps it listed. The
+  Columns tag keeps the key. A strategy that could not be read or is the
+  project's own is not assumed to ignore it.
 - **A `unique_key` entry that is an expression** (`order_id || '-' || line`)
   stays an entry, counted in `1/2`, and is not checked for `not_null`: it is
   not parsed, as 0076 left it. It merges with a `unique` test written on the

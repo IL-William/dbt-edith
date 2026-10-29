@@ -10572,9 +10572,9 @@ const CHECKS = [
   { key: 'sources_not_read', title: 'Sources no node reads',
     why: 'No node has it as a parent, a test of it aside: a model, snapshot, analysis or exposure reading it counts.' },
   { key: 'keys_maybe_null', title: 'Keys with a column not tested not_null',
-    why: 'A key is a unique_key, a unique test or a unique_combination_of_columns test, composites included. dbt\'s unique skips nulls and a merge on a null key matches nothing and inserts the row again, so each column of a key wants an enabled not_null test with no where. A model that appends or overwrites a partition ignores its unique_key, so one only the config declares is not looked at. A row opens the first column left.' },
+    why: 'A key is a unique_key, a unique test or a unique_combination_of_columns test, composites included. dbt\'s unique skips nulls and a merge on a null key matches nothing and inserts the row again, so each column of a key wants an enabled not_null test with no where. A model that appends or overwrites ignores its unique_key, so one only the config declares is not looked at. A row opens the first column left.' },
   { key: 'unique_keys_untested', title: 'Incremental unique_key no uniqueness test checks',
-    why: 'No unique test on the column, nor unique_combination_of_columns on the same columns in any order, so a duplicate the merge lets in is not caught. A unique_key written as an expression is checked only by a unique test written on the same text. A model that appends or overwrites a partition ignores its unique_key and is not listed.' },
+    why: 'No unique test on the column, nor unique_combination_of_columns on the same columns in any order, so a duplicate the merge lets in is not caught. A unique_key written as an expression is checked only by a unique test written on the same text. A model that appends or overwrites ignores its unique_key and is not listed.' },
   { key: 'models_without_key', title: 'Models with no key test',
     why: 'No enabled unique test on a column and no unique_combination_of_columns test, a test with a where aside. A unique_key alone does not count: nothing checks it.' },
 ];

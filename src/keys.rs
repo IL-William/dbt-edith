@@ -133,13 +133,18 @@ fn add<'a>(drafts: &mut Vec<Draft<'a>>, entries: Vec<&'a str>, from: (&'static s
 }
 
 /// Whether dbt ignores the model's `unique_key`: the strategy as the box shows
-/// it, else the configured one, is `append` or `insert_overwrite`, which insert
-/// without matching on a key. An unread or custom strategy is not assumed to,
-/// nor is microbatch, which merges on the key on some adapters. The Columns tag
-/// keeps the key all the same; the checks leave a key only the config declares.
-pub fn config_ignored(n: &Node) -> bool {
+/// it, else the configured one, inserts without matching on a key: `append`,
+/// `insert_overwrite` and Databricks' `replace_where`, and `microbatch` on
+/// every adapter but Postgres, whose own microbatch merges on it. An unread or
+/// custom strategy is not assumed to. The Columns tag keeps the key all the
+/// same; the checks leave a key only the config declares.
+pub fn config_ignored(adapter: &str, n: &Node) -> bool {
+    if !n.is_incremental() {
+        return false;
+    }
     let strategy = n.shown.as_ref().map(|s| s.shown.as_str()).unwrap_or(n.strategy.as_str());
-    n.is_incremental() && ["append", "insert_overwrite"].iter().any(|s| strategy.eq_ignore_ascii_case(s))
+    let is = |name: &str| strategy.eq_ignore_ascii_case(name);
+    is("append") || is("insert_overwrite") || is("replace_where") || (is("microbatch") && !adapter.eq_ignore_ascii_case("postgres"))
 }
 
 /// The keys of node `i` and the columns its `not_null` tests cover, from the
@@ -223,7 +228,7 @@ pub struct Tally {
 
 pub fn tally(graph: &Graph, i: u32) -> Tally {
     let (drafts, covered) = gather(graph, i);
-    let ignored = config_ignored(&graph.nodes[i as usize]);
+    let ignored = config_ignored(&graph.meta.adapter, &graph.nodes[i as usize]);
     Tally {
         nullable: drafts.iter().filter(|d| !(ignored && d.in_config() && !d.tested()) && d.nullable(&covered).next().is_some()).count(),
         config_untested: !ignored && drafts.iter().any(|d| d.in_config() && !d.tested()),
@@ -463,19 +468,39 @@ mod tests {
     }
 
     #[test]
-    fn append_and_insert_overwrite_ignore_a_unique_key_and_nothing_else_does() {
-        let strategy = |name: &str| {
+    fn some_strategies_ignore_a_unique_key_and_nothing_else_does() {
+        let build = |name: &str, adapter: &str| {
             let mut m = incremental("orders", json!("id"));
             m["config"]["incremental_strategy"] = json!(name);
-            graph(m, vec![])
+            let raw: RawManifest = serde_json::from_value(json!({
+                "metadata": { "project_name": "shop", "adapter_type": adapter },
+                "nodes": { "model.shop.orders": m },
+            }))
+            .unwrap();
+            Graph::build(raw, Path::new("manifest.json"), 1, 0)
         };
-        let ignored = |g: &Graph| config_ignored(&g.nodes[g.index["model.shop.orders"] as usize]);
-        assert!(ignored(&strategy("append")) && ignored(&strategy("Insert_Overwrite")));
-        assert!(!ignored(&strategy("merge")) && !ignored(&strategy("microbatch")) && !ignored(&strategy("my_own")));
+        let ignored = |name: &str, adapter: &str| {
+            let g = build(name, adapter);
+            config_ignored(&g.meta.adapter, &g.nodes[g.index["model.shop.orders"] as usize])
+        };
+        for name in ["append", "Insert_Overwrite", "replace_where"] {
+            assert!(ignored(name, "snowflake") && ignored(name, "postgres"), "{name}");
+        }
+        // Postgres' microbatch merges on the key; the others replace by event time.
+        assert!(!ignored("microbatch", "postgres") && ignored("microbatch", "snowflake") && ignored("microbatch", ""));
+        assert!(!ignored("merge", "snowflake") && !ignored("delete+insert", "snowflake") && !ignored("my_own", "snowflake"));
         // The Columns tag keeps the key, and the tally leaves it out.
-        let g = strategy("append");
+        let g = build("append", "snowflake");
         assert_eq!(orders(&g).len(), 1);
         let t = tally(&g, g.index["model.shop.orders"]);
         assert_eq!((t.nullable, t.config_untested), (0, false));
+    }
+
+    #[test]
+    fn a_kwarg_column_holding_jinja_names_no_column() {
+        let g = graph(model("orders", json!({})), vec![under_model("u", "unique", json!("{{ var('pk') }}")), under_model("v", "unique", json!("id"))]);
+        let k = orders(&g);
+        assert_eq!(k.len(), 1);
+        assert_eq!(k[0].entries, ["id"]);
     }
 }

@@ -2887,7 +2887,7 @@ Left by the job order pull requests of 2026-10-28 (#120 to #122, 1.57.0 to
 Left by the keys from tests (0127, 1.61.0), each a known limit, unranked:
 
 - **Not counted as a key:** a test with a `where:`, a kwarg that is not a list
-  of strings (Jinja left unrendered), a combination test named through a
+  of strings or a `column_name` holding `{{` (Jinja left unrendered), a combination test named through a
   namespace other than `dbt_utils`, contract `constraints`, `dbt_constraints`,
   `dbt_expectations.expect_compound_columns_to_be_unique`, and not-null checks
   other than dbt's `not_null`.

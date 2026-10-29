@@ -150,8 +150,10 @@ fn columns_of(kwargs: Option<crate::manifest::RawTestKwargs>) -> (Box<[String]>,
         }
         _ => Box::default(),
     };
+    // dbt keeps the kwarg as written, so Jinja it did not render reads as a
+    // column of that name; like the combination's, it names none.
     let column = match k.column_name {
-        Some(serde_json::Value::String(s)) => s,
+        Some(serde_json::Value::String(s)) if !s.contains("{{") => s,
         _ => String::new(),
     };
     (combination, column)

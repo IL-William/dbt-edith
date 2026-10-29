@@ -132,7 +132,7 @@ fn keys_of(graph: &Graph, i: u32, f: &mut Found, rows: bool) {
     }
     let keys = crate::keys::keys(graph, i);
     // A `unique_key` dbt ignores, and no test declares, is no key to check.
-    let ignored = crate::keys::config_ignored(&graph.nodes[i as usize]);
+    let ignored = crate::keys::config_ignored(&graph.meta.adapter, &graph.nodes[i as usize]);
     for k in keys.iter().filter(|k| !k.nullable.is_empty() && !(ignored && k.in_config() && !k.tested())) {
         let detail = format!("key {}: no not_null on {}", k.entries.join(", "), k.nullable.join(", "));
         f.nullable_key.push(Hit { node: i, detail, column: k.nullable[0].clone(), key: k.entries.clone() });
