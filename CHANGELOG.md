@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.59.1 - 2026-10-29
+
+- Show the whole Snowflake error, cause included, in Reports (the builds by job
+  and by environment), the column lineage, the query history and the Snowsight
+  menu, where it stopped at `SQL compilation error:` because Snowflake writes
+  the cause on the next line.
+
 ## 1.59.0 - 2026-10-28
 
 - Show the dependencies the jobs do not order in a Job order section of

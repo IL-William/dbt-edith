@@ -289,9 +289,11 @@ def die(msg: str, code: int = 2):
     sys.exit(code)
 
 
-def first_line(error: BaseException, limit: int) -> str:
-    lines = str(error).strip().splitlines()
-    return (lines[0] if lines else type(error).__name__)[:limit]
+def error_text(error: BaseException, limit: int) -> str:
+    # Snowflake puts the cause on the second line ("SQL compilation error:" then
+    # "Database 'X' does not exist"), so every line stays, on one.
+    lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+    return (" ".join(lines) or type(error).__name__)[:limit]
 
 
 # --------------------------------------------------------------- queries ----
@@ -547,7 +549,7 @@ def cmd_probe(args):
             print(f"  OK    {label}: {len(rows)} row(s) in {time.time() - t0:.1f}s")
             return rows
         except Exception as e:  # noqa: BLE001 - the whole point is to report any failure
-            print(f"  FAIL  {label}: {first_line(e, 160)}")
+            print(f"  FAIL  {label}: {error_text(e, 160)}")
             return None
 
     print("\n[1] session")
@@ -726,7 +728,7 @@ def cmd_serve(args):
                     cur.close()
             reply({"id": rid, **answer})
         except Exception as e:  # noqa: BLE001 - every failure becomes a reply
-            reply({"id": rid, "error": first_line(e, 300), "phase": phase})
+            reply({"id": rid, "error": error_text(e, 300), "phase": phase})
             # A dead session would fail every later request the same way.
             if conn is not None and getattr(conn, "is_closed", lambda: False)():
                 conn = None
@@ -776,7 +778,7 @@ def cmd_dump(args):
                 edges = rows_to_edges(column_lineage(cur, rel, col, "UPSTREAM", 1), resolve)
             except Exception as e:  # noqa: BLE001
                 with lock:
-                    errors.append(f"{rel}.{col}: {first_line(e, 120)}")
+                    errors.append(f"{rel}.{col}: {error_text(e, 120)}")
                 edges = []
             with lock:
                 found.extend(edges)

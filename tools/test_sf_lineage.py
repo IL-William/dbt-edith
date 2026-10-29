@@ -323,8 +323,20 @@ class Serve(ScriptTest):
         )
         self.assertEqual(code, 0)
         first, second = self.answers(lines)
-        self.assertEqual(first, {"id": 1, "error": "SQL compilation error:", "phase": "query"})
+        self.assertEqual(
+            first,
+            {"id": 1, "error": "SQL compilation error: Object 'X.Y.BROKEN' does not exist", "phase": "query"},
+        )
         self.assertEqual(len(second["rows"]), 1)
+
+    def test_an_error_keeps_its_cause_on_one_line_cut_at_the_limit(self):
+        long = "SQL compilation error:\n  \n" + "\n".join(f"  column ORDERS_{i} is unknown  " for i in range(40))
+        text = sf.error_text(RuntimeError(long), 300)
+        self.assertTrue(text.startswith("SQL compilation error: column ORDERS_0 is unknown column ORDERS_1"))
+        self.assertNotIn("\n", text)
+        self.assertEqual(len(text), 300)
+        self.assertEqual(sf.error_text(RuntimeError("  \n "), 160), "RuntimeError")
+        self.assertEqual(sf.error_text(KeyError(), 160), "KeyError")
 
     def test_noise_on_stdin_is_ignored(self):
         code, lines, _ = self.serve("not json", "[1, 2]", "", {"op": "quit"})
