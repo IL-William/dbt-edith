@@ -46,7 +46,7 @@ $JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outl
 $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
-$JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, and the columns its key names
+$JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, the columns its key names, and the tag of a key
 $JSC web/tests/export.js      # an exported graph: its header, its file, its safety, and none of the Halloween look
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order

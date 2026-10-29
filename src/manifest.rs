@@ -179,6 +179,19 @@ pub struct RawTestMeta {
     /// bare, which says nothing about where it is defined.
     #[serde(default)]
     pub namespace: Option<String>,
+    /// Only the one kwarg read for a key, not the whole of them: most are
+    /// column names and Jinja nobody here uses.
+    #[serde(default)]
+    pub kwargs: Option<RawTestKwargs>,
+}
+
+#[derive(serde::Deserialize, Default)]
+pub struct RawTestKwargs {
+    /// `dbt_utils.unique_combination_of_columns`'s columns, a list of strings
+    /// once dbt rendered it. Kept as written so that a list holding anything
+    /// else, or Jinja left unrendered, can be told from a list.
+    #[serde(default)]
+    pub combination_of_columns: Option<serde_json::Value>,
 }
 
 #[derive(serde::Deserialize, Default)]

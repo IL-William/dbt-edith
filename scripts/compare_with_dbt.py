@@ -31,11 +31,11 @@ resource, which dbt warns of as it parses, are compared with what the
 Warnings report works out without a run (0103). A third copy, of Jaffle Shop
 with such paths added, makes that comparison say something.
 
-On each project, the four lists of the Checks report (0116) are worked out
-again in Python from the manifest dbt wrote, by the rules dbt-core's own code
-gives them, and compared with what the report lists. A fourth copy, of Jaffle
-Shop with sources, models and tests of every shape those rules tell apart,
-makes that comparison say something.
+On each project, the seven lists of the Checks report (0116, 0127) are worked
+out again in Python from the manifest dbt wrote, by the rules dbt-core's own
+code gives them, and compared with what the report lists. A fourth copy, of
+Jaffle Shop with sources, models and tests of every shape those rules tell
+apart, makes that comparison say something.
 
 The lineage of every model is compared with --every-model, which CI passes.
 Without it, a project with more than 40 models has every eighth compared,
@@ -233,7 +233,13 @@ JAFFLE_VERSIONS = {
 # one tested and read by none, a test of it pointing at a model of the same
 # file, and one disabled; and models that are described
 # or not, tested by a test they declare, only pointed at by one, selected from
-# by a singular test, targeted by a unit test, or by nothing, and one disabled.
+# by a singular test, targeted by a unit test, or by nothing, and one disabled;
+# and, for the key rules (0127), an incremental model whose unique_key one
+# not_null half covers and no uniqueness test checks, a unique test with no
+# not_null, a unique_key checked and covered, a unique test limited by a where,
+# a unique_key written as an expression, and a bare unique_combination_of_columns
+# (the macro is the project's, with dbt_utils' SQL) that checks a unique_key
+# listed in another order, and one with a column no not_null covers.
 JAFFLE_CHECKS = {
     "models/probe/sources_probe.yml": """version: 2
 sources:
@@ -315,7 +321,78 @@ unit_tests:
       rows:
         - {id: 1}
 """,
-    "macros/probe_tests.sql": "{% test probe_ref_check(model, column_name, to) %}\nselect 1 where false\n{% endtest %}\n",
+    "models/probe/keys_probe.yml": """version: 2
+
+models:
+  - name: probe_key_merge
+    description: A merge key of two columns, one of them tested not_null.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+  - name: probe_key_unique
+    description: Unique, and never tested not_null.
+    columns:
+      - name: id
+        data_tests:
+          - unique
+  - name: probe_key_covered
+    description: Its unique_key is checked and covered.
+    columns:
+      - name: id
+        data_tests:
+          - unique
+          - not_null
+  - name: probe_key_where
+    description: A unique test that checks only some of the rows is no key test.
+    columns:
+      - name: id
+        data_tests:
+          - unique:
+              config:
+                where: "id > 0"
+          - not_null
+  - name: probe_key_expression
+    description: A unique_key that is an expression names no column.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+  - name: probe_combo_checked
+    description: Its unique_key is checked by a combination test in another order.
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: line_number
+        data_tests:
+          - not_null
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [line_number, order_id]
+  - name: probe_combo_nullable
+    description: A combination test with one column not tested not_null.
+    columns:
+      - name: a
+        data_tests:
+          - not_null
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [a, b]
+""",
+    "models/probe/probe_key_merge.sql": "{{ config(materialized='incremental', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_key_unique.sql": "select 1 as id\n",
+    "models/probe/probe_key_covered.sql": "{{ config(materialized='incremental', unique_key='id') }}\nselect 1 as id\n",
+    "models/probe/probe_key_where.sql": "select 1 as id\n",
+    "models/probe/probe_combo_checked.sql": "{{ config(materialized='incremental', unique_key=['order_id', 'line_number']) }}\nselect 1 as order_id, 1 as line_number\n",
+    "models/probe/probe_combo_nullable.sql": "select 1 as a, 1 as b\n",
+    "models/probe/probe_key_expression.sql": "{{ config(materialized='incremental', unique_key=\"order_id || '-' || line_number\") }}\nselect 1 as order_id, 1 as line_number\n",
+    "macros/probe_tests.sql": "{% test probe_ref_check(model, column_name, to) %}\nselect 1 where false\n{% endtest %}\n"
+                              "{% test unique_combination_of_columns(model, combination_of_columns) %}\n"
+                              "select {{ combination_of_columns | join(', ') }} from {{ model }}\n"
+                              "group by {{ combination_of_columns | join(', ') }} having count(*) > 1\n{% endtest %}\n",
     "models/probe/probe_pointer.sql": "select 1 as id\n",
     "models/probe/probe_target.sql": "select 1 as id\n",
     "models/probe/probe_singular.sql": "select 1 as id\n",
@@ -339,6 +416,16 @@ JAFFLE_CHECKS_FOUND = {
     "sources_not_read": ["source.jaffle_shop.s_none.bare", "source.jaffle_shop.s_none.cfg_style",
                          "source.jaffle_shop.s_partial.half", "source.jaffle_shop.s_top.empty_own",
                          "source.jaffle_shop.s_top.overrides_null", "source.jaffle_shop.s_top.own"],
+    # A key row is the model and the key's columns, lower case and sorted.
+    "keys_maybe_null": ["model.jaffle_shop.probe_combo_nullable|a,b", "model.jaffle_shop.probe_key_merge|line_number,order_id",
+                        "model.jaffle_shop.probe_key_unique|id"],
+    "unique_keys_untested": ["model.jaffle_shop.probe_key_expression|order_id || '-' || line_number",
+                             "model.jaffle_shop.probe_key_merge|line_number,order_id"],
+    "models_without_key": ["model.jaffle_shop.probe_key_expression", "model.jaffle_shop.probe_key_merge",
+                           "model.jaffle_shop.probe_key_where", "model.jaffle_shop.probe_pointer",
+                           "model.jaffle_shop.probe_reader", "model.jaffle_shop.probe_singular",
+                           "model.jaffle_shop.probe_target", "model.jaffle_shop.probe_undescribed",
+                           "model.jaffle_shop.probe_unit"],
 }
 
 # What Shopify has and Jaffle Shop does not: a package under a root project,
@@ -530,7 +617,8 @@ class Edith:
         return sorted(".".join([u["block"]] + u["chain"]) for u in body["unused"])
 
     def checks(self):
-        """The Checks report's four lists, as sorted unique ids, or a reason it cannot say."""
+        """The Checks report's seven lists, as sorted unique ids, or a reason it cannot say.
+        A key rule lists a model once for each key, so its rows are `id|columns`."""
         body = self.get("/api/reports/checks")
         if "manifest_at" not in body:
             return {"error": [f"error: {body}"]}
@@ -539,7 +627,7 @@ class Edith:
         for k, check in found.items():
             if len(check["rows"]) < 1000 and check["total"] != len(check["rows"]):
                 return {"error": [f"error: {k} counts {check['total']} and lists {len(check['rows'])}"]}
-        return {k: sorted(r["id"] for r in check["rows"]) for k, check in found.items()}
+        return {k: sorted(key_row(k, r) for r in check["rows"]) for k, check in found.items()}
 
     def lineage(self, unique_id, up, down, tests):
         """The names the canvas draws around a model, or a reason it cannot say."""
@@ -820,11 +908,65 @@ def has_freshness(threshold):
                and threshold[k].get("period") is not None for k in ("warn_after", "error_after"))
 
 
+def norm_column(name):
+    """A column or a key entry as the warehouse compares it: quotes off, lower case."""
+    s = name.strip()
+    m = re.fullmatch(r'"(.*)"|`(.*)`|\[(.*)\]', s, re.S)
+    return (next(g for g in m.groups() if g is not None) if m else s).lower()
+
+
+def is_column(entry):
+    """Whether a unique_key entry names a column, rather than being an expression."""
+    s = entry.strip()
+    return bool(re.fullmatch(r'"(.*)"|`(.*)`|\[(.*)\]', s, re.S) or re.fullmatch(r"[\w$]+", s))
+
+
+def key_row(check, row):
+    """What a row of a list is compared by: its node, and for the key rules
+    the key's columns too, which the row carries as a list."""
+    if check not in ("keys_maybe_null", "unique_keys_untested"):
+        return row["id"]
+    return row["id"] + "|" + ",".join(sorted({norm_column(e) for e in row["key"]}))
+
+
+def keys_in_manifest(node, tests):
+    """The keys of a model by the rules of 0127, as {columns: where declared}
+    and the columns a `not_null` covers. Only what the manifest says: a test
+    with a `where`, another namespace, or columns that are no list of strings
+    declares nothing."""
+    keys = {}
+
+    def add(entries, how):
+        keys.setdefault(frozenset(norm_column(e) for e in entries), {"entries": entries, "how": set()})["how"].add(how)
+
+    config = node.get("config", {})
+    unique_key = config.get("unique_key")
+    unique_key = [unique_key] if isinstance(unique_key, str) else unique_key or []
+    if config.get("materialized") == "incremental" and unique_key:
+        add([str(e) for e in unique_key], "unique_key")
+    covered = set()
+    for t in tests:
+        meta = t.get("test_metadata") or {}
+        if str(t.get("config", {}).get("where") or "").strip():
+            continue
+        name, namespace, column = meta.get("name"), meta.get("namespace"), t.get("column_name")
+        if name == "unique" and namespace in (None, "dbt") and column:
+            add([column], "unique")
+        elif name == "unique_combination_of_columns" and namespace in (None, "dbt_utils"):
+            columns = (meta.get("kwargs") or {}).get("combination_of_columns")
+            if isinstance(columns, list) and columns and all(isinstance(c, str) for c in columns):
+                add(columns, "combination")
+        elif name == "not_null" and namespace in (None, "dbt") and column:
+            covered.add(norm_column(column))
+    return keys, covered
+
+
 def checks_in_manifest(manifest):
-    """The Checks report's four lists from the manifest dbt wrote, by the
-    rules of 0116 read off dbt's own fields: the project's own enabled models
-    and sources, a test counting for the node it is attached to, a singular
-    test for the nodes it selects from, a unit test for the model it targets."""
+    """The Checks report's seven lists from the manifest dbt wrote, by the
+    rules of 0116 and 0127 read off dbt's own fields: the project's own enabled
+    models and sources, a test counting for the node it is attached to, a
+    singular test for the nodes it selects from, a unit test for the model it
+    targets."""
     project = manifest["metadata"]["project_name"]
 
     def own(node):
@@ -857,12 +999,32 @@ def checks_in_manifest(manifest):
     def read(source_id):
         return any(not c.startswith(("test.", "unit_test.")) for c in manifest["child_map"].get(source_id, []))
 
+    attached = {}
+    for n in nodes.values():
+        if n["resource_type"] == "test" and n.get("attached_node"):
+            attached.setdefault(n["attached_node"], []).append(n)
+    nullable_key, untested_key, no_key = [], [], []
+    for k, n in models.items():
+        keys, covered = keys_in_manifest(n, attached.get(k, []))
+        for columns, key in keys.items():
+            if any(is_column(e) and norm_column(e) not in covered for e in key["entries"]):
+                nullable_key.append(k + "|" + ",".join(sorted(columns)))
+        if n.get("config", {}).get("materialized") == "incremental":
+            for columns, key in keys.items():
+                if "unique_key" in key["how"] and key["how"] == {"unique_key"}:
+                    untested_key.append(k + "|" + ",".join(sorted(columns)))
+        if not any(key["how"] - {"unique_key"} for key in keys.values()):
+            no_key.append(k)
+
     return {
         "sources_without_freshness": sorted(k for k, n in sources.items()
                                             if threshold(n)[1] and not has_freshness(threshold(n)[0])),
         "models_without_test": sorted(k for k in models if k not in tested),
         "models_without_description": sorted(k for k, n in models.items() if not n["description"].strip()),
         "sources_not_read": sorted(k for k in sources if not read(k)),
+        "keys_maybe_null": sorted(nullable_key),
+        "unique_keys_untested": sorted(untested_key),
+        "models_without_key": sorted(no_key),
     }
 
 
@@ -902,7 +1064,7 @@ def compare_unused(tally, binary, work):
 
 
 def compare_checks(tally, binary, work):
-    """Jaffle Shop with JAFFLE_CHECKS added: the four lists, id for id."""
+    """Jaffle Shop with JAFFLE_CHECKS added: the seven lists, id for id."""
     project = work / "project"
     shutil.copytree(JAFFLE, project)
     for name, text in JAFFLE_CHECKS.items():

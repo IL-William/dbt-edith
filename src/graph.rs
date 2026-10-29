@@ -137,6 +137,18 @@ fn test_settings(c: &crate::manifest::RawConfig) -> Box<[Setting]> {
         .collect()
 }
 
+/// The columns of a `unique_combination_of_columns` test, when its kwarg is a
+/// list of strings. Anything else, a lone string or Jinja dbt left unrendered,
+/// names no columns that could be compared, so the test counts for no key.
+fn combination_of(kwargs: Option<crate::manifest::RawTestKwargs>) -> Box<[String]> {
+    match kwargs.and_then(|k| k.combination_of_columns) {
+        Some(serde_json::Value::Array(a)) => {
+            a.into_iter().map(|v| if let serde_json::Value::String(s) = v { Some(s) } else { None }).collect::<Option<Vec<_>>>().unwrap_or_default().into()
+        }
+        _ => Box::default(),
+    }
+}
+
 /// A versioned model's version and the latest of its versions, kept as the
 /// manifest wrote them, a number or a string, because dbt compares them as
 /// it finds them (`UnparsedVersion`): `1` equals `1.0` and never `"1"` (0104).
@@ -318,6 +330,10 @@ pub struct Node {
     /// neighbours, since an empty one allocates nothing on the many nodes
     /// that have none.
     pub namespace: String,
+    /// Test nodes only, and empty on the rest: the columns a
+    /// `unique_combination_of_columns` test names, as the manifest rendered
+    /// them. Empty too when the kwarg is not a list of strings (0127).
+    pub combination: Box<[String]>,
     pub warn: bool,
     /// Sources only: whether dbt would count the table as having a freshness
     /// threshold, `Some` once the manifest says so, even as `null`, and None
@@ -901,9 +917,9 @@ impl Graph {
             columns.sort_by(|a, b| a.name.cmp(&b.name));
 
             let file = slashed(raw_node.original_file_path);
-            let (test_name, namespace) = raw_node
+            let (test_name, namespace, combination) = raw_node
                 .test_metadata
-                .map(|m| (m.name, m.namespace.unwrap_or_default()))
+                .map(|m| (m.name, m.namespace.unwrap_or_default(), combination_of(m.kwargs)))
                 .unwrap_or_default();
             // Fusion writes `WARN`, dbt-core keeps whatever the YAML says.
             let warn = kind == Kind::Test
@@ -1004,6 +1020,7 @@ impl Graph {
                 test_name,
                 column: raw_node.column_name.unwrap_or_default(),
                 namespace,
+                combination,
                 warn,
                 freshness,
                 settings,

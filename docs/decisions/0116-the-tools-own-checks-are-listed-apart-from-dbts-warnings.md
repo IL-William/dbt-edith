@@ -1,6 +1,6 @@
 # 0116. The tool's own checks are listed apart from dbt's warnings
 
-Date: 2026-10-22 · Status: accepted · Builds on 0103 and 0105
+Date: 2026-10-22 · Status: accepted, amended by 0127 · Builds on 0103 and 0105
 
 **Trigger:** read before adding a rule to the Checks section of Reports,
 changing which nodes one of its four looks at, or reading a source's

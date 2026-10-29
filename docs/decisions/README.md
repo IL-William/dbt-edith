@@ -130,6 +130,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0124](0124-a-jobs-answer-carries-its-order-as-the-files-write-it.md) | A job's answer carries its order as the files write it | changing what `--job` prints of the order between tasks and DAGs, how a sensor or a task's `depends_on` is worded, or whether the order is followed or checked |
 | [0125](0125-the-jobs-are-checked-for-the-dependencies-they-do-not-order.md) | The jobs are checked for the dependencies they do not order | changing what `--job-order` lists, what counts in it as ordered, or which jobs it looks at |
 | [0126](0126-job-order-is-a-quiet-section-of-reports.md) | Job order is a quiet section of Reports | changing what the Job order section lists or when it is listed, whether it lights the Reports button, or which sources it reads |
+| [0127](0127-a-key-is-a-column-list-from-unique-key-or-a-uniqueness-test.md) | A key is a column list from unique_key or a uniqueness test | changing which columns the Catalog tags `KEY`, what makes a key tag dashed, or the three key rules of the Checks section |
 
 ## Keeping these honest
 

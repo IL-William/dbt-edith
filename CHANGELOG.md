@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.61.0 - 2026-10-29
+
+- Show the keys tests declare in the Catalog: a column tested `unique`, or in a
+  `unique_combination_of_columns`, is tagged `KEY` like a `unique_key` column,
+  `KEY 1/2` for a column of several, lettered `KEY A`, `KEY B` when a node has
+  two keys, and dashed when a column of the key has no `not_null` test, and
+  Checks lists three more rules: keys with a column not tested `not_null`,
+  incremental `unique_key`s no uniqueness test checks, and models with no key
+  test (0127).
+
 ## 1.60.0 - 2026-10-29
 
 - Open one environment of a job in Builds by job by clicking its cell, and a

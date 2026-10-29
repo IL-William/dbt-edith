@@ -2884,6 +2884,22 @@ Left by the job order pull requests of 2026-10-28 (#120 to #122, 1.57.0 to
   agent reads the flag from the text; and `answer()` works out the steps'
   sensors a second time where `step_view` already has them.
 
+Left by the keys from tests (0127, 1.61.0), each a known limit, unranked:
+
+- **Not counted as a key:** a test with a `where:`, a kwarg that is not a list
+  of strings (Jinja left unrendered), a combination test named through a
+  namespace other than `dbt_utils`, contract `constraints`, `dbt_constraints`,
+  `dbt_expectations.expect_compound_columns_to_be_unique`, and not-null checks
+  other than dbt's `not_null`.
+- **Keys are not in `--describe` or MCP,** only on `/api/node`.
+- **The three rules hold models only,** like the other four, not sources, seeds
+  or snapshots, though a snapshot's `unique_key` is tagged in the Columns tab.
+- **A `unique_key` expression** stays an entry (counted in `1/2`), is not
+  checked for `not_null`, and merges only with a `unique` test written on the
+  same text.
+- **A `not_null` with `severity: warn`** covers its column, though it fails
+  nothing.
+
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
 the store for, and filtering the column lineage by any edge kind, beyond stop

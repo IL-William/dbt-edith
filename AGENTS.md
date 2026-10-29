@@ -234,8 +234,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | link something to a macro, or change which one a call reaches | [0028](docs/decisions/0028-a-macro-call-resolves-the-way-dbt-resolves-it.md) |
 | change what `Cmd/Ctrl + K` lists, how it ranks a macro, or where opening one lands | [0084](docs/decisions/0084-a-macro-is-searched-by-its-name-and-opens-on-its-line.md) |
 | say who calls a macro, or that nothing does, or read `depends_on.macros` | [0105](docs/decisions/0105-a-macro-is-counted-by-the-nodes-reaching-it-and-never-called-unused.md) |
-| add a rule to the Checks section of Reports, or read a source's `freshness` | [0116](docs/decisions/0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |
+| add a rule to the Checks section of Reports, or read a source's `freshness` | [0127](docs/decisions/0127-a-key-is-a-column-list-from-unique-key-or-a-uniqueness-test.md), [0116](docs/decisions/0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md), [0103](docs/decisions/0103-a-config-path-is-unused-when-no-fqn-of-its-kind-begins-it.md) |
 | show what an incremental model does on a run, follow `adapter.dispatch`, or keep a macro's body | [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md) |
+| change which columns the Catalog tags `KEY`, what makes a key tag dashed, or the three key rules of Checks | [0127](docs/decisions/0127-a-key-is-a-column-list-from-unique-key-or-a-uniqueness-test.md), [0076](docs/decisions/0076-an-incremental-strategy-is-read-from-the-macros-dbt-runs.md), [0116](docs/decisions/0116-the-tools-own-checks-are-listed-apart-from-dbts-warnings.md) |
 | hide part of a column graph by role, or make the column walk skip an edge | [0083](docs/decisions/0083-a-role-stops-the-column-walk-downstream-on-the-server.md) |
 | change what a column box's badge says, or read a field of collin's cache other than its edges | [0096](docs/decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md), [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md) |
 | change how an edge of a role is drawn or walked, what the legend groups, what the indirect button hides, or how many boxes a column's canvas draws | [0097](docs/decisions/0097-an-indirect-edge-is-hidden-by-default-drawn-dashed-when-shown.md), [0118](docs/decisions/0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md) |
@@ -314,7 +315,8 @@ src/freshness.rs      whether manifest.json still matches the files dbt would pa
 src/envs.rs           .env parsing and location resolution per environment
 src/project.rs        the vars: and dispatch: blocks of dbt_project.yml, read by hand
 src/unused_paths.rs   the config paths of dbt_project.yml no fqn of the manifest begins, as dbt warns of them
-src/checks.rs         the tool's own checks: sources without freshness, models with no test or description, sources no node reads
+src/checks.rs         the tool's own checks: sources without freshness, models with no test or description, sources no node reads, keys with a nullable column, unique keys no test checks, models with no key test
+src/keys.rs           the keys a node declares: a unique_key, a unique test or a combination test, one entry per column list, and the columns no not_null covers
 src/profiles.rs       where dbt looks for profiles.yml, the one file outside the project opened, and its active target
 src/redact.rs         the profile's secrets, replaced before it is sent and put back when it is saved
 src/git.rs            working tree status and the git commands the UI can run
