@@ -321,7 +321,7 @@ holds, or a materialization or strategy macro no node names, and the panel
 then opens on it rather than on an empty coverage; it carries no chip, since
 the count would never go (0105).
 
-**Checks** lists four rules that are this tool's own, apart from Warnings, which
+**Checks** lists seven rules that are this tool's own, apart from Warnings, which
 is what dbt itself would warn of: dbt says nothing of any of these. The sources
 that have no freshness threshold, as dbt-core counts one: `warn_after` or
 `error_after` with both a count and a period, written on the table or on its
@@ -331,7 +331,16 @@ declared on the model or one of its columns, no singular test selecting from it,
 no unit test of it, a `relationships` test that merely points at it not
 counting. The models whose description is empty once doc blocks are resolved.
 And the sources no node reads: no node has it as a parent, a model, snapshot,
-analysis or exposure reading it counting, a test not. Each rule is a fold with
+analysis or exposure reading it counting, a test not. Three rules are about
+keys, a key being a `unique_key`, a `unique` test or a
+`unique_combination_of_columns` test, as the Catalog tags it: the keys with a
+column no enabled `not_null` test covers, composites included, one row for each
+key that says its columns and the ones left, and opening the Columns tab on the
+first of them; the incremental models whose `unique_key` no `unique` or
+combination test checks (a model that appends, overwrites or replaces by
+event time ignores its `unique_key`, so neither rule looks at one only the config
+declares); and the models with no `unique` and no combination
+test (0127). Each rule is a fold with
 its count, open while it lists fifty or fewer, its rows grouped by folder as the
 job coverage groups its own, the first hundred drawn and **Show all** giving the
 rest, up to a thousand, "and N more" saying how many are left, and a name opens
@@ -339,7 +348,7 @@ the node with its Catalog tab.
 Only the project's own enabled models and sources are looked at, an installed
 package's being the package's to document, test and read. A source whose
 manifest says nothing of freshness, as another producer's may, is given no
-verdict. The section is listed in the panel while one of the four lists a node,
+verdict. The section is listed in the panel while one of the seven lists a node,
 but never lights the button, carries no chip, since the count would rarely go
 down, and is never the section the panel opens on (0116).
 

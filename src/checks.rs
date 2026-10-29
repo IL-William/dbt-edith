@@ -1,5 +1,5 @@
 //! The tool's own checks on the project, worked out from the manifest alone
-//! (0116): four rules dbt itself warns of none of, listed under their own
+//! (0116): seven rules dbt itself warns of none of, listed under their own
 //! names in Reports, apart from what dbt would warn of (0103).
 //!
 //! - a source with no freshness threshold, as dbt-core's `has_freshness`
@@ -7,7 +7,11 @@
 //! - a model nothing tests: no generic test declared on it or one of its
 //!   columns, no singular test selecting from it, no unit test of it;
 //! - a model with no description;
-//! - a source no node reads.
+//! - a source no node reads;
+//! - a key of a model, from its `unique_key` or a uniqueness test, with a
+//!   column no `not_null` test covers (0127);
+//! - an incremental model whose `unique_key` no uniqueness test checks;
+//! - a model with no uniqueness test at all.
 //!
 //! Only the root project's own enabled nodes are looked at: an installed
 //! package's models and sources are the package's to document, test and read,
@@ -22,6 +26,18 @@ pub struct Row {
     pub name: String,
     pub file: String,
     pub folder: String,
+    /// What a row of a key rule says of its key, the columns and the ones left
+    /// uncovered. Empty on the other rules.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    /// The column a row opens in the Catalog's Columns tab, if it has one.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub column: String,
+    /// The columns of the key a key row is about, as declared, for a reader
+    /// that must not take them out of `detail`, where an expression may hold
+    /// a comma.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub key: Vec<String>,
 }
 
 /// More rows of one check than a report sends: a project with thousands of
@@ -43,14 +59,35 @@ pub struct Checks {
     pub models_without_test: Check,
     pub models_without_description: Check,
     pub sources_not_read: Check,
+    pub keys_maybe_null: Check,
+    pub unique_keys_untested: Check,
+    pub models_without_key: Check,
 }
 
-/// The nodes of each list, by index in the graph.
+/// One node a list holds, by index in the graph, with what a key rule says of
+/// its key: a model may hold several keys, one row each.
+struct Hit {
+    node: u32,
+    detail: String,
+    column: String,
+    key: Vec<String>,
+}
+
+impl Hit {
+    fn of(node: u32) -> Hit {
+        Hit { node, detail: String::new(), column: String::new(), key: Vec::new() }
+    }
+}
+
+/// The nodes of each list.
 struct Found {
-    no_freshness: Vec<u32>,
-    no_test: Vec<u32>,
-    no_description: Vec<u32>,
-    not_read: Vec<u32>,
+    no_freshness: Vec<Hit>,
+    no_test: Vec<Hit>,
+    no_description: Vec<Hit>,
+    not_read: Vec<Hit>,
+    nullable_key: Vec<Hit>,
+    untested_key: Vec<Hit>,
+    no_key: Vec<Hit>,
 }
 
 /// Which models some test counts for: a generic one declared on the model or
@@ -77,10 +114,51 @@ fn tested(graph: &Graph) -> Vec<bool> {
     tested
 }
 
-fn found(graph: &Graph) -> Found {
+/// The three key rules for model `i`. A key whose columns are not all covered
+/// by a `not_null` is listed whoever declares it, the `unique_key` of a merge
+/// included, since a null never matches and is inserted again (0127). Counting
+/// only wants how many rows there would be, so it builds none of their text.
+fn keys_of(graph: &Graph, i: u32, f: &mut Found, rows: bool) {
+    if !rows {
+        let t = crate::keys::tally(graph, i);
+        f.nullable_key.extend((0..t.nullable).map(|_| Hit::of(i)));
+        if t.config_untested && graph.nodes[i as usize].is_incremental() {
+            f.untested_key.push(Hit::of(i));
+        }
+        if !t.tested {
+            f.no_key.push(Hit::of(i));
+        }
+        return;
+    }
+    let keys = crate::keys::keys(graph, i);
+    // A `unique_key` dbt ignores, and no test declares, is no key to check.
+    let ignored = crate::keys::config_ignored(&graph.meta.adapter, &graph.nodes[i as usize]);
+    for k in keys.iter().filter(|k| !k.nullable.is_empty() && !(ignored && k.in_config() && !k.tested())) {
+        let detail = format!("key {}: no not_null on {}", k.entries.join(", "), k.nullable.join(", "));
+        f.nullable_key.push(Hit { node: i, detail, column: k.nullable[0].clone(), key: k.entries.clone() });
+    }
+    if graph.nodes[i as usize].is_incremental() && !ignored {
+        if let Some(k) = keys.iter().find(|k| k.in_config()).filter(|k| !k.tested()) {
+            f.untested_key.push(Hit { node: i, detail: format!("unique_key {}", k.entries.join(", ")), column: String::new(), key: k.entries.clone() });
+        }
+    }
+    if !keys.iter().any(|k| k.tested()) {
+        f.no_key.push(Hit::of(i));
+    }
+}
+
+fn found(graph: &Graph, rows: bool) -> Found {
     let root = graph.macros.root();
     let tested = tested(graph);
-    let mut f = Found { no_freshness: Vec::new(), no_test: Vec::new(), no_description: Vec::new(), not_read: Vec::new() };
+    let mut f = Found {
+        no_freshness: Vec::new(),
+        no_test: Vec::new(),
+        no_description: Vec::new(),
+        not_read: Vec::new(),
+        nullable_key: Vec::new(),
+        untested_key: Vec::new(),
+        no_key: Vec::new(),
+    };
     for (i, n) in graph.nodes.iter().enumerate() {
         // Disabled nodes never run, and a package's are its own to look after,
         // as the job coverage leaves them (`jobs::coverage`).
@@ -93,19 +171,20 @@ fn found(graph: &Graph) -> Found {
                 // Only `Some(false)` is a verdict: a manifest that does not say
                 // gives none, never a missing threshold.
                 if n.freshness == Some(false) {
-                    f.no_freshness.push(i);
+                    f.no_freshness.push(Hit::of(i));
                 }
                 if n.children.is_empty() {
-                    f.not_read.push(i);
+                    f.not_read.push(Hit::of(i));
                 }
             }
             Kind::Model => {
                 if !tested[i as usize] {
-                    f.no_test.push(i);
+                    f.no_test.push(Hit::of(i));
                 }
                 if n.description.trim().is_empty() {
-                    f.no_description.push(i);
+                    f.no_description.push(Hit::of(i));
                 }
+                keys_of(graph, i, &mut f, rows);
             }
             _ => {}
         }
@@ -113,26 +192,46 @@ fn found(graph: &Graph) -> Found {
     f
 }
 
-/// How many nodes the four lists hold in all, without building a row: the
+/// How many rows the seven lists hold in all, without building one: the
 /// Reports index asks it whenever it is read.
 pub fn count(graph: &Graph) -> usize {
-    let f = found(graph);
-    f.no_freshness.len() + f.no_test.len() + f.no_description.len() + f.not_read.len()
+    let f = found(graph, false);
+    f.no_freshness.len()
+        + f.no_test.len()
+        + f.no_description.len()
+        + f.not_read.len()
+        + f.nullable_key.len()
+        + f.untested_key.len()
+        + f.no_key.len()
 }
 
 pub fn checks(graph: &Graph) -> Checks {
-    let f = found(graph);
-    let rows = |list: Vec<u32>| {
+    let f = found(graph, true);
+    let rows = |list: Vec<Hit>| {
         let total = list.len();
         let mut rows: Vec<Row> = list
             .into_iter()
-            .map(|i| {
-                let n = &graph.nodes[i as usize];
-                Row { id: n.id.clone(), name: n.name.clone(), file: n.file.clone(), folder: crate::jobs::folder(graph, i) }
+            .map(|h| {
+                let n = &graph.nodes[h.node as usize];
+                Row {
+                    id: n.id.clone(),
+                    name: n.name.clone(),
+                    file: n.file.clone(),
+                    folder: crate::jobs::folder(graph, h.node),
+                    detail: h.detail,
+                    column: h.column,
+                    key: h.key,
+                }
             })
             .collect();
+        // A model with two keys listed is two rows, told apart by their detail.
         rows.sort_by(|a, b| {
-            a.folder.cmp(&b.folder).then_with(|| a.file.cmp(&b.file)).then_with(|| a.name.cmp(&b.name)).then_with(|| a.id.cmp(&b.id))
+            a.folder
+                .cmp(&b.folder)
+                .then_with(|| a.file.cmp(&b.file))
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| a.id.cmp(&b.id))
+                .then_with(|| a.detail.cmp(&b.detail))
         });
         rows.truncate(MAX_ROWS);
         Check { total, rows }
@@ -142,6 +241,9 @@ pub fn checks(graph: &Graph) -> Checks {
         models_without_test: rows(f.no_test),
         models_without_description: rows(f.no_description),
         sources_not_read: rows(f.not_read),
+        keys_maybe_null: rows(f.nullable_key),
+        unique_keys_untested: rows(f.untested_key),
+        models_without_key: rows(f.no_key),
     }
 }
 
@@ -370,8 +472,10 @@ mod tests {
         // The first by path, not the first read.
         assert_eq!(c.models_without_description.rows[MAX_ROWS - 1].name, format!("m{:04}", MAX_ROWS - 1));
         assert_eq!(c.models_without_test.total, MAX_ROWS + 5);
-        // The index counts every node, not the rows sent.
-        assert_eq!(count(&g), 2 * (MAX_ROWS + 5));
+        // The index counts every node, not the rows sent: no description, no
+        // test, and no key.
+        assert_eq!(c.models_without_key.total, MAX_ROWS + 5);
+        assert_eq!(count(&g), 3 * (MAX_ROWS + 5));
     }
 
     #[test]
@@ -506,7 +610,8 @@ mod tests {
         assert_eq!(names(&c.models_without_description.rows), ["kept"]);
         assert_eq!(names(&c.sources_without_freshness.rows), ["crm.kept"]);
         assert_eq!(names(&c.sources_not_read.rows), ["crm.kept"]);
-        assert_eq!(count(&g), 4);
+        assert_eq!(names(&c.models_without_key.rows), ["kept"]);
+        assert_eq!(count(&g), 5);
     }
 
     #[test]
@@ -529,5 +634,109 @@ mod tests {
         assert_eq!(seen, [("models", "top"), ("models/marts", "z"), ("models/staging", "a"), ("models/staging", "b")]);
         assert_eq!(rows[1].id, "model.shop.z");
         assert_eq!(rows[1].file, "models/marts/z.sql");
+    }
+
+    /// A model `orders` carrying `config`, and the tests of it given.
+    fn keyed(config: Value, tests: Vec<(&str, &str, Option<&str>, Value)>) -> Graph {
+        let mut orders = model("orders", "shop", "x");
+        orders["config"] = config;
+        let mut nodes = serde_json::Map::new();
+        nodes.insert("model.shop.orders".into(), orders);
+        nodes.insert("model.shop.lonely".into(), model("lonely", "shop", "x"));
+        let mut parents = serde_json::Map::new();
+        for (name, generic, column, kwargs) in tests {
+            let mut t = generic_test(name, "model.shop.orders", generic, kwargs);
+            if let Some(c) = column {
+                t["column_name"] = json!(c);
+            }
+            parents.insert(format!("test.shop.{name}"), json!(["model.shop.orders"]));
+            nodes.insert(format!("test.shop.{name}"), t);
+        }
+        build(json!({ "nodes": nodes, "parent_map": parents }))
+    }
+
+    fn generic_test(name: &str, attached: &str, generic: &str, kwargs: Value) -> Value {
+        let namespace = if generic == "unique_combination_of_columns" { json!("dbt_utils") } else { Value::Null };
+        json!({
+            "name": name, "resource_type": "test", "package_name": "shop",
+            "original_file_path": "models/schema.yml", "fqn": ["shop", name], "attached_node": attached,
+            "test_metadata": { "name": generic, "namespace": namespace, "kwargs": kwargs },
+        })
+    }
+
+    #[test]
+    fn a_key_with_a_column_no_not_null_covers_is_listed_with_that_column() {
+        let g = keyed(
+            json!({ "materialized": "table" }),
+            vec![
+                ("u_id", "unique", Some("id"), json!({})),
+                ("u_code", "unique", Some("code"), json!({})),
+                ("nn_code", "not_null", Some("code"), json!({})),
+                ("combo", "unique_combination_of_columns", None, json!({ "combination_of_columns": ["order_id", "line"] })),
+                ("nn_order", "not_null", Some("order_id"), json!({})),
+            ],
+        );
+        let rows = checks(&g).keys_maybe_null;
+        assert_eq!(rows.total, 2);
+        let seen: Vec<(&str, &str)> = rows.rows.iter().map(|r| (r.detail.as_str(), r.column.as_str())).collect();
+        assert_eq!(seen, [("key id: no not_null on id", "id"), ("key order_id, line: no not_null on line", "line")]);
+        assert_eq!(rows.rows[1].key, ["order_id", "line"]);
+        // The count the index reads is the rows', built without any of them.
+        assert_eq!(count(&g), checks(&g).keys_maybe_null.total + checks(&g).models_without_key.total + checks(&g).models_without_test.total + checks(&g).models_without_description.total + checks(&g).unique_keys_untested.total);
+        // Both rows are the same model, and neither is a model with no key.
+        assert!(checks(&g).models_without_key.rows.iter().all(|r| r.name == "lonely"));
+    }
+
+    #[test]
+    fn a_unique_key_of_an_incremental_model_wants_a_uniqueness_test_of_its_columns() {
+        let incremental = |key: Value| json!({ "materialized": "incremental", "unique_key": key });
+        let g = keyed(incremental(json!(["id", "line"])), vec![("u", "unique", Some("id"), json!({}))]);
+        let c = checks(&g);
+        assert_eq!(names(&c.unique_keys_untested.rows), ["orders"]);
+        assert_eq!(c.unique_keys_untested.rows[0].detail, "unique_key id, line");
+        // The test of the whole list, in another order, checks it.
+        let g = keyed(incremental(json!(["id", "line"])), vec![("c", "unique_combination_of_columns", None, json!({ "combination_of_columns": ["line", "id"] }))]);
+        assert!(checks(&g).unique_keys_untested.rows.is_empty());
+        // A table with a unique_key is not held to it: it does not merge.
+        let g = keyed(json!({ "materialized": "table", "unique_key": "id" }), vec![]);
+        assert!(checks(&g).unique_keys_untested.rows.is_empty());
+    }
+
+    #[test]
+    fn a_model_with_no_uniqueness_test_has_no_key_even_with_a_unique_key() {
+        let g = keyed(json!({ "materialized": "incremental", "unique_key": "id" }), vec![("nn", "not_null", Some("id"), json!({}))]);
+        assert_eq!(names(&checks(&g).models_without_key.rows), ["lonely", "orders"]);
+        let g = keyed(json!({ "materialized": "table" }), vec![("u", "unique", Some("id"), json!({}))]);
+        assert_eq!(names(&checks(&g).models_without_key.rows), ["lonely"]);
+    }
+
+    #[test]
+    fn the_key_rules_leave_out_a_package_and_a_disabled_model() {
+        let g = build(json!({
+            "nodes": { "model.kit.helper": model("helper", "kit", "x") },
+            "disabled": { "model.shop.old": [{
+                "name": "old", "resource_type": "model", "package_name": "shop",
+                "original_file_path": "models/old.sql", "fqn": ["shop", "old"], "config": { "enabled": false },
+            }] },
+        }));
+        assert!(checks(&g).models_without_key.rows.is_empty());
+    }
+
+    #[test]
+    fn a_unique_key_dbt_ignores_is_not_checked_unless_a_test_declares_it() {
+        let append = json!({ "materialized": "incremental", "incremental_strategy": "append", "unique_key": "id" });
+        let g = keyed(append.clone(), vec![]);
+        let c = checks(&g);
+        assert!(c.unique_keys_untested.rows.is_empty() && c.keys_maybe_null.rows.is_empty());
+        let total = |c: &Checks| {
+            c.sources_without_freshness.total + c.models_without_test.total + c.models_without_description.total + c.sources_not_read.total
+                + c.keys_maybe_null.total + c.unique_keys_untested.total + c.models_without_key.total
+        };
+        assert_eq!(count(&g), total(&c), "the count leaves it out too");
+        // A test of the same column makes it a key the checks look at.
+        let g = keyed(append, vec![("u", "unique", Some("id"), json!({}))]);
+        assert_eq!(checks(&g).keys_maybe_null.total, 1);
+        let merge = json!({ "materialized": "incremental", "incremental_strategy": "merge", "unique_key": "id" });
+        assert_eq!(checks(&keyed(merge, vec![])).unique_keys_untested.total, 1);
     }
 }

@@ -20,6 +20,7 @@ mod incremental;
 mod job;
 mod job_order;
 mod jobs;
+mod keys;
 mod ls;
 mod look;
 mod ls_column;

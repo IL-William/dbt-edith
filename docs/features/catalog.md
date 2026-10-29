@@ -20,7 +20,21 @@ An incremental model adds Strategy and Unique key beside the materialization,
 the strategy as its box reads it, and a snapshot its Unique key. The key takes
 one column per line, three at most, then `+N more, in Columns`, and each name
 opens the Columns tab on its row. There, each key column carries a `KEY` tag,
-and a Key sort puts them first in the key's order. A view or a table that a
+and a Key sort puts them first, by key and then in the key's order.
+A key is a list of columns that identify a row, declared by that `unique_key`,
+by a `unique` test on one column or by a `dbt_utils.unique_combination_of_columns`
+test, on any model, seed or source as well. Whatever declares it the tag says
+`KEY`, and `KEY 1/2` for a column of a key of several, its place in the
+`unique_key` or else in the test's list. Two declarations of one list, in any
+order or case, are one key. A node with two different keys letters them, `KEY A`
+and `KEY B 2/3`, the `unique_key` first, then the fewest columns. A tag is dashed
+when a column of its key has no enabled `not_null` test, since dbt's `unique`
+skips nulls and a merge on a null key inserts the row again; hovering it says
+the columns, where the key is declared and which have no `not_null`. A test with
+a `where`, or from another package than dbt's or dbt_utils, declares nothing,
+and a `unique_key` written as an expression is counted, never checked for
+`not_null`, and merged only with a `unique` test written on the same text
+(0127). A view or a table that a
 folder's config gave a strategy or a key lists it, dimmed, under details: it
 does not use it, but `config.incremental_strategy:` still selects it.
 Once a [job source](jobs-and-reports.md#jobs) is named, Preview also lists the steps that run the

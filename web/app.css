@@ -1579,6 +1579,7 @@ kbd {
 .cols tr.c-focus td { background: var(--accent-dim); }
 /* In the incremental orange, outlined like the canvas's role tags. */
 .cols .keytag { display: inline-block; margin-left: 7px; padding: 0 4px; font: 9.5px var(--mono); letter-spacing: .4px; color: #e0a34b; border: 1px solid #e0a34b; border-radius: 3px; vertical-align: 1px; user-select: none; }
+.cols .keytag.dashed { border-style: dashed; }
 .cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
 .cols .c-lin b { color: var(--accent); font-weight: 600; }
 /* What a generated column is set to, in the canvas badge's pink, clipped:

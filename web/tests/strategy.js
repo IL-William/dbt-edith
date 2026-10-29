@@ -1,6 +1,6 @@
 // An incremental model's strategy and unique key: the box's second line with
 // its struck word, what a screen reader hears of it, the hover card's line,
-// and which columns a key names.
+// which columns a key names, and the tag a key puts on a column.
 // Run from the repository root: jsc web/tests/strategy.js
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('function subtitle(n)'), lin.indexOf('  function init(')));
@@ -110,3 +110,22 @@ check('names compared as Snowflake compares them', [columnKey('`Amount`'), colum
   ['amount', 'x', 'a b']);
 check('no key, no columns', keyColumns(undefined, cols), []);
 check('a view, an ephemeral', [article('view'), article('ephemeral')], ['a view', 'an ephemeral']);
+
+print('\n--- the tag of a key on a column (0127) ---');
+var one = { entries: ['id'], from: [{ kind: 'unique', id: 'test.shop.unique_orders_id', name: 'unique_orders_id' }] };
+var many = { entries: ['order_id', 'line_number'], nullable: ['line_number'],
+  from: [{ kind: 'unique_key' }, { kind: 'combination', id: 'test.shop.combo', name: 'combo' }] };
+check('a key of one column is KEY alone', keyTag(one, '', 'id').text, 'KEY');
+check('a key of several says the place of the column in it', [keyTag(many, '', 'order_id').text, keyTag(many, '', '"LINE_NUMBER"').text],
+  ['KEY 1/2', 'KEY 2/2']);
+check('a letter once the node has two keys, before the place', [keyTag(one, 'A', 'id').text, keyTag(many, 'B', 'line_number').text],
+  ['KEY A', 'KEY B 2/2']);
+check('dashed while a column of the key has no not_null', [keyTag(one, '', 'id').dashed, keyTag(many, '', 'order_id').dashed],
+  [false, true]);
+check('the title: the key, where it is declared, and what is left', keyTag(many, 'B', 'order_id').title.split('\n'),
+  ['key B: order_id, line_number', 'declared by unique_key', 'declared by the unique_combination_of_columns test combo',
+    'no not_null test on line_number']);
+check('a unique test is named in the title', keyTag(one, '', 'id').title.split('\n'),
+  ['key: id', 'declared by the unique test unique_orders_id']);
+check('letters from two keys, none for one, numbers past Z', [keyLetter(0, 1), keyLetter(0, 2), keyLetter(25, 30), keyLetter(26, 30)],
+  ['', 'A', 'Z', '27']);

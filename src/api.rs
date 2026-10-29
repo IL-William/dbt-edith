@@ -964,7 +964,7 @@ async fn reports_index(State(st): State<Arc<AppState>>) -> Response {
     // The macros section is listed only while some macro of the project is
     // reached by no node and nothing explains it, from summaries worked out
     // once per macro (0105).
-    // The checks section is listed only while one of the four finds a node,
+    // The checks section is listed only while one of the seven finds a node,
     // counted from the same graph: no file is read (0116).
     let (unexplained, checks) = {
         let graph = st.graph.read().await;
@@ -1745,6 +1745,10 @@ struct NodeDetail<'a> {
     strategy: &'a str,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     unique_key: &'a [String],
+    /// The column lists the node declares as a key, from its `unique_key` or
+    /// its uniqueness tests, one entry per list (0127).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    keys: Vec<crate::keys::NodeKey>,
     /// What the box says of an incremental model's strategy, besides.
     #[serde(flatten)]
     incremental: crate::graph::StrategyFacts<'a>,
@@ -1844,6 +1848,7 @@ async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Re
         materialized: &n.materialized,
         strategy: &n.strategy,
         unique_key: &n.unique_key,
+        keys: crate::keys::keys(&graph, idx),
         incremental: n.strategy_facts(),
         package: &n.package,
         description: &n.description,
@@ -4899,6 +4904,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A node's keys reach the Catalog with where each is declared and which
+    /// columns no `not_null` covers; a node with none says nothing of them.
+    #[tokio::test]
+    async fn the_node_route_carries_the_keys_its_tests_declare() {
+        let root = temp_project("node-keys");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let test = |name: &str, generic: &str, column: &str| {
+            serde_json::json!({ "name": name, "resource_type": "test", "package_name": "demo", "column_name": column,
+                                "attached_node": "model.demo.orders", "test_metadata": { "name": generic } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.demo.orders": { "name": "orders", "resource_type": "model", "package_name": "demo" },
+            "model.demo.plain": { "name": "plain", "resource_type": "model", "package_name": "demo" },
+            "test.demo.unique_orders_id": test("unique_orders_id", "unique", "id"),
+        }, "parent_map": { "test.demo.unique_orders_id": ["model.demo.orders"] } }))
+        .unwrap();
+        *st.graph.write().await = Arc::new(Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0));
+
+        let node = response_of(port, get("/api/node?id=model.demo.orders", &h)).await;
+        let key = r#""keys":[{"entries":["id"],"from":[{"kind":"unique","id":"test.demo.unique_orders_id","name":"unique_orders_id"}],"nullable":["id"]}]"#;
+        assert!(node.contains(key), "{node}");
+        let plain = response_of(port, get("/api/node?id=model.demo.plain", &h)).await;
+        assert!(!plain.contains(r#""keys""#), "{plain}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// `cut` reaches the walk through the route, and names what it stopped at;
     /// without it the answer is the one it always was.
     #[tokio::test]
@@ -5865,8 +5899,12 @@ mod tests {
             });
             if tested {
                 nodes["test.shop.not_null_orders_id"] = serde_json::json!({
-                    "name": "not_null_orders_id", "resource_type": "test", "package_name": "shop",
+                    "name": "not_null_orders_id", "resource_type": "test", "package_name": "shop", "column_name": "id",
                     "attached_node": "model.shop.orders", "test_metadata": { "name": "not_null" } });
+                // The key rules want a uniqueness test, and its column covered.
+                nodes["test.shop.unique_orders_id"] = serde_json::json!({
+                    "name": "unique_orders_id", "resource_type": "test", "package_name": "shop", "column_name": "id",
+                    "attached_node": "model.shop.orders", "test_metadata": { "name": "unique" } });
             }
             serde_json::from_value(serde_json::json!({
                 "metadata": { "project_name": "shop" },
@@ -5876,15 +5914,16 @@ mod tests {
                         "source_name": "crm", "original_file_path": "models/sources.yml", "freshness": null },
                 },
                 "parent_map": { "model.shop.orders": ["source.shop.crm.customers"],
-                    "test.shop.not_null_orders_id": ["model.shop.orders"] },
+                    "test.shop.not_null_orders_id": ["model.shop.orders"], "test.shop.unique_orders_id": ["model.shop.orders"] },
             }))
             .unwrap()
         };
         let path = root.join("target").join("manifest.json");
         *st.graph.write().await = Arc::new(Graph::build(manifest("", false), &path, 7, 0));
         let index = json(&response_of(port, get("/api/reports", &h)).await);
-        // The source has no freshness, and the model no test and no description.
-        assert_eq!(index["checks"], serde_json::json!({ "count": 3, "at": 7 }));
+        // The source has no freshness, and the model no test, no description
+        // and no key.
+        assert_eq!(index["checks"], serde_json::json!({ "count": 4, "at": 7 }));
         let report = json(&response_of(port, get("/api/reports/checks", &h)).await);
         let row = |id: &str, name: &str, file: &str, folder: &str| serde_json::json!({ "id": id, "name": name, "file": file, "folder": folder });
         assert_eq!(report["manifest_at"], 7);
@@ -5892,6 +5931,8 @@ mod tests {
         assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models")]));
         assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts")]));
         assert_eq!(report["models_without_description"]["rows"][0]["name"], "orders");
+        assert_eq!(report["models_without_key"]["rows"][0]["name"], "orders");
+        assert_eq!(report["keys_maybe_null"]["total"], 0);
         assert_eq!(report["sources_not_read"], serde_json::json!({ "total": 0, "rows": [] }));
         assert!(status_of(port, keyless(get("/api/reports/checks", &h))).await.ends_with("401 Unauthorized"));
 

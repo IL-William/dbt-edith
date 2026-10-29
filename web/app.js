@@ -10571,6 +10571,12 @@ const CHECKS = [
     why: 'An empty description once doc blocks are resolved.' },
   { key: 'sources_not_read', title: 'Sources no node reads',
     why: 'No node has it as a parent, a test of it aside: a model, snapshot, analysis or exposure reading it counts.' },
+  { key: 'keys_maybe_null', title: 'Keys with a column not tested not_null',
+    why: 'A key is a unique_key, a unique test or a unique_combination_of_columns test, composites included. dbt\'s unique skips nulls and a merge on a null key matches nothing and inserts the row again, so each column of a key wants an enabled not_null test with no where. A model that appends or overwrites ignores its unique_key, so one only the config declares is not looked at. A row opens the first column left.' },
+  { key: 'unique_keys_untested', title: 'Incremental unique_key no uniqueness test checks',
+    why: 'No unique test on the column, nor unique_combination_of_columns on the same columns in any order, so a duplicate the merge lets in is not caught. A unique_key written as an expression is checked only by a unique test written on the same text. A model that appends or overwrites ignores its unique_key and is not listed.' },
+  { key: 'models_without_key', title: 'Models with no key test',
+    why: 'No enabled unique test on a column and no unique_combination_of_columns test, a test with a where aside. A unique_key alone does not count: nothing checks it.' },
 ];
 
 async function checksSection(again) {
@@ -10652,8 +10658,10 @@ function checkRow(row, path) {
   const li = jel('li', '');
   const name = jel('a', 'filelink', row.name);
   name.title = row.file ? `${row.id} · ${row.file}` : row.id;
-  name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(row.id); });
+  // A key row opens the Columns tab on the column it left untested.
+  name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(row.id, row.column); });
   li.append(name);
+  if (row.detail) li.append(jel('span', '', ' ' + row.detail));
   if (path) li.append(jel('span', 'muted', ' · ' + path));
   return li;
 }
@@ -13451,6 +13459,32 @@ function keyColumns(key, columns) {
   return (key || []).map((entry) => ({ entry, column: by.get(columnKey(entry)) || null }));
 }
 
+/* The letter of the `i`th of `total` keys of a node: none while the node has
+   one key, `A`, `B`... from two, and the number past `Z`. */
+function keyLetter(i, total) {
+  if (total < 2) return '';
+  return i < 26 ? String.fromCharCode(65 + i) : String(i + 1);
+}
+
+/* The tag of one key on one of its columns (0127): `KEY`, `KEY 1/2` for a
+   column of several, `KEY A` and `KEY A 1/2` once the node has two keys.
+   Dashed when a column of the key has no not_null test, and the title says
+   what declares the key and which columns are left. `key` is the payload's,
+   `entries` its columns in the order of the first declaration. */
+function keyTag(key, letter, column) {
+  const entries = key.entries || [];
+  const at = entries.findIndex((e) => columnKey(e) === columnKey(column));
+  const text = ['KEY', letter, entries.length > 1 && at >= 0 ? `${at + 1}/${entries.length}` : ''].filter(Boolean).join(' ');
+  const lines = [`${letter ? `key ${letter}` : 'key'}: ${entries.join(', ')}`];
+  for (const f of key.from || []) {
+    lines.push(f.kind === 'unique_key' ? 'declared by unique_key'
+      : `declared by the ${f.kind === 'combination' ? 'unique_combination_of_columns' : 'unique'} test ${f.name}`);
+  }
+  const nullable = key.nullable || [];
+  if (nullable.length) lines.push(`no not_null test on ${nullable.join(', ')}`);
+  return { text, title: lines.join('\n'), dashed: nullable.length > 0 };
+}
+
 /* Marks a column for the Columns table of node `id` to scroll to, once, the
    next time that node's table is drawn with the Catalog in front. Tied to the
    node, so a table drawn meanwhile, the one a report's link opens over or one
@@ -14780,27 +14814,30 @@ function catalogColumns(body, n) {
     again.addEventListener('click', () => regenerateCollin());
     tools.appendChild(again);
   }
-  // The key's columns, in the key's order, on the two nodes that use a key.
-  const usesKey = ((n.kind === 'model' && n.materialized === 'incremental') || n.kind === 'snapshot') && !n.disabled;
-  // By its place in the whole key, expressions included; a column named twice
-  // keeps its first place.
+  // Each column of a key, by the key's letter and its place in the key,
+  // expressions included; a column named twice in a key keeps its first place.
+  const keys = n.keys || [];
   const keyed = new Map();
-  if (usesKey) {
-    keyColumns(n.unique_key, n.columns).forEach((k, i) => {
-      if (k.column && !keyed.has(k.column.name)) keyed.set(k.column.name, i);
+  keys.forEach((key, ki) => {
+    const letter = keyLetter(ki, keys.length);
+    key.entries.forEach((entry, at) => {
+      const name = columnKey(entry);
+      const here = keyed.get(name) || [];
+      if (!here.some((h) => h.ki === ki)) keyed.set(name, here.concat({ key, letter, ki, at }));
     });
-  }
-  const keyLength = (n.unique_key || []).length;
-  // Kept from node to node like the others; a node without a key has no Key
-  // button, and sorts A-Z until the next one that has.
-  const sort = S.colSort === 'key' && !keyed.size ? 'az' : S.colSort;
+  });
+  // Kept from node to node like the others; a node with no key naming a column
+  // of the table, an expression or a column listed nowhere, has no Key button
+  // that would move nothing, and sorts A-Z until the next one that has.
+  const keyShown = keys.some((k) => keyColumns(k.entries, n.columns).some((e) => e.column));
+  const sort = S.colSort === 'key' && !keyShown ? 'az' : S.colSort;
   tools.append(Object.assign(document.createElement('div'), { className: 'grow' }));
   tools.appendChild(document.createTextNode('Sort by'));
-  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keyed.size ? [['key', 'Key']] : [])]) {
+  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keyShown ? [['key', 'Key']] : [])]) {
     const b = document.createElement('button');
     b.className = 'btn sm';
     b.textContent = label;
-    if (key === 'key') b.title = 'the unique key\'s columns first, in its order, then the rest A-Z';
+    if (key === 'key') b.title = 'the columns of the keys first, by key and place in it, then the rest A-Z';
     if (sort === key) b.style.borderColor = 'var(--accent)';
     b.addEventListener('click', () => { S.colSort = key; renderCatalog(n); });
     tools.appendChild(b);
@@ -14814,8 +14851,8 @@ function catalogColumns(body, n) {
   // A column with no test has no `tests` at all: the payload skips it empty.
   if (sort === 'tests') cols.sort((a, b) => (b.tests || []).length - (a.tests || []).length || a.name.localeCompare(b.name));
   else if (sort === 'key') {
-    const at = (c) => (keyed.has(c.name) ? keyed.get(c.name) : Infinity);
-    cols.sort((a, b) => at(a) - at(b) || a.name.localeCompare(b.name));
+    const first = (c) => (keyed.get(columnKey(c.name)) || [{ ki: Infinity, at: Infinity }])[0];
+    cols.sort((a, b) => first(a).ki - first(b).ki || first(a).at - first(b).at || a.name.localeCompare(b.name));
   } else cols.sort((a, b) => a.name.localeCompare(b.name));
 
   // With Snowflake picked, every column can be asked about, not just the cached ones.
@@ -14849,9 +14886,10 @@ function catalogColumns(body, n) {
     // beside it, out of reach of that rewrite.
     const text = Object.assign(document.createElement('span'), { textContent: c.name });
     name.append(text);
-    if (keyed.has(c.name)) {
+    for (const { key, letter } of keyed.get(columnKey(c.name)) || []) {
+      const tag = keyTag(key, letter, c.name);
       name.append(Object.assign(document.createElement('span'), {
-        className: 'keytag', textContent: 'KEY', title: `in the unique key, entry ${keyed.get(c.name) + 1} of ${keyLength}`,
+        className: tag.dashed ? 'keytag dashed' : 'keytag', textContent: tag.text, title: tag.title,
       }));
     }
     rows.push({ tr, name: text, c });
