@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-27.
+belongs here. Last updated 2026-10-29.
 
 ## Shipped
 
@@ -1757,7 +1757,13 @@ by an asset or another job, a manual one, and a cron this cannot read are
 judged on the global threshold, not a clock; the DAG of an invocation is
 inferred from the job's selections, not read, since `dbt_artifacts` does not
 record it; and a long list of assets is cut short in the schedule pill, whole
-only in its tooltip. Seeds, snapshots and tests wait on item 26.
+only in its tooltip. Seeds, snapshots and tests wait on item 26. Since 1.60.0 a
+row opens one environment at a time: a click on a cell lists that environment's
+errored, late and not built models, another cell of the row switches, the same
+cell closes, and a click elsewhere on the row opens the environment picked last,
+else the job's worst. Since 1.59.1 an environment Snowflake refused shows the
+whole error, its cause included, where it used to stop at `SQL compilation
+error:`.
 
 Job order (0124 to 0126, 1.57.0 to 1.59.0): the order the job files declare,
 said three ways. `--job`, and MCP's `--job` line, carry it (0124): under a DAG
@@ -1775,6 +1781,20 @@ tests: sensors of every form, assets with several updaters, DAGs with no dbt
 task, crons across zones, cycles written in any order, the same answer twice;
 the route behind the key, its body the command's) and `web/tests/joborder.js`.
 Its limits are in the list left by these pull requests, below.
+
+Keys (0127, 1.61.0): the Columns tab tags `KEY` on a column a `unique` test, a
+`dbt_utils.unique_combination_of_columns` test or an incremental `unique_key`
+names, one tag per column list whatever the order or case, `1/2` on each column
+of a key of several, letters once a node has two keys, and the whole key dashed
+when one of its columns has no `not_null` test. A test written under the model,
+which dbt gives no `column_name`, counts by its kwarg. Checks gained three
+rules: keys with a column not tested `not_null`, an incremental `unique_key` no
+uniqueness test checks, and models with no key test; a `unique_key` the strategy
+ignores (`append`, `insert_overwrite`, `replace_where`, and `microbatch` except
+on Postgres) is left out of the first two unless a test also declares it.
+Checked with `cargo test` (`keys::`, `checks::`), `web/tests/strategy.js` and
+`scripts/compare_with_dbt.py` against dbt's own manifest. Its limits are in the
+list left by it, below.
 
 ## Deferred, in the order they were chosen
 
@@ -2887,8 +2907,9 @@ Left by the job order pull requests of 2026-10-28 (#120 to #122, 1.57.0 to
 Left by the keys from tests (0127, 1.61.0), each a known limit, unranked:
 
 - **Not counted as a key:** a test with a `where:`, a kwarg that is not a list
-  of strings or a `column_name` holding `{{` (Jinja left unrendered), a combination test named through a
-  namespace other than `dbt_utils`, contract `constraints`, `dbt_constraints`,
+  of strings or a `column_name` holding `{{` (Jinja left unrendered), a
+  combination test named through a namespace other than `dbt_utils`, contract
+  `constraints`, `dbt_constraints`,
   `dbt_expectations.expect_compound_columns_to_be_unique`, and not-null checks
   other than dbt's `not_null`.
 - **Keys are not in `--describe` or MCP,** only on `/api/node`.
@@ -2899,6 +2920,27 @@ Left by the keys from tests (0127, 1.61.0), each a known limit, unranked:
   same text.
 - **A `not_null` with `severity: warn`** covers its column, though it fails
   nothing.
+
+Left by the pull requests of 2026-10-29 (#124 and #126, 1.59.1 and 1.60.0),
+each a known limit, unranked:
+
+- **A long Snowflake error in the column lineage** now shows whole in the
+  status at the canvas's bottom right, which has no width limit, so on a
+  narrow window it can reach the legend.
+- **Builds by job's open row closes on a Refresh,** as before 1.60.0; only the
+  environment picked last is kept, and the picks last as long as the page, not
+  across a reload.
+- **Builds by job's row wiring** (switching, closing on the same cell, opening
+  by the row, the rows put back) is checked in headless Chrome only;
+  `web/tests/jobbuilds.js` holds the order of the pick.
+- **Every listable cell of Builds by job is a tab stop,** so a long table takes
+  many presses of Tab.
+- **Reports reopens on a section with news,** Job coverage for one, rather than
+  on Builds by job.
+
+Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
+read connects with. One connection, with the active target's role, reads every
+environment (0117).
 
 Wanted but never ranked, because nobody has needed either enough to place it:
 persisting the open tabs between sessions, which `src/settings.rs` already has
