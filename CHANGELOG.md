@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.60.0 - 2026-10-29
+
+- Open one environment of a job in Builds by job by clicking its cell, and a
+  click elsewhere on the row opens the last one picked or its worst, instead of
+  stacking every environment under the row.
+
 ## 1.59.1 - 2026-10-29
 
 - Show the whole Snowflake error, cause included, in Reports (the builds by job

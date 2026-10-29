@@ -102,6 +102,7 @@ const S = {
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
   reportsPlace: {},           // per section, its open folds, the lists shown whole and its scroll, for when it is shown again
+  jobBuildsPick: { last: null, rows: {} }, // Builds by job: the environment last picked by a cell, and the one each open row is on
   settingsSection: '',        // the section of the settings on screen, or last on screen this session (0100)
   settingsKept: {},           // per section holding a form, its body as it was left, until the panel rolls up
   settingsFrom: '',           // the panel the settings took the place of, '' for none
@@ -14240,7 +14241,32 @@ function jobBuildsCell(res, clock) {
   if (c.none) bits.push(`${c.none} not built`);
   cell.append(jel('span', 'jobdot'), jel('span', 'jbsay', bits.length ? bits.join(' · ') : c.total === 1 ? 'built' : `all ${c.total} built`));
   if (clock && res.last !== null) cell.append(jel('span', 'muted jbsince', jobSinceText(res, clock.tz)));
+  // A cell with models to list opens the row on its environment; the row's
+  // handler wires the click, since it knows the fold.
+  cell.classList.add('pick');
+  cell.setAttribute('role', 'button');
+  cell.tabIndex = 0;
+  cell.setAttribute('aria-expanded', 'false');
   return cell;
+}
+
+/* Which environment a job's row opens on. `listable` is the row's environments
+   that have something to list, in column order, as { key, tone }. A pick made
+   on this row wins, then the one last made anywhere in the section, then the
+   worst, so that a click on the name lands where the eye is likely to be. A
+   pick with nothing to list for this job falls through, and a tie in tone
+   takes the first column. Pure, so the order is checked without a DOM
+   (web/tests/jobbuilds.js). */
+function jobBuildsPick(listable, kept, last) {
+  const has = (k) => k !== null && k !== undefined && listable.some((e) => e.key === k);
+  if (has(kept)) return kept;
+  if (has(last)) return last;
+  const rank = { error: 3, late: 2, none: 1, ok: 0 };
+  let best = null;
+  for (const e of listable) {
+    if (best === null || (rank[e.tone] || 0) > (rank[best.tone] || 0)) best = e;
+  }
+  return best === null ? null : best.key;
 }
 
 /* The models of one environment worth a look: errored, late, not built. */
@@ -14352,12 +14378,12 @@ async function jobBuildsSection() {
   const head2 = jel('div', 'jbrow jbheads');
   head2.append(jel('span', '', 'job'), jel('span', '', 'schedule'), jel('span', '', 'models'));
   ready.forEach((t) => {
-    const h = jel('span', '', buildsEnvLabel(t));
+    const h = jel('span', 'jbenvh', buildsEnvLabel(t));
     h.title = h.textContent;
     head2.append(h);
   });
   // Every row is made once; the filter only hides them. The detail of a job,
-  // the lists of its environments, is made when it is first opened.
+  // the lists of one environment, is made when the row opens.
   const twins = jobsTwinTags(cfg.jobs);
   const rows = jobsByStart(cfg.jobs, (j) => j).map((job) => {
     const clock = clocks.get(job);
@@ -14372,37 +14398,91 @@ async function jobBuildsSection() {
     if (apart) meta.append(jel('span', 'muted', ` + ${counted(apart, 'seed or snapshot', 'seeds and snapshots')} not read`));
     row.append(nameBox, jobBuildsWhen(job, clock), meta);
     // A job has something to open only where an environment judged its models.
-    let listable = false;
+    const nameKey = `${job.name} ${twins.get(job) || ''}`.toLowerCase();
+    // Case-sensitive and per file, unlike the filter's name: two jobs that differ
+    // only in case must not share a pick.
+    const pickKey = `${job.source}|${job.file}:${job.line}|${job.name}|${twins.get(job) || ''}`;
+    const listable = [];
+    const cells = new Map();
     for (const t of ready) {
       const res = verdictsOf(job, t);
       const cell = jobBuildsCell(res, clock);
       cell.title = `${buildsEnvLabel(t)}: ${res.clash ? res.clash : res.basis === 'clock' ? 'judged by ' + clock.said : 'judged on the threshold'}`;
       row.append(cell);
-      if (!res.clash && res.counts.total) listable = true;
+      if (!res.clash && res.counts.total) {
+        listable.push({ key: t.env || '', tone: res.tone, t, res });
+        cells.set(t.env || '', cell);
+        cell.title += '\nClick to list its models here.';
+      }
     }
     d.append(row);
-    if (!listable) {
+    if (!listable.length) {
       d.classList.add('empty');
       // Nothing to open: a click on the row does not.
       row.addEventListener('click', (ev) => ev.preventDefault());
     }
-    d.addEventListener('toggle', () => {
-      // A fold the place restored on a row with nothing to open now closes.
-      if (d.open && !listable) { d.open = false; return; }
-      if (!d.open || d.dataset.built) return;
-      d.dataset.built = '1';
-      const detail = jel('div', 'jbdetail');
+    const picks = S.jobBuildsPick;
+    let detail = null;
+    // The row shows one environment at a time; drawing replaces what it held.
+    const draw = (key) => {
+      const e = listable.find((x) => x.key === key);
+      if (!e) return;
+      if (!detail) { detail = jel('div', 'jbdetail'); d.append(detail); }
+      if (detail.dataset.env === key) return;
+      detail.dataset.env = key;
+      detail.replaceChildren();
       // The rule late is judged by is the job's, said once.
       if (clock && clock.before !== null) {
         detail.append(jel('div', 'jbrule', `Late: no success since ${zoneStamp(clock.before, clock.tz)}, the run before the last start.`));
       }
-      for (const t of ready) {
-        const res = verdictsOf(job, t);
-        if (!res.clash && res.counts.total) detail.append(jobBuildsEnv(job, t, res, read.byEnv[t.env], names, now));
+      detail.append(jobBuildsEnv(job, e.t, e.res, read.byEnv[e.t.env], names, now));
+      for (const [k, cell] of cells) {
+        cell.classList.toggle('picked', k === key);
+        cell.setAttribute('aria-expanded', k === key ? 'true' : 'false');
       }
-      d.append(detail);
+    };
+    for (const [key, cell] of cells) {
+      const act = (ev) => {
+        // Else the summary the cell sits in toggles the row on its own.
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (d.open && detail && detail.dataset.env === key) { d.open = false; return; }
+        picks.rows[pickKey] = key;
+        picks.last = key;
+        draw(key);
+        d.open = true;
+      };
+      cell.addEventListener('click', act);
+      cell.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        // A held key must not open and close the row in turn.
+        if (ev.repeat) { ev.preventDefault(); return; }
+        act(ev);
+      });
+    }
+    d.addEventListener('toggle', (ev) => {
+      // A fold the place restored on a row with nothing to open now closes.
+      if (d.open && !listable.length) { d.open = false; return; }
+      if (!d.open) {
+        delete picks.rows[pickKey];
+        if (detail) { detail.remove(); detail = null; }
+        for (const cell of cells.values()) { cell.classList.remove('picked'); cell.setAttribute('aria-expanded', 'false'); }
+        return;
+      }
+      // Already drawn: the native toggle that follows a cell click or the
+      // place's own dispatch.
+      if (detail) return;
+      // Only restoreReportPlace dispatches a toggle by hand, and it reopens
+      // only folds that were open when the place was kept: so an entry in
+      // picks.rows, which a draw that dropped the rows without closing them
+      // may have left stale, is read only there, where it is not stale. A
+      // click on the row, the name included, takes the last pick or the worst.
+      const key = jobBuildsPick(listable, ev.isTrusted ? null : picks.rows[pickKey], picks.last);
+      if (key === null) return;
+      picks.rows[pickKey] = key;
+      draw(key);
     });
-    return { name: `${job.name} ${twins.get(job) || ''}`.toLowerCase(), el: d };
+    return { name: nameKey, el: d };
   });
   list.replaceChildren(head2, ...rows.map((r) => r.el));
   const apply = () => {
