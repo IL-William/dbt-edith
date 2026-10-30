@@ -1,6 +1,6 @@
 # 0057. A selection is answered on the command line, without a server
 
-Date: 2026-10-10 · Status: accepted, amended by 0110, 0114 and 0115 · Follows 0024 and 0052
+Date: 2026-10-10 · Status: accepted, amended by 0110, 0114, 0115 and 0134 · Follows 0024 and 0052
 
 **Trigger:** read before adding a flag that answers and exits instead of
 serving, or before letting anything but the page read the selection engine.
@@ -26,6 +26,8 @@ a process to stop afterwards, and 0052 keeps other programs off it on purpose.
   decided before anything a server needs: no port bound, no key drawn, no
   browser, no settings read or written, no catalog, no column lineage cache,
   no watcher. `--manifest` still says which manifest.
+  *Amended by [0134](0134-columns-are-printed-alone-by-one-flag-for-a-card-and-a-selection.md):
+  with `--columns` the catalog beside the manifest is merged in, for the types.*
 - **The page's entry points, in the route's order.** A `--selector` inside the
   line wins, then `select::select` with tests counted in. A pasted
   `dbt ls -s ...` is stripped as the box strips it. So the command line and the

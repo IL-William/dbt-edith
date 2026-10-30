@@ -31,9 +31,10 @@ pub const INSTRUCTIONS: &str = "Questions about this dbt project's models, sourc
 pub const HELP: &str = concat!(
     "dbt-edith ",
     env!("CARGO_PKG_VERSION"),
-    " answers from the manifest dbt wrote; it never runs dbt. One question per call, with the flags of its command line and no project path.\n",
+    " answers from the manifest dbt wrote; it never runs dbt. One question per call, no project path.\n",
     "--overview [--depth N]          the project's shape: kinds, materializations, tags, selectors, folders. Ask first.\n",
     "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's or macro's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
+    "  --columns                     only the columns, also with -s\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
     "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
     "--selector NAME                 a selector of selectors.yml\n",
@@ -45,15 +46,15 @@ pub const HELP: &str = concat!(
     "  --stop-at window,aggregate    roles not walked past downstream\n",
     "  --indirect                    cross filter, join and dedup keys too\n",
     "  --column-tool fusion|collin|snowflake  whose cache answers\n",
-    "  --run-collin                  run collin first, which rewrites its cache under target/\n",
-    "--output name|json|compact      name by default; compact: one tab-separated line per node or column, under a header\n",
-    "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe, no shell: count with --count-by KEY, or filter the answer yourself.\n",
-    "After the answer: the manifest that answered, then freshness. If stale, run dbt parse and ask again.\n",
+    "  --run-collin                  run collin first, rewriting its cache in target/\n",
+    "--output name|json|compact      name by default; compact: tab-separated lines under a header\n",
+    "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe or shell: count with --count-by, or filter the answer yourself.\n",
+    "After the answer: the manifest, then freshness. If stale, run dbt parse and ask again.\n",
 );
 
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
-const ALLOWED: [&str; 20] = [
+const ALLOWED: [&str; 21] = [
     "select",
     "exclude",
     "selector",
@@ -67,6 +68,7 @@ const ALLOWED: [&str; 20] = [
     "describe",
     "sql",
     "compiled_sql",
+    "columns",
     "overview",
     "job",
     "job_order",
@@ -416,6 +418,9 @@ mod tests {
         assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n), None) if n == "nightly"));
         assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false } if names.len() == 2));
         assert!(matches!(asked("--describe orders --compiled-sql").0, Question::Describe { sql: false, compiled_sql: true, .. }));
+        assert!(matches!(asked("--describe orders,customers --columns").0, Question::DescribeColumns { ref names } if names.len() == 2));
+        assert!(matches!(asked("-s orders+ --exclude resource_type:test --columns --output compact").0, Question::SelectColumns(crate::ls::Query::Line { ref select, ref exclude }) if select == "orders+" && exclude == "resource_type:test"));
+        assert!(matches!(asked("--selector nightly --columns").0, Question::SelectColumns(crate::ls::Query::Named(ref n)) if n == "nightly"));
         assert!(matches!(asked("--overview --depth 1 --output=json").0, Question::Overview { depth: 1 }));
         assert!(matches!(asked("--job jaffle_daily --output json").0, Question::Job { ref name } if name == "jaffle_daily"));
         assert!(matches!(asked("--job-order --output json").0, Question::JobOrder));
@@ -526,7 +531,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 31] = [
+    const SAMPLES: [(&str, &str); 32] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -549,6 +554,7 @@ mod tests {
         ("describe", "--describe orders"),
         ("sql", "--describe orders --sql"),
         ("compiled_sql", "--describe orders --compiled-sql"),
+        ("columns", "--describe orders --columns"),
         ("overview", "--overview"),
         ("job", "--job jaffle_daily"),
         ("job_order", "--job-order"),

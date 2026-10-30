@@ -179,7 +179,7 @@ Anything about Snowflake is in [docs/features/snowflake.md](docs/features/snowfl
 dbt-edith [PROJECT]                       dbt project root, default the current directory
          [-p, --port 4321]               tries up to 20 ports from there, then gives up
          [--manifest path/manifest.json] default <project>/target/manifest.json
-         [--catalog path/catalog.json]   default <project>/target/catalog.json, beside the manifest for --run-collin, --describe and --overview
+         [--catalog path/catalog.json]   default <project>/target/catalog.json, beside the manifest for --run-collin, --describe, --overview and --columns
          [--column-lineage path.json]    default the tool last picked, else the newest cache
          [--shell "zsh -l"]              the terminal's shell, default $SHELL -l, Git Bash on Windows
          [--no-open]                     do not open a browser at startup
@@ -197,6 +197,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
          [--describe name[,name...]]     print a node's card as the Catalog shows it, or a macro's, and exit, without serving
          [--sql]                         --describe prints the node's own SQL file, or the macro's lines of its file, after its card
+         [--columns]                     with --describe or --select, print only the columns: a line each for a selection
          [--compiled-sql]                --describe prints the SQL dbt compiled for the node, from the file under the target folder, after its card
          [--overview]                    print what the project holds, by kind, materialization and folder, and exit
          [--job name]                    print one DAG or dbt Cloud job, step by step, from .dbt-edith/jobs.yml and exit
