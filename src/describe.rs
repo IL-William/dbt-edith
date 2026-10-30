@@ -143,7 +143,7 @@ pub fn run_describe(
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = respond_describe(&root, &graph, None, names, sql, output, &mut out, &mut err);
+    let written = respond_describe(&root, &graph, None, None, names, sql, output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
@@ -153,13 +153,14 @@ pub(crate) fn respond_describe(
     root: &Path,
     graph: &Graph,
     jobs: Option<&Known>,
+    standings: Option<&Standings>,
     names: &[String],
     sql: bool,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let code = describe(graph, root, jobs, names, sql, output, out, err)?;
+    let code = describe(graph, root, jobs, standings, names, sql, output, out, err)?;
     out.flush()?;
     let _ = ls::provenance(root, graph, err);
     Ok(code)
@@ -187,6 +188,7 @@ fn describe(
     graph: &Graph,
     root: &Path,
     jobs: Option<&Known>,
+    standings: Option<&Standings>,
     names: &[String],
     sql: bool,
     output: Output,
@@ -198,7 +200,7 @@ fn describe(
         writeln!(err, "{NO_NAME}")?;
         return Ok(REFUSED);
     }
-    let files = Files::new(graph, root).with_jobs(jobs);
+    let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings);
     let mut code = ANSWERED;
     let mut done: Vec<u32> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
@@ -393,6 +395,7 @@ fn card(graph: &Graph, files: &Files, idx: u32) -> (String, Sheet) {
         }
         Kind::Model | Kind::Seed | Kind::Snapshot | Kind::Analysis | Kind::Source => built_rows(graph, files, idx, &mut sheet),
     }
+    selectors_row(&files.selectors_of(idx), &mut sheet);
     (first, sheet)
 }
 
@@ -511,6 +514,30 @@ fn jobs_row(graph: &Graph, known: &Known, idx: u32, sheet: &mut Sheet) {
             }
         }
     }
+}
+
+/// The named selectors that select a node, as `--selector NAME` lists it. A
+/// selector this build cannot resolve is named apart and never left out, since
+/// it may hold the node, and so is one a manifest that lost `indirect_selection`
+/// leaves unsure.
+fn selectors_row(found: &SelectorsOf, sheet: &mut Sheet) {
+    let mut parts: Vec<String> = Vec::new();
+    if !found.held.is_empty() {
+        let held: Vec<String> = found
+            .held
+            .iter()
+            .map(|&(name, unsure)| if unsure { format!("{name} (by dbt's default; indirect_selection lost)") } else { name.to_string() })
+            .collect();
+        parts.push(held.join(", "));
+    }
+    if !found.may_hold.is_empty() {
+        parts.push(format!("may be held (indirect_selection lost): {}", found.may_hold.join(", ")));
+    }
+    if !found.unresolved.is_empty() {
+        parts.push(format!("not resolvable here: {}", found.unresolved.join(", ")));
+    }
+    let key = if found.held.is_empty() { "selectors".to_string() } else { format!("selectors ({})", found.held.len()) };
+    sheet.line(key, parts.join("; "));
 }
 
 // ------------------------------------------------- where a node lands per .env
@@ -645,11 +672,86 @@ struct Files<'a> {
     /// sources file (0115).
     kept_jobs: Option<&'a Known>,
     jobs: std::cell::OnceCell<Known>,
+    /// The selectors resolved, when the caller keeps them between calls (MCP,
+    /// beside the graph they were resolved on); else they are resolved the
+    /// first time a card asks.
+    kept_standings: Option<&'a Standings>,
+    standings: Standings,
+}
+
+/// Each named selector resolved once, for the whole call or for as long as
+/// the graph lives: a card asks which hold its node, and resolving per card
+/// would walk the graph again for every name of a `--describe a,b,c`, and per
+/// call over MCP, where it cost most of the answer's time when a project holds many selectors.
+#[derive(Default)]
+pub(crate) struct Standings {
+    list: std::cell::OnceCell<Vec<Standing>>,
+}
+
+/// A named selector against this manifest: the nodes it holds (ascending, as
+/// `Resolved` gives them), or `None` when this build cannot resolve it. It
+/// stands at its place in `graph.selectors.list()`, whose name a card borrows.
+struct Standing {
+    nodes: Option<Vec<u32>>,
+    /// The nodes the manifest's lost `indirect_selection` leaves unsure
+    /// (0032): held by dbt's default, they may not be in the selector's own
+    /// mode, and a node it drops may be in it. Asked only of a manifest that
+    /// lost the setting, and then once: it is two more resolutions.
+    unsure: std::cell::OnceCell<Vec<u32>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times a set of selectors was resolved on this thread.
+    pub(crate) static RESOLVED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Standings {
+    fn of(&self, graph: &Graph) -> &[Standing] {
+        self.list.get_or_init(|| {
+            #[cfg(test)]
+            RESOLVED.with(|n| n.set(n.get() + 1));
+            graph
+                .selectors
+                .list()
+                .iter()
+                .map(|s| Standing {
+                    nodes: graph.selectors.resolve(graph, &s.name).ok().map(|r| r.nodes),
+                    unsure: std::cell::OnceCell::new(),
+                })
+                .collect()
+        })
+    }
+}
+
+/// The selectors a card names: those that hold the node, then those this
+/// build could not resolve, which might.
+#[derive(Default)]
+struct SelectorsOf<'a> {
+    /// A name, and whether the node is held by dbt's default alone.
+    held: Vec<(&'a str, bool)>,
+    /// Selectors that do not hold it by dbt's default and might in their own
+    /// mode, on a manifest that lost `indirect_selection`.
+    may_hold: Vec<&'a str>,
+    unresolved: Vec<&'a str>,
 }
 
 impl<'a> Files<'a> {
     fn new(graph: &'a Graph, root: &'a Path) -> Files<'a> {
-        Files { graph, root, found: std::cell::OnceCell::new(), kept_jobs: None, jobs: std::cell::OnceCell::new() }
+        Files {
+            graph,
+            root,
+            found: std::cell::OnceCell::new(),
+            kept_jobs: None,
+            jobs: std::cell::OnceCell::new(),
+            kept_standings: None,
+            standings: Standings::default(),
+        }
+    }
+
+    fn with_standings(mut self, kept: Option<&'a Standings>) -> Files<'a> {
+        self.kept_standings = kept;
+        self
     }
 
     fn with_jobs(mut self, kept: Option<&'a Known>) -> Files<'a> {
@@ -659,6 +761,35 @@ impl<'a> Files<'a> {
 
     fn jobs(&self) -> &Known {
         self.kept_jobs.unwrap_or_else(|| self.jobs.get_or_init(|| jobs::known(self.graph, self.root)))
+    }
+
+    /// The named selectors that hold a node, in name order (0055). Nothing is
+    /// resolved for a project that defines none, nor for a disabled node, which
+    /// dbt never selects.
+    fn selectors_of(&self, idx: u32) -> SelectorsOf<'a> {
+        let graph: &'a Graph = self.graph;
+        let mut found = SelectorsOf::default();
+        let n = &graph.nodes[idx as usize];
+        if n.disabled || graph.selectors.list().is_empty() {
+            return found;
+        }
+        let standings = self.kept_standings.unwrap_or(&self.standings).of(graph);
+        debug_assert_eq!(standings.len(), graph.selectors.list().len(), "kept selectors resolved on another graph");
+        for (s, named) in standings.iter().zip(graph.selectors.list()) {
+            let Some(nodes) = &s.nodes else {
+                found.unresolved.push(named.name.as_str());
+                continue;
+            };
+            let held = nodes.binary_search(&idx).is_ok();
+            let unsure = graph.selectors.lost_indirect()
+                && s.unsure.get_or_init(|| graph.selectors.unsure_nodes(graph, &named.name)).binary_search(&idx).is_ok();
+            match (held, unsure) {
+                (true, unsure) => found.held.push((named.name.as_str(), unsure)),
+                (false, true) => found.may_hold.push(named.name.as_str()),
+                (false, false) => {}
+            }
+        }
+        found
     }
 
     fn shown(&self) -> &[envs::EnvFile] {
@@ -883,6 +1014,22 @@ struct Described<'a> {
     /// Why the project's sources file was not read.
     #[serde(skip_serializing_if = "Option::is_none")]
     jobs_refused: Option<String>,
+    /// The project's named selectors that select it, by name, as the card's
+    /// `selectors` row.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    selectors: Vec<&'a str>,
+    /// Those of `selectors` that may hold this node only by dbt's default,
+    /// because the manifest lost an `indirect_selection` that `selectors.yml`
+    /// sets.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    selectors_indirect_lost: Vec<&'a str>,
+    /// Selectors that do not hold it by dbt's default and might in their own
+    /// mode, for the same reason.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    selectors_may_hold: Vec<&'a str>,
+    /// Selectors this build cannot resolve, which may select it too.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    selectors_unresolved: Vec<&'a str>,
     /// The node's own file, with `--sql`, once it was read.
     #[serde(skip_serializing_if = "Option::is_none")]
     sql: Option<String>,
@@ -945,7 +1092,7 @@ struct TestFacts<'a> {
 }
 
 impl<'a> Described<'a> {
-    fn of(graph: &'a Graph, files: &Files, idx: u32, sql: Option<String>) -> Described<'a> {
+    fn of(graph: &'a Graph, files: &Files<'a>, idx: u32, sql: Option<String>) -> Described<'a> {
         let n = &graph.nodes[idx as usize];
         let landing = Landing::of(n, files);
         let ids = |list: &[u32]| {
@@ -975,6 +1122,7 @@ impl<'a> Described<'a> {
                 Known::Absent => {}
             }
         }
+        let selectors = files.selectors_of(idx);
         Described {
             unique_id: &n.id,
             name: &n.name,
@@ -1043,6 +1191,15 @@ impl<'a> Described<'a> {
             jobs_sources: sources.filter(|&n| n == 0 || not_read.is_some()),
             jobs_not_read: not_read,
             jobs_refused: refused,
+            selectors_indirect_lost: selectors
+                .held
+                .iter()
+                .filter(|&&(_, lost)| lost)
+                .map(|&(name, _)| name)
+                .collect(),
+            selectors_may_hold: selectors.may_hold,
+            selectors: selectors.held.iter().map(|&(name, _)| name).collect(),
+            selectors_unresolved: selectors.unresolved,
             sql,
         }
     }
@@ -1533,7 +1690,8 @@ mod tests {
     /// A source feeding a staging model feeding a mart with typed columns, two
     /// generic tests, a singular one and an exposure; an incremental model
     /// downstream with a generic from a package; a disabled model; a second
-    /// `customers` in another package; and two named selectors.
+    /// `customers` in another package. It names no selector, which would add a
+    /// row to every card: `with_selectors()` has two.
     fn graph() -> Graph {
         graph_with(|_| {})
     }
@@ -1541,6 +1699,17 @@ mod tests {
     /// `graph()` with the manifest's JSON edited first, for a test that needs
     /// one node more than every other does.
     fn graph_with(edit: impl FnOnce(&mut serde_json::Value)) -> Graph {
+        build(false, edit)
+    }
+
+    /// `graph()` with its two named selectors, which add a row to every card:
+    /// the tests of the cards leave them out, and the ones of the overview and
+    /// of the `selectors` row ask for them.
+    fn with_selectors() -> Graph {
+        build(true, |_| {})
+    }
+
+    fn build(selectors: bool, edit: impl FnOnce(&mut serde_json::Value)) -> Graph {
         let mut manifest = json!({
             "metadata": { "dbt_version": "1.12.5", "project_name": "shop", "adapter_type": "duckdb" },
             "nodes": {
@@ -1652,6 +1821,9 @@ mod tests {
                 "ci": { "name": "ci", "definition": { "method": "state", "value": "modified" } },
             },
         });
+        if !selectors {
+            manifest["selectors"] = json!({});
+        }
         edit(&mut manifest);
         let raw: RawManifest = serde_json::from_value(manifest).unwrap();
         let mut g = Graph::build(raw, Path::new("/p/target/manifest.json"), MANIFEST_AT, 0);
@@ -1684,7 +1856,7 @@ mod tests {
     fn ask_on(g: &Graph, root: &Path, names: &[&str], sql: bool, output: Output) -> (String, String, i32) {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = describe(g, root, None, &names, sql, output, &mut out, &mut err).unwrap();
+        let code = describe(g, root, None, None, &names, sql, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -2196,7 +2368,7 @@ mod tests {
         let log: Log = Rc::default();
         let (mut out, mut err) = (BufWriter::new(Tap("out", log.clone())), Tap("err", log.clone()));
         let names: Vec<String> = ["stg_orders", "nothing", "weekly_report"].iter().map(|n| n.to_string()).collect();
-        let code = describe(&graph(), Path::new("/nowhere"), None, &names, false, Output::Name, &mut out, &mut err).unwrap();
+        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, Output::Name, &mut out, &mut err).unwrap();
         assert_eq!(code, REFUSED);
         let seen = log.borrow();
         let first_error = seen.iter().position(|(stream, _)| *stream == "err").unwrap();
@@ -2230,7 +2402,7 @@ mod tests {
     }
 
     fn overview(depth: usize) -> Overview {
-        Overview::of(&graph(), "/p/target/manifest.json", "/p/target/catalog.json", &caches(), depth, MANIFEST_AT + 8 * 86_400)
+        Overview::of(&with_selectors(), "/p/target/manifest.json", "/p/target/catalog.json", &caches(), depth, MANIFEST_AT + 8 * 86_400)
     }
 
     fn text(o: &Overview) -> String {
@@ -2367,7 +2539,7 @@ mod tests {
             cache("column_lineage.json", "fusion", "fusion", "", MANIFEST_AT + 120),
             cache("column_lineage.other.json", "", "", "", MANIFEST_AT + 120),
         ];
-        let o = Overview::of(&graph(), "/p/target/manifest.json", "/p/target/catalog.json", &caches, 1, MANIFEST_AT + 300);
+        let o = Overview::of(&with_selectors(), "/p/target/manifest.json", "/p/target/catalog.json", &caches, 1, MANIFEST_AT + 300);
         let text = text(&o);
         assert!(text.contains("\ncolumn lineage  column_lineage.json from fusion, written 2026-03-01T10:02:00Z (3 min ago)\n"), "{text}");
         assert!(text.contains("\ncolumn lineage  column_lineage.other.json, written 2026-03-01T10:02:00Z (3 min ago)\n"), "{text}");
@@ -2794,11 +2966,11 @@ mod tests {
         assert_eq!(json["jobs_sources"], 2);
         // The overview says it too.
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("; 1 of 2 sources (nothing at this path) not read")), "{text}");
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Json, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Json, &mut out, &mut err).unwrap();
         let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(json["jobs_not_read"]["of"], 2);
     }
@@ -2812,7 +2984,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!((json["jobs"].clone(), json["jobs_sources"].clone()), (json!([]), json!(0)));
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("no sources in .dbt-edith/jobs.yml")), "{text}");
     }
@@ -2823,7 +2995,7 @@ mod tests {
         let root = project_with_jobs("deep-sources", &[]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), format!("jobs: {}{}\n", "[".repeat(400_000), "]".repeat(400_000))).unwrap();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = respond_overview(&root, Path::new("/p/target/manifest.json"), &graph(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        let code = respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert_eq!(code, ANSWERED);
         assert!(
@@ -2838,5 +3010,206 @@ mod tests {
         let (out, _, code) = ask_in(&root, &["orders"], false, Output::Name);
         assert_eq!(code, ANSWERED);
         assert!(out.lines().last().unwrap().contains("2 job files not read"), "{out}");
+    }
+
+    // -------------------------------------------------------------- selectors
+
+    /// `graph()` with a test that reads two models, and one selector per
+    /// `indirect_selection` mode on `orders`, so the tests they keep differ.
+    fn with_modes() -> Graph {
+        modes(true)
+    }
+
+    /// Without `keeps`, the selectors carry no `indirect_selection`, as a
+    /// manifest from a dbt Fusion that drops it writes them.
+    fn modes(keeps: bool) -> Graph {
+        graph_with(|m| {
+            m["nodes"]["test.shop.relationships_orders_customers"] = json!({
+                "name": "relationships_orders_customers", "resource_type": "test", "package_name": "shop",
+                "original_file_path": "models/marts/schema.yml", "attached_node": "model.shop.orders",
+                "test_metadata": { "name": "relationships" },
+            });
+            m["parent_map"]["test.shop.relationships_orders_customers"] = json!(["model.shop.orders", "model.shop.customers"]);
+            let mode = |name: &str, mode: Option<&str>| {
+                let mut def = json!({ "method": "fqn", "value": "orders" });
+                if let Some(mode) = mode.filter(|_| keeps) {
+                    def["indirect_selection"] = json!(mode);
+                }
+                (name.to_string(), json!({ "name": name, "definition": def }))
+            };
+            let mut all: serde_json::Map<String, serde_json::Value> = [
+                mode("orders_eager", None),
+                mode("orders_cautious", Some("cautious")),
+                mode("orders_buildable", Some("buildable")),
+                mode("orders_empty", Some("empty")),
+            ]
+            .into_iter()
+            .collect();
+            all.insert("marts".into(), json!({ "name": "marts", "definition": { "method": "path", "value": "models/marts" } }));
+            all.insert("raw_and_after".into(), json!({ "name": "raw_and_after", "definition": { "method": "source", "value": "raw", "children": true } }));
+            // Its eager exclusion drops the test that reads `customers`; in the
+            // exclusion's own mode `empty` that test would stay.
+            all.insert(
+                "orders_without_customers".into(),
+                json!({ "name": "orders_without_customers", "definition": {
+                    "method": "fqn", "value": "orders", "exclude": [{ "method": "fqn", "value": "customers" }],
+                } }),
+            );
+            all.insert("ci".into(), json!({ "name": "ci", "definition": { "method": "state", "value": "modified" } }));
+            m["selectors"] = serde_json::Value::Object(all);
+        })
+    }
+
+    #[test]
+    fn a_card_names_the_selectors_that_select_it_and_those_it_cannot_resolve() {
+        let g = with_selectors();
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["orders"], false, Output::Name);
+        assert!(out.contains("\n  selectors (1)  marts; not resolvable here: ci\n"), "{out}");
+        // Not held by `marts`, but `ci` might hold it: said, not skipped.
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["stg_orders"], false, Output::Name);
+        assert!(out.ends_with("\n  selectors     not resolvable here: ci\n"), "{out}");
+        let v = json_of(&g, "orders");
+        assert_eq!((&v["selectors"], &v["selectors_unresolved"]), (&json!(["marts"]), &json!(["ci"])), "{v}");
+        let v = json_of(&g, "stg_orders");
+        assert_eq!((v.get("selectors"), &v["selectors_unresolved"]), (None, &json!(["ci"])), "{v}");
+        // A test and an exposure are cards too.
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["not_null_orders_order_id", "weekly_report"], false, Output::Compact);
+        assert_eq!(out.matches("selectors (1)  marts; not resolvable here: ci").count(), 2, "{out}");
+    }
+
+    #[test]
+    fn no_selector_in_the_project_or_none_holding_the_node_adds_no_row() {
+        let (out, _, _) = ask(&["orders"], Output::Name);
+        assert!(!out.contains("selectors"), "{out}");
+        let g = graph_with(|m| {
+            m["selectors"] = json!({ "marts": { "name": "marts", "definition": { "method": "path", "value": "models/marts" } } });
+        });
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["stg_orders"], false, Output::Name);
+        assert!(!out.contains("selectors"), "{out}");
+        let v = json_of(&g, "stg_orders");
+        assert!(v.get("selectors").is_none() && v.get("selectors_unresolved").is_none(), "{v}");
+    }
+
+    /// The row is `--selector NAME`'s list, read from the other end: a node
+    /// names a selector exactly when that selector's answer holds it, for every
+    /// `indirect_selection` mode and every kind of node.
+    #[test]
+    fn the_row_agrees_with_what_selector_lists() {
+        let g = with_modes();
+        let mut held: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for s in g.selectors.list() {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let code = ls::respond(Path::new("/nowhere"), &g, &ls::Query::Named(s.name.clone()), None, Output::Json, &mut out, &mut err).unwrap();
+            if s.unsupported.is_some() {
+                assert_eq!(code, REFUSED, "{}", s.name);
+                continue;
+            }
+            assert_eq!(code, ANSWERED, "{}: {}", s.name, String::from_utf8_lossy(&err));
+            for line in String::from_utf8(out).unwrap().lines() {
+                let v: serde_json::Value = serde_json::from_str(line).unwrap();
+                held.entry(v["unique_id"].as_str().unwrap().to_string()).or_default().push(s.name.clone());
+            }
+        }
+        // The modes differ on the test that reads two models.
+        assert!(held["test.shop.relationships_orders_customers"].contains(&"orders_eager".to_string()));
+        assert!(!held["test.shop.relationships_orders_customers"].contains(&"orders_cautious".to_string()));
+        let mut seen = 0;
+        for (i, n) in g.nodes.iter().enumerate() {
+            let v = serde_json::to_value(Described::of(&g, &Files::new(&g, Path::new("/nowhere")), i as u32, None)).unwrap();
+            let mut on_card: Vec<String> =
+                v["selectors"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().to_string()).collect();
+            on_card.sort();
+            let mut by_selector = held.get(&n.id).cloned().unwrap_or_default();
+            by_selector.sort();
+            assert_eq!(on_card, by_selector, "{}", n.id);
+            seen += on_card.len();
+            // Whatever it holds, the text card names it too.
+            let (text, _, _) = ask_on(&g, Path::new("/nowhere"), &[n.id.as_str()], false, Output::Name);
+            for name in &on_card {
+                assert!(text.contains(name.as_str()), "{text}");
+            }
+        }
+        assert!(seen > 8, "{seen}");
+    }
+
+    #[test]
+    fn a_manifest_that_lost_indirect_selection_flags_the_tests_it_decides() {
+        let mut g = modes(false);
+        let root = root_with("lost-indirect", &[("selectors.yml", "selectors:\n  - name: orders_cautious\n    definition:\n      indirect_selection: cautious\n")]);
+        g.selectors.check_against(&root);
+        assert!(g.selectors.lost_indirect());
+        let (test, _, _) = ask_on(&g, &root, &["relationships_orders_customers"], false, Output::Name);
+        assert!(test.contains("orders_eager (by dbt's default; indirect_selection lost)"), "{test}");
+        // `raw_and_after` reaches the test through its parents either way.
+        assert!(test.contains("raw_and_after;") && !test.contains("raw_and_after (indirect"), "{test}");
+        // A model is held the same whatever the setting.
+        let (model, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        assert!(model.contains("orders_eager") && !model.contains("indirect_selection lost"), "{model}");
+        let v = json_of(&g, "relationships_orders_customers");
+        assert!(v["selectors_indirect_lost"].as_array().unwrap().contains(&json!("orders_eager")), "{v}");
+        assert!(v["selectors"].as_array().unwrap().contains(&json!("orders_eager")), "{v}");
+        // A selector that drops the test by its default may hold it in its own mode.
+        assert!(!v["selectors"].as_array().unwrap().contains(&json!("orders_without_customers")), "{v}");
+        assert_eq!(v["selectors_may_hold"], json!(["orders_without_customers"]), "{v}");
+        assert!(test.contains("; may be held (indirect_selection lost): orders_without_customers; "), "{test}");
+        // The manifest that kept it flags nothing.
+        let kept = with_modes();
+        let v = json_of(&kept, "relationships_orders_customers");
+        assert!(v.get("selectors_indirect_lost").is_none() && v.get("selectors_may_hold").is_none(), "{v}");
+    }
+
+    #[test]
+    fn several_names_resolve_the_selectors_once_and_a_kept_set_not_again() {
+        let g = with_modes();
+        let before = RESOLVED.with(|n| n.get());
+        let files = Files::new(&g, Path::new("/nowhere"));
+        for i in 0..g.nodes.len() as u32 {
+            files.selectors_of(i);
+        }
+        assert_eq!(RESOLVED.with(|n| n.get()) - before, 1, "one resolution of the set for every card");
+        // A caller that keeps them, as MCP does, resolves them on the first call only.
+        let kept = Standings::default();
+        let before = RESOLVED.with(|n| n.get());
+        for _ in 0..3 {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, Output::Name, &mut out, &mut err).unwrap();
+            assert!(String::from_utf8(out).unwrap().contains("selectors ("));
+        }
+        assert_eq!(RESOLVED.with(|n| n.get()) - before, 1);
+        // A project with no selector, or a node dbt never selects, resolves nothing.
+        let before = RESOLVED.with(|n| n.get());
+        Files::new(&graph(), Path::new("/nowhere")).selectors_of(0);
+        assert_eq!(RESOLVED.with(|n| n.get()), before);
+    }
+
+    #[test]
+    fn a_disabled_node_is_selected_by_nothing_and_says_nothing_of_selectors() {
+        let g = graph_with(|m| {
+            m["selectors"] = json!({ "ci": { "name": "ci", "definition": { "method": "state", "value": "modified" } } });
+        });
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["legacy"], false, Output::Name);
+        assert_eq!(out, "model legacy  table  models/marts/legacy.sql\n  status  disabled\n  reach   0 upstream, 0 downstream\n");
+        let (json, _, _) = ask_on(&g, Path::new("/nowhere"), &["legacy"], false, Output::Json);
+        assert!(!json.contains("selectors"), "{json}");
+    }
+
+    #[test]
+    fn the_selectors_row_follows_the_jobs_row_and_ends_a_tests_card() {
+        let root = project_with_jobs("selectors-row", &[("airflow", "airflow"), ("dbt_cloud", "dbt_cloud")]);
+        let g = with_selectors();
+        let (out, _, _) = ask_on(&g, &root, &["orders"], false, Output::Name);
+        let tail: Vec<&str> = out.lines().rev().take(2).collect();
+        assert!(tail[0].starts_with("  selectors (1)  marts; not resolvable here: ci"), "{out}");
+        assert!(tail[1].starts_with("  jobs (3)       DAG jaffle_daily"), "{out}");
+        let (out, _, _) = ask_on(&g, &root, &["not_null_orders_order_id"], false, Output::Name);
+        assert_eq!(
+            out,
+            lines(&[
+                "test not_null_orders_order_id  models/marts/schema.yml",
+                "  checks         not_null on orders.order_id",
+                "  parents (1)    orders",
+                "  selectors (1)  marts; not resolvable here: ci",
+            ])
+        );
     }
 }

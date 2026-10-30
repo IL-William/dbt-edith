@@ -2199,8 +2199,7 @@ of its own, and each panel updates the tour, its page under
     - the compiled SQL reachable from `--sql`, which prints the node's own
       file;
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
-      file (0115), which MCP could not take without a path in a line (0110);
-    - a `selectors` line on a node's card, the named selectors that select it.
+      file (0115), which MCP could not take without a path in a line (0110).
 21. **Where the sources file goes after a save.** The form already offers
     `.dbt-edith/jobs.yml` (shared, committed) beside "For me only" (0115),
     but the command line and MCP read only the file, never the settings, so

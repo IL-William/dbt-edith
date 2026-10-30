@@ -181,18 +181,19 @@ manifest:
 
 ```
 model stg_payments  view  models/staging/stg_payments.sql
-  relation      "jaffle_shop"."main"."stg_payments"
-  tags          staging
-  yml           models/staging/schema.yml
+  relation       "jaffle_shop"."main"."stg_payments"
+  tags           staging
+  yml            models/staging/schema.yml
   columns (4)
     amount	DOUBLE (catalog only)
     order_id	INTEGER (catalog only)
     payment_id	INTEGER	not_null, unique
     payment_method	VARCHAR	accepted_values
-  parents (1)   raw_payments (seed)
-  children (2)  customers (table), orders (table)
-  tests (5)     accepted_values_stg_payments_payment_method__credit_card__coupon__bank_transfer__gift_card: accepted_values on payment_method; assert_order_amounts_match_payments (singular); assert_payments_are_positive (singular); not_null_stg_payments_payment_id: not_null on payment_id; unique_stg_payments_payment_id: unique on payment_id
-  reach         1 upstream, 2 downstream
+  parents (1)    raw_payments (seed)
+  children (2)   customers (table), orders (table)
+  tests (5)      accepted_values_stg_payments_payment_method__credit_card__coupon__bank_transfer__gift_card: accepted_values on payment_method; assert_order_amounts_match_payments (singular); assert_payments_are_positive (singular); not_null_stg_payments_payment_id: not_null on payment_id; unique_stg_payments_payment_id: unique on payment_id
+  reach          1 upstream, 2 downstream
+  selectors (7)  around_stg_orders, customers_and_upstream, shorthand_and_strings, staging_and_below, staging_children, staging_grown, staging_only; not resolvable here: changed
 ```
 
 ### Which node
@@ -249,6 +250,7 @@ Every line under it is left out when it has nothing to say.
 | `tests (N)` | each test on the node: `name: generic on column`, `name (singular)` for a query of its own, then `warn` and each setting off dbt's default (`where x`, `limit 5`); a test declared on another node, as a `relationships` is on the model it points at, names that node: `on orders.customer_id` |
 | `reach` | how many nodes lie upstream and downstream, tests excluded; a source has only downstream |
 | `jobs (N)` | only in a project with a `.dbt-edith/jobs.yml` ([below](#a-job)): the steps of the orchestrator's jobs that run it, scheduled jobs first, `DAG shop_daily › task marts (scheduled 0 5 * * *) via +tag:daily` or `job Daily build › step 3/3 (manual)`, the terms of the step's selection that reached it after `via`; `none` when no step does and every source was read, then `N steps not resolved` for the ones that could not be read or resolved and could act on it, `N job files not read`, and `1 of 3 sources (nothing at this path) not read` for a source whose folder or file could not be walked or was cut at a bound, which says `jobs  not read: 1 of 3 sources (...)` instead of `none`. A file with `jobs: []` says `no sources in .dbt-edith/jobs.yml`, which is not `none`. A file that does not read gives `not read, .dbt-edith/jobs.yml:` and the reason in its place. Left off a test, an exposure and the nodes with no reach line |
+| `selectors (N)` | the project's named selectors (`selectors.yml`) that select it, by name and in name order, as `--selector NAME` lists them, tests counted in as dbt counts them. A selector this build cannot resolve (a `state:` method, say) is named after `not resolvable here:`, since it may select the node too; with none holding the node the row is `selectors  not resolvable here: ci`. In a manifest that lost the `indirect_selection` of `selectors.yml` (Fusion before 2026-08-18 drops it), the selectors are also resolved at both ends of that setting, and what they disagree on is said: a selector holding the node by dbt's default but not in its least generous mode is followed by `(by dbt's default; indirect_selection lost)`, and one that drops it by default but would hold it in its most generous mode is named after `may be held (indirect_selection lost):`. The row is left off when the project defines no selector, when none holds or may hold the node and every one resolves, and on a disabled node, which dbt never selects. It follows `jobs` on a model, seed, snapshot, analysis or source, and ends the card of a test or an exposure |
 
 A test's card says what it checks and how it is set instead:
 
@@ -320,6 +322,7 @@ names, and leaves out every key that is empty:
 | `tests` | each test on the node: `name`, `test_name` (absent for a singular one), `column`, `host` (the unique_id of the node that declares it, only when that is not the node described: the `column` is its), `warn`, `settings` |
 | `upstream_total`, `downstream_total` | the reach, tests excluded |
 | `jobs`, `jobs_unresolved`, `jobs_files_refused`, `jobs_not_read`, `jobs_sources`, `jobs_refused` | with a `.dbt-edith/jobs.yml`, for the nodes that have a reach: `jobs` the steps that run it, each `kind` (`airflow` or `dbt_cloud`), `job`, `step`, `schedule`, `via` and `file`, an empty list when none does; `jobs_unresolved` the steps not resolved that could act on it and `jobs_files_refused` the job files not read, when not zero; `jobs_not_read` the sources that were not read (`sources`, `of`, `reason`), so an empty `jobs` is not an answer; `jobs_sources` how many sources the file names, when none or when some were not read; `jobs_refused` why the sources file was not read, instead of `jobs` |
+| `selectors`, `selectors_indirect_lost`, `selectors_may_hold`, `selectors_unresolved` | the names of the selectors that select it; those of them that may hold this node only by dbt's default, and the selectors that do not hold it by default but may in their own mode, when the manifest lost an `indirect_selection` that `selectors.yml` sets; the selectors this build cannot resolve, which may select it too. Each is left off when empty |
 | `test` | on a test node: `checks` (the generic's name, or `singular`), `column`, `host` (the unique_id of the node it is declared on), `severity`, `generic`, `settings` |
 | `sql` | with `--sql`, the file, whole, once it was read |
 

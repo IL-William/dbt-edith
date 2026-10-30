@@ -15,6 +15,7 @@
 //! no such file keeps nothing and reads nothing.
 
 use crate::graph::Graph;
+use crate::describe::Standings;
 use crate::jobs::{self, Known};
 use crate::{api, ls, macros};
 use std::path::{Path, PathBuf};
@@ -36,6 +37,10 @@ struct Kept {
     /// What the load said and the command line prints before its answer:
     /// `catalog.json ignored: ...`.
     warning: Option<String>,
+    /// The selectors resolved on this graph, kept with it and so dropped with
+    /// it: `selectors.yml` is among the files whose change reloads the slot.
+    /// Only the base graph answers `--describe`, so the manifest slot has none.
+    standings: Option<Standings>,
 }
 
 /// The jobs, and what they were read under: the base graph's load, the sources
@@ -55,12 +60,16 @@ pub struct Loads {
     pub base: usize,
 }
 
+/// Why the base slot's standings can be unwrapped: only the manifest slot goes without.
+const BASE_STANDINGS: &str = "the base slot always carries its standings";
+
 /// The base graph, with what its load said.
 pub struct Base<'a> {
     pub graph: &'a Graph,
     /// The line the command line prints to stderr while it loads, when the
     /// catalog did not read.
     pub warning: Option<&'a str>,
+    pub standings: &'a Standings,
 }
 
 pub struct Graphs {
@@ -148,7 +157,7 @@ impl Graphs {
         self.refresh_base()?;
         self.base
             .as_ref()
-            .map(|k| Base { graph: &k.graph, warning: k.warning.as_deref() })
+            .map(|k| Base { graph: &k.graph, warning: k.warning.as_deref(), standings: k.standings.as_ref().expect(BASE_STANDINGS) })
             .ok_or_else(|| "error: the manifest is not loaded".to_string())
     }
 
@@ -182,7 +191,7 @@ impl Graphs {
                 }
             }
         };
-        let base = self.base.as_ref().map(|k| Base { graph: &k.graph, warning: k.warning.as_deref() });
+        let base = self.base.as_ref().map(|k| Base { graph: &k.graph, warning: k.warning.as_deref(), standings: k.standings.as_ref().expect(BASE_STANDINGS) });
         base.map(|b| (b, known)).ok_or_else(|| "error: the manifest is not loaded".to_string())
     }
 
@@ -195,7 +204,7 @@ impl Graphs {
         self.manifest = None;
         let (_, _, graph) = ls::open(&self.root, Some(&self.manifest_path)).map_err(for_the_server)?;
         self.loads.manifest += 1;
-        self.manifest = Some(Kept { stamps, graph, warning: None });
+        self.manifest = Some(Kept { stamps, graph, warning: None, standings: None });
         Ok(())
     }
 
@@ -217,7 +226,7 @@ impl Graphs {
         let catalog = ls::catalog_path(&self.root, &self.manifest_path, self.catalog.as_deref());
         let warning = api::add_catalog(&mut graph, &self.root, &catalog);
         self.loads.base += 1;
-        self.base = Some(Kept { stamps, graph, warning });
+        self.base = Some(Kept { stamps, graph, warning, standings: Some(Standings::default()) });
         Ok(())
     }
 }
@@ -467,8 +476,8 @@ pub(crate) mod tests {
         let base = g.base().unwrap().graph;
         let names = ["orders", "helper", "stg_orders"].map(String::from);
         for output in [ls::Output::Name, ls::Output::Json] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, &names, true, output, o, e));
-            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, &names, true, output, o, e));
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, output, o, e));
+            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, output, o, e));
             assert_eq!(got.0, want.0, "describe {output:?}");
             assert!(got.0.contains("helper") && got.0.contains("BIGINT"), "the cards hold the package's model and the catalog's type: {}", got.0);
             assert_eq!(got.2, want.2);
@@ -501,6 +510,36 @@ pub(crate) mod tests {
         assert_eq!(got.0, want.0);
         assert_eq!(got.0, "orders\nstg_orders\n");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_selectors_resolved_are_kept_with_the_base_graph_and_go_with_it() {
+        let dir = project("standings");
+        let manifest = dir.join("target/manifest.json");
+        let mut m: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+        m["selectors"] = serde_json::json!({ "marts": { "name": "marts", "definition": { "method": "path", "value": "models/marts" } } });
+        std::fs::write(&manifest, m.to_string()).unwrap();
+        let root = dir.canonicalize().unwrap();
+        let mut g = graphs(&dir);
+        let names = ["orders".to_string()];
+        let card = |g: &mut Graphs| {
+            let (base, jobs) = g.base_and_jobs().unwrap();
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, ls::Output::Name, &mut out, &mut err)
+                .unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let resolved = || crate::describe::RESOLVED.with(|n| n.get());
+        let before = resolved();
+        for _ in 0..3 {
+            assert!(card(&mut g).contains("selectors (1)  marts"));
+        }
+        assert_eq!(resolved() - before, 1, "resolved on the first call, kept for the others");
+        // `selectors.yml` is a file the graph's load reads: the graph and what was resolved on it go.
+        touch(&dir.join("selectors.yml"));
+        card(&mut g);
+        card(&mut g);
+        assert_eq!(resolved() - before, 2);
     }
 
     #[test]
