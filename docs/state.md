@@ -1703,6 +1703,16 @@ and every command the file cites parses, passes the mode checks and is accepted
 by the MCP line. Whether an agent loads it was measured with agents before it
 was written, not by a test.
 
+The skill for a client that defers MCP tools (0136, 1.69.0):
+`dbt-edith --skill mcp` prints `docs/agent-skill/mcp/SKILL.md`, named
+`dbt-edith-mcp` so it can sit beside the first. It tells the agent to load
+the `edith` tool and gives the recipes as the tool's lines. `--skill` alone is
+unchanged, any other value is refused with the accepted ones, and `--skill`
+stays refused over MCP. Both skills and `help` lead with `--overview --depth 2`.
+Checked with `cargo test`: both files get the tests of the first, and every
+line the variant cites, with any flag a line carries, is read by the tool's own
+reader, so a flag the tool refuses fails. Tried with Claude Code only.
+
 Job sources in the project, and jobs on the command line (0115, 1.49.0): the
 sources form offers to keep the sources in `.dbt-edith/jobs.yml`, shared and
 committed, or for the person only, in the settings, as before. The file is
@@ -2198,7 +2208,7 @@ of its own, and each panel updates the tour, its page under
     capped.
 20. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
-    - a shorter `--overview` JSON, with `--depth 1` first;
+    - a shorter `--overview` JSON (`--depth 2` first is settled, 0136);
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).
 21. **Where the sources file goes after a save.** The form already offers
@@ -2233,11 +2243,9 @@ of its own, and each panel updates the tour, its page under
     one-object answer is refused with that line; an error carrying cards is
     cut at 10 000, one with no answer in it and the command line never are;
     tokens are not counted.
-24. **A skill for a client that defers tools.** Print the MCP variant of the
-    skill (`--skill mcp`?), which tells the agent to load the `edith` tool and
-    call it. 0114 says the shipped skill is printed, never installed, and
-    `--skill` is refused over MCP. The variant was tried only with Claude Code
-    and has to be tried with other clients, Copilot among them.
+24. ~~**A skill for a client that defers tools.**~~ Settled in 1.69.0 (0136).
+    Still open: the variant is untried with clients other than Claude Code,
+    Copilot among them.
 25. **When a table last changed, from Snowflake's metadata.** The last
     builds (0117) say when dbt ran a model, which is the package's word. What
     Snowflake says of the table itself, `LAST_ALTERED` in the schema's
@@ -2708,12 +2716,12 @@ Left by the agent skill (0114, 1.48.0), unranked:
 Left by the pull requests of 2026-10-22 (#103 to #105, 1.49.1 to 1.50.0), each
 a known limit, unranked:
 
-- **`SKILL.md` is 4082 of its 4096 bytes** (the test's limit), so the next
-  recipe needs a cut. The warning to say which steps were not resolved was
-  dropped for lack of room.
-- **The MCP variant of the skill** (a `SKILL.md` telling an agent to load the
+- **The skills are 4086 (`SKILL.md`) and 4080 (`mcp/SKILL.md`) of their 4096
+  bytes** (the tests' limit), so the next recipe needs a cut. The warning to
+  say which steps were not resolved was dropped for lack of room.
+- ~~**The MCP variant of the skill** (a `SKILL.md` telling an agent to load the
   edith tool and call it) is documented, not shipped, and was tried with Claude
-  Code only.
+  Code only.~~ Shipped as `--skill mcp` (0136, 1.69.0).
 - **Show all and the zero-count Job coverage groups are untested**, since no
   harness slices `runSection` or `renderCoverage` (0013).
 - **"Read again" folds Slowest back to five rows**, while a redraw from the

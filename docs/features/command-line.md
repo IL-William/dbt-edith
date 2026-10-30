@@ -818,6 +818,11 @@ dbt-edith path/to/project --overview
 dbt-edith path/to/project --overview --depth 2 --output json
 ```
 
+The folders are the only part `--depth` changes. At 1 they are the top folders
+(`models`, `seeds`, `tests`), which the nodes line already says; the layers
+(`models/staging`, `models/marts`) come at 2, and it is below that the list
+grows with the project. The skills therefore ask for `--depth 2` first.
+
 On Jaffle Shop:
 
 ```
@@ -878,7 +883,7 @@ are safe to run unasked.
 
 | To know | Ask |
 | --- | --- |
-| what the project is | `dbt-edith . --overview`, once, first |
+| what the project is | `dbt-edith . --overview --depth 2`, once, first |
 | what a model, source or test is | `dbt-edith . --describe name[,name...]`, on the nodes the question names; add `--sql` to read the model, `--compiled-sql` for what dbt compiled it to |
 | a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact` for its children; `1+model` for its parents, `1+model+1` for both |
 | everything upstream, or downstream, of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact`; `model+` for what dropping or renaming it breaks |
@@ -945,15 +950,16 @@ mkdir -p .github/skills/dbt-edith && dbt-edith --skill > .github/skills/dbt-edit
 In Windows PowerShell 5.1 `>` writes UTF-16, which a client may not read: run
 it in Git Bash or cmd.
 
-The same file is [docs/agent-skill/SKILL.md](../agent-skill/SKILL.md) in the
-repository, with a literal `{version}` in a comment under its frontmatter that
-`--skill` fills in with the installed version. dbt-edith never writes it into a
-client's folder or settings. Print it again after updating dbt-edith: a flag the
-installed binary refuses means it is older than the text. The tests check that
-every long flag written anywhere in the file is one this version has, that the
-keys it lists for `--count-by` are keys, that every selection it cites resolves
-on a small graph, and that every command it cites parses and is accepted, over
-MCP too. They do not check what a recipe means.
+The same files are [docs/agent-skill/SKILL.md](../agent-skill/SKILL.md) and
+[docs/agent-skill/mcp/SKILL.md](../agent-skill/mcp/SKILL.md) in the repository,
+with a literal `{version}` in a comment under their frontmatter that `--skill`
+fills in with the installed version. dbt-edith never writes them into a
+client's folder or settings. Print one again after updating dbt-edith: a flag the
+installed binary refuses means it is older than the text. The tests check, for
+both files, that every long flag written anywhere in the file is one this
+version has, that the keys it lists for `--count-by` are keys, that every
+selection it cites resolves on a small graph, and that every command or tool
+line it cites parses and is accepted, over MCP too. They do not check what a recipe means.
 
 What the description says decides whether an agent loads the skill at all: a
 one-line description was not loaded where one that names the questions it
@@ -964,7 +970,8 @@ with care. It describes the card's per-`.env` lines as [the card](#the-card)
 does, the config before the `generate_*_name` macros and not where dbt builds.
 An agent that has no terminal, or whose client lists tools rather than skills,
 needs no skill: it can ask the same questions [over MCP](#over-mcp), where
-`help` is the reference and `--skill` is refused.
+`help` is the reference and `--skill` is refused. A client that defers MCP tools
+does need one, which `--skill mcp` prints ([below](#over-mcp)).
 
 ## Over MCP
 
@@ -1093,13 +1100,24 @@ byte for byte (0135). The tokens are not counted: Claude Code 2.1.314 estimates
 them as the length over 4, so 48 000 stays under its 25 000 unless a user lowers
 `MAX_MCP_OUTPUT_TOKENS` under about 24 000.
 
-On a large project the manifest load dominates a command-line call, which reads
+On a project with hundreds of models the manifest load dominates a command-line call, which reads
 it again each time. The server keeps the graph, and the jobs read, between
 calls, so the later calls are the cheaper ones.
 
-A client that defers MCP tools can pair the server with a small skill that
-tells the agent to load the `edith` tool (with ToolSearch) and call it. That
-variant, a `SKILL.md` using the tool instead of the commands, is not shipped. It
-was tried only with Claude Code on Jaffle Shop: with it an agent used 1 to 3
-calls where, without a skill, it used 9, and it did not fall back to `dbt ls`
-in those runs.
+A client that defers MCP tools pairs the server with a small skill that tells
+the agent to load the `edith` tool (with ToolSearch in Claude Code, "load the
+deferred tool named edith" elsewhere) and call it, with the same lines as the
+recipes above, minus the program and the project. `dbt-edith --skill mcp`
+prints it, as `--skill` prints the other
+([0136](../decisions/0136-a-client-that-defers-tools-gets-its-own-printed-skill.md)):
+
+```
+mkdir -p .claude/skills/dbt-edith-mcp && dbt-edith --skill mcp > .claude/skills/dbt-edith-mcp/SKILL.md      # Claude Code
+```
+
+It is named `dbt-edith-mcp`, so a client holding both skills does not see one
+name twice; put it in a folder of that name. It was tried only with Claude Code
+on Jaffle Shop: with it an agent used 1 to 3 calls where, without a skill, it
+used 9, and it did not fall back to `dbt ls` in those runs. Other clients,
+Copilot among them, are untried. Like the first it is printed and never
+installed, and `--skill` is refused over MCP.

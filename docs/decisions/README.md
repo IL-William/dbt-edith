@@ -139,6 +139,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0133](0133-a-macro-is-described-when-no-node-has-the-name.md) | A macro is described when no node has the name | changing what `--describe` accepts as a name, the order a macro name is looked for in, what a macro's card says, or what the command line reads of a macro's file |
 | [0134](0134-columns-are-printed-alone-by-one-flag-for-a-card-and-a-selection.md) | Columns are printed alone, by one flag, for a card and for a selection | changing what `--columns` prints, what loads the catalog for a selection, or adding a flag that narrows a card |
 | [0135](0135-an-answer-over-mcp-is-cut-before-the-client-saves-it-to-a-file.md) | An answer over MCP is cut before the client saves it to a file | changing how long an answer over `--mcp` may be or the line that closes a cut one, or cutting an answer on the command line |
+| [0136](0136-a-client-that-defers-tools-gets-its-own-printed-skill.md) | A client that defers tools gets its own printed skill | changing `docs/agent-skill/mcp/SKILL.md`, what `--skill` accepts, or the name of either skill |
 
 ## Keeping these honest
 

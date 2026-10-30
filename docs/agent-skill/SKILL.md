@@ -6,11 +6,11 @@ description: "Answer questions about a dbt project from its manifest with the `d
 
 # dbt-edith
 
-Run `dbt-edith . <flags>` from the project root. It reads the manifest, never runs dbt or reaches a warehouse, so every call is safe unasked except `--run-collin`.
+Run `dbt-edith . <flags>` from the project root. It never runs dbt or reaches a warehouse, so every call is safe unasked except `--run-collin`.
 
 | To know | Run |
 | --- | --- |
-| the project, its job count | `dbt-edith . --overview`, once, first |
+| the project, its job count | `dbt-edith . --overview --depth 2`, once, first |
 | a model, source or test: columns, types, tests, materialization, strategy, unique key, parents, children | `dbt-edith . --describe name[,name...]` (a source is `source_name.table`; a macro: args, callers); `--sql` the file, `--compiled-sql` its compiled SQL; `--columns` columns only (`-s` too) |
 | downstream of a model, what dropping it breaks | `dbt-edith . -s 'model+' --exclude resource_type:test --output compact`; `model+1` children only, `1+model` parents, `1+model+1` both |
 | everything upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact` |

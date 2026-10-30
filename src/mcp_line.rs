@@ -32,7 +32,7 @@ pub const HELP: &str = concat!(
     "dbt-edith ",
     env!("CARGO_PKG_VERSION"),
     " answers from the manifest dbt wrote; it never runs dbt. One question per call, no project path.\n",
-    "--overview [--depth N]          the project's shape: kinds, materializations, tags, selectors, folders. Ask first.\n",
+    "--overview [--depth N]          project shape: kinds, materializations, tags, selectors, folders. Ask first: --depth 2.\n",
     "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's or macro's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
     "  --columns                     only the columns, also with -s\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
@@ -91,7 +91,7 @@ const REFUSED: [(&str, &str); 11] = [
     ("no_open", "not a question"),
     ("no_update_check", "not a question"),
     ("mcp", "not a question"),
-    ("skill", "for a terminal, where it prints the skill; `help` is the tool's reference"),
+    ("skill", "for a terminal, where it prints the skill (`dbt-edith --skill mcp` there, for a client that defers tools); `help` is the tool's reference"),
 ];
 
 /// The longest line read. Far past any question.
@@ -452,7 +452,8 @@ mod tests {
             ("--overview --shell bash", "--shell", "not a question"),
             ("--overview --no-open", "--no-open", "not a question"),
             ("--overview --no-update-check", "--no-update-check", "not a question"),
-            ("--skill", "--skill", "for a terminal, where it prints the skill; `help` is the tool's reference"),
+            ("--skill", "--skill", "for a terminal, where it prints the skill (`dbt-edith --skill mcp` there, for a client that defers tools); `help` is the tool's reference"),
+            ("--skill mcp", "--skill", "for a terminal"),
         ] {
             let said = refused(line);
             assert!(said.starts_with(&format!("error: {flag} is ")) && said.contains(why), "{line}: {said}");

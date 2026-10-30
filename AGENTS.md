@@ -256,7 +256,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | name a macro to `--describe`, change the order a macro name is looked for in, or what a macro's card says | [0133](docs/decisions/0133-a-macro-is-described-when-no-node-has-the-name.md) |
 | change what `--columns` prints, or what loads the catalog for a selection | [0134](docs/decisions/0134-columns-are-printed-alone-by-one-flag-for-a-card-and-a-selection.md), [0102](docs/decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md) |
 | print a location derived from a `.env` file on the command line or over MCP, or change the card's per-file lines | [0113](docs/decisions/0113-the-card-resolves-a-location-per-env-file.md), [0012](docs/decisions/0012-secrets-and-boundaries.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
-| change the agent skill, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
+| change the agent skill or its MCP variant, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0136](docs/decisions/0136-a-client-that-defers-tools-gets-its-own-printed-skill.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | get, build or install the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
@@ -305,7 +305,7 @@ src/job_coverage.rs   --job-coverage: the models no scheduled job runs and the s
 src/mcp.rs            --mcp: the stdio JSON-RPC loop and its one tool, over the same answers
 src/mcp_line.rs       the tool's command line: split, parsed by clap, accepted by an allow-list of flags
 src/mcp_graphs.rs     the manifest and the base graph the server keeps, reloaded when their files change
-src/skill.rs          --skill: the agent skill of docs/agent-skill/ printed for this version, and held to the flags this binary accepts
+src/skill.rs          --skill [mcp]: the agent skill of docs/agent-skill/ (or its MCP variant) printed for this version, and held to the flags this binary accepts
 src/jobs.rs           the orchestrator's jobs, read from the folders named (in the settings or `.dbt-edith/jobs.yml`), and the nodes each step acts on
 src/command.rs        a dbt command line, read into what it runs and what it selects
 src/yaml.rs           a subset of YAML, anchors and merges included, read into a tree

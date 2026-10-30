@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.69.0 - 2026-10-31
+
+- Print a skill for a client that defers MCP tools with `--skill mcp`, telling
+  the agent to load the `edith` tool, and lead both skills and the tool's `help`
+  with `--overview --depth 2`, cutting one sentence from the first skill (0136).
+
 ## 1.68.0 - 2026-10-30
 
 - Cut a long answer over MCP at 48 000 characters, after its last whole line,
