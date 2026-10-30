@@ -55,6 +55,9 @@ pub struct AppState {
     /// changes, since listing them is what opening the menu costs.
     pub cll_headers: collin::Headers,
     pub shell: ShellSpec,
+    /// Why the terminal's shell reads the current folder, worked out once at
+    /// startup (0130).
+    pub path_reads_cwd: Option<crate::program::Reads>,
     pub git: tokio::sync::Mutex<Option<(std::time::Instant, GitInfo)>>,
     /// Same idea as `git`, for the same reason: the badge polls on a timer and
     /// each answer costs a walk of the resource directories.
@@ -515,6 +518,12 @@ struct MetaBody {
     /// keys readline reads whatever its `inputrc` says (0073).
     #[serde(skip_serializing_if = "String::is_empty")]
     shell_name: String,
+    /// Why the terminal's shell reads the current folder, `relative`, `empty`
+    /// or `cmd`, and for a relative entry the first one, so a program in the
+    /// project could run in place of git, dbt or cargo when the page types
+    /// one (0130).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path_reads_cwd: Option<crate::program::Reads>,
     /// The package version, and which build it is. A release binary embeds
     /// `web/` (0005), so the page saying which build drew it is the quickest
     /// answer to "my frontend fix did nothing".
@@ -759,6 +768,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         root: st.root.display().to_string(),
         shell: format!("{} {}", st.shell.program, st.shell.args.join(" ")).trim().to_string(),
         shell_name: crate::pty::shell_name(&st.shell),
+        path_reads_cwd: st.path_reads_cwd.clone(),
         version: env!("CARGO_PKG_VERSION"),
         build: env!("DBT_EDITH_BUILD"),
         repo: crate::update::REPO,
@@ -4691,6 +4701,17 @@ mod tests {
         shell: ShellSpec,
         update: crate::update::Update,
     ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
+        serve_cwd(root, profiles, shell, update, None).await
+    }
+
+    /// With `cwd` as why the terminal's shell reads the current folder (0130).
+    async fn serve_cwd(
+        root: &Path,
+        profiles: crate::profiles::Lookup,
+        shell: ShellSpec,
+        update: crate::update::Update,
+        cwd: Option<crate::program::Reads>,
+    ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let manifest = root.join("target").join("manifest.json");
@@ -4714,6 +4735,7 @@ mod tests {
             git: tokio::sync::Mutex::new(None),
             fresh: tokio::sync::Mutex::new(None),
             shell,
+            path_reads_cwd: cwd,
             sidecar: sidecar::Sidecar::new(false, Default::default()),
             collin: collin_run::Runner::new(std::time::Duration::from_secs(10)),
             collin_report: Default::default(),
@@ -4807,6 +4829,36 @@ mod tests {
     /// The same request as a program that never saw the printed link sends it.
     fn keyless(request: String) -> String {
         request.replace(&format!("Authorization: Bearer {TEST_KEY}\r\n"), "")
+    }
+
+    /// The meta answer says why the shell reads the current folder only when
+    /// it does, which is what the page's warning and the freshness badge's
+    /// typing instead of running hang on (0130).
+    #[tokio::test]
+    async fn meta_says_why_the_terminal_reads_the_current_folder_only_when_it_does() {
+        use crate::program::{Cwd, Reads};
+        let read = |why, entry: &str| Some(Reads { why, entry: entry.into() });
+        for (cwd, want) in [
+            (None, None),
+            (read(Cwd::Relative, "bin"), Some(r#""path_reads_cwd":{"why":"relative","entry":"bin"}"#)),
+            (read(Cwd::Empty, ""), Some(r#""path_reads_cwd":{"why":"empty"}"#)),
+            (read(Cwd::Cmd, ""), Some(r#""path_reads_cwd":{"why":"cmd"}"#)),
+        ] {
+            let root = temp_project("cwd");
+            let target = root.join("target");
+            std::fs::create_dir_all(&target).unwrap();
+            std::fs::write(target.join("manifest.json"), r#"{"metadata":{"project_name":"demo"}}"#).unwrap();
+            let update = crate::update::Update::new(false, Some(root.join("update.json")), Err(crate::update::Why::Elsewhere));
+            let shell = ShellSpec { program: "/bin/sh".into(), args: Vec::new() };
+            let (port, _st, server) = serve_cwd(&root, crate::profiles::Lookup::default(), shell, update, cwd).await;
+            let meta = response_of(port, get("/api/meta", &[("Host", &format!("127.0.0.1:{port}"))])).await;
+            match want {
+                Some(json) => assert!(meta.contains(json), "{meta}"),
+                None => assert!(!meta.contains("path_reads_cwd"), "left out when false: {meta}"),
+            }
+            server.abort();
+            let _ = std::fs::remove_dir_all(&root);
+        }
     }
 
     /// A collin installed side by side is picked by its version, which must

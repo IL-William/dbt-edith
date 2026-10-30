@@ -45,6 +45,12 @@ ok('and says what that means', said(fresh).indexOf('what your project actually s
 ok('names the moment it was written', fresh.when.indexOf('12min ago') >= 0);
 check('nothing to list', fresh.groups.length, 0);
 check('with nothing to advise, the hint names the command', fresh.hint, 'Click to run dbt parse in the terminal.');
+check('where the click only types it, the hint says Enter is left to you',
+  freshnessBadge(payload({}), true).hint, 'Click to type dbt parse in the terminal; Enter is left to you.');
+check('an advice hint says the click runs it',
+  freshnessBadge(payload({ advice: 'dbt parse' }), false).hint, 'Click to run it in the terminal.');
+check('and where the click only types, that wins over the advice',
+  freshnessBadge(payload({ advice: 'dbt parse' }), true).hint, 'Click to type dbt parse in the terminal; Enter is left to you.');
 
 print('\n--- saved but not committed: the medium state ---');
 var edited = freshnessBadge(payload({

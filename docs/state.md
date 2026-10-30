@@ -2167,27 +2167,15 @@ edited, so find an item by its title.
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-16. **A typed command and an empty entry of `PATH`.** Every command the page
-    types runs in the project folder, in the terminal's shell: the update,
-    Run again, Recompile, `dbt ls`, the selector command, collin's install
-    line, and the freshness badge's `dbt parse`, which presses Enter itself
-    (0025).
-    - **Where the current folder is not looked in.** `cmd.exe` looks there
-      first, but gets no update command (`update::shell_kind`). PowerShell
-      never runs a program from it unless it is named `.\`.
-    - **Where it is.** bash and zsh look there through an empty entry of
-      `PATH`, a leading or trailing `:` or a `::`, or through a `.`. With
-      one, a `git`, `cargo` or `dbt` committed at the project's root runs in
-      place of the one meant: checked on a Mac, with a planted `git` and a
-      leading `:`. `program::on_path` already skips such an entry for what
-      the server starts (0094); what the page types follows the shell.
-    - **Possible answers.** Say so at startup and in Edith's menu when the
-      `PATH` handed to the terminal holds one, and have the badge type its
-      `dbt parse` without pressing Enter then. Or type each program by the
-      path `on_path` finds: every command gets longer to read, and Git Bash
-      wants its own form of a path.
-    - **Not known.** Whether Git Bash turns an empty entry of the Windows
-      `PATH`, a `;;`, into one of its own: the Mac has no Git Bash.
+16. ~~**A typed command and an empty entry of `PATH`.**~~ Settled in 1.62.0
+    (0130): the startup banner and Edith's menu say when the terminal's shell
+    reads the current folder, by a relative entry of the `PATH` (named as
+    written), an empty one that survives, or cmd.exe, and the freshness badge
+    then types `dbt parse` without pressing Enter. An empty entry is dropped
+    before the first prompt by a macOS login shell (`path_helper`) and by Git
+    Bash (msys2), so it warns on Linux and on a macOS shell that is not a login
+    one. The check reads the `PATH` dbt-edith hands the shell, which the
+    shell's startup files may still change.
 
 Items 17 to 19 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
@@ -3044,9 +3032,6 @@ both that route and the cross-compile.
 - **The Halloween look's sounds (1.43.0).** The ghost's wail and the eyes'
   whisper, made in the browser, have never been listened to: the checks ran the
   apparitions, not a speaker.
-- **The choice left open in Deferred item 16.** Whether to say at startup and
-  in Edith's menu that the terminal's `PATH` holds an empty entry, or to type
-  each program by the path `program::on_path` finds.
 - **The GitHub menu's issue from someone else's account.** Pull requests
   are for collaborators only and issues open to all. The settings read right
   through the API, but nobody has yet opened an issue from Raise an issue
