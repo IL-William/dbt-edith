@@ -476,8 +476,8 @@ pub(crate) mod tests {
         let base = g.base().unwrap().graph;
         let names = ["orders", "helper", "stg_orders"].map(String::from);
         for output in [ls::Output::Name, ls::Output::Json] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, output, o, e));
-            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, output, o, e));
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, None, output, o, e));
+            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, None, output, o, e));
             assert_eq!(got.0, want.0, "describe {output:?}");
             assert!(got.0.contains("helper") && got.0.contains("BIGINT"), "the cards hold the package's model and the catalog's type: {}", got.0);
             assert_eq!(got.2, want.2);
@@ -525,7 +525,7 @@ pub(crate) mod tests {
         let card = |g: &mut Graphs| {
             let (base, jobs) = g.base_and_jobs().unwrap();
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, ls::Output::Name, &mut out, &mut err)
+            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, None, ls::Output::Name, &mut out, &mut err)
                 .unwrap();
             String::from_utf8(out).unwrap()
         };

@@ -63,10 +63,10 @@ check('the button now says redo', stale.button, 'Recompile');
 print('--- several inputs moved at once ---');
 var both = artifactBar(payload({
   stale: true,
-  changed: ['the model file', 'the schema file', 'dbt_project.yml', 'the macro fiscal_year.sql'],
+  changed: ['the model file', 'the schema file', 'dbt_project.yml', 'the macro macros/dates/fiscal_year.sql'],
 }), 'orders');
 has('all of them, introduced once', both.why,
-  'changed since: the model file, the schema file, dbt_project.yml, the macro fiscal_year.sql');
+  'changed since: the model file, the schema file, dbt_project.yml, the macro macros/dates/fiscal_year.sql');
 check('and "changed since" is said once, not per entry', both.why.split('changed since').length, 2);
 
 print('--- the run file is a different question ---');

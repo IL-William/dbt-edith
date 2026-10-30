@@ -5,12 +5,14 @@
 //! merged in, so the page and the command line cannot disagree about a node.
 //! stdout carries the answer and nothing else; what it is worth, the
 //! manifest's date and whether files changed since, goes to stderr
-//! (`ls::provenance`). Nothing is served, stored or run: the one file read
-//! beyond the artifacts is a node's own, under `--sql`, through
-//! `files::read_file`, which holds it to the project root as every read the
-//! page asks for.
+//! (`ls::provenance`). Nothing is served, stored or run: the files read beyond
+//! the artifacts are a node's own, under `--sql`, through `files::read_file`,
+//! which holds it to the project root as every read the page asks for, and the
+//! SQL dbt compiled from it, under `--compiled-sql`, through the lookup the
+//! page's compiled tab uses, which holds it to the target folder (0132).
 
 use crate::collin::{self, iso_utc, Available};
+use crate::compiled;
 use crate::envs::{self, Status};
 use crate::graph::{Graph, Kind, Node, Place};
 use crate::jobs::{self, Known};
@@ -18,7 +20,7 @@ use crate::ls::{self, node_named, Output, ANSWERED, REFUSED};
 use crate::files;
 use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// How many tags, and how many selectors, an overview names before it counts
 /// the rest: a project of thousands of models tags them with dozens and names
@@ -129,6 +131,7 @@ pub fn run_describe(
     catalog: Option<&Path>,
     names: &[String],
     sql: bool,
+    compiled_sql: bool,
     output: Output,
 ) -> i32 {
     // Before the project is opened: reading a manifest and a catalog to say
@@ -137,18 +140,26 @@ pub fn run_describe(
         eprintln!("{why}");
         return REFUSED;
     }
-    let (root, _, graph) = match ls::open_with_catalog(project, manifest, catalog) {
+    let (root, manifest_path, graph) = match ls::open_with_catalog(project, manifest, catalog) {
         Ok(opened) => opened,
         Err(why) => return ls::cannot_open(&why),
     };
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
-    let written = respond_describe(&root, &graph, None, None, names, sql, output, &mut out, &mut err);
+    let compiled = compiled_sql.then(|| target_dir(&root, &manifest_path));
+    let written = respond_describe(&root, &graph, None, None, names, sql, compiled.as_deref(), output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
+/// The folder dbt wrote its artifacts into: the manifest's own, which
+/// `--manifest` may have put anywhere, else `target/` under the project.
+pub(crate) fn target_dir(root: &Path, manifest_path: &Path) -> PathBuf {
+    files::folder_of(manifest_path).unwrap_or_else(|| root.join("target"))
+}
+
 /// What the mode does once the project is open: the cards, flushed, then what
-/// the manifest is worth. The exit code, or the write that failed.
+/// the manifest is worth. The exit code, or the write that failed. `compiled`
+/// is the target folder to read each node's compiled SQL from, when asked for.
 pub(crate) fn respond_describe(
     root: &Path,
     graph: &Graph,
@@ -156,11 +167,12 @@ pub(crate) fn respond_describe(
     standings: Option<&Standings>,
     names: &[String],
     sql: bool,
+    compiled: Option<&Path>,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let code = describe(graph, root, jobs, standings, names, sql, output, out, err)?;
+    let code = describe(graph, root, jobs, standings, names, sql, compiled, output, out, err)?;
     out.flush()?;
     let _ = ls::provenance(root, graph, err);
     Ok(code)
@@ -191,6 +203,7 @@ fn describe(
     standings: Option<&Standings>,
     names: &[String],
     sql: bool,
+    compiled: Option<&Path>,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
@@ -201,6 +214,7 @@ fn describe(
         return Ok(REFUSED);
     }
     let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings);
+    let newest_macro = std::cell::OnceCell::new();
     let mut code = ANSWERED;
     let mut done: Vec<u32> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
@@ -231,17 +245,31 @@ fn describe(
         } else {
             None
         };
+        let built = match compiled {
+            Some(target) => {
+                out.flush()?;
+                read_compiled(root, target, &newest_macro, n, err)?
+            }
+            None => None,
+        };
         match output {
             Output::Json => {
-                serde_json::to_writer(&mut *out, &Described::of(graph, &files, idx, body))?;
+                serde_json::to_writer(&mut *out, &Described::of(graph, &files, idx, body, built))?;
                 writeln!(out)?;
             }
             // A card is read, so compact has nothing to drop from it: both
             // print the text.
             Output::Name | Output::Compact => {
                 let (first, mut sheet) = card(graph, &files, idx);
-                if let Some(body) = body.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
-                    sheet.block("sql", "", body.lines().map(|l| l.trim_end().to_string()).collect());
+                for (key, text) in [("sql", &body), ("compiled sql", &built)] {
+                    if let Some(text) = text.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
+                        // dbt leaves the blank lines of a `{% set %}` line or a
+                        // comment at the head of a compiled file; they are not
+                        // the query. The file's own keeps its head as written,
+                        // and JSON keeps both whole.
+                        let skipped = if key == "sql" { 0 } else { text.lines().take_while(|l| l.trim().is_empty()).count() };
+                        sheet.block(key, "", text.lines().skip(skipped).map(|l| l.trim_end().to_string()).collect());
+                    }
                 }
                 writeln!(out, "{}", clean(&first))?;
                 sheet.write(2, out)?;
@@ -290,6 +318,58 @@ fn read_sql(graph: &Graph, root: &Path, n: &Node, err: &mut impl Write) -> io::R
         }
     }
 }
+
+/// Whether dbt writes a compiled file for the node: a model, a snapshot, an
+/// analysis and a test, a generic one included. A seed is data, and a source
+/// and an exposure are declarations.
+fn has_compiled_form(n: &Node) -> bool {
+    matches!(n.kind, Kind::Model | Kind::Snapshot | Kind::Analysis | Kind::Test)
+}
+
+/// The SQL dbt compiled for the node, from the file under the target folder,
+/// never from the manifest's `compiled_code` (0132). As for `--sql`, None once
+/// stderr says why there is none, and the exit code is not changed by it. A
+/// file older than what it was built from is still printed, with the note that
+/// the code may no longer be what dbt would compile now.
+fn read_compiled(
+    root: &Path,
+    target: &Path,
+    newest_macro: &std::cell::OnceCell<Option<(u64, String)>>,
+    n: &Node,
+    err: &mut impl Write,
+) -> io::Result<Option<String>> {
+    if !has_compiled_form(n) {
+        writeln!(err, "{}: no compiled SQL of its own", n.name)?;
+        return Ok(None);
+    }
+    let subject = compiled::Subject { package: &n.package, file: &n.file, yml: &n.yml, compiled: &n.compiled, name: &n.name, alias: &n.alias };
+    // The macros are walked once for the whole call, not once per node.
+    let newest = || newest_macro.get_or_init(|| crate::freshness::newest_input(root, crate::freshness::MACROS_DIR)).clone();
+    let found = compiled::look_up_with(root, target, compiled::Kind::Compiled, &subject, COMPILED_MAX, newest);
+    if !found.found {
+        if compiled::recorded_path_leaves(target, &subject) {
+            writeln!(err, "{}: the compiled path the manifest records leaves the target folder, so it is not read", n.name)?;
+            return Ok(None);
+        }
+        writeln!(err, "{}: no compiled SQL under {}: run dbt compile -s {}", n.name, target.join(compiled::Kind::Compiled.dir()).display(), n.name)?;
+        return Ok(None);
+    }
+    let shown = if found.rel.is_empty() { &found.path } else { &found.rel };
+    if let Some(why) = found.reasons.first() {
+        writeln!(err, "{}: {shown}: {why}", n.name)?;
+        return Ok(None);
+    }
+    if found.truncated {
+        writeln!(err, "{}: {shown} is larger than dbt-edith reads of a file, so its end is left out", n.name)?;
+    }
+    if found.stale {
+        writeln!(err, "{}: {shown} is older than {}: run dbt compile -s {}", n.name, found.changed.join(", "), n.name)?;
+    }
+    Ok(Some(found.content))
+}
+
+/// How much of a compiled file is read: what the page's compiled tab reads.
+const COMPILED_MAX: u64 = 2 * 1024 * 1024;
 
 /// Where a node is built: dbt's own `relation_name`, else what is left of
 /// database, schema and alias for a node that is built at all. An ephemeral
@@ -1033,6 +1113,9 @@ struct Described<'a> {
     /// The node's own file, with `--sql`, once it was read.
     #[serde(skip_serializing_if = "Option::is_none")]
     sql: Option<String>,
+    /// What dbt compiled it to, with `--compiled-sql`, once it was read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    compiled_sql: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -1092,7 +1175,7 @@ struct TestFacts<'a> {
 }
 
 impl<'a> Described<'a> {
-    fn of(graph: &'a Graph, files: &Files<'a>, idx: u32, sql: Option<String>) -> Described<'a> {
+    fn of(graph: &'a Graph, files: &Files<'a>, idx: u32, sql: Option<String>, compiled_sql: Option<String>) -> Described<'a> {
         let n = &graph.nodes[idx as usize];
         let landing = Landing::of(n, files);
         let ids = |list: &[u32]| {
@@ -1201,6 +1284,7 @@ impl<'a> Described<'a> {
             selectors: selectors.held.iter().map(|&(name, _)| name).collect(),
             selectors_unresolved: selectors.unresolved,
             sql,
+            compiled_sql,
         }
     }
 }
@@ -1232,7 +1316,7 @@ pub(crate) fn respond_overview(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let target_dir = files::folder_of(manifest_path).unwrap_or_else(|| root.join("target"));
+    let target_dir = target_dir(root, manifest_path);
     // The caches beside the manifest, as the page lists them, whichever of
     // them it would load.
     let caches = collin::discover(&target_dir);
@@ -1856,7 +1940,7 @@ mod tests {
     fn ask_on(g: &Graph, root: &Path, names: &[&str], sql: bool, output: Output) -> (String, String, i32) {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = describe(g, root, None, None, &names, sql, output, &mut out, &mut err).unwrap();
+        let code = describe(g, root, None, None, &names, sql, None, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -2190,7 +2274,7 @@ mod tests {
     }
 
     fn json_of(g: &Graph, name: &str) -> serde_json::Value {
-        serde_json::to_value(Described::of(g, &Files::new(g, Path::new("/nowhere")), node_named(g, name, &[]).unwrap(), None)).unwrap()
+        serde_json::to_value(Described::of(g, &Files::new(g, Path::new("/nowhere")), node_named(g, name, &[]).unwrap(), None, None)).unwrap()
     }
 
     #[test]
@@ -2307,6 +2391,151 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A project holding the model file of `orders` and, under `target/`, the
+    /// compiled files the test names.
+    fn compiled_project(tag: &str, compiled: &[(&str, &str)]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-describe-compiled-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("models/marts")).unwrap();
+        std::fs::write(dir.join("models/marts/orders.sql"), "select * from {{ ref('stg_orders') }}\n").unwrap();
+        for (rel, body) in compiled {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        dir
+    }
+
+    fn ask_compiled(g: &Graph, dir: &Path, names: &[&str], sql: bool, output: Output) -> (String, String, i32) {
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let target = dir.join("target");
+        let code = describe(g, dir, None, None, &names, sql, Some(&target), output, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn the_blank_lines_dbt_leaves_at_the_head_of_a_compiled_file_are_not_printed() {
+        let dir = compiled_project("head", &[("target/compiled/shop/models/marts/orders.sql", "\n\n  \nselect 1\n")]);
+        let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Name);
+        assert!(out.ends_with("  compiled sql\n    select 1\n"), "{out}");
+        // JSON keeps the file whole.
+        let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["compiled_sql"], "\n\n  \nselect 1\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compiled_sql_follows_the_card_from_the_file_dbt_wrote() {
+        let dir = compiled_project("file", &[("target/compiled/shop/models/marts/orders.sql", "select *\nfrom raw.stg_orders\n")]);
+        let (out, err, code) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert!(out.starts_with("model orders  table"), "{out}");
+        assert!(out.ends_with("  compiled sql\n    select *\n    from raw.stg_orders\n"), "{out}");
+        // The flag alone does not print the model's own file.
+        assert!(!out.contains("  sql\n"), "{out}");
+
+        // In JSON it is a key of the node, whole, only when it was read.
+        let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["compiled_sql"], "select *\nfrom raw.stg_orders\n");
+        assert!(v.get("sql").is_none());
+        assert!(!ask(&["orders"], Output::Json).0.contains("compiled_sql"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_node_not_compiled_yet_is_said_with_the_command_that_compiles_it() {
+        let dir = compiled_project("missing", &[("target/compiled/shop/models/marts/orders.sql", "select 1")]);
+        let (out, err, code) = ask_compiled(&graph(), &dir, &["orders_daily", "not_null_orders_order_id"], false, Output::Name);
+        // The cards are still printed and the exit code is not changed, as for
+        // a node file `--sql` cannot read.
+        assert_eq!(code, ANSWERED);
+        assert!(out.starts_with("model orders_daily  incremental") && !out.contains("compiled sql"), "{out}");
+        let at = dir.join("target/compiled").display().to_string();
+        assert_eq!(
+            err,
+            format!(
+                "orders_daily: no compiled SQL under {at}: run dbt compile -s orders_daily\n\
+                 not_null_orders_order_id: no compiled SQL under {at}: run dbt compile -s not_null_orders_order_id\n"
+            )
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_recorded_path_outside_the_target_is_not_read_for_the_card() {
+        let dir = compiled_project("outside", &[("secret.sql", "select 'not for the card'"), ("target/compiled/.keep", "")]);
+        let g = graph_with(|m| {
+            m["nodes"]["model.shop.leaky"] = json!({
+                "name": "leaky", "resource_type": "model", "package_name": "shop",
+                "original_file_path": "models/marts/leaky.sql", "compiled_path": "target/../secret.sql",
+            });
+        });
+        let (out, err, code) = ask_compiled(&g, &dir, &["leaky"], false, Output::Name);
+        assert_eq!(code, ANSWERED);
+        assert!(!out.contains("not for the card") && !out.contains("compiled sql"), "{out}");
+        assert_eq!(err, "leaky: the compiled path the manifest records leaves the target folder, so it is not read\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn both_flags_print_the_nodes_file_then_its_compiled_one() {
+        let dir = compiled_project("both", &[("target/compiled/shop/models/marts/orders.sql", "select * from raw.stg_orders\n")]);
+        let (out, err, code) = ask_compiled(&graph(), &dir, &["orders"], true, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert!(
+            out.ends_with("  sql\n    select * from {{ ref('stg_orders') }}\n  compiled sql\n    select * from raw.stg_orders\n"),
+            "{out}"
+        );
+        // Each node under its own headings, one after another.
+        std::fs::write(dir.join("models/marts/orders_daily.sql"), "select 2\n").unwrap();
+        std::fs::create_dir_all(dir.join("target/compiled/shop/models/marts")).unwrap();
+        std::fs::write(dir.join("target/compiled/shop/models/marts/orders_daily.sql"), "select 3\n").unwrap();
+        let (out, _, _) = ask_compiled(&graph(), &dir, &["orders", "orders_daily"], true, Output::Name);
+        assert_eq!(out.matches("  sql\n").count(), 2, "{out}");
+        assert_eq!(out.matches("  compiled sql\n").count(), 2, "{out}");
+        assert!(out.contains("\n\nmodel orders_daily") && out.ends_with("  sql\n    select 2\n  compiled sql\n    select 3\n"), "{out}");
+
+        let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], true, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!((v["sql"].as_str(), v["compiled_sql"].as_str()), (Some("select * from {{ ref('stg_orders') }}\n"), Some("select * from raw.stg_orders\n")));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_seed_a_source_and_an_exposure_have_no_compiled_form() {
+        let dir = compiled_project("kinds", &[]);
+        let g = graph_with(|m| {
+            m["nodes"]["seed.shop.raw_customers"] = json!({
+                "name": "raw_customers", "resource_type": "seed", "package_name": "shop", "original_file_path": "seeds/raw_customers.csv",
+            });
+        });
+        let (out, err, code) = ask_compiled(&g, &dir, &["raw_customers", "raw.orders", "weekly_report"], false, Output::Name);
+        assert_eq!(code, ANSWERED, "{err}");
+        assert!(!out.contains("compiled sql"), "{out}");
+        for name in ["raw_customers", "orders", "weekly_report"] {
+            assert!(err.contains(&format!("{name}: no compiled SQL of its own\n")), "{err}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_compiled_file_older_than_the_model_is_printed_with_a_note() {
+        let dir = compiled_project("stale", &[("target/compiled/shop/models/marts/orders.sql", "select 1\n")]);
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(dir.join("target/compiled/shop/models/marts/orders.sql")).unwrap().set_modified(old).unwrap();
+        let (out, err, code) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Name);
+        assert_eq!(code, ANSWERED);
+        assert!(out.ends_with("  compiled sql\n    select 1\n"), "{out}");
+        assert_eq!(
+            err,
+            "orders: target/compiled/shop/models/marts/orders.sql is older than the model file: run dbt compile -s orders\n"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Two incremental models whose strategy nothing names: one with a key
     /// and one with nothing.
     fn with_unnamed_strategies() -> Graph {
@@ -2368,7 +2597,7 @@ mod tests {
         let log: Log = Rc::default();
         let (mut out, mut err) = (BufWriter::new(Tap("out", log.clone())), Tap("err", log.clone()));
         let names: Vec<String> = ["stg_orders", "nothing", "weekly_report"].iter().map(|n| n.to_string()).collect();
-        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, Output::Name, &mut out, &mut err).unwrap();
+        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, Output::Name, &mut out, &mut err).unwrap();
         assert_eq!(code, REFUSED);
         let seen = log.borrow();
         let first_error = seen.iter().position(|(stream, _)| *stream == "err").unwrap();
@@ -2382,7 +2611,7 @@ mod tests {
         // A project that is nowhere would be the other exit code, 2, had it
         // been opened first.
         let blank = [" ".to_string(), String::new()];
-        assert_eq!(run_describe(Path::new("/nowhere/at/all"), None, None, &blank, false, Output::Name), REFUSED);
+        assert_eq!(run_describe(Path::new("/nowhere/at/all"), None, None, &blank, false, false, Output::Name), REFUSED);
     }
 
     fn cache(file: &str, source: &str, tool: &'static str, producer: &str, mtime: u64) -> Available {
@@ -3115,7 +3344,7 @@ mod tests {
         assert!(!held["test.shop.relationships_orders_customers"].contains(&"orders_cautious".to_string()));
         let mut seen = 0;
         for (i, n) in g.nodes.iter().enumerate() {
-            let v = serde_json::to_value(Described::of(&g, &Files::new(&g, Path::new("/nowhere")), i as u32, None)).unwrap();
+            let v = serde_json::to_value(Described::of(&g, &Files::new(&g, Path::new("/nowhere")), i as u32, None, None)).unwrap();
             let mut on_card: Vec<String> =
                 v["selectors"].as_array().into_iter().flatten().map(|s| s.as_str().unwrap().to_string()).collect();
             on_card.sort();
@@ -3172,7 +3401,7 @@ mod tests {
         let before = RESOLVED.with(|n| n.get());
         for _ in 0..3 {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, Output::Name, &mut out, &mut err).unwrap();
+            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, None, Output::Name, &mut out, &mut err).unwrap();
             assert!(String::from_utf8(out).unwrap().contains("selectors ("));
         }
         assert_eq!(RESOLVED.with(|n| n.get()) - before, 1);

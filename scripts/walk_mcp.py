@@ -124,6 +124,10 @@ QUESTIONS = [
     ("--describe stg_payments", 0),
     ("--describe orders,raw_orders --output json", 0),
     ("--describe orders --sql", 0),
+    ("--describe orders --compiled-sql", 0),
+    ("--describe orders,customers --sql --compiled-sql --output json", 0),
+    ("--describe stg_payments --compiled-sql", 0),
+    ("--describe raw_orders --compiled-sql", 0),
     ("--describe orders,nope", 1),
     ("--describe nope", 1),
     ("--describe ,", 1),
@@ -639,7 +643,18 @@ def main():
         print(f"{C.Dbt(work, work).version()}, on Jaffle Shop")
         project = work / "jaffle" / "project"
         shutil.copytree(C.JAFFLE, project)
-        C.Dbt(project, work / "jaffle").parse()
+        dbt = C.Dbt(project, work / "jaffle")
+        dbt.parse()
+        # Compiled, but for one model: --compiled-sql reads the files dbt wrote
+        # under the target folder, and says so for the one it did not write.
+        # Compiling opens the profile's relative database file, so it is
+        # created in the work folder and not wherever this ran from.
+        here = os.getcwd()
+        os.chdir(work)
+        try:
+            dbt.invoke(["compile", "--exclude", "stg_payments"])
+        finally:
+            os.chdir(here)
         target = work / "jaffle" / "target"
         manifest = target / "manifest.json"
         (target / "column_lineage.collin.json").write_text(json.dumps(CACHE))
@@ -707,6 +722,19 @@ def main():
         walk.check(
             blocks is not None and "customer_lifetime_value" in blocks[0] and "orders" in blocks[0],
             "--column walks the edges of the cache down to the columns they feed", str(blocks),
+        )
+
+        # The same for --compiled-sql: the compiled SQL is what answers, with
+        # the Jinja gone, and the model dbt did not compile is only said.
+        blocks, _ = blocks_of(server.call("--describe orders --compiled-sql"))
+        walk.check(
+            blocks is not None and "\n  compiled sql\n" in blocks[0] and "{{" not in blocks[0].split("\n  compiled sql\n")[1],
+            "--compiled-sql prints the compiled SQL, not the model's own", str(blocks),
+        )
+        blocks, _ = blocks_of(server.call("--describe stg_payments --compiled-sql"))
+        walk.check(
+            blocks is not None and "compiled sql" not in blocks[0] and len(blocks) == 2 and "run dbt compile -s stg_payments" in blocks[1],
+            "--compiled-sql says what to run for a model dbt did not compile", str(blocks),
         )
 
         # The cache moved away: --column cannot answer, and says what to do.

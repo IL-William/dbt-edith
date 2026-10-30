@@ -184,7 +184,9 @@ pub fn newest_input(root: &Path, dir: &str) -> Option<(u64, String)> {
                 stack.push((entry.path(), rel));
             } else if meta.is_file() && parses_into_manifest(&name) {
                 let when = mtime_secs(&entry.path());
-                if best.as_ref().map(|(b, _)| when > *b).unwrap_or(true) {
+                // The first by path on a tie, so the name given does not depend
+                // on the order the folder lists its files in (0055).
+                if best.as_ref().map(|(b, at)| when > *b || (when == *b && rel < *at)).unwrap_or(true) {
                     best = Some((when, rel));
                 }
             }

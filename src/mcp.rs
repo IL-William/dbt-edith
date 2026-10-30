@@ -391,7 +391,7 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
             Ok(graph) => ls::respond(&root, graph, &query, count, output, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
         },
-        Question::Describe { names, sql } => {
+        Question::Describe { names, sql, compiled_sql } => {
             // As the command line does: before the project is opened.
             if let Some(why) = describe::no_name(&names) {
                 return Outcome::failed(why);
@@ -399,7 +399,8 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
             match graphs.base_and_jobs() {
                 Ok((base, jobs)) => {
                     kept_warning(base.warning, &mut err);
-                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, output, &mut out, &mut err)
+                    let compiled = compiled_sql.then(|| describe::target_dir(&root, &manifest_path));
+                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), output, &mut out, &mut err)
                 }
                 Err(why) => return Outcome::failed(&why),
             }
@@ -865,7 +866,7 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
         let names = ["helper".to_string(), "orders".to_string()];
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, None, None, &names, false, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(&root, &graph, None, None, &names, false, None, ls::Output::Name, &mut out, &mut err).unwrap();
         let said = s.ask("--describe helper,orders");
         let got = blocks(&said);
         assert_eq!(got[0], String::from_utf8(out).unwrap());
@@ -902,7 +903,7 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
 
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, None, None, &["orders".to_string()], false, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(&root, &graph, None, None, &["orders".to_string()], false, None, ls::Output::Name, &mut out, &mut err).unwrap();
         let card = String::from_utf8(out).unwrap();
         assert!(card.contains("  jobs (1)"), "{card}");
         assert_eq!(blocks(&s.ask("--describe orders"))[0], card);

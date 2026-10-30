@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-29.
+belongs here. Last updated 2026-10-30.
 
 ## Shipped
 
@@ -1666,11 +1666,17 @@ selection or a column as tab-separated lines under a header, without what the
 name and the path already say. Both new modes read the graph the Catalog is
 painted from, the catalog merged in, and `--describe` names its nodes the way
 `--column` does. `docs/features/command-line.md` is the page, with the recipes
-an agent follows. Checked with `cargo test` on an invented graph (every card, the JSON
+an agent follows. `--compiled-sql` (0132, 1.65.0) adds the SQL dbt compiled
+for the node, read from its file under the target folder through the lookup the
+compiled tab uses and confined to it, never from the manifest's `compiled_code`;
+it goes with `--describe` over MCP too, and a node dbt has not compiled is said
+on stderr with `dbt compile -s name`, the card and the exit code unchanged.
+Checked with `cargo test` on an invented graph (every card, the JSON
 keys, the rules of a name, `--sql` against a temporary project, the overview at
 two depths) and by running them on Jaffle Shop parsed, compiled, seeded and
 documented with dbt 1.11, with collin's cache beside the manifest, the flags'
-conflicts and an unknown name. On Jaffle Shop a compact answer is about a
+conflicts and an unknown name; `--compiled-sql` also by `scripts/walk_mcp.py` on
+Jaffle Shop compiled but for one model. On Jaffle Shop a compact answer is about a
 quarter of the JSON's bytes.
 
 A selection counted instead of listed (0112, 1.46.0): `--count-by KEY` on
@@ -2196,8 +2202,6 @@ of its own, and each panel updates the tour, its page under
     - a card of the columns alone;
     - a shorter `--overview` JSON, with `--depth 1` first;
     - a macro nameable by `--describe`, which takes nodes only;
-    - the compiled SQL reachable from `--sql`, which prints the node's own
-      file;
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).
 21. **Where the sources file goes after a save.** The form already offers
