@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.62.0 - 2026-10-30
+
+- Warn in the startup banner and Edith's menu when the terminal's shell reads
+  the current folder, by a relative or surviving empty entry of its `PATH` or
+  because it is cmd.exe, and type the freshness badge's `dbt parse` without
+  pressing Enter then (0130).
+
 ## 1.61.2 - 2026-10-30
 
 - Bring the clone up to the release the menu announces, not to `main`, when the

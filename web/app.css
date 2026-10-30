@@ -241,6 +241,8 @@ kbd {
    scrolls rather than run past it, its button out of reach. */
 .envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; }
 .updmenu .menunote { padding-left: 8px; max-width: none; }
+.updmenu .menunote.pathwarn { color: var(--warn); }
+.updmenu .menunote code { font: 11px var(--mono); }
 .updmenu .updfoot { display: flex; align-items: center; gap: 10px; padding: 2px 4px 4px 0; }
 /* One release per row: its version in a column of its own, its title on one
    line, cut short, the whole of it in the row's tooltip. */

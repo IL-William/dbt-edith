@@ -12,6 +12,24 @@ environment's. Each new terminal then types that environment's own activate
 script, `source …/activate` for bash and zsh, so it comes first again after
 your `~/.bashrc` or `~/.zshrc`, which may have put pyenv or conda before it.
 
+Some shells read the current folder when they look for a program, so a `git`,
+`dbt` or `cargo` in the project would run in place of the one meant. A relative
+entry of the `PATH` (`.`, `bin`) is read from the current folder by bash, zsh
+and the other POSIX shells everywhere, Git Bash included; PowerShell does it for
+an entry that starts with a dot. An empty one (a leading or trailing separator,
+a doubled one) is read as the current folder by those shells on Linux and in a
+macOS shell that is not a login one; the default `$SHELL -l` on a Mac and Git
+Bash drop it before the first prompt, and PowerShell drops it too, so nothing is
+said there. cmd.exe looks in the current folder first whatever the `PATH` holds.
+When the shell does, the startup banner says so on a `warning` line, naming the
+relative entry as written, Edith's menu says the same in a sentence, and the
+freshness badge types `dbt parse` and leaves Enter to you instead of pressing
+it, so you see the line before it runs. For the `PATH` reasons the check reads
+the `PATH` dbt-edith hands the shell, which the shell's startup files may still
+change
+([0130](../decisions/0130-a-path-that-reads-the-current-folder-is-warned-of-not-typed-around.md),
+[0071](../decisions/0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md)).
+
 ## Python environment
 
 The status bar shows the virtualenv, labelled `venv` when it was active as

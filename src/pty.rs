@@ -84,6 +84,26 @@ fn find_git_bash() -> Option<PathBuf> {
     None
 }
 
+/// The PATH the shell starts with, which `command` sets from this and nothing
+/// else, so what is said of it is said of the PATH the shell really gets.
+pub fn terminal_path() -> Option<std::ffi::OsString> {
+    std::env::var_os("PATH")
+}
+
+/// A login shell, which `-l` and `--login` ask for, as does any cluster of
+/// short flags holding an `l`, `-il` and `-li` included.
+fn starts_login(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--login" || (a.starts_with('-') && !a.starts_with("--") && a.contains('l')))
+}
+
+/// Whether the shell, started with that PATH, reads the current folder, and by
+/// which door, so a program in the project could run in place of git, dbt or
+/// cargo when one is typed (0130). Asked once, at startup.
+pub fn path_reads_cwd(shell: &ShellSpec) -> Option<crate::program::Reads> {
+    let login = starts_login(&shell.args);
+    crate::program::reads_cwd(terminal_path().as_ref(), &shell_name(shell), cfg!(windows), cfg!(target_os = "macos"), login)
+}
+
 /// The shell's command, in the project, with dbt-edith's own environment.
 ///
 /// `portable-pty` does not simply inherit it: on Windows it overwrites what was
@@ -100,6 +120,13 @@ fn command(shell: &ShellSpec, cwd: &Path) -> portable_pty::CommandBuilder {
     cmd.env_clear();
     for (key, value) in std::env::vars_os() {
         cmd.env(key, value);
+    }
+    // The value the startup warning was judged on, set by the same function, so
+    // the two cannot differ. On Unix it sets what the copy above already set;
+    // on Windows it only replaces the inherited `Path`, which portable-pty
+    // 0.9.0 keys by a lower-cased name, so both are one entry.
+    if let Some(path) = terminal_path() {
+        cmd.env("PATH", path);
     }
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -316,6 +343,17 @@ impl PtySession {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_login_shell_is_one_asked_for_by_a_flag_or_a_cluster_of_them() {
+        let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for login in [&["-l"][..], &["--login"], &["-il"], &["-li"], &["-i", "-l"]] {
+            assert!(starts_login(&args(login)), "{login:?}");
+        }
+        for plain in [&[][..], &["-i"], &["-c", "ls"], &["--noprofile"], &["--rcfile", "x"]] {
+            assert!(!starts_login(&args(plain)), "{plain:?}");
+        }
+    }
 
     fn spec(line: &str) -> Option<(String, Vec<String>)> {
         parse_shell(line).map(|s| (s.program, s.args))

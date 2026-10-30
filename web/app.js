@@ -16,6 +16,8 @@ const S = {
   term: null, ws: null, fit: null,
   venv: null,                 // /api/meta's venv: the one dbt-edith was started in, and each found
   termVenv: undefined,        // the terminal's VIRTUAL_ENV at its last prompt, '' for none, undefined unheard (0069)
+  pathReadsCwd: '',           // /api/meta: why the terminal's shell reads the current folder, relative, empty or cmd, '' when it does not, so what is typed may run a program in the project (0130)
+  pathEntry: '',              // the first relative entry of that PATH, as it is written, '' for the other reasons (0130)
   shellName: '',              // /api/meta's name for the terminal's shell, bash or zsh, '' until it answers (0073)
   termPrompt: undefined,      // true at bash's prompt, false once Enter hands its line on, undefined unheard (0073)
   venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
@@ -3795,7 +3797,7 @@ async function refreshFreshness() {
 
 function paintFreshness(f) {
   const el = $('#fresh-badge');
-  const b = freshnessBadge(f);
+  const b = freshnessBadge(f, !freshnessRuns(S.pathReadsCwd));
   el.classList.remove('hidden');
   el.dataset.tone = b.tone;
   el.querySelector('.lbl').textContent = b.label;
@@ -8395,9 +8397,10 @@ function gitPausedNote(key) {
 
    The card carries the words. "manifest 3d" and "main +10" are a reminder of
    something you already understand, not an explanation, so every number the
-   badge shows is spelled out in a sentence here. Pure, so every state is
+   badge shows is spelled out in a sentence here. `typed` says the click only
+   types dbt parse, Enter left to the user (0130). Pure, so every state is
    testable without a DOM. */
-function freshnessBadge(f) {
+function freshnessBadge(f, typed) {
   const n = (k) => f[k + '_n'] || 0;
   const plural = (k, one, many) => n(k) + ' ' + (n(k) === 1 ? one : many);
   const tone = { fresh: 'ok', edited: 'warn', stale: 'bad', missing: 'none' }[f.state] || 'none';
@@ -8461,7 +8464,8 @@ function freshnessBadge(f) {
 
   const advice = f.advice || '';
   return { tone, label, drift, head, when, desc, groups, facts, advice,
-    hint: advice ? 'Click to run it in the terminal.' : 'Click to run dbt parse in the terminal.' };
+    hint: typed ? 'Click to type dbt parse in the terminal; Enter is left to you.'
+      : advice ? 'Click to run it in the terminal.' : 'Click to run dbt parse in the terminal.' };
 }
 
 /* What the canvas says when the file in front has no node, or '' when it was
@@ -8482,10 +8486,41 @@ function noNodeHint(path, f, { macros = false, shown = '' } = {}) {
   return head + ' The manifest is older than the project\'s files: if this one is new, run dbt parse and its lineage follows.';
 }
 
+/* What Edith's menu says while the terminal's shell reads the current folder,
+   by the reason the server gives (0130): a relative entry of the PATH, which
+   it names as written, an empty one the shell keeps, or cmd.exe, which looks
+   there first whatever the PATH holds. A program in the project could then run
+   in place of git, dbt or cargo. The second line, for the two PATH reasons, is
+   the limit of the check, which reads the PATH dbt-edith hands the shell, not
+   the one its startup files leave. Empty when the shell does not. Pure, so the
+   harness reads it without a DOM. Each line is a list of parts: text, or
+   `{ code }` for the entry, which the menu sets as a code element's text. */
+function pathWarning(why, entry) {
+  const run = 'could run there in place of git, dbt or cargo.';
+  const says = {
+    relative: ['The terminal\'s PATH holds a relative entry', ...(entry ? [' (', { code: entry }, ')'] : []),
+      ', which the shell reads from the current folder, so a program in the project ' + run],
+    empty: ['The terminal\'s PATH holds an empty entry, which the shell reads as the current folder, so a program at the project\'s root ' + run],
+    cmd: ['cmd.exe looks in the current folder before the PATH, so a program committed at the project\'s root ' + run],
+  }[why];
+  if (!says) return [];
+  const lines = [says];
+  if (why !== 'cmd') lines.push(['This reads the PATH dbt-edith hands the shell; its startup files may still change it.']);
+  return lines;
+}
+
+/* Whether the freshness badge presses Enter for the user: not while the shell
+   could run a program from the project's root in place of dbt, so the line is
+   seen before it runs (0130, 0071). */
+function freshnessRuns(why) {
+  return !why;
+}
+
 /* Types a command into the integrated terminal. It stops at the prompt by
    default, because running it is the user's decision and dbt is theirs to
    launch (0002). `run` is for the freshness badge alone: its dbt parse reaches
-   no warehouse, and a command that can is never run for the user (0071).
+   no warehouse, and a command that can is never run for the user (0071), nor
+   the badge's while the shell reads the current folder (0130).
    `typed`, when given, is called once the command is in the terminal in place
    of the toast, for the update, whose card says what to do next (0111). */
 function sendToTerminal(cmd, run, typed) {
@@ -11733,7 +11768,7 @@ function fillMacroCard(el, t) {
    this only lays them out, using the same vocabulary as the node and var
    cards so the three read as one thing. */
 function fillFreshCard(el, f) {
-  const b = freshnessBadge(f);
+  const b = freshnessBadge(f, !freshnessRuns(S.pathReadsCwd));
   const add = (cls, text, parent) => {
     const d = Object.assign(document.createElement('div'), { className: cls, textContent: text });
     (parent || el).appendChild(d);
@@ -16900,7 +16935,7 @@ function wireKeys() {
   // The badge says the manifest is behind; the command that fixes that is the
   // one thing the user would type next. dbt still runs in their terminal, under
   // their environment, never from the server (0002).
-  $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', true));
+  $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd)));
   $('#reports-btn').addEventListener('click', toggleReports);
   $('#select-btn').addEventListener('click', toggleSelection);
   $('#selpanel-close').title = `Close the selection (${keyLabel('Escape', IS_MAC)})`;
@@ -17221,6 +17256,15 @@ function paintUpdateMenu(menu) {
   const same = (r) => (had.getAttribute('href') ? r.getAttribute('href') === had.getAttribute('href') : r.className === had.className);
   menu.replaceChildren(el('div', 'menuhead', o ? o.head : `dbt-edith ${S.version || '?'}`));
   if (S.build) menu.append(el('div', 'menunote', S.build));
+  const unsafe = pathWarning(S.pathReadsCwd, S.pathEntry);
+  if (unsafe.length) {
+    menu.append(document.createElement('hr'));
+    unsafe.forEach((parts, i) => {
+      const note = el('div', i ? 'menunote' : 'menunote pathwarn');
+      for (const part of parts) note.append(part.code === undefined ? part : el('code', '', part.code));
+      menu.append(note);
+    });
+  }
   if (o) {
     menu.append(document.createElement('hr'));
     // What to do comes first, drawn as a button or said as done, with how it
@@ -17529,6 +17573,8 @@ async function boot() {
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
   S.shellName = info.shell_name || '';
+  S.pathReadsCwd = (info.path_reads_cwd || {}).why || '';
+  S.pathEntry = (info.path_reads_cwd || {}).entry || '';
   // Which build drew this page. A release binary embeds web/ (0005), so this is
   // what tells a stale binary from a frontend change that really did nothing.
   const build = $('#status-build');

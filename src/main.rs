@@ -430,6 +430,7 @@ async fn main() -> anyhow::Result<()> {
     let seen = [graph.meta.manifest_mtime, graph.meta.catalog_mtime, graph.meta.cll_mtime];
     let shell = pty::ShellSpec::detect(args.shell);
     let venv = venv::detect(&root, &shell);
+    let path_reads_cwd = pty::path_reads_cwd(&shell);
     // Bound before the state exists: the guard in api.rs compares Host and
     // Origin against the port actually taken, which may not be the one asked for.
     let listener = bind(args.port).await?;
@@ -464,6 +465,7 @@ async fn main() -> anyhow::Result<()> {
         git: tokio::sync::Mutex::new(None),
         fresh: tokio::sync::Mutex::new(None),
         shell: shell.clone(),
+        path_reads_cwd: path_reads_cwd.clone(),
         sidecar: sidecar::Sidecar::new(live, Default::default()),
         // Nothing runs here: collin is found and started only once asked (0042).
         collin: collin_run::Runner::new(collin_run::DEADLINE),
@@ -505,6 +507,19 @@ async fn main() -> anyhow::Result<()> {
             if venv.source == "activated" { "activated" } else { "found in project, not activated" },
             if venv.chosen.python.is_empty() { String::new() } else { format!(", python {}", venv.chosen.python) },
         );
+    }
+    if let Some(read) = &path_reads_cwd {
+        // Quoted with its control characters escaped: the entry is read from
+        // the environment and, printed raw, it could carry one.
+        let line = match read.why {
+            program::Cwd::Relative => format!(
+                "PATH holds a relative entry ({}), which the shell reads from the current folder: a program in the project could run in the terminal in place of git, dbt or cargo",
+                read.quoted()
+            ),
+            program::Cwd::Empty => "PATH holds an empty entry, which the shell reads as the current folder: a program at the project's root could run in the terminal in place of git, dbt or cargo".into(),
+            program::Cwd::Cmd => "cmd.exe looks in the current folder before the PATH: a program committed at the project's root could run in the terminal in place of git, dbt or cargo".into(),
+        };
+        eprintln!("  warning   {line}");
     }
     if live {
         eprintln!("  column lineage from Snowflake, connecting on the first column click");

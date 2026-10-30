@@ -133,6 +133,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0127](0127-a-key-is-a-column-list-from-unique-key-or-a-uniqueness-test.md) | A key is a column list from unique_key or a uniqueness test | changing which columns the Catalog tags `KEY`, what makes a key tag dashed, or the three key rules of the Checks section |
 | [0128](0128-a-collin-others-can-replace-is-not-run.md) | A collin others can replace is not run | running a collin from a folder under the config directory, or changing what makes an install refused |
 | [0129](0129-the-update-brings-the-clone-up-to-the-tag-it-announced.md) | The update brings the clone up to the tag it announced | changing the git step of the command the update types, or where the version in that command comes from |
+| [0130](0130-a-path-that-reads-the-current-folder-is-warned-of-not-typed-around.md) | A shell that reads the current folder is warned of, not typed around | changing what the page types into the terminal, which button presses Enter there, or what the banner and Edith's menu say about the terminal's shell and `PATH` |
 
 ## Keeping these honest
 
