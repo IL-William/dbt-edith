@@ -1,6 +1,6 @@
 ---
 name: dbt-edith
-description: "Answer questions about a dbt project from its manifest with the `dbt-edith` command, without running dbt: what a model, source or test is (materialization, incremental strategy and unique key, where dbt builds it, its config per .env file, columns and types, tests, parents, children), lineage (upstream or downstream, the sources feeding a model, counts by layer, the impact of dropping or renaming a model), column-level lineage (a column to its source), which DAGs or jobs run a node and what a job runs, and a short overview. USE FIRST for any such question, before grepping SQL files or running `dbt ls`."
+description: "Answer questions about a dbt project from its manifest with the `dbt-edith` command, without running dbt: what a model, source or test is (materialization, incremental strategy and unique key, where dbt builds it, its config per .env file, columns and types, tests, parents, children, selectors), lineage (upstream or downstream, the sources feeding a model, counts by layer, the impact of dropping or renaming a model), column-level lineage (a column to its source), which DAGs or jobs run a node and what a job runs, and a short overview. USE FIRST for any such question, before grepping SQL files or running `dbt ls`."
 ---
 <!-- written by dbt-edith {version}; `dbt-edith --skill` prints the text matching the installed binary -->
 
@@ -27,7 +27,7 @@ Column lineage reads collin's or Fusion's cache beside the manifest, else fails.
 ## Habits
 
 - **Leave the tests out unless asked.** A test joins its parent's selection: `--exclude resource_type:test` drops them, `--describe` lists a node's. Compact for lists, the card for one node.
-- **Big project: count, then narrow.** A long list (hundreds) or several cards can pass an answer limit: `--count-by folder` or `tag` first, list a narrow one, describe 2-3 names per call.
+- **Big project: count, then narrow.** A long list or several cards can pass an answer limit: `--count-by folder` or `tag` first, list a narrow one, describe 2-3 names per call.
 - **Several `--exclude` terms go in one quoted value.** `--count-by` counts sources, seeds and the start too: `--exclude 'resource_type:test resource_type:source resource_type:seed resource_type:exposure'` counts models, snapshots and analyses; subtract the start if selected.
 - **Jobs touching a set**: `--overview --depth 0 --output json` names every job (text cuts at 15), `--job name` lists the nodes each runs and the steps' order; intersect with the selection. One call per job: with many, say which were skipped. Models no job runs: `dbt-edith . --job-coverage --output compact`.
 - **Confirm before anything irreversible**: `dbt ls` the selection before a run, drop or deletion.

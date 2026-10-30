@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.64.0 - 2026-10-30
+
+- Name the selectors that select a node on its card, in `--describe` and over
+  MCP: a `selectors` row and a `selectors` field, with the ones this build
+  cannot resolve named apart (0102).
+
 ## 1.63.0 - 2026-10-30
 
 - Add `--job-coverage`, which prints what the Job coverage report shows, the

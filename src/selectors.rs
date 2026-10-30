@@ -390,6 +390,24 @@ impl Selectors {
     }
 }
 
+impl Selectors {
+    /// The nodes whose membership the `indirect_selection` a manifest lost
+    /// could change: those the most generous reading of every criterion brings
+    /// and the least generous does not (`Bound`). Ascending; empty for a
+    /// selector that cannot be resolved.
+    pub fn unsure_nodes(&self, graph: &Graph, name: &str) -> Vec<u32> {
+        let Some(Named { spec: Some(spec), .. }) = self.get(name) else { return Vec::new() };
+        let at = |bound| select::resolve_bounded(graph, spec, Tests::Eager, &|n: &str| self.spec_of(n), bound);
+        match (at(Bound::Low), at(Bound::High)) {
+            (Ok(low), Ok(high)) => {
+                let low: HashSet<u32> = low.nodes.into_iter().collect();
+                high.nodes.into_iter().filter(|i| !low.contains(i)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+}
+
 /// What a named selector's answer puts on the canvas.
 #[derive(Debug, Default, PartialEq)]
 pub struct Shown {
