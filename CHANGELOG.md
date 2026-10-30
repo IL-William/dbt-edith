@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.67.0 - 2026-10-30
+
+- Print only the columns of a node or of a whole selection with `--columns`,
+  beside `--describe` or `--select`, one line per column in `--output compact`
+  (0134).
+
 ## 1.66.0 - 2026-10-30
 
 - Describe a macro on the command line and over MCP: `--describe` takes the

@@ -2198,8 +2198,6 @@ of its own, and each panel updates the tour, its page under
     capped.
 20. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
-    - one compact line per column of every selected node;
-    - a card of the columns alone;
     - a shorter `--overview` JSON, with `--depth 1` first;
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).

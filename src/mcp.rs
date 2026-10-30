@@ -405,6 +405,27 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
                 Err(why) => return Outcome::failed(&why),
             }
         }
+        // The graph `--describe` is answered from, since a type is the
+        // catalog's (0134); the selection reads nothing the merge changes.
+        Question::SelectColumns(query) => match graphs.base() {
+            Ok(base) => {
+                kept_warning(base.warning, &mut err);
+                ls::respond_columns(&root, base.graph, &query, output, &mut out, &mut err)
+            }
+            Err(why) => return Outcome::failed(&why),
+        },
+        Question::DescribeColumns { names } => {
+            if let Some(why) = describe::no_name(&names) {
+                return Outcome::failed(why);
+            }
+            match graphs.base() {
+                Ok(base) => {
+                    kept_warning(base.warning, &mut err);
+                    describe::respond_describe_columns(&root, base.graph, &names, output, &mut out, &mut err)
+                }
+                Err(why) => return Outcome::failed(&why),
+            }
+        }
         Question::Overview { depth } => match graphs.base_and_jobs() {
             Ok((base, jobs)) => {
                 kept_warning(base.warning, &mut err);
@@ -875,6 +896,37 @@ mod tests {
         let said = s.ask("--overview --output json");
         assert!(!is_error(&said));
         assert!(blocks(&said)[0].contains("\"project\":\"jaffle_shop\""), "{said}");
+    }
+
+    #[test]
+    fn columns_are_answered_from_the_base_graph_the_way_the_command_line_does() {
+        let dir = project("columns");
+        let root = dir.canonicalize().unwrap();
+        let s = Session::start(&dir);
+        let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
+        let names = ["orders".to_string()];
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        describe::respond_describe_columns(&root, &graph, &names, ls::Output::Compact, &mut out, &mut err).unwrap();
+        let said = s.ask("--describe orders --columns --output compact");
+        assert!(!is_error(&said), "{said}");
+        assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
+        assert!(blocks(&said)[0].contains("BIGINT"), "the catalog is merged: {said}");
+        // A selection too, which reads the manifest alone without the flag.
+        let query = ls::Query::Line { select: "+orders".to_string(), exclude: String::new() };
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        ls::respond_columns(&root, &graph, &query, ls::Output::Compact, &mut out, &mut err).unwrap();
+        let said = s.ask("-s '+orders' --columns --output compact");
+        assert!(!is_error(&said), "{said}");
+        assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
+        assert_eq!(
+            blocks(&said)[0],
+            "node\tcolumn\ttype\ttests\tdescription\norders\torder_id\tBIGINT\t\t\nstg_orders\torder_id\tinteger\t\t\n"
+        );
+        assert_eq!(without_ages(&blocks(&said)[1]), without_ages(&String::from_utf8(err).unwrap()));
+        let said = s.ask("--describe ' , ' --columns");
+        assert!(is_error(&said) && blocks(&said)[0].starts_with("error: --describe wants the name"), "{said}");
+        let said = s.ask("-s orders --columns --count-by kind");
+        assert!(is_error(&said) && blocks(&said)[0].contains("cannot be used with"), "{said}");
     }
 
     #[test]

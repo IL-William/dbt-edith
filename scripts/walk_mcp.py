@@ -129,6 +129,11 @@ QUESTIONS = [
     ("--describe stg_payments --compiled-sql", 0),
     ("--describe raw_orders --compiled-sql", 0),
     ("--describe orders,nope", 1),
+    ("--describe orders,raw_orders --columns", 0),
+    ("--describe orders --columns --output json", 0),
+    ("-s '+customers' --exclude resource_type:test --columns --output compact", 0),
+    ("-s 'resource_type:model' --columns --output json", 0),
+    ("--describe nope --columns", 1),
     ("--describe nope", 1),
     ("--describe ,", 1),
     # A macro, named when no node has the name: dbt's own, since Jaffle Shop

@@ -15,7 +15,7 @@
 use crate::collin::{self, iso_utc, Available};
 use crate::compiled;
 use crate::envs::{self, Status};
-use crate::graph::{Graph, Kind, Node, Place};
+use crate::graph::{Column, Graph, Kind, Node, Place};
 use crate::jobs::{self, Known};
 use crate::ls::{self, find_node, Output, Unnamed, ANSWERED, REFUSED, SUGGESTED};
 use crate::macro_use::{self, Summary, Why};
@@ -218,31 +218,14 @@ fn describe(
     }
     let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings);
     let newest_macro = std::cell::OnceCell::new();
-    let mut code = ANSWERED;
-    let mut done: Vec<Named> = Vec::new();
-    let mut refused: Vec<String> = Vec::new();
-    let mut also: Vec<String> = Vec::new();
-    for name in names {
-        let (named, shadowed) = match named(graph, name) {
-            Ok(named) => named,
-            Err(why) => {
-                refused.push(why);
-                code = REFUSED;
-                continue;
-            }
-        };
-        // A name and its unique_id in one call are one node, said once.
-        if done.contains(&named) {
-            continue;
-        }
-        if let Some(at) = shadowed {
-            also.push(format!("{name}: a macro too, {}", graph.macros.at(at).id));
-        }
+    let (found, refused, also) = resolved(graph, &names);
+    let code = if refused.is_empty() { ANSWERED } else { REFUSED };
+    for (at, named) in found.into_iter().enumerate() {
         let text = matches!(output, Output::Name | Output::Compact);
         // The empty line between two cards goes out before a note of
         // `--sql` on stderr, so the note does not read as the end of the
         // card above it.
-        if text && !done.is_empty() {
+        if text && at > 0 {
             writeln!(out)?;
         }
         match named {
@@ -306,8 +289,34 @@ fn describe(
                 }
             }
         }
-        done.push(named);
     }
+    closing(also, refused, out, err)?;
+    Ok(code)
+}
+
+/// What the names stand for, each once and in the order they were written; why
+/// each name that stands for nothing was refused; and the notes of the names
+/// that are a macro too. A name and its unique_id in one call are one node.
+fn resolved(graph: &Graph, names: &[&str]) -> (Vec<Named>, Vec<String>, Vec<String>) {
+    let (mut found, mut refused, mut also): (Vec<Named>, Vec<String>, Vec<String>) = (Vec::new(), Vec::new(), Vec::new());
+    for name in names {
+        match named(graph, name) {
+            Ok((one, _)) if found.contains(&one) => {}
+            Ok((one, shadowed)) => {
+                if let Some(at) = shadowed {
+                    also.push(format!("{name}: a macro too, {}", graph.macros.at(at).id));
+                }
+                found.push(one);
+            }
+            Err(why) => refused.push(why),
+        }
+    }
+    (found, refused, also)
+}
+
+/// The notes and the refusals, after the last card: stdout is flushed first,
+/// so on a terminal none reaches the screen ahead of a card.
+fn closing(also: Vec<String>, refused: Vec<String>, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
     if !refused.is_empty() || !also.is_empty() {
         out.flush()?;
         for note in also {
@@ -317,7 +326,7 @@ fn describe(
             writeln!(err, "error: {why}")?;
         }
     }
-    Ok(code)
+    Ok(())
 }
 
 /// The files read under `--sql` and `--compiled-sql`, as the card's last rows.
@@ -826,19 +835,25 @@ fn test_entry(graph: &Graph, owner: u32, t: &Node) -> String {
     entry
 }
 
+/// The first line of a card: the kind, the name, how it is built and where it
+/// is written. `--columns` heads its text with it too.
+fn first_line(graph: &Graph, n: &Node) -> String {
+    let kind = n.resource_type();
+    let how = if n.materialized == kind { "" } else { n.materialized.as_str() };
+    [format!("{kind} {}", n.name), how.to_string(), ls::path_of(graph, n)]
+        .into_iter()
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
 /// The first line of a card, and the rows under it. The first line says the
 /// kind, the name, how it is built and where it is written, so the rows below
 /// need not. How it is built is left off when it only repeats the kind, as a
 /// source's and a test's `materialized` do.
 fn card(graph: &Graph, files: &Files, idx: u32) -> (String, Sheet) {
     let n = &graph.nodes[idx as usize];
-    let kind = n.resource_type();
-    let how = if n.materialized == kind { "" } else { n.materialized.as_str() };
-    let first = [format!("{kind} {}", n.name), how.to_string(), ls::path_of(graph, n)]
-        .into_iter()
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join("  ");
+    let first = first_line(graph, n);
     let mut sheet = Sheet::default();
     if n.disabled {
         sheet.line("status", "disabled");
@@ -872,6 +887,35 @@ fn description_rows(n: &Node, sheet: &mut Sheet) {
     }
 }
 
+/// The cells of a column's row, as the card shows them: name, type, tests and
+/// description. `--columns` prints the same cells, so the card and the
+/// command cannot drift. Tests are joined by `tests_sep`: the card's `, `, and
+/// the `,` the other compact modes use.
+fn column_cells(graph: &Graph, c: &Column, tests_sep: &str) -> [String; 4] {
+    let tests: Vec<&str> = c
+        .tests
+        .iter()
+        .map(|&t| {
+            let t = &graph.nodes[t as usize];
+            if t.test_name.is_empty() { t.name.as_str() } else { t.test_name.as_str() }
+        })
+        .collect();
+    // A column only the warehouse has is said, since no YAML or SQL of the
+    // project mentions it.
+    let kind = if c.undeclared { format!("{} (catalog only)", c.data_type).trim().to_string() } else { c.data_type.clone() };
+    [c.name.clone(), kind, tests.join(tests_sep), flat(&c.description)]
+}
+
+/// A node's columns as the card lists them: a `columns (N)` block, one
+/// tab-separated row each. A field with nothing after it is left off, with its
+/// tab: a wide model has hundreds of columns with no test and no description,
+/// and `cut -f` reads a missing field as an empty one. Nothing is added for a
+/// node with no column.
+fn column_block(graph: &Graph, n: &Node, sheet: &mut Sheet) {
+    let lines: Vec<String> = n.columns.iter().map(|c| column_cells(graph, c, ", ").join("\t").trim_end_matches('\t').to_string()).collect();
+    sheet.block(format!("columns ({})", lines.len()), "", lines);
+}
+
 /// A model, seed, snapshot, analysis or source: the nodes with columns, and a
 /// place in the graph.
 fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
@@ -897,28 +941,7 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
         sheet.line("incremental", how.join(", "));
     }
     description_rows(n, sheet);
-    let lines: Vec<String> = n
-        .columns
-        .iter()
-        .map(|c| {
-            let tests: Vec<&str> = c
-                .tests
-                .iter()
-                .map(|&t| {
-                    let t = &graph.nodes[t as usize];
-                    if t.test_name.is_empty() { t.name.as_str() } else { t.test_name.as_str() }
-                })
-                .collect();
-            // A column only the warehouse has is said, since no YAML or SQL
-            // of the project mentions it.
-            let kind = if c.undeclared { format!("{} (catalog only)", c.data_type).trim().to_string() } else { c.data_type.clone() };
-            // A field with nothing after it is left off, with its tab: a wide
-            // model has hundreds of columns with no test and no description,
-            // and `cut -f` reads a missing field as an empty one.
-            format!("{}\t{kind}\t{}\t{}", c.name, tests.join(", "), flat(&c.description)).trim_end_matches('\t').to_string()
-        })
-        .collect();
-    sheet.block(format!("columns ({})", lines.len()), "", lines);
+    column_block(graph, n, sheet);
     sheet.line(format!("parents ({})", n.parents.len()), refs(graph, &n.parents, true));
     sheet.line(format!("children ({})", n.children.len()), refs(graph, &n.children, true));
     let entries: Vec<String> = sorted_by_name(graph, &n.tests).iter().map(|t| test_entry(graph, idx, t)).collect();
@@ -1509,6 +1532,17 @@ struct DescribedColumn<'a> {
     undeclared: bool,
 }
 
+fn described_columns<'a>(graph: &'a Graph, n: &'a Node) -> Vec<DescribedColumn<'a>> {
+    n.columns
+        .iter()
+        .map(|c| {
+            let mut tests: Vec<&str> = c.tests.iter().map(|&t| graph.nodes[t as usize].name.as_str()).collect();
+            tests.sort_unstable();
+            DescribedColumn { name: &c.name, data_type: &c.data_type, description: &c.description, tests, undeclared: c.undeclared }
+        })
+        .collect()
+}
+
 #[derive(serde::Serialize)]
 struct DependsOn<'a> {
     nodes: Vec<&'a str>,
@@ -1603,21 +1637,7 @@ impl<'a> Described<'a> {
             unique_key: n.box_key(),
             description: n.description.trim(),
             tags: &n.tags,
-            columns: n
-                .columns
-                .iter()
-                .map(|c| {
-                    let mut tests: Vec<&str> = c.tests.iter().map(|&t| graph.nodes[t as usize].name.as_str()).collect();
-                    tests.sort_unstable();
-                    DescribedColumn {
-                        name: &c.name,
-                        data_type: &c.data_type,
-                        description: &c.description,
-                        tests,
-                        undeclared: c.undeclared,
-                    }
-                })
-                .collect(),
+            columns: described_columns(graph, n),
             depends_on: (!parents.is_empty()).then_some(DependsOn { nodes: parents }),
             children: ids(&n.children),
             tests: tests
@@ -1664,6 +1684,149 @@ impl<'a> Described<'a> {
             compiled_sql,
         }
     }
+}
+
+// ---------------------------------------------------------------- --columns
+
+/// The header of `--columns --output compact`. The cells are the card's
+/// (`column_cells`) behind the node's name, so a column's row is the same on
+/// the card and here.
+pub(crate) const COLUMNS_HEADER: &str = "node\tcolumn\ttype\ttests\tdescription";
+
+/// `--describe NAMES --columns`: the columns of the nodes named, and nothing
+/// else of their cards. Like `run_describe`, it refuses an empty list before
+/// the project is opened.
+pub fn run_describe_columns(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, names: &[String], output: Output) -> i32 {
+    if let Some(why) = no_name(names) {
+        eprintln!("{why}");
+        return REFUSED;
+    }
+    let (root, _, graph) = match ls::open_with_catalog(project, manifest, catalog) {
+        Ok(opened) => opened,
+        Err(why) => return ls::cannot_open(&why),
+    };
+    let mut err = io::stderr().lock();
+    let mut out = BufWriter::new(io::stdout().lock());
+    let written = respond_describe_columns(&root, &graph, names, output, &mut out, &mut err);
+    ls::ended(written, &mut err)
+}
+
+/// What the mode does once the project is open: the columns, flushed, then the
+/// names that stand for no node, then what the manifest is worth.
+pub(crate) fn respond_describe_columns(
+    root: &Path,
+    graph: &Graph,
+    names: &[String],
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let names = wanted(names);
+    if names.is_empty() {
+        writeln!(err, "{NO_NAME}")?;
+        return Ok(REFUSED);
+    }
+    let (found, refused, also) = resolved(graph, &names);
+    let code = if refused.is_empty() { ANSWERED } else { REFUSED };
+    let mut nodes: Vec<&Node> = Vec::new();
+    let mut macros: Vec<&str> = Vec::new();
+    for one in &found {
+        match *one {
+            Named::Node(idx) => nodes.push(&graph.nodes[idx as usize]),
+            Named::Macro(at) => macros.push(&graph.macros.at(at).name),
+        }
+    }
+    let bare = write_columns(graph, &nodes, output, true, out)?;
+    closing(also, refused, out, err)?;
+    if !bare.is_empty() {
+        out.flush()?;
+        // By the label every answer uses, so two nodes of one name are told apart.
+        let shared = ls::shared_names(graph);
+        writeln!(err, "no column on {}", bare.iter().map(|n| ls::label(n, &shared)).collect::<Vec<_>>().join(", "))?;
+    }
+    // A macro has no column, and prints nothing, as a node without one does.
+    for name in macros {
+        out.flush()?;
+        writeln!(err, "{name}: a macro has no columns")?;
+    }
+    out.flush()?;
+    let _ = ls::provenance(root, graph, err);
+    Ok(code)
+}
+
+/// One node of a `--columns --output json` answer: who it is, and its columns
+/// as `--describe` gives them.
+#[derive(serde::Serialize)]
+struct ColumnsOf<'a> {
+    unique_id: &'a str,
+    name: &'a str,
+    resource_type: &'a str,
+    /// As on the card's JSON: only a node `--describe` names can be disabled,
+    /// a selection never lists one.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    disabled: bool,
+    columns: Vec<DescribedColumn<'a>>,
+}
+
+/// The columns of `nodes`, in the order given, for the two modes that ask for
+/// them: the cards of `--describe` (`as_cards`, text) or the lines of a
+/// selection. A node with no column prints nothing and is returned, so the
+/// caller can say so on stderr. Text is a card's first line and its `columns`
+/// block; `name` for a selection is `node.column` one per line; compact is
+/// one tab-separated row of five fields per column under `COLUMNS_HEADER`; JSON is one object
+/// per node.
+pub(crate) fn write_columns<'a>(
+    graph: &Graph,
+    nodes: &[&'a Node],
+    output: Output,
+    as_cards: bool,
+    out: &mut impl Write,
+) -> io::Result<Vec<&'a Node>> {
+    let (with, without): (Vec<&'a Node>, Vec<&'a Node>) = nodes.iter().partition(|n| !n.columns.is_empty());
+    let shared = if output == Output::Json { Default::default() } else { ls::shared_names(graph) };
+    if output == Output::Compact && !with.is_empty() {
+        writeln!(out, "{COLUMNS_HEADER}")?;
+    }
+    for (at, n) in with.iter().enumerate() {
+        match output {
+            Output::Json => {
+                let of = ColumnsOf { unique_id: &n.id, name: &n.name, resource_type: n.resource_type(), disabled: n.disabled, columns: described_columns(graph, n) };
+                serde_json::to_writer(&mut *out, &of)?;
+                writeln!(out)?;
+            }
+            Output::Compact => {
+                let label = ls::label(n, &shared);
+                for c in &n.columns {
+                    let mut fields = vec![ls::field(&label)];
+                    fields.extend(column_cells(graph, c, ",").iter().map(|cell| ls::field(cell)));
+                    // Every field is written, as the other compact modes do:
+                    // `cut -f` and a split on tabs read the same five.
+                    writeln!(out, "{}", fields.join("\t"))?;
+                }
+            }
+            Output::Name if as_cards => {
+                if at > 0 {
+                    writeln!(out)?;
+                }
+                let mut sheet = Sheet::default();
+                // As the card says it. The compact rows have no cell for it:
+                // a disabled node is reached by `--describe` alone.
+                if n.disabled {
+                    sheet.line("status", "disabled");
+                }
+                column_block(graph, n, &mut sheet);
+                writeln!(out, "{}", clean(&first_line(graph, n)))?;
+                sheet.write(2, out)?;
+            }
+            Output::Name => {
+                let label = ls::label(n, &shared);
+                for c in &n.columns {
+                    writeln!(out, "{}.{}", ls::field(&label), ls::field(&c.name))?;
+                }
+            }
+        }
+    }
+    Ok(without)
 }
 
 // ---------------------------------------------------------------- --overview
@@ -2357,6 +2520,127 @@ mod tests {
         );
         // A card is read, so compact has nothing to drop from it.
         assert_eq!(ask(&["orders"], Output::Compact).0, out);
+    }
+
+    /// stdout, stderr and the exit code of `--describe NAMES --columns`.
+    fn ask_columns(names: &[&str], output: Output) -> (String, String, i32) {
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let g = graph();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = respond_describe_columns(Path::new("/nowhere"), &g, &names, output, &mut out, &mut err).unwrap();
+        // The provenance is the other modes' own; what is checked here is what
+        // comes before it.
+        let err = String::from_utf8(err).unwrap();
+        let err = err.split("manifest: ").next().unwrap().to_string();
+        (String::from_utf8(out).unwrap(), err, code)
+    }
+
+    #[test]
+    fn columns_alone_print_the_cards_own_rows_under_its_first_line() {
+        let (out, err, code) = ask_columns(&["orders"], Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert_eq!(
+            out,
+            lines(&[
+                "model orders  table  models/marts/orders.sql",
+                "  columns (3)",
+                "    amount\tnumeric\t\tNet amount in euros",
+                "    created_at\tTIMESTAMP (catalog only)",
+                "    order_id\tinteger\tnot_null, unique\tThe id of the order",
+            ])
+        );
+        // The rows are the card's, byte for byte: they are made by one function.
+        let card = ask(&["orders"], Output::Name).0;
+        let block: Vec<&str> = out.lines().skip(1).collect();
+        assert!(card.contains(&format!("{}\n", block.join("\n"))), "{card}");
+    }
+
+    #[test]
+    fn columns_in_compact_are_one_line_each_behind_the_nodes_name_under_a_header() {
+        let (out, err, code) = ask_columns(&["orders", "raw.orders"], Output::Compact);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert_eq!(
+            out,
+            lines(&[
+                "node\tcolumn\ttype\ttests\tdescription",
+                "orders\tamount\tnumeric\t\tNet amount in euros",
+                // Every field is written, the empty ones too, and tests joined by a comma.
+                "orders\tcreated_at\tTIMESTAMP (catalog only)\t\t",
+                "orders\torder_id\tinteger\tnot_null,unique\tThe id of the order",
+                "raw.orders\tid\t\t\tPrimary key",
+            ])
+        );
+        assert_eq!(out, ask_columns(&["orders", "raw.orders"], Output::Compact).0, "the same answer twice");
+    }
+
+    #[test]
+    fn columns_in_json_are_the_nodes_identity_and_its_columns_as_describe_gives_them() {
+        let (out, _, code) = ask_columns(&["orders"], Output::Json);
+        assert_eq!(code, ANSWERED);
+        let v: serde_json::Value = serde_json::from_str(out.trim_end()).unwrap();
+        assert_eq!(out.lines().count(), 1);
+        let mut keys: Vec<&String> = v.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["columns", "name", "resource_type", "unique_id"]);
+        let described: serde_json::Value = serde_json::from_str(ask(&["orders"], Output::Json).0.trim_end()).unwrap();
+        assert_eq!(v["columns"], described["columns"]);
+        assert_eq!(v["unique_id"], "model.shop.orders");
+    }
+
+    #[test]
+    fn a_node_with_no_column_prints_nothing_and_is_named_on_stderr() {
+        for output in [Output::Name, Output::Compact, Output::Json] {
+            let (out, err, code) = ask_columns(&["model.shop.customers", "weekly_report"], output);
+            assert_eq!((out.as_str(), code), ("", ANSWERED), "{output:?}");
+            assert_eq!(err, "no column on model.shop.customers, weekly_report\n");
+        }
+        // The nodes that have some still print, and the one that has none is said.
+        let (out, err, _) = ask_columns(&["model.shop.customers", "orders"], Output::Name);
+        assert!(out.starts_with("model orders  table"), "{out}");
+        assert_eq!(err, "no column on model.shop.customers\n");
+    }
+
+    #[test]
+    fn a_disabled_node_says_so_in_the_text_and_the_json_of_its_columns() {
+        let g = graph_with(|m| {
+            m["disabled"]["model.shop.legacy"][0]["columns"] = json!({ "id": { "name": "id", "data_type": "integer" } });
+        });
+        let names = vec!["legacy".to_string()];
+        let said = |output| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            respond_describe_columns(Path::new("/nowhere"), &g, &names, output, &mut out, &mut err).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        assert_eq!(said(Output::Name), lines(&["model legacy  table  models/marts/legacy.sql", "  status  disabled", "  columns (1)", "    id\tinteger"]));
+        let v: serde_json::Value = serde_json::from_str(said(Output::Json).trim_end()).unwrap();
+        assert_eq!(v["disabled"], true);
+        // An enabled node carries no such key.
+        let (out, _, _) = ask_columns(&["orders"], Output::Json);
+        assert!(!out.contains("disabled"), "{out}");
+    }
+
+    #[test]
+    fn a_macro_has_no_columns_and_is_said_on_stderr_like_a_node_without() {
+        for output in [Output::Name, Output::Compact, Output::Json] {
+            let (out, err, code) = ask_columns(&["cents_to_dollars"], output);
+            assert_eq!((out.as_str(), code), ("", ANSWERED), "{output:?}");
+            assert_eq!(err, "cents_to_dollars: a macro has no columns\n");
+        }
+        // Beside a node that has columns and one that has none, each said once.
+        let (out, err, code) = ask_columns(&["orders", "model.shop.customers", "cents_to_dollars"], Output::Compact);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(out.lines().count(), 4, "the header and orders' three columns: {out}");
+        assert_eq!(err, "no column on model.shop.customers\ncents_to_dollars: a macro has no columns\n");
+    }
+
+    #[test]
+    fn a_name_that_stands_for_no_node_is_refused_after_the_columns() {
+        let (out, err, code) = ask_columns(&["orders", "nowhere", "orders"], Output::Compact);
+        assert_eq!(code, REFUSED);
+        assert_eq!(out.lines().count(), 4, "orders once: {out}");
+        assert!(err.starts_with("error: no node or macro named nowhere"), "{err}");
+        let (_, err, code) = ask_columns(&[" "], Output::Name);
+        assert_eq!((err.as_str(), code), ("error: --describe wants the name or the unique_id of a node or a macro\n", REFUSED));
     }
 
     #[test]

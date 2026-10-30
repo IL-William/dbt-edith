@@ -37,21 +37,23 @@ terminal can ask the same questions [over MCP](#over-mcp).
 
 - **`--manifest path/manifest.json`** names the manifest, else
   `<project>/target/manifest.json`. **`--catalog path/catalog.json`** names the
-  catalog `--describe` and `--overview` merge, else the `catalog.json` beside
-  the manifest, where `dbt docs generate` writes it. A relative path is
-  relative to where the command is typed, not to the project.
+  catalog `--describe`, `--overview` and `--columns` merge, else the
+  `catalog.json` beside the manifest, where `dbt docs generate` writes it. A
+  relative path is relative to where the command is typed, not to the project.
 - **`--output`** picks what is printed: `name`, the default, one name per
   line; `json`, one object per node; `compact`, tab-separated lines under a
   header. `--describe`, `--overview`, `--job` and `--job-order` print text
-  unless it is `json`: a card is read, so `compact` prints the same text.
+  unless it is `json`: a card is read, so `compact` prints the same text,
+  except with [`--columns`](#the-columns-alone).
   `--job-coverage` prints text for `name`, and its `compact` is lines of its own.
 
 A call costs one process start and one read of the artifacts: the manifest for
-a selection or a column, and for `--describe` and `--overview` the catalog and
-the caches beside it too, which is why those two take longer on a project with
-a wide catalog. The job files are read only by a project that has a
-`.dbt-edith/jobs.yml`, and then once per call. The freshness walk runs after the answer is out, so it never
-holds it back.
+a selection or a column; for `--describe`, `--overview` and `--columns` the
+catalog too, and for `--describe` and `--overview` the caches beside it, which
+is why those take longer on a project with a wide catalog. The job files are
+read only by a project that has a `.dbt-edith/jobs.yml`, and then once per
+call. The freshness walk runs after the answer is out, so it never holds it
+back.
 
 ## A selection
 
@@ -431,6 +433,66 @@ names, and leaves out every key that is empty:
 | `test` | on a test node: `checks` (the generic's name, or `singular`), `column`, `host` (the unique_id of the node it is declared on), `severity`, `generic`, `settings` |
 | `sql` | with `--sql`, the file, whole, once it was read |
 | `compiled_sql` | with `--compiled-sql`, the compiled file, once it was read |
+
+## The columns alone
+
+`--columns` prints only the columns, for a question about them: which models
+carry a column, what a layer's columns are called and typed. It goes with
+`--describe` or with `--select` / `--selector`, and with `--exclude`; it is
+refused beside `--count-by`, `--sql`, `--compiled-sql` and `--column`
+([0134](../decisions/0134-columns-are-printed-alone-by-one-flag-for-a-card-and-a-selection.md)).
+It reads the catalog beside the manifest, as `--describe` does, for the types:
+a selection without the flag does not, and on a project of hundreds of nodes
+that is most of the extra time.
+
+With `--describe`, each node's first line and its `columns (N)` block, as the
+card writes it, under a `status  disabled` line for a disabled node. With
+`--output compact` it prints instead the rows of the next example, five fields
+under a header, not card text:
+
+```
+dbt-edith path/to/project --describe stg_payments --columns
+```
+
+```
+model stg_payments  view  models/staging/stg_payments.sql
+  columns (4)
+    amount	DOUBLE (catalog only)
+    order_id	INTEGER (catalog only)
+    payment_id	INTEGER	not_null, unique
+    payment_method	VARCHAR	accepted_values
+```
+
+With a selection, one line per column of every node it matches, sorted by node:
+
+```
+dbt-edith path/to/project -s stg_orders --columns --output compact
+```
+
+```
+node	column	type	tests	description
+stg_orders	customer_id	INTEGER (catalog only)		
+stg_orders	order_date	DATE (catalog only)		
+stg_orders	order_id	INTEGER	not_null,unique	
+stg_orders	status	VARCHAR	accepted_values	
+```
+
+`node` is the name `--output compact` writes for a node, the unique_id where
+another node shares it. The four other cells are the card's: column, type,
+tests, description, and a type can read `INTEGER (catalog only)` for a column
+only the warehouse has, as on the card. Every cell is written, an empty one included, as in the other
+compact answers, and tests are joined by a comma; the card joins them with `, `
+and leaves empty cells at the end off. `--output name` prints `node.column`,
+one per line; `--output json` one object per node, with its `unique_id`,
+`name`, `resource_type`, `disabled` (when true) and the `columns` that
+`--describe` gives. A node that
+neither its YAML nor the catalog gives a column, a test for one, prints
+nothing: stderr says how many of a selection had none, and `--describe` names
+them. Exclude the tests from a selection, since each joins its parent's and has
+no column.
+A macro named to `--describe` has no column either: it prints nothing, and
+stderr says `name: a macro has no columns`, with the exit code a node without
+columns gets.
 
 ## A job
 

@@ -1,6 +1,6 @@
 # 0102. A node and the project are described on the command line
 
-Date: 2026-10-19 · Status: accepted, amended by 0110, 0113, 0114, 0132 and 0133 · Follows 0057 and 0088
+Date: 2026-10-19 · Status: accepted, amended by 0110, 0113, 0114, 0132, 0133 and 0134 · Follows 0057 and 0088
 
 **Trigger:** read before adding to what the command line prints of a node or
 the project, or before letting it read a file of the project.
@@ -39,6 +39,8 @@ name and the path already say: the unique_id is the kind and the name.
   *Amended by [0110](0110-an-agent-may-ask-over-mcp-through-one-tool.md):
   it wraps them, in one tool, when the client is configured for it.*
 - **Full cards from `--select`**: one card per node is the JSON's size again.
+  *Amended by [0134](0134-columns-are-printed-alone-by-one-flag-for-a-card-and-a-selection.md):
+  `--columns` prints a line per column of a selection, and a card's columns alone.*
 - **`raw_code` from the manifest for `--sql`**: it is deserialized for every
   node, the bulk of the manifest, for one answer.
 - **A skill here**: the caller's work (0057); the recipes page is its text.

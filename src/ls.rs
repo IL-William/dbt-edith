@@ -10,7 +10,7 @@
 //! badge already asks.
 
 use crate::collin::iso_utc;
-use crate::describe::{materialization, sorted_by_count};
+use crate::describe::{self, materialization, sorted_by_count};
 use crate::graph::{newer_version, Graph, Kind, Node};
 use crate::select::{self, Resolved, SelectError, Tests};
 use crate::{api, files, freshness, git};
@@ -197,17 +197,10 @@ fn answer(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let resolved = match resolve(graph, query) {
-        Ok(r) => r,
-        Err(e) => {
-            refused(query, &e, err)?;
-            return Ok(REFUSED);
-        }
+    let (nodes, warnings) = match selected(graph, query, err)? {
+        Some(selection) => selection,
+        None => return Ok(REFUSED),
     };
-    let mut nodes: Vec<&Node> = resolved.nodes.iter().map(|&i| &graph.nodes[i as usize]).collect();
-    // dbt sorts by name. The id breaks a tie, so two nodes of one name come
-    // out the same way on every run (0055).
-    nodes.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
     if let Some(count) = count {
         // A selection that matched nothing prints no rows, as a listing
         // prints no header; JSON is one object either way, so a script that
@@ -231,11 +224,80 @@ fn answer(
             }
         }
     }
-    for w in &resolved.warnings {
+    for w in &warnings {
         writeln!(err, "warning: {w}")?;
     }
     if nodes.is_empty() {
         writeln!(err, "nothing matched")?;
+    }
+    Ok(ANSWERED)
+}
+
+/// The nodes the query selects, in the order every answer prints them, and
+/// the resolver's warnings; or None once the refusal is written to `err`.
+fn selected<'g>(graph: &'g Graph, query: &Query, err: &mut impl Write) -> io::Result<Option<(Vec<&'g Node>, Vec<String>)>> {
+    let resolved = match resolve(graph, query) {
+        Ok(r) => r,
+        Err(e) => {
+            refused(query, &e, err)?;
+            return Ok(None);
+        }
+    };
+    let mut nodes: Vec<&Node> = resolved.nodes.iter().map(|&i| &graph.nodes[i as usize]).collect();
+    // dbt sorts by name. The id breaks a tie, so two nodes of one name come
+    // out the same way on every run (0055).
+    nodes.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    Ok(Some((nodes, resolved.warnings)))
+}
+
+/// `--select` or `--selector` with `--columns`: the whole mode. The catalog is
+/// merged in, as `--describe` has it, since a type is the catalog's to give;
+/// the selection itself reads nothing the merge changes, so the nodes are the
+/// ones `run` would list (0134).
+pub fn run_columns(project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, query: &Query, output: Output) -> i32 {
+    let (root, _, graph) = match open_with_catalog(project, manifest, catalog) {
+        Ok(opened) => opened,
+        Err(why) => return cannot_open(&why),
+    };
+    let mut err = io::stderr().lock();
+    let mut out = BufWriter::new(io::stdout().lock());
+    let written = respond_columns(&root, &graph, query, output, &mut out, &mut err);
+    ended(written, &mut err)
+}
+
+/// What `run_columns` does once the project is open, and what an MCP call
+/// does over the graph the server keeps for `--describe`.
+pub(crate) fn respond_columns(
+    root: &Path,
+    graph: &Graph,
+    query: &Query,
+    output: Output,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> io::Result<i32> {
+    let code = answer_columns(graph, query, output, out, err)?;
+    out.flush()?;
+    let _ = provenance(root, graph, err);
+    Ok(code)
+}
+
+/// The columns of the selection and what to say of it, without the
+/// manifest's provenance.
+fn answer_columns(graph: &Graph, query: &Query, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+    let Some((nodes, warnings)) = selected(graph, query, err)? else { return Ok(REFUSED) };
+    let bare = describe::write_columns(graph, &nodes, output, false, out)?;
+    // The answer is out before any of stderr, so on a terminal no note
+    // reaches the screen ahead of it.
+    out.flush()?;
+    for w in &warnings {
+        writeln!(err, "warning: {w}")?;
+    }
+    if nodes.is_empty() {
+        writeln!(err, "nothing matched")?;
+    } else if !bare.is_empty() {
+        // Counted and not named: a selection holds tests by the thousand.
+        let (verb, noun) = if nodes.len() == 1 { ("has", "node") } else { ("have", "nodes") };
+        writeln!(err, "{} of {} selected {noun} {verb} no column", bare.len(), nodes.len())?;
     }
     Ok(ANSWERED)
 }
@@ -639,7 +701,7 @@ fn kind_words(kinds: &[Kind]) -> String {
 
 /// The names more than one node of the graph carries, as two models of one
 /// name in two packages do.
-fn shared_names(graph: &Graph) -> HashSet<&str> {
+pub(crate) fn shared_names(graph: &Graph) -> HashSet<&str> {
     let mut seen: HashSet<&str> = HashSet::new();
     // A disabled twin is never listed, so it makes no name ambiguous.
     graph.nodes.iter().filter(|n| !n.disabled).map(|n| n.name.as_str()).filter(|&name| !seen.insert(name)).collect()
@@ -652,6 +714,12 @@ pub(crate) fn field(text: &str) -> String {
     text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
 }
 
+/// How an answer names a node: its name, or its unique_id where another node
+/// of the graph has that name, so a name read in one line is never two nodes.
+pub(crate) fn label(n: &Node, shared: &HashSet<&str>) -> String {
+    if shared.contains(n.name.as_str()) { n.id.clone() } else { n.name.clone() }
+}
+
 /// One node of a `--output compact` answer: the columns of `COMPACT_HEADER`.
 /// The parents by the name `--output name` prints, so a line's last column
 /// names other lines of the same answer, and nothing a reader can derive: no
@@ -660,13 +728,13 @@ pub(crate) fn field(text: &str) -> String {
 /// name two nodes share would join them in one entry, so it is written as the
 /// unique_id, in both columns.
 fn compact_line(graph: &Graph, n: &Node, shared: &HashSet<&str>) -> String {
-    let label = |n: &Node| field(if shared.contains(n.name.as_str()) { &n.id } else { &n.name });
-    let mut parents: Vec<String> = n.parents.iter().map(|&p| label(&graph.nodes[p as usize])).collect();
+    let named = |n: &Node| field(&label(n, shared));
+    let mut parents: Vec<String> = n.parents.iter().map(|&p| named(&graph.nodes[p as usize])).collect();
     parents.sort_unstable();
     parents.dedup();
     format!(
         "{}\t{}\t{}\t{}\t{}\t{}",
-        label(n),
+        named(n),
         field(n.resource_type()),
         field(&n.materialized),
         field(&path_of(graph, n)),
@@ -1299,6 +1367,158 @@ mod tests {
         assert_eq!(code, REFUSED);
         assert!(err.starts_with("error: no selector named `nope`"), "{err}");
         let (_, err, code) = ask(&Query::Named("ci".into()), Output::Name);
+        assert_eq!(code, REFUSED);
+        assert!(err.starts_with("error: selector `ci` cannot be resolved here"), "{err}");
+    }
+
+    /// The graph with columns on two models, a type on one, and a model of
+    /// another package that shares the name `orders`.
+    fn graph_with_columns() -> Graph {
+        graph_with(|m| {
+            m["nodes"]["model.shop.orders"]["columns"] = json!({
+                "id": { "name": "id", "data_type": "integer", "description": "The id\n  of the order" },
+                "amount": { "name": "amount" },
+            });
+            m["nodes"]["model.shop.stg_orders"]["columns"] = json!({ "order_id": { "name": "order_id", "data_type": "text" } });
+            m["nodes"]["model.audit.orders"] = json!({
+                "name": "orders", "resource_type": "model", "package_name": "audit",
+                "original_file_path": "models/orders.sql", "fqn": ["audit", "orders"],
+                "config": { "materialized": "view" },
+                "columns": { "seen": { "name": "seen" } },
+            });
+        })
+    }
+
+    /// stdout, stderr and the exit code of one selection with `--columns`.
+    fn ask_columns(query: &Query, output: Output) -> (String, String, i32) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = answer_columns(&graph_with_columns(), query, output, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn columns_in_compact_are_a_line_each_in_the_order_of_the_names() {
+        let (out, err, code) = ask_columns(&line("+orders+", ""), Output::Compact);
+        assert_eq!(code, ANSWERED);
+        // The test, the source and `customers` have no column. A name two
+        // nodes share is written as the unique_id, in this answer as in
+        // `--output compact`.
+        assert_eq!(
+            out,
+            "node\tcolumn\ttype\ttests\tdescription\n\
+             model.audit.orders\tseen\t\t\t\n\
+             model.shop.orders\tamount\t\t\t\n\
+             model.shop.orders\tid\tinteger\tnot_null\tThe id of the order\n\
+             stg_orders\torder_id\ttext\t\t\n"
+        );
+        assert_eq!(err, "3 of 6 selected nodes have no column\n");
+        assert_eq!(out, ask_columns(&line("+orders+", ""), Output::Compact).0, "the same answer twice");
+    }
+
+    #[test]
+    fn columns_by_name_are_node_dot_column_and_in_json_one_object_per_node() {
+        let (out, _, code) = ask_columns(&line("orders stg_orders", "resource_type:test"), Output::Name);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(out, "model.audit.orders.seen\nmodel.shop.orders.amount\nmodel.shop.orders.id\nstg_orders.order_id\n");
+        let (out, _, _) = ask_columns(&line("stg_orders", ""), Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim_end()).unwrap();
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert_eq!(v["unique_id"], "model.shop.stg_orders");
+        assert_eq!(v["resource_type"], "model");
+        assert_eq!(v["columns"], json!([{ "name": "order_id", "data_type": "text" }]));
+    }
+
+    #[test]
+    fn a_selection_without_a_column_prints_nothing_and_counts_them() {
+        for output in [Output::Name, Output::Compact, Output::Json] {
+            let (out, err, code) = ask_columns(&line("customers source:raw.orders", ""), output);
+            assert_eq!((out.as_str(), code), ("", ANSWERED), "{output:?}");
+            assert_eq!(err, "2 of 2 selected nodes have no column\n");
+        }
+        let (out, err, code) = ask_columns(&line("tag:nowhere", ""), Output::Compact);
+        assert_eq!((out.as_str(), err.as_str(), code), ("", "warning: nothing matches `tag:nowhere`\nnothing matched\n", ANSWERED));
+    }
+
+    #[test]
+    fn one_selected_node_without_a_column_is_said_in_the_singular() {
+        let (_, err, _) = ask_columns(&line("customers", ""), Output::Name);
+        assert_eq!(err, "1 of 1 selected node has no column\n");
+    }
+
+    /// The merged graph selects the nodes the manifest alone does (0134): a
+    /// catalog holding an id the manifest lacks, a disabled model and a model
+    /// of an installed package change none of the answers.
+    #[test]
+    fn the_catalog_and_the_placed_packages_change_no_selection() {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-ls-merged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::create_dir_all(dir.join("dbt_packages/dbt_utils/models")).unwrap();
+        std::fs::write(dir.join("dbt_packages/dbt_utils/models/helper.sql"), "select 1").unwrap();
+        std::fs::write(dir.join("dbt_project.yml"), "name: shop\nversion: '1.0'\n").unwrap();
+        let manifest = json!({
+            "metadata": { "dbt_version": "1.12.5", "project_name": "shop" },
+            "nodes": {
+                "model.shop.orders": {
+                    "name": "orders", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/marts/orders.sql", "fqn": ["shop", "marts", "orders"],
+                    "config": { "materialized": "table" }, "columns": { "id": { "name": "id" } },
+                },
+                "model.dbt_utils.helper": {
+                    "name": "helper", "resource_type": "model", "package_name": "dbt_utils",
+                    "original_file_path": "models/helper.sql", "fqn": ["dbt_utils", "helper"],
+                    "config": { "materialized": "ephemeral" },
+                },
+            },
+            "sources": {
+                "source.shop.raw.orders": {
+                    "name": "orders", "resource_type": "source", "package_name": "shop", "source_name": "raw",
+                    "original_file_path": "models/staging/sources.yml", "fqn": ["shop", "staging", "raw", "orders"],
+                },
+            },
+            "disabled": {
+                "model.shop.legacy": [{
+                    "name": "legacy", "resource_type": "model", "package_name": "shop",
+                    "original_file_path": "models/marts/legacy.sql", "fqn": ["shop", "marts", "legacy"],
+                    "config": { "enabled": false },
+                }],
+            },
+            "parent_map": { "model.shop.orders": ["source.shop.raw.orders", "model.dbt_utils.helper"] },
+        });
+        std::fs::write(dir.join("target/manifest.json"), manifest.to_string()).unwrap();
+        // `model.shop.ghost` and `model.shop.legacy` are the warehouse's, not the manifest's.
+        std::fs::write(
+            dir.join("target/catalog.json"),
+            json!({ "nodes": {
+                "model.shop.orders": { "columns": { "id": { "name": "id", "type": "BIGINT", "index": 1 }, "extra": { "name": "extra", "type": "TEXT", "index": 2 } } },
+                "model.shop.ghost": { "columns": { "id": { "name": "id", "type": "BIGINT", "index": 1 } } },
+                "model.shop.legacy": { "columns": { "id": { "name": "id", "type": "BIGINT", "index": 1 } } },
+            } })
+            .to_string(),
+        )
+        .unwrap();
+        let (_, _, alone) = open(&dir, None).unwrap();
+        let (_, _, merged) = open_with_catalog(&dir, None, None).unwrap();
+        assert_eq!(alone.nodes.len(), merged.nodes.len(), "the catalog adds no node");
+        assert!(merged.nodes.iter().any(|n| n.id == "model.dbt_utils.helper" && !n.place.is_empty()), "the package was placed");
+        for select in ["*", "path:models/marts", "path:models/helper.sql", "source:*", "package:dbt_utils", "package:shop", "+orders", "orders+", "resource_type:model", "config.materialized:table"] {
+            let ids = |g: &Graph| {
+                let mut err = Vec::new();
+                let (nodes, _) = selected(g, &line(select, ""), &mut err).unwrap().unwrap_or_else(|| panic!("{select}: {}", String::from_utf8_lossy(&err)));
+                nodes.iter().map(|n| n.id.clone()).collect::<Vec<_>>()
+            };
+            assert_eq!(ids(&alone), ids(&merged), "{select}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_selection_is_refused_with_columns_as_without() {
+        let plain = ask(&line("orders+bogus:x", ""), Output::Name);
+        let (out, err, code) = ask_columns(&line("orders+bogus:x", ""), Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        assert_eq!(err, plain.1);
+        let (_, err, code) = ask_columns(&Query::Named("ci".to_string()), Output::Name);
         assert_eq!(code, REFUSED);
         assert!(err.starts_with("error: selector `ci` cannot be resolved here"), "{err}");
     }

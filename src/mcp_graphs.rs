@@ -1,8 +1,8 @@
 //! The project the MCP server has opened, kept between calls (0110).
 //!
 //! Invariants: nothing is read until a call needs a graph. There are two
-//! graphs, as the command line has: `--select` and `--column` load the
-//! manifest alone, `--describe` and `--overview` also place the packages and
+//! graphs, as the command line has: `--select` (bar `--columns`) and `--column`
+//! load the manifest alone, `--describe` and `--overview` also place the packages and
 //! merge the catalog, and one shared graph would not answer byte for byte as
 //! the command line does. A slot is loaded again when any file its load reads
 //! has moved, so an edit to `selectors.yml` or a `dbt parse` in between never
@@ -150,9 +150,8 @@ impl Graphs {
     /// The manifest with the packages placed and the catalog merged, as
     /// `ls::open_with_catalog` gives `--describe` and `--overview`. It is built
     /// from a copy of the manifest graph, so the manifest is parsed once. The
-    /// calls that answer use `base_and_jobs`; this is the graph alone, for the
-    /// tests that compare it.
-    #[cfg(test)]
+    /// calls that answer use `base_and_jobs`, bar `--columns`, which has no use
+    /// for the jobs and so does not read them; this is the graph alone.
     pub fn base(&mut self) -> Result<Base<'_>, String> {
         self.refresh_base()?;
         self.base

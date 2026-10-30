@@ -74,7 +74,7 @@ struct Args {
     #[arg(long)]
     manifest: Option<PathBuf>,
 
-    /// Path to catalog.json (default: <project>/target/catalog.json; for --run-collin, --describe and --overview, catalog.json beside the manifest)
+    /// Path to catalog.json (default: <project>/target/catalog.json; for --run-collin, --describe, --overview and --columns, catalog.json beside the manifest)
     #[arg(long)]
     catalog: Option<PathBuf>,
 
@@ -150,6 +150,10 @@ struct Args {
     #[arg(long, requires = "describe")]
     compiled_sql: bool,
 
+    /// Print only the columns: of the nodes --describe names, as its card lists them, or one line per column of every node --select or --selector matches. Reads the catalog beside the manifest, for the types
+    #[arg(long, conflicts_with_all = ["count_by", "sql", "compiled_sql", "column"])]
+    columns: bool,
+
     /// Print what the project holds, by kind, materialization and folder, and exit, without serving
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
     overview: bool,
@@ -183,7 +187,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
@@ -193,7 +197,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
-            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "overview", "job", "job_order",
+            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
             "job_coverage", "count_by", "depth", "output", "mcp",
         ]
     )]
@@ -208,6 +212,7 @@ fn stray(args: &Args) -> Option<String> {
     let flags = [
         (args.sql, "--sql", "--describe", !args.describe.is_empty()),
         (args.compiled_sql, "--compiled-sql", "--describe", !args.describe.is_empty()),
+        (args.columns, "--columns", "--describe, --select or --selector", !args.describe.is_empty() || args.select.is_some() || args.selector.is_some()),
         (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
         (args.count_by.is_some(), "--count-by", "--select or --selector", args.select.is_some() || args.selector.is_some()),
         (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
@@ -244,6 +249,9 @@ enum Question {
     /// A selection, listed or, with a `Count`, counted (0112).
     Select(ls::Query, Option<ls::Count>),
     Describe { names: Vec<String>, sql: bool, compiled_sql: bool },
+    /// A selection's columns, one line each, or a card's columns alone (0134).
+    SelectColumns(ls::Query),
+    DescribeColumns { names: Vec<String> },
     Overview { depth: usize },
     Job { name: String },
     JobOrder,
@@ -259,6 +267,10 @@ fn question_of(args: &Args) -> Option<Question> {
     // The depth's 3 is applied here, as the overview's is below.
     let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
     match (&args.select, &args.selector) {
+        (Some(select), _) if args.columns => {
+            return Some(Question::SelectColumns(ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() }))
+        }
+        (None, Some(name)) if args.columns => return Some(Question::SelectColumns(ls::Query::Named(name.clone()))),
         (Some(select), _) => {
             return Some(Question::Select(
                 ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() },
@@ -267,6 +279,9 @@ fn question_of(args: &Args) -> Option<Question> {
         }
         (None, Some(name)) => return Some(Question::Select(ls::Query::Named(name.clone()), count)),
         (None, None) => {}
+    }
+    if !args.describe.is_empty() && args.columns {
+        return Some(Question::DescribeColumns { names: args.describe.clone() });
     }
     if !args.describe.is_empty() {
         return Some(Question::Describe { names: args.describe.clone(), sql: args.sql, compiled_sql: args.compiled_sql });
@@ -309,6 +324,8 @@ impl Question {
         match self {
             Question::Select(query, count) => ls::run(project, manifest, query, *count, args.output),
             Question::Describe { names, sql, compiled_sql } => describe::run_describe(project, manifest, catalog, names, *sql, *compiled_sql, args.output),
+            Question::SelectColumns(query) => ls::run_columns(project, manifest, catalog, query, args.output),
+            Question::DescribeColumns { names } => describe::run_describe_columns(project, manifest, catalog, names, args.output),
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
             Question::Job { name } => job::run_job(project, manifest, catalog, name, args.output),
             Question::JobOrder => job_order::run_job_order(project, manifest, catalog, args.output),
@@ -637,6 +654,10 @@ mod tests {
             ("-s orders --count-by folder --depth 0", "--depth 0 counts no folder; use 1 or more"),
             ("--count-by kind", "--count-by goes with --select or --selector"),
             ("--describe orders --count-by kind", "--count-by goes with --select or --selector"),
+            ("--overview --columns", "--columns goes with --describe, --select or --selector"),
+            ("--job jaffle_daily --columns", "--columns goes with --describe, --select or --selector"),
+            ("--job-order --columns", "--columns goes with --describe, --select or --selector"),
+            ("--columns", "--columns goes with --describe, --select or --selector"),
             ("--overview --count-by folder", "--count-by goes with --select or --selector"),
             ("--column a.b --count-by tag", "--count-by goes with --select or --selector"),
             ("--describe orders --exclude resource_type:test", "--exclude goes with --select"),
@@ -793,6 +814,9 @@ mod tests {
             "--describe orders --sql",
             "--describe orders --compiled-sql",
             "--describe orders --sql --compiled-sql",
+            "--describe orders --columns",
+            "-s orders --exclude resource_type:test --columns",
+            "--selector nightly --columns --output compact",
             "--overview --depth 2",
             "-s a --count-by folder --depth 2",
             "--selector nightly --count-by kind",
@@ -822,6 +846,9 @@ mod tests {
             Some(Question::Select(ls::Query::Named(name), None)) => format!("selector {name}"),
             Some(Question::Select(_, Some(ls::Count { by, depth }))) => format!("count {by:?} {depth}"),
             Some(Question::Describe { names, sql, compiled_sql }) => format!("describe {} {sql} {compiled_sql}", names.join(",")),
+            Some(Question::SelectColumns(ls::Query::Line { select, exclude })) => format!("columns of select {select} | {exclude}"),
+            Some(Question::SelectColumns(ls::Query::Named(name))) => format!("columns of selector {name}"),
+            Some(Question::DescribeColumns { names }) => format!("columns of describe {}", names.join(",")),
             Some(Question::Overview { depth }) => format!("overview {depth}"),
             Some(Question::Job { name }) => format!("job {name}"),
             Some(Question::JobOrder) => "job-order".to_string(),
@@ -843,6 +870,9 @@ mod tests {
         assert_eq!(text("--describe orders --sql --compiled-sql"), "describe orders true true");
         assert_eq!(text("-s orders --count-by kind"), "count Kind 3");
         assert_eq!(text("--selector nightly --count-by folder --depth 1"), "count Folder 1");
+        assert_eq!(text("--describe orders,customers --columns"), "columns of describe orders,customers");
+        assert_eq!(text("-s stg_orders+1 --exclude resource_type:test --columns"), "columns of select stg_orders+1 | resource_type:test");
+        assert_eq!(text("--selector nightly --columns"), "columns of selector nightly");
         assert_eq!(text("--overview"), "overview 3");
         assert_eq!(text("--overview --depth 1"), "overview 1");
         assert_eq!(text("--job jaffle_daily"), "job jaffle_daily");
@@ -852,6 +882,26 @@ mod tests {
         assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text("--column orders.amount --run-collin"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text(""), "page");
+    }
+
+    #[test]
+    fn columns_are_refused_beside_what_they_cannot_be_asked_with() {
+        for (line, other) in [
+            ("-s orders --count-by kind --columns", "--count-by"),
+            ("--selector nightly --columns --count-by tag", "--count-by"),
+            ("--describe orders --sql --columns", "--sql"),
+            ("--describe orders --compiled-sql --columns", "--compiled-sql"),
+            ("--column orders.amount --columns", "--column"),
+            ("--columns --mcp", "--mcp"),
+            ("--columns --skill", "--skill"),
+            ("--describe orders -s orders --columns", "--describe"),
+        ] {
+            let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
+                Ok(_) => panic!("{line} was accepted"),
+                Err(e) => e.to_string(),
+            };
+            assert!(why.contains("cannot be used with") && why.contains(other), "{line}: {why}");
+        }
     }
 
     #[test]
