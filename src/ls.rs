@@ -443,7 +443,7 @@ pub(crate) fn path_of(graph: &Graph, n: &Node) -> String {
 }
 
 /// How many names `did you mean` offers.
-const SUGGESTED: usize = 5;
+pub(crate) const SUGGESTED: usize = 5;
 
 /// The seconds since the epoch, for the age of a file.
 pub(crate) fn now_secs() -> u64 {
@@ -463,6 +463,29 @@ pub(crate) fn now_secs() -> u64 {
 /// guess between them would be an answer that changes with the next edit of
 /// the project.
 pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u32, String> {
+    find_node(graph, name, kinds).map_err(|why| match why {
+        Unnamed::Many(why) => why,
+        Unnamed::Nothing => {
+            let near = near_nodes(graph, name, kinds);
+            let none = if kinds.is_empty() { format!("no node named {name}") } else { format!("no {} is named {name}", kind_words(kinds)) };
+            if near.is_empty() { none } else { format!("{none}; did you mean {}", near.join(", ")) }
+        }
+    })
+}
+
+/// Why `find_node` did not find one node.
+pub(crate) enum Unnamed {
+    /// No node answers to the name. A caller that can name something else,
+    /// as `--describe` can a macro, tries that here and only here, and asks
+    /// `near_nodes` for suggestions only when it has nothing either.
+    Nothing,
+    /// Several do, and the refusal that says which: a name that clashes
+    /// between nodes is never settled by another kind of thing.
+    Many(String),
+}
+
+/// `node_named`, with its two failures told apart.
+pub(crate) fn find_node(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u32, Unnamed> {
     if let Some(&i) = graph.index.get(name) {
         return Ok(i);
     }
@@ -545,39 +568,41 @@ pub(crate) fn node_named(graph: &Graph, name: &str, kinds: &[Kind]) -> Result<u3
     match hits.as_slice() {
         [one] => Ok(*one),
         [] => {
-            // The nodes a person writes first when any may answer, because the
-            // name of a generic test contains those of its model and its
-            // column, and would fill the list; a name that only a test could
-            // be meant by is offered the tests.
-            let mut near_ids = if kinds.is_empty() {
-                let written = [Kind::Model, Kind::Source, Kind::Seed, Kind::Snapshot, Kind::Exposure, Kind::Analysis];
-                graph.search(name, &written, SUGGESTED)
-            } else {
-                graph.search(name, kinds, SUGGESTED)
-            };
-            if near_ids.is_empty() && kinds.is_empty() {
-                near_ids = graph.search(name, &[], SUGGESTED);
-            }
-            let mut near: Vec<&str> = Vec::new();
-            for i in near_ids {
-                let found = graph.nodes[i as usize].name.as_str();
-                if !near.contains(&found) {
-                    near.push(found);
-                }
-            }
-            let none = if kinds.is_empty() { format!("no node named {name}") } else { format!("no {} is named {name}", kind_words(kinds)) };
-            if near.is_empty() {
-                Err(none)
-            } else {
-                Err(format!("{none}; did you mean {}", near.join(", ")))
-            }
+            Err(Unnamed::Nothing)
         }
         many => {
             let mut ids: Vec<&str> = many.iter().map(|&i| graph.nodes[i as usize].id.as_str()).collect();
             ids.sort_unstable();
-            Err(format!("{name} names {} nodes: write the unique_id of one, {}", ids.len(), ids.join(", ")))
+            Err(Unnamed::Many(format!("{name} names {} nodes: write the unique_id of one, {}", ids.len(), ids.join(", "))))
         }
     }
+}
+
+/// The names nearest to one that names no node, for a refusal to offer.
+/// Worked out only once the caller has no other answer to the name, since the
+/// search is the costly part.
+pub(crate) fn near_nodes(graph: &Graph, name: &str, kinds: &[Kind]) -> Vec<String> {
+    // The nodes a person writes first when any may answer, because the
+    // name of a generic test contains those of its model and its
+    // column, and would fill the list; a name that only a test could
+    // be meant by is offered the tests.
+    let mut near_ids = if kinds.is_empty() {
+        let written = [Kind::Model, Kind::Source, Kind::Seed, Kind::Snapshot, Kind::Exposure, Kind::Analysis];
+        graph.search(name, &written, SUGGESTED)
+    } else {
+        graph.search(name, kinds, SUGGESTED)
+    };
+    if near_ids.is_empty() && kinds.is_empty() {
+        near_ids = graph.search(name, &[], SUGGESTED);
+    }
+    let mut near: Vec<&str> = Vec::new();
+    for i in near_ids {
+        let found = graph.nodes[i as usize].name.as_str();
+        if !near.contains(&found) {
+            near.push(found);
+        }
+    }
+    near.into_iter().map(str::to_string).collect()
 }
 
 /// Whether a unique_id ends in `.name`: the part after a dot, never a piece of

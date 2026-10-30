@@ -1123,7 +1123,10 @@ function scanMacroCalls(text, yaml = false) {
    are masked first: a commented-out copy is not the macro dbt reads. A generic
    test and a materialization are macros too, which dbt names from their own
    blocks: `{% test x(` is `test_x`, and `{% materialization x, adapter='y' %}`
-   is `materialization_x_y`, `_default` without an adapter. */
+   is `materialization_x_y`, `_default` without an adapter. The command line
+   finds a macro the same way in `macros::block_in` (src/macros.rs), which also
+   leaves a `{%` in a raw block or a string alone, as this does not: a change
+   to what names a macro wants the other changed with it. */
 function macroDefLine(text, name) {
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const masked = maskJinjaComments(text);
@@ -11672,7 +11675,8 @@ function runSaid(run) {
    the palette's. A macro no node reaches has no reference found, never
    unused, and the likeliest reason it may still run: a run-operation or
    another package's call, which leave the manifest no trace, or dbt running
-   it itself. */
+   it itself. `used_text` in src/describe.rs words the same lines for the
+   command line (a copy of 0105's wording): change them together. */
 function macroUseText(used, adapter) {
   const u = used || {};
   const by = u.by || [];

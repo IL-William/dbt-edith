@@ -136,6 +136,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0130](0130-a-path-that-reads-the-current-folder-is-warned-of-not-typed-around.md) | A shell that reads the current folder is warned of, not typed around | changing what the page types into the terminal, which button presses Enter there, or what the banner and Edith's menu say about the terminal's shell and `PATH` |
 | [0131](0131-job-coverage-is-answered-on-the-command-line.md) | Job coverage is answered on the command line | changing what `--job-coverage` prints or leaves out, how its three outputs differ, or making another mode read the jobs |
 | [0132](0132-the-compiled-sql-of-a-node-is-read-from-its-file-under-the-target.md) | The compiled SQL of a node is read from its file under the target | changing what `--compiled-sql` prints or reads, or reading `compiled_code` from the manifest |
+| [0133](0133-a-macro-is-described-when-no-node-has-the-name.md) | A macro is described when no node has the name | changing what `--describe` accepts as a name, the order a macro name is looked for in, what a macro's card says, or what the command line reads of a macro's file |
 
 ## Keeping these honest
 

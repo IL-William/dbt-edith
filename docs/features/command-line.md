@@ -221,9 +221,10 @@ included:
    or a versioned model in another is therefore refused, as it is for any two
    packages, and a disabled model of that name gives way to the versions.
 
-A refused name lists the unique_ids to write. A name that is no node is refused
-with the nearest names, `no node named order; did you mean orders,
-orders_daily`, models and sources before the tests that carry their names.
+A refused name lists the unique_ids to write. A name that is no node and no
+macro ([below](#a-macro)) is refused with the nearest names, `no node or macro
+named order; did you mean orders, orders_daily`, models and sources before the
+tests that carry their names, then macros, a package's as `package.name`.
 The names that do resolve are all printed first, and the exit code is 1 if any
 did not.
 
@@ -286,11 +287,86 @@ which only fills a column whose YAML gives none. A control character other than
 the tab in a description or a SQL file is left out of the text, so none of the
 project's reaches the terminal as an escape.
 
+### A macro
+
+When no node has the name, `--describe` looks among the macros the manifest
+lists (0133). A node wins a name it shares with a macro, so an answer never
+changes because a package brought a macro of that name, and a name several
+nodes share is refused whatever macro is named so. A macro is named:
+
+- by its unique_id, `macro.dbt_utils.star`;
+- as `package.name`, `dbt_utils.star`, outright;
+- by its bare name, the way dbt resolves a call from the root project: the
+  project's own macro, then the adapter's (`dbt_duckdb`, a parent adapter's
+  after it), then dbt's. A package's macro is never reached by its bare name,
+  since dbt does not reach it either: the refusal offers `dbt_utils.star`.
+
+`dbt.run_query` named outright is dbt's own `macro.dbt.run_query`, and the card
+shows that one; a call `{{ dbt.run_query() }}` in a model may reach the
+adapter's macro of the same name, which dbt's search puts first.
+
+The name is case-sensitive, as a call is. Macros and nodes may be mixed in one
+call. A node wins a name it shares with a macro, `package.name` included, since
+a package node's unique_id ends in it; stderr then says `orders: a macro too,
+macro.shop.orders`, and the macro's unique_id always reaches the macro.
+
+```
+dbt-edith path/to/project --describe cents_to_dollars --sql
+```
+
+```
+macro cents_to_dollars  macros/money.sql:1
+  package    jaffle_shop
+  arguments  column_name, scale
+  description
+    Converts an amount in cents to dollars.
+  used by    1 model
+  sql
+    {% macro cents_to_dollars(column_name, scale=2) -%}
+        ({{ column_name }} / 100)::numeric(16, {{ scale }})
+    {%- endmacro %}
+```
+
+The first line is `macro`, the name, and the file with the line the
+definition starts on, under `dbt_packages/<package>` for an installed
+package's. A macro of dbt's or its adapter's has no file in the project: its
+path is marked `dbt's own:`. The rows are the package, the arguments, the
+description and `used by`. The arguments are the names the macro's opening tag
+writes, without their defaults, since the manifest lists only those the YAML
+documents; `none` for a tag with empty parentheses and for a materialization,
+and `not documented` when there is no tag to read and no YAML. In JSON,
+`arguments` is `[]` for a macro known to take none and absent for one nothing
+lists, so the two can be told apart. `used by` is worded as the page's macro card words it: the
+nodes reaching the macro by kind, how many only through other macros, how many
+only where dbt recorded no call, and the first macros calling it. A macro no
+node reaches says `no reference found` and the likeliest reason it may still
+run, never `unused`. `--output compact` prints
+the same card; JSON is one object with `"kind": "macro"`, which no node has,
+`unique_id`, `name`, `package_name`, `original_file_path`, `path` (only when
+it is not that), `line` and `end_line`, `arguments`, `description`, `used`
+(the page's `used`), and `sql` with `--sql`.
+
+The line comes from the macro's file, which is read for it even without
+`--sql`, through the same confined read; nothing else of the project is. With
+`--sql` the lines from `{% macro` to its `{% endmacro %}` print under `sql`
+(a generic test and a materialization are macros too, from `{% test` and
+`{% materialization`). A macro of dbt's own, which the project holds no file
+of, has no line and no sql, and `--sql` says so on stderr; so it does for a
+package `dbt deps` has not installed, for one linked from outside the project,
+which is not read, and for one installed whose file the manifest remembers and
+the package no longer holds (`cannot read <path>: no such file in package X`).
+
+A macro has no compiled SQL of its own, dbt renders it into the SQL of the
+nodes that call it, so `--compiled-sql` on a macro prints its card all the
+same and stderr says `name: a macro has no compiled SQL of its own`, as it
+does for a seed; the exit code is unchanged.
+
 ### The SQL
 
 `--sql` prints the node's own file after its card, under `sql`, indented. It
-is the one file the command line reads besides the artifacts, through the
-confined read the page uses, so it never leaves the project. A model, a
+is the one file the command line reads of a node besides the artifacts (a
+macro's is read for its line, above), through the confined read the page uses,
+so it never leaves the project. A model, a
 snapshot, an analysis, a Python model and a singular test have one. A generic
 test shares its properties file, a source and an exposure are declared in one
 and a seed's file is data, so those print nothing, and stderr says `name: no
@@ -298,7 +374,8 @@ SQL file of its own`. A node of a package `dbt deps` has not installed is not
 read from the project's own folder of the same name: stderr says to run it.
 A file that cannot be read is said on stderr too, `name: cannot read path:
 reason`, with the card still printed and the exit code unchanged. The SQL is the
-Jinja as written; `--compiled-sql` is the other one.
+Jinja as written; `--compiled-sql` is the other one. For a macro `--sql` is
+the macro's own lines of its file ([above](#a-macro)).
 
 `--compiled-sql` prints the SQL dbt compiled for the node, after its card,
 under `compiled sql`. It is read from the file dbt wrote under the target

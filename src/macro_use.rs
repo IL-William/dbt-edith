@@ -528,8 +528,15 @@ impl MacroUse {
 
 /// Whether `package` holds dbt's own macros or the adapter's, a parent
 /// adapter's included.
-fn internal_package(adapter: &str, package: &str) -> bool {
+pub(crate) fn internal_package(adapter: &str, package: &str) -> bool {
     package == "dbt" || package.strip_prefix("dbt_").is_some_and(|a| a == adapter || parent(adapter, a))
+}
+
+/// The packages dbt looks in after the root project for a bare macro name,
+/// in its order: the adapter's, a parent adapter's, then dbt's own.
+pub(crate) fn internal_packages(adapter: &str) -> Vec<String> {
+    let parents = PARENTS.iter().filter(|&&(child, _)| child == adapter).map(|&(_, p)| p);
+    std::iter::once(adapter).chain(parents).filter(|a| !a.is_empty()).map(|a| format!("dbt_{a}")).chain(["dbt".to_string()]).collect()
 }
 
 fn parent(adapter: &str, of: &str) -> bool {

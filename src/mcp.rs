@@ -979,7 +979,7 @@ mod tests {
         for line in ["--describe ''", "--describe ,", "--describe ' , '"] {
             let said = s.ask(line);
             assert!(is_error(&said), "{line}");
-            assert_eq!(blocks(&said), ["error: --describe wants the name or the unique_id of a node\n"], "{line}");
+            assert_eq!(blocks(&said), ["error: --describe wants the name or the unique_id of a node or a macro\n"], "{line}");
         }
     }
 

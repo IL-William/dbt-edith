@@ -195,8 +195,8 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
          [--run-collin]                  run collin over the manifest first, and answer --column from its cache
          [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
-         [--describe name[,name...]]     print a node's card as the Catalog shows it and exit, without serving
-         [--sql]                         --describe prints the node's own SQL file after its card
+         [--describe name[,name...]]     print a node's card as the Catalog shows it, or a macro's, and exit, without serving
+         [--sql]                         --describe prints the node's own SQL file, or the macro's lines of its file, after its card
          [--compiled-sql]                --describe prints the SQL dbt compiled for the node, from the file under the target folder, after its card
          [--overview]                    print what the project holds, by kind, materialization and folder, and exit
          [--job name]                    print one DAG or dbt Cloud job, step by step, from .dbt-edith/jobs.yml and exit

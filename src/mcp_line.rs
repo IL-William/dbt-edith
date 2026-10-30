@@ -33,7 +33,7 @@ pub const HELP: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " answers from the manifest dbt wrote; it never runs dbt. One question per call, with the flags of its command line and no project path.\n",
     "--overview [--depth N]          the project's shape: kinds, materializations, tags, selectors, folders. Ask first.\n",
-    "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
+    "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's or macro's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
     "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
     "--selector NAME                 a selector of selectors.yml\n",

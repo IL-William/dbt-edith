@@ -138,11 +138,11 @@ struct Args {
     #[arg(long, value_name = "DIR", requires = "run_collin")]
     compiled: Option<PathBuf>,
 
-    /// Print one node's card, as the Catalog shows it, and exit, without serving: a model, source (source_name.table), seed, snapshot, test or exposure by name, or any node by unique_id; several, comma-separated
+    /// Print one node's card, as the Catalog shows it, and exit, without serving: a model, source (source_name.table), seed, snapshot, test or exposure by name, or any node by unique_id; else a macro, bare as dbt resolves a call from the root project, or as package.name (a node wins that too: macro.<package>.<name> always reaches the macro); several, comma-separated
     #[arg(long, value_name = "NAMES", value_delimiter = ',', conflicts_with_all = ["select", "selector", "column"])]
     describe: Vec<String>,
 
-    /// --describe prints the node's own SQL file after its card
+    /// --describe prints the node's own SQL file, or a macro's own lines of its file, after its card
     #[arg(long, requires = "describe")]
     sql: bool,
 

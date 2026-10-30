@@ -2201,7 +2201,6 @@ of its own, and each panel updates the tour, its page under
     - one compact line per column of every selected node;
     - a card of the columns alone;
     - a shorter `--overview` JSON, with `--depth 1` first;
-    - a macro nameable by `--describe`, which takes nodes only;
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).
 21. **Where the sources file goes after a save.** The form already offers
