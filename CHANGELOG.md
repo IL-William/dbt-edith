@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.61.2 - 2026-10-30
+
+- Bring the clone up to the release the menu announces, not to `main`, when the
+  update is typed: a commit merged after the release is no longer built under
+  its number (0129).
+
 ## 1.61.1 - 2026-10-30
 
 - Refuse a collin installed side by side that another account could replace: its

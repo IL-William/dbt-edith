@@ -23,15 +23,15 @@ check('switched off', updateOffer({ current: '1.11.0', off: true }), null);
 print('\n--- installed by cargo, from a clone on this machine ---');
 var installed = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  hows: [{ command: 'git -C "/src/dbt-edith" pull --ff-only origin main && cargo install --locked --path "/src/dbt-edith"',
+  hows: [{ command: 'git -C "/src/dbt-edith" merge --ff-only v1.12.0 && cargo install --locked --path "/src/dbt-edith"',
     kind: 'install', source: '/src/dbt-edith', exe: 'dbt-edith' }],
 });
 check('the pill names the release', installed.label, '1.12.0 available');
 check('the menu says both versions', installed.head, 'dbt-edith 1.12.0 · this is 1.11.0');
 check('the command is the server\'s, untouched', installed.command,
-  'git -C "/src/dbt-edith" pull --ff-only origin main && cargo install --locked --path "/src/dbt-edith"');
+  'git -C "/src/dbt-edith" merge --ff-only v1.12.0 && cargo install --locked --path "/src/dbt-edith"');
 check('the notes link is the release page', installed.notes, notes);
-ok('names the branch and the clone it pulls', says(installed, 'It pulls main into /src/dbt-edith and installs it again with cargo install'));
+ok('names the tag and the clone it brings up to it', says(installed, 'It brings /src/dbt-edith up to v1.12.0, the release\'s tag and no further, and installs it again with cargo install'));
 check('the button names the release', installed.button, 'Update to 1.12.0');
 ok('right under it: the terminal, Enter, and the restart',
   installed.step === 'It types the update into the terminal below. Press Enter there to run it, a minute or two, '
@@ -41,7 +41,7 @@ ok('says nothing of Windows elsewhere', !says(installed, 'Windows'));
 print('\n--- built in place ---');
 var built = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  hows: [{ command: 'git -C "/src/dbt-edith" pull --ff-only origin main && ...', kind: 'build', source: '/src/dbt-edith',
+  hows: [{ command: 'git -C "/src/dbt-edith" merge --ff-only v1.12.0 && ...', kind: 'build', source: '/src/dbt-edith',
     exe: 'dbt-edith' }],
 });
 ok('says it builds rather than installs', says(built, 'builds it again with cargo build --release'));
@@ -55,7 +55,7 @@ var downloaded = updateOffer({
 check('the pill and the button name the release as ever', [downloaded.label, downloaded.button], ['1.12.0 available', 'Update to 1.12.0']);
 ok('says it downloads the .exe and checks its SHA-256',
   says(downloaded, 'It downloads the .exe CI built for this release, of this build\'s architecture, checks its SHA-256 against the one published beside it, and replaces the running .exe with it.'));
-ok('and not that it builds or installs with cargo', !says(downloaded, 'cargo') && !says(downloaded, 'pulls main'));
+ok('and not that it builds or installs with cargo', !says(downloaded, 'cargo') && !says(downloaded, 'brings'));
 ok('the running .exe still steps aside, and comes back if the swap fails',
   says(downloaded, 'dbt-edith.exe steps aside as dbt-edith.exe.old first') && says(downloaded, 'comes back if the swap fails'));
 check('the step promises no minute or two', downloaded.step,
@@ -91,7 +91,7 @@ check('installed, a choice is no choice', updateOffer({ current: '1.11.0', lates
 print('\n--- installed by cargo, on Windows ---');
 var renamed = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes,
-  hows: [{ command: 'git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
+  hows: [{ command: 'git -C "C:/src/dbt-edith" merge --ff-only v1.12.0 && ...', kind: 'install',
     source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true }],
 });
 ok('says why the running .exe steps aside', says(renamed, 'Windows will not replace a running .exe but lets it be renamed: dbt-edith.exe steps aside as dbt-edith.exe.old first'));
@@ -101,7 +101,7 @@ ok('and that it comes back on a failure', says(renamed, 'comes back if the build
 print('\n--- installed, not yet restarted (0095) ---');
 var waiting = updateOffer({
   current: '1.11.0', latest: '1.12.0', newer: true, notes: notes, replaced: true,
-  hows: [{ command: 'git -C "C:/src/dbt-edith" fetch --tags --force origin; git -C "C:/src/dbt-edith" pull --ff-only origin main && ...', kind: 'install',
+  hows: [{ command: 'git -C "C:/src/dbt-edith" fetch --tags --force origin; git -C "C:/src/dbt-edith" merge --ff-only v1.12.0 && ...', kind: 'install',
     source: 'C:/src/dbt-edith', exe: 'dbt-edith.exe', renames: true }],
 });
 check('the pill says to restart, naming no version, since which went in is not known', waiting.label, 'restart to update');
@@ -121,20 +121,23 @@ var carried = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, no
 check('still offered', carried.label, '1.12.0 available');
 check('with no command', carried.command, '');
 check('nor a step to follow', carried.step, '');
-ok('carried from another machine: says where to rebuild it', says(carried, 'pull and rebuild it where it was built'));
+ok('carried from another machine: says where to rebuild it', says(carried, 'bring the clone up to the release (fetch the tags, then git merge --ff-only v1.12.0) and rebuild it where it was built'));
 var carriedWin = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'elsewhere' }, 'windows');
 ok('on Windows it points to the download, not the README', says(carriedWin, 'download the release\'s .exe by hand, as docs/windows.md says under Download it.') && !says(carriedWin, 'README'));
 var locked = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'locked' });
-ok('built in place on Windows: says to stop it first', says(locked, 'stop it, then pull and build it again'));
+ok('built in place on Windows: says to stop it first', says(locked, 'stop it, then bring the clone up to the release (git merge --ff-only v1.12.0) and build it again'));
 var shell = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'shell' });
 ok('another shell: says which ones it is typed for', says(shell, 'typed for sh, bash, zsh and PowerShell'));
 var windowsShell = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'shell' }, 'windows');
 ok('on Windows a shell refusal points to the download, not the clone', says(windowsShell, 'download the release\'s .exe by hand, as docs/windows.md says under Download it.') && !says(windowsShell, 'README'));
 var windowsPath = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' }, 'windows');
-ok('so does a path refusal', says(windowsPath, 'download the release\'s .exe by hand') && !says(windowsPath, 'pull the clone'));
-ok('elsewhere they point to the clone', says(shell, 'pull the clone and install it again by hand') && says(updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' }, 'macos'), 'as the README says'));
+ok('so does a path refusal', says(windowsPath, 'download the release\'s .exe by hand') && !says(windowsPath, 'bring the clone'));
+ok('elsewhere they point to the clone', says(shell, 'bring the clone up to the release (fetch the tags, then git merge --ff-only v1.12.0) and install it again') && says(updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' }, 'macos'), 'as the README says'));
 var path = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'path' });
 ok('an odd path: says so, not that it was built elsewhere', says(path, 'a character a shell would read') && !says(path, 'where it was built'));
+var release = updateOffer({ current: '1.11.0', latest: '1.12.0', newer: true, why: 'release' });
+ok('a release that is no version: says so, not that it was built elsewhere', says(release, 'is not a version number') && !says(release, 'where it was built'));
+check('and offers no command', release.command, '');
 
 print('\n--- when a look was made, in the machine\'s own time ---');
 // Built from local fields, so the answer is the same in every time zone.

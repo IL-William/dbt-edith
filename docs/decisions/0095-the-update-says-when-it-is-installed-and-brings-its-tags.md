@@ -1,6 +1,6 @@
 # 0095. The update says when it is installed, and brings its tags
 
-Date: 2026-10-16 · Status: accepted, amended by 0111, 0120 and 0123 · Amends 0068, 0079
+Date: 2026-10-16 · Status: accepted, amended by 0111, 0120, 0123 and 0129 · Amends 0068, 0079
 
 **Trigger:** read before changing what the update types, what Edith's menu
 offers once it has run, or how the build stamp names a release.
@@ -59,6 +59,9 @@ worked, and three things in it read wrong to the person running it:
   under the FSL do, though `main` would fast-forward: git will not clobber a
   tag, and stops before moving the clone. Forcing rewrites only the tags the
   repository holds, its own release tags.
+  *Amended by [0129](0129-the-update-brings-the-clone-up-to-the-tag-it-announced.md):
+  the pull of `main` is a fast-forward to the announced release's tag, so a
+  commit merged after the release is not built under its number.*
   *Amended by [0123](0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md):
   the release's own `.exe` has no clone to fetch tags into; its update
   downloads the next `.exe`, renamed aside and put back as here.*

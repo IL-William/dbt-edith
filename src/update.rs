@@ -360,8 +360,9 @@ pub struct Update {
     /// Where the answer is kept. None when there is no config directory.
     file: Option<PathBuf>,
     /// The commands that install a newer one here, the recommended first, or
-    /// why there is none (0123).
-    pub hows: Result<Vec<How>, Why>,
+    /// why there is none (0123). Private: a clone's has no command until
+    /// `hows_for` composes it for a release (0129).
+    hows: Result<Vec<How>, Why>,
     known: Mutex<Known>,
     spread: u64,
     /// The running binary's path, and when its file was last written as this
@@ -416,6 +417,16 @@ impl Update {
     /// not one yet.
     pub fn replaced(&self) -> bool {
         self.binary.as_ref().is_some_and(|(exe, at)| mtime(exe).is_some_and(|now| now != *at))
+    }
+
+    /// The commands that install release `latest` here, or why there are none.
+    /// A clone's command names the tag it brings the clone up to, so it is
+    /// composed for each answer; one whose release is not a version number is
+    /// left out (0129), and the menu says why when that leaves nothing.
+    pub fn hows_for(&self, latest: &str) -> Result<Vec<How>, Why> {
+        let hows = self.hows.as_ref().map_err(|why| *why)?;
+        let composed: Vec<How> = hows.iter().filter_map(|h| h.for_release(latest)).collect();
+        if composed.is_empty() { Err(Why::Release) } else { Ok(composed) }
     }
 
     /// The same, as if `version` were running.
@@ -561,6 +572,38 @@ pub struct How {
     /// will not replace an executable that runs, but lets it be renamed.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub renames: bool,
+    /// What a command that pulls the clone is made of, kept to compose it
+    /// again for each release the menu announces (0129). None for a download,
+    /// whose command names no version.
+    #[serde(skip)]
+    pub plan: Option<Plan>,
+}
+
+/// The parts of a clone's command that do not change with the release.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Plan {
+    shell: Shell,
+    source: String,
+    step: String,
+    clean: Option<String>,
+    swap: Option<String>,
+}
+
+impl How {
+    /// The command that brings the clone up to `version`, the release the menu
+    /// announces, and installs it. A `version` that is not three runs of
+    /// digits gets none, since it comes off the network and goes into a typed
+    /// line (0129). A download is the same for every release and comes back
+    /// as it is.
+    pub fn for_release(&self, version: &str) -> Option<How> {
+        let Some(plan) = &self.plan else { return Some(self.clone()) };
+        if !is_version(version) {
+            return None;
+        }
+        let command =
+            compose(plan.shell, &plan.source, version, &plan.step, plan.clean.as_deref(), plan.swap.as_deref());
+        Some(How { command, ..self.clone() })
+    }
 }
 
 /// Why there is no command to offer, for the page to say.
@@ -579,6 +622,9 @@ pub enum Why {
     Shell,
     /// A path holds a character a shell would read inside the quotes.
     Path,
+    /// The release the menu announces is not a version number, so there is no
+    /// tag to bring the clone up to (0129).
+    Release,
 }
 
 /// The two command languages the update can be written in.
@@ -649,12 +695,15 @@ pub fn how(source: &Path, exe: &Path, shell: Option<Shell>, windows: bool) -> Re
         None
     };
     let swap = if windows { Some(spell(exe)?) } else { None };
+    // No command until a release is announced: the clone is brought up to
+    // that tag, so `Update::hows_for` composes it from the plan (0129).
     Ok(How {
-        command: compose(shell, &src, &step, clean.as_deref(), swap.as_deref()),
+        command: String::new(),
         kind,
-        source: src,
+        source: src.clone(),
         exe: exe.file_name().ok_or(Why::Elsewhere)?.to_string_lossy().into_owned(),
         renames: windows,
+        plan: Some(Plan { shell, source: src, step, clean, swap }),
     })
 }
 
@@ -710,15 +759,21 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
     (!s.chars().any(odd)).then_some(s)
 }
 
-/// Pull, then rebuild, each only once the step before it worked. The pull
-/// names `main`, where every release is tagged (0045), whatever branch the
-/// clone has out: one that cannot fast-forward to it stops the command there.
+/// Bring the clone up to the release, then rebuild, each only once the step
+/// before it worked. `tag` is the version the menu announces, which
+/// `How::for_release` has checked is three runs of digits. The merge
+/// fast-forwards whatever the clone has out, a branch or a detached HEAD, to
+/// that tag and no further, so a commit merged after the release is not built
+/// under its number (0129). A clone already at the tag or past it is "Already
+/// up to date" and builds what it holds; one that cannot fast-forward to it
+/// stops the command there, as a pull does. Release tags are lightweight, so
+/// the merge names a commit.
 /// The tags come first, in a step of their own whose failure stops nothing:
-/// a pull naming a branch leaves them behind, and the build stamp is `git
-/// describe` in the clone, which would name the last release the clone had
-/// heard of rather than the one it builds. Forced, since a clone may hold a
-/// release tag the repository has since moved, which `pull --tags` refuses to
-/// clobber, failing the whole pull (0095). Both shells read `;` alike.
+/// the merge needs the tag, and the build stamp is `git describe` in the
+/// clone, which would name the last release the clone had heard of rather than
+/// the one it builds. Forced, since a clone may hold a release tag the
+/// repository has since moved, which `pull --tags` refuses to clobber, failing
+/// the whole pull (0095). Both shells read `;` alike.
 /// With `swap`, the running binary is renamed to `<exe>.old` before the
 /// rebuild and put back when the rebuild fails, so a failed update still
 /// leaves one to start.
@@ -733,9 +788,9 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
 /// the install worked, the binary stays, and the closing line is still
 /// printed. A Posix brace group ends its last command on `;`, and PowerShell
 /// goes on after a failed native command by itself.
-fn compose(shell: Shell, source: &str, step: &str, clean: Option<&str>, swap: Option<&str>) -> String {
-    let pull =
-        format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" pull --ff-only origin main");
+fn compose(shell: Shell, source: &str, tag: &str, step: &str, clean: Option<&str>, swap: Option<&str>) -> String {
+    let bring =
+        format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" merge --ff-only v{tag}");
     let printed = format!("printf '\\n%s\\n' '{DONE}'");
     let closing = match clean {
         None => printed,
@@ -743,18 +798,18 @@ fn compose(shell: Shell, source: &str, step: &str, clean: Option<&str>, swap: Op
     };
     let cleaned = clean.map(|clean| format!("{clean}; ")).unwrap_or_default();
     match (shell, swap) {
-        (Shell::Posix, None) => format!("{pull} && {step} && {closing}"),
+        (Shell::Posix, None) => format!("{bring} && {step} && {closing}"),
         (Shell::Posix, Some(exe)) => {
             format!(
-                "{pull} && mv -f \"{exe}\" \"{exe}.old\" && ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
+                "{bring} && mv -f \"{exe}\" \"{exe}.old\" && ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) \
                  && {closing}"
             )
         }
         (Shell::PowerShell, None) => {
-            format!("{pull}; if ($?) {{ {step}; if ($?) {{ {cleaned}Write-Host \"\"; Write-Host \"{DONE}\" }} }}")
+            format!("{bring}; if ($?) {{ {step}; if ($?) {{ {cleaned}Write-Host \"\"; Write-Host \"{DONE}\" }} }}")
         }
         (Shell::PowerShell, Some(exe)) => format!(
-            "{pull}; if ($?) {{ Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
+            "{bring}; if ($?) {{ Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
              if ($?) {{ {cleaned}Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
         ),
     }
@@ -793,6 +848,7 @@ fn download_of(asset: &str, exe: &Path, shell: Option<Shell>, windows: bool) -> 
         source: base,
         exe: exe.file_name().ok_or(Why::Elsewhere)?.to_string_lossy().into_owned(),
         renames: true,
+        plan: None,
     })
 }
 
@@ -1312,11 +1368,12 @@ mod tests {
     fn a_binary_cargo_installed_is_pulled_and_installed_again() {
         let (source, root) = layout("installed");
         let how = how(&source, &root.join("bin").join("dbt-edith"), Some(Shell::Posix), false).unwrap();
+        let how = how.for_release("1.2.0").unwrap();
         let s = source.display();
         assert_eq!(
             how.command,
             format!(
-                "git -C \"{s}\" fetch --tags --force origin; git -C \"{s}\" pull --ff-only origin main && \
+                "git -C \"{s}\" fetch --tags --force origin; git -C \"{s}\" merge --ff-only v1.2.0 && \
                  cargo install --locked --path \"{s}\" && {{ cargo clean --release --manifest-path \"{s}/Cargo.toml\" \
                  --target-dir \"{s}/target\"; printf '\\n%s\\n' '{DONE}'; }}"
             )
@@ -1331,7 +1388,7 @@ mod tests {
     fn on_windows_the_clean_is_spelled_by_how_and_runs_after_the_install_only() {
         let (source, root) = layout("winclean");
         let exe = root.join("bin").join("dbt-edith");
-        let how = how(&source, &exe, Some(Shell::PowerShell), true).unwrap();
+        let how = how(&source, &exe, Some(Shell::PowerShell), true).unwrap().for_release("1.2.0").unwrap();
         let s = quotable(&source, true).unwrap();
         let clean = format!("cargo clean --release --manifest-path \"{s}/Cargo.toml\" --target-dir \"{s}/target\"");
         let (ok, failed) = how.command.split_once(" else ").unwrap();
@@ -1345,7 +1402,7 @@ mod tests {
     fn a_binary_built_in_the_clone_is_built_there_again() {
         let (source, _) = layout("built");
         let exe = source.join("target").join("release").join("dbt-edith");
-        let built = how(&source, &exe, Some(Shell::Posix), false).unwrap();
+        let built = how(&source, &exe, Some(Shell::Posix), false).unwrap().for_release("1.2.0").unwrap();
         assert_eq!(built.kind, "build");
         assert!(built.command.contains(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
         assert!(built.command.ends_with(&format!("&& printf '\\n%s\\n' '{DONE}'")));
@@ -1398,18 +1455,18 @@ mod tests {
         let exe = "C:/Users/ada/.cargo/bin/dbt-edith.exe";
         let step = "cargo install --locked --path \"C:/src/dbt-edith\"";
         assert_eq!(
-            compose(Shell::Posix, "C:/src/dbt-edith", step, None, Some(exe)),
+            compose(Shell::Posix, "C:/src/dbt-edith", "1.2.0", step, None, Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
-                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
+                 git -C \"C:/src/dbt-edith\" merge --ff-only v1.2.0 && mv -f \"{exe}\" \"{exe}.old\" && \
                  ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && printf '\\n%s\\n' '{DONE}'"
             )
         );
         assert_eq!(
-            compose(Shell::PowerShell, "C:/src/dbt-edith", step, None, Some(exe)),
+            compose(Shell::PowerShell, "C:/src/dbt-edith", "1.2.0", step, None, Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
-                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
+                 git -C \"C:/src/dbt-edith\" merge --ff-only v1.2.0; if ($?) {{ \
                  Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
                  if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
             )
@@ -1419,19 +1476,19 @@ mod tests {
         // outside the group that puts the binary back (0120).
         let clean = "cargo clean --release --manifest-path \"C:/src/dbt-edith/Cargo.toml\" --target-dir \"C:/src/dbt-edith/target\"";
         assert_eq!(
-            compose(Shell::Posix, "C:/src/dbt-edith", step, Some(clean), Some(exe)),
+            compose(Shell::Posix, "C:/src/dbt-edith", "1.2.0", step, Some(clean), Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
-                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main && mv -f \"{exe}\" \"{exe}.old\" && \
+                 git -C \"C:/src/dbt-edith\" merge --ff-only v1.2.0 && mv -f \"{exe}\" \"{exe}.old\" && \
                  ({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && \
                  {{ {clean}; printf '\\n%s\\n' '{DONE}'; }}"
             )
         );
         assert_eq!(
-            compose(Shell::PowerShell, "C:/src/dbt-edith", step, Some(clean), Some(exe)),
+            compose(Shell::PowerShell, "C:/src/dbt-edith", "1.2.0", step, Some(clean), Some(exe)),
             format!(
                 "git -C \"C:/src/dbt-edith\" fetch --tags --force origin; \
-                 git -C \"C:/src/dbt-edith\" pull --ff-only origin main; if ($?) {{ \
+                 git -C \"C:/src/dbt-edith\" merge --ff-only v1.2.0; if ($?) {{ \
                  Move-Item -Force -LiteralPath \"{exe}\" -Destination \"{exe}.old\"; if ($?) {{ {step}; \
                  if ($?) {{ {clean}; Write-Host \"\"; Write-Host \"{DONE}\" }} else {{ Move-Item -Force -LiteralPath \"{exe}.old\" -Destination \"{exe}\" }} }} }}"
             )
@@ -1662,15 +1719,15 @@ mod tests {
         assert!(!DONE.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
         let (exe, step) = ("/bin/dbt-edith", "cargo install --locked --path \"/src\"");
         let clean = "cargo clean --release --manifest-path \"/src/Cargo.toml\" --target-dir \"/src/target\"";
-        let posix = compose(Shell::Posix, "/src", step, None, None);
+        let posix = compose(Shell::Posix, "/src", "1.2.0", step, None, None);
         assert!(posix.ends_with(&format!("{step} && printf '\\n%s\\n' '{DONE}'")), "{posix}");
         // The restore ends in `false`, or the subshell would exit 0 after a
         // failed build and the chain would go on to the line.
-        let swapped = compose(Shell::Posix, "/src", step, None, Some(exe));
+        let swapped = compose(Shell::Posix, "/src", "1.2.0", step, None, Some(exe));
         assert!(swapped.contains(&format!("({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && printf")), "{swapped}");
-        let ps = compose(Shell::PowerShell, "/src", step, None, None);
+        let ps = compose(Shell::PowerShell, "/src", "1.2.0", step, None, None);
         assert!(ps.ends_with(&format!("{{ {step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }} }}")), "{ps}");
-        let ps_swapped = compose(Shell::PowerShell, "/src", step, None, Some(exe));
+        let ps_swapped = compose(Shell::PowerShell, "/src", "1.2.0", step, None, Some(exe));
         let (ok, failed) = ps_swapped.split_once(" else ").unwrap();
         assert!(ok.ends_with(&format!("{step}; if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }}")), "{ps_swapped}");
         assert!(failed.starts_with("{ Move-Item") && !failed.contains("Write-Host"), "{ps_swapped}");
@@ -1678,15 +1735,15 @@ mod tests {
         // With the clean: after the install, in a group ending on `;` that the
         // restore does not contain, before the line.
         let group = format!("{{ {clean}; printf '\\n%s\\n' '{DONE}'; }}");
-        let posix = compose(Shell::Posix, "/src", step, Some(clean), None);
+        let posix = compose(Shell::Posix, "/src", "1.2.0", step, Some(clean), None);
         assert!(posix.ends_with(&format!("{step} && {group}")), "{posix}");
-        let swapped = compose(Shell::Posix, "/src", step, Some(clean), Some(exe));
+        let swapped = compose(Shell::Posix, "/src", "1.2.0", step, Some(clean), Some(exe));
         assert!(swapped.ends_with(&format!("({step} || {{ mv -f \"{exe}.old\" \"{exe}\"; false; }}) && {group}")), "{swapped}");
         assert_eq!(swapped.matches("cargo clean").count(), 1, "{swapped}");
         let line = format!("{{ {clean}; Write-Host \"\"; Write-Host \"{DONE}\" }}");
-        let ps = compose(Shell::PowerShell, "/src", step, Some(clean), None);
+        let ps = compose(Shell::PowerShell, "/src", "1.2.0", step, Some(clean), None);
         assert!(ps.ends_with(&format!("{{ {step}; if ($?) {line} }}")), "{ps}");
-        let ps_swapped = compose(Shell::PowerShell, "/src", step, Some(clean), Some(exe));
+        let ps_swapped = compose(Shell::PowerShell, "/src", "1.2.0", step, Some(clean), Some(exe));
         let (ok, failed) = ps_swapped.split_once(" else ").unwrap();
         assert!(ok.ends_with(&format!("{step}; if ($?) {line}")), "{ps_swapped}");
         assert!(failed.starts_with("{ Move-Item") && !failed.contains("cargo clean"), "{ps_swapped}");
@@ -1722,6 +1779,7 @@ mod tests {
         let r = remote.to_str().unwrap();
         git(&["init", "-q", "-b", "main", r]);
         git(&["-C", r, "commit", "-q", "--allow-empty", "-m", "one"]);
+        git(&["-C", r, "tag", "v1.2.0"]);
         git(&["clone", "-q", r, clone]);
         let run = |command: &str| {
             let out = std::process::Command::new("sh").args(["-c", command]).output().unwrap();
@@ -1731,10 +1789,10 @@ mod tests {
         let touches = format!("touch \"{}\"", marker.display());
         for swap in [None, Some(e)] {
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "true", None, swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "1.2.0", "true", None, swap));
             assert!(ok && out.contains(DONE), "{swap:?}: {out}");
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "false", None, swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "1.2.0", "false", None, swap));
             assert!(!ok && !out.contains(DONE), "{swap:?}: a failed step must not claim an install: {out}");
             if swap.is_some() {
                 assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
@@ -1743,19 +1801,19 @@ mod tests {
             // The install worked and the clean did too: it ran, then the line.
             let _ = std::fs::remove_file(&marker);
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "true", Some(&touches), swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "1.2.0", "true", Some(&touches), swap));
             assert!(ok && out.contains(DONE) && marker.exists(), "{swap:?}: {out}");
             // The install worked and the clean failed: the line still comes,
             // and the binary is not put back over the new one.
             std::fs::write(&exe, "old").unwrap();
             let installs = format!("printf new > \"{e}\"");
-            let (ok, out) = run(&compose(Shell::Posix, clone, &installs, Some("false"), swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "1.2.0", &installs, Some("false"), swap));
             assert!(ok && out.contains(DONE), "{swap:?}: a failed clean must not hide the line: {out}");
             assert_eq!(std::fs::read_to_string(&exe).unwrap(), "new", "{swap:?}: the install stays");
             // The install failed: the clean never ran.
             let _ = std::fs::remove_file(&marker);
             std::fs::write(&exe, "old").unwrap();
-            let (ok, out) = run(&compose(Shell::Posix, clone, "false", Some(&touches), swap));
+            let (ok, out) = run(&compose(Shell::Posix, clone, "1.2.0", "false", Some(&touches), swap));
             assert!(!ok && !out.contains(DONE) && !marker.exists(), "{swap:?}: {out}");
             if swap.is_some() {
                 assert_eq!(std::fs::read_to_string(&exe).unwrap(), "old", "the binary is put back");
@@ -1922,7 +1980,8 @@ mod tests {
     /// leaves behind, so the build stamp names the release it builds. The
     /// clone holds a release tag the repository has since moved, as the
     /// clones of the repository recreated under the FSL do: `pull --tags`
-    /// refuses to clobber it and stops before moving the clone at all.
+    /// refuses to clobber it and stops before moving the clone at all. A
+    /// commit merged after the release is not brought along (0129).
     #[cfg(unix)]
     #[test]
     fn the_update_brings_the_tags_the_build_stamp_names() {
@@ -1952,11 +2011,121 @@ mod tests {
         run("git", &["-C", c, "reset", "-q", "--hard", "origin/main"]);
         run("git", &["-C", r, "commit", "-q", "--allow-empty", "-m", "two"]);
         run("git", &["-C", r, "tag", "v1.28.0"]);
+        run("git", &["-C", r, "commit", "-q", "--allow-empty", "-m", "three"]);
 
-        run("sh", &["-c", &compose(Shell::Posix, c, "true", None, None)]);
-        assert_eq!(run("git", &["-C", c, "log", "-1", "--format=%s"]), "two", "the clone moved");
+        run("sh", &["-c", &compose(Shell::Posix, c, "1.28.0", "true", None, None)]);
+        assert_eq!(run("git", &["-C", c, "log", "-1", "--format=%s"]), "two", "the clone moved to the tag, not to main");
         assert_eq!(run("git", &["-C", c, "describe", "--tags"]), "v1.28.0");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real git: the clone is brought up to the announced tag whatever it
+    /// has out, a branch or a detached HEAD, is left alone when already at or
+    /// past the tag, and stops the command when it cannot fast-forward (0129).
+    #[cfg(unix)]
+    #[test]
+    fn the_clone_goes_up_to_the_tag_and_no_further() {
+        let dir = scratch("uptotag");
+        let remote = dir.join("remote");
+        let git = |at: &Path, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(at)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Ada")
+                .env("GIT_AUTHOR_EMAIL", "ada@example.com")
+                .env("GIT_COMMITTER_NAME", "Ada")
+                .env("GIT_COMMITTER_EMAIL", "ada@example.com")
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        let update_to = |clone: &Path, tag: &str| {
+            let out = std::process::Command::new("sh")
+                .args(["-c", &compose(Shell::Posix, clone.to_str().unwrap(), tag, "true", None, None)])
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap();
+            (out.status.success(), String::from_utf8_lossy(&out.stdout).contains(DONE))
+        };
+        let update = |clone: &Path| update_to(clone, "1.2.0");
+        let r = remote.to_str().unwrap();
+        git(&dir, &["init", "-q", "-b", "main", r]);
+        git(&remote, &["commit", "-q", "--allow-empty", "-m", "one"]);
+        // Cloned before the release, so the tag and the commit it names are
+        // both news to it.
+        let clones: Vec<PathBuf> = ["on_main", "on_branch", "detached", "past", "diverged"]
+            .iter()
+            .map(|n| {
+                let c = dir.join(n);
+                git(&dir, &["clone", "-q", r, c.to_str().unwrap()]);
+                c
+            })
+            .collect();
+        let one = git(&remote, &["rev-parse", "HEAD"]);
+        git(&remote, &["commit", "-q", "--allow-empty", "-m", "release"]);
+        git(&remote, &["tag", "v1.2.0"]);
+        let tagged = git(&remote, &["rev-parse", "HEAD"]);
+        git(&remote, &["commit", "-q", "--allow-empty", "-m", "after the release"]);
+        let after = git(&remote, &["rev-parse", "HEAD"]);
+        let head = |c: &Path| git(c, &["rev-parse", "HEAD"]);
+
+        let [on_main, on_branch, detached, past, diverged] = &clones[..] else { unreachable!() };
+        assert_eq!(update(on_main), (true, true));
+        assert_eq!((head(on_main), git(on_main, &["describe", "--tags"])), (tagged.clone(), "v1.2.0".into()));
+        // Another branch than main fast-forwards too, and stays the branch
+        // out, so a plain pull there still works later.
+        git(on_branch, &["checkout", "-q", "-b", "mine"]);
+        assert_eq!(update(on_branch), (true, true));
+        assert_eq!((head(on_branch), git(on_branch, &["branch", "--show-current"])), (tagged.clone(), "mine".into()));
+        // A detached HEAD moves along with the merge.
+        git(detached, &["checkout", "-q", "--detach", &one]);
+        assert_eq!(update(detached), (true, true));
+        assert_eq!((head(detached), git(detached, &["branch", "--show-current"])), (tagged.clone(), String::new()));
+        // Already past the tag: "Already up to date", and it builds what it holds.
+        git(past, &["fetch", "-q", "origin"]);
+        git(past, &["merge", "-q", "--ff-only", "origin/main"]);
+        assert_eq!(head(past), after);
+        assert_eq!(update(past), (true, true));
+        assert_eq!(head(past), after, "left where it was");
+        // A local commit the tag does not contain: the merge cannot
+        // fast-forward and nothing is installed.
+        git(diverged, &["commit", "-q", "--allow-empty", "-m", "mine alone"]);
+        let mine = head(diverged);
+        assert_eq!(update(diverged), (false, false));
+        assert_eq!(head(diverged), mine);
+        // A tag origin does not have: git cannot find it and nothing moves.
+        let before = head(on_branch);
+        assert_eq!(update_to(on_branch, "9.9.9"), (false, false));
+        assert_eq!(head(on_branch), before);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The release comes off the network and enters a typed line, so only three
+    /// runs of digits get a command (0129).
+    #[test]
+    fn a_release_that_is_not_a_version_gets_no_clone_command() {
+        let (source, root) = layout("badtag");
+        let installed = how(&source, &root.join("bin").join("dbt-edith"), Some(Shell::Posix), false).unwrap();
+        assert!(installed.for_release("1.2.0").unwrap().command.contains("merge --ff-only v1.2.0 &&"));
+        for bad in ["1.2.0;rm", "1.2", "", "1.2.0 ", "v1.2.0", "1.2.0.1", "1.2.x", "$(id).1.2", "1..2", "-1.2.3"] {
+            assert_eq!(installed.for_release(bad), None, "{bad:?}");
+        }
+        // The server composes per answer: a clone alone is refused with a
+        // reason, a download beside it is still offered.
+        let update = Update::new(true, None, Ok(vec![installed.clone()]));
+        assert_eq!(update.hows_for("1.2.0;rm"), Err(Why::Release));
+        assert_eq!(update.hows_for("1.2.0").unwrap()[0].command, installed.for_release("1.2.0").unwrap().command);
+        let exe = Path::new("C:/Users/ada/bin/dbt-edith.exe");
+        let both = Update::new(true, None, Ok(vec![download(exe, Some(Shell::Posix), true).unwrap(), installed]));
+        let offered = both.hows_for("1.2.0;rm").unwrap();
+        assert_eq!(offered.iter().map(|h| h.kind).collect::<Vec<_>>(), ["download"]);
+        assert_eq!(Update::new(true, None, Err(Why::Shell)).hows_for("1.2.0"), Err(Why::Shell));
+        let _ = std::fs::remove_dir_all(source.parent().unwrap());
     }
 
     #[test]
