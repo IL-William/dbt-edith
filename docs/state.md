@@ -822,8 +822,9 @@ key. The launch key was kept in a cookie, which a browser sends to every
 server on 127.0.0.1 whatever its port; the page now keeps it for its own port
 and sends it as a header, the terminal's socket taking it in its address. A
 `.env` that is a link out of the project is no longer listed. Each has a test
-beside it; the update command's branch and a collin install in a shared
-folder are in Deferred, items 29 and 31.
+beside it; the update command's branch is in Deferred, item 29, and a
+collin install in a shared folder is refused on macOS and Linux (0128) and
+in Deferred for Windows, item 31.
 
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
@@ -1796,6 +1797,13 @@ Checked with `cargo test` (`keys::`, `checks::`), `web/tests/strategy.js` and
 `scripts/compare_with_dbt.py` against dbt's own manifest. Its limits are in the
 list left by it, below.
 
+An install others can write to is not run (0128, 1.61.1): on macOS and Linux a
+version under `<config>/collin/` has to be owned by the account, with its
+binary and each folder up to that one writable by nobody else, and a link below
+it is refused. The menu names the path, the owner or who may write it, and the
+`chmod` or `chown`. Checked with `cargo test` (`collin_run::`, the version route
+in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 31.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
@@ -2292,14 +2300,14 @@ of its own, and each panel updates the tour, its page under
     verify`), both in docs/windows.md. The update's own check still reads the
     `.sha256` of the same release, `gh` not being on the machines it runs on
     (0085, 0123).
-31. **A collin install in a folder others can write to.** The versions
-    installed side by side live under `<config>/collin/<X.Y.Z>/bin/`
-    (`collin_run::installs_dir`), and the one picked is run without checking
-    who may write there. On a host where the configuration folder is shared
-    with another account, that account can replace the binary. The default
-    places are the user's own; checking the folder's owner and mode, and
-    refusing a binary the account does not own, is the fix, with the trap that
-    Windows reports ownership differently (0042, 0060, 0094).
+31. **A collin install in a folder others can write to, on Windows.** On
+    macOS and Linux a version installed under `<config>/collin/<X.Y.Z>/bin/`
+    is run only when its binary and each folder up to `<config>/collin/` belong
+    to the account and are writable by nobody else (0128, 1.61.1). Windows is
+    left as it was: ownership there is a SID and an ACL, which std does not
+    read, so the same check needs a call into the Windows security API or
+    `icacls` parsed, and a folder Administrators own is the user's own on many
+    machines (0042, 0060, 0094).
 32. **A version resource for the MSVC `.exe` (0123).** The release's file has
     none, since `rc.exe` is off `PATH` outside a developer prompt (0093). The
     runner has it; the work is a resource script `build.rs` hands to it, or a

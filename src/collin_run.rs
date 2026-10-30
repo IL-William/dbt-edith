@@ -90,6 +90,11 @@ pub enum Refusal {
     /// deadline, or no git on the PATH. Not knowing is not taken for the
     /// user's own (0094).
     Unsure(String),
+    /// An install side by side that another account may replace, or that a
+    /// link could be swapped under: the sentence says which path and what to
+    /// run (0128). Never raised for the default collin, which is the user's
+    /// PATH or the folder beside the binary.
+    Shared(String),
 }
 
 /// What the search for collin found: the one that runs, and the first one it
@@ -300,10 +305,26 @@ pub struct Install {
     pub bin: PathBuf,
 }
 
-/// The versions installed side by side, newest first. A folder that is not a
-/// version, or holds no collin yet, as while cargo is still building it, is
-/// not one.
-pub fn installed(dir: &Path) -> Vec<Install> {
+/// The versions installed side by side, newest first, split into those safe to
+/// run and those refused. A folder that is not a version, or holds no collin
+/// yet, as while cargo is still building it, is neither.
+///
+/// A refusal is the sentence the menu shows (0128). `uid` is the account running dbt-edith,
+/// a parameter so a test can be another one, as `program::on_path_in` takes
+/// its PATH.
+pub fn installs_checked(dir: &Path, uid: u32) -> (Vec<Install>, Vec<(Install, String)>) {
+    let (mut safe, mut refused) = (Vec::new(), Vec::new());
+    for install in listed(dir) {
+        match shared(&install.bin, dir, uid) {
+            None => safe.push(install),
+            Some(why) => refused.push((install, why)),
+        }
+    }
+    (safe, refused)
+}
+
+/// Every version folder holding a collin, newest first, whoever owns it.
+fn listed(dir: &Path) -> Vec<Install> {
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut out: Vec<Install> = entries
         .flatten()
@@ -317,14 +338,108 @@ pub fn installed(dir: &Path) -> Vec<Install> {
     out
 }
 
+/// The account dbt-edith runs as. std has no call for it and no crate is added
+/// for one (0003); libc is linked already.
+#[cfg(unix)]
+pub fn effective_uid() -> u32 {
+    extern "C" {
+        fn geteuid() -> u32;
+    }
+    // SAFETY: geteuid takes no argument, reads no memory and cannot fail.
+    unsafe { geteuid() }
+}
+
+/// Windows reports ownership by SID and ACL, which `shared` does not read.
+#[cfg(not(unix))]
+pub fn effective_uid() -> u32 {
+    0
+}
+
+/// Why the install at `bin` must not run, or None when only `uid` can replace
+/// it: the binary and each folder up to `root` inclusive have to belong to
+/// `uid` and be writable by nobody else, or whoever can write any of them
+/// swaps the collin this account then starts (0128). Each is read without
+/// following a link, so the check holds for the file that will run: a link
+/// below `root` is refused, its target being a different file with other
+/// owners. `root` itself is the user's own folder and may be a link to one.
+#[cfg(unix)]
+fn shared(bin: &Path, root: &Path, uid: u32) -> Option<String> {
+    use std::os::unix::fs::MetadataExt;
+    for part in bin.ancestors() {
+        let at_root = part == root;
+        let meta = if at_root { std::fs::metadata(part) } else { std::fs::symlink_metadata(part) };
+        let meta = match meta {
+            Ok(m) => m,
+            Err(e) => return Some(format!("{} cannot be read ({e}), so nobody checked who may replace collin", part.display())),
+        };
+        if meta.file_type().is_symlink() {
+            return Some(format!(
+                "{} is a link, and the file it leads to is not checked: put the folder or file itself there",
+                part.display()
+            ));
+        }
+        if meta.uid() != uid {
+            return Some(format!(
+                "{} belongs to another account (uid {}), which can replace collin: run sudo chown -R \"$(id -un)\" \"{root}/\" && chmod -R go-w \"{root}/\"",
+                part.display(),
+                meta.uid(),
+                root = root.display()
+            ));
+        }
+        let mode = meta.mode();
+        let who = match (mode & 0o020 != 0, mode & 0o002 != 0) {
+            (false, false) => None,
+            (true, false) => Some("its group"),
+            (false, true) => Some("everyone"),
+            (true, true) => Some("its group and everyone"),
+        };
+        if let Some(who) = who {
+            return Some(format!(
+                "{} can be written by {who} (mode {:03o}), so they can replace collin: run chmod -R go-w \"{root}/\"",
+                part.display(),
+                mode & 0o777,
+                root = root.display()
+            ));
+        }
+        if at_root {
+            return None;
+        }
+    }
+    // Not under `root`: nothing vouches for it.
+    Some(format!("{} is not under {}", bin.display(), root.display()))
+}
+
+#[cfg(not(unix))]
+fn shared(_bin: &Path, _root: &Path, _uid: u32) -> Option<String> {
+    None
+}
+
+/// The default collin, unless it is an install side by side refused: a user who
+/// puts `<config>/collin/<v>/bin` on the PATH, as cargo's own warning says to,
+/// gets that binary from `locate` unchecked, and a refusal must not be undone
+/// by the same file found another way. Compared by canonical path, so a link
+/// to it is the same file (0128).
+pub fn without_refused(default: Option<PathBuf>, refused: &[(Install, String)]) -> Option<PathBuf> {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let d = default?;
+    let same = refused.iter().any(|(i, _)| i.bin == d || real(&i.bin) == real(&d));
+    (!same).then_some(d)
+}
+
 /// What installs `version` side by side, typed into the terminal for the user
 /// to run, as the plain install is (0042). Its tag, never `main`: a version
 /// picked by number has to stay that version. None when the folder's path
-/// holds a quote, which no shell would read back as one argument.
+/// holds a quote, which no shell would read back as one argument. On Unix it
+/// ends by taking the group and others' write bit off everything under `dir`,
+/// since a desktop umask of 002 leaves cargo's files group-writable and the
+/// install would then be refused (0128). Joined with `;`, not `&&`, which
+/// nushell and older PowerShell reject; the chmod then also runs after a failed
+/// install, harmlessly. Windows is not checked.
 pub fn install_command(dir: &Path, version: &str) -> Option<String> {
     let root = dir.join(version);
     let root = root.to_str().filter(|r| !r.contains('"'))?;
-    Some(format!("cargo install --locked --git {REPO} --tag v{version} --root \"{root}\" collin-cli"))
+    let install = format!("cargo install --locked --git {REPO} --tag v{version} --root \"{root}\" collin-cli");
+    Some(if cfg!(unix) { format!("{install}; chmod -R go-w \"{}/\"", dir.display()) } else { install })
 }
 
 /// The collin that runs: the version picked for the project when it is
@@ -1146,13 +1261,121 @@ pub(crate) mod tests {
                 std::fs::write(bin.join(exe_name()), "").unwrap();
             }
         }
-        let found: Vec<String> = installed(&d).into_iter().map(|i| i.version).collect();
+        let found: Vec<String> = listed(&d).into_iter().map(|i| i.version).collect();
         assert_eq!(found, ["0.10.0", "0.3.0"], "by number, not by name; one still building is not there yet");
-        assert!(installed(&d.join("missing")).is_empty());
-        let picked = chosen_bin(&installed(&d), Some("0.3.0"), None);
+        assert!(listed(&d.join("missing")).is_empty());
+        let picked = chosen_bin(&listed(&d), Some("0.3.0"), None);
         assert_eq!(picked, Some(d.join("0.3.0").join("bin").join(exe_name())));
         let default = d.join("default");
-        assert_eq!(chosen_bin(&installed(&d), Some("0.9.9"), Some(&default)), Some(default), "one not installed falls back");
+        assert_eq!(chosen_bin(&listed(&d), Some("0.9.9"), Some(&default)), Some(default), "one not installed falls back");
+    }
+
+    /// `<root>/<version>/bin/collin` with every folder and the file given the
+    /// modes a clean `cargo install --root` leaves, whatever the umask.
+    fn install(root: &Path, version: &str) -> PathBuf {
+        let bin_dir = root.join(version).join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let bin = bin_dir.join(exe_name());
+        std::fs::write(&bin, "").unwrap();
+        for (path, mode) in [(root, 0o755), (&root.join(version), 0o755), (&bin_dir, 0o755), (&bin, 0o755)] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        bin
+    }
+
+    fn mine() -> u32 {
+        effective_uid()
+    }
+
+    fn refused_with(root: &Path, version: &str) -> Option<String> {
+        let (safe, refused) = installs_checked(root, mine());
+        assert_eq!(safe.len() + refused.len(), 1, "listed either way");
+        refused.into_iter().find(|(i, _)| i.version == version).map(|(_, why)| why)
+    }
+
+    #[test]
+    fn an_install_only_its_owner_can_write_is_accepted() {
+        let d = dir("shared-clean");
+        let bin = install(&d.join("collin"), "0.4.0");
+        let (safe, refused) = installs_checked(&d.join("collin"), mine());
+        assert_eq!((safe, refused), (vec![Install { version: "0.4.0".into(), bin }], vec![]));
+    }
+
+    #[test]
+    fn an_install_owned_by_another_account_is_refused_and_says_how_to_take_it() {
+        let d = dir("shared-owner");
+        let root = d.join("collin");
+        install(&root, "0.4.0");
+        // The account running dbt-edith is somebody else: every file here is
+        // somebody else's.
+        let (safe, refused) = installs_checked(&root, mine() + 1);
+        assert!(safe.is_empty(), "{safe:?}");
+        let why = &refused[0].1;
+        assert!(why.contains(&format!("{} belongs to another account (uid {})", root.join("0.4.0").join("bin").join(exe_name()).display(), mine())), "{why}");
+        assert!(why.contains(&format!("sudo chown -R \"$(id -un)\" \"{0}/\" && chmod -R go-w \"{0}/\"", root.display())), "{why}");
+    }
+
+    #[test]
+    fn an_install_a_group_or_everyone_can_write_is_refused_wherever_in_the_chain() {
+        // The binary, each folder up to the root, and which of the two it is.
+        for (up, mode, who) in [(0, 0o775, "its group"), (0, 0o757, "everyone"), (1, 0o775, "its group"), (2, 0o777, "its group and everyone"), (3, 0o770, "its group")] {
+            let d = dir(&format!("shared-mode-{up}-{mode:o}"));
+            let root = d.join("collin");
+            let bin = install(&root, "0.4.0");
+            let part = bin.ancestors().nth(up).unwrap().to_path_buf();
+            std::fs::set_permissions(&part, std::fs::Permissions::from_mode(mode)).unwrap();
+            let why = refused_with(&root, "0.4.0").unwrap_or_else(|| panic!("{} should be refused", part.display()));
+            assert!(why.contains(&format!("{} can be written by {who} (mode {mode:o})", part.display())), "{why}");
+            assert!(why.contains(&format!("chmod -R go-w \"{}/\"", root.display())), "one command mends every part: {why}");
+        }
+    }
+
+    #[test]
+    fn what_sits_above_the_install_root_is_not_looked_at() {
+        let d = dir("shared-above");
+        let root = d.join("collin");
+        install(&root, "0.4.0");
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert_eq!(refused_with(&root, "0.4.0"), None, "the config directory is the user's own (0011)");
+    }
+
+    #[test]
+    fn a_link_below_the_root_is_refused_and_the_root_may_be_one() {
+        let d = dir("shared-link");
+        let real = d.join("elsewhere");
+        install(&real, "0.4.0");
+        // The root a link to the user's own folder, as dotfiles leave it.
+        let root = d.join("collin");
+        std::os::unix::fs::symlink(&real, &root).unwrap();
+        assert_eq!(refused_with(&root, "0.4.0"), None);
+        // The version folder a link: a different folder, other owners.
+        let other = d.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::rename(real.join("0.4.0"), other.join("0.4.0")).unwrap();
+        std::os::unix::fs::symlink(other.join("0.4.0"), real.join("0.4.0")).unwrap();
+        let why = refused_with(&root, "0.4.0").unwrap();
+        assert!(why.contains("is a link") && why.contains("0.4.0"), "{why}");
+        // The binary itself a link to another file.
+        std::fs::remove_file(real.join("0.4.0")).unwrap();
+        std::fs::rename(other.join("0.4.0"), real.join("0.4.0")).unwrap();
+        let bin = real.join("0.4.0").join("bin").join(exe_name());
+        std::fs::rename(&bin, d.join("copy")).unwrap();
+        std::os::unix::fs::symlink(d.join("copy"), &bin).unwrap();
+        assert!(refused_with(&root, "0.4.0").unwrap().contains("is a link"));
+    }
+
+    #[test]
+    fn a_refused_install_is_listed_apart_and_never_picked() {
+        let d = dir("shared-split");
+        let root = d.join("collin");
+        let good = install(&root, "0.3.0");
+        let bad = install(&root, "0.4.0");
+        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let (safe, refused) = installs_checked(&root, mine());
+        assert_eq!(safe.iter().map(|i| &i.bin).collect::<Vec<_>>(), [&good]);
+        assert_eq!(refused.iter().map(|(i, _)| i.version.as_str()).collect::<Vec<_>>(), ["0.4.0"]);
+        let default = d.join("default");
+        assert_eq!(chosen_bin(&safe, Some("0.4.0"), Some(&default)), Some(default), "the refused one picked falls back to the default");
     }
 
     #[test]
@@ -1174,12 +1397,33 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_refused_install_found_on_the_path_is_not_the_default_either() {
+        let d = dir("shared-path");
+        let root = d.join("collin");
+        let bin = install(&root, "0.4.0");
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let (_, refused) = installs_checked(&root, mine());
+        // The folder on the PATH, as cargo's own warning tells the user to.
+        let on_path = locate_in(None, Some(bin.parent().unwrap().as_os_str().to_owned()), |_| None).bin;
+        assert_eq!(on_path.as_deref(), Some(bin.as_path()), "locate alone does not know");
+        assert_eq!(without_refused(on_path, &refused), None);
+        // By another name: a link to it is the same file.
+        let link = d.join("collin-link");
+        std::os::unix::fs::symlink(&bin, &link).unwrap();
+        assert_eq!(without_refused(Some(link), &refused), None);
+        let other = d.join("elsewhere").join(exe_name());
+        assert_eq!(without_refused(Some(other.clone()), &refused), Some(other), "another collin stays");
+    }
+
+    #[test]
     fn a_version_installs_at_its_tag_into_its_own_folder() {
         let dir = Path::new("/home/me/.config/dbt-edith/collin");
         assert_eq!(
             install_command(dir, "0.3.0").unwrap(),
             "cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 \
-             --root \"/home/me/.config/dbt-edith/collin/0.3.0\" collin-cli"
+             --root \"/home/me/.config/dbt-edith/collin/0.3.0\" collin-cli\
+             ; chmod -R go-w \"/home/me/.config/dbt-edith/collin/\"",
+            "a umask of 002 would leave what cargo wrote group-writable, and refused"
         );
         assert_eq!(install_command(Path::new("/odd\"dir"), "0.3.0"), None);
     }

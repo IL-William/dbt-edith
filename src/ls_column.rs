@@ -363,6 +363,7 @@ fn passed_over(collin: &collin_run::Located, err: &mut impl Write) -> io::Result
             printable(&at.display().to_string()),
             printable(why)
         ),
+        Some((at, collin_run::Refusal::Shared(why))) => writeln!(err, "  {} is not run: {}", printable(&at.display().to_string()), printable(why)),
         None => Ok(()),
     }
 }

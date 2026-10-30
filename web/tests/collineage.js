@@ -151,6 +151,13 @@ check('...and the Columns tab says what the running one says',
       collinHint('collin', { found: true, refused: '/p/collin', stale: true }).text,
       'older than the manifest: the next column click runs collin again');
 check('nothing refused, nothing said', collinRefusedNote({ found: true }), '');
+var shared = '/c/collin/0.4.0/bin is writable by everyone: run chmod -R go-w "/c/collin/"';
+check('an install another account could replace: the sentence as the server wrote it, after the one in use',
+      collinRefusedNote({ found: true, refused: '/c/collin/0.4.0/bin/collin', refused_shared: shared, path: '/home/me/.cargo/bin/collin' }),
+      'Using /home/me/.cargo/bin/collin. Skipped /c/collin/0.4.0/bin/collin: ' + shared);
+check('...and with no other collin, the Columns tab says it was not run, without the git advice',
+      collinHint('collin', { found: false, refused: '/c/collin/0.4.0/bin/collin', refused_shared: shared }).text,
+      'Not run: ' + shared);
 
 var noCacheYet = lineagePickLabel({ cll_edges: 0, cll_file: '' }, 'collin', false, null, { state: 'running' });
 check('the button names Collin while its first run goes on',
@@ -507,6 +514,8 @@ check('not under another tool', collinVersionRows(two, 'snowflake').length, 0);
 check('a pinned version is not offered an update: its tag has nothing newer', collinUpdateRow(two, 'collin'), null);
 check('the default still is', collinUpdateRow(one, 'collin').label, 'Check for a newer collin');
 check('a picked version still installed says nothing', collinChosenGone(two), null);
+check('one picked and refused is not said to be gone: the refusal says why',
+      collinChosenGone({ chosen: '0.2.0', chosen_refused: true, versions: two.versions }), null);
 check('one removed since says the default runs',
       collinChosenGone({ chosen: '0.2.0', versions: two.versions }),
       'collin 0.2.0, picked for this project, is not installed here any more: the default one runs.');
