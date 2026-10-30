@@ -146,6 +146,10 @@ struct Args {
     #[arg(long, requires = "describe")]
     sql: bool,
 
+    /// --describe prints the SQL dbt compiled for the node, read from the file under the target folder, after its card
+    #[arg(long, requires = "describe")]
+    compiled_sql: bool,
+
     /// Print what the project holds, by kind, materialization and folder, and exit, without serving
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
     overview: bool,
@@ -179,7 +183,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
@@ -189,7 +193,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
-            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order",
+            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "overview", "job", "job_order",
             "job_coverage", "count_by", "depth", "output", "mcp",
         ]
     )]
@@ -203,6 +207,7 @@ struct Args {
 fn stray(args: &Args) -> Option<String> {
     let flags = [
         (args.sql, "--sql", "--describe", !args.describe.is_empty()),
+        (args.compiled_sql, "--compiled-sql", "--describe", !args.describe.is_empty()),
         (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
         (args.count_by.is_some(), "--count-by", "--select or --selector", args.select.is_some() || args.selector.is_some()),
         (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
@@ -238,7 +243,7 @@ fn stray(args: &Args) -> Option<String> {
 enum Question {
     /// A selection, listed or, with a `Count`, counted (0112).
     Select(ls::Query, Option<ls::Count>),
-    Describe { names: Vec<String>, sql: bool },
+    Describe { names: Vec<String>, sql: bool, compiled_sql: bool },
     Overview { depth: usize },
     Job { name: String },
     JobOrder,
@@ -264,7 +269,7 @@ fn question_of(args: &Args) -> Option<Question> {
         (None, None) => {}
     }
     if !args.describe.is_empty() {
-        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql });
+        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql, compiled_sql: args.compiled_sql });
     }
     if args.overview {
         // Not clap's `default_value_t`: a flag with a default is always set,
@@ -303,7 +308,7 @@ impl Question {
         let (project, manifest, catalog) = (&args.project, args.manifest.as_deref(), args.catalog.as_deref());
         match self {
             Question::Select(query, count) => ls::run(project, manifest, query, *count, args.output),
-            Question::Describe { names, sql } => describe::run_describe(project, manifest, catalog, names, *sql, args.output),
+            Question::Describe { names, sql, compiled_sql } => describe::run_describe(project, manifest, catalog, names, *sql, *compiled_sql, args.output),
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
             Question::Job { name } => job::run_job(project, manifest, catalog, name, args.output),
             Question::JobOrder => job_order::run_job_order(project, manifest, catalog, args.output),
@@ -624,6 +629,8 @@ mod tests {
     fn a_flag_of_another_mode_is_named_and_not_dropped() {
         for (line, flag) in [
             ("--overview --sql", "--sql goes with --describe"),
+            ("--overview --compiled-sql", "--compiled-sql goes with --describe"),
+            ("-s orders --compiled-sql", "--compiled-sql goes with --describe"),
             ("--describe orders --depth 2", "--depth goes with --overview or --count-by folder"),
             ("-s orders --depth 2", "--depth goes with --overview or --count-by folder"),
             ("-s orders --count-by kind --depth 2", "--depth goes with --overview or --count-by folder"),
@@ -694,6 +701,7 @@ mod tests {
             ("--compiled", "--mcp --compiled sql"),
             ("--describe", "--mcp --describe orders"),
             ("--sql", "--mcp --sql"),
+            ("--compiled-sql", "--mcp --compiled-sql"),
             ("--overview", "--mcp --overview"),
             ("--job", "--mcp --job jaffle_daily"),
             ("--job-order", "--mcp --job-order"),
@@ -735,6 +743,7 @@ mod tests {
             "--skill --port 4321",
             "--skill -s orders",
             "--skill --describe orders",
+            "--skill --compiled-sql",
             "--skill --overview",
             "--skill --job jaffle_daily",
             "--skill --job-order",
@@ -782,6 +791,8 @@ mod tests {
     fn the_flags_of_a_mode_beside_it_are_no_stray() {
         for line in [
             "--describe orders --sql",
+            "--describe orders --compiled-sql",
+            "--describe orders --sql --compiled-sql",
             "--overview --depth 2",
             "-s a --count-by folder --depth 2",
             "--selector nightly --count-by kind",
@@ -810,7 +821,7 @@ mod tests {
             Some(Question::Select(ls::Query::Line { select, exclude }, None)) => format!("select {select} | {exclude}"),
             Some(Question::Select(ls::Query::Named(name), None)) => format!("selector {name}"),
             Some(Question::Select(_, Some(ls::Count { by, depth }))) => format!("count {by:?} {depth}"),
-            Some(Question::Describe { names, sql }) => format!("describe {} {sql}", names.join(",")),
+            Some(Question::Describe { names, sql, compiled_sql }) => format!("describe {} {sql} {compiled_sql}", names.join(",")),
             Some(Question::Overview { depth }) => format!("overview {depth}"),
             Some(Question::Job { name }) => format!("job {name}"),
             Some(Question::JobOrder) => "job-order".to_string(),
@@ -827,7 +838,9 @@ mod tests {
         };
         assert_eq!(text("-s stg_orders+1 --exclude resource_type:test"), "select stg_orders+1 | resource_type:test");
         assert_eq!(text("--selector nightly"), "selector nightly");
-        assert_eq!(text("--describe orders,customers --sql"), "describe orders,customers true");
+        assert_eq!(text("--describe orders,customers --sql"), "describe orders,customers true false");
+        assert_eq!(text("--describe orders --compiled-sql"), "describe orders false true");
+        assert_eq!(text("--describe orders --sql --compiled-sql"), "describe orders true true");
         assert_eq!(text("-s orders --count-by kind"), "count Kind 3");
         assert_eq!(text("--selector nightly --count-by folder --depth 1"), "count Folder 1");
         assert_eq!(text("--overview"), "overview 3");
@@ -874,5 +887,6 @@ mod tests {
     #[test]
     fn a_flag_with_no_mode_at_all_is_refused_by_clap() {
         assert!(Args::try_parse_from(["dbt-edith", "--sql"]).is_err());
+        assert!(Args::try_parse_from(["dbt-edith", "--compiled-sql"]).is_err());
     }
 }

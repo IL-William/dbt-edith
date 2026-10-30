@@ -100,12 +100,14 @@ DBT=~/.local/bin/dbt python3 scripts/compare_with_dbt.py   # or any dbt executab
 same Jaffle Shop, the way an MCP client drives it, and every question it
 answers is asked of the command line too: the two have to give the same
 stdout and stderr, bar the ages and the time collin took, and `isError` has to
-be the exit code not being 0 (0110). The copy gets a `.dbt-edith/jobs.yml`
+be the exit code not being 0 (0110). The copy is parsed and then compiled
+but for `stg_payments`, so `--compiled-sql` is compared on a file that is
+there, a seed and a model dbt did not compile (0132). The copy gets a `.dbt-edith/jobs.yml`
 over a copy of the invented job fixtures, so `--describe`, `--job`, `--job-order` and `--job-coverage`
 are compared on jobs too (0115, 0125, 0131). The session also has to leave the project
 and the manifest's folder as they were, write nothing to a configuration
 folder, and, for `--run-collin` with a stand-in collin, change exactly the two
-files collin writes. It needs the same dbt, parses with it, and skips itself
+files collin writes. It needs the same dbt, parses and compiles with it, and skips itself
 without it; CI runs it beside the comparison above:
 
 ```

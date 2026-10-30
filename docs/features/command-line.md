@@ -174,6 +174,7 @@ nothing has to be learned from the files:
 dbt-edith path/to/project --describe stg_payments
 dbt-edith path/to/project --describe orders,raw.orders --output json
 dbt-edith path/to/project --describe orders --sql
+dbt-edith path/to/project --describe orders --compiled-sql
 ```
 
 This is the card of a model on Jaffle Shop, with its catalog beside the
@@ -297,8 +298,35 @@ SQL file of its own`. A node of a package `dbt deps` has not installed is not
 read from the project's own folder of the same name: stderr says to run it.
 A file that cannot be read is said on stderr too, `name: cannot read path:
 reason`, with the card still printed and the exit code unchanged. The SQL is the
-Jinja as written: the compiled SQL is under `target/compiled`, where the
-manifest names it.
+Jinja as written; `--compiled-sql` is the other one.
+
+`--compiled-sql` prints the SQL dbt compiled for the node, after its card,
+under `compiled sql`. It is read from the file dbt wrote under the target
+folder, the one holding the manifest, through the lookup the page's compiled
+tab uses, so it never leaves that folder, whatever path the manifest records;
+the manifest's own `compiled_code` is not read. A model, a snapshot, an
+analysis and a test, a generic one included, have a compiled file. A seed, a
+source and an exposure have none, and stderr says `name: no compiled SQL of
+its own`. A node dbt has not compiled, or whose file is gone, is said as
+`name: no compiled SQL under <target>/compiled: run dbt compile -s name`, with
+the card still printed and the exit code unchanged. A file older than the model
+file, its properties file, `dbt_project.yml` or the newest macro under
+`macros/` (any macro, not only the ones the node calls) is printed and said to
+be older; nothing else is compared, neither a source's YAML nor a parent's
+alias or schema. The text form leaves out the blank lines dbt writes at the head
+of a compiled file, and JSON keeps the file whole. With both flags the node's file comes first, then
+its compiled SQL, each under its own heading, for every node in turn.
+
+```
+$ dbt-edith path/to/project --describe stg_orders --compiled-sql
+model stg_orders  view  models/staging/stg_orders.sql
+  ...
+  compiled sql
+    with source as (
+        select * from "jaffle_shop"."main"."raw_orders"
+    ),
+    ...
+```
 
 ### As JSON
 
@@ -325,6 +353,7 @@ names, and leaves out every key that is empty:
 | `selectors`, `selectors_indirect_lost`, `selectors_may_hold`, `selectors_unresolved` | the names of the selectors that select it; those of them that may hold this node only by dbt's default, and the selectors that do not hold it by default but may in their own mode, when the manifest lost an `indirect_selection` that `selectors.yml` sets; the selectors this build cannot resolve, which may select it too. Each is left off when empty |
 | `test` | on a test node: `checks` (the generic's name, or `singular`), `column`, `host` (the unique_id of the node it is declared on), `severity`, `generic`, `settings` |
 | `sql` | with `--sql`, the file, whole, once it was read |
+| `compiled_sql` | with `--compiled-sql`, the compiled file, once it was read |
 
 ## A job
 
@@ -711,7 +740,7 @@ are safe to run unasked.
 | To know | Ask |
 | --- | --- |
 | what the project is | `dbt-edith . --overview`, once, first |
-| what a model, source or test is | `dbt-edith . --describe name[,name...]`, on the nodes the question names; add `--sql` to read the model |
+| what a model, source or test is | `dbt-edith . --describe name[,name...]`, on the nodes the question names; add `--sql` to read the model, `--compiled-sql` for what dbt compiled it to |
 | a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact` for its children; `1+model` for its parents, `1+model+1` for both |
 | everything upstream, or downstream, of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact`; `model+` for what dropping or renaming it breaks |
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
@@ -835,6 +864,7 @@ project.
 ```
 --overview
 --describe orders --sql
+--describe orders --compiled-sql
 --job jaffle_daily
 --job-order
 -s 'stg_orders+1' --exclude resource_type:test --output compact

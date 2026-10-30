@@ -33,13 +33,13 @@ pub const HELP: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " answers from the manifest dbt wrote; it never runs dbt. One question per call, with the flags of its command line and no project path.\n",
     "--overview [--depth N]          the project's shape: kinds, materializations, tags, selectors, folders. Ask first.\n",
-    "--describe NAME[,NAME] [--sql]  a node's card: columns, types, tests, parents, children, reach. --sql adds its file.\n",
+    "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
     "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
     "--selector NAME                 a selector of selectors.yml\n",
     "--job NAME                      a job's steps, nodes and order\n",
     "--job-order                     steps that read what another builds, with no file ordering them\n",
-    "--job-coverage                  models no scheduled job runs, those only unscheduled jobs run, steps that select nothing\n",
+    "--job-coverage                  models no scheduled job runs, those only unscheduled jobs run, steps selecting nothing\n",
     "--column MODEL.COLUMN           a column's lineage, over the cache beside the manifest\n",
     "  --up N|all --down N|all       how far, 0 by default\n",
     "  --stop-at window,aggregate    roles not walked past downstream\n",
@@ -48,12 +48,12 @@ pub const HELP: &str = concat!(
     "  --run-collin                  run collin first, which rewrites its cache under target/\n",
     "--output name|json|compact      name by default; compact: one tab-separated line per node or column, under a header\n",
     "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe, no shell: count with --count-by KEY, or filter the answer yourself.\n",
-    "After the answer: the manifest that answered, then freshness. When it says stale, run dbt parse and ask again.\n",
+    "After the answer: the manifest that answered, then freshness. If stale, run dbt parse and ask again.\n",
 );
 
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
-const ALLOWED: [&str; 19] = [
+const ALLOWED: [&str; 20] = [
     "select",
     "exclude",
     "selector",
@@ -66,6 +66,7 @@ const ALLOWED: [&str; 19] = [
     "run_collin",
     "describe",
     "sql",
+    "compiled_sql",
     "overview",
     "job",
     "job_order",
@@ -413,7 +414,8 @@ mod tests {
         assert_eq!(output, Output::Compact);
         assert!(matches!(asked("--select=orders").0, Question::Select(..)), "the = form");
         assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n), None) if n == "nightly"));
-        assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true } if names.len() == 2));
+        assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false } if names.len() == 2));
+        assert!(matches!(asked("--describe orders --compiled-sql").0, Question::Describe { sql: false, compiled_sql: true, .. }));
         assert!(matches!(asked("--overview --depth 1 --output=json").0, Question::Overview { depth: 1 }));
         assert!(matches!(asked("--job jaffle_daily --output json").0, Question::Job { ref name } if name == "jaffle_daily"));
         assert!(matches!(asked("--job-order --output json").0, Question::JobOrder));
@@ -524,7 +526,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 30] = [
+    const SAMPLES: [(&str, &str); 31] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -546,6 +548,7 @@ mod tests {
         ("compiled", "--column orders.amount --run-collin --compiled sql"),
         ("describe", "--describe orders"),
         ("sql", "--describe orders --sql"),
+        ("compiled_sql", "--describe orders --compiled-sql"),
         ("overview", "--overview"),
         ("job", "--job jaffle_daily"),
         ("job_order", "--job-order"),

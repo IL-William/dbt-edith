@@ -13,6 +13,7 @@
 //! candidate tried is reported, which makes a wrong guess obvious instead of
 //! silent.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Which of the two directories under `target/` is being read.
@@ -174,6 +175,14 @@ fn confined<'a>(target: &'a Path, rels: &'a [String]) -> impl Iterator<Item = Pa
     rels.iter().filter_map(move |rel| crate::files::resolve_under(target, canon.as_deref()?, rel).ok())
 }
 
+/// Whether the path dbt recorded for the node is one `look_up` refuses for
+/// leaving the target folder, which is a different thing to tell a reader than
+/// a file that is not there yet.
+pub fn recorded_path_leaves(target: &Path, s: &Subject) -> bool {
+    let (Some(inside), Ok(canon)) = (inside_target(s.compiled), target.canonicalize()) else { return false };
+    crate::files::resolve_under(target, &canon, &under(inside, Kind::Compiled)).is_err()
+}
+
 /// The mtime of a project file the manifest names, held to the project as a
 /// compiled path is held to the target directory: an `original_file_path`
 /// pointing outside is nothing, not the stat of a file the page could never
@@ -193,6 +202,19 @@ fn relative(root: &Path, path: &Path) -> String {
 }
 
 pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u64) -> CompiledInfo {
+    look_up_with(root, target, kind, s, max_bytes, || crate::freshness::newest_input(root, crate::freshness::MACROS_DIR))
+}
+
+/// `look_up` with the newest macro handed in, asked for only once a file is
+/// found: a caller looking up many nodes walks `macros/` once, not once each.
+pub fn look_up_with(
+    root: &Path,
+    target: &Path,
+    kind: Kind,
+    s: &Subject,
+    max_bytes: u64,
+    newest_macro: impl FnOnce() -> Option<(u64, String)>,
+) -> CompiledInfo {
     let mut info = CompiledInfo { kind: kind.dir().to_string(), ..Default::default() };
     let tried = candidates(kind, s);
     let hit = confined(target, &tried).find(|p| p.is_file());
@@ -232,9 +254,8 @@ pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u
     // in turn call, and most of what it does list is `macro.dbt.*`, built into
     // dbt-core with no file to stat. A macro edit makes every compiled file
     // suspect until it is rebuilt, which is also what dbt does about it.
-    if let Some((when, path)) = crate::freshness::newest_input(root, crate::freshness::MACROS_DIR) {
-        let name = path.rsplit('/').next().unwrap_or(&path).to_string();
-        inputs.push((when, format!("the macro {name}")));
+    if let Some((when, path)) = newest_macro() {
+        inputs.push((when, format!("the macro {path}")));
     }
     // dbt writes `compiled/` on every compile but `run/` only on a run, so the
     // compiled sibling being newer is the run file's own question answered:
@@ -255,8 +276,11 @@ pub fn look_up(root: &Path, target: &Path, kind: Kind, s: &Subject, max_bytes: u
     }
     info.stale = !info.changed.is_empty() || !info.reasons.is_empty();
 
-    match std::fs::read(path) {
-        Ok(bytes) => {
+    // One byte past the cap says it was cut, without loading the rest of a
+    // file that is far larger than what is shown.
+    let mut bytes = Vec::new();
+    match std::fs::File::open(path).and_then(|f| f.take(max_bytes.saturating_add(1)).read_to_end(&mut bytes)) {
+        Ok(_) => {
             info.truncated = bytes.len() as u64 > max_bytes;
             let slice = &bytes[..bytes.len().min(max_bytes as usize)];
             info.content = String::from_utf8_lossy(slice).into_owned();
@@ -425,11 +449,41 @@ mod tests {
         backdate(&dir, "target/compiled/shop/models/marts/orders.sql", 120);
 
         let info = look(&dir, Kind::Compiled);
-        assert_eq!(info.changed, vec!["the macro fiscal_year.sql"]);
+        assert_eq!(info.changed, vec!["the macro macros/dates/fiscal_year.sql"]);
 
         // And an untouched macro says nothing.
         backdate(&dir, "macros/dates/fiscal_year.sql", 300);
         assert!(!look(&dir, Kind::Compiled).stale);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_macros_changed_at_once_are_named_by_path_and_the_same_one_every_time() {
+        let dir = project(&[
+            ("target/compiled/shop/models/marts/orders.sql", "select 1"),
+            ("macros/b/pivot.sql", ""),
+            ("macros/a/dates.sql", ""),
+        ]);
+        backdate(&dir, "models/marts/orders.sql", 300);
+        backdate(&dir, "target/compiled/shop/models/marts/orders.sql", 120);
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        for rel in ["macros/b/pivot.sql", "macros/a/dates.sql"] {
+            std::fs::File::options().write(true).open(dir.join(rel)).unwrap().set_modified(when).unwrap();
+        }
+        assert_eq!(look(&dir, Kind::Compiled).changed, vec!["the macro macros/a/dates.sql"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_past_the_cap_is_cut_there_and_said_to_be() {
+        let dir = project(&[("target/compiled/shop/models/marts/orders.sql", "select 1 from a_long_table")]);
+        let s = subject("models/marts/orders.sql");
+        let cut = look_up(&dir, &dir.join("target"), Kind::Compiled, &s, 8);
+        assert!(cut.truncated);
+        assert_eq!(cut.content, "select 1");
+        let whole = look_up(&dir, &dir.join("target"), Kind::Compiled, &s, 26);
+        assert!(!whole.truncated);
+        assert_eq!(whole.content, "select 1 from a_long_table");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
