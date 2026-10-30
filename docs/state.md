@@ -822,8 +822,8 @@ key. The launch key was kept in a cookie, which a browser sends to every
 server on 127.0.0.1 whatever its port; the page now keeps it for its own port
 and sends it as a header, the terminal's socket taking it in its address. A
 `.env` that is a link out of the project is no longer listed. Each has a test
-beside it; the update command's branch, the `.exe`'s hash beside the `.exe`
-and a collin install in a shared folder are in Deferred, items 29 to 31.
+beside it; the update command's branch and a collin install in a shared
+folder are in Deferred, items 29 and 31.
 
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
@@ -2285,12 +2285,13 @@ of its own, and each panel updates the tour, its page under
     clone, and the later `git pull` of someone who stays on `main` has to cope
     with that. It was left until 0120, which changes the same command, had
     landed.
-30. **The `.exe`'s hash travels with the `.exe`.** `build_windows.sh` writes the
-    SHA-256 beside the file (`dbt-edith.exe.sha256`), so whoever can replace
-    one can replace the other: the hash catches a damaged copy, not a swapped
-    one. Closing it means a signature or a hash published on another channel,
-    which goes with the signing question in the paragraph on distribution
-    below (0085, 0093).
+30. ~~**The `.exe`'s hash travels with the `.exe`.**~~ Settled in releases
+    after 1.61.0: releases from 1.57.0 on are immutable, so `gh release
+    verify-asset` checks a file against GitHub's record of the release, and
+    the release job attests each `.exe`'s build provenance (`gh attestation
+    verify`), both in docs/windows.md. The update's own check still reads the
+    `.sha256` of the same release, `gh` not being on the machines it runs on
+    (0085, 0123).
 31. **A collin install in a folder others can write to.** The versions
     installed side by side live under `<config>/collin/<X.Y.Z>/bin/`
     (`collin_run::installs_dir`), and the one picked is run without checking
@@ -2853,8 +2854,8 @@ each a known limit, unranked:
   it.** This covers a custom `CARGO_TARGET_DIR` or a clone moved after building
   (0123).
 - **PowerShell's redirects are not held to HTTPS, as curl's are.** The release's
-  `.sha256` comes from the same server, so it catches truncation, not tampering.
-  This extends item 30 to the release files.
+  `.sha256` comes from the same server, so the update's check catches a
+  truncated download, not a swapped one.
 - **Git Bash's `curl` reads `HTTPS_PROXY` only, not Windows' proxy settings.**
   Behind a proxy, the PowerShell terminal or a manual download is the way.
   Reading the system proxy is not done.
