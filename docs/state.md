@@ -2227,12 +2227,12 @@ of its own, and each panel updates the tour, its page under
     or when the dbt project sits in a subfolder; and nothing may ever add to a
     tracked ignore file, which is the repository's.
 22. ~~**Job coverage from the command line.**~~ Settled in 1.63.0 (0131).
-23. **A cap on the size of an answer.** Over MCP a client cuts a long answer (a
-    compact list of a whole folder of a large project) and the file it saves
-    cannot be opened. The server could cut itself at a stated size and say how
-    to narrow, with `--count-by` or a narrower selection. Trap: the answers of
-    the command line and of MCP are byte-identical (0110), which
-    `walk_mcp.py` compares.
+23. ~~**A cap on the size of an answer.**~~ Settled in 1.68.0 (0135): over MCP
+    an answer past 48 000 characters is cut at a line and closed by a line saying
+    what was left out and how to narrow; JSON stays valid line by line, a
+    one-object answer is refused with that line; an error carrying cards is
+    cut at 10 000, one with no answer in it and the command line never are;
+    tokens are not counted.
 24. **A skill for a client that defers tools.** Print the MCP variant of the
     skill (`--skill mcp`?), which tells the agent to load the `edith` tool and
     call it. 0114 says the shipped skill is printed, never installed, and
@@ -2614,8 +2614,9 @@ Left by the MCP server (0110, 1.44.0), unranked:
 - **A project-scoped `.mcp.json`** with `"."` for the project: the folder
   Claude Code starts a server in is undocumented, and was not checked. Only
   `claude mcp add` with the path written out is documented.
-- **Clients cut long answers**: Claude Code stops at 25 000 tokens. The server
-  does not cap, so that the answer stays the command line's.
+- ~~**Clients cut long answers**: Claude Code stops at 25 000 tokens. The server
+  does not cap, so that the answer stays the command line's.~~ Settled in 1.68.0
+  (0135).
 - **Freshness is checked on every call**, git included, and is the whole of
   the warm call on a project in a repository. Keeping one git answer for a
   second or two would take it well under a millisecond on Shopify, and make

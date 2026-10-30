@@ -1,6 +1,6 @@
 # 0110. An agent may ask over MCP, through one tool
 
-Date: 2026-10-21 · Status: accepted, amended by 0113, 0114 and 0115 · Amends 0057, 0099 and 0102
+Date: 2026-10-21 · Status: accepted, amended by 0113, 0114, 0115 and 0135 · Amends 0057, 0099 and 0102
 
 **Trigger:** read before changing `--mcp`, the `edith` tool, what its line
 accepts, what the server reads or writes, or before adding a second tool.
@@ -39,6 +39,10 @@ dbt-collin's fixture. Orders of magnitude, not current facts.
 - **The text is the command line's.** Two blocks: stdout, then stderr (the
   manifest, its date, the freshness line), an empty one left out; `isError` is
   the exit code not being 0. No `structuredContent`.
+  *Amended by [0135](0135-an-answer-over-mcp-is-cut-before-the-client-saves-it-to-a-file.md):
+  an answer past 48 000 UTF-16 units is cut at a line and closed by a line
+  saying how to narrow, and one that is a single object on one line comes back
+  `isError` while the command line exits 0.*
 - **`--run-collin` is allowed per call**, under the guard of 0099 and 0109:
   the collin beside the binary or on the PATH, never one git tracks (0094),
   a 600 s deadline, the cache replaced only by a finished run. A cancellation
@@ -93,6 +97,9 @@ in a line.*
 - **A cap on long answers**: the command line's answer is the answer. Clients
   cut them (Claude Code stops at 25 000 tokens); a selection that long is asked
   again narrower.
+  *Amended by [0135](0135-an-answer-over-mcp-is-cut-before-the-client-saves-it-to-a-file.md):
+  the server cuts a long answer itself, at 48 000 characters, and says how to
+  narrow.*
 - **Reading `CLAUDE_PROJECT_DIR`**: one client's variable deciding the project.
 - **Keeping one git answer for a second or two**, which would take the warm
   call on Shopify from about 35 ms to well under 1: not asked for, and it would

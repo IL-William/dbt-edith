@@ -36,6 +36,22 @@ const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 /// held whole.
 const MAX_MESSAGE: usize = 1024 * 1024;
 
+/// The most text a call answers (0135), in UTF-16 units, which is how Claude
+/// Code counts: the sum of the JavaScript `length` of the text blocks. It shows
+/// a result whole under 50 000 of them and saves a longer one to a file the
+/// agent must page through with Read; this stays under that with room for the
+/// closing line. Tokens are not counted: as of Claude Code 2.1.314 it
+/// estimates them as length over 4 and counts for real only above 12 500, so
+/// 48 000 stays under its 25 000 whatever the text, unless the user lowers
+/// `MAX_MCP_OUTPUT_TOKENS` under about 24 000.
+const MAX_ANSWER: usize = 48_000;
+
+/// The most text of an error that carries an answer (`--describe` with one
+/// name unknown refuses, with the cards found still written). Claude Code
+/// keeps only the first and last 5 000 of an error past about 11 000, so this
+/// stays under that and the cut is ours.
+const MAX_ERROR: usize = 10_000;
+
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
 const METHOD_NOT_FOUND: i64 = -32601;
@@ -43,7 +59,8 @@ const INVALID_PARAMS: i64 = -32602;
 const INTERNAL_ERROR: i64 = -32603;
 
 /// What a call answers: the command line's stdout and stderr, and whether it
-/// ended the way the command line's exit code says it failed.
+/// ended the way the command line's exit code says it failed. Under
+/// `MAX_ANSWER`; a longer one is cut (0135).
 pub struct Outcome {
     pub out: String,
     pub err: String,
@@ -359,7 +376,8 @@ fn call<W: Write>(wire: &Wire<W>, jobs: &mpsc::Sender<Job>, id: Value, params: O
 }
 
 /// The result of a call: the command line's stdout, then its stderr, as two
-/// text blocks, an empty one left out.
+/// text blocks, an empty one left out. Under `MAX_ANSWER`; a longer one is cut
+/// (0135).
 fn tool_result(outcome: &Outcome) -> Value {
     let content: Vec<Value> =
         [&outcome.out, &outcome.err].into_iter().filter(|text| !text.is_empty()).map(|text| json!({"type": "text", "text": text})).collect();
@@ -369,7 +387,7 @@ fn tool_result(outcome: &Outcome) -> Value {
 /// A call: one command line, read against the allow-list and answered from
 /// the project the server was started on, as the command line answers it. The
 /// text it writes is the command line's, stdout and stderr, and `is_error` is
-/// its exit code not being 0.
+/// its exit code not being 0. Under `MAX_ANSWER`; a longer one is cut (0135).
 pub(crate) fn answer_line(graphs: &mut Graphs, line: &str, stop: &AtomicBool) -> Outcome {
     answer_with(graphs, line, stop, collin_run::locate)
 }
@@ -377,6 +395,12 @@ pub(crate) fn answer_line(graphs: &mut Graphs, line: &str, stop: &AtomicBool) ->
 /// `answer_line` with the search for collin handed in, which a test replaces
 /// by a stand-in instead of changing the process's PATH.
 fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl FnOnce() -> collin_run::Located) -> Outcome {
+    answer_capped(graphs, line, stop, locate, MAX_ANSWER)
+}
+
+/// `answer_with` whose answer is cut at `cap` characters, which a test lowers
+/// to drive a small project through the code a long answer takes.
+fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl FnOnce() -> collin_run::Located, cap: usize) -> Outcome {
     let root = graphs.root().to_path_buf();
     let manifest_path = graphs.manifest_path().to_path_buf();
     let catalog = graphs.catalog().map(Path::to_path_buf);
@@ -385,6 +409,7 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
         Ok(mcp_line::Read::Help) => return Outcome { out: HELP.to_string(), err: String::new(), is_error: false },
         Err(refusal) => return Outcome { out: String::new(), err: refusal, is_error: true },
     };
+    let narrow = narrowing(&question, output);
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let written = match question {
         Question::Select(query, count) => match graphs.manifest() {
@@ -467,11 +492,102 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
         },
     };
     let code = ls::ended(written, &mut err);
-    Outcome {
+    let answered = Outcome {
         out: String::from_utf8_lossy(&out).into_owned(),
         err: String::from_utf8_lossy(&err).into_owned(),
         is_error: code != ls::ANSWERED,
+    };
+    cut_to(answered, cap, &narrow, output == ls::Output::Json)
+}
+
+/// How to ask for less, for the line that closes a cut answer: what the mode
+/// has that makes its answer shorter, not every flag. The form of the output
+/// is offered only where another is shorter: compact for json, names for
+/// compact, and nothing for names, which are the shortest.
+fn narrowing(question: &Question, output: ls::Output) -> String {
+    let compact = match output {
+        ls::Output::Json => "; --output compact is shorter",
+        ls::Output::Compact => "; --output name lists names only",
+        ls::Output::Name => "",
+    };
+    match question {
+        Question::Select(_, None) => format!(
+            "--count-by folder (or kind, tag, package) counts instead of listing; a narrower --select lists less{compact}"
+        ),
+        Question::Select(_, Some(_)) => "a smaller --depth with --count-by folder, or a narrower --select".to_string(),
+        // The compiled SQL is usually the longest part of a card, so each of
+        // the two file flags is named when it was given.
+        Question::Describe { sql, compiled_sql, .. } => match (sql, compiled_sql) {
+            (true, true) => "describe fewer names, or leave out --sql or --compiled-sql".to_string(),
+            (true, false) => "describe fewer names, or leave out --sql".to_string(),
+            (false, true) => "describe fewer names, or leave out --compiled-sql".to_string(),
+            (false, false) => "describe fewer names".to_string(),
+        },
+        Question::SelectColumns(_) => format!("a narrower --select, or --describe NAME --columns for fewer nodes{compact}"),
+        // Its name output is the cards' column blocks, which compact does not
+        // shorten, so only json is pointed at another form.
+        Question::DescribeColumns { .. } => {
+            let json = if output == ls::Output::Json { "; --output compact is shorter" } else { "" };
+            format!("fewer names{json}")
+        }
+        Question::Overview { .. } => "a smaller --depth, or --describe one node".to_string(),
+        Question::Job { .. } | Question::JobOrder => "ask about a part of it: --describe NAME, or -s with --count-by folder".to_string(),
+        // No flag narrows it, and the form of its output is not a shorter
+        // one in either direction.
+        Question::JobCoverage => "ask about a part of it: --job NAME for one job, or --describe NAME for one node".to_string(),
+        Question::Column(_) => format!("a smaller --up or --down, or --stop-at window,aggregate{compact}"),
     }
+}
+
+/// The answer, kept whole under `cap` UTF-16 units and otherwise cut after its
+/// last whole line that leaves room for one closing line saying how many were
+/// left out and how to ask for less (0135). Units, not characters or bytes: the
+/// client sums the `length` of its text blocks. The cap counts both blocks, the
+/// freshness one included, and the cut is made in the first, so the second is
+/// always whole.
+///
+/// An error is short, and left as it is, unless it carries an answer in its
+/// first block (`--describe` with a name unknown): that one is cut at
+/// `MAX_ERROR`, since the client cuts an error more roughly than the rest.
+/// With `--output json` the closing line is a JSON object, so every line still
+/// parses; an answer that is one line, such as `--overview --output json`, has
+/// no whole line to keep and is refused with the same closing line, as an
+/// error.
+fn cut_to(answer: Outcome, cap: usize, narrow: &str, json: bool) -> Outcome {
+    if answer.is_error && answer.out.is_empty() {
+        return answer;
+    }
+    let cap = if answer.is_error { cap.min(MAX_ERROR) } else { cap };
+    let units = |text: &str| text.encode_utf16().count();
+    let kept_for_err = units(&answer.err);
+    if units(&answer.out) + kept_for_err <= cap {
+        return answer;
+    }
+    let lines: Vec<&str> = answer.out.split_inclusive('\n').collect();
+    let closing = |left: usize| {
+        let mut said = format!(
+            "answer cut at {cap} characters: {left} of {} lines left out. To ask for less: {narrow}.",
+            lines.len()
+        );
+        if json && left == lines.len() {
+            said.push_str(" Or leave out --output json.");
+        }
+        if json { format!("{}\n", json!({"cut": said})) } else { format!("{said}\n") }
+    };
+    // The line is longest with every line left out, its numbers only shorten,
+    // so room for that one is room for any.
+    let room = cap.saturating_sub(kept_for_err).saturating_sub(units(&closing(lines.len())));
+    let (mut used, mut kept) = (0, 0);
+    for line in &lines {
+        used += units(line);
+        if used > room {
+            break;
+        }
+        kept += 1;
+    }
+    let mut out: String = lines[..kept].concat();
+    out.push_str(&closing(lines.len() - kept));
+    Outcome { out, err: answer.err, is_error: answer.is_error || kept == 0 }
 }
 
 /// What the load said, such as `catalog.json ignored: ...`, which the command
@@ -1264,6 +1380,208 @@ mod tests {
         s.close();
         assert_eq!(s.recv()["id"], 1);
         assert_eq!(s.recv()["id"], 2);
+    }
+
+    /// The test project with forty models in a chain, `long_model_name_00` to `_39`, so a
+    /// selection has lines enough to cut.
+    fn wide(tag: &str) -> PathBuf {
+        let dir = project(tag);
+        let mut nodes = Map::new();
+        let mut parents = Map::new();
+        for i in 0..40 {
+            let (name, id) = (format!("long_model_name_{i:02}"), format!("model.jaffle_shop.long_model_name_{i:02}"));
+            nodes.insert(
+                id.clone(),
+                json!({
+                    "name": name, "resource_type": "model", "package_name": "jaffle_shop",
+                    "original_file_path": format!("models/marts/{name}.sql"), "fqn": ["jaffle_shop", "marts", name],
+                    "config": {"materialized": "table"}, "columns": {"order_id": {"name": "order_id"}},
+                }),
+            );
+            if i > 0 {
+                parents.insert(id, json!([format!("model.jaffle_shop.long_model_name_{:02}", i - 1)]));
+            }
+        }
+        let manifest = json!({"metadata": {"project_name": "jaffle_shop", "adapter_type": "duckdb"}, "nodes": nodes, "parent_map": parents});
+        std::fs::write(dir.join("target/manifest.json"), manifest.to_string()).unwrap();
+        dir
+    }
+
+    /// What a call answers under `cap`, with no collin to find.
+    fn capped(dir: &Path, line: &str, cap: usize) -> Outcome {
+        let mut graphs = Graphs::new(dir.canonicalize().unwrap(), None, None);
+        answer_capped(&mut graphs, line, &AtomicBool::new(false), collin_run::Located::default, cap)
+    }
+
+    #[test]
+    fn an_answer_under_the_cap_is_the_uncapped_one() {
+        let dir = wide("cap-under");
+        let whole = capped(&dir, "-s 'long_model_name_00+'", MAX_ANSWER);
+        assert!(whole.out.lines().count() > 30 && !whole.out.contains("left out"));
+        let size = whole.out.chars().count() + whole.err.chars().count();
+        let exact = capped(&dir, "-s 'long_model_name_00+'", size);
+        assert_eq!((exact.out.as_str(), exact.err.as_str(), exact.is_error), (whole.out.as_str(), whole.err.as_str(), false));
+        let over = capped(&dir, "-s 'long_model_name_00+'", size - 1);
+        assert_ne!(over.out, whole.out, "one character over the cap is cut");
+    }
+
+    #[test]
+    fn a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow() {
+        let dir = wide("cap-cut");
+        let whole = capped(&dir, "-s 'long_model_name_00+'", MAX_ANSWER);
+        let total = whole.out.lines().count();
+        let cap = whole.err.chars().count() + 260;
+        let cut = capped(&dir, "-s 'long_model_name_00+'", cap);
+        assert!(!cut.is_error);
+        assert_eq!(cut.err, whole.err, "the freshness block is whole");
+        assert!(cut.out.chars().count() + cut.err.chars().count() <= cap, "{}", cut.out);
+        let (kept, closing) = cut.out.trim_end().rsplit_once('\n').expect("some lines are kept");
+        assert!(whole.out.starts_with(&format!("{kept}\n")), "a prefix of whole lines");
+        let left = total - kept.lines().count();
+        assert_eq!(
+            closing,
+            format!(
+                "answer cut at {cap} characters: {left} of {total} lines left out. To ask for less: --count-by folder (or kind, tag, package) \
+                 counts instead of listing; a narrower --select lists less."
+            )
+        );
+    }
+
+    #[test]
+    fn json_lines_stay_json_and_each_output_is_offered_only_a_shorter_one() {
+        let dir = wide("cap-json");
+        let whole = capped(&dir, "-s 'long_model_name_00+' --output json", MAX_ANSWER);
+        let total = whole.out.lines().count();
+        let cut = capped(&dir, "-s 'long_model_name_00+' --output json", whole.err.chars().count() + 3000);
+        assert!(!cut.is_error);
+        let lines: Vec<Value> = cut.out.lines().map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{l}: {e}"))).collect();
+        assert!(lines.len() > 2 && lines.len() < total, "{} of {total}", lines.len());
+        let said = lines.last().unwrap()["cut"].as_str().expect("the closing line is an object");
+        assert!(said.contains(&format!("{} of {total} lines left out", total - (lines.len() - 1))), "{said}");
+        assert!(said.contains("--output compact is shorter") && !said.contains("leave out --output json"), "{said}");
+        let err = capped(&dir, "-s 'long_model_name_00+' --output compact", MAX_ANSWER).err.chars().count();
+        let compact = capped(&dir, "-s 'long_model_name_00+' --output compact", err + 260);
+        assert!(compact.out.contains("lines left out") && compact.out.contains("--output name lists names only"), "{}", compact.out);
+        assert!(!compact.out.contains("is shorter"), "{}", compact.out);
+    }
+
+    #[test]
+    fn an_answer_that_is_one_line_has_none_to_keep_and_is_refused_with_the_hint() {
+        let dir = wide("cap-one");
+        let whole = capped(&dir, "--overview --output json", MAX_ANSWER);
+        assert_eq!(whole.out.lines().count(), 1);
+        let cut = capped(&dir, "--overview --output json", whole.err.chars().count() + 150);
+        assert!(cut.is_error);
+        let closing: Value = serde_json::from_str(&cut.out).expect("only the closing line, as JSON");
+        let said = closing["cut"].as_str().unwrap();
+        assert!(said.contains("1 of 1 lines left out") && said.contains("--describe one node") && said.ends_with("Or leave out --output json."), "{said}");
+        assert_eq!(cut.err, whole.err);
+    }
+
+    #[test]
+    fn job_coverage_is_one_object_in_json_and_is_refused_over_the_cap() {
+        let dir = wide("cap-coverage");
+        std::fs::create_dir_all(dir.join("dags")).unwrap();
+        std::fs::write(
+            dir.join("dags/daily.yml"),
+            "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select long_model_name_00\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join(".dbt-edith")).unwrap();
+        let source = crate::settings::JobSource { kind: "airflow".into(), path: "dags".into(), ..Default::default() };
+        std::fs::write(dir.join(".dbt-edith/jobs.yml"), crate::jobs::sources_yaml(&[source])).unwrap();
+        let whole = capped(&dir, "--job-coverage --output json", MAX_ANSWER);
+        assert!(!whole.is_error && whole.out.lines().count() == 1, "{}", whole.err);
+        let cut = capped(&dir, "--job-coverage --output json", whole.err.chars().count() + 150);
+        assert!(cut.is_error);
+        let closing: Value = serde_json::from_str(&cut.out).expect("only the closing line, as JSON");
+        let said = closing["cut"].as_str().unwrap();
+        assert!(said.contains("1 of 1 lines left out") && said.contains("--job NAME for one job") && said.ends_with("Or leave out --output json."), "{said}");
+        // The text form has lines to keep: cut, not refused.
+        let text = capped(&dir, "--job-coverage", MAX_ANSWER);
+        let cut = capped(&dir, "--job-coverage", text.err.chars().count() + 260);
+        assert!(!cut.is_error && cut.out.contains("lines left out") && !cut.out.contains("Or leave out"), "{}", cut.out);
+    }
+
+    #[test]
+    fn each_mode_names_what_makes_its_answer_shorter() {
+        let dir = wide("cap-modes");
+        for (line, hint) in [
+            ("--overview", "a smaller --depth"),
+            ("--describe long_model_name_00 --sql", "describe fewer names, or leave out --sql."),
+            ("--describe long_model_name_00 --compiled-sql", "describe fewer names, or leave out --compiled-sql."),
+            ("--describe long_model_name_00 --sql --compiled-sql", "or leave out --sql or --compiled-sql."),
+            ("--describe long_model_name_00", "describe fewer names"),
+            ("-s long_model_name_00 --count-by folder", "a smaller --depth with --count-by folder"),
+            ("-s 'long_model_name_00+' --columns", "or --describe NAME --columns for fewer nodes"),
+            ("--describe long_model_name_00 --columns", "fewer names"),
+        ] {
+            let cut = capped(&dir, line, 10);
+            assert!(cut.out.contains("lines left out") && cut.out.contains(hint), "{line}: {}", cut.out);
+        }
+        let Ok(mcp_line::Read::Ask { question, output }) = mcp_line::read("--column long_model_name_00.order_id --up all", &dir, None, None) else {
+            panic!("a column is asked");
+        };
+        let hint = narrowing(&question, output);
+        assert!(hint.contains("a smaller --up or --down") && !hint.contains("--output"), "names are the shortest: {hint}");
+        let asked = |line: &str| match mcp_line::read(line, &dir, None, None) {
+            Ok(mcp_line::Read::Ask { question, output }) => narrowing(&question, output),
+            _ => panic!("{line} is a question"),
+        };
+        assert!(asked("--column m.c --output json").contains("--output compact is shorter"));
+        assert_eq!(
+            asked("-s m --columns"),
+            "a narrower --select, or --describe NAME --columns for fewer nodes"
+        );
+        assert!(asked("-s m --columns --output json").ends_with("fewer nodes; --output compact is shorter"));
+        assert!(asked("-s m --columns --output compact").ends_with("fewer nodes; --output name lists names only"));
+        assert_eq!(asked("--describe m --columns"), "fewer names");
+        assert_eq!(asked("--describe m --columns --output compact"), "fewer names");
+        assert_eq!(asked("--describe m --columns --output json"), "fewer names; --output compact is shorter");
+        assert_eq!(asked("--job-coverage"), "ask about a part of it: --job NAME for one job, or --describe NAME for one node");
+        assert_eq!(asked("--job-coverage --output json"), asked("--job-coverage"));
+        assert!(asked("--column m.c --output compact").contains("--output name lists names only"));
+    }
+
+    #[test]
+    fn a_short_error_is_not_cut_whatever_the_cap() {
+        let dir = wide("cap-error");
+        let refused = capped(&dir, "--overview --port 4321", 10);
+        assert!(refused.is_error && refused.err.chars().count() > 10 && refused.out.is_empty());
+        assert!(!refused.err.contains("lines left out"));
+        // The branch itself: an error with no answer is returned as it is.
+        let long = Outcome { out: String::new(), err: "error: x\n".repeat(30), is_error: true };
+        let same = cut_to(Outcome { out: String::new(), err: long.err.clone(), is_error: true }, 10, "x", false);
+        assert_eq!((same.out.as_str(), same.err.as_str()), ("", long.err.as_str()));
+    }
+
+    #[test]
+    fn an_error_carrying_cards_is_cut_and_stays_an_error() {
+        let dir = wide("cap-cards");
+        let names: Vec<String> = (0..10).map(|i| format!("long_model_name_{i:02}")).collect();
+        let line = format!("--describe {},nope", names.join(","));
+        let whole = capped(&dir, &line, MAX_ANSWER);
+        assert!(whole.is_error && whole.out.contains("long_model_name_09") && whole.err.contains("nope"), "{}", whole.err);
+        let cut = capped(&dir, &line, whole.err.chars().count() + 400);
+        assert!(cut.is_error && cut.out.contains("lines left out"), "{}", cut.out);
+        assert_eq!(cut.err, whole.err, "the refusal is whole");
+        // The error's own cap, whatever the cap handed in.
+        let big = Outcome { out: "x\n".repeat(MAX_ERROR), err: String::new(), is_error: true };
+        let cut = cut_to(big, MAX_ANSWER, "x", false);
+        assert!(cut.is_error && cut.out.encode_utf16().count() <= MAX_ERROR && cut.out.contains("lines left out"));
+        let small = Outcome { out: "x\n".repeat(MAX_ERROR / 2 - 1), err: String::new(), is_error: true };
+        assert!(!cut_to(small, MAX_ANSWER, "x", false).out.contains("lines left out"));
+    }
+
+    #[test]
+    fn the_cap_counts_utf16_units_as_the_client_does() {
+        // Two lines of nine units: five characters, seventeen bytes each.
+        let text = ("\u{1F600}".repeat(4) + "\n").repeat(2);
+        assert_eq!((text.encode_utf16().count(), text.chars().count(), text.len()), (18, 10, 34));
+        let kept = cut_to(Outcome { out: text.clone(), err: String::new(), is_error: false }, 18, "x", false);
+        assert_eq!(kept.out, text, "eighteen units fit in a cap of eighteen");
+        let cut = cut_to(Outcome { out: text, err: String::new(), is_error: false }, 17, "x", false);
+        assert!(cut.is_error && cut.out.starts_with("answer cut at 17"), "{}", cut.out);
     }
 
     #[cfg(unix)]
