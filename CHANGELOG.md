@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.61.1 - 2026-10-30
+
+- Refuse a collin installed side by side that another account could replace: its
+  binary and each folder up to `<config>/collin/` have to belong to you and be
+  writable by nobody else, a link below it is refused, and the menu names the
+  path and the `chmod` or `chown` that fixes it (0128). An install an earlier
+  dbt-edith typed under a umask of 002, as on Ubuntu or Fedora desktops, is
+  refused until the `chmod` the menu names.
+
 ## 1.61.0 - 2026-10-29
 
 - Show the keys tests declare in the Catalog: a column tested `unique`, or in a

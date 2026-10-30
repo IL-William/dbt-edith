@@ -5081,6 +5081,11 @@ function columnsHint(sc, cached) {
    nothing and nobody would know why. */
 function collinRefusedNote(cl) {
   if (!cl || !cl.refused) return '';
+  // An install side by side another account could replace: the server wrote
+  // the sentence, ending on the command that fixes it, so no full stop (0128).
+  if (cl.refused_shared) {
+    return cl.found && cl.path ? `Using ${cl.path}. Skipped ${cl.refused}: ${cl.refused_shared}` : `Not run: ${cl.refused_shared}`;
+  }
   // Another collin runs: say which first, so the note does not read as if
   // collin were not running at all.
   // git said nothing: it sits in a repository, and may be the repository's.
@@ -6007,7 +6012,7 @@ function collinVersionRows(cl, tool) {
 
 /* What the menu says when the version picked is no longer installed. */
 function collinChosenGone(cl) {
-  if (!cl || !cl.chosen) return null;
+  if (!cl || !cl.chosen || cl.chosen_refused) return null;
   const there = (cl.versions || []).some((v) => v.origin === 'installed' && v.version === cl.chosen);
   return there ? null : `collin ${cl.chosen}, picked for this project, is not installed here any more: the default one runs.`;
 }

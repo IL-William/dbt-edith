@@ -71,8 +71,24 @@ installs it at its tag into a folder of its own, under dbt-edith's config
 directory:
 
 ```
-cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 --root "<config>/collin/0.3.0" collin-cli
+cargo install --locked --git https://github.com/IL-William/dbt-collin --tag v0.3.0 --root "<config>/collin/0.3.0" collin-cli; chmod -R go-w "<config>/collin/"
 ```
+
+**An install others can write to does not run (macOS and Linux).** A version
+installed side by side runs only if its binary and each folder from it up to
+`<config>/collin/` belong to you and have no write bit for the group or others;
+otherwise another account could swap the file you then start. A link below that
+folder is refused too. The install command the menu types ends with `; chmod -R
+go-w` on `<config>/collin/`, since a desktop umask of 002 would leave what cargo
+wrote group-writable. A refused version is left out of the list, and the menu
+says under Collin which path, who may write it or owns it, and one command that
+mends every part: `chmod -R go-w "<config>/collin/"`, or `sudo chown -R "$(id -un)"
+"<config>/collin/" && chmod -R go-w "<config>/collin/"` for files another
+account owns. Picking it anyway, or pressing Regenerate with it as the only
+collin, is answered with the same sentence. An extended ACL on macOS can grant
+write without showing in the mode, and is not seen. Windows does not check
+this yet
+([0128](../decisions/0128-a-collin-others-can-replace-is-not-run.md)).
 
 Once it is built, the menu lists every collin there is, the one beside
 dbt-edith or on your `PATH` first, and the one picked runs for this project

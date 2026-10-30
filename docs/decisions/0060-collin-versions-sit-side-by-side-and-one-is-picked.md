@@ -1,6 +1,6 @@
 # 0060. collin versions sit side by side, and the project picks the one that runs
 
-Date: 2026-10-10 · Status: accepted · Amends 0042 and 0043
+Date: 2026-10-10 · Status: accepted, amended by 0128 · Amends 0042 and 0043
 
 **Trigger:** read before changing which collin runs, where versions are
 installed, or what makes collin's cache stale.

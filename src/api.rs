@@ -602,6 +602,14 @@ struct CollinBody {
     /// a repository; empty when git said it does.
     #[serde(skip_serializing_if = "String::is_empty")]
     refused_why: String,
+    /// The refused one is an install side by side another account could
+    /// replace: the whole sentence, the path and the command that fixes it
+    /// (0128).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    refused_shared: String,
+    /// The version picked for the project is the one refused.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    chosen_refused: bool,
     /// The collin that runs, named beside a refused one so the menu says
     /// which is in use.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -629,16 +637,31 @@ struct CollinNow {
     /// The one that runs is offered the update: the default one, older than
     /// `WANTS` (0098).
     outdated: bool,
-    /// A collin passed over because git tracks it (0094).
+    /// A collin passed over because git tracks it (0094), or an install
+    /// another account could replace (0128).
     refused: Option<(PathBuf, collin_run::Refusal)>,
+    /// The version picked for the project is the install refused: not gone,
+    /// so the menu does not say it was removed.
+    chosen_refused: bool,
 }
 
 async fn collin_now(st: &Arc<AppState>) -> CollinNow {
     let shared = st.clone();
     let chosen = st.collin_chosen.lock().ok().and_then(|c| c.clone());
     let read = tokio::task::spawn_blocking(move || {
-        let installs = shared.collin_installs.as_deref().map(collin_run::installed).unwrap_or_default();
+        let uid = collin_run::effective_uid();
+        let (installs, unsafe_installs) =
+            shared.collin_installs.as_deref().map(|d| collin_run::installs_checked(d, uid)).unwrap_or_default();
         let collin_run::Located { bin: default, refused } = collin_run::locate();
+        let default = collin_run::without_refused(default, &unsafe_installs);
+        // What the menu names when it can name one: the version picked for the
+        // project and refused first, since it is the reason a different
+        // collin runs, then the default one git passed over, then any other
+        // install refused (0094, 0128).
+        let shared_refusal = |(i, why): &(collin_run::Install, String)| (i.bin.clone(), collin_run::Refusal::Shared(why.clone()));
+        let picked = chosen.as_deref().and_then(|c| unsafe_installs.iter().find(|(i, _)| i.version == c));
+        let chosen_refused = picked.is_some();
+        let refused = picked.map(shared_refusal).or(refused).or_else(|| unsafe_installs.first().map(shared_refusal));
         let bin = collin_run::chosen_bin(&installs, chosen.as_deref(), default.as_deref());
         let version = bin.as_deref().and_then(|b| shared.collin_version.get(b));
         let short = |v: Option<String>| v.as_deref().unwrap_or_default().split_whitespace().next().unwrap_or_default().to_string();
@@ -659,9 +682,9 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         // version, or a collin that gives none, is judged by its time alone.
         let other = matches!((&wrote, short(version.clone())), (Some(w), now) if !now.is_empty() && *w != now);
         let stale = collin_run::stale(&out, &shared.manifest_path) || other;
-        CollinNow { bin, version, stale, versions, outdated, refused }
+        CollinNow { bin, version, stale, versions, outdated, refused, chosen_refused }
     });
-    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), outdated: false, refused: None })
+    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), outdated: false, refused: None, chosen_refused: false })
 }
 
 #[derive(serde::Serialize)]
@@ -715,6 +738,11 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
                 Some((_, collin_run::Refusal::Unsure(why))) => why.clone(),
                 _ => String::new(),
             },
+            refused_shared: match &now.refused {
+                Some((_, collin_run::Refusal::Shared(why))) => why.clone(),
+                _ => String::new(),
+            },
+            chosen_refused: now.chosen_refused,
             path: now.bin.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
             status: st.collin.status(),
             report,
@@ -1380,17 +1408,24 @@ async fn regenerate_in_background(st: &Arc<AppState>) {
     });
 }
 
+/// What Regenerate says when no collin can run: an install refused is there,
+/// so it says why that one does not run (0128).
+fn collin_missing(refused: Option<(PathBuf, collin_run::Refusal)>) -> String {
+    match refused {
+        Some((_, collin_run::Refusal::Shared(why))) => format!("collin is not run: {why}"),
+        _ => "collin is not installed: it was not found beside dbt-edith or on the PATH".to_string(),
+    }
+}
+
 /// Runs collin now and answers once it is done: the Regenerate button, and a
 /// column clicked while Collin's cache is older than the manifest (0042).
 /// POST, for the same reason as `/fetch`: a GET passes the guard on its Host
 /// alone, and this starts a process.
 async fn generate_col_lineage(State(st): State<Arc<AppState>>) -> Response {
     match regenerate(&st).await {
-        None => (
-            StatusCode::NOT_FOUND,
-            "collin is not installed: it was not found beside dbt-edith or on the PATH",
-        )
-            .into_response(),
+        None => {
+            (StatusCode::NOT_FOUND, collin_missing(collin_now(&st).await.refused)).into_response()
+        }
         Some(status) if status.state == "failed" => (StatusCode::BAD_GATEWAY, status.error).into_response(),
         Some(_) => Json(meta_body(&st).await).into_response(),
     }
@@ -1413,11 +1448,17 @@ async fn choose_collin_version(State(st): State<Arc<AppState>>, Json(b): Json<Co
         None
     } else {
         let dir = st.collin_installs.clone();
-        let installs = tokio::task::spawn_blocking(move || dir.as_deref().map(collin_run::installed).unwrap_or_default())
-            .await
-            .unwrap_or_default();
+        let uid = collin_run::effective_uid();
+        let (installs, unsafe_installs) =
+            tokio::task::spawn_blocking(move || dir.as_deref().map(|d| collin_run::installs_checked(d, uid)).unwrap_or_default())
+                .await
+                .unwrap_or_default();
         match installs.into_iter().find(|i| i.version == b.version) {
             Some(i) => Some(i.version),
+            None if unsafe_installs.iter().any(|(i, _)| i.version == b.version) => {
+                let why = unsafe_installs.into_iter().find(|(i, _)| i.version == b.version).map(|(_, why)| why).unwrap_or_default();
+                return (StatusCode::CONFLICT, format!("collin {} is not run: {why}", b.version)).into_response();
+            }
             None => return (StatusCode::NOT_FOUND, format!("collin {} is not installed here", b.version)).into_response(),
         }
     };
@@ -4785,7 +4826,11 @@ mod tests {
         let draft = root.join("collin.draft");
         std::fs::write(&draft, "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.3.0 (abc1234)'\nexit 0\n").unwrap();
         assert!(std::process::Command::new("cp").arg(&draft).arg(bin.join("collin")).status().unwrap().success());
-        std::fs::set_permissions(bin.join("collin"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Every folder to the install root as a clean install leaves it, whatever
+        // the umask (0128).
+        for p in [bin.join("collin"), bin.clone(), bin.parent().unwrap().to_path_buf(), root.join("collin-installs")] {
+            std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         // Written after the manifest, so only its producer can make it stale.
         std::thread::sleep(std::time::Duration::from_millis(20));
         let cache = |producer: &str| {
@@ -4824,6 +4869,35 @@ mod tests {
         assert!(command.contains("collin-installs/0.4.0"), "{command}");
         let bad = status_of(port, get("/api/collin/install?version=0.4.0%3Brm", &h)).await;
         assert!(bad.ends_with("400 Bad Request"), "{bad}");
+
+        // A folder others can write to: the install is not offered, not
+        // picked, and the menu says which folder and what to run (0128).
+        // ...including one saved as the project's pick, which then falls back
+        // to the default collin and says so rather than that it was removed.
+        response_of(port, post(r#"{"version":"0.3.0"}"#)).await;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let meta = response_of(port, get("/api/meta", &h)).await;
+        let collin = &json_of(&meta)["collin"];
+        assert_eq!((collin["chosen"].as_str(), collin["chosen_refused"].as_bool()), (Some("0.3.0"), Some(true)), "{meta}");
+        assert!(collin["refused"].as_str().unwrap().ends_with("0.3.0/bin/collin"), "names the binary refused: {meta}");
+        assert!(!collin["path"].as_str().unwrap_or_default().contains("collin-installs"), "the default runs, never the refused one: {meta}");
+        assert!(!meta.contains(r#""origin":"installed""#), "{meta}");
+        assert!(meta.contains(r#""refused_shared":""#) && meta.contains("can be written by its group (mode 775)"), "{meta}");
+        let refused = response_of(port, post(r#"{"version":"0.3.0"}"#)).await;
+        assert!(refused.starts_with("HTTP/1.1 409") && refused.contains("chmod -R go-w"), "{refused}");
+        assert_eq!(st.collin_chosen.lock().unwrap().as_deref(), Some("0.3.0"), "a refused pick changes nothing");
+        // Not picked at all: the menu still names the refused install, and does
+        // not call it a pick that went missing.
+        response_of(port, post(r#"{"version":""}"#)).await;
+        let meta = response_of(port, get("/api/meta", &h)).await;
+        let collin = &json_of(&meta)["collin"];
+        assert!(collin["refused_shared"].as_str().unwrap().contains("can be written by its group"), "{meta}");
+        assert!(collin.get("chosen_refused").is_none() && collin.get("chosen").is_none(), "{meta}");
+        // What Regenerate says when nothing else can run (a collin on this
+        // machine's PATH would run instead, so the sentence is asked directly).
+        let why = collin_missing(Some((bin.join("collin"), collin_run::Refusal::Shared("x is open".into()))));
+        assert_eq!(why, "collin is not run: x is open");
+        assert!(collin_missing(None).starts_with("collin is not installed"));
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
