@@ -1075,8 +1075,23 @@ name until it searches for it, and an agent given the tool then mostly ran
 defers tools therefore needs the skill, or the tool listed. What else was
 weighed is in [0110](../decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md).
 
-A client may cut a long answer (Claude Code stops at 25 000 tokens): ask for
-`--output compact`, or a narrower selection.
+A client cuts a long answer on its own: Claude Code does not show a result past
+25 000 tokens or 50 000 characters, but saves it to a file under its own folder
+that the agent must page through. The server cuts first, over MCP only: an
+answer past 48 000 UTF-16 units (as the client counts) ends after its last
+whole line that leaves room for a closing line, which says how many lines of
+how many were left out and what to ask for less in that mode (`--count-by
+folder`, a narrower `--select`, fewer names, a smaller `--depth`, `--up` or
+`--down`, `--job NAME` for `--job-coverage`, and a shorter `--output` where there is one: compact for json, names
+for compact). With `--output json` that line is an object, `{"cut": "..."}`, so
+every line still parses; an answer that is one object on one line has no line
+to keep and comes back as that line alone, as an error. An error with no answer
+in it is never cut; one that carries cards (`--describe` with a name unknown)
+is cut at 10 000, since the client keeps only the ends of a long error. The
+command line is never cut, and an answer under the cap is the command line's
+byte for byte (0135). The tokens are not counted: Claude Code 2.1.314 estimates
+them as the length over 4, so 48 000 stays under its 25 000 unless a user lowers
+`MAX_MCP_OUTPUT_TOKENS` under about 24 000.
 
 On a large project the manifest load dominates a command-line call, which reads
 it again each time. The server keeps the graph, and the jobs read, between

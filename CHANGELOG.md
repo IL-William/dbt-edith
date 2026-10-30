@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.68.0 - 2026-10-30
+
+- Cut a long answer over MCP at 48 000 characters, after its last whole line,
+  with a closing line saying how many lines were left out and how to ask for
+  less, instead of leaving the client to save it to a file the agent must page
+  through (0135).
+
 ## 1.67.0 - 2026-10-30
 
 - Print only the columns of a node or of a whole selection with `--columns`,

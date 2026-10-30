@@ -7,8 +7,9 @@ client does: `initialize`, `notifications/initialized`, `tools/list`, then the
 questions as `tools/call`. Each question is also asked of the command line, on
 the same copy and with the same HOME, and the two have to agree:
 
-  - the first text block is the command line's stdout byte for byte, the
-    second its stderr, an empty one left out;
+  - the first text block is the command line's stdout byte for byte, under the
+    cap the tool cuts a longer answer at (0135), the second its stderr, an empty
+    one left out;
   - `isError` is the exit code not being 0;
   - the ages the answers print, `(N s ago)` and `"age_s"`, and the time collin
     took, are the one thing the clock moves, so they are masked on both sides.
@@ -324,6 +325,8 @@ SKILL_LINE = "dbt-edith: answers what a dbt project, node, selection or column i
 
 PASSES = 3
 N_CALLS = 20
+# What src/mcp.rs cuts an answer at (0135), in UTF-16 units, as the client counts.
+MAX_ANSWER = 48000
 
 
 def release_binary():
@@ -724,10 +727,20 @@ def main():
         walk.check(is_error and "--port" in refused[0], "a flag that is not a question is refused", str(refused))
 
         # The questions, against the command line.
+        sizes = []
         for line, expected in QUESTIONS:
             cli = command_line(binary, project, manifest, line, env, work)
             walk.check(cli[2] == expected, f"the command line exits {expected} for {line}", f"exit {cli[2]}: {cli[1]}")
-            walk.same(f"the tool answers as the command line does: {line}", server.call(line), cli)
+            said = server.call(line)
+            walk.same(f"the tool answers as the command line does: {line}", said, cli)
+            sizes.append(sum(len(t.encode("utf-16-le")) // 2 for t in (blocks_of(said)[0] or [])))
+
+        # What the comparison above rests on: a long answer is cut over MCP
+        # (0135), never on the command line, so these agree byte for byte only
+        # while every answer is under the cap.
+        walk.check(
+            max(sizes) <= MAX_ANSWER, f"every answer compared is under the {MAX_ANSWER} UTF-16 units the tool cuts at", f"the longest is {max(sizes)}"
+        )
 
         # An agreement on nothing would pass too: the invented edges are walked.
         blocks, _ = blocks_of(server.call("--column stg_payments.amount --down all --output compact"))
