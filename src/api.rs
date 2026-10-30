@@ -3326,10 +3326,10 @@ async fn update_status(State(st): State<Arc<AppState>>) -> Response {
     let crate::update::Status { latest, checked, checking, failed, error, next, releases, older } =
         st.update.status(crate::update::now_secs());
     let newer = crate::update::newer(current, &latest);
-    let (hows, why) = match &st.update.hows {
+    let (hows, why) = match st.update.hows_for(&latest) {
         _ if !newer => (Vec::new(), None),
-        Ok(hows) => (hows.clone(), None),
-        Err(why) => (Vec::new(), Some(*why)),
+        Ok(hows) => (hows, None),
+        Err(why) => (Vec::new(), Some(why)),
     };
     Json(UpdateBody {
         current,
@@ -5164,18 +5164,32 @@ mod tests {
     #[tokio::test]
     async fn the_update_route_lists_the_commands_it_offers() {
         let root = temp_project("update-hows");
-        let how = |command: &str, kind, source: &str| crate::update::How {
-            command: command.into(),
-            kind,
-            source: source.into(),
+        // The clone's command comes from `how()` as production makes it, with
+        // none until a release is named (0129).
+        let clone = root.join("clone");
+        std::fs::create_dir_all(clone.join(".git")).unwrap();
+        std::fs::write(clone.join("Cargo.toml"), "").unwrap();
+        let cargo = root.join("cargo");
+        std::fs::create_dir_all(cargo.join("bin")).unwrap();
+        std::fs::write(cargo.join(".crates2.json"), "").unwrap();
+        std::fs::write(cargo.join("bin").join("dbt-edith"), "").unwrap();
+        let installed = crate::update::how(
+            &clone,
+            &cargo.join("bin").join("dbt-edith"),
+            Some(crate::update::Shell::Posix),
+            false,
+        )
+        .unwrap();
+        assert_eq!(installed.command, "", "no release, no line");
+        let download = crate::update::How {
+            command: "download it".into(),
+            kind: "download",
+            source: "https://example.com/dl".into(),
             exe: "dbt-edith.exe".into(),
             renames: true,
+            plan: None,
         };
-        let update = crate::update::Update::new(
-            false,
-            Some(root.join("update.json")),
-            Ok(vec![how("download it", "download", "https://example.com/dl"), how("cargo it", "install", "C:/src/dbt-edith")]),
-        );
+        let update = crate::update::Update::new(false, Some(root.join("update.json")), Ok(vec![download, installed]));
         let (port, st, server) = serve_full(&root, crate::profiles::Lookup::default(), ShellSpec { program: "/bin/sh".into(), args: Vec::new() }, update).await;
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
@@ -5183,13 +5197,17 @@ mod tests {
         std::fs::write(root.join("update.json"), format!(r#"{{"checked":{now},"latest":"99.0.0"}}"#)).unwrap();
         st.update.check().await;
         let body = response_of(port, get("/api/update", &h)).await;
+        let head = past_head(&body);
         assert!(
-            past_head(&body).contains(concat!(
-                r#""hows":[{"command":"download it","kind":"download","source":"https://example.com/dl","exe":"dbt-edith.exe","renames":true},"#,
-                r#"{"command":"cargo it","kind":"install","source":"C:/src/dbt-edith","exe":"dbt-edith.exe","renames":true}]"#
-            )),
+            head.contains(
+                r#""hows":[{"command":"download it","kind":"download","source":"https://example.com/dl","exe":"dbt-edith.exe","renames":true},"#
+            ),
             "{body}"
         );
+        // The clone's line names the release the look found.
+        let line = format!("git -C \"{}\" fetch --tags --force origin; git -C \"{}\" merge --ff-only v99.0.0 && cargo install", clone.display(), clone.display());
+        assert!(head.contains(&line.replace('"', "\\\"")), "{body}");
+        assert!(head.contains(r#""kind":"install""#) && !head.contains("pull --ff-only"), "{body}");
         assert!(!past_head(&body).contains(r#""why""#) && !past_head(&body).contains(r#""how":"#), "{body}");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);

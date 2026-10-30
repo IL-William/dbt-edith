@@ -822,9 +822,9 @@ key. The launch key was kept in a cookie, which a browser sends to every
 server on 127.0.0.1 whatever its port; the page now keeps it for its own port
 and sends it as a header, the terminal's socket taking it in its address. A
 `.env` that is a link out of the project is no longer listed. Each has a test
-beside it; the update command's branch is in Deferred, item 29, and a
-collin install in a shared folder is refused on macOS and Linux (0128) and
-in Deferred for Windows, item 31.
+beside it; the update command's branch was settled by 0129, and a collin
+install in a shared folder is refused on macOS and Linux (0128) and in
+Deferred for Windows, item 31.
 
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
@@ -2285,14 +2285,7 @@ of its own, and each panel updates the tour, its page under
     `schema` column to leave the warehouse (who built where) and the schema
     each environment really builds into, which `generate_schema_name` decides
     and this tool does not evaluate (0113).
-29. **The update pulls `main`, not the tag it announced.** The command the menu
-    types fast-forwards the clone to `origin/main` (`update::compose`), where a
-    release is tagged (0045), so a commit merged after the release is built
-    and installed under the release's number, the build stamp being the only
-    thing that tells them apart. Pulling the tag instead means a detached
-    clone, and the later `git pull` of someone who stays on `main` has to cope
-    with that. It was left until 0120, which changes the same command, had
-    landed.
+29. ~~**The update pulls `main`, not the tag it announced.**~~ Settled in 1.61.2 (0129).
 30. ~~**The `.exe`'s hash travels with the `.exe`.**~~ Settled in releases
     after 1.61.0: releases from 1.57.0 on are immutable, so `gh release
     verify-asset` checks a file against GitHub's record of the release, and

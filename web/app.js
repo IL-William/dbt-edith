@@ -17003,7 +17003,7 @@ function pinBoxFile(n) {
 /* What the status bar offers for an /api/update answer (0068): nothing until
    a later release is known, then a pill naming it, and a menu with its notes
    and, for a binary built from a clone on this machine, the command that
-   pulls and rebuilds it, or why there is none. `os` is the server's, which
+   brings the clone up to the release and rebuilds it, or why there is none. `os` is the server's, which
    decides what a refusal points to. Pure, for web/tests/update.js. */
 function updateOffer(u, os) {
   if (!u || !u.newer) return null;
@@ -17042,8 +17042,8 @@ function updateOffer(u, os) {
         ? 'It downloads the .exe CI built for this release, of this build\'s architecture, checks its SHA-256 '
           + 'against the one published beside it, and replaces the running .exe with it.'
         : how.kind === 'build'
-          ? `It pulls main into ${how.source} and builds it again with cargo build --release, compiling it on this machine.`
-          : `It pulls main into ${how.source} and installs it again with cargo install, compiling it on this machine.`],
+          ? `It brings ${how.source} up to v${u.latest}, the release's tag and no further, and builds it again with cargo build --release, compiling it on this machine.`
+          : `It brings ${how.source} up to v${u.latest}, the release's tag and no further, and installs it again with cargo install, compiling it on this machine.`],
     };
   });
   const lines = options.flatMap((o) => o.lines);
@@ -17064,19 +17064,21 @@ function updateOffer(u, os) {
     // On Windows the way out of a refusal is the file a release carries.
     const by = os === 'windows'
       ? 'download the release\'s .exe by hand, as docs/windows.md says under Download it.'
-      : 'pull the clone and install it again by hand, as the README says.';
+      : `bring the clone up to the release (fetch the tags, then git merge --ff-only v${u.latest}) and install it again, as the README says.`;
     if (u.why === 'locked') {
       lines.push('This dbt-edith runs from a build in its clone\'s target folder, which an update would replace '
-        + 'and a build cannot while it runs: stop it, then pull and build it again.');
+        + `and a build cannot while it runs: stop it, then bring the clone up to the release (git merge --ff-only v${u.latest}) and build it again.`);
     } else if (u.why === 'shell') {
       lines.push(`The update is typed for sh, bash, zsh and PowerShell, and this terminal runs another shell: ${by}`);
+    } else if (u.why === 'release') {
+      lines.push(`The release this dbt-edith was told of is not a version number, so no clone is brought up to it: ${by}`);
     } else if (u.why === 'path') {
       lines.push(`A path in the update holds a character a shell would read inside quotes, so none is typed: ${by}`);
     } else if (os === 'windows') {
       lines.push(`There is no command to offer for this dbt-edith: ${by}`);
     } else {
       lines.push('This dbt-edith is neither in cargo\'s bin nor in the target/release of a clone on this machine, '
-        + 'so there is no command to offer: pull and rebuild it where it was built, as the README says.');
+        + `so there is no command to offer: bring the clone up to the release (fetch the tags, then git merge --ff-only v${u.latest}) and rebuild it where it was built, as the README says.`);
     }
   }
   const first = options[0] || null;

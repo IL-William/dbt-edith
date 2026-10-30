@@ -7,45 +7,52 @@ to 09:00 Paris time and then not until the next midnight, so the first start of
 your day knows what came out overnight, wherever you are. When one is newer, a
 pill after the version in the status bar says so and a dot marks Edith at the
 top left. Resting the pointer on Edith opens a menu, as a click does, and the
-pill opens the same in the Updates section of the settings:
-the version and build you run, every release since yours by the title of the
-pull request that released it, each linked to its notes, and, for a binary
-installed or built from a clone on that machine, the pull of `main` and the
-install typed into the terminal for you to run, or for a release's own Windows
-`.exe` the download of the next one (below); restart dbt-edith once it
-finishes. Otherwise it says why it has no command. The menu also says when
-GitHub last answered, or what git said when it could not reach it, and when it
-asks next, and Check for updates asks again at once. Nothing about your project
-is sent, a failed look is tried again within the hour and stays out of the
-status bar, and `--no-update-check` turns it off (0068, 0079).
+pill opens the same in the Updates section of the settings: the version and
+build you run, every release since yours by the title of the pull request that
+released it, each linked to its notes, and, for a binary installed or built from
+a clone on that machine, the clone brought up to the release and the install
+typed into the terminal for you to run, or for a release's own Windows `.exe`
+the download of the next one (below); restart dbt-edith once it finishes.
+Otherwise it says why it has no command. The menu also says when GitHub last
+answered, or what git said when it could not reach it, and when it asks next,
+and Check for updates asks again at once. Nothing about your project is sent, a
+failed look is tried again within the hour and stays out of the status bar, and
+`--no-update-check` turns it off (0068, 0079).
 
-The update is the menu's button, `Update to` the newest release, and right
-under it is how it goes: it types the command into the terminal below, Enter
-there runs it, a minute or two, and dbt-edith then has to be stopped where it
-was started and started again, since the version that started serves the page
-until then. A card in the middle of the page says so once the command is typed
-(Press Enter in the terminal to run the update), and goes by itself after
-fifteen seconds, or at its button or at Escape pressed in the terminal or on the
-page. The command ends, when the install worked and not otherwise, on a line of
-its own saying the same restart in the terminal. The release tags are fetched
-before the pull, so the build stamp names the release it built. For a binary
-cargo installed, the command also empties the clone's `target/release` once the
-install worked (`cargo clean --release`), which cargo otherwise keeps filling
-with the leftovers of every build, a full copy of the dependencies for each one
-that changed; so each update builds from scratch, a little longer, and a failed
-clean changes neither the install nor the closing line (0120). The clone's
-`target/debug` is left alone, and a binary built in the clone keeps its folder,
-since it runs from there. Once the new binary is in place, which dbt-edith tells
-by the time its own file was written, the menu says `Installed: restart
-dbt-edith to run it` in place of the button and the pill reads `restart to
-update`, within a few seconds of the update ending, and of an update run by hand
-once the menu is opened (0095). A second card, `dbt-edith is installed`,
-appears the moment the page learns it, whether or not the button was pressed
-here, and stays until closed with its button or Escape in the terminal or on the
-page; it is not shown for an install the page found already done when it loaded,
-which the pill covers (0111). Neither, nor the menu's heading, names the new
-version, since a release out after the install may not be the one installed: a
-restart onto one still behind is offered the update again.
+The update is the menu's button, `Update to` the newest release, and right under
+it is how it goes: it types the command into the terminal below, Enter there
+runs it, a minute or two, and dbt-edith then has to be stopped where it was
+started and started again, since the version that started serves the page until
+then. A card in the middle of the page says so once the command is typed (Press
+Enter in the terminal to run the update), and goes by itself after fifteen
+seconds, or at its button or at Escape pressed in the terminal or on the page.
+The command ends, when the install worked and not otherwise, on a line of its
+own saying the same restart in the terminal. The release tags are fetched first,
+and the clone is then fast-forwarded to the announced release's tag and no
+further (`git merge --ff-only vX.Y.Z`), so a commit merged after the release is
+not built under its number and the build stamp names the release it built. It
+works on any branch the clone has out, which keeps that branch, and on a
+detached HEAD; a clone already at the tag or past it builds what it holds, and
+one with commits the tag does not contain stops there, as a pull would. The
+command names the release the last look found, and is typed only for a release
+that reads as three numbers (0129). For a binary cargo installed, the command
+also empties the clone's `target/release` once the install worked (`cargo clean
+--release`), which cargo otherwise keeps filling with the leftovers of every
+build, a full copy of the dependencies for each one that changed; so each update
+builds from scratch, a little longer, and a failed clean changes neither the
+install nor the closing line (0120). The clone's `target/debug` is left alone,
+and a binary built in the clone keeps its folder, since it runs from there. Once
+the new binary is in place, which dbt-edith tells by the time its own file was
+written, the menu says `Installed: restart dbt-edith to run it` in place of the
+button and the pill reads `restart to update`, within a few seconds of the
+update ending, and of an update run by hand once the menu is opened (0095). A
+second card, `dbt-edith is installed`, appears the moment the page learns it,
+whether or not the button was pressed here, and stays until closed with its
+button or Escape in the terminal or on the page; it is not shown for an install
+the page found already done when it loaded, which the pill covers (0111).
+Neither, nor the menu's heading, names the new version, since a release out
+after the install may not be the one installed: a restart onto one still behind
+is offered the update again.
 
 Opened by the pointer, the menu closes once the pointer has left Edith and the
 menu, or at the next key, which goes on to the editor or the terminal you were
@@ -88,12 +95,14 @@ as `<name>.old` and back if the swap fails (0123).
 ## On Windows, built here
 
 To update by hand, stop dbt-edith first, because Windows will not replace an
-`.exe` that is running, then `git pull`, `cargo install --path . --locked` and
-`cargo clean --release` (0120). The command the menu types when a release is out
-needs no stop: it renames the running `dbt-edith.exe` to `dbt-edith.exe.old`
-first, which Windows allows, and the old one goes on serving the page from
-there; it puts it back if the build fails. In Git Bash that command then ends as
-a failure, with no closing line; PowerShell prints no closing line either, but
-its status stays a success. Restart dbt-edith afterwards. A binary run from the
-clone's `target\release` gets no such command: cargo builds it through a file
-the rename does not free, so stop it before building.
+`.exe` that is running, then `git fetch --tags --force origin`, `git merge
+--ff-only vX.Y.Z` for the release you want, `cargo install --path . --locked`
+and `cargo clean --release` (0120, 0129). The command the menu types when a
+release is out needs no stop: it renames the running `dbt-edith.exe` to
+`dbt-edith.exe.old` first, which Windows allows, and the old one goes on serving
+the page from there; it puts it back if the build fails. In Git Bash that
+command then ends as a failure, with no closing line; PowerShell prints no
+closing line either, but its status stays a success. Restart dbt-edith
+afterwards. A binary run from the clone's `target\release` gets no such command:
+cargo builds it through a file the rename does not free, so stop it before
+building.
