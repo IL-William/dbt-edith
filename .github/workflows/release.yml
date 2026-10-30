@@ -4,7 +4,7 @@ name: release
 # GitHub release are created together at the commit that was pushed, and the
 # notes are that version's section of CHANGELOG.md (0045). The release is the
 # source, and for Windows the two .exe files CI builds on a native runner, with
-# their SHA-256 (0123).
+# their SHA-256 (0123) and their build provenance attested.
 #
 # The tag is made here rather than pushed by hand: one pushed by hand is the
 # step that gets left for later, and a version bumped on main and never tagged
@@ -154,6 +154,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # The attestation is signed with this workflow's identity, and stored
+      # with the repository.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,6 +170,13 @@ jobs:
       - name: The files are as they were built
         working-directory: dist
         run: sha256sum -c dbt-edith.exe.sha256 dbt-edith-arm64.exe.sha256
+      # Which workflow and commit built each file, kept on GitHub rather than
+      # beside the file as the .sha256 is. The files are the ones just checked,
+      # and Publish uploads these same paths. The .sha256 files are not
+      # attested: they are not what anyone runs.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.exe
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

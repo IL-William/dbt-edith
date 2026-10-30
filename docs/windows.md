@@ -31,9 +31,22 @@ is the published one:
 certutil -hashfile dbt-edith.exe SHA256
 ```
 
-It must match the `.sha256` file. The file is built with Microsoft's toolchain and
-carries no version resource. Keep it in a folder of your own on your `PATH`, as
-the next section shows, and run it. Update, in the menu under Edith, then
+It must match the `.sha256` file. That file is published beside the `.exe`, so
+with [`gh`](https://cli.github.com) there are two checks that do not rely on it:
+
+```
+gh release verify-asset vX.Y.Z dbt-edith.exe -R IL-William/dbt-edith
+gh attestation verify dbt-edith.exe -R IL-William/dbt-edith --signer-workflow IL-William/dbt-edith/.github/workflows/release.yml --source-ref refs/heads/main
+```
+
+The first says the release published this very file and that it cannot have
+changed since; it works for releases from 1.57.0 on, the first immutable ones.
+The second says this repository's release workflow built it, run from `main`;
+it works for releases after 1.61.0.
+
+The file is built with Microsoft's toolchain and carries no version resource.
+Keep it in a folder of your own on your `PATH`, as the next section shows, and
+run it. Update, in the menu under Edith, then
 downloads the next release, checks its SHA-256 and replaces the file, with the
 running one renamed to `dbt-edith.exe.old` or `dbt-edith-arm64.exe.old` until you
 restart; it keeps fetching the file of the architecture it was built for.
