@@ -18,6 +18,7 @@ mod git;
 mod graph;
 mod incremental;
 mod job;
+mod job_coverage;
 mod job_order;
 mod jobs;
 mod keys;
@@ -157,6 +158,10 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job"])]
     job_order: bool,
 
+    /// Print which models, seeds and snapshots no scheduled job runs, which run only in jobs whose schedule is not read or that nothing starts, and the steps that select nothing, as the Job coverage report lists them, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job", "job_order"])]
+    job_coverage: bool,
+
     /// Count what --select or --selector matched instead of listing it, one row per value of KEY and a total
     #[arg(long, value_enum, value_name = "KEY")]
     count_by: Option<ls::CountBy>,
@@ -165,7 +170,7 @@ struct Args {
     #[arg(long, value_name = "N")]
     depth: Option<usize>,
 
-    /// What --select, --selector, --column, --describe, --overview, --job and --job-order print: one name per line, one JSON object per node (per model for --column, one for --overview, --job or --job-order), or compact tab-separated lines; --describe, --overview, --job and --job-order print a text card unless json; with --count-by, json prints one object and name and compact print the same table
+    /// What --select, --selector, --column, --describe, --overview, --job, --job-order and --job-coverage print: one name per line, one JSON object per node (per model for --column, one for --overview, --job, --job-order or --job-coverage), or compact tab-separated lines; --describe, --overview, --job and --job-order print a text card unless json; --job-coverage prints text unless json, and its compact is one row per line; with --count-by, json prints one object and name and compact print the same table
     #[arg(long, value_enum, value_name = "FORMAT", default_value = "name")]
     output: ls::Output,
 
@@ -174,7 +179,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
@@ -185,7 +190,7 @@ struct Args {
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
             "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "overview", "job", "job_order",
-            "count_by", "depth", "output", "mcp",
+            "job_coverage", "count_by", "depth", "output", "mcp",
         ]
     )]
     skill: bool,
@@ -215,7 +220,7 @@ fn stray(args: &Args) -> Option<String> {
             "--column-lineage",
             "--column, or the page",
             args.column.is_some()
-                || (args.describe.is_empty() && !args.overview && args.job.is_none() && !args.job_order && args.select.is_none() && args.selector.is_none()),
+                || (args.describe.is_empty() && !args.overview && args.job.is_none() && !args.job_order && !args.job_coverage && args.select.is_none() && args.selector.is_none()),
         ),
     ];
     let stray = flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"));
@@ -237,13 +242,14 @@ enum Question {
     Overview { depth: usize },
     Job { name: String },
     JobOrder,
+    JobCoverage,
     Column(ls_column::Ask),
 }
 
 /// The question the arguments ask, or None for the page. One mapping from
 /// flags to mode, so the command line and the MCP tool cannot read the same
 /// flags two ways. A selection is looked at first, then a name to describe,
-/// the overview, a job, the order between jobs and the column, which is the order the modes were added in.
+/// the overview, a job, the order between jobs, the coverage of the jobs and the column, which is the order the modes were added in.
 fn question_of(args: &Args) -> Option<Question> {
     // The depth's 3 is applied here, as the overview's is below.
     let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
@@ -270,6 +276,9 @@ fn question_of(args: &Args) -> Option<Question> {
     }
     if args.job_order {
         return Some(Question::JobOrder);
+    }
+    if args.job_coverage {
+        return Some(Question::JobCoverage);
     }
     args.column.as_ref().map(|column| {
         Question::Column(ls_column::Ask {
@@ -298,6 +307,7 @@ impl Question {
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
             Question::Job { name } => job::run_job(project, manifest, catalog, name, args.output),
             Question::JobOrder => job_order::run_job_order(project, manifest, catalog, args.output),
+            Question::JobCoverage => job_coverage::run_job_coverage(project, manifest, catalog, args.output),
             Question::Column(ask) => ls_column::run(project, manifest, ask, args.output),
         }
     }
@@ -641,6 +651,10 @@ mod tests {
             ("--job-order --count-by kind", "--count-by goes with --select or --selector"),
             ("--job-order --up 1", "--up goes with --column"),
             ("--job-order --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+            ("--job-coverage --depth 2", "--depth goes with --overview or --count-by folder"),
+            ("--job-coverage --count-by kind", "--count-by goes with --select or --selector"),
+            ("--job-coverage --up 1", "--up goes with --column"),
+            ("--job-coverage --column-lineage n.json", "--column-lineage goes with --column, or the page"),
         ] {
             assert_eq!(stray(&asked(line)).as_deref(), Some(flag), "{line}");
         }
@@ -683,6 +697,7 @@ mod tests {
             ("--overview", "--mcp --overview"),
             ("--job", "--mcp --job jaffle_daily"),
             ("--job-order", "--mcp --job-order"),
+            ("--job-coverage", "--mcp --job-coverage"),
             ("--count-by", "--mcp --count-by kind"),
             ("--depth", "--mcp --depth 2"),
             ("--output", "--mcp --output json"),
@@ -723,6 +738,7 @@ mod tests {
             "--skill --overview",
             "--skill --job jaffle_daily",
             "--skill --job-order",
+            "--skill --job-coverage",
             "--skill --output json",
             "--skill --mcp",
             "--mcp --skill",
@@ -780,6 +796,8 @@ mod tests {
             "--job jaffle_daily --output json",
             "--job-order",
             "--job-order --output json",
+            "--job-coverage",
+            "--job-coverage --output compact",
             "",
         ] {
             assert_eq!(stray(&asked(line)), None, "{line}");
@@ -796,6 +814,7 @@ mod tests {
             Some(Question::Overview { depth }) => format!("overview {depth}"),
             Some(Question::Job { name }) => format!("job {name}"),
             Some(Question::JobOrder) => "job-order".to_string(),
+            Some(Question::JobCoverage) => "job-coverage".to_string(),
             Some(Question::Column(ask)) => format!(
                 "column {} {} {} {:?} produce={}",
                 ask.column,
@@ -815,6 +834,7 @@ mod tests {
         assert_eq!(text("--overview --depth 1"), "overview 1");
         assert_eq!(text("--job jaffle_daily"), "job jaffle_daily");
         assert_eq!(text("--job-order"), "job-order");
+        assert_eq!(text("--job-coverage"), "job-coverage");
         assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");
         assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text("--column orders.amount --run-collin"), "column orders.amount 0 0 [] produce=true");
@@ -835,6 +855,13 @@ mod tests {
             "--job-order -s orders",
             "--job-order --selector s",
             "--job-order --column a.b",
+            "--job-coverage --overview",
+            "--job-coverage --describe orders",
+            "--job-coverage -s orders",
+            "--job-coverage --selector s",
+            "--job-coverage --column a.b",
+            "--job-coverage --job a",
+            "--job-coverage --job-order",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),

@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.63.0 - 2026-10-30
+
+- Add `--job-coverage`, which prints what the Job coverage report shows, the
+  models, seeds and snapshots no scheduled job runs, those only unscheduled
+  jobs or jobs whose schedule is not read run, and the steps that select
+  nothing or could not be resolved, in text, `--output json` or `--output
+  compact`, and over MCP (0131).
+
 ## 1.62.0 - 2026-10-30
 
 - Warn in the startup banner and Edith's menu when the terminal's shell reads

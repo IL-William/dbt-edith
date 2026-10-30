@@ -16,7 +16,7 @@ Run `dbt-edith` from the project root as `dbt-edith . <flags>`. It reads the man
 | everything upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact` |
 | the sources feeding a model | `dbt-edith . -s '+model,resource_type:source' --exclude resource_type:test --output compact`; add `--count-by source` to count |
 | a column's sources, or what it feeds | `dbt-edith . --column model.column --up all --output compact`; or `--down all` |
-| which DAGs or jobs run a node; what a job runs; what no job orders | `jobs` line of `--describe name` (needs `.dbt-edith/jobs.yml`); `dbt-edith . --job name`; `--job-order` |
+| which jobs run a node; what a job runs; what no job runs or orders | `jobs` line of `--describe name` (needs `.dbt-edith/jobs.yml`); `--job name`; `--job-coverage`; `--job-order` |
 
 `--count-by` counts a selection by `folder` (`--depth N`, layers), `source`, `kind`, `materialized`, `tag` or `package`. Never count with a pipe.
 
@@ -29,7 +29,7 @@ Column lineage reads collin's or Fusion's cache beside the manifest, else fails.
 - **Leave the tests out unless asked.** A test joins its parent's selection: `--exclude resource_type:test` drops them, `--describe` lists a node's. Compact for lists, the card for one node.
 - **Big project: count, then narrow.** A long list (hundreds) or several cards can pass an answer limit: `--count-by folder` or `tag` first, list a narrow one, describe 2-3 names per call.
 - **Several `--exclude` terms go in one quoted value.** `--count-by` counts sources, seeds and the start too: `--exclude 'resource_type:test resource_type:source resource_type:seed resource_type:exposure'` counts models, snapshots and analyses; subtract the start if selected.
-- **Jobs touching a set, or models no job runs**: `dbt-edith . --overview --depth 0 --output json` names every job (text cuts at 15), `--job name` lists the nodes each runs and the steps' order, sensors included; intersect with or subtract from the selection. One call per job: with many, say which were skipped.
+- **Jobs touching a set**: `--overview --depth 0 --output json` names every job (text cuts at 15), `--job name` lists the nodes each runs and the steps' order; intersect with the selection. One call per job: with many, say which were skipped. Models no job runs: `dbt-edith . --job-coverage --output compact`.
 - **Confirm before anything irreversible**: `dbt ls` the selection before a run, drop or deletion.
 
 ## Freshness

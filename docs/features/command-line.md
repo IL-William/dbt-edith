@@ -9,8 +9,8 @@ terminal can ask the same questions [over MCP](#over-mcp).
 
 ## Without a server
 
-`--select` and `--selector`, `--column`, `--describe`, `--overview`, `--job`
-and `--job-order` have this in common
+`--select` and `--selector`, `--column`, `--describe`, `--overview`, `--job`,
+`--job-order` and `--job-coverage` have this in common
 ([0057](../decisions/0057-a-selection-is-answered-on-the-command-line.md),
 [0102](../decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md)):
 
@@ -29,7 +29,7 @@ and `--job-order` have this in common
   | --- | --- |
   | 0 | answered, an empty answer included, which stderr says |
   | 1 | refused: a selection or a name it cannot resolve, with the reason on stderr; `--describe` still prints the names it could |
-  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag; for `--job` and `--job-order`, no `.dbt-edith/jobs.yml`, or one that does not read |
+  | 2 | nothing was asked: no project, no manifest, an unreadable one, a `--catalog` that is not a file, or a wrong flag; for `--job`, `--job-order` and `--job-coverage`, no `.dbt-edith/jobs.yml`, or one that does not read |
 
   A flag that belongs to another mode is a wrong flag: `--sql` beside
   `--overview` or `--depth` beside `--describe` is refused, naming the mode it
@@ -44,6 +44,7 @@ and `--job-order` have this in common
   line; `json`, one object per node; `compact`, tab-separated lines under a
   header. `--describe`, `--overview`, `--job` and `--job-order` print text
   unless it is `json`: a card is read, so `compact` prints the same text.
+  `--job-coverage` prints text for `name`, and its `compact` is lines of its own.
 
 A call costs one process start and one read of the artifacts: the manifest for
 a selection or a column, and for `--describe` and `--overview` the catalog and
@@ -562,6 +563,80 @@ what it waits for as the Jobs tab words it) and `group_sensors` (the same, and
 `task`, the step's task that depends on it). The text's notes are built from
 these.
 
+## Which models no job runs
+
+`--job-coverage` prints what the Reports page's Job coverage lists: which of the
+project's own models, seeds and snapshots no scheduled job runs, which run only
+in jobs nothing starts or whose schedule is not read, and the steps that select
+nothing or could not be resolved
+([0131](../decisions/0131-job-coverage-is-answered-on-the-command-line.md)). It
+is the question an agent otherwise answers by calling `--job` for every job and
+subtracting from the project by hand.
+
+```
+dbt-edith path/to/project --job-coverage
+dbt-edith path/to/project --job-coverage --output compact
+dbt-edith path/to/project --job-coverage --output json
+```
+
+It reads the jobs as `--job` does, from the project's own `.dbt-edith/jobs.yml`,
+and exits 2 in the same cases, with the same sentences. An answer exits 0
+whether it lists something or not. It never runs dbt. Only the project's own
+nodes count, an installed package's models being the package's to schedule, and
+ephemeral models are listed apart, since no job runs one on its own.
+
+```
+1 of 8 models, seeds and snapshots run in a scheduled job; 1 only in unscheduled jobs, 6 in no job.
+run by no job  6
+  models/staging/stg_customers
+  models/staging/stg_orders
+  models/staging/stg_payments
+  seeds/raw_customers
+  seeds/raw_orders
+  seeds/raw_payments
+only in unscheduled jobs  1
+  models/customers
+steps that select nothing they act on  1
+  jaffle_daily › nothing  airflow · jaffle_daily.yml:7
+    dbt run --select tag:nightly
+    nothing matches `tag:nightly`
+```
+
+The first line is the page's sentence, so an answer a client cuts still says how
+much there was. A list with no row is not printed. **No list is cut**: the rows
+are the answer, and a node is its folder and its name, a step its job and task,
+its source, its file and line, the command as parsed and why it is listed.
+
+`--output compact` prints a header and one line per row, sorted as the text is:
+
+```
+list	name	where	why
+never	stg_customers	models/staging	
+unscheduled	customers	models	
+empty	jaffle_daily › nothing	airflow · jaffle_daily.yml:7	nothing matches `tag:nightly`
+```
+
+`list` is `never`, `unscheduled`, `unread`, `ephemeral`, `empty`,
+`unresolved` or `not_read`; `where` is a node's folder or a step's source and `file:line`, and
+`why` a step's alone. The `not_read` row puts its note in `name`, the other
+columns empty. The header comes even when there is no row.
+
+`--output json` prints one object: `configured` (the sources file names at least
+one source), `total` (the nodes that can run, ephemerals aside), and the lists
+`never`, `unscheduled`, `unread` and `ephemeral` (each row an `id`, `name`,
+`kind` and `folder`) and `empty` and `unresolved` (each step a `source`, `job`,
+`n`, `name`, `file`, `line`, `shown` and `why`), then `not_read` when a source
+was named and not read, and `files_refused` when job files were refused whole
+in a source that was read (a tab in the indentation), a count left out when 0.
+A source or a file not read could hold a job that runs what `never` lists, so
+the text says `not read:` right under its sentence, `2 job files (refused)`
+included, and compact starts with a `not_read` row. When every source failed outright (a folder
+that is not there), that note is the whole text and the only compact row; a
+source cut at its bound still gave its files, so the lists stay beside the note.
+In the first case JSON lists nothing either. With no source in the file there is
+no list (`total` and `ephemeral` stay the project's), `configured` is false,
+and compact prints its header and warns on stderr.
+
 ## The project
 
 `--overview` prints what the project holds on one screen, the first thing to
@@ -640,6 +715,7 @@ are safe to run unasked.
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
 | which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
 | what a DAG or dbt Cloud job runs, and what each step waits for | `dbt-edith . --job name`, step by step |
+| the models no job runs, and the steps that select nothing | `dbt-edith . --job-coverage --output compact` |
 | the dbt dependencies the jobs do not order | `dbt-edith . --job-order`, then `--output json` to filter |
 | whether the answer still holds | the `freshness:` line of stderr; run `dbt parse` when it says `stale` |
 
@@ -668,11 +744,11 @@ Six habits keep the answers small and true:
   the seeds, the exposures a downstream selection reaches and the node the
   selection starts from, so those are excluded to count models, and the start
   is subtracted when it is selected.
-- **For the jobs that touch a set of nodes, or the models no job runs, go job
-  by job.** `--overview --depth 0 --output json` names every job, where the
-  text stops at fifteen, `--job` lists the nodes each one runs, and the agent
-  intersects them with the selection or subtracts them from it. It costs one
-  call per job, so an agent with many says which it did not check. `--job` also
+- **For the jobs that touch a set of nodes, go job by job; for the models no
+  job runs, ask `--job-coverage`.** `--overview --depth 0 --output json` names
+  every job, where the text stops at fifteen, `--job` lists the nodes each one
+  runs, and the agent intersects them with the selection. It costs one call per
+  job, so an agent with many says which it did not check. `--job` also
   gives each step's order, the sensors a DAG waits on and what its tasks update,
   as the files write them; whether the jobs run what feeds a model before it is
   no job-by-job question, and `--job-order` answers it for all of them at once.
