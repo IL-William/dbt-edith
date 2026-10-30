@@ -6,17 +6,20 @@
 //! stdout carries the answer and nothing else; what it is worth, the
 //! manifest's date and whether files changed since, goes to stderr
 //! (`ls::provenance`). Nothing is served, stored or run: the files read beyond
-//! the artifacts are a node's own, under `--sql`, through `files::read_file`,
-//! which holds it to the project root as every read the page asks for, and the
-//! SQL dbt compiled from it, under `--compiled-sql`, through the lookup the
-//! page's compiled tab uses, which holds it to the target folder (0132).
+//! the artifacts are a node's own, under `--sql`, and a macro's, for the line it
+//! starts on (0133), through `files::read_file`, which holds them to the project
+//! root as every read the page asks for, and the SQL dbt compiled from a node,
+//! under `--compiled-sql`, through the lookup the page's compiled tab uses, which
+//! holds it to the target folder (0132).
 
 use crate::collin::{self, iso_utc, Available};
 use crate::compiled;
 use crate::envs::{self, Status};
 use crate::graph::{Graph, Kind, Node, Place};
 use crate::jobs::{self, Known};
-use crate::ls::{self, node_named, Output, ANSWERED, REFUSED};
+use crate::ls::{self, find_node, Output, Unnamed, ANSWERED, REFUSED, SUGGESTED};
+use crate::macro_use::{self, Summary, Why};
+use crate::macros::{self, Block, Macro};
 use crate::files;
 use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
@@ -183,7 +186,7 @@ pub(crate) fn no_name(names: &[String]) -> Option<&'static str> {
     wanted(names).is_empty().then_some(NO_NAME)
 }
 
-const NO_NAME: &str = "error: --describe wants the name or the unique_id of a node";
+const NO_NAME: &str = "error: --describe wants the name or the unique_id of a node or a macro";
 
 /// The names that were written, without the blanks a trailing comma leaves.
 fn wanted(names: &[String]) -> Vec<&str> {
@@ -216,11 +219,12 @@ fn describe(
     let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings);
     let newest_macro = std::cell::OnceCell::new();
     let mut code = ANSWERED;
-    let mut done: Vec<u32> = Vec::new();
+    let mut done: Vec<Named> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
+    let mut also: Vec<String> = Vec::new();
     for name in names {
-        let idx = match node_named(graph, name, &[]) {
-            Ok(idx) => idx,
+        let (named, shadowed) = match named(graph, name) {
+            Ok(named) => named,
             Err(why) => {
                 refused.push(why);
                 code = REFUSED;
@@ -228,10 +232,12 @@ fn describe(
             }
         };
         // A name and its unique_id in one call are one node, said once.
-        if done.contains(&idx) {
+        if done.contains(&named) {
             continue;
         }
-        let n = &graph.nodes[idx as usize];
+        if let Some(at) = shadowed {
+            also.push(format!("{name}: a macro too, {}", graph.macros.at(at).id));
+        }
         let text = matches!(output, Output::Name | Output::Compact);
         // The empty line between two cards goes out before a note of
         // `--sql` on stderr, so the note does not read as the end of the
@@ -239,51 +245,138 @@ fn describe(
         if text && !done.is_empty() {
             writeln!(out)?;
         }
-        let body = if sql {
-            out.flush()?;
-            read_sql(graph, root, n, err)?
-        } else {
-            None
-        };
-        let built = match compiled {
-            Some(target) => {
-                out.flush()?;
-                read_compiled(root, target, &newest_macro, n, err)?
-            }
-            None => None,
-        };
-        match output {
-            Output::Json => {
-                serde_json::to_writer(&mut *out, &Described::of(graph, &files, idx, body, built))?;
-                writeln!(out)?;
-            }
-            // A card is read, so compact has nothing to drop from it: both
-            // print the text.
-            Output::Name | Output::Compact => {
-                let (first, mut sheet) = card(graph, &files, idx);
-                for (key, text) in [("sql", &body), ("compiled sql", &built)] {
-                    if let Some(text) = text.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
-                        // dbt leaves the blank lines of a `{% set %}` line or a
-                        // comment at the head of a compiled file; they are not
-                        // the query. The file's own keeps its head as written,
-                        // and JSON keeps both whole.
-                        let skipped = if key == "sql" { 0 } else { text.lines().take_while(|l| l.trim().is_empty()).count() };
-                        sheet.block(key, "", text.lines().skip(skipped).map(|l| l.trim_end().to_string()).collect());
+        match named {
+            Named::Node(idx) => {
+                let n = &graph.nodes[idx as usize];
+                let body = if sql {
+                    out.flush()?;
+                    read_sql(graph, root, n, err)?
+                } else {
+                    None
+                };
+                let built = match compiled {
+                    Some(target) => {
+                        out.flush()?;
+                        read_compiled(root, target, &newest_macro, n, err)?
+                    }
+                    None => None,
+                };
+                match output {
+                    Output::Json => {
+                        serde_json::to_writer(&mut *out, &Described::of(graph, &files, idx, body, built))?;
+                        writeln!(out)?;
+                    }
+                    // A card is read, so compact has nothing to drop from it: both
+                    // print the text.
+                    Output::Name | Output::Compact => {
+                        let (first, mut sheet) = card(graph, &files, idx);
+                        code_rows(&mut sheet, &body, &built);
+                        writeln!(out, "{}", clean(&first))?;
+                        sheet.write(2, out)?;
                     }
                 }
-                writeln!(out, "{}", clean(&first))?;
-                sheet.write(2, out)?;
+            }
+            Named::Macro(at) => {
+                let m = graph.macros.at(at);
+                let found = MacroFile::of(graph, root, m);
+                let body = if sql {
+                    out.flush()?;
+                    found.note(&m.name, err)?;
+                    found.body.clone()
+                } else {
+                    None
+                };
+                // Nothing is compiled for a macro: dbt renders it into the SQL of
+                // the nodes that call it. Said as for a seed, with the card printed.
+                if compiled.is_some() {
+                    out.flush()?;
+                    writeln!(err, "{}: a macro has no compiled SQL of its own", m.name)?;
+                }
+                match output {
+                    Output::Json => {
+                        serde_json::to_writer(&mut *out, &DescribedMacro::of(graph, m, at, &found, body))?;
+                        writeln!(out)?;
+                    }
+                    Output::Name | Output::Compact => {
+                        let (first, mut sheet) = macro_card(graph, m, at, &found);
+                        code_rows(&mut sheet, &body, &None);
+                        writeln!(out, "{}", clean(&first))?;
+                        sheet.write(2, out)?;
+                    }
+                }
             }
         }
-        done.push(idx);
+        done.push(named);
     }
-    if !refused.is_empty() {
+    if !refused.is_empty() || !also.is_empty() {
         out.flush()?;
+        for note in also {
+            writeln!(err, "{note}")?;
+        }
         for why in refused {
             writeln!(err, "error: {why}")?;
         }
     }
     Ok(code)
+}
+
+/// The files read under `--sql` and `--compiled-sql`, as the card's last rows.
+fn code_rows(sheet: &mut Sheet, body: &Option<String>, built: &Option<String>) {
+    for (key, text) in [("sql", body), ("compiled sql", built)] {
+        if let Some(text) = text.as_deref().map(str::trim_end).filter(|b| !b.is_empty()) {
+            // dbt leaves the blank lines of a `{% set %}` line or a
+            // comment at the head of a compiled file; they are not
+            // the query. The file's own keeps its head as written,
+            // and JSON keeps both whole.
+            let skipped = if key == "sql" { 0 } else { text.lines().take_while(|l| l.trim().is_empty()).count() };
+            sheet.block(key, "", text.lines().skip(skipped).map(|l| l.trim_end().to_string()).collect());
+        }
+    }
+}
+
+/// What a name written on the command line stands for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Named {
+    Node(u32),
+    /// By its position in `Macros`.
+    Macro(u32),
+}
+
+/// Resolves a name to a node, else to a macro (0133). A node wins a name the
+/// two share, so an answer never changes because a package brought a macro of
+/// that name; and a name that several nodes share is refused, never settled
+/// by a macro. A macro is reached by `package.name`, by its unique_id, or by
+/// a bare name the way dbt resolves a call from the root project
+/// (`Macros::lookup`).
+///
+/// With a node, the macro the name also reaches, which the caller says on
+/// stderr: `package.name` ends a package node's unique_id, so a node wins it
+/// too, and only the macro's own unique_id then reaches the macro.
+fn named(graph: &Graph, name: &str) -> Result<(Named, Option<u32>), String> {
+    let also = graph.macros.lookup(name, &graph.meta.adapter);
+    match find_node(graph, name, &[]) {
+        Ok(idx) => return Ok((Named::Node(idx), also)),
+        Err(Unnamed::Many(why)) => return Err(why),
+        Err(Unnamed::Nothing) => {}
+    }
+    if let Some(at) = also {
+        return Ok((Named::Macro(at), None));
+    }
+    // Only a real refusal pays for the suggestions.
+    let mut near = ls::near_nodes(graph, name, &[]);
+    // Nodes are what is written first, and a macro the name is only a
+    // package away from (`dbt_utils.star` for `star`) fills what is left.
+    for m in graph.macros.search(name) {
+        if near.len() >= SUGGESTED {
+            break;
+        }
+        let call = graph.macros.position(&m.id).map(|at| macro_use::call_of(&graph.macros, at)).unwrap_or_else(|| m.name.clone());
+        if !near.contains(&call) {
+            near.push(call);
+        }
+    }
+    let none = format!("no node or macro named {name}");
+    Err(if near.is_empty() { none } else { format!("{none}; did you mean {}", near.join(", ")) })
 }
 
 /// Whether the node's own file holds code: a model, a snapshot, an analysis or
@@ -370,6 +463,290 @@ fn read_compiled(
 
 /// How much of a compiled file is read: what the page's compiled tab reads.
 const COMPILED_MAX: u64 = 2 * 1024 * 1024;
+
+// ------------------------------------------------------------------- a macro
+
+/// A macro's file as the card reads it (0133): where it is, the lines its
+/// definition spans, and what `--sql` prints of them. The file is read for
+/// the line the card names whether or not `--sql` is given, through
+/// `files::read_file`, which holds it to the project root.
+struct MacroFile {
+    /// Where the file is, or would be, under the project: what `dbt deps`
+    /// makes of an installed package's, and the manifest's own for a macro of
+    /// dbt's, which the project does not hold.
+    path: String,
+    block: Option<Block>,
+    /// The definition's lines, each ended, once the file was read and holds it.
+    body: Option<String>,
+    /// Why there is no body, said on stderr under `--sql` only: the card is
+    /// the answer, and a file is no reason to change the exit code.
+    problem: Option<String>,
+    /// Whether the macro is dbt's or its adapter's, whose path is inside the
+    /// installed package and is no file of the project.
+    own: bool,
+    /// The argument names the opening tag writes, the one place that lists
+    /// them all: the manifest knows only those the YAML documents.
+    signature: Option<Vec<String>>,
+}
+
+impl MacroFile {
+    fn of(graph: &Graph, root: &Path, m: &Macro) -> MacroFile {
+        let macros = &graph.macros;
+        let Some(path) = macros.place(root, m) else {
+            let internal = macro_use::internal_package(&graph.meta.adapter, &m.package);
+            let missing =
+                |path: String, problem: String| MacroFile { path, block: None, body: None, problem: Some(problem), own: internal, signature: None };
+            return if m.package == macros.root() || internal {
+                let problem = if internal {
+                    "a macro of dbt's own, which the project holds no file of".to_string()
+                } else {
+                    format!("cannot read {}: no such file in the project", m.path)
+                };
+                missing(m.path.clone(), problem)
+            } else {
+                match package_in(root, &m.package) {
+                    Package::Outside => missing(
+                        format!("dbt_packages/{}/{}", m.package, m.path),
+                        format!("package {} is linked from outside the project, so its file is not read", m.package),
+                    ),
+                    // Installed, and the manifest remembers a file it no longer
+                    // holds: a package upgraded since `dbt parse`.
+                    Package::Installed(dir) => {
+                        let path = format!("{dir}/{}/{}", m.package, m.path);
+                        let problem = format!("cannot read {path}: no such file in package {}", m.package);
+                        missing(path, problem)
+                    }
+                    Package::Missing => missing(
+                        format!("dbt_packages/{}/{}", m.package, m.path),
+                        format!("its file is in package {}, which is not installed under the project: run dbt deps", m.package),
+                    ),
+                }
+            };
+        };
+        let mut found = MacroFile { path: path.clone(), block: None, body: None, problem: None, own: false, signature: None };
+        match files::read_file(root, &path) {
+            Ok(read) => match macros::block_in(&read.content, &m.name) {
+                Some(block) => {
+                    let mut body: String = read.content.lines().skip(block.line - 1).take(block.end - block.line + 1).collect::<Vec<_>>().join("\n");
+                    body.push('\n');
+                    found.block = Some(block);
+                    found.body = Some(body);
+                    found.signature = macros::args_in(&read.content, &m.name);
+                    if read.truncated {
+                        found.problem = Some(format!("{path} is larger than dbt-edith reads of a file, so its end is left out"));
+                    }
+                }
+                None => found.problem = Some(format!("no definition of it found in {path}")),
+            },
+            Err(e) => found.problem = Some(format!("cannot read {path}: {e}")),
+        }
+        found
+    }
+
+    /// The reason `--sql` printed less than the definition, on stderr.
+    fn note(&self, name: &str, err: &mut impl Write) -> io::Result<()> {
+        match &self.problem {
+            Some(why) => writeln!(err, "{name}: {why}"),
+            None => Ok(()),
+        }
+    }
+
+    /// `path:line`, or the path alone when no definition was found. A path
+    /// inside dbt's own package is marked, so it is not opened in the project.
+    fn place(&self) -> String {
+        match self.block {
+            Some(b) => format!("{}:{}", self.path, b.line),
+            None if self.own => format!("dbt's own: {}", self.path),
+            None => self.path.clone(),
+        }
+    }
+}
+
+/// Where `dbt deps` put a package, as the palette's macro search looks for it.
+enum Package {
+    /// In this folder of the project.
+    Installed(&'static str),
+    /// A folder is there and leads out of the project, as a link to a checkout
+    /// elsewhere does.
+    Outside,
+    Missing,
+}
+
+fn package_in(root: &Path, package: &str) -> Package {
+    let Ok(canon) = root.canonicalize() else { return Package::Missing };
+    let mut outside = false;
+    for dir in macros::PACKAGE_DIRS {
+        let rel = format!("{dir}/{package}");
+        match files::resolve_under(root, &canon, &rel) {
+            Ok(path) if path.is_dir() => return Package::Installed(dir),
+            Err(_) if root.join(&rel).exists() => outside = true,
+            _ => {}
+        }
+    }
+    if outside { Package::Outside } else { Package::Missing }
+}
+
+/// How many nodes of a kind call a macro, in the words of the page's card.
+fn kind_words_of(kind: &str, n: usize) -> &str {
+    let (one, many) = match kind {
+        "model" => ("model", "models"),
+        "snapshot" => ("snapshot", "snapshots"),
+        "seed" => ("seed", "seeds"),
+        "test" => ("test", "tests"),
+        "analysis" => ("analysis", "analyses"),
+        "operation" => ("hook", "hooks"),
+        "exposure" => ("exposure", "exposures"),
+        "source" => ("source", "sources"),
+        _ => ("node", "nodes"),
+    };
+    if n == 1 { one } else { many }
+}
+
+/// What dbt runs a macro for, in the page's words: `each` for the reason,
+/// `count` with how many there are.
+fn run_said(run: &macro_use::Run) -> (String, String) {
+    let (one, many) = match run.key {
+        "materialized" => ("model materialized", "models materialized"),
+        "incremental_strategy" => ("incremental model with strategy", "incremental models with strategy"),
+        "strategy" => ("snapshot with strategy", "snapshots with strategy"),
+        _ => ("node named", "nodes named"),
+    };
+    (format!("{one} {}", run.name), format!("{} {}", counted(run.nodes, one, many), run.name))
+}
+
+/// The line of a card that says who calls a macro, and the lines under it,
+/// worded as the page's card words them (0105): never `unused`, since the
+/// manifest cannot see half the ways a macro runs.
+fn used_text(used: &Summary, adapter: &str) -> (String, Vec<String>) {
+    let total: usize = used.by.iter().map(|k| k.n).sum();
+    let mut callers = used.callers.join(", ");
+    if used.callers_of > used.callers.len() {
+        callers.push_str(&format!(" and {} more", used.callers_of - used.callers.len()));
+    }
+    let mut notes = Vec::new();
+    if total > 0 {
+        if used.through > 0 {
+            notes.push(if used.through == total { "all of them through other macros".to_string() } else { format!("{} of them through other macros", used.through) });
+        }
+        if used.written > 0 {
+            let which = if used.written == total { "all of them".to_string() } else { format!("{} of them", used.written) };
+            notes.push(format!("{which} only where dbt recorded no call, read from their SQL"));
+        }
+        if !callers.is_empty() {
+            notes.push(format!("called by {callers}"));
+        }
+        let by: Vec<String> = used.by.iter().map(|k| format!("{} {}", k.n, kind_words_of(k.kind, k.n))).collect();
+        return (by.join(", "), notes);
+    }
+    let ran = used.run.as_ref().map(run_said);
+    let why = match used.why {
+        Some(Why::Dbt) if used.from.is_empty() => Some("dbt calls it itself by its name, and records no call".to_string()),
+        Some(Why::Dbt) => Some(format!("called by {}, which dbt runs itself", used.from)),
+        Some(Why::Run) => ran.map(|(each, _)| {
+            let nodes = used.run.as_ref().map_or(0, |r| r.nodes);
+            format!("dbt runs it for each {each}, and {}", if nodes > 0 { counted(nodes, "is", "are") } else { "none is".to_string() })
+        }),
+        Some(Why::Dispatch) => Some(format!(
+            "a variant adapter.dispatch did not pick for {}, the one this manifest was parsed for",
+            if adapter.is_empty() { "the adapter" } else { adapter }
+        )),
+        Some(Why::Test) => Some("a generic test no enabled test uses".to_string()),
+        Some(Why::Macros) => Some(format!("called only by {callers}, which no node reaches either")),
+        Some(Why::None) => Some("nothing in the manifest calls it: dbt run-operation or another package may".to_string()),
+        None => None,
+    };
+    ("no reference found".to_string(), why.into_iter().collect())
+}
+
+/// The names of a macro's arguments: those its opening tag writes, else the
+/// YAML's, else None.
+fn arguments_of(m: &Macro, file: &MacroFile) -> Option<Vec<String>> {
+    file.signature.clone().or_else(|| (!m.args.is_empty()).then(|| m.args.clone()))
+}
+
+/// The card's `arguments` row. A macro known to take none says so, and one
+/// whose arguments nothing lists says that, where an empty row would read as a
+/// macro that takes none.
+fn arguments_text(m: &Macro, file: &MacroFile) -> String {
+    match arguments_of(m, file) {
+        Some(args) if args.is_empty() => "none".to_string(),
+        Some(args) => args.join(", "),
+        // No tag was read, so no file, and no YAML: nothing to point `--sql` at.
+        None => "not documented".to_string(),
+    }
+}
+
+/// A macro's card: the first line says it is one, its name and where it is
+/// written, and the rows below say the package, the arguments, the
+/// description and who calls it.
+fn macro_card(graph: &Graph, m: &Macro, at: u32, file: &MacroFile) -> (String, Sheet) {
+    let first = ["macro ".to_string() + &m.name, file.place()].into_iter().filter(|p| !p.trim().is_empty()).collect::<Vec<_>>().join("  ");
+    let mut sheet = Sheet::default();
+    sheet.line("package", m.package.as_str());
+    sheet.line("arguments", arguments_text(m, file));
+    let text = m.description.trim();
+    if !text.is_empty() {
+        sheet.block("description", "", text.lines().map(|l| l.trim_end().to_string()).collect());
+    }
+    let used = graph.macro_use.summary(&graph.macros, &graph.nodes, &graph.meta.adapter, at);
+    let (head, notes) = used_text(used, &graph.meta.adapter);
+    if notes.is_empty() {
+        sheet.line("used by", head);
+    } else {
+        sheet.block("used by", head, notes);
+    }
+    (first, sheet)
+}
+
+/// One macro of a `--output json` answer, a line of its own. `kind` is the one
+/// key a node's line does not have, so a reader can tell the two apart.
+#[derive(serde::Serialize)]
+struct DescribedMacro<'a> {
+    kind: &'static str,
+    unique_id: &'a str,
+    name: &'a str,
+    package_name: &'a str,
+    /// dbt's own, inside its package for a package's macro.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    original_file_path: &'a str,
+    /// Where the file is, or would be, under the project, when that is not
+    /// `original_file_path`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    path: String,
+    /// The lines its definition spans in that file, when it was found there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_line: Option<usize>,
+    /// Left out only when nothing lists them; a macro known to take none says `[]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    arguments: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    description: &'a str,
+    used: Summary,
+    /// The definition's own lines, with `--sql`, once they were read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sql: Option<String>,
+}
+
+impl<'a> DescribedMacro<'a> {
+    fn of(graph: &Graph, m: &'a Macro, at: u32, file: &MacroFile, sql: Option<String>) -> DescribedMacro<'a> {
+        DescribedMacro {
+            kind: "macro",
+            unique_id: &m.id,
+            name: &m.name,
+            package_name: &m.package,
+            original_file_path: &m.path,
+            path: if file.path == m.path { String::new() } else { file.path.clone() },
+            line: file.block.map(|b| b.line),
+            end_line: file.block.map(|b| b.end),
+            arguments: arguments_of(m, file),
+            description: m.description.trim(),
+            used: graph.macro_use.summary(&graph.macros, &graph.nodes, &graph.meta.adapter, at).clone(),
+            sql,
+        }
+    }
+}
 
 /// Where a node is built: dbt's own `relation_name`, else what is left of
 /// database, schema and alias for a node that is built at all. An ephemeral
@@ -1768,6 +2145,7 @@ fn folders(graph: &Graph, depth: usize) -> Vec<FolderFacts> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ls::node_named;
     use crate::manifest::{RawCatalog, RawManifest};
     use serde_json::json;
 
@@ -2148,12 +2526,12 @@ mod tests {
         let (out, err, code) = ask(&["order"], Output::Name);
         assert_eq!((out.as_str(), code), ("", REFUSED));
         // Models and sources before the tests that carry their names.
-        assert_eq!(err, "error: no node named order; did you mean orders, orders_daily, raw.orders, stg_orders\n");
+        assert_eq!(err, "error: no node or macro named order; did you mean orders, orders_daily, raw.orders, stg_orders\n");
         let (_, err, _) = ask(&["nothing_like_it"], Output::Name);
-        assert_eq!(err, "error: no node named nothing_like_it\n");
+        assert_eq!(err, "error: no node or macro named nothing_like_it\n");
         // Only a test could be meant: the tests are offered.
         let (_, err, _) = ask(&["not_null_orders_order"], Output::Name);
-        assert_eq!(err, "error: no node named not_null_orders_order; did you mean not_null_orders_order_id\n");
+        assert_eq!(err, "error: no node or macro named not_null_orders_order; did you mean not_null_orders_order_id\n");
         let (out, err, code) = ask(&[" ", ""], Output::Name);
         assert_eq!((out.as_str(), code), ("", REFUSED));
         assert!(err.starts_with("error: --describe wants"), "{err}");
@@ -2236,7 +2614,7 @@ mod tests {
     fn several_names_print_several_cards_and_the_unknown_ones_are_refused_last() {
         let (out, err, code) = ask(&["stg_orders", "nothing", "weekly_report", "model.shop.stg_orders"], Output::Name);
         assert_eq!(code, REFUSED);
-        assert_eq!(err, "error: no node named nothing\n");
+        assert_eq!(err, "error: no node or macro named nothing\n");
         // One empty line between cards, and the same node named twice is one.
         assert_eq!(
             out,
@@ -2415,6 +2793,26 @@ mod tests {
     }
 
     #[test]
+    fn a_macro_has_no_compiled_sql_and_the_card_is_still_printed() {
+        let dir = compiled_project("macro", &[("target/compiled/shop/models/marts/orders.sql", "select 1\n")]);
+        let g = with_macros();
+        // Beside a node that has some, as for a seed: the note, the card, the code unchanged.
+        let (out, err, code) = ask_compiled(&g, &dir, &["orders", "cents_to_dollars"], false, Output::Name);
+        let said = "cents_to_dollars: a macro has no compiled SQL of its own\norders: a macro too, macro.shop.orders\n";
+        assert_eq!((code, err.as_str()), (ANSWERED, said));
+        assert!(out.contains("  compiled sql\n    select 1\n") && out.contains("\nmacro cents_to_dollars"), "{out}");
+        assert_eq!(out.matches("compiled sql").count(), 1, "{out}");
+        let (out, _, code) = ask_compiled(&g, &dir, &["cents_to_dollars"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!((code, v["kind"].as_str(), v.get("compiled_sql")), (ANSWERED, Some("macro"), None));
+        // With `--sql` too: the macro's own lines, and the one note about the other flag.
+        let (out, err, _) = ask_compiled(&g, &dir, &["dbt_utils.star"], true, Output::Name);
+        assert!(!out.contains("compiled sql"), "{out}");
+        assert!(err.ends_with("star: a macro has no compiled SQL of its own\n"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn the_blank_lines_dbt_leaves_at_the_head_of_a_compiled_file_are_not_printed() {
         let dir = compiled_project("head", &[("target/compiled/shop/models/marts/orders.sql", "\n\n  \nselect 1\n")]);
         let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Name);
@@ -2442,6 +2840,92 @@ mod tests {
         assert_eq!(v["compiled_sql"], "select *\nfrom raw.stg_orders\n");
         assert!(v.get("sql").is_none());
         assert!(!ask(&["orders"], Output::Json).0.contains("compiled_sql"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The graph with macros worth asking for: a documented one two models
+    /// and a test call, one sharing its name with a model, one of a package
+    /// that the root project also defines, one only a package defines, and
+    /// one dbt and its adapter both define.
+    fn with_macros() -> Graph {
+        graph_with(|m| {
+            let mac = |name: &str, package: &str, path: &str| json!({ "name": name, "package_name": package, "original_file_path": path });
+            m["macros"]["macro.shop.cents_to_dollars"] = json!({
+                "name": "cents_to_dollars", "package_name": "shop", "original_file_path": "macros/money.sql",
+                "description": "Converts cents to dollars.\n\nRounds half up.",
+                "arguments": [{ "name": "amount" }, { "name": "scale" }],
+            });
+            m["macros"]["macro.shop.orders"] = mac("orders", "shop", "macros/orders.sql");
+            m["macros"]["macro.shop.star"] = mac("star", "shop", "macros/star.sql");
+            m["macros"]["macro.dbt_utils.star"] = mac("star", "dbt_utils", "macros/sql/star.sql");
+            m["macros"]["macro.dbt_utils.pivot_all"] = mac("pivot_all", "dbt_utils", "macros/sql/pivot_all.sql");
+            m["macros"]["macro.dbt_duckdb.run_query"] = mac("run_query", "dbt_duckdb", "macros/run_query.sql");
+            for name in ["helper", "nothing", "materialization_fancy_default"] {
+                m["macros"][format!("macro.shop.{name}")] = mac(name, "shop", "macros/helper.sql");
+            }
+            for id in ["model.shop.orders", "model.shop.orders_daily", "test.shop.assert_positive_amounts"] {
+                m["nodes"][id]["depends_on"] = json!({ "macros": ["macro.shop.cents_to_dollars"] });
+            }
+        })
+    }
+
+    const MONEY: &str = "{# {% macro cents_to_dollars(x) %} is the old one #}\n\
+        {% macro other() %}select 1{% endmacro %}\n\
+        \n\
+        {% macro cents_to_dollars(amount, scale=2) -%}\n\
+        \x20   ({{ amount }} / 100)::numeric(16, {{ scale }})\n\
+        {%- endmacro %}\n";
+
+    fn project_with_money() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-describe-macro-{}-{:?}", std::process::id(), std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("macros")).unwrap();
+        std::fs::write(dir.join("macros/money.sql"), MONEY).unwrap();
+        std::fs::write(
+            dir.join("macros/helper.sql"),
+            "{% macro helper(a, b=\"x,)\", c=none, d=[1, 2]) %}{{ a }}{% endmacro %}\n\
+             {% macro nothing() %}1{% endmacro %}\n\
+             {% materialization fancy, default %}{% endmaterialization %}\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_macro_is_described_by_its_name_when_no_node_has_it() {
+        let dir = project_with_money();
+        let g = with_macros();
+        let (out, err, code) = ask_on(&g, &dir, &["cents_to_dollars"], false, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        assert_eq!(
+            out,
+            lines(&[
+                "macro cents_to_dollars  macros/money.sql:4",
+                "  package    shop",
+                "  arguments  amount, scale",
+                "  description",
+                "    Converts cents to dollars.",
+                "",
+                "    Rounds half up.",
+                "  used by    2 models, 1 test",
+            ])
+        );
+        // A card is read, so compact has nothing to drop from it.
+        assert_eq!(ask_on(&g, &dir, &["cents_to_dollars"], false, Output::Compact).0, out);
+
+        let (out, _, _) = ask_on(&g, &dir, &["cents_to_dollars"], false, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(
+            v,
+            json!({
+                "kind": "macro", "unique_id": "macro.shop.cents_to_dollars", "name": "cents_to_dollars", "package_name": "shop",
+                "original_file_path": "macros/money.sql", "line": 4, "end_line": 6, "arguments": ["amount", "scale"],
+                "description": "Converts cents to dollars.\n\nRounds half up.",
+                "used": { "by": [{ "kind": "model", "n": 2 }, { "kind": "test", "n": 1 }] },
+            })
+        );
+        // Not asked for: the file is read for its line, and its text is not said.
+        assert!(v.get("sql").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2477,6 +2961,44 @@ mod tests {
         assert_eq!(code, ANSWERED);
         assert!(!out.contains("not for the card") && !out.contains("compiled sql"), "{out}");
         assert_eq!(err, "leaky: the compiled path the manifest records leaves the target folder, so it is not read\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_arguments_are_those_the_opening_tag_writes_and_the_yaml_only_when_it_is_not_found() {
+        let dir = project_with_money();
+        let g = with_macros();
+        let row = |name: &str| -> String {
+            let (out, _, _) = ask_on(&g, &dir, &[name], false, Output::Name);
+            out.lines().find(|l| l.starts_with("  arguments")).unwrap_or("none").to_string()
+        };
+        // No YAML at all: the names, without their defaults, a default that holds
+        // a comma or a parenthesis included.
+        assert_eq!(row("helper"), "  arguments  a, b, c, d");
+        let (out, _, _) = ask_on(&g, &dir, &["helper"], false, Output::Json);
+        assert_eq!(serde_json::from_str::<serde_json::Value>(out.trim()).unwrap()["arguments"], json!(["a", "b", "c", "d"]));
+        // A tag with none is a macro that takes none, not one that says nothing.
+        assert_eq!(row("nothing"), "  arguments  none");
+        let (out, _, _) = ask_on(&g, &dir, &["nothing"], false, Output::Json);
+        assert_eq!(serde_json::from_str::<serde_json::Value>(out.trim()).unwrap()["arguments"], json!([]));
+        // Unknown is another thing: the key is not there.
+        let (out, _, _) = ask_on(&g, &dir, &["ref"], false, Output::Json);
+        assert!(serde_json::from_str::<serde_json::Value>(out.trim()).unwrap().get("arguments").is_none());
+        // The tag wins over the YAML's shorter list.
+        assert_eq!(row("cents_to_dollars"), "  arguments  amount, scale");
+        // A materialization takes none, whatever its tag says.
+        assert_eq!(row("materialization_fancy_default"), "  arguments  none");
+        // dbt's own has no file and no YAML here: nothing to show, and no `--sql` to point at.
+        assert_eq!(row("ref"), "  arguments  not documented");
+        // With only the YAML to go on, its names stand.
+        let yaml = graph_with(|m| {
+            m["macros"]["macro.shop.cents_to_dollars"] = json!({
+                "name": "cents_to_dollars", "package_name": "shop", "original_file_path": "macros/gone.sql",
+                "arguments": [{ "name": "amount" }],
+            });
+        });
+        let (out, _, _) = ask_on(&yaml, &dir, &["cents_to_dollars"], false, Output::Name);
+        assert!(out.contains("  arguments  amount\n"), "{out}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2533,6 +3055,171 @@ mod tests {
             err,
             "orders: target/compiled/shop/models/marts/orders.sql is older than the model file: run dbt compile -s orders\n"
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_macro_no_node_reaches_says_why_it_may_still_run() {
+        let g = with_macros();
+        let (out, _, _) = ask_on(&g, Path::new("/nowhere"), &["shop.star"], false, Output::Name);
+        // Nothing reads the file of a project that is nowhere: no line, no error.
+        assert_eq!(
+            out,
+            lines(&[
+                "macro star  macros/star.sql",
+                "  package    shop",
+                "  arguments  not documented",
+                "  used by    no reference found",
+                "    nothing in the manifest calls it: dbt run-operation or another package may",
+            ]),
+        );
+    }
+
+    #[test]
+    fn a_node_wins_a_name_a_macro_shares() {
+        let dir = project_with_money();
+        let g = with_macros();
+        let (out, _, _) = ask_on(&g, &dir, &["orders"], false, Output::Name);
+        assert!(out.starts_with("model orders  table"), "{out}");
+        // `package.name` ends the node's unique_id too, so the node wins there
+        // as well; the macro is reached by its own unique_id.
+        let (out, err, _) = ask_on(&g, &dir, &["shop.orders", "orders", "stg_orders"], false, Output::Name);
+        assert!(out.starts_with("model orders  table"), "{out}");
+        // Said once for the node, whatever way it was named, with what reaches the macro.
+        assert_eq!(err, "shop.orders: a macro too, macro.shop.orders\n");
+        let (out, _, _) = ask_on(&g, &dir, &["macro.shop.orders"], false, Output::Name);
+        assert!(out.starts_with("macro orders  macros/orders.sql\n"), "{out}");
+        // Said after the cards, ahead of a refusal.
+        let (_, err, code) = ask_on(&g, &dir, &["orders", "nope"], false, Output::Name);
+        assert_eq!((code, err.as_str()), (REFUSED, "orders: a macro too, macro.shop.orders\nerror: no node or macro named nope\n"));
+        // A name several nodes share is refused whatever macro is named so.
+        let g = graph_with(|m| {
+            m["macros"]["macro.shop.customers"] = json!({ "name": "customers", "package_name": "shop", "original_file_path": "macros/c.sql" });
+        });
+        let (out, err, code) = ask_on(&g, &dir, &["customers"], false, Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        assert!(err.starts_with("error: customers names 2 nodes"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_bare_macro_name_is_resolved_as_dbt_resolves_a_call() {
+        let g = with_macros();
+        let first = |name: &str| -> String {
+            let (out, _, code) = ask_on(&g, Path::new("/nowhere"), &[name], false, Output::Json);
+            assert_eq!(code, ANSWERED, "{name}");
+            serde_json::from_str::<serde_json::Value>(out.trim()).unwrap()["unique_id"].as_str().unwrap().to_string()
+        };
+        // The root project's before a package's, which a bare name never reaches.
+        assert_eq!(first("star"), "macro.shop.star");
+        assert_eq!(first("dbt_utils.star"), "macro.dbt_utils.star");
+        assert_eq!(first("macro.dbt_utils.star"), "macro.dbt_utils.star");
+        // The adapter's own before dbt's, and dbt's once the others lack it.
+        assert_eq!(first("run_query"), "macro.dbt_duckdb.run_query");
+        assert_eq!(first("ref"), "macro.dbt.ref");
+        assert_eq!(first("dbt.run_query"), "macro.dbt.run_query");
+        // Case counts, as in a call.
+        let (_, err, code) = ask_on(&g, Path::new("/nowhere"), &["STAR"], false, Output::Name);
+        assert_eq!(code, REFUSED);
+        assert!(err.starts_with("error: no node or macro named STAR"), "{err}");
+    }
+
+    #[test]
+    fn a_name_that_is_neither_says_it_looked_among_macros_too() {
+        let g = with_macros();
+        let (out, err, code) = ask_on(&g, Path::new("/nowhere"), &["pivot_all"], false, Output::Name);
+        assert_eq!((out.as_str(), code), ("", REFUSED));
+        // A package's macro is not reached by its bare name; it is offered whole.
+        assert_eq!(err, "error: no node or macro named pivot_all; did you mean dbt_utils.pivot_all\n");
+        let (_, err, _) = ask_on(&g, Path::new("/nowhere"), &["order"], false, Output::Name);
+        // The nodes first, and a macro that only repeats one of them is not said twice.
+        assert_eq!(err, "error: no node or macro named order; did you mean orders, orders_daily, raw.orders, stg_orders\n");
+        let (_, err, _) = ask_on(&g, Path::new("/nowhere"), &["cents_to"], false, Output::Name);
+        assert_eq!(err, "error: no node or macro named cents_to; did you mean cents_to_dollars\n");
+        let (_, err, _) = ask_on(&g, Path::new("/nowhere"), &["nothing_like_it", "dbt_utils.nope"], false, Output::Name);
+        assert_eq!(err, "error: no node or macro named nothing_like_it\nerror: no node or macro named dbt_utils.nope\n");
+    }
+
+    #[test]
+    fn nodes_and_macros_mix_in_one_call_and_each_is_said_once() {
+        let dir = project_with_money();
+        let g = with_macros();
+        let (out, err, code) = ask_on(&g, &dir, &["stg_orders", "cents_to_dollars", "macro.shop.cents_to_dollars", "nope"], false, Output::Name);
+        assert_eq!(code, REFUSED);
+        let cards: Vec<&str> = out.lines().filter(|l| !l.starts_with(' ') && !l.is_empty()).collect();
+        assert_eq!(cards, ["model stg_orders  view  models/staging/stg_orders.sql", "macro cents_to_dollars  macros/money.sql:4"]);
+        assert!(out.contains("\n\nmacro cents_to_dollars"), "{out}");
+        assert!(err.starts_with("error: no node or macro named nope"), "{err}");
+        let (out, _, _) = ask_on(&g, &dir, &["stg_orders", "cents_to_dollars"], false, Output::Json);
+        let kinds: Vec<Option<String>> =
+            out.lines().map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["kind"].as_str().map(str::to_string)).collect();
+        assert_eq!(kinds, [None, Some("macro".to_string())]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sql_prints_the_macros_own_block_and_says_why_when_it_cannot() {
+        let dir = project_with_money();
+        let g = with_macros();
+        let (out, err, code) = ask_on(&g, &dir, &["cents_to_dollars"], true, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        // From its opening tag to its closing one, not the file.
+        let tail = lines(&[
+            "  sql",
+            "    {% macro cents_to_dollars(amount, scale=2) -%}",
+            "        ({{ amount }} / 100)::numeric(16, {{ scale }})",
+            "    {%- endmacro %}",
+        ]);
+        assert!(out.ends_with(&tail), "{out}");
+        assert!(!out.contains("other()"), "{out}");
+        let (out, _, _) = ask_on(&g, &dir, &["cents_to_dollars"], true, Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["sql"], "{% macro cents_to_dollars(amount, scale=2) -%}\n    ({{ amount }} / 100)::numeric(16, {{ scale }})\n{%- endmacro %}\n");
+
+        // dbt's own has no file in the project, a package not installed says
+        // to run dbt deps, and a file the manifest remembers and a commit
+        // moved is said too. The card is printed all the same.
+        let (out, err, code) = ask_on(&g, &dir, &["ref", "dbt_utils.star", "orders_old"], true, Output::Name);
+        assert_eq!(code, REFUSED);
+        assert!(out.contains("macro ref  dbt's own: macros/ref.sql\n") && out.contains("macro star  dbt_packages/dbt_utils/macros/sql/star.sql\n"), "{out}");
+        assert_eq!(
+            err,
+            "ref: a macro of dbt's own, which the project holds no file of\n\
+             star: its file is in package dbt_utils, which is not installed under the project: run dbt deps\n\
+             error: no node or macro named orders_old\n"
+        );
+        let (_, err, _) = ask_on(&g, &dir, &["orders"], true, Output::Name);
+        assert!(err.starts_with("orders: cannot read models/marts/orders.sql"), "{err}");
+        let (_, err, _) = ask_on(&g, &dir, &["macro.shop.orders"], true, Output::Name);
+        assert!(err.starts_with("orders: cannot read macros/orders.sql: "), "{err}");
+        // Installed, and the manifest's file is not there (the package was upgraded
+        // since `dbt parse`): not asked to be installed, and under either folder.
+        for folder in ["dbt_packages", "dbt_modules"] {
+            std::fs::create_dir_all(dir.join(folder).join("dbt_utils")).unwrap();
+            let (out, err, _) = ask_on(&g, &dir, &["dbt_utils.star"], true, Output::Name);
+            let path = format!("{folder}/dbt_utils/macros/sql/star.sql");
+            assert!(out.starts_with(&format!("macro star  {path}\n")), "{out}");
+            assert_eq!(err, format!("star: cannot read {path}: no such file in package dbt_utils\n"));
+            std::fs::remove_dir_all(dir.join(folder)).unwrap();
+        }
+        // Its package is a link out of the project: not read, and not asked to be installed.
+        #[cfg(unix)]
+        {
+            let outside = dir.with_extension("outside");
+            let _ = std::fs::remove_dir_all(&outside);
+            let elsewhere = outside.join("dbt_utils/macros/sql");
+            std::fs::create_dir_all(&elsewhere).unwrap();
+            std::fs::write(elsewhere.join("star.sql"), "{% macro star() %}1{% endmacro %}\n").unwrap();
+            std::fs::create_dir_all(dir.join("dbt_packages")).unwrap();
+            std::os::unix::fs::symlink(outside.join("dbt_utils"), dir.join("dbt_packages/dbt_utils")).unwrap();
+            let (out, err, _) = ask_on(&g, &dir, &["dbt_utils.star"], true, Output::Name);
+            assert!(!out.contains("  sql\n"), "{out}");
+            assert_eq!(err, "star: package dbt_utils is linked from outside the project, so its file is not read\n");
+            std::fs::remove_dir_all(&outside).unwrap();
+        }
+        std::fs::write(dir.join("macros/orders.sql"), "{% macro something_else() %}{% endmacro %}\n").unwrap();
+        let (_, err, _) = ask_on(&g, &dir, &["macro.shop.orders"], true, Output::Name);
+        assert_eq!(err, "orders: no definition of it found in macros/orders.sql\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

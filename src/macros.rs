@@ -141,6 +141,26 @@ impl Macros {
         }
     }
 
+    /// The macro a name stands for when it is asked for on its own, outside
+    /// any file (`--describe`): a unique_id, `package.name` for that package's,
+    /// and a bare name the way dbt resolves a call from the root project, its
+    /// own macros first, then the adapter's, then dbt's. A package's macro is
+    /// never found by a bare name, since dbt does not find it either; the
+    /// caller offers `package.name` instead. Case counts, as in a call.
+    pub(crate) fn lookup(&self, name: &str, adapter: &str) -> Option<u32> {
+        if let Some(at) = self.position(name) {
+            return Some(at);
+        }
+        let in_package = |package: &str, name: &str| self.by_package.get(package)?.get(name).copied();
+        match name.split_once('.') {
+            Some((package, name)) if !name.contains('.') => in_package(package, name),
+            Some(_) => None,
+            None => std::iter::once(self.root.clone())
+                .chain(crate::macro_use::internal_packages(adapter))
+                .find_map(|package| in_package(&package, name)),
+        }
+    }
+
     /// The package a project file belongs to: the installed one whose folder
     /// it sits in, or the root project.
     pub fn package_of<'a>(&'a self, file: &'a str) -> &'a str {
@@ -255,6 +275,267 @@ impl Macros {
         }
         found
     }
+}
+
+/// The lines a macro's definition spans in its file, counted from 1 and both
+/// ends included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Block {
+    pub line: usize,
+    pub end: usize,
+}
+
+/// Where the macro `name` is written in `text`: from its `{% macro name(` to
+/// the `{% endmacro %}` closing it. A generic test and a materialization are
+/// macros too, named from their own blocks, `{% test x(` being `test_x` and
+/// `{% materialization x, adapter='y' %}` being `materialization_x_y`
+/// (`_default` without an adapter). Comments are masked first, since a
+/// commented-out copy is not the macro dbt reads, and so are raw blocks and
+/// the strings of `{{ }}`, whose `{%` is text. A block of the same keyword
+/// inside it is counted, so its end is not taken for the outer one's. A block
+/// never closed runs to the end of the file, which dbt would not have parsed,
+/// so only a stale manifest meets one.
+///
+/// The editor finds the same start with `macroDefLine` in `web/app.js` and
+/// masks comments with `maskJinjaComments` there: a change to what names a
+/// macro, or to what a comment is, wants the other changed with it. The
+/// editor's still reads a `{%` inside a raw block or a string as a start.
+pub(crate) fn block_in(text: &str, name: &str) -> Option<Block> {
+    located(text, name).map(|(block, _)| block)
+}
+
+/// The names of the arguments in the tag that opens the macro `name`, in the
+/// order written and without their defaults: `amount, scale` for
+/// `{% macro cents(amount, scale=2) %}`. Empty for a materialization, whose
+/// tag has no parentheses and which dbt gives no arguments; None for a macro
+/// `block_in` does not find.
+pub(crate) fn args_in(text: &str, name: &str) -> Option<Vec<String>> {
+    let masked = mask_comments(text);
+    let (_, open) = located(text, name)?;
+    // A materialization takes no arguments: dbt gives it an empty list.
+    let Some(open) = open else { return Some(Vec::new()) };
+    let inner = &masked[open..];
+    let mut names = Vec::new();
+    let (mut start, mut quote, mut depth, mut escaped) = (0, 0u8, 0i32, false);
+    let mut push = |arg: &str| {
+        // A default is written after an `=`; the name is what stands before it.
+        let name = arg.split('=').next().unwrap_or("").trim();
+        if !name.is_empty() {
+            names.push(name.to_string());
+        }
+    };
+    for (i, c) in inner.bytes().enumerate() {
+        if quote != 0 {
+            // A backslash escapes the byte after it, a quote included.
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == quote {
+                quote = 0;
+            }
+            continue;
+        }
+        match c {
+            b'"' | b'\'' => quote = c,
+            b'(' | b'[' | b'{' => depth += 1,
+            b']' | b'}' => depth -= 1,
+            // The parenthesis that closes the tag's own, outside any default's.
+            b')' if depth == 0 => {
+                push(&inner[start..i]);
+                return Some(names);
+            }
+            b')' => depth -= 1,
+            b',' if depth == 0 => {
+                push(&inner[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    Some(names)
+}
+
+/// The block of `name`, and the offset just past the `(` of its tag in the
+/// masked text, when it has one.
+fn located(text: &str, name: &str) -> Option<(Block, Option<usize>)> {
+    let masked = mask_comments(text);
+    let starts = statement_starts(&masked);
+    for (n, &start) in starts.iter().enumerate() {
+        let (keyword, after) = tag_at(&masked, start);
+        let (opener, closer, paren) = match keyword {
+            "macro" if opens(after, name) => ("macro", "endmacro", opened_at(&masked, after, name)),
+            "test" => match name.strip_prefix("test_").filter(|test| opens(after, test)) {
+                Some(test) => ("test", "endtest", opened_at(&masked, after, test)),
+                None => continue,
+            },
+            "materialization" if materialization_name(after) == name => ("materialization", "endmaterialization", None),
+            _ => continue,
+        };
+        let (mut end, mut depth) = (masked.trim_end().len(), 1);
+        for &tag in &starts[n + 1..] {
+            match tag_at(&masked, tag).0 {
+                k if k == opener => depth += 1,
+                k if k == closer => depth -= 1,
+                _ => {}
+            }
+            if depth == 0 {
+                end = tag_end(&masked, tag);
+                break;
+            }
+        }
+        let lines = |upto: usize| masked[..upto].matches('\n').count() + 1;
+        return Some((Block { line: lines(start), end: lines(end.max(start)) }, paren));
+    }
+    None
+}
+
+/// The offset in `masked` just past the `(` after `name` in `after`, which is
+/// a suffix of `masked`.
+fn opened_at(masked: &str, after: &str, name: &str) -> Option<usize> {
+    let rest = after.trim_start().strip_prefix(name)?.trim_start().strip_prefix('(')?;
+    Some(masked.len() - rest.len())
+}
+
+/// Where each `{%` that Jinja's lexer reads as a tag opens, in text whose
+/// comments are masked: not inside a `{{ }}` block, whose strings may hold one,
+/// nor in a raw block.
+fn statement_starts(text: &str) -> Vec<usize> {
+    let mut starts = Vec::new();
+    let mut i = 0;
+    while let Some(found) = text[i..].find('{') {
+        let open = i + found;
+        i = open + 1;
+        match text.as_bytes().get(open + 1) {
+            Some(b'%') => {
+                starts.push(open);
+                i = if tag_at(text, open).0 == "raw" && closes_tag(tag_at(text, open).1) {
+                    text[open..]
+                        .match_indices("{%")
+                        .map(|(at, _)| open + at)
+                        .find(|&tag| tag_at(text, tag).0 == "endraw")
+                        .map_or(text.len(), |tag| tag_end(text, tag))
+                } else {
+                    tag_end(text, open)
+                };
+            }
+            Some(b'{') => i = block_end(text, open + 2, b'}').saturating_add(2).min(text.len()),
+            _ => {}
+        }
+    }
+    starts
+}
+
+/// `text` with every `{# #}` comment blanked, newlines and byte offsets kept.
+/// Only where Jinja's lexer opens one, in the text between blocks: a `{#`
+/// inside a string of a `{{ }}` or `{% %}` block, or in a raw block, is text.
+fn mask_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let (mut at, mut i) = (0, 0);
+    while let Some(found) = text[i..].find('{') {
+        let open = i + found;
+        i = open + 1;
+        match text.as_bytes().get(open + 1) {
+            Some(b'#') => {
+                let Some(close) = text[open + 2..].find("#}") else { break };
+                let end = open + 2 + close + 2;
+                out.push_str(&text[at..open]);
+                out.extend(text[open..end].chars().map(|c| if c == '\n' { "\n".to_string() } else { " ".repeat(c.len_utf8()) }));
+                (at, i) = (end, end);
+            }
+            Some(b'%') if tag_at(text, open).0 == "raw" && closes_tag(tag_at(text, open).1) => {
+                i = text[open..]
+                    .match_indices("{%")
+                    .map(|(at, _)| open + at)
+                    .find(|&tag| tag_at(text, tag).0 == "endraw")
+                    .map_or(text.len(), |tag| tag_end(text, tag));
+            }
+            Some(b'%') => i = tag_end(text, open),
+            Some(b'{') => i = block_end(text, open + 2, b'}').saturating_add(2).min(text.len()),
+            _ => {}
+        }
+    }
+    out.push_str(&text[at..]);
+    out
+}
+
+/// Whether `after`, what follows a tag's keyword, closes the tag.
+fn closes_tag(after: &str) -> bool {
+    let after = after.trim_start();
+    after.strip_prefix(['-', '+']).unwrap_or(after).starts_with("%}")
+}
+
+/// The offset just past the `%}` of the tag opening at `start`.
+fn tag_end(text: &str, start: usize) -> usize {
+    block_end(text, start + 2, b'%').saturating_add(2).min(text.len())
+}
+
+/// Where a block opened before `from` closes: the first `}` after `close`
+/// outside a string with every bracket shut, since Jinja's lexer reads the
+/// `}}` ending `{'a': {'b': 1}}` as two braces of the dict. A block that never
+/// balances ends at its first close, or at the end of the text.
+fn block_end(text: &str, from: usize, close: u8) -> usize {
+    let bytes = text.as_bytes();
+    let (mut quote, mut depth, mut first) = (0u8, 0i32, None);
+    let mut i = from;
+    while i + 1 < bytes.len() {
+        let c = bytes[i];
+        if quote != 0 {
+            if c == b'\\' {
+                i += 1;
+            } else if c == quote {
+                quote = 0;
+            }
+        } else if c == b'"' || c == b'\'' {
+            quote = c;
+        } else {
+            if c == close && bytes[i + 1] == b'}' {
+                if depth <= 0 {
+                    return i;
+                }
+                first.get_or_insert(i);
+            }
+            match c {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' => depth -= 1,
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    first.unwrap_or(bytes.len())
+}
+
+/// The keyword of the tag opening at `start` (`{%`), and what follows it.
+fn tag_at(text: &str, start: usize) -> (&str, &str) {
+    let inner = &text[start + 2..];
+    let inner = inner.strip_prefix(['-', '+']).unwrap_or(inner).trim_start();
+    let end = inner.find(|c: char| !c.is_ascii_alphabetic() && c != '_').unwrap_or(inner.len());
+    inner.split_at(end)
+}
+
+/// Whether what follows a `macro` keyword names `name` and opens its
+/// arguments.
+fn opens(after: &str, name: &str) -> bool {
+    after.starts_with(char::is_whitespace)
+        && after.trim_start().strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('('))
+}
+
+/// The name dbt gives the materialization a tag declares: its first argument
+/// is the name, and `adapter` is looked for among the arguments after it, as a
+/// keyword, never inside another word.
+fn materialization_name(after: &str) -> String {
+    let head = after.split("%}").next().unwrap_or(after);
+    let word = |s: &str| s.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>();
+    let mut args = head.split(',');
+    let name = word(args.next().unwrap_or("").trim_start());
+    let adapter = args
+        .filter_map(|arg| arg.trim_start().strip_prefix("adapter"))
+        .filter_map(|rest| rest.trim_start().strip_prefix('='))
+        .map(|rest| word(rest.trim_start().trim_start_matches(['\'', '"'])))
+        .find(|a| !a.is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    format!("materialization_{name}_{adapter}")
 }
 
 #[cfg(test)]
@@ -497,5 +778,111 @@ mod tests {
         assert_eq!(fx.description, "Converts to euros.");
         assert_eq!(fx.args, vec!["amount"]);
         assert_eq!(g.macros.resolve("cents", "shop").unwrap().path, "");
+    }
+
+    #[test]
+    fn a_definition_is_found_between_its_opening_tag_and_its_closing_one() {
+        let text = "{# {% macro cents(x) %} is gone #}\n\
+                    {% macro other() %}1{% endmacro %}\n\
+                    \n\
+                    {%- macro cents(amount,\n\
+                    \x20          scale=2) -%}\n\
+                    \x20 {{ amount }}\n\
+                    {%- endmacro -%}\n\
+                    {% macro after() %}2{% endmacro %}\n";
+        assert_eq!(block_in(text, "cents"), Some(Block { line: 4, end: 7 }));
+        assert_eq!(block_in(text, "other"), Some(Block { line: 2, end: 2 }));
+        // A longer name is not the one asked for, nor is a call.
+        assert_eq!(block_in(text, "cent"), None);
+        assert_eq!(block_in(text, "amount"), None);
+        // Never closed: to the last line.
+        assert_eq!(block_in("a\n{% macro open() %}\nbody\n", "open"), Some(Block { line: 2, end: 3 }));
+    }
+
+    #[test]
+    fn a_generic_test_and_a_materialization_are_macros_under_the_names_dbt_gives_them() {
+        let text = "{% test positive(model, column_name) %}\nselect 1\n{% endtest %}\n\
+                    {% materialization fancy, adapter='duckdb' %}\nx\n{% endmaterialization %}\n\
+                    {% materialization fancy, default %}\ny\n{% endmaterialization %}\n";
+        assert_eq!(block_in(text, "test_positive"), Some(Block { line: 1, end: 3 }));
+        assert_eq!(block_in(text, "materialization_fancy_duckdb"), Some(Block { line: 4, end: 6 }));
+        assert_eq!(block_in(text, "materialization_fancy_default"), Some(Block { line: 7, end: 9 }));
+        assert_eq!(block_in(text, "positive"), None);
+    }
+
+    #[test]
+    fn what_looks_like_a_comment_or_a_block_inside_a_tag_or_a_raw_block_is_text() {
+        // A `{#` in a string of a tag opens no comment, so the macro after it is found.
+        let text = "{% macro a() %}{% set x = '{#' %}1{% endmacro %}\n{% macro b() %}2{% endmacro %}\n";
+        assert_eq!(block_in(text, "a"), Some(Block { line: 1, end: 1 }));
+        assert_eq!(block_in(text, "b"), Some(Block { line: 2, end: 2 }));
+        // Nor does one in `{{ }}`, with a dict's braces inside it, or in a raw block.
+        let text = "{% macro a() %}{{ {'k': '{#'} }}{% endmacro %}\n\
+                    {% raw %}{# {% macro c() %} #}{% endraw %}\n\
+                    {% macro b() %}2{% endmacro %}\n";
+        assert_eq!(block_in(text, "b"), Some(Block { line: 3, end: 3 }));
+        assert_eq!(block_in(text, "a"), Some(Block { line: 1, end: 1 }));
+        // A macro written inside another ends at its own end, and the outer at the last.
+        let text = "{% macro outer() %}\n{% macro inner() %}\n1\n{% endmacro %}\n{{ inner() }}\n{% endmacro %}\n";
+        assert_eq!(block_in(text, "inner"), Some(Block { line: 2, end: 4 }));
+        assert_eq!(block_in(text, "outer"), Some(Block { line: 1, end: 6 }));
+        // `adapter` is a keyword of the arguments, not a piece of another word.
+        let text = "{% materialization my_adapter_x, default %}\nx\n{% endmaterialization %}\n";
+        assert_eq!(block_in(text, "materialization_my_adapter_x_default"), Some(Block { line: 1, end: 3 }));
+        let text = "{% materialization fancy, adapter = \"duckdb\", supported_languages=['sql'] %}x{% endmaterialization %}\n";
+        assert_eq!(block_in(text, "materialization_fancy_duckdb"), Some(Block { line: 1, end: 1 }));
+    }
+
+    #[test]
+    fn a_raw_block_or_a_string_holds_no_tag_to_start_or_end_a_block() {
+        // The end inside a raw block is text.
+        let text = "{% macro a() %}{% raw %}{% endmacro %}{% endraw %}\n2\n{% endmacro %}\n";
+        assert_eq!(block_in(text, "a"), Some(Block { line: 1, end: 3 }));
+        // So is a copy of the macro before the real one, in a raw block or a string.
+        let text = "{% raw %}{% macro d() %}{% endraw %}\n{{ \"{% macro d() %}\" }}\n{% macro d() %}\n1\n{% endmacro %}\n";
+        assert_eq!(block_in(text, "d"), Some(Block { line: 3, end: 5 }));
+    }
+
+    #[test]
+    fn the_arguments_are_the_names_before_any_default() {
+        let text = "{# {% macro m(old) %} #}\n{% macro m(a, b = 'x,)', c=none,\n  d=[1, (2)], e) -%}\n{% endmacro %}\n\
+                    {% macro none() %}{% endmacro %}\n{% test positive(model, column_name) %}{% endtest %}\n\
+                    {% materialization fancy, default %}{% endmaterialization %}\n";
+        assert_eq!(args_in(text, "m"), Some(["a", "b", "c", "d", "e"].map(String::from).to_vec()));
+        assert_eq!(args_in(text, "none"), Some(Vec::new()));
+        assert_eq!(args_in(text, "test_positive"), Some(["model", "column_name"].map(String::from).to_vec()));
+        assert_eq!(args_in(text, "materialization_fancy_default"), Some(Vec::new()));
+        assert_eq!(args_in(text, "absent"), None);
+        // A quote escaped inside a default does not end it.
+        let text = "{% macro e(a, b='it\\'s, ok', c=\"say \\\"hi\\\")\", d) %}{% endmacro %}\n";
+        assert_eq!(args_in(text, "e"), Some(["a", "b", "c", "d"].map(String::from).to_vec()));
+    }
+
+    #[test]
+    fn a_bare_name_is_the_root_projects_then_the_adapters_then_dbts() {
+        let from_ids = |raw: &[(&str, &str)]| {
+            let list = raw.iter().map(|(id, package)| {
+                let name = id.rsplit('.').next().unwrap();
+                (id.to_string(), serde_json::json!({ "name": name, "package_name": package, "original_file_path": "x.sql" }))
+            });
+            let raw: HashMap<String, RawMacro> = list.map(|(id, v)| (id, serde_json::from_value(v).unwrap())).collect();
+            Macros::build(raw, "shop")
+        };
+        let both = from_ids(&[("macro.dbt.q", "dbt"), ("macro.dbt_duckdb.q", "dbt_duckdb"), ("macro.shop.q", "shop"), ("macro.pkg.r", "pkg")]);
+        let package_of = |name: &str, adapter: &str| both.lookup(name, adapter).map(|at| both.at(at).package.clone());
+        assert_eq!(package_of("q", "duckdb").as_deref(), Some("shop"));
+        assert_eq!(package_of("pkg.r", "duckdb").as_deref(), Some("pkg"));
+        // An installed package is never searched for a bare name.
+        assert_eq!(package_of("r", "duckdb"), None);
+        assert_eq!(package_of("dbt_duckdb.q", "postgres").as_deref(), Some("dbt_duckdb"));
+        assert_eq!(package_of("a.b.c", "duckdb"), None);
+        let no_root = from_ids(&[("macro.dbt.q", "dbt"), ("macro.dbt_duckdb.q", "dbt_duckdb")]);
+        let package_of = |adapter: &str| no_root.lookup("q", adapter).map(|at| no_root.at(at).package.clone());
+        assert_eq!(package_of("duckdb").as_deref(), Some("dbt_duckdb"));
+        assert_eq!(package_of("postgres").as_deref(), Some("dbt"));
+        assert_eq!(package_of("").as_deref(), Some("dbt"));
+        // A parent adapter's after the adapter's own.
+        let parent = from_ids(&[("macro.dbt.q", "dbt"), ("macro.dbt_postgres.q", "dbt_postgres")]);
+        assert_eq!(parent.lookup("q", "redshift").map(|at| parent.at(at).package.as_str()), Some("dbt_postgres"));
     }
 }

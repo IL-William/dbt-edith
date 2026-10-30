@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.66.0 - 2026-10-30
+
+- Describe a macro on the command line and over MCP: `--describe` takes the
+  name of a macro when no node has it, `package.name` outright, with its
+  package, file and line, arguments, description and who calls it, and `--sql`
+  prints its own lines of the file (0133).
+
 ## 1.65.0 - 2026-10-30
 
 - Print the SQL dbt compiled for a node after its card with

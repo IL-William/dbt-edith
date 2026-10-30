@@ -253,6 +253,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | answer over MCP, change the `edith` tool, what its line accepts, or what `--mcp` reads and writes | [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md), [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md), [0099](docs/decisions/0099-a-column-may-run-collin-first-when-asked.md) |
 | add a key to `--count-by`, or let another mode count instead of list | [0112](docs/decisions/0112-a-selection-may-be-counted-instead-of-listed.md), [0057](docs/decisions/0057-a-selection-is-answered-on-the-command-line.md) |
 | change what `--describe` or `--overview` prints, what `--output compact` leaves out, or let the command line read a file of the project | [0102](docs/decisions/0102-a-node-and-the-project-are-described-on-the-command-line.md), [0132](docs/decisions/0132-the-compiled-sql-of-a-node-is-read-from-its-file-under-the-target.md) |
+| name a macro to `--describe`, change the order a macro name is looked for in, or what a macro's card says | [0133](docs/decisions/0133-a-macro-is-described-when-no-node-has-the-name.md) |
 | print a location derived from a `.env` file on the command line or over MCP, or change the card's per-file lines | [0113](docs/decisions/0113-the-card-resolves-a-location-per-env-file.md), [0012](docs/decisions/0012-secrets-and-boundaries.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | change the agent skill, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
@@ -296,7 +297,7 @@ src/run_results.rs    the last dbt command's results, read from run_results.json
 src/select.rs         dbt selector expressions, parsed and resolved against the graph
 src/selectors.rs      the named selectors of selectors.yml, as the manifest recorded them
 src/ls.rs             --select and --selector: one selection printed, and no server
-src/describe.rs       --describe and --overview: a node's card and the project's shape printed, and no server
+src/describe.rs       --describe and --overview: a node's or macro's card and the project's shape printed, and no server
 src/job.rs            --job: one DAG or dbt Cloud job printed step by step, with the nodes each runs and the order its files declare, and no server
 src/job_order.rs      --job-order: the dbt dependencies between jobs' steps that no job file orders, printed, and no server
 src/job_coverage.rs   --job-coverage: the models no scheduled job runs and the steps that select nothing, printed, and no server

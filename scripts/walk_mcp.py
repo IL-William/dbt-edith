@@ -131,6 +131,13 @@ QUESTIONS = [
     ("--describe orders,nope", 1),
     ("--describe nope", 1),
     ("--describe ,", 1),
+    # A macro, named when no node has the name: dbt's own, since Jaffle Shop
+    # defines none. Bare it is resolved from the root project as dbt does, and
+    # `package.name` names it outright; its file is not in the project.
+    ("--describe is_incremental", 0),
+    ("--describe dbt.is_incremental,orders --output json", 0),
+    ("--describe is_incremental --sql", 0),
+    ("--describe orders,not_a_macro", 1),
     ("-s 'stg_orders+1' --exclude resource_type:test --output compact", 0),
     ("-s '+customers'", 0),
     ("-s 'path:models/staging/*.sql' --output json", 0),
