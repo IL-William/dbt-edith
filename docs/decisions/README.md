@@ -134,6 +134,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0128](0128-a-collin-others-can-replace-is-not-run.md) | A collin others can replace is not run | running a collin from a folder under the config directory, or changing what makes an install refused |
 | [0129](0129-the-update-brings-the-clone-up-to-the-tag-it-announced.md) | The update brings the clone up to the tag it announced | changing the git step of the command the update types, or where the version in that command comes from |
 | [0130](0130-a-path-that-reads-the-current-folder-is-warned-of-not-typed-around.md) | A shell that reads the current folder is warned of, not typed around | changing what the page types into the terminal, which button presses Enter there, or what the banner and Edith's menu say about the terminal's shell and `PATH` |
+| [0131](0131-job-coverage-is-answered-on-the-command-line.md) | Job coverage is answered on the command line | changing what `--job-coverage` prints or leaves out, how its three outputs differ, or making another mode read the jobs |
 
 ## Keeping these honest
 

@@ -47,7 +47,8 @@ project's own models, seeds and snapshots no scheduled job runs, which run only
 in jobs nothing schedules (*Only in unscheduled jobs*: manual, CI, a merge),
 which run only in jobs whose schedule is not read and in no scheduled one
 (*Only in jobs whose schedule is not read*), which steps select nothing, and
-which jobs were read.
+which jobs were read. `dbt-edith --job-coverage` prints the same lists
+([0131](../decisions/0131-job-coverage-is-answered-on-the-command-line.md)).
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed
 on its own. A group with nothing in it is not drawn. An installed package's

@@ -21,7 +21,7 @@ use std::path::Path;
 /// is truthy, which it is not). The other hints stay at their defaults because
 /// they are the truth: `--run-collin` replaces collin's cache, which may have
 /// come from another catalog or other SQL (0099).
-pub const TOOL: &str = r#"{"name":"edith","description":"Answers one dbt-edith command line about this dbt project, from its manifest: --overview, --describe NAME, -s 'SELECTION', --selector NAME, --job NAME, --job-order or --column MODEL.COLUMN, with their flags. `help` lists every flag.","inputSchema":{"type":"object","properties":{"line":{"type":"string","description":"the flags, no project: --describe orders --sql"}},"additionalProperties":false},"annotations":{"openWorldHint":false}}"#;
+pub const TOOL: &str = r#"{"name":"edith","description":"Answers one dbt-edith command line about this dbt project, from its manifest: --overview, --describe NAME, -s 'SELECTION', --selector NAME, --job NAME, --job-order, --job-coverage or --column MODEL.COLUMN. `help` lists every flag.","inputSchema":{"type":"object","properties":{"line":{"type":"string","description":"the flags, no project: --describe orders --sql"}},"additionalProperties":false},"annotations":{"openWorldHint":false}}"#;
 
 /// What the server tells a client about itself, once, at `initialize`.
 pub const INSTRUCTIONS: &str = "Questions about this dbt project's models, sources, tests, selections or column lineage: ask the edith tool, which answers from the manifest and never runs dbt.";
@@ -39,6 +39,7 @@ pub const HELP: &str = concat!(
     "--selector NAME                 a selector of selectors.yml\n",
     "--job NAME                      a job's steps, nodes and order\n",
     "--job-order                     steps that read what another builds, with no file ordering them\n",
+    "--job-coverage                  models no scheduled job runs, those only unscheduled jobs run, steps that select nothing\n",
     "--column MODEL.COLUMN           a column's lineage, over the cache beside the manifest\n",
     "  --up N|all --down N|all       how far, 0 by default\n",
     "  --stop-at window,aggregate    roles not walked past downstream\n",
@@ -52,7 +53,7 @@ pub const HELP: &str = concat!(
 
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
-const ALLOWED: [&str; 18] = [
+const ALLOWED: [&str; 19] = [
     "select",
     "exclude",
     "selector",
@@ -68,6 +69,7 @@ const ALLOWED: [&str; 18] = [
     "overview",
     "job",
     "job_order",
+    "job_coverage",
     "count_by",
     "depth",
     "output",
@@ -163,7 +165,7 @@ fn read_with(command: clap::Command, line: &str, root: &Path, manifest: Option<&
     }
     match question_of(&args) {
         Some(question) => Ok(Read::Ask { question, output: args.output }),
-        None => Err(refusal("ask one of --overview, --describe, -s, --selector, --job, --job-order, --column".to_string())),
+        None => Err(refusal("ask one of --overview, --describe, -s, --selector, --job, --job-order, --job-coverage, --column".to_string())),
     }
 }
 
@@ -415,6 +417,7 @@ mod tests {
         assert!(matches!(asked("--overview --depth 1 --output=json").0, Question::Overview { depth: 1 }));
         assert!(matches!(asked("--job jaffle_daily --output json").0, Question::Job { ref name } if name == "jaffle_daily"));
         assert!(matches!(asked("--job-order --output json").0, Question::JobOrder));
+        assert!(matches!(asked("--job-coverage --output compact").0, Question::JobCoverage));
         let (q, _) = asked("--column orders.amount --up all --down 2 --stop-at window,aggregate --indirect --column-tool collin");
         assert!(matches!(q, Question::Column(ref a) if a.down == 2 && a.stop_at.len() == 2 && a.indirect && a.tool.is_some()));
         let (q, _) = asked("--column orders.amount --run-collin --indirect");
@@ -508,7 +511,7 @@ mod tests {
     fn a_line_with_no_question_is_refused() {
         // A default is not a typed flag: this asks nothing.
         let said = refused("--output json");
-        assert_eq!(said, "error: ask one of --overview, --describe, -s, --selector, --job, --job-order, --column\n`help` lists every flag.");
+        assert_eq!(said, "error: ask one of --overview, --describe, -s, --selector, --job, --job-order, --job-coverage, --column\n`help` lists every flag.");
     }
 
     #[test]
@@ -521,7 +524,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 29] = [
+    const SAMPLES: [(&str, &str); 30] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -546,6 +549,7 @@ mod tests {
         ("overview", "--overview"),
         ("job", "--job jaffle_daily"),
         ("job_order", "--job-order"),
+        ("job_coverage", "--job-coverage"),
         ("count_by", "-s orders --count-by folder --depth 2"),
         ("depth", "--overview --depth 2"),
         ("output", "--overview --output json"),
@@ -614,7 +618,7 @@ mod tests {
         let tools = format!("[{TOOL}]");
         assert!(tools.len() <= 512, "tools array: {} bytes", tools.len());
         assert!(INSTRUCTIONS.len() <= 192, "instructions: {} bytes", INSTRUCTIONS.len());
-        assert!(HELP.len() <= 1664, "help: {} bytes", HELP.len());
+        assert!(HELP.len() <= 1792, "help: {} bytes", HELP.len());
         let tool: serde_json::Value = serde_json::from_str(TOOL).unwrap();
         let description = tool["description"].as_str().unwrap();
         assert!(description.len() <= 240, "description: {} bytes", description.len());

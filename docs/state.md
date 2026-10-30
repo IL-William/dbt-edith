@@ -2226,13 +2226,7 @@ of its own, and each panel updates the tour, its page under
     refuses paths outside the project, where the git folder lies in a worktree
     or when the dbt project sits in a subfolder; and nothing may ever add to a
     tracked ignore file, which is the repository's.
-22. **Job coverage from the command line.** The page's Job coverage report
-    (which of the project's own models no scheduled job runs, which run only in
-    unscheduled jobs, the steps that select nothing) is reachable by an agent
-    only at one `--job` call per job (the names from `--overview --output
-    json`) and a comparison it does itself. A single call for the report is
-    missing. Ideas: `--count-by job` or `dag`, or a coverage mode. Trap: it
-    needs the jobs read, which is off when there is no sources file.
+22. ~~**Job coverage from the command line.**~~ Settled in 1.63.0 (0131).
 23. **A cap on the size of an answer.** Over MCP a client cuts a long answer (a
     compact list of a whole folder of a large project) and the file it saves
     cannot be opened. The server could cut itself at a stated size and say how

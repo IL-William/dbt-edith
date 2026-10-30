@@ -19,7 +19,7 @@
 
 use crate::mcp_graphs::Graphs;
 use crate::mcp_line::{self, HELP, INSTRUCTIONS, TOOL};
-use crate::{collin_run, describe, job, job_order, ls, ls_column, Question};
+use crate::{collin_run, describe, job, job_coverage, job_order, ls, ls_column, Question};
 use serde_json::{json, Map, Value};
 use std::collections::HashSet;
 use std::io::{self, BufRead, Read, Write};
@@ -428,6 +428,13 @@ fn answer_with(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: impl 
             Ok((base, jobs)) => {
                 kept_warning(base.warning, &mut err);
                 job_order::respond_job_order(&root, base.graph, Some(&jobs), output, &mut out, &mut err)
+            }
+            Err(why) => return Outcome::failed(&why),
+        },
+        Question::JobCoverage => match graphs.base_and_jobs() {
+            Ok((base, jobs)) => {
+                kept_warning(base.warning, &mut err);
+                job_coverage::respond_job_coverage(&root, base.graph, Some(&jobs), output, &mut out, &mut err)
             }
             Err(why) => return Outcome::failed(&why),
         },
@@ -880,6 +887,8 @@ mod tests {
         assert!(is_error(&said) && said.to_string().contains("no .dbt-edith/jobs.yml in this project"), "{said}");
         let said = s.ask("--job-order");
         assert!(is_error(&said) && said.to_string().contains("no .dbt-edith/jobs.yml in this project"), "{said}");
+        let said = s.ask("--job-coverage");
+        assert!(is_error(&said) && said.to_string().contains("no .dbt-edith/jobs.yml in this project"), "{said}");
 
         std::fs::create_dir_all(dir.join("dags")).unwrap();
         std::fs::write(
@@ -910,6 +919,13 @@ mod tests {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             crate::job_order::respond_job_order(&root, &graph, None, output, &mut out, &mut err).unwrap();
             let line = if output == ls::Output::Json { "--job-order --output json" } else { "--job-order" };
+            let said = s.ask(line);
+            assert!(!is_error(&said), "{said}");
+            assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
+        }
+        for (output, line) in [(ls::Output::Name, "--job-coverage"), (ls::Output::Json, "--job-coverage --output json"), (ls::Output::Compact, "--job-coverage --output compact")] {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            crate::job_coverage::respond_job_coverage(&root, &graph, None, output, &mut out, &mut err).unwrap();
             let said = s.ask(line);
             assert!(!is_error(&said), "{said}");
             assert_eq!(blocks(&said)[0], String::from_utf8(out).unwrap());
