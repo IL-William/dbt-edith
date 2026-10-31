@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-30.
+belongs here. Last updated 2026-10-31.
 
 ## Shipped
 
@@ -824,7 +824,7 @@ and sends it as a header, the terminal's socket taking it in its address. A
 `.env` that is a link out of the project is no longer listed. Each has a test
 beside it; the update command's branch was settled by 0129, and a collin
 install in a shared folder is refused on macOS and Linux (0128) and in
-Deferred for Windows, item 31.
+Deferred for Windows, item 25.
 
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
@@ -871,6 +871,38 @@ local server by a test that only compiles here and runs in both legs of the
 release workflow, which also starts each `.exe`. Not checked: the workflow's
 runs on GitHub until a pull request touching the crate has made them.
 
+The release's `.exe` files are attested (no version of its own). `release.yml`
+attests the build provenance of each `.exe`, and [docs/windows.md](windows.md)
+gives two checks that do not rest on the `.sha256` published beside it:
+`gh release verify-asset vX.Y.Z dbt-edith.exe`, which says the release
+published this very file, and `gh attestation verify ... --source-ref
+refs/heads/main`, which says the repository's release workflow built it, run
+from `main`; the first holds for releases from 1.57.0 on, the second for
+releases after 1.61.0. The update's own check still reads the `.sha256` of the
+same release, `gh` not being on the machines it runs on (0085, 0123).
+
+The update stops at the release it announced (0129, 1.61.2), amending 0095.
+After the tags are fetched the command runs `git merge --ff-only vX.Y.Z` where
+it pulled `main`, so a commit merged after the release is no longer built under
+its number. The merge moves the branch the clone is on and leaves it there, so
+a plain `git pull` still works, and a clone with a commit the tag does not
+contain stops at the merge, as the pull did. The version is the one
+`/api/update` announces, put into the typed line for each answer, and only if
+it is three runs of at most five digits; otherwise there is no clone command.
+
+A shell that reads the current folder is warned of (0130, 1.62.0). Everything
+the page types runs in the project folder, where a `git`, `dbt` or `cargo`
+committed there would run in place of the one meant if the terminal's shell
+reads the current folder. The startup banner and Edith's menu now say so when
+the `PATH` handed to the shell holds a relative entry (named as written) or an
+empty one that survives, or when the shell is cmd.exe, and the freshness badge
+then types `dbt parse` without pressing Enter. A macOS login shell
+(`path_helper`) and Git Bash (msys2) drop an empty entry before the first
+prompt, so it warns on Linux and on a macOS shell that is not a login one;
+PowerShell warns only for an entry starting with a dot. The check reads the
+`PATH` dbt-edith hands the shell, which the shell's startup files may still
+change.
+
 A test in the Catalog reads as a test (1.29.0). It was drawn as a model: Mat.
 type `test`, no columns, a location table for a relation dbt never builds for
 it, and "No description in the YAML." It has Preview alone now, which opens on
@@ -915,7 +947,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 17 and 18).
+items 16 and 17).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -1706,9 +1738,10 @@ was written, not by a test.
 The skill for a client that defers MCP tools (0136, 1.69.0):
 `dbt-edith --skill mcp` prints `docs/agent-skill/mcp/SKILL.md`, named
 `dbt-edith-mcp` so it can sit beside the first. It tells the agent to load
-the `edith` tool and gives the recipes as the tool's lines. `--skill` alone is
-unchanged, any other value is refused with the accepted ones, and `--skill`
-stays refused over MCP. Both skills and `help` lead with `--overview --depth 2`.
+the `edith` tool and gives the recipes as the tool's lines. `--skill` alone
+prints the same skill, one clause shorter, any other value is refused with the
+accepted ones, and `--skill` stays refused over MCP. Both skills and `help`
+lead with `--overview --depth 2`.
 Checked with `cargo test`: both files get the tests of the first, and every
 line the variant cites, with any flag a line carries, is read by the tool's own
 reader, so a flag the tool refuses fails. Tried with Claude Code only.
@@ -1732,6 +1765,56 @@ Shop and compares the tool with the command line on `--describe orders` and
 copy: no file, saved into the project, reopened on the file, and a file that
 does not read. Not driven: the reason shown under the choice for a path the
 file may not hold, and Save held while a save is on its way.
+
+Job coverage on the command line (0131, 1.63.0): `--job-coverage` prints what
+the Job coverage report shows, from the function behind `GET
+/api/jobs/coverage`, over the sources file as `--job` reads it: the models,
+seeds and snapshots no scheduled job runs, those only unscheduled jobs or jobs
+whose schedule is not read run, the ephemeral ones, and the steps that select
+nothing or could not be resolved. The text opens with the page's sentence and
+cuts no list; `--output json` is one object and `compact` a row per node or
+step under a header. A source named and not read is said first, in the answer.
+MCP takes the same line.
+
+The selectors row of a card (1.64.0, a row added to 0102's card): `--describe`,
+and MCP, end a node's card with `selectors (N)`, the named selectors of
+`selectors.yml` that select it, in name order, tests counted as dbt counts them.
+A selector this build cannot resolve (a `state:` method, say) is named after
+`not resolvable here:`, since it may select the node too. The row is left off
+when the project defines none, when none holds the node and every one resolves,
+and on a disabled node. It reuses `Selectors::resolve`, the code `--selector`
+runs, and a test holds the two to one answer. MCP keeps the results beside its
+graph and drops them when the graph reloads, `selectors.yml` among the files
+that trigger it.
+
+A macro described (0133, 1.66.0): `--describe NAME` is a node first and a macro
+when no node has the name, given as its unique_id, as `package.name`, or bare,
+resolved as dbt resolves a call from the root project: the project's macro,
+then the adapter's package, then `dbt`. The card has the package, the path and
+line, the arguments read from the opening tag, the description and `used by`,
+in the words of the page's card; `--sql` prints the definition's own lines.
+The file is read for the line even without `--sql`, which amends 0102. A macro
+of dbt's own has no line, and a macro has no compiled SQL or columns, which
+stderr says.
+
+Columns alone (0134, 1.67.0): `--columns`, beside `--describe NAMES` or
+`--select`, prints only the columns. With `--describe`, each node's first line
+and its `columns (N)` block; with a selection, `node.column` under `--output
+name`, five tab-separated fields under a header in compact, and one object per
+node in JSON. One function makes a column's cells for the card and the flag.
+The merged graph, catalog types included, is loaded for the flag alone, so a
+selection without it still reads the manifest alone (0057).
+
+A long answer is cut over MCP (0135, 1.68.0), amending 0110. An answer past
+48 000 UTF-16 units, the unit Claude Code counts before it saves a result to a
+file the agent must page through, is cut after its last whole line, with a
+closing line beginning `answer cut at` that says how many lines were left out
+and what makes the answer shorter in the mode asked. JSON stays valid line by
+line, the closing line being `{"cut": "..."}`; an answer of one object on one
+line is refused with that line alone. An error carrying cards is cut at 10 000;
+one with no answer in it, the freshness block and the command line never are,
+so under the cap the two answers stay byte for byte the same, which
+`scripts/walk_mcp.py` compares. Tokens are not counted.
 
 The tool's own checks (0116, 1.51.0): a Checks section in Reports, apart from
 Warnings, listing the root project's own enabled nodes that four rules pick
@@ -1774,7 +1857,7 @@ by an asset or another job, a manual one, and a cron this cannot read are
 judged on the global threshold, not a clock; the DAG of an invocation is
 inferred from the job's selections, not read, since `dbt_artifacts` does not
 record it; and a long list of assets is cut short in the schedule pill, whole
-only in its tooltip. Seeds, snapshots and tests wait on item 26. Since 1.60.0 a
+only in its tooltip. Seeds, snapshots and tests wait on item 22. Since 1.60.0 a
 row opens one environment at a time: a click on a cell lists that environment's
 errored, late and not built models, another cell of the row switches, the same
 cell closes, and a click elsewhere on the row opens the environment picked last,
@@ -1818,13 +1901,13 @@ version under `<config>/collin/` has to be owned by the account, with its
 binary and each folder up to that one writable by nobody else, and a link below
 it is refused. The menu names the path, the owner or who may write it, and the
 `chmod` or `chown`. Checked with `cargo test` (`collin_run::`, the version route
-in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 31.
+in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 25.
 
 ## Deferred, in the order they were chosen
 
-Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101 and
-0103 name items by the numbers they had when written, and decisions are never
-edited, so find an item by its title.
+Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
+0128 and 0130 name items by the numbers they had when written, and decisions
+are never edited, so find an item by its title.
 
 1. **Run status on the canvas.** The last run is read since 1.11.0, in
    Reports (0065), and a dot per box shows the last build of one environment
@@ -2183,35 +2266,26 @@ edited, so find an item by its title.
     cannot fill it in: Regenerate would offer the profile's targets and pass
     the one picked, which the user then has to have compiled and generated
     the catalog under.
-16. ~~**A typed command and an empty entry of `PATH`.**~~ Settled in 1.62.0
-    (0130): the startup banner and Edith's menu say when the terminal's shell
-    reads the current folder, by a relative entry of the `PATH` (named as
-    written), an empty one that survives, or cmd.exe, and the freshness badge
-    then types `dbt parse` without pressing Enter. An empty entry is dropped
-    before the first prompt by a macOS login shell (`path_helper`) and by Git
-    Bash (msys2), so it warns on Linux and on a macOS shell that is not a login
-    one. The check reads the `PATH` dbt-edith hands the shell, which the
-    shell's startup files may still change.
 
-Items 17 to 19 are the rest of the plan chosen with the panels' mechanism
+Items 16 to 18 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-17. **A model's lineage seen whole.** The dock's lineage of the model in
+16. **A model's lineage seen whole.** The dock's lineage of the model in
     front, opened in a panel at the window's height, as Custom selection is.
-18. **git seen whole.** The side-by-side diff and the commit in a panel, the
+17. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-19. **Boxes without their text far out, then the cap again.** Past 3 000
+18. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-20. **From the command line, for an agent.** Ideas for `--describe`,
+19. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
     - a shorter `--overview` JSON (`--depth 2` first is settled, 0136);
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).
-21. **Where the sources file goes after a save.** The form already offers
+20. **Where the sources file goes after a save.** The form already offers
     `.dbt-edith/jobs.yml` (shared, committed) beside "For me only" (0115),
     but the command line and MCP read only the file, never the settings, so
     someone who wants an agent to see the sources without sharing them must
@@ -2236,17 +2310,7 @@ of its own, and each panel updates the tour, its page under
     refuses paths outside the project, where the git folder lies in a worktree
     or when the dbt project sits in a subfolder; and nothing may ever add to a
     tracked ignore file, which is the repository's.
-22. ~~**Job coverage from the command line.**~~ Settled in 1.63.0 (0131).
-23. ~~**A cap on the size of an answer.**~~ Settled in 1.68.0 (0135): over MCP
-    an answer past 48 000 characters is cut at a line and closed by a line saying
-    what was left out and how to narrow; JSON stays valid line by line, a
-    one-object answer is refused with that line; an error carrying cards is
-    cut at 10 000, one with no answer in it and the command line never are;
-    tokens are not counted.
-24. ~~**A skill for a client that defers tools.**~~ Settled in 1.69.0 (0136).
-    Still open: the variant is untried with clients other than Claude Code,
-    Copilot among them.
-25. **When a table last changed, from Snowflake's metadata.** The last
+21. **When a table last changed, from Snowflake's metadata.** The last
     builds (0117) say when dbt ran a model, which is the package's word. What
     Snowflake says of the table itself, `LAST_ALTERED` in the schema's
     `INFORMATION_SCHEMA.TABLES`, is a different question (the table changed,
@@ -2254,36 +2318,28 @@ of its own, and each panel updates the tour, its page under
     needs its own read per environment and its own privilege, and would show
     beside the package's answer, not instead of it, since the two disagree on
     a model changed by hand.
-26. **Seeds, snapshots and tests in the builds.** The package keeps
+22. **Seeds, snapshots and tests in the builds.** The package keeps
     `seed_executions`, `snapshot_executions` and `test_executions` beside
     `model_executions` (0117), with the same `node_id` and the same invocation.
     The read joins the models' table alone, so a seed or a snapshot box carries
     no dot and a test's last result is not in the section. Each is one more
     query per environment, and a test's status words (`pass`, `fail`) are
     already in the verdict.
-27. **The package's schema is the config before `generate_schema_name`.**
+23. **The package's schema is the config before `generate_schema_name`.**
     The builds place the package's tables with the relation the Location
     table resolves (0113), which is the config as written. A project whose
     `generate_schema_name` rewrites the package's schema sends the query to a
     table that is not there, and the section shows Snowflake's error for the
     relation it asked. Fixing it means evaluating that macro, which this tool
     does not do (the `generate_*_name` note below).
-28. **Runs of one target by several people.** An `.env` file that sets
+24. **Runs of one target by several people.** An `.env` file that sets
     `DBT_TARGET` keeps that target's runs (0117), and every run under one
     target is one, whoever ran it: two developers building `dev` into their
     own schemas share one last attempt. Telling them apart needs the model's
     `schema` column to leave the warehouse (who built where) and the schema
     each environment really builds into, which `generate_schema_name` decides
     and this tool does not evaluate (0113).
-29. ~~**The update pulls `main`, not the tag it announced.**~~ Settled in 1.61.2 (0129).
-30. ~~**The `.exe`'s hash travels with the `.exe`.**~~ Settled in releases
-    after 1.61.0: releases from 1.57.0 on are immutable, so `gh release
-    verify-asset` checks a file against GitHub's record of the release, and
-    the release job attests each `.exe`'s build provenance (`gh attestation
-    verify`), both in docs/windows.md. The update's own check still reads the
-    `.sha256` of the same release, `gh` not being on the machines it runs on
-    (0085, 0123).
-31. **A collin install in a folder others can write to, on Windows.** On
+25. **A collin install in a folder others can write to, on Windows.** On
     macOS and Linux a version installed under `<config>/collin/<X.Y.Z>/bin/`
     is run only when its binary and each folder up to `<config>/collin/` belong
     to the account and are writable by nobody else (0128, 1.61.1). Windows is
@@ -2291,18 +2347,18 @@ of its own, and each panel updates the tour, its page under
     read, so the same check needs a call into the Windows security API or
     `icacls` parsed, and a folder Administrators own is the user's own on many
     machines (0042, 0060, 0094).
-32. **A version resource for the MSVC `.exe` (0123).** The release's file has
+26. **A version resource for the MSVC `.exe` (0123).** The release's file has
     none, since `rc.exe` is off `PATH` outside a developer prompt (0093). The
     runner has it; the work is a resource script `build.rs` hands to it, or a
     step in the workflow, and a check that the properties read as 0093 says.
-33. **Signing the release's `.exe`.** The certificate options are in the
+27. **Signing the release's `.exe`.** The certificate options are in the
     release paragraph below: Azure Artifact Signing wants an organisation in
     Europe and its certificates last three days, SignPath's free plan an OSI
     licence, and an endpoint's certificate exclusion pins one certificate.
-34. **`collin.exe` as a release asset.** collin is still built with cargo on
+28. **`collin.exe` as a release asset.** collin is still built with cargo on
     Windows (0043); its own repository would carry the asset, and the update
     that installs it (0043, 0060) would download as 0123 does.
-35. **Downloads off Windows.** A macOS or Linux build is installed with cargo
+29. **Downloads off Windows.** A macOS or Linux build is installed with cargo
     from a clone; a release asset for them would need its own build, hash and
     command, and 0123 gives them none.
 
@@ -2392,7 +2448,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 19);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 18);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;
@@ -2930,6 +2986,53 @@ each a known limit, unranked:
   many presses of Tab.
 - **Reports reopens on a section with news,** Job coverage for one, rather than
   on Builds by job.
+
+Left by the pull requests of 2026-10-30 (#128 to #138, 1.61.1 to 1.69.0), each
+a known limit, unranked:
+
+- **Collin installs (0128):** a refused install first on `PATH` hides a later
+  good collin, since `locate()` stops at the first accepted binary and
+  `without_refused` then drops it, so no default collin runs, unless a version
+  is picked for the project (it fails closed). A macOS extended ACL
+  (`chmod +a`) grants write without mode bits and is not read.
+  When `<config>/collin` is a link, the folders above its target are not
+  checked. OpenSSH's private-group rule, a group-writable part whose group is
+  the owner's own, is not accepted.
+- **The update (0129):** the first update after 1.61.2 still types the old pull
+  (0095). A clone already past the tag builds what it holds under its own
+  `Cargo.toml` version. The clone's PowerShell line is checked only as a
+  string, and CI runs no PowerShell on it.
+- **The PATH warning (0130):** `web/tests/pathwarn.js` covers the pure
+  functions only; the click handler, the freshness badge's callers and the boot
+  read are not. Git Bash dropping empty entries and PowerShell resolving `.`
+  entries were read from msys2's and PowerShell's source, not run. bash
+  expands `~/bin` in `PATH` and zsh does not, so `~/bin` warns for both. A shell
+  started with no `PATH` at all (bash's default ends in `.`) is not reported.
+- **Job coverage (0131):** the skill's description does not mention
+  unscheduled models (0114 measures a new description with agents first).
+- **The selectors row:** on the first call each selector is resolved on its
+  own, so a selector of selectors resolves its parts again, and the row
+  computes start nodes it never uses.
+- **Compiled SQL (0132):** the stale note compares the model's file, its
+  properties file, `dbt_project.yml` and the newest macro, not a source's YAML
+  or a parent's alias or schema.
+- **Macros (0133):** the page's `macroDefLine` still reads a `{%` inside a raw
+  block or a `{{ }}` string, which the command line's `block_in` no longer
+  does. `dbt.x` named outright is dbt's own macro, while a call may reach the
+  adapter's.
+- **Columns (0134):** compact rows of a disabled node carry no sign of it; the
+  text and the JSON do.
+- **The MCP cut (0135):** the cap is fixed, not per client, and other clients'
+  limits are not known. It rests on Claude Code estimating tokens as length
+  over 4, so a `MAX_MCP_OUTPUT_TOKENS` under about 24 000 still gets a saved
+  file.
+- **Skills (0136):** the shipped skill texts were not measured with agents; the
+  measure was on an earlier text, and other clients, Copilot among them, are
+  untried.
+- **The MCP help sits near its byte cap:** 1770 of its 1792 bytes at 1.69.0, so
+  the next flag needs a cut (the skills' sizes are above).
+- **A test to watch:** `web/tests/layout.js` failed once on a loaded machine
+  during a full check and passed alone.
 
 Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
 read connects with. One connection, with the active target's role, reads every
