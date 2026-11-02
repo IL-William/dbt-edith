@@ -492,18 +492,22 @@
       </div>
     </section>
 
-    <!-- The panels, over the editor and the dock rather than in their place, so
-         nothing under them is measured again when one rolls up or down (0064, 0091). -->
-    <section id="reports" class="panel reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
-      <nav id="reports-nav" class="reports-nav" aria-label="Reports"></nav>
-      <div id="reports-view" class="reports-view"></div>
-    </section>
-    <!-- The settings, a section at a time, as the reports are (0100). -->
+    <!-- The settings, a section at a time, as the reports are (0100): over the
+         editor and the dock rather than in their place, so nothing under them is
+         measured again when they roll up or down (0064, 0091). -->
     <section id="settings" class="panel settings" tabindex="-1" aria-label="Settings" aria-hidden="true">
       <nav id="settings-nav" class="reports-nav" aria-label="Settings"></nav>
       <div id="settings-view" class="reports-view"></div>
     </section>
   </main>
+
+  <!-- The reports over the whole window, the sidebar too, since a list of
+       hundreds is read at full width; the settings above keep to the editor
+       and the dock (0137). -->
+  <section id="reports" class="panel reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
+    <nav id="reports-nav" class="reports-nav" aria-label="Reports"></nav>
+    <div id="reports-view" class="reports-view"></div>
+  </section>
 
   <!-- Custom selection over the whole window, the sidebar too (0092, 0101). It
        holds nothing of its own: selectPanelDown() brings the dock's canvas up

@@ -302,3 +302,105 @@ check('Read again and Close when the section can redraw itself',
       buttons(reportHead({ title: 'T', tool: 'dbt', again: function () {} })), ['Read again', '×']);
 check('Close alone when it is not given a way to (the builds, whose own button asks Snowflake)',
       buttons(reportHead({ title: 'T', tool: 'snowflake', extra: [jel('button', '', 'Refresh')] })), ['Refresh', '×']);
+
+print('\n--- an explanation folded to its first sentence ---');
+check('split at the first full stop followed by a space', leverSplit('No freshness. Neither warn_after nor error_after holds a count.'),
+      { first: 'No freshness.', rest: 'Neither warn_after nor error_after holds a count.' });
+check('a dotted name does not end the sentence', leverSplit('Reads stg_orders.csv before it. Then the rest.').first, 'Reads stg_orders.csv before it.');
+check('a question or an exclamation ends it too', [leverSplit('Why? Because.').first, leverSplit('Look! Now.').first], ['Why?', 'Look!']);
+check('one sentence has no rest, with or without its stop', [leverSplit('Only this.'), leverSplit('Only this')],
+      [{ first: 'Only this.', rest: '' }, { first: 'Only this', rest: '' }]);
+check('nothing at all', leverSplit(''), { first: '', rest: '' });
+check('the rest keeps its own sentences', leverSplit('One. Two. Three.').rest, 'Two. Three.');
+
+print('\n--- the folds, filtered on their data ---');
+function fold(title, rows, more) {
+  return Object.assign({ title: title, tone: '', lever: '', rows: rows, open: true, find: function (r) { return r.name; }, draw: function () { return []; } }, more || {});
+}
+var rowsA = [{ name: 'orders' }, { name: 'order_items' }, { name: 'customers' }];
+var groupsA = [{ folds: [fold('Models', rowsA), fold('Sources', [{ name: 'raw_orders' }, { name: 'raw_users' }])] }];
+function shapes(gs, q) { return reportFiltered(gs, q).map(function (g) { return g.folds.map(function (f) { return [f.title, f.hits.length, f.count]; }); }); }
+check('unfiltered, every row and the total as the count', shapes(groupsA, ''), [[['Models', 3, '3'], ['Sources', 2, '2']]]);
+check('filtered, the hits and "n of m", case-insensitively', shapes(groupsA, 'ORDER'), [[['Models', 2, '2 of 3'], ['Sources', 1, '1 of 2']]]);
+check('filtered but nothing hidden, the plain count', shapes(groupsA, 'r'), [[['Models', 3, '3'], ['Sources', 2, '2']]]);
+check('a badge is the count whenever nothing is hidden', shapes([{ folds: [fold('M', rowsA, { badge: 'high' })] }], 'r')[0][0][2], 'high');
+check('a fold with no hit is dropped while filtered', shapes(groupsA, 'customers'), [[['Models', 1, '1 of 3']]]);
+check('and a group left with no fold', shapes(groupsA, 'nothing like this'), []);
+check('blank spaces in the filter are not part of it', shapes(groupsA, '  order  ').length, 1);
+check('the total is `of` when the server sent fewer rows', shapes([{ folds: [fold('Models', rowsA, { of: 2000 })] }], ''), [[['Models', 3, '2000']]]);
+check('and "n of m" counts against it', shapes([{ folds: [fold('Models', rowsA, { of: 2000 })] }], 'order'), [[['Models', 2, '2 of 2000']]]);
+check('a fold with a total of zero is dropped, whatever its rows', shapes([{ folds: [fold('Models', [], { of: 0 }), fold('Sources', rowsA)] }], ''), [[['Sources', 3, '3']]]);
+check('a badge replaces the total unfiltered, and "n of m" wins while the filter hides some',
+      [shapes([{ folds: [fold('M', rowsA, { badge: 'high' })] }], '')[0][0][2], shapes([{ folds: [fold('M', rowsA, { badge: 'high' })] }], 'order')[0][0][2]], ['high', '2 of 3']);
+check('open as given', reportFiltered([{ folds: [fold('M', rowsA, { open: false })] }], '')[0].folds[0].open, false);
+check('open by the rows it would list: the total unfiltered, the hits filtered',
+      [reportFiltered([{ folds: [fold('M', rowsA, { of: 60, open: function (n) { return n <= 50; } })] }], '')[0].folds[0].open,
+        reportFiltered([{ folds: [fold('M', rowsA, { of: 60, open: function (n) { return n <= 50; } })] }], 'order')[0].folds[0].open], [false, true]);
+check('how many the server held back, said only unfiltered',
+      [reportFiltered([{ folds: [fold('M', rowsA, { of: 2000 })] }], '')[0].folds[0].more, reportFiltered([{ folds: [fold('M', rowsA, { of: 2000 })] }], 'order')[0].folds[0].more], [1997, 0]);
+check('a group with only a head stays, filtered or not',
+      [reportFiltered([{ head: ['h'], folds: [] }], '').length, reportFiltered([{ head: ['h'], folds: [fold('M', rowsA)] }], 'zzz').length], [1, 1]);
+check('the group\'s own keys travel with it', reportFiltered([{ group: 'rerun', label: 'Rerun', desc: 'd', folds: [fold('M', rowsA)] }], '')[0].label, 'Rerun');
+check('the fold\'s own keys too, and the rows are not changed',
+      [reportFiltered(groupsA, 'order')[0].folds[0].tone, groupsA[0].folds[0].rows.length], ['', 3]);
+
+print('\n--- a key row of the Checks ---');
+check('a composite key keeps its columns, which nothing else on the row says', checkDetail({ key: ['order_id', 'line'], detail: 'key order_id, line: no not_null on line' }), 'key order_id, line: no not_null on line');
+check('every column of it lacking the test is said once, not twice', checkDetail({ key: ['order_id', 'line'], detail: 'key order_id, line: no not_null on order_id, line' }), 'no not_null on any column of key order_id, line');
+check('a single column key whose list is itself is as before', checkDetail({ key: ['id'], detail: 'key id: no not_null on id' }), 'no not_null on id');
+check('a composite with only some columns missing keeps its detail whole', checkDetail({ key: ['a', 'b', 'c'], detail: 'key a, b, c: no not_null on b, c' }), 'key a, b, c: no not_null on b, c');
+check('so two keys of one model missing the same column read apart',
+      [checkDetail({ key: ['order_id', 'line'], detail: 'key order_id, line: no not_null on line' }), checkDetail({ key: ['sku', 'line'], detail: 'key sku, line: no not_null on line' })].join('|'),
+      'key order_id, line: no not_null on line|key sku, line: no not_null on line');
+check('a single column', checkDetail({ key: ['id'], detail: 'key id: no not_null on id' }), 'no not_null on id');
+check('as sent when the key is not the one the text starts with', checkDetail({ key: ['id'], detail: 'key other: no not_null on other' }), 'key other: no not_null on other');
+check('as sent without a key list', checkDetail({ detail: 'unique_key id' }), 'unique_key id');
+check('a unique_key row is as sent', checkDetail({ key: ['id'], detail: 'unique_key id' }), 'unique_key id');
+check('no detail, none', checkDetail({ id: 'model.shop.a' }), '');
+
+print('\n--- the figures over the Warnings ---');
+check('how many paths, and how many apply to nothing', warningsTiles({ checked: 12, unused: [{}, {}] }).map(function (t) { return [t.label, t.value, t.tone]; }),
+      [['Config paths', '12', undefined], ['Apply to no resource', '2', 'warn']]);
+check('no tone when every path applies', warningsTiles({ checked: 12, unused: [] })[1].tone, '');
+check('none while the file could not be read', warningsTiles({ unread: { line: 3, message: 'x' }, checked: 0, unused: [] }), []);
+
+print('\n--- the rail, by who reads the files ---');
+var secs = reportsSections({ run: { at: 9 }, warnings: { unused: 2 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 }, macros: { unexplained: 1, at: 3 },
+  checks: { count: 4, at: 3 }, builds: {} });
+check('dbt, collin, Jobs, Snowflake, each in the sections\' own order',
+      reportsRailGroups(secs).map(function (g) { return [g.label, g.sections.map(function (s) { return s.key; })]; }),
+      [['dbt', ['run', 'warnings', 'macros', 'checks']], ['collin', ['collin']], ['Jobs', ['jobs', 'joborder']], ['Snowflake', ['builds', 'jobbuilds']]]);
+check('a group with no section is not listed', reportsRailGroups(reportsSections({})).map(function (g) { return g.label; }), ['Jobs']);
+check('and none at all', reportsRailGroups([]), []);
+
+print('\n--- the count beside a section ---');
+function railN(key, index, collin, kept) { var c = reportsRailCount(key, index, collin, kept); return c && c.n; }
+check('the last run: everything that did not pass', railN('run', { run: { error: 1, fail: 2, warn: 3, partial: 1, ok: 40, other: 1 } }), 8);
+check('the warnings: the paths that apply to nothing', railN('warnings', { warnings: { unused: 5 } }), 5);
+check('collin: what it names to look at', railN('collin', {}, { report: { to_investigate: 7 } }), 7);
+check('the jobs: in no job or only in unscheduled ones', railN('jobs', { jobs: { never: 4, unscheduled: 3 } }), 7);
+check('the macros: unexplained', railN('macros', { macros: { unexplained: 2 } }), 2);
+check('the checks: the index\'s count', railN('checks', { checks: { count: 90 } }), 90);
+check('the job order: what the section left when it was drawn', railN('joborder', {}, null, { joborder: 3 }), 3);
+check('none until drawn, never fetched to count', railN('joborder', { jobs: {} }, null, {}), null);
+check('the builds count nothing: a number across environments would match nothing on the page',
+      ['builds', 'jobbuilds'].map(function (k) { return railN(k, { builds: {}, jobs: {} }, null, { builds: 5, jobbuilds: 2 }); }), [null, null]);
+check('zero is none', [railN('run', { run: { error: 0, fail: 0, warn: 0, partial: 0, ok: 4, other: 0 } }), railN('warnings', { warnings: { unused: 0 } }), railN('collin', {}, { report: { to_investigate: 0 } })], [null, null, null]);
+check('and a missing index', ['run', 'warnings', 'collin', 'jobs', 'macros', 'checks'].map(function (k) { return railN(k, null, null, null); }), [null, null, null, null, null, null]);
+check('the checks say findings, as the index sums the rows of every check', reportsRailCount('checks', { checks: { count: 4 } }).title, '4 findings in this tool\'s own checks');
+check('a title says what is counted, in the singular too', [reportsRailCount('warnings', { warnings: { unused: 1 } }).title, reportsRailCount('macros', { macros: { unexplained: 3 } }).title],
+      ['1 config path of dbt_project.yml that applies to no resource', '3 macros no node reaches and nothing explains']);
+
+print('\n--- the source named at the head of a section ---');
+function row(head) { return head.children[0]; }
+var chip = row(reportHead({ title: 'Job order', tool: 'jobs' })).children[0];
+check('a chip first, with the word the rail head says, and its source for the colour', [chip.className, chip.textContent, chip.dataset.tool], ['srcchip', 'Jobs', 'jobs']);
+check('the same word as the rail\'s head, for every source',
+  ['dbt', 'collin', 'jobs', 'snowflake'].map(function (t) { return [row(reportHead({ title: 'T', tool: t })).children[0].textContent, reportSourceLabel(t)]; }),
+  [['dbt', 'dbt'], ['collin', 'collin'], ['Jobs', 'Jobs'], ['Snowflake', 'Snowflake']]);
+check('and the rail groups carry it', reportsRailGroups(reportsSections({ run: { at: 9 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 } })).map(function (g) { return [g.tool, g.label, reportSourceLabel(g.tool)]; }),
+  [['dbt', 'dbt', 'dbt'], ['collin', 'collin', 'collin'], ['jobs', 'Jobs', 'Jobs']]);
+check('no dot with no outcome to say: the chip is all', row(reportHead({ title: 'T', tool: 'dbt' })).children.filter(function (c) { return c.className === 'tooldot'; }).length, 0);
+runEndWords = function (tone) { return tone === 'bad' ? 'Ended with errors or failed tests' : ''; };
+var withDot = row(reportHead({ title: 'Last run', tool: 'dbt', tone: 'bad' })).children;
+check('the dot stays for a run outcome, after the chip', [withDot[0].className, withDot[1].className, withDot[1].dataset.tone, withDot[1].title], ['srcchip', 'tooldot', 'bad', 'Ended with errors or failed tests']);

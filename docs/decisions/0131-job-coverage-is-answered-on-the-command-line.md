@@ -28,6 +28,8 @@ and subtracting from the project by hand.
   unscheduled jobs, only in jobs whose schedule is not read, ephemeral, steps
   that select nothing, steps not resolved. A node is `folder/name`; a step is
   `job › task`, its source, `file:line`, its command and why it is listed.
+  *Amended by [0137](0137-reports-open-over-the-whole-window.md): the page
+  shows these counts as tiles; the sentence is the command line's alone.*
   **No list is cut**: the list is the answer, and an agent that met `+N more`
   would need JSON to get the rest. `--output name` prints this text, as the
   other job modes do.

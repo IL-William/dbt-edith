@@ -99,13 +99,21 @@ kbd {
 .envdot[data-tone=manifest] { background: transparent; border: 1px solid #6f7f93; }
 /* Column lineage tools (0031). Their own attribute rather than data-tone, which
    is the environments' colour. Each hue is far from the accent and from the
-   others, and the tool is always named beside it, never shown by colour alone. */
+   others, and the tool is always named beside it, never shown by colour alone.
+   Jobs is the orchestrator's files, the reports' third source beside dbt, collin
+   and Snowflake (0137). */
 [data-tool] { --tool: #6f7f93; }
 [data-tool=fusion] { --tool: #ff694b; }
 [data-tool=collin] { --tool: #e070d0; }
 [data-tool=snowflake] { --tool: #29b5e8; }
+[data-tool=jobs] { --tool: #a78bfa; }
 /* dbt's own artifacts in the reports: the last run, and what follows it. */
 [data-tool=dbt] { --tool: #ff694b; }
+/* The source named at the head of a section, in its colour. */
+.srcchip {
+  flex: 0 0 auto; font: 10.5px/16px var(--ui); padding: 0 5px; border-radius: 3px;
+  color: var(--tool); border: 1px solid color-mix(in srgb, var(--tool) 40%, transparent);
+}
 .tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
 /* How the last run ended, over the tool's colour: a section's own dot, in the
    reports, says it only when it has an outcome to say. */
@@ -718,11 +726,21 @@ kbd {
   background: none; border: 0; color: var(--fg-dim); font: 12.5px var(--ui); text-align: left; cursor: pointer;
 }
 .reports-navrow:hover { background: var(--bg-3); color: var(--fg); }
-.reports-navrow[aria-current="true"] { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
-.reports-navrow > span:not(.tooldot):not(.rnew) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-navrow[aria-current="true"] { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--tool, var(--accent)); }
+.reports-navrow > span:not(.tooldot):not(.rnew):not(.navcount) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports-navrow .rnew { margin-left: auto; flex: 0 0 auto; }
-/* A section with nothing to show yet, listed as where to set it up. */
-.reports-navrow.empty .tooldot { background: none; box-shadow: inset 0 0 0 1.5px var(--tool); }
+/* A section with nothing to show yet, listed as where to set it up, dimmed. */
+.reports-navrow.empty:not([aria-current="true"]) { opacity: .65; }
+/* The rail by who reads the files (0137): a head over each group, a count at
+   the end of a row that has something, the chips after it. */
+.reports-navgroup + .reports-navgroup { margin-top: 8px; }
+.reports-navhead { padding: 6px 12px 3px; font: 600 10.5px var(--ui); letter-spacing: .9px; text-transform: uppercase; color: var(--tool, var(--fg-dim)); }
+/* A rule down the left of the group's rows in its source's colour, the current
+   row's marker the same at full strength. */
+.reports-navgroup .reports-navrow { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--tool) 35%, transparent); }
+.reports-navgroup .reports-navrow[aria-current="true"] { box-shadow: inset 2px 0 0 var(--tool); }
+.reports-navrow .navcount { margin-left: auto; flex: 0 0 auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--fg-dim); }
+.navcount ~ .rnew { margin-left: 0; }
 .reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* Custom selection in its panel (0092), over the whole window (0101): its
@@ -803,7 +821,7 @@ kbd {
 .reporttile[data-tone=warn] .rvalue { color: var(--warn); }
 .runnote { margin: 6px 0 0; font-size: 12px; color: var(--fg-dim); max-width: 900px; }
 .runnote[data-tone=warn] { color: var(--warn); }
-.reportbody > .reportfinding { margin-top: 10px; }
+.reportlists > .reportfinding { margin-top: 10px; }
 .reportfinding[data-tone=bad] .rtitle { color: var(--bad); }
 .reportfinding[data-tone=warn] .rtitle { color: var(--warn); }
 /* dbt's own message under a node, its first lines as dbt wrote them. */
@@ -815,8 +833,13 @@ kbd {
 /* collin's report, a section of the reports: figures, then findings by who acts. */
 .reportbody { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 28px; }
 .reportbody > p { margin: 4px 0 0; }
+/* Each tile spans three rows of the grid its label, value and sub are laid on,
+   so that a label which wraps pushes the values of its whole row down with it. */
 .reporttiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
-.reporttile { background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.reporttile {
+  display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+}
 .reporttile .rlabel, .reporttile .rsub { font-size: 11px; color: var(--fg-dim); }
 .reporttile .rvalue { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .reportgroup { margin-top: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
@@ -831,13 +854,57 @@ kbd {
 .reportfinding summary::before { content: "\25b8"; color: var(--fg-dim); width: 10px; }
 .reportfinding[open] summary::before { content: "\25be"; }
 .reportfinding .rcount { font: 11px var(--mono); color: var(--fg-dim); }
-.reportfinding .rlever { margin: 1px 0 4px 18px; color: var(--fg-dim); font-size: 12px; max-width: 760px; }
+.reportfinding .rlever { margin: 1px 0 4px 18px; color: var(--fg-dim); font-size: 12px; max-width: 110ch; }
 .rentries { margin: 0 0 4px; padding-left: 36px; font-size: 12px; }
 .rentries li { margin: 1px 0; overflow-wrap: anywhere; }
 .rentries .rcol, .rentries .rrel { font: 11.5px var(--mono); }
 .rentries .rcol { cursor: pointer; color: var(--fg); }
 .rentries .rcol:hover { text-decoration: underline; }
-.rentries .rwhy { color: var(--fg-dim); margin: 0 0 4px; max-width: 900px; }
+/* The "why" behind a lever's first sentence, and the path a row shares with the one above. */
+/* In the line, after the first sentence's last word, which it never leaves. */
+.rtail { white-space: nowrap; }
+.rmorebtn {
+  background: none; border: 0; padding: 0; margin-left: .45em; color: var(--accent); font: inherit; font-size: 11px;
+  cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.rmorebtn:hover, .rmorebtn:focus-visible { text-decoration: underline solid; outline: none; }
+.rdim { color: var(--fg-dim); }
+/* A step of a job in a list: where it is, then its command in full, wrapping
+   rather than cut, and the file it is in on the line under. */
+.rstep { font: 11.5px var(--mono); color: var(--fg); }
+.rline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 2px 0 0; font-size: 11px; color: var(--fg-dim); }
+/* A step's command takes the free width and wraps, its file pinned to the right,
+   so that the two line up from one step to the next. */
+.rstepline { flex-wrap: nowrap; align-items: flex-start; }
+.rstepline .rcmd { flex: 1 1 0; }
+.rstepline .rsched { flex: 1 1 0; min-width: 0; }
+/* A fixed share of the line, so that the commands' bars end at the same place
+   from one step to the next; more specific than the wrap rule for files below. */
+.rentries .rstepline .jobfile { flex: 0 0 32%; max-width: 32%; margin-left: auto; text-align: right; }
+.rquote { font: 11px var(--mono); color: var(--fg); }
+/* The models of a pair, as the links of collin's report are. */
+.reportbody .jobs-model { color: var(--accent); text-decoration: none; }
+.reportbody .jobs-model:hover, .reportbody .jobs-model:focus-visible { text-decoration: underline; }
+.rline .jobwhen { max-width: 100%; }
+.rcmd {
+  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: #c2ccd9; background: var(--bg-3);
+  border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Where a step is written wraps with the line: it is read, not cut at an ellipsis. */
+.rentries .jobfile { max-width: 100%; text-align: left; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.reportfinding .checkfolder > .rline { margin: 0 0 2px 54px; }
+/* The filter over a section's lists, kept in view as they are scrolled. */
+/* A fixed height, which what else sticks in a section (the builds grid's
+   head) is offset by. */
+.reportbody { --findh: 38px; }
+.reportfind {
+  position: sticky; top: -12px; z-index: 3; background: var(--bg); box-sizing: border-box; height: var(--findh);
+  padding: 7px 0 0; margin-top: 6px;
+}
+.reportfilter {
+  background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+  padding: 3px 8px; font: 12px var(--ui); min-width: 220px;
+}
 /* A folder inside a check's fold: a level of its own, with its own arrow, not the fold's. */
 .reportfinding .checkfolder > summary { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 2px 18px; padding: 0; }
 .reportfinding .checkfolder > summary::before { content: "\25b8"; }
@@ -1295,34 +1362,12 @@ kbd {
 .joblink { font-size: 11px; color: var(--fg-dim); padding-left: 2px; margin-top: 2px; }
 .joblink.why { color: var(--warn); }
 .jobs-warn { font-size: 11.5px; color: var(--warn); margin: 0 0 8px; }
-.jobs-maybe > summary, .jobs-sec > summary { cursor: pointer; font: 600 10.5px var(--ui); letter-spacing: .8px; text-transform: uppercase; color: var(--fg-dim); margin: 12px 0 6px; }
-.jobs-line { font-size: 12.5px; margin: 2px 0 6px; }
-.jobs-folder > summary { cursor: pointer; font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 2px 10px; }
-.jobs-row {
-  display: flex; align-items: center; gap: 7px; width: 100%; margin: 0; padding: 2px 0 2px 26px;
-  background: none; border: 0; color: var(--fg); font: 12px var(--ui); text-align: left; cursor: pointer;
-}
-.jobs-row:hover { background: var(--bg-3); }
-.jobs-name { text-decoration: underline dotted var(--fg-dim); text-underline-offset: 3px; }
-/* Where a row sits below its folder, or its whole folder for a row listed
-   bare, which is indented as a folder's summary is. */
-.jobs-path { font: 10.5px var(--mono); color: var(--fg-dim); margin-left: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jobs-sec > .jobs-row { padding-left: 12px; }
-.jobs-row:hover .jobs-name { color: var(--accent); text-decoration: underline solid; }
-/* A pair of Job order (0126): the step to be ordered, and the models it reads
-   from the steps it should wait for, each a link to the model. */
-.jobs-pair { margin: 8px 0 0 10px; padding-left: 8px; border-left: 2px solid var(--line); min-width: 0; }
-.jobs-pairhead { font-size: 12px; }
-.jobs-pair .joblink { padding-left: 0; }
-.jobs-edges { margin-top: 2px; }
-.jobs-sec ~ .jobs-line, .jobs-sec ~ .jobs-warn { margin-top: 12px; }
-.jobs-edges > .btn { margin-top: 4px; }
+.jobs-maybe > summary { cursor: pointer; font: 600 10.5px var(--ui); letter-spacing: .8px; text-transform: uppercase; color: var(--fg-dim); margin: 12px 0 6px; }
 .jobs-model {
   background: none; border: 0; padding: 0; color: var(--fg); font: inherit; cursor: pointer;
   text-decoration: underline dotted var(--fg-dim); text-underline-offset: 3px;
 }
 .jobs-model:hover, .jobs-model:focus-visible { color: var(--accent); text-decoration: underline solid; outline: none; }
-.jobs-ref { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0 10px; min-width: 0; font-size: 12px; }
 .jobs-none {
   min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 12px; text-align: center;
@@ -1868,10 +1913,9 @@ kbd {
 .buildsenv { display: flex; align-items: center; gap: 8px; margin: 18px 0 6px; font-size: 13px; }
 .buildsgrid { margin-top: 22px; }
 .buildstools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-.buildsfilter { background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; font: 12px var(--ui); min-width: 180px; }
 .buildspk { font-size: 12px; color: var(--fg-dim); }
 .buildstable { border-collapse: collapse; font-size: 12px; }
-.buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+.buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: calc(var(--findh) - 12px); background: var(--bg); }
 .buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid rgba(42, 51, 64, .5); }
 .buildstable td.bname { font-family: var(--mono); font-size: 11.5px; }
 .buildstable td[data-verdict=ok] { color: var(--ok); }
@@ -1881,8 +1925,10 @@ kbd {
 /* Builds by job (0119): a row per job, a column per environment read. The
    table takes the panel's width and shrinks to it; many environments scroll it. */
 .jbscroll { overflow-x: auto; }
-.jobbuilds { --cols: minmax(130px, 1.5fr) minmax(150px, 1.3fr) minmax(64px, .6fr) repeat(var(--envs), minmax(120px, 1fr));
-  min-width: calc(370px + var(--envs) * 130px); }
+.jobbuilds { --cols: minmax(230px, 1.6fr) 96px var(--sched, 200px) minmax(64px, .6fr) repeat(var(--envs), minmax(120px, 1fr));
+  min-width: calc(390px + var(--sched, 200px) + var(--envs) * 120px + (3 + var(--envs)) * 14px); }
+/* The job stays in view as the environments are scrolled sideways. */
+.jbrow > :first-child { position: sticky; left: 0; z-index: 1; background: var(--bg); }
 .jbrow { display: grid; grid-template-columns: var(--cols); gap: 4px 14px; align-items: start; padding: 4px 0; }
 .jbrow > * { min-width: 0; }
 .jbheads { font-size: 12px; font-weight: 600; color: var(--fg-dim); border-bottom: 1px solid var(--line); }
@@ -1895,19 +1941,23 @@ kbd {
 .jbname::before { content: "\25b8"; color: var(--fg-dim); width: 10px; flex: 0 0 auto; }
 .jobbuild[open] > summary .jbname::before { content: "\25be"; }
 .jobbuild.empty > summary { cursor: default; color: var(--fg-dim); }
-.jobbuild.empty > summary .jbname::before { content: ""; }
+/* No caret on a row with nothing to open, and the room for one kept. */
+.jobbuild.empty > summary .jbname::before { content: ""; display: block; width: 10px; flex: 0 0 10px; }
 .jbname { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .jbname b { font: 600 12px var(--mono); overflow-wrap: break-word; min-width: 0; }
 .jbtag { flex: 0 0 auto; font-size: 11px; }
 .jbalso { font-weight: 400; color: var(--fg-dim); }
 .jbwhen { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
-.jbwhen .jobwhen { max-width: 100%; min-width: 0; }
-.jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.jbwhen .jobwhen { max-width: 100%; }
+/* Cut at the column's edge past 560px: the pill's tooltip holds the whole of it. */
+.jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jbzone { font-size: 11px; color: var(--fg-dim); }
 .jbmodels { font-size: 12px; }
 .jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 0 4px; border-radius: 4px; }
 .jbheads > .jbenvh { padding: 0 4px; }
-.jbcell .jobdot { align-self: center; }
+.jbtop { display: flex; align-items: flex-start; gap: 6px; flex: 1 1 100%; min-width: 0; }
+.jbtop .jobdot { margin-top: .4em; }
+.jbsay { min-width: 0; }
 .jobdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--ok); }
 .jbcell[data-verdict=error] .jobdot { background: var(--bad); }
 .jbcell[data-verdict=late] .jobdot { background: var(--warn); }

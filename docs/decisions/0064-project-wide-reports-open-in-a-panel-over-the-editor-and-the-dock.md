@@ -19,6 +19,8 @@ next.
 - **One Reports button in the top bar** rolls a panel down over `#main`, the
   editor and the dock both, with a rail of sections on its left. The sidebar
   stays, so a file can still be picked. `Mod+Alt+R` opens and closes it.
+  *Amended by [0137](0137-reports-open-over-the-whole-window.md): the panel
+  covers the sidebar too.*
 - **It covers, it never replaces.** Nothing under it is hidden or measured
   again; while it is down, what is under it is `inert`.
 - **Anything that shows a file or a dock tab rolls it up**: a tab activated, a

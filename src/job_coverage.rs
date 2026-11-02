@@ -205,8 +205,8 @@ impl View {
         (!parts.is_empty()).then(|| parts.join("; "))
     }
 
-    /// The sentence over the lists, worded as the page's `jobsCoverageLine`
-    /// words it (`web/app.js`), so the two say the same.
+    /// The sentence over the lists: the command line's own. The page shows the
+    /// same counts as tiles (`jobsCoverageTiles` in `web/app.js`).
     fn line(&self) -> String {
         let covered = self.total - self.never.len() - self.unscheduled.len() - self.unread.len();
         let mut rest = Vec::new();

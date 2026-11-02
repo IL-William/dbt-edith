@@ -80,6 +80,19 @@ check('the macro dbt runs beside its helper', groups[3].items[0].extra, 'called 
 check('snapshots counted as such', runSaid({ key: 'strategy', name: 'mine', nodes: 2 }).count, '2 snapshots with strategy mine');
 check('nothing beside the others', groups[0].items[0].extra, '');
 check('no list, no group', macroGroups([]), []);
+var rawUnreached = [
+  { used: { why: 'none' } }, { used: { why: 'none' } }, { used: { why: 'macros' } }, { used: { why: 'test' } },
+  { used: { why: 'run', run: { nodes: 2 } } }, { used: { why: 'run', run: {} } }, { used: { why: 'dispatch' } }, { used: { why: 'dbt' } }, {},
+];
+check('the figures: the project\'s macros, those no node reaches, those left unexplained',
+  macrosTiles({ own: 40, project: 'shop', unreached: rawUnreached }).map(function (t) { return [t.label, t.value]; }),
+  [['Macros', '40'], ['No reference found', '9'], ['Left unexplained', '6']]);
+check('unexplained is the rail\'s own rule: none, called only by macros, a test, a run macro no node names (a zero is not sent), and a macro with no reason',
+  macrosTiles({ own: 1, project: 'shop', unreached: rawUnreached })[2].value, '6');
+check('a run macro with nodes, a variant, and one dbt calls explain themselves',
+  macrosTiles({ own: 1, project: 'shop', unreached: [rawUnreached[4], rawUnreached[6], rawUnreached[7]] })[2].value, '0');
+check('the project named under the first', macrosTiles({ own: 40, project: 'shop', unreached: [] }).map(function (t) { return t.sub; }).slice(0, 1), ['in shop']);
+check('none unreached, none unexplained', macrosTiles({ own: 3, project: 'shop', unreached: [] }).map(function (t) { return t.value; }), ['3', '0', '0']);
 
 print('\n--- how a node in the list reaches the macro ---');
 check('listing it', userHow({}), '');

@@ -52,7 +52,8 @@ which jobs were read. `dbt-edith --job-coverage` prints the same lists
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed
 on its own. A group with nothing in it is not drawn. An installed package's
-models are left out, so the report is about the project's own. A job counts as
+models are left out, so the report is about the project's own. Figures over the
+lists count the same models and the jobs read. A job counts as
 scheduled when it is on a clock, a cron or a preset such as `@daily`, or when it
 starts after one that is: an Airflow DAG on an asset a scheduled DAG updates,
 whether that DAG runs dbt or not, a dbt Cloud job started by a scheduled job's
@@ -192,22 +193,34 @@ freshness configured. A `--project-dir` is taken to name this project.
 ## Reports
 
 **Reports**, a sheet with a bar chart in the top bar whose name unfolds under
-the pointer, rolls a panel down over the editor and the dock
-with what speaks of the whole project, a section each, listed on its left:
-the last dbt command's results once dbt has written them, the warnings dbt
-would give as it parses once there is one, collin's report once collin has
-written one, the coverage of your jobs once the Jobs tab has a source, and the
-order of their steps with it, the project's macros while one is reached by no
-node and nothing explains it, this tool's own checks while one finds a node, and
-the builds of each environment once the dbt_artifacts package is there. The
-order of the steps, the checks and the builds are listed but never light the
-button.
-The sidebar stays, and anything that shows a file or a dock tab rolls the
-panel up again: a name in a report, a file in the
-tree, the palette, a dock tab, Escape. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and
-closes it. While no section has anything to show, the button is dimmed and its
-tooltip says what will fill it; it opens on the job coverage, where a source is
-added (0075).
+the pointer, rolls a panel down over the editor and the dock with what speaks of
+the whole project, a section each, listed on its left: the last dbt command's
+results once dbt has written them, the warnings dbt would give as it parses once
+there is one, collin's report once collin has written one, the coverage of your
+jobs once the Jobs tab has a source, and the order of their steps with it, the
+project's macros while one is reached by no node and nothing explains it, this
+tool's own checks while one finds a node, and the builds of each environment
+once the dbt_artifacts package is there. The order of the steps, the checks and
+the builds are listed but never light the button. The panel covers the whole
+window, the sidebar too, so a list is read at full width; the settings keep to
+the editor and the dock (0137). Anything that shows a file or a dock tab rolls
+it up again: a name in a report, the palette, a dock tab, Escape. The list on
+its left is grouped by who reads the files, dbt, collin, Jobs and Snowflake,
+each in its own colour and always named, in the rail and in a chip at the head
+of its sections, and a row with something to count carries it, as the section
+last drew it or the index says: the Job order counts nothing until it has been
+shown, since counting it would ask for the job files, and the builds count
+nothing, a number across environments matching none on the page. Each count is a
+number the section shows. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and closes it.
+While no section has anything to show, the button is dimmed and its tooltip says
+what will fill it; it opens on the job coverage, where a source is added (0075).
+
+Every section reads the same way: figures over it, a few notes, a filter, then
+folds, each with a title, a count and one line saying what it means. The rest of
+that explanation is behind **why**. The filter searches every row of the
+section, not only the rows drawn, and a fold says `3 of 40` while it narrows.
+What you filtered, opened, unfolded and scrolled is kept when you leave a
+section and come back (0137).
 
 What is new since you last looked rides on the button, a chip per report in
 its colour: the last run's errors and failed tests in red, the config paths
@@ -243,8 +256,9 @@ that apply to no resource, dbt's `UnusedResourceConfigPath`. A misspelt
 folder, a folder renamed or emptied, a `meta:` written without its `+`: no
 node's fqn begins with the key's path, so what it sets reaches nothing. Each
 path is written as dbt writes it, `models.jaffle_shop.stagign`, beside its
-line, which opens `dbt_project.yml` at the key, and says why: no node of the
-block's kind and no disabled node is under it. The list is dbt's, checked
+line, which opens `dbt_project.yml` at the key, the keys it shares with the path
+above dimmed. The reason is said once over the paths it holds for: no node of
+the block's kind and no disabled node is under them. The list is dbt's, checked
 against dbt-core and Fusion, a disabled node counting as dbt counts it. When
 `dbt_project.yml` was saved after the manifest, or other files changed since,
 the section says so first: a folder added since the last parse is in no
@@ -275,18 +289,21 @@ crons differ, and the files order nothing) and **Ordered the other way**, open
 while it holds fifty or fewer. A pair names the step and the steps it should
 wait for (one of them, when several build the parent), both schedules with their
 zones, the file of the step, which a click copies, and the models: `orders reads
-stg_orders through int_orders`, each name a link that opens the model with the
-Jobs tab, which lists the steps that build it. Ten edges are drawn for a pair, a
-button giving the rest. A sensor the DAG holds and the step does not depend on,
-a sensor on a task group, whose tasks are not read, and the steps it should wait
-for that the files run after it, are said under the pair. After the folds come
-the steps not resolved, which could hide more pairs, the DAGs whose `depends_on`
-loops and so are left out, the jobs nothing starts, left out too, and the
-sources that were not read. The job files are looked at again as the section
-opens, and by **Read again**. Its head says "Newer results" when the manifest
-moved, or when what the jobs read elsewhere changed (the sources, or the
-coverage's counts); an edit of a job file that leaves those alone, a new sensor
-or `depends_on`, is not noticed until the section is read again.
+stg_orders through int_orders`, or `orders reads stg_orders, stg_items (through
+int_a)` when one model reads several, each name a link that opens the model with
+the Jobs tab, which lists the steps that build it. The pairs of one DAG sit in a
+fold of its name, `DAG shop_marts (2)`, with the schedules said once when all
+its pairs share them; a DAG with a single pair is listed bare. Ten models are
+drawn for a pair, a button giving the rest. A sensor the DAG holds and the step
+does not depend on, a sensor on a task group, whose tasks are not read, and the
+steps it should wait for that the files run after it, are said under the pair.
+After the folds come the steps not resolved, which could hide more pairs, the
+DAGs whose `depends_on` loops and so are left out, the jobs nothing starts, left
+out too, and the sources that were not read. The job files are looked at again
+as the section opens, and by **Read again**. Its head says "Newer results" when
+the manifest moved, or when what the jobs read elsewhere changed (the sources,
+or the coverage's counts); an edit of a job file that leaves those alone, a new
+sensor or `depends_on`, is not noticed until the section is read again.
 
 The page reads the sources in force, the project's `.dbt-edith/jobs.yml` or, when
 the project has none, the ones kept in the settings; the command line reads the
@@ -359,18 +376,19 @@ models. Nothing is asked until you press **Read from Snowflake** in its head
 (**Refresh** after), which reads each environment's tables one after the other,
 drawing each as it lands. It carries no chip on the button: there is no file
 written to watch. Per environment, with its colour: tiles for the models in
-**error** (the last attempt failed), **stale** (no success within the
-threshold, set in the Snowflake section of the settings), **not built** (no run
-in the last 90 days) and fine, and a fold for each of the first three listing
-the models, which open on click, with dbt's message under an error. A model
-built under several targets counts by the worst of them. Under them, a table
-of every model against every environment, its last status and how long
-ago in each cell, filtered by name, the project's own models unless you tick
-include packages. An environment that cannot place the package's tables says
-why instead of showing numbers, and one the read failed on says what Snowflake
-said, with a link to the profile when the connection is to blame. Every enabled
-model is listed, by name, and the section stays where it is in the list and
-leaves the button dimmed until it has been read ([snowflake.md](snowflake.md),
+**error** (the last attempt failed), **stale** (no success within the threshold,
+set in the Snowflake section of the settings), **not built** (no run in the last
+90 days) and fine, and a fold for each of the first three listing the models,
+which open on click, with dbt's message under an error. A model built under
+several targets counts by the worst of them. Under them, a table of every model
+against every environment, its last status and how long ago in each cell,
+filtered by name with the section's filter, the project's own models unless you
+tick include packages. An environment that cannot place the package's tables
+says why instead of showing numbers, and one the read failed on says what
+Snowflake said, with a link to the profile when the connection is to blame.
+Every enabled model is listed, by name, and the section stays where it is in the
+list and leaves the button dimmed until it has been read
+([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
 
 **Builds by job** is listed beside it once a source is named as well, and is
@@ -393,8 +411,17 @@ environment last picked by a cell in the section, or the job's worst one (an
 error, then late, then not built, the first column on a tie) when none was
 picked or the last has nothing to list for this job. Coming back from a model
 finds the row open on its environment, and the last pick survives a Refresh. A
-filter narrows the jobs by name. An environment that could not be read says why
-above the rows, as Builds by environment does.
+filter narrows the jobs by name. Over the rows each environment has a figure,
+`3 of 5 jobs`, the jobs judged there that have every model built, with how many
+errored, are late or were not built under it. One line under the figures says
+that the first figure counts the jobs whose models were all built in time, and
+how many jobs were left out of every count, for having no model or a target
+clash. Another names the environments kept to a target, which count only the
+runs under it though their table also holds the others', and one with no run
+under its target says so. The
+table scrolls sideways when the environments do not fit, the job staying in
+view. An environment that could not be read says why above the rows, as Builds
+by environment does.
 
 A model is **late** when it has no success since the fire before the last one:
 a whole scheduled run went by without building it. The cron is read in the

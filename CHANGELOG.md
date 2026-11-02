@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.71.0 - 2026-11-02
+
+- Read every section of Reports in one grammar, over the whole window, with the
+  rail grouped by who reads the files and counting what it can, figures on top,
+  a filter over each section's lists and the explanations folded behind "why",
+  each source, dbt, collin, Jobs and Snowflake, in a colour of its own in the
+  rail and at the head of its sections (0137).
+
 ## 1.70.0 - 2026-11-02
 
 - Show a model's jobs before its last builds in the Catalog.
