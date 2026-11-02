@@ -1100,9 +1100,9 @@ byte for byte (0135). The tokens are not counted: Claude Code 2.1.314 estimates
 them as the length over 4, so 48 000 stays under its 25 000 unless a user lowers
 `MAX_MCP_OUTPUT_TOKENS` under about 24 000.
 
-On a project with hundreds of models the manifest load dominates a command-line call, which reads
-it again each time. The server keeps the graph, and the jobs read, between
-calls, so the later calls are the cheaper ones.
+The manifest load dominates a command-line call, which reads it again each
+time. The server keeps the graph, and the jobs read, between calls, so the
+later calls are the cheaper ones.
 
 A client that defers MCP tools pairs the server with a small skill that tells
 the agent to load the `edith` tool (with ToolSearch in Claude Code, "load the
