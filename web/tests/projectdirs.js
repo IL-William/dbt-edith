@@ -370,3 +370,24 @@ check('why: a block with nothing of its kind, under the name it was written with
 check('why: a config written without its +', unusedWhy({ block: 'seeds', chain: ['shop', 'docs'], line: 4 }),
       'No seed\'s fqn begins with these keys, nor any disabled node\'s, so what the last one sets applies to nothing. '
         + 'Without its +, dbt reads docs: as a folder; written +docs:, it is the config.');
+
+print('\n--- the paths under the reason they apply to nothing ---');
+var listed = [
+  { block: 'models', chain: ['shop', 'stagign'], line: 3 },
+  { block: 'models', chain: ['shop', 'staging', 'stagign'], line: 5 },
+  { block: 'seeds', chain: ['shop', 'docs'], line: 8 },
+  { block: 'models', chain: ['shop', 'merged', 'core'], line: 2 },
+];
+check('each reason once, the paths under it in the order they came', unusedByWhy(listed).map(function (g) { return g.rows.map(unusedSays); }),
+      [['models.shop.stagign', 'models.shop.staging.stagign', 'models.shop.merged.core'], ['seeds.shop.docs']]);
+check('the reason is the one the card says', unusedByWhy(listed)[1].why, unusedWhy(listed[2]));
+check('a block of another kind is another reason, even with the same words after it', unusedByWhy(listed).length, 2);
+check('none, none', unusedByWhy([]), []);
+check('the keys a path has in common with the one before it, the first with none',
+      unusedShared(listed.slice(0, 2)), [0, 2]);
+check('across a block, only the keys that are the same from the start', unusedShared(listed), [0, 2, 0, 0]);
+check('never every key: a path shows its own last one',
+      unusedShared([{ block: 'models', chain: ['shop', 'a'], line: 1 }, { block: 'models', chain: ['shop', 'a'], line: 2 }]), [0, 2]);
+check('a shorter path under a longer one keeps its last key',
+      unusedShared([{ block: 'models', chain: ['shop', 'a', 'b'], line: 1 }, { block: 'models', chain: ['shop'], line: 2 }]), [0, 1]);
+check('none for none', unusedShared([]), []);

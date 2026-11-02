@@ -103,7 +103,8 @@ const S = {
   reportsShown: null,         // the index entry the section on screen was read at
   reportsAsk: 0,              // bumped per section read, so only the latest answer is drawn
   reportsDrawn: '',           // the section whose answer is in the panel, '' while one is read
-  reportsPlace: {},           // per section, its open folds, the lists shown whole and its scroll, for when it is shown again
+  reportsPlace: {},           // per section, its open folds, its filter, the lists shown whole and its scroll, for when it is shown again
+  reportsCounts: {},          // the order of the steps' rail count, left by the last time it was drawn (0137)
   jobBuildsPick: { last: null, rows: {} }, // Builds by job: the environment last picked by a cell, and the one each open row is on
   settingsSection: '',        // the section of the settings on screen, or last on screen this session (0100)
   settingsKept: {},           // per section holding a form, its body as it was left, until the panel rolls up
@@ -1002,6 +1003,34 @@ function unusedWhy(u) {
   if (last && DBT_CONFIGS.has(last)) notes.push(`Without its +, dbt reads ${last}: as a folder; written +${last}:, it is the config.`);
   if (u.written) notes.push(`dbt reads ${u.written}: as ${u.block}:, its name since dbt 1.8.`);
   return notes.join(' ');
+}
+
+/* The paths under the reason they apply to nothing, each reason said once, in
+   the order the paths come in. */
+function unusedByWhy(list) {
+  const groups = [];
+  for (const u of list || []) {
+    const why = unusedWhy(u);
+    let g = groups.find((x) => x.why === why);
+    if (!g) groups.push(g = { why, rows: [] });
+    g.rows.push(u);
+  }
+  return groups;
+}
+
+/* How many leading keys of each path it has in common with the one before, so
+   that a list of paths under one folder shows that folder once, dimmed after.
+   Never every key: a path always shows its own last one. */
+function unusedShared(list) {
+  const keys = (u) => [u.block].concat(u.chain);
+  return (list || []).map((u, i) => {
+    if (!i) return 0;
+    const a = keys(u);
+    const b = keys(list[i - 1]);
+    let n = 0;
+    while (n < a.length - 1 && n < b.length && a[n] === b[n]) n++;
+    return n;
+  });
 }
 
 /* The line, from 0, that each path's last key sits on in the editor's text,
@@ -5892,114 +5921,84 @@ function collinReportAbout(view) {
 /* collin's report, the body of its section in the reports: something to work
    through model by model, each opening in the editor as the panel rolls up. */
 function collinReportBody(view) {
-  const el = (tag, className, textContent) => Object.assign(document.createElement(tag), className ? { className } : {},
-    textContent !== undefined ? { textContent } : {});
-  const body = el('div', 'reportbody');
-  const tiles = el('div', 'reporttiles');
-  for (const t of collinReportTiles(view.totals)) {
-    const tile = el('div', 'reporttile');
-    tile.append(el('div', 'rlabel', t.label), el('div', 'rvalue', t.value), el('div', 'rsub', t.sub));
-    tiles.append(tile);
-  }
-  body.append(tiles);
+  const body = jel('div', 'reportbody');
+  body.append(reportTiles(collinReportTiles(view.totals)));
   const n = view.to_investigate || 0;
-  body.append(el('p', 'muted', n
+  body.append(jel('p', 'muted', n
     ? `${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at. A name opens the model, whose Columns tab says what collin noted on each column.`
     : 'Nothing to investigate: every model collin read came out clean.'));
-
-  if ((view.collin_findings || []).length) {
-    body.append(collinWrittenSections(view.collin_findings, el));
-    return body;
-  }
-
-  for (const g of collinReportGroups(view.findings)) {
-    const section = el('section', 'reportgroup');
-    section.dataset.group = g.group;
-    section.append(el('h3', '', g.label), el('p', 'muted', g.desc));
-    for (const f of g.findings) {
-      const d = el('details', 'reportfinding');
-      // A short list is worth seeing at once; a long one is a count first.
-      d.open = f.entries.length <= 5;
-      const sum = el('summary');
-      sum.append(el('span', 'rtitle', f.title), el('span', 'rcount', String(f.entries.length)));
-      d.append(sum, el('p', 'rlever', f.lever));
-      const list = el('ul', 'rentries');
-      for (const e of f.entries) {
-        const li = el('li');
-        const node = f.kind !== 'relation_collision';
-        const name = el(node ? 'a' : 'span', node ? 'filelink' : 'rrel', node ? shortId(e.id) : e.id);
-        if (node) {
-          name.title = e.id;
-          name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id); });
-        }
-        li.append(name);
-        if (f.kind === 'relation_collision') {
-          li.append(el('span', 'muted', ' claimed by '));
-          (e.items || []).forEach((id, i) => {
-            if (i) li.append(el('span', 'muted', ', '));
-            const a = el('a', 'filelink', shortId(id));
-            a.title = id;
-            a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(id); });
-            li.append(a);
-          });
-        } else if (collinItemsAreColumns(f.kind) && (e.items || []).length) {
-          li.append(el('span', 'muted', ': '));
-          e.items.forEach((c, i) => {
-            if (i) li.append(el('span', 'muted', ', '));
-            const a = el('a', 'rcol', c);
-            a.title = `Open ${shortId(e.id)} with ${c} picked out in its Columns tab`;
-            a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id, c); });
-            li.append(a);
-          });
-          const tail = collinEntryTail(f.kind, e);
-          if (tail) li.append(el('span', 'muted', tail));
-        } else {
-          const text = collinEntryText(f.kind, e);
-          if (text) li.append(el('span', 'muted', ': ' + text));
-        }
-        list.append(li);
-      }
-      d.append(list);
-      section.append(d);
-    }
-    body.append(section);
-  }
+  // A short list is worth seeing at once; a long one is a count first.
+  const few = (len) => len <= 5;
+  const groups = (view.collin_findings || []).length
+    ? collinWrittenSections(view.collin_findings)
+    : collinReportGroups(view.findings).map((g) => ({ group: g.group, label: g.label, desc: g.desc,
+      folds: g.findings.map((f) => ({
+        title: f.title, tone: '', lever: f.lever, rows: f.entries, open: few,
+        find: (e) => `${e.id} ${(e.items || []).join(' ')}`,
+        draw: (hits, d) => [reportList(hits, (e) => collinEntryRow(f, e), d, CHECK_SHOWN)],
+      })) }));
+  reportLists(body, groups, 'Filter the findings');
   return body;
 }
 
-/* collin's own findings, as it worded them: what it saw, what that usually
-   means and what to do, then each model with what its entry says. */
-function collinWrittenSections(written, el) {
-  const out = document.createDocumentFragment();
-  for (const g of collinWrittenGroups(written)) {
-    const section = el('section', 'reportgroup');
-    section.dataset.group = g.group;
-    section.append(el('h3', '', g.label), el('p', 'muted', g.desc));
-    for (const f of g.findings) {
-      const d = el('details', 'reportfinding');
-      d.dataset.severity = f.severity || '';
-      d.open = f.models.length <= 5;
-      const sum = el('summary');
-      sum.append(el('span', 'rtitle', f.title), el('span', 'rcount', f.severity || ''));
-      d.append(sum);
-      if (f.why) d.append(el('p', 'muted', f.why));
-      if (f.action) d.append(el('p', 'rlever', f.action));
-      const list = el('ul', 'rentries');
-      for (const m of f.models) {
-        const li = el('li');
-        const a = el('a', 'filelink', m.name || shortId(m.unique_id));
+/* One model of a finding: its name opens it, then what collin says of it, the
+   columns each pointing at theirs in the Columns tab. */
+function collinEntryRow(f, e) {
+  const li = jel('li', '');
+  const node = f.kind !== 'relation_collision';
+  const name = jel(node ? 'a' : 'span', node ? 'filelink' : 'rrel', node ? shortId(e.id) : e.id);
+  if (node) {
+    name.title = e.id;
+    name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id); });
+  }
+  li.append(name);
+  if (f.kind === 'relation_collision') {
+    li.append(jel('span', 'muted', ' claimed by '));
+    (e.items || []).forEach((id, i) => {
+      if (i) li.append(jel('span', 'muted', ', '));
+      const a = jel('a', 'filelink', shortId(id));
+      a.title = id;
+      a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(id); });
+      li.append(a);
+    });
+  } else if (collinItemsAreColumns(f.kind) && (e.items || []).length) {
+    li.append(jel('span', 'muted', ': '));
+    e.items.forEach((c, i) => {
+      if (i) li.append(jel('span', 'muted', ', '));
+      const a = jel('a', 'rcol', c);
+      a.title = `Open ${shortId(e.id)} with ${c} picked out in its Columns tab`;
+      a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(e.id, c); });
+      li.append(a);
+    });
+    const tail = collinEntryTail(f.kind, e);
+    if (tail) li.append(jel('span', 'muted', tail));
+  } else {
+    const text = collinEntryText(f.kind, e);
+    if (text) li.append(jel('span', 'muted', ': ' + text));
+  }
+  return li;
+}
+
+/* collin's own findings, as it worded them, under the same groups as folds:
+   what it saw, what that usually means and what to do, then each model with
+   what its entry says. */
+function collinWrittenSections(written) {
+  return collinWrittenGroups(written).map((g) => ({ group: g.group, label: g.label, desc: g.desc,
+    folds: g.findings.map((f) => ({
+      title: f.title, tone: '', badge: f.severity || undefined, lever: f.why || '',
+      rows: f.models, open: (len) => len <= 5,
+      find: (m) => `${m.name || ''} ${m.unique_id} ${m.detail || ''}`,
+      // What to do is the fix, so it is read at once and not behind "why".
+      draw: (hits, d) => [...(f.action ? [jel('p', 'rlever', f.action)] : []), reportList(hits, (m) => {
+        const li = jel('li', '');
+        const a = jel('a', 'filelink', m.name || shortId(m.unique_id));
         a.title = m.unique_id;
         a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(m.unique_id); });
         li.append(a);
-        if (m.detail) li.append(el('span', 'muted', ': ' + m.detail));
-        list.append(li);
-      }
-      d.append(list);
-      section.append(d);
-    }
-    out.append(section);
-  }
-  return out;
+        if (m.detail) li.append(jel('span', 'muted', ': ' + m.detail));
+        return li;
+      }, d, CHECK_SHOWN)],
+    })) }));
 }
 
 /* The collins there are to pick under Collin in the menu, once there is more
@@ -8836,16 +8835,35 @@ function jobsCoverageGroups(rows) {
   return [...out.values()];
 }
 
-/* The sentence over the coverage lists. */
-function jobsCoverageLine(cov) {
+/* A text with spans between backticks cut into its parts, `{text, code}`, so
+   that what the server quoted can be drawn as code. An unmatched backtick
+   stays as it is. */
+function jobsBackticks(text) {
+  const parts = [];
+  String(text || '').split(/`([^`]+)`/).forEach((piece, i) => {
+    if (piece) parts.push({ text: piece, code: i % 2 === 1 });
+  });
+  return parts;
+}
+
+/* The figures over the coverage: how many models, seeds and snapshots run in a
+   scheduled job, in unscheduled ones only, in none, and the jobs and steps
+   behind them. The schedule not read and the steps only when there is
+   something to say. */
+function jobsCoverageTiles(cov) {
   const unread = (cov.unread || []).length;
   const covered = cov.total - cov.never.length - cov.unscheduled.length - unread;
-  const of = `${covered} of ${cov.total} models, seeds and snapshots run in a scheduled job`;
-  const rest = [];
-  if (unread) rest.push(`${unread} only in jobs whose schedule is not read`);
-  if (cov.unscheduled.length) rest.push(`${cov.unscheduled.length} only in unscheduled jobs`);
-  if (cov.never.length) rest.push(`${cov.never.length} in no job`);
-  return of + (rest.length ? '; ' + rest.join(', ') : '') + '.';
+  const tiles = [
+    { label: 'In a scheduled job', value: `${covered} of ${cov.total}`, sub: 'models, seeds and snapshots', tone: '' },
+    { label: 'Only in unscheduled jobs', value: String(cov.unscheduled.length), sub: 'no clock starts them', tone: '' },
+    { label: 'In no job', value: String(cov.never.length), sub: 'run by none of the jobs read', tone: cov.never.length ? 'warn' : '' },
+  ];
+  if (unread) tiles.push({ label: 'Schedule not read', value: String(unread), sub: 'only in jobs that may start on their own', tone: '' });
+  const jobs = cov.jobs || [];
+  tiles.push({ label: 'Jobs read', value: String(jobs.length), sub: `${jobs.filter((j) => jobsStart(j) === 'scheduled').length} scheduled`, tone: '' });
+  const steps = (cov.empty || []).length + (cov.unresolved || []).length;
+  if (steps) tiles.push({ label: 'Steps to look at', value: String(steps), sub: 'select nothing, or are not resolved', tone: '' });
+  return tiles;
 }
 
 /* What PUT /api/jobs/sources takes from what the form holds. A key left at
@@ -9161,10 +9179,7 @@ function jobsCard(group, { reason = false } = {}) {
     jobsWhen(job),
     jel('span', 'grow'),
   );
-  const where = jel('button', 'jobfile', `${job.source} · ${job.file}:${job.line}`);
-  where.title = 'Outside the project, so it does not open here. Click to copy where it is.';
-  where.addEventListener('click', () => copyText(`${job.file}:${job.line}`));
-  head.append(where);
+  head.append(jobsFileButton(job.source, job.file, job.line));
   card.append(head);
   for (const row of jobsJobLinks(job)) card.append(jel('div', 'joblink', row));
   for (const step of group.steps) {
@@ -9228,83 +9243,66 @@ function revealJobStep(body, id, want) {
   if (!maybe) line.classList.add('jobs-hit');
 }
 
-/* One section of the coverage view, folders inside, open when short. */
-function jobsSection(title, groups, count, open, hint = '') {
-  const sec = jel('details', 'jobs-sec');
-  sec.open = open;
-  const head = jel('summary', '', `${title} (${count})`);
-  if (hint) head.title = hint;
-  sec.append(head);
-  for (const g of groups) {
-    // A folder of one is no level to unfold: the row is listed bare, its
-    // whole folder beside it.
-    if (g.rows.length === 1 || !g.folder) {
-      for (const r of g.rows) sec.append(jobsRow(r, r.folder));
-      continue;
-    }
-    const folder = jel('details', 'jobs-folder');
-    folder.open = open;
-    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
-    for (const r of g.rows) folder.append(jobsRow(r, r.rest));
-    sec.append(folder);
-  }
-  return sec;
+/* A model of the coverage, its kind's dot first: the name opens it with the
+   Jobs tab listing its jobs, and its folder follows, muted. */
+function coverageRow(r, path) {
+  const li = jel('li', '');
+  const link = jel('a', 'filelink', r.name);
+  link.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
+  link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(r.id, { dock: 'jobs' }); });
+  li.append(dot(r.kind), ' ', link);
+  if (path) li.append(jel('span', 'muted', ' · ' + path));
+  return li;
 }
 
-function jobsRow(r, path) {
-  const row = jel('button', 'jobs-row');
-  row.append(dot(r.kind), jel('span', 'jobs-name', r.name));
-  if (path) row.append(jel('span', 'jobs-path', path));
-  row.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
-  row.addEventListener('click', () => openFromReport(r.id, { dock: 'jobs' }));
-  return row;
+/* One step of a job: where it is, why it is listed, then its command in full
+   and the file it is in, copied on a click. */
+function jobsStepRow(r) {
+  const li = jel('li', '');
+  li.append(jel('span', 'rstep', `${r.job} › ${r.name || 'step ' + r.n}`));
+  // The server quotes a selector or a flag between backticks: as code here.
+  if (r.why) li.append(jel('span', 'muted', ' · '), ...jobsBackticks(r.why).map((x) => (x.code ? jel('code', 'rquote', x.text) : x.text)));
+  const line = jel('div', 'rline rstepline');
+  line.append(jel('code', 'rcmd', r.shown), jobsFileButton(r.source, r.file, r.line));
+  li.append(line);
+  return li;
 }
 
-function jobsStepList(title, refs) {
-  const sec = jel('details', 'jobs-sec');
-  sec.open = refs.length <= 20;
-  sec.append(jel('summary', '', `${title} (${refs.length})`));
-  for (const r of refs) {
-    const row = jel('div', 'jobs-ref');
-    row.append(jel('b', '', `${r.job} › ${r.name || 'step ' + r.n}`), jel('code', 'stepcmd', r.shown),
-      jel('span', 'jobfile', `${r.source} · ${r.file}:${r.line}`));
-    sec.append(row, jel('div', 'joblink why', r.why));
-  }
-  return sec;
+/* Steps as a fold: those that select nothing they act on, those not resolved. */
+function jobsStepList(title, refs, lever = '') {
+  return { title, tone: '', lever, rows: refs, open: (n) => n <= 20,
+    find: (r) => `${r.job} ${r.name || 'step ' + r.n} ${r.shown} ${r.why || ''}`,
+    draw: (hits, d) => [reportList(hits, jobsStepRow, d)] };
 }
 
 function renderCoverage(body, cov) {
   if (cov.sources_refused) return jobsRefusedFile(body, cov.sources_refused);
   if (!cov.configured) return jobsNoSource(body);
-  const out = [jel('div', 'jobs-line', jobsCoverageLine(cov))];
+  const folds = [];
+  // A group with nothing in it is not drawn (reportFiltered).
+  const models = (title, rows, tone, lever, open) => folds.push({ title, tone, lever, rows, open,
+    find: (r) => `${r.name} ${r.folder || ''}`,
+    draw: (hits, d, more) => checkFoldList(hits, d, more, coverageRow) });
   const short = (n) => n <= 50;
-  // A group with nothing in it is not drawn.
-  if (cov.never.length) {
-    out.push(jobsSection('Run by no job', jobsCoverageGroups(cov.never), cov.never.length, short(cov.never.length)));
-  }
-  if (cov.unscheduled.length) {
-    out.push(jobsSection('Only in unscheduled jobs', jobsCoverageGroups(cov.unscheduled), cov.unscheduled.length, short(cov.unscheduled.length),
-      'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock'));
-  }
-  const unread = cov.unread || [];
-  if (unread.length) {
-    out.push(jobsSection('Only in jobs whose schedule is not read', jobsCoverageGroups(unread), unread.length, short(unread.length), JOBS_UNREAD_WHY));
-  }
-  if (cov.ephemeral.length) {
-    out.push(jobsSection('Ephemeral, so never run on their own', jobsCoverageGroups(cov.ephemeral), cov.ephemeral.length, false));
-  }
-  if (cov.empty.length) out.push(jobsStepList('Steps that select nothing they act on', cov.empty));
-  if (cov.unresolved.length) out.push(jobsStepList('Steps not resolved', cov.unresolved));
-  const jobs = jel('details', 'jobs-sec');
-  jobs.append(jel('summary', '', `Jobs read (${cov.jobs.length})`));
-  for (const j of jobsByStart(cov.jobs, (j) => j)) {
-    const row = jel('div', 'jobs-ref');
-    row.append(jel('b', '', jobsJobLabel(j)), jobsWhen(j),
-      jel('span', 'jobfile', `${j.source} · ${j.file}:${j.line}`));
-    jobs.append(row);
-  }
-  out.push(jobs);
-  body.replaceChildren(...out);
+  models('Run by no job', cov.never, 'warn', '', short);
+  models('Only in unscheduled jobs', cov.unscheduled, '',
+    'In jobs, but only ones nothing starts on its own: no schedule, @once, CI or merge, or an asset or a job that never leads back to a clock', short);
+  models('Only in jobs whose schedule is not read', cov.unread || [], '', JOBS_UNREAD_WHY, short);
+  models('Ephemeral, so never run on their own', cov.ephemeral, '', '', false);
+  folds.push(jobsStepList('Steps that select nothing they act on', cov.empty));
+  folds.push(jobsStepList('Steps not resolved', cov.unresolved));
+  folds.push({ title: 'Jobs read', tone: '', rows: jobsByStart(cov.jobs, (j) => j), open: false,
+    find: (j) => `${jobsJobLabel(j)} ${jobsScheduleText(j)} ${j.source}`,
+    draw: (hits, d) => [reportList(hits, (j) => {
+      const li = jel('li', '');
+      const line = jel('div', 'rline');
+      line.append(jobsWhen(j), jobsFileButton(j.source, j.file, j.line));
+      li.append(jel('span', 'rstep', jobsJobLabel(j)), line);
+      return li;
+    }, d)] });
+  // The figures (jobsCoverageTiles) say what a sentence over the lists would.
+  body.replaceChildren(reportTiles(jobsCoverageTiles(cov)));
+  reportLists(body, [{ folds }], 'Filter the models and steps');
 }
 
 /* What one source read, under its form once saved. */
@@ -9699,14 +9697,17 @@ function jobSourcesRead(answer) {
 
 // ----------------------------------------------------------------- panels --
 /* What rolls down over the editor and the dock, the sidebar staying beside
-   it (0064, 0091): what speaks of the whole project, or wants the window's
-   height. What follows the file in front stays in the dock. One panel at a
+   it unless the panel is wide (0064, 0091, 0101, 0137): what speaks of the
+   whole project, or wants the window's height. What follows the file in front
+   stays in the dock. One panel at a
    time, opening one rolls up the one that was down. Each names its element,
    what paints its button, what it does once rolled up, and how the tour puts
    it back. */
 const PANELS = {
   reports: {
     el: '#reports',
+    // Over the sidebar too: a list of hundreds is read at full width (0137).
+    wide: true,
     paint: paintReportsButton,
     // The Catalog it covered asks for its jobs if it has not, once it is
     // seen again: not when another panel takes this one's place (0063).
@@ -10100,6 +10101,133 @@ function runEntryText(e) {
   return bits.join(' · ');
 }
 
+/* An explanation split at its first sentence: that one is read at once, the
+   rest sits behind "why" (reportLever). A text with one sentence has no rest. */
+function leverSplit(text) {
+  const s = String(text || '');
+  const m = /^([\s\S]*?[.!?])\s+(\S[\s\S]*)$/.exec(s);
+  return m ? { first: m[1], rest: m[2] } : { first: s, rest: '' };
+}
+
+/* The folds of a section, filtered on their data and not on the rows drawn:
+   a list capped at a hundred rows is searched whole. A group is
+   `{group?, label?, desc?, head?, folds}`; a fold is `{title, tone, lever,
+   badge?, rows, of?, open, find, draw}` where `of` is the total found when the
+   server sent fewer rows, `open` a boolean or a function of the rows it would
+   list, and `find` the text of a row a filter is held against. Each fold comes
+   back with its `hits`, its `count` (the total, or `n of m` while filtered)
+   and whether it is `open`, and a fold or a group with nothing to show is
+   left out. A group with only a `head`, such as an environment that could not
+   be read, stays. */
+function reportFiltered(groups, q) {
+  const needle = String(q || '').trim().toLowerCase();
+  const out = [];
+  for (const g of groups) {
+    const folds = [];
+    for (const f of g.folds || []) {
+      const of = f.of === undefined ? f.rows.length : f.of;
+      if (!of) continue;
+      const hits = needle ? f.rows.filter((row) => String(f.find(row)).toLowerCase().includes(needle)) : f.rows;
+      if (needle && !hits.length) continue;
+      const n = needle ? hits.length : of;
+      folds.push(Object.assign({}, f, {
+        hits, of,
+        count: needle && hits.length < of ? `${hits.length} of ${of}` : String(f.badge !== undefined ? f.badge : of),
+        open: typeof f.open === 'function' ? !!f.open(n) : !!f.open,
+        // A filter searches the rows sent, so it cannot say how many the server held back.
+        more: needle ? 0 : Math.max(0, of - f.rows.length),
+      }));
+    }
+    if (folds.length || g.head) out.push(Object.assign({}, g, { folds }));
+  }
+  return out;
+}
+
+/* What a key row of the Checks says after its name: the server words it
+   `key K: no not_null on M`. A key of one column is the column the row names
+   already, so only what is wrong remains. A composite key is not drawn
+   anywhere else, so its columns stay, and two keys of one model missing the
+   same column read apart; when every column of it lacks the test, saying them
+   twice is replaced by saying so. Anything else is as sent. */
+function checkDetail(row) {
+  const d = row.detail || '';
+  const key = Array.isArray(row.key) ? row.key : [];
+  if (key.length === 1) {
+    const lead = `key ${key[0]}: `;
+    return d.startsWith(lead) ? d.slice(lead.length) : d;
+  }
+  const all = key.join(', ');
+  return key.length > 1 && d === `key ${all}: no not_null on ${all}` ? `no not_null on any column of key ${all}` : d;
+}
+
+/* The figures over the Warnings: how many paths dbt_project.yml holds, and how
+   many of them apply to nothing. None while the file could not be read. */
+function warningsTiles(r) {
+  if (r.unread) return [];
+  const unused = (r.unused || []).length;
+  return [
+    { label: 'Config paths', value: String(r.checked), sub: 'in dbt_project.yml' },
+    { label: 'Apply to no resource', value: String(unused), sub: 'what they set reaches nothing', tone: unused ? 'warn' : '' },
+  ];
+}
+
+/* Who reads the files a section is made of, in the order the rail lists them,
+   with the word that names each: the rail's heads and the chip in a section's
+   head say the same one, beside the colour the source has. */
+function reportSources() {
+  return [['dbt', 'dbt'], ['collin', 'collin'], ['jobs', 'Jobs'], ['snowflake', 'Snowflake']];
+}
+
+function reportSourceLabel(tool) {
+  const found = reportSources().find(([key]) => key === tool);
+  return found ? found[1] : tool;
+}
+
+/* The rail's groups, by who reads the files: the order of the sections is kept
+   inside each, and a group without a section is not listed. */
+function reportsRailGroups(sections) {
+  return reportSources()
+    .map(([tool, label]) => ({ tool, label, sections: sections.filter((sec) => sec.tool === tool) }))
+    .filter((g) => g.sections.length);
+}
+
+/* The count beside a section in the rail and what its tooltip says it counts,
+   from what the page already holds: the index, collin's state and, for the
+   order of the steps, the count the section left behind when it was last
+   drawn (`kept`). None for zero. A count that needs a read, the job files',
+   is never fetched for the rail, and the builds have none: a number across
+   environments would match nothing on the page. */
+function reportsRailCount(key, index, collin, kept) {
+  const i = index || {};
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  let n = 0;
+  let title = '';
+  if (key === 'run') {
+    const r = i.run || {};
+    n = (r.error || 0) + (r.fail || 0) + (r.warn || 0) + (r.partial || 0) + (r.other || 0);
+    title = `${plural(n, 'result', 'results')} of the last run did not pass`;
+  } else if (key === 'warnings') {
+    n = (i.warnings && i.warnings.unused) || 0;
+    title = `${plural(n, 'config path', 'config paths')} of dbt_project.yml that ${n === 1 ? 'applies' : 'apply'} to no resource`;
+  } else if (key === 'collin') {
+    n = (collin && collin.report && collin.report.to_investigate) || 0;
+    title = `${plural(n, 'model or table', 'models or tables')} collin's last run names to look at`;
+  } else if (key === 'jobs') {
+    n = ((i.jobs && i.jobs.never) || 0) + ((i.jobs && i.jobs.unscheduled) || 0);
+    title = `${plural(n, 'model, seed or snapshot', 'models, seeds or snapshots')} run by no scheduled job`;
+  } else if (key === 'macros') {
+    n = (i.macros && i.macros.unexplained) || 0;
+    title = `${plural(n, 'macro', 'macros')} no node reaches and nothing explains`;
+  } else if (key === 'checks') {
+    n = (i.checks && i.checks.count) || 0;
+    title = `${plural(n, 'finding', 'findings')} in this tool's own checks`;
+  } else if (key === 'joborder') {
+    n = (kept && kept.joborder) || 0;
+    title = `${plural(n, 'pair', 'pairs')} of steps found when the section was last drawn`;
+  }
+  return n > 0 ? { n, title } : null;
+}
+
 /* The section the panel opens on: one with news, then the one read last this
    session unless it is empty, then the first that is not, and the first there
    is, the empty coverage, only when every one is (0070, 0075): the macros come
@@ -10227,31 +10355,51 @@ function toggleReports() {
   else openReports();
 }
 
+/* The rail: the sections under who reads their files, each with what it
+   counts when it counts something (0137). The dot is the last run's alone,
+   saying how it ended; the tool is the group's. */
 function paintReportsNav() {
   const { sections, news } = reportsNow();
-  $('#reports-nav').replaceChildren(...sections.map((sec) => {
-    const row = jel('button', 'reports-navrow' + (sec.empty ? ' empty' : ''));
-    row.type = 'button';
-    const sourceless = sec.empty && sec.key === 'jobs';
-    row.title = sourceless ? 'No source named yet: add the folders your jobs are in' : sec.title;
-    if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
-    const dot = jel('span', 'tooldot');
-    dot.dataset.tool = sec.tool;
-    const words = runEndWords(sec.tone);
-    if (words) {
-      // Inside a button, the dot is not read: the row's title says the outcome.
-      dot.dataset.tone = sec.tone;
-      dot.setAttribute('aria-hidden', 'true');
-      dot.title = words;
-      row.title += '\n' + words;
+  $('#reports-nav').replaceChildren(...reportsRailGroups(sections).map((g) => {
+    const group = jel('div', 'reports-navgroup');
+    // Its rows take the source's colour from it.
+    group.dataset.tool = g.tool;
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', g.label);
+    group.append(jel('div', 'reports-navhead', g.label));
+    for (const sec of g.sections) {
+      const row = jel('button', 'reports-navrow' + (sec.empty ? ' empty' : ''));
+      row.type = 'button';
+      row.dataset.key = sec.key;
+      const sourceless = sec.empty && sec.key === 'jobs';
+      row.title = sourceless ? 'No source named yet: add the folders your jobs are in' : sec.title;
+      if (sec.key === S.reportsSection) row.setAttribute('aria-current', 'true');
+      const words = runEndWords(sec.tone);
+      if (words) {
+        const dot = jel('span', 'tooldot');
+        dot.dataset.tool = sec.tool;
+        // Inside a button, the dot is not read: the row's title says the outcome.
+        dot.dataset.tone = sec.tone;
+        dot.setAttribute('aria-hidden', 'true');
+        dot.title = words;
+        row.title += '\n' + words;
+        row.append(dot);
+      }
+      row.append(jel('span', '', sec.label));
+      const count = reportsRailCount(sec.key, S.reports, S.collin, S.reportsCounts);
+      if (count) {
+        const n = jel('span', 'navcount', String(count.n));
+        n.title = count.title;
+        row.append(n);
+      }
+      if (sourceless) row.append(jel('span', 'rhint', 'add a source'));
+      // The rail is narrow: the count alone, the words being on the button.
+      const chip = news.find((x) => x.key === sec.key);
+      if (chip) row.append(newsChip(Object.assign({}, chip, { text: chip.short })));
+      row.addEventListener('click', () => showReportSection(sec.key));
+      group.append(row);
     }
-    row.append(dot, jel('span', '', sec.label));
-    if (sourceless) row.append(jel('span', 'rhint', 'add a source'));
-    // The rail is narrow: the count alone, the words being on the button.
-    const n = news.find((x) => x.key === sec.key);
-    if (n) row.append(newsChip(Object.assign({}, n, { text: n.short })));
-    row.addEventListener('click', () => showReportSection(sec.key));
-    return row;
+    return group;
   }));
   paintReportStale();
 }
@@ -10269,16 +10417,22 @@ function paintReportStale() {
 function reportHead({ title, tool, tone, about, again, extra = [] }) {
   const head = jel('div', 'diff-head');
   const row = jel('div', 'diff-title');
-  const dot = jel('span', 'tooldot');
-  dot.dataset.tool = tool;
+  // The source, named in its colour. The dot stays only to say how the last
+  // run ended: the colour is never all that says whose a section is.
+  const chip = jel('span', 'srcchip', reportSourceLabel(tool));
+  chip.dataset.tool = tool;
+  row.append(chip);
   const words = runEndWords(tone);
   if (words) {
+    const dot = jel('span', 'tooldot');
+    dot.dataset.tool = tool;
     dot.dataset.tone = tone;
     dot.setAttribute('role', 'img');
     dot.setAttribute('aria-label', words);
     dot.title = words;
+    row.append(dot);
   }
-  row.append(dot, jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
+  row.append(jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
   const close = jel('button', 'icon', '×');
   close.title = `Close the reports (${keyLabel('Escape', IS_MAC)})`;
   close.setAttribute('aria-label', 'Close the reports');
@@ -10305,25 +10459,36 @@ function reportFoldKey(d) {
   return names.join(' › ');
 }
 
-/* Which folds of the section on screen are open, and where its list is
-   scrolled: a list of hundreds is gone through one model at a time, each
-   opened from it, and coming back must find it as it was left. */
+/* Which folds of the section on screen are open, the "why" of which lever is
+   unfolded, what its filter holds, and where its list is scrolled: a list of
+   hundreds is gone through one model at a time, each opened from it, and
+   coming back must find it as it was left. */
 function keepReportPlace(view) {
-  const scroller = view.querySelector('.reportbody, .jobs-body');
+  const scroller = view.querySelector('.reportbody');
   if (!scroller) return null;
   const open = {};
   const all = {}; // the folds whose capped list was shown whole
+  const touched = {}; // the folds the reader opened or shut, which a filter leaves as they are
   for (const d of scroller.querySelectorAll('details')) {
     const key = reportFoldKey(d);
     open[key] = d.open;
     if (d.dataset.all) all[key] = true;
+    if (d.dataset.touched) touched[key] = true;
   }
-  return { open, all, scroll: scroller.scrollTop };
+  const whys = {};
+  for (const b of scroller.querySelectorAll('.rmorebtn')) whys[b.closest('[data-key]').dataset.key] = b.getAttribute('aria-expanded') === 'true';
+  const find = view.querySelector('.reportfilter');
+  return { open, all, touched, whys, filter: find ? find.value : '', scroll: scroller.scrollTop };
 }
 
 function restoreReportPlace(view, place) {
-  const scroller = view.querySelector('.reportbody, .jobs-body');
+  const scroller = view.querySelector('.reportbody');
   if (!place || !scroller) return;
+  // The filter first: it draws the lists again, at once and not after the
+  // wait a typed key has, and what follows is put back on the lists as they
+  // come out. A place without one (the filter's own redraw) leaves it alone.
+  const find = view.querySelector('.reportfilter');
+  if (find && place.filter !== undefined && find.value !== place.filter) find.redraw(place.filter);
   // Show all first: a list drawn again brings folds of its own, whose state
   // is then put back from a fresh look at the folds.
   for (const d of scroller.querySelectorAll('details')) {
@@ -10334,13 +10499,189 @@ function restoreReportPlace(view, place) {
     const key = reportFoldKey(d);
     if (key in place.open) {
       d.open = place.open[key];
+      if (place.touched && place.touched[key]) d.dataset.touched = '1';
       // A fold that makes its list when first opened (Builds by job) has to
       // have it before the scroll is put back, which the event it fires on
       // its own, a task later, would not.
       if (d.open) d.dispatchEvent(new Event('toggle'));
     }
   }
+  for (const b of scroller.querySelectorAll('.rmorebtn')) {
+    const want = place.whys && place.whys[b.closest('[data-key]').dataset.key];
+    if (want !== undefined && want !== (b.getAttribute('aria-expanded') === 'true')) b.click();
+  }
   scroller.scrollTop = place.scroll;
+}
+
+/* The pieces every section is made of (0137): figures, a lever folded to its
+   first sentence, folds of entries, a filter over them. web/tests/joborder.js
+   evaluates this block, so it holds functions only. */
+
+/* The figures over a section, a tile each. */
+function reportTiles(tiles) {
+  const box = jel('div', 'reporttiles');
+  for (const t of tiles) {
+    const tile = jel('div', 'reporttile');
+    if (t.tone) tile.dataset.tone = t.tone;
+    tile.append(jel('div', 'rlabel', t.label), jel('div', 'rvalue', t.value), jel('div', 'rsub', t.sub || ''));
+    box.append(tile);
+  }
+  return box;
+}
+
+/* What explains a finding or a section: its first sentence, and the rest
+   behind "why". The sentence is the key the open "why"s are kept by. */
+function reportLever(text, cls = 'rlever') {
+  const { first, rest } = leverSplit(text);
+  const p = jel('p', cls, first);
+  p.dataset.key = first;
+  if (rest) {
+    // The last word goes with the button, so that a sentence filling the line
+    // never leaves "why" alone at the start of the next.
+    const at = first.lastIndexOf(' ') + 1;
+    p.textContent = first.slice(0, at);
+    const tail = jel('span', 'rtail', first.slice(at));
+    const more = jel('span', 'rmore', ' ' + rest);
+    more.hidden = true;
+    const btn = jel('button', 'rmorebtn', 'why');
+    btn.type = 'button';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.addEventListener('click', () => {
+      more.hidden = !more.hidden;
+      btn.setAttribute('aria-expanded', String(!more.hidden));
+      btn.textContent = more.hidden ? 'why' : 'less';
+    });
+    tail.append(btn);
+    p.append(tail, more);
+  }
+  return p;
+}
+
+/* A fold as reportFiltered hands it back: its title and count, then its lever.
+   Its list is the caller's, appended to it. Opened or shut by the reader, it
+   is `touched`, and the filter then keeps it as it was left. */
+function reportFold(f) {
+  const d = jel('details', 'reportfinding');
+  d.open = f.open;
+  if (f.tone) d.dataset.tone = f.tone;
+  const sum = jel('summary', '');
+  sum.append(jel('span', 'rtitle', f.title), jel('span', 'rcount', f.count));
+  sum.addEventListener('click', () => { d.dataset.touched = '1'; });
+  d.append(sum);
+  if (f.lever) d.append(reportLever(f.lever));
+  return d;
+}
+
+/* A fold's entries: the first `cap`, a button for the rest, and how many the
+   server held back (`more`). Show all is remembered on the fold. */
+function reportList(rows, rowFn, d, cap = Infinity, more = 0) {
+  const ul = jel('ul', 'rentries');
+  const paint = (upTo) => {
+    const items = rows.slice(0, upTo).map(rowFn);
+    if (rows.length > upTo) {
+      const li = jel('li', 'muted');
+      const all = jel('button', 'btn sm showall', `Show all ${rows.length}`);
+      all.addEventListener('click', () => {
+        d.dataset.all = '1';
+        d.dataset.touched = '1';
+        paint(Infinity);
+      });
+      li.append(all);
+      items.push(li);
+    }
+    if (more > 0) items.push(jel('li', 'muted', `and ${more} more`));
+    ul.replaceChildren(...items);
+  };
+  paint(cap);
+  return ul;
+}
+
+/* The lists of a section, drawn from its groups through the filter. A group
+   with a label is a section of its own under its heading; one with a `head`
+   brings that, as an environment that could not be read brings its reason. */
+function drawReportLists(host, groups, q) {
+  const out = [];
+  for (const g of reportFiltered(groups, q)) {
+    let section = null;
+    if (g.label) {
+      section = jel('section', 'reportgroup');
+      section.dataset.group = g.group || '';
+      section.append(jel('h3', '', g.label), jel('p', 'muted', g.desc || ''));
+      out.push(section);
+    } else if (g.head) {
+      out.push(...[].concat(g.head));
+    }
+    for (const f of g.folds) {
+      const d = reportFold(f);
+      d.append(...f.draw(f.hits, d, f.more));
+      if (section) section.append(d);
+      else out.push(d);
+    }
+  }
+  // A section with no fold filters its own table (`also`), which says what is
+  // left itself: nothing here was searched, so nothing is "not found".
+  if (!out.length && groups.length && String(q || '').trim()) out.push(jel('p', 'runnote', 'Nothing here matches the filter.'));
+  host.replaceChildren(...out);
+}
+
+/* The filter over a section's lists. Drawing replaces the folds, so the place
+   is kept first and put back after: the folds the reader opened or shut or
+   showed whole stay so, though a filter hid them for a while (`seen`), and the
+   scroll and the "why"s stay where they were. A key typed waits a moment for
+   the next, so that a word is searched once; putting a section back as it was
+   left (`redraw`) does not wait. */
+function reportFilterBox(placeholder, draw) {
+  const box = jel('div', 'reportfind');
+  const input = jel('input', 'reportfilter');
+  input.type = 'search';
+  input.placeholder = placeholder;
+  input.setAttribute('aria-label', placeholder);
+  const seen = { open: {}, all: {}, touched: {}, whys: {} };
+  const run = () => {
+    const view = box.closest('.reports-view');
+    const place = view && keepReportPlace(view);
+    if (place) {
+      // Only what the reader did: a fold's own default opening follows the
+      // rows it lists, which a filter changes.
+      for (const d of view.querySelectorAll('.reportbody details')) {
+        if (!d.dataset.touched) continue;
+        const key = reportFoldKey(d);
+        seen.open[key] = d.open;
+        seen.touched[key] = true;
+        if (d.dataset.all) seen.all[key] = true;
+      }
+      Object.assign(seen.whys, place.whys);
+    }
+    draw(input.value);
+    if (place) restoreReportPlace(view, Object.assign({}, place, { open: seen.open, all: seen.all, touched: seen.touched, whys: seen.whys, filter: undefined }));
+  };
+  let timer = 0;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(run, 80);
+  });
+  input.redraw = (value) => {
+    clearTimeout(timer);
+    input.value = value;
+    run();
+  };
+  box.append(input);
+  return box;
+}
+
+/* A section's lists, and a filter above them when there is anything to
+   filter. `also` draws what else the filter drives, as the grid of every
+   model under Builds by environment, and is what a section without folds
+   (Builds by job) filters by. */
+function reportLists(body, groups, placeholder, also) {
+  const lists = jel('div', 'reportlists');
+  const draw = (q) => {
+    drawReportLists(lists, groups, q);
+    if (also) also(q);
+  };
+  if (also || reportFiltered(groups, '').some((g) => g.folds.length)) body.append(reportFilterBox(placeholder, draw));
+  body.append(lists);
+  draw('');
 }
 
 /* Draws one section, read again on every showing so a run since the last
@@ -10396,58 +10737,27 @@ async function runSection(again) {
   catch (e) { return [reportHead({ title: 'Last run', tool: 'dbt', about: '', again }), jel('div', 'compiled-empty', e.message)]; }
   const about = [runAbout(run), run.at ? `written ${cacheAge(run.at)}` : ''].filter(Boolean).join(' · ');
   const body = jel('div', 'reportbody');
-  const tiles = jel('div', 'reporttiles');
-  for (const t of runTiles(run)) {
-    const tile = jel('div', 'reporttile');
-    if (t.tone) tile.dataset.tone = t.tone;
-    tile.append(jel('div', 'rlabel', t.label), jel('div', 'rvalue', t.value), jel('div', 'rsub', t.sub));
-    tiles.append(tile);
-  }
-  body.append(tiles);
+  body.append(reportTiles(runTiles(run)));
   for (const n of runNotes(run)) {
     const p = jel('p', 'runnote', n.text);
     if (n.tone) p.dataset.tone = n.tone;
     body.append(p);
   }
   // `cap` lists the first rows only, and a button under them the rest.
-  const group = (title, list, open, tone, cap = Infinity) => {
-    if (!list.of) return;
-    const d = jel('details', 'reportfinding');
-    d.open = open;
-    if (tone) d.dataset.tone = tone;
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', title), jel('span', 'rcount', String(list.of)));
-    const ul = jel('ul', 'rentries');
-    for (const e of list.items.slice(0, cap)) ul.append(runEntryRow(e));
-    if (list.items.length > cap) {
-      const more = jel('li', 'muted');
-      const all = jel('button', 'btn sm showall', `Show all ${list.items.length}`);
-      all.addEventListener('click', () => {
-        d.dataset.all = '1';
-        more.remove();
-        for (const e of list.items.slice(cap)) ul.append(runEntryRow(e));
-      });
-      more.append(all);
-      ul.append(more);
-    }
-    if (list.of > list.items.length) ul.append(jel('li', 'muted', `and ${list.of - list.items.length} more`));
-    d.append(sum, ul);
-    body.append(d);
-  };
-  group('Errors and failed tests', run.problems, true, 'bad');
-  group('Warnings', run.warned, run.warned.of <= 20, 'warn');
-  group('Skipped', run.skipped, run.skipped.of <= 20, '');
-  group('Slowest', { items: run.slowest, of: run.slowest.length }, true, '', 5);
-  if (run.unknown.of) {
-    const d = jel('details', 'reportfinding');
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', 'Not in the manifest'), jel('span', 'rcount', String(run.unknown.of)));
-    const ul = jel('ul', 'rentries');
-    for (const id of run.unknown.items) ul.append(jel('li', 'rrel', id));
-    if (run.unknown.of > run.unknown.items.length) ul.append(jel('li', 'muted', `and ${run.unknown.of - run.unknown.items.length} more`));
-    d.append(sum, ul);
-    body.append(d);
-  }
+  const spec = (title, list, open, tone, cap = Infinity) => ({
+    title, tone, rows: list.items, of: list.of, open,
+    find: (e) => `${e.name} ${e.id} ${e.message || ''}`,
+    draw: (hits, d, more) => [reportList(hits, runEntryRow, d, cap, more)],
+  });
+  const unknown = run.unknown;
+  reportLists(body, [{ folds: [
+    spec('Errors and failed tests', run.problems, true, 'bad'),
+    spec('Warnings', run.warned, (n) => n <= 20, 'warn'),
+    spec('Skipped', run.skipped, (n) => n <= 20, ''),
+    spec('Slowest', { items: run.slowest, of: run.slowest.length }, true, '', 5),
+    { title: 'Not in the manifest', tone: '', rows: unknown.items, of: unknown.of, open: false, find: (id) => id,
+      draw: (hits, d, more) => [reportList(hits, (id) => jel('li', 'rrel', id), d, Infinity, more)] },
+  ] }], 'Filter the results');
   return [reportHead({ title: 'Last run', tool: 'dbt', tone: runEndTone(runEndCounts(run.statuses)), about, again }), body];
 }
 
@@ -10489,32 +10799,37 @@ async function warningsSection(again) {
   try { r = await api.get('/api/reports/warnings'); }
   catch (e) { return [reportHead({ title: 'Warnings', tool: 'dbt', about, again }), jel('div', 'compiled-empty', e.message)]; }
   const body = jel('div', 'reportbody');
+  body.append(reportTiles(warningsTiles(r)));
   for (const n of warningsNotes(r, S.fresh)) {
     const p = jel('p', 'runnote', n.text);
     if (n.tone) p.dataset.tone = n.tone;
     body.append(p);
   }
-  if (r.unused.length) {
-    const d = jel('details', 'reportfinding');
-    d.open = true;
-    d.dataset.tone = 'warn';
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', 'Config paths that apply to no resource'), jel('span', 'rcount', String(r.unused.length)));
-    const lever = jel('div', 'rlever', 'dbt applies a key of dbt_project.yml to every node whose fqn its keys begin, and no fqn '
+  reportLists(body, [{ folds: [{
+    title: 'Config paths that apply to no resource', tone: 'warn', rows: r.unused, open: true,
+    // What each row shows, its file and line included.
+    find: (u) => `dbt_project.yml:${u.line} ${unusedSays(u)}`,
+    lever: 'dbt applies a key of dbt_project.yml to every node whose fqn its keys begin, and no fqn '
       + 'begins these: what they set reaches nothing. dbt says so once, as it parses (UnusedResourceConfigPath); this is the '
-      + 'same list, read off the manifest.');
-    const ul = jel('ul', 'rentries');
-    for (const u of r.unused) ul.append(unusedRow(u));
-    d.append(sum, lever, ul);
-    body.append(d);
-  }
+      + 'same list, read off the manifest.',
+    // The reason is the same for most paths: said once over them, and the
+    // folders a path shares with the one above it dimmed.
+    draw: (hits, d) => unusedByWhy(hits).map((g) => {
+      const shared = unusedShared(g.rows);
+      const block = jel('div', '');
+      block.append(jel('p', 'rlever', g.why),
+        reportList(g.rows.map((u, i) => ({ u, shared: shared[i] })), (x) => unusedRow(x.u, x.shared), d));
+      return block;
+    }),
+  }] }], 'Filter the paths');
   return [reportHead({ title: 'Warnings', tool: 'dbt', about, again }), body];
 }
 
 /* One path: its line opens dbt_project.yml there, then the path as dbt
-   writes it, then why. The line is the open text's when the file is open,
-   which an edit not saved yet may have moved. */
-function unusedRow(u) {
+   writes it, the keys it shares with the path above (`shared`) dimmed. The
+   line is the open text's when the file is open, which an edit not saved yet
+   may have moved. */
+function unusedRow(u, shared = 0) {
   const li = jel('li', 'unusedrow');
   const at = jel('a', 'filelink', `dbt_project.yml:${u.line}`);
   at.title = 'Open dbt_project.yml at this key';
@@ -10524,7 +10839,11 @@ function unusedRow(u) {
     const found = f && f.doc ? unusedLines(f.doc.getValue(), [u], !f.dirty)[0] : null;
     openProjectAt(found ? found.line : u.line - 1, 0);
   });
-  li.append(at, jel('span', 'rrel', ' ' + unusedSays(u)), jel('div', 'rwhy', unusedWhy(u)));
+  const keys = [u.block].concat(u.chain);
+  const path = jel('span', 'rrel', '');
+  if (shared) path.append(jel('span', 'rdim', keys.slice(0, shared).join('.') + '.'));
+  path.append(keys.slice(shared).join('.'));
+  li.append(at, ' ', path);
   return li;
 }
 
@@ -10555,52 +10874,50 @@ async function macrosSection(again) {
     a.addEventListener('click', (ev) => { ev.preventDefault(); closePanel(); openMacro({ file: m.file, name: m.name }); });
     return a;
   };
+  const groups = macroGroups(r.unreached);
+  body.append(reportTiles(macrosTiles(r)));
+  if (!none) body.append(jel('p', 'runnote', `Every macro of ${r.project} is reached by a node, itself or through other macros.`));
+  const folds = [];
   if (r.focus) {
     const f = r.focus;
     const use = macroUseText(f.used, r.adapter);
-    const d = jel('details', 'reportfinding macrofocus');
-    d.open = true;
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', f.call), jel('span', 'rcount', use.head));
-    d.append(sum);
     const where = jel('p', 'rlever', 'defined in ');
     where.append(macroLink(Object.assign({}, f, { call: f.file || f.call })));
-    d.append(where);
-    for (const n of use.notes) d.append(jel('p', 'rlever', n));
-    const ul = jel('ul', 'rentries');
-    for (const u of f.users) {
-      const li = jel('li', '');
-      const name = jel(u.file ? 'a' : 'span', u.file ? 'filelink' : 'rrel', u.name);
-      name.title = u.id;
-      if (u.file) name.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(u.id); });
-      li.append(name, jel('span', 'muted', ` · ${useKind(u.kind, 1)}${userHow(u)}`));
-      ul.append(li);
-    }
-    if (f.users_of > f.users.length) ul.append(jel('li', 'muted', `and ${f.users_of - f.users.length} more`));
-    for (const c of f.callers) {
-      const li = jel('li', '');
-      li.append(macroLink(c), jel('span', 'muted', ' · macro calling it'));
-      ul.append(li);
-    }
-    d.append(ul);
-    body.append(d);
+    // The nodes reaching it, then the macros calling it, in one list.
+    const rows = f.users.map((u) => ({ u })).concat(f.callers.map((c) => ({ c })));
+    folds.push({
+      // A macro nothing reaches has no row and still shows its card, so the total is never zero.
+      title: f.call, tone: '', badge: use.head, rows, of: f.users_of + f.callers.length || 1, open: true,
+      find: (x) => (x.u ? `${x.u.name} ${x.u.id}` : `${x.c.call} ${x.c.name || ''}`),
+      draw: (hits, d, more) => [where, ...use.notes.map((n) => jel('p', 'rlever', n)), reportList(hits, (x) => {
+        const li = jel('li', '');
+        if (x.c) {
+          li.append(macroLink(x.c), jel('span', 'muted', ' · macro calling it'));
+          return li;
+        }
+        const u = x.u;
+        const name = jel(u.file ? 'a' : 'span', u.file ? 'filelink' : 'rrel', u.name);
+        name.title = u.id;
+        if (u.file) name.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(u.id); });
+        li.append(name, jel('span', 'muted', ` · ${useKind(u.kind, 1)}${userHow(u)}`));
+        return li;
+      }, d, Infinity, rows.length ? more : 0)],
+    });
   }
-  if (!none) body.append(jel('p', 'runnote', `Every macro of ${r.project} is reached by a node, itself or through other macros.`));
-  for (const g of macroGroups(r.unreached)) {
-    const d = jel('details', 'reportfinding');
-    d.open = g.items.length <= 30;
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', g.title), jel('span', 'rcount', String(g.items.length)));
-    const ul = jel('ul', 'rentries');
-    for (const m of g.items) {
-      const li = jel('li', '');
-      li.append(macroLink(m));
-      if (m.extra) li.append(jel('span', 'muted', ' · ' + m.extra));
-      ul.append(li);
-    }
-    d.append(sum, jel('p', 'rlever', g.why === 'dispatch' ? `${g.lever} ${r.adapter || 'an adapter it does not name'}.` : g.lever), ul);
-    body.append(d);
+  for (const g of groups) {
+    folds.push({
+      title: g.title, tone: '', open: (len) => len <= 30, rows: g.items,
+      lever: g.why === 'dispatch' ? `${g.lever} ${r.adapter || 'an adapter it does not name'}.` : g.lever,
+      find: (m) => `${m.name} ${m.call} ${m.extra || ''}`,
+      draw: (hits, d) => [reportList(hits, (m) => {
+        const li = jel('li', '');
+        li.append(macroLink(m));
+        if (m.extra) li.append(jel('span', 'muted', ' · ' + m.extra));
+        return li;
+      }, d)],
+    });
   }
+  reportLists(body, [{ folds }], 'Filter the macros');
   return [head(about), body];
 }
 
@@ -10632,51 +10949,62 @@ async function checksSection(again) {
   try { r = await api.get('/api/reports/checks'); }
   catch (e) { return [head(), jel('div', 'compiled-empty', e.message)]; }
   const body = jel('div', 'reportbody');
-  body.append(jel('p', 'runnote', "Only the project's own enabled models and sources are looked at, never an installed package's."));
+  const tiles = [];
+  const folds = [];
   for (const c of CHECKS) {
     // `rows` is what the server sent, at most its cap of the `total` found.
     const { total = 0, rows = [] } = r[c.key] || {};
     if (!total) continue;
-    const d = jel('details', 'reportfinding');
-    d.open = total <= 50;
-    const sum = jel('summary', '');
-    sum.append(jel('span', 'rtitle', c.title), jel('span', 'rcount', String(total)));
-    const groups = jel('div', '');
-    const draw = (shown) => groups.replaceChildren(...checkGroups(rows, shown, d.open));
-    d.append(sum, jel('p', 'rlever', c.why), groups);
-    // A list of thousands draws its first rows, a button the rest, as Slowest
-    // does: the folds that are closed would draw them all the same.
-    const rest = rows.length - CHECK_SHOWN;
-    draw(CHECK_SHOWN);
-    if (rest > 0 || total > rows.length) {
-      const more = jel('ul', 'rentries');
-      if (rest > 0) {
-        const li = jel('li', 'muted');
-        const all = jel('button', 'btn sm showall', `Show all ${rows.length}`);
-        all.addEventListener('click', () => {
-          d.dataset.all = '1';
-          draw(rows.length);
-          li.remove();
-        });
-        li.append(all);
-        more.append(li);
-      }
-      if (total > rows.length) more.append(jel('li', 'muted', `and ${total - rows.length} more`));
-      d.append(more);
-    }
-    body.append(d);
+    tiles.push({ label: c.title, value: String(total), sub: '', tone: '' });
+    folds.push({
+      title: c.title, tone: '', lever: c.why, rows, of: total, open: (n) => n <= 50,
+      find: (row) => `${row.name} ${row.id} ${row.folder || ''} ${checkDetail(row)}`,
+      draw: (hits, d, more) => checkFoldList(hits, d, more),
+    });
   }
-  if (body.children.length === 1) body.append(jel('p', 'runnote', 'Nothing to list: every check comes out clean.'));
+  body.append(reportTiles(tiles), jel('p', 'runnote', "Only the project's own enabled models and sources are looked at, never an installed package's."));
+  if (!folds.length) body.append(jel('p', 'runnote', 'Nothing to list: every check comes out clean.'));
+  reportLists(body, [{ folds }], 'Filter the models and sources');
   return [head(), body];
 }
 
 /* How many rows of a check are drawn before Show all. */
 const CHECK_SHOWN = 100;
 
+/* A fold of rows by folder: the first CHECK_SHOWN, a button for the rest, and
+   how many the server held back. A list of thousands draws its first rows, as
+   Slowest does: the folds that are closed would draw them all the same. */
+function checkFoldList(hits, d, more, row = checkRow) {
+  const groups = jel('div', '');
+  const draw = (shown) => groups.replaceChildren(...checkGroups(hits, shown, d.open, row));
+  draw(CHECK_SHOWN);
+  const out = [groups];
+  const rest = hits.length - CHECK_SHOWN;
+  if (rest > 0 || more > 0) {
+    const tail = jel('ul', 'rentries');
+    if (rest > 0) {
+      const li = jel('li', 'muted');
+      const all = jel('button', 'btn sm showall', `Show all ${hits.length}`);
+      all.addEventListener('click', () => {
+        d.dataset.all = '1';
+        d.dataset.touched = '1';
+        draw(hits.length);
+        li.remove();
+      });
+      li.append(all);
+      tail.append(li);
+    }
+    if (more > 0) tail.append(jel('li', 'muted', `and ${more} more`));
+    out.push(tail);
+  }
+  return out;
+}
+
 /* The first `shown` of a check's rows, by folder as the job coverage groups its
    own. The folders are made of every row the server sent, so a folder's count
-   is the whole of it, drawn or not. */
-function checkGroups(rows, shown, open) {
+   is the whole of it, drawn or not. `row` draws one: a check's by default, the
+   coverage's for the models no job runs. */
+function checkGroups(rows, shown, open, row = checkRow) {
   const out = [];
   const drawn = new Set(rows.slice(0, shown).map((r) => r.id));
   for (const g of jobsCoverageGroups(rows)) {
@@ -10685,7 +11013,7 @@ function checkGroups(rows, shown, open) {
     // A folder of one is no level to unfold: the row is listed bare.
     if (g.rows.length === 1 || !g.folder) {
       const ul = jel('ul', 'rentries');
-      for (const row of here) ul.append(checkRow(row, row.folder));
+      for (const r of here) ul.append(row(r, r.folder));
       out.push(ul);
       continue;
     }
@@ -10693,7 +11021,7 @@ function checkGroups(rows, shown, open) {
     folder.open = open;
     folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
     const ul = jel('ul', 'rentries');
-    for (const row of here) ul.append(checkRow(row, row.rest));
+    for (const r of here) ul.append(row(r, r.rest));
     folder.append(ul);
     out.push(folder);
   }
@@ -10707,7 +11035,8 @@ function checkRow(row, path) {
   // A key row opens the Columns tab on the column it left untested.
   name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(row.id, row.column); });
   li.append(name);
-  if (row.detail) li.append(jel('span', '', ' ' + row.detail));
+  const detail = checkDetail(row);
+  if (detail) li.append(jel('span', '', ': ' + detail));
   if (path) li.append(jel('span', 'muted', ' · ' + path));
   return li;
 }
@@ -10734,7 +11063,7 @@ async function jobsCoverageSection(again) {
   try { cov = await api.get('/api/jobs/coverage?look=true'); }
   catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
   forgetCatalogJobs();
-  const body = jel('div', 'jobs-body');
+  const body = jel('div', 'reportbody');
   renderCoverage(body, cov);
   return [head, body];
 }
@@ -10828,28 +11157,82 @@ function jobOrderCaveats(a) {
   return out;
 }
 
+/* The figures over the order: the steps looked at, the pairs of each kind and
+   the steps not resolved. None while there is no pair and nothing unresolved:
+   the line under says what holds. */
+function jobOrderTiles(a) {
+  const lost = (a.unresolved || []).length;
+  if (!a.pairs.length && !lost) return [];
+  const tiles = [{ label: 'Steps looked at', value: String(a.checked), sub: 'of jobs that start on their own, building a node', tone: '' }];
+  for (const g of jobOrderGroups(a)) {
+    tiles.push({ label: g.title, value: String(g.pairs.length), sub: 'pairs of steps', tone: g.key === 'none' || g.key === 'reversed' ? 'warn' : '' });
+  }
+  if (lost) tiles.push({ label: 'Steps not resolved', value: String(lost), sub: 'could hide more pairs', tone: '' });
+  return tiles;
+}
+
+/* The steps a step should wait for: by their own label when they are in its
+   job, which its fold already names, else with their job. */
+function jobOrderTargets(p) {
+  return p.waits_for.map((s) => (s.source === p.step.source && s.job === p.step.job ? s.label : jobOrderSide(s)));
+}
+
+/* The schedules of a fold's pairs when they all say the same, to say them once. */
+function jobOrderShared(pairs) {
+  if (!pairs.length) return '';
+  const first = jobOrderSchedules(pairs[0]);
+  return pairs.every((p) => jobOrderSchedules(p) === first) ? first : '';
+}
+
+/* A pair's edges by the model that reads, in the order they were found: one
+   model often reads several parents of the other step. */
+function jobOrderEdgeRows(edges) {
+  const rows = new Map();
+  for (const e of edges) {
+    if (!rows.has(e.node)) rows.set(e.node, { node: e.node, node_name: e.node_name, edges: [] });
+    rows.get(e.node).edges.push(e);
+  }
+  return [...rows.values()];
+}
+
+/* Where a step is written, outside the project and so copied rather than
+   opened. */
+function jobsFileButton(source, file, line) {
+  const where = jel('button', 'jobfile', `${source} · ${file}:${line}`);
+  where.type = 'button';
+  where.title = 'Outside the project, so it does not open here. Click to copy where it is.';
+  where.addEventListener('click', () => copyText(`${file}:${line}`));
+  return where;
+}
+
+/* What the answer says before its pairs, in the order it is read: the figures,
+   the line, then what was left out, the warnings first in the colour of one. */
 function renderJobOrder(body, a) {
   if (a.sources_refused) return jobsRefusedFile(body, a.sources_refused);
   if (!a.configured) return jobsNoSource(body);
-  const out = [jel('div', 'jobs-line', jobOrderLine(a))];
-  for (const g of jobOrderGroups(a)) {
-    const sec = jel('details', 'jobs-sec');
-    sec.open = g.open;
-    const head = jel('summary', '', `${g.title} (${g.pairs.length})`);
-    head.title = g.hint;
-    sec.append(head);
-    for (const p of g.pairs) sec.append(jobOrderPair(p));
-    out.push(sec);
+  const out = [reportTiles(jobOrderTiles(a)), jel('p', 'runnote', jobOrderLine(a))];
+  for (const c of jobOrderCaveats(a)) {
+    const note = jel('p', 'runnote', c.text);
+    if (c.warn) note.dataset.tone = 'warn';
+    out.push(note);
   }
+  const folds = jobOrderGroups(a).map((g) => {
+    // What a filter is held against, made once: a keystroke would otherwise
+    // join the names of every edge of every pair again.
+    const text = new Map(g.pairs.map((p) => [p, [jobOrderSide(p.step), ...p.waits_for.map(jobOrderSide),
+      ...p.edges.map((e) => [e.node_name, e.parent_name, ...(e.through || []).map((t) => t.name)].join(' '))].join(' ')]));
+    return { title: g.title, tone: g.key === 'none' || g.key === 'reversed' ? 'warn' : '', lever: g.hint, rows: g.pairs, open: (n) => n <= 50,
+      find: (p) => text.get(p), draw: (hits, d) => jobOrderFoldList(hits, d) };
+  });
   // The steps not resolved are listed as the coverage lists its own.
   if (a.unresolved && a.unresolved.length) {
-    out.push(jobsStepList('Steps not resolved, which could hide more pairs',
+    folds.push(jobsStepList('Steps not resolved, which could hide more pairs',
       // An Airflow task by its id, as the coverage names it; a dbt Cloud step
       // keeps its place, which it has no name for.
       a.unresolved.map((u) => Object.assign({}, u, { name: u.label.replace(/^task /, '') }))));
   }
-  for (const c of jobOrderCaveats(a)) out.push(jel('div', c.warn ? 'jobs-warn' : 'jobs-line', c.text));
   body.replaceChildren(...out);
+  reportLists(body, [{ folds }], 'Filter the steps and models');
 }
 
 /* A model of an edge, opened in the editor with the Jobs tab, which lists the
@@ -10861,41 +11244,113 @@ function jobOrderModel(id, name) {
   return link;
 }
 
-function jobOrderEdge(e) {
-  const row = jel('div', 'joblink');
-  row.append(jobOrderModel(e.node, e.node_name), ' reads ', jobOrderModel(e.parent, e.parent_name));
-  // The views and ephemerals between them open too: one is often what to look at.
-  (e.through || []).forEach((t, i) => row.append(i ? ', ' : ' through ', jobOrderModel(t.id, t.name)));
-  return row;
+/* One model and what it reads from the other step's: a single parent as
+   "x reads a through t", several as "x reads a, b (through t)", the views and
+   ephemerals between them opening too, since one is often what to look at. */
+function jobOrderEdge(row) {
+  const line = jel('div', 'joblink');
+  line.append(jobOrderModel(row.node, row.node_name), ' reads ');
+  row.edges.forEach((e, i) => line.append(...(i ? [', '] : []), jobOrderModel(e.parent, e.parent_name)));
+  const through = [];
+  for (const t of row.edges.flatMap((e) => e.through || [])) if (!through.some((x) => x.id === t.id)) through.push(t);
+  if (!through.length) return line;
+  line.append(row.edges.length > 1 ? ' (through ' : ' through ');
+  through.forEach((t, i) => line.append(...(i ? [', '] : []), jobOrderModel(t.id, t.name)));
+  if (row.edges.length > 1) line.append(')');
+  return line;
 }
 
-/* One pair: the step, the steps it should wait for, the clocks of both, what
-   else the files say, and the models it reads from them, the first ten with
-   a button for the rest (the JSON has them all). */
-function jobOrderPair(p) {
-  const box = jel('div', 'jobs-pair');
-  const head = jel('div', 'jobs-pairhead');
-  head.append(jel('b', '', jobOrderSide(p.step)), p.waits_for.length === 1 ? ' should wait for ' : ' should wait for one of ',
-    jel('b', '', p.waits_for.map(jobOrderSide).join(', ')));
-  box.append(head);
-  box.append(jel('div', 'joblink', jobOrderSchedules(p)));
-  const where = jel('button', 'jobfile', `${p.step.source} · ${p.step.file}:${p.step.line}`);
-  where.title = 'Outside the project, so it does not open here. Click to copy where it is.';
-  where.addEventListener('click', () => copyText(`${p.step.file}:${p.step.line}`));
-  box.append(where);
-  for (const note of jobOrderNotes(p)) box.append(jel('div', 'joblink', note));
-  const edges = jel('div', 'jobs-edges');
-  for (const e of p.edges.slice(0, 10)) edges.append(jobOrderEdge(e));
-  if (p.edges.length > 10) {
-    const more = jel('button', 'btn sm', `+${p.edges.length - 10} more`);
+/* One pair: the step, the steps it should wait for, the clocks of both
+   unless its fold says them once (`shared`), where the step is written, what
+   else the files say, and the models it reads from them, a line each model,
+   the first ten with a button for the rest (the JSON has them all). Inside
+   its job's fold (`inFold`) the step is its task alone. */
+function jobOrderPair(p, { inFold = false, shared = false } = {}) {
+  const li = jel('li', '');
+  const head = jel('div', '');
+  head.append(jel('span', 'rstep', inFold ? p.step.label : jobOrderSide(p.step)),
+    p.waits_for.length === 1 ? ' should wait for ' : ' should wait for one of ', jobOrderTargets(p).join(', '));
+  li.append(head);
+  // The clocks take the free width and the file is pinned right, as a step's
+  // command and file are in the coverage.
+  const line = jel('div', 'rline rstepline');
+  if (!shared) line.append(jel('span', 'rsched muted', jobOrderSchedules(p)));
+  line.append(jobsFileButton(p.step.source, p.step.file, p.step.line));
+  li.append(line);
+  for (const note of jobOrderNotes(p)) li.append(jel('div', 'joblink', note));
+  const rows = jobOrderEdgeRows(p.edges);
+  const edges = jel('div', '');
+  for (const row of rows.slice(0, 10)) edges.append(jobOrderEdge(row));
+  if (rows.length > 10) {
+    const more = jel('button', 'btn sm', `+${rows.length - 10} more`);
     more.addEventListener('click', () => {
       more.remove();
-      for (const e of p.edges.slice(10)) edges.append(jobOrderEdge(e));
+      for (const row of rows.slice(10)) edges.append(jobOrderEdge(row));
     });
     edges.append(more);
   }
-  box.append(edges);
-  return box;
+  li.append(edges);
+  return li;
+}
+
+/* The pairs of a group by the DAG or job the step is in, so that its name and
+   its clocks are said once over its steps. A job with a single pair is listed
+   bare, with its whole name. */
+function jobOrderFolders(hits, open, shown = Infinity) {
+  const drawn = new Set(hits.slice(0, shown));
+  const byJob = new Map();
+  for (const p of hits) {
+    const key = `${p.step.source}\n${p.step.job}`;
+    if (!byJob.has(key)) byJob.set(key, []);
+    byJob.get(key).push(p);
+  }
+  const out = [];
+  for (const pairs of byJob.values()) {
+    // A job's count is the whole of its pairs, drawn or not, as a folder of a
+    // check's rows says it.
+    const first = pairs.filter((p) => drawn.has(p));
+    if (!first.length) continue;
+    if (pairs.length === 1) {
+      const ul = jel('ul', 'rentries');
+      ul.append(jobOrderPair(pairs[0]));
+      out.push(ul);
+      continue;
+    }
+    const shared = jobOrderShared(pairs);
+    const folder = jel('details', 'checkfolder');
+    folder.open = open;
+    folder.append(jel('summary', '', `${jobsJobLabel({ kind: pairs[0].step.kind, name: pairs[0].step.job })} (${pairs.length})`));
+    if (shared) folder.append(jel('p', 'rline', shared));
+    const ul = jel('ul', 'rentries');
+    for (const p of first) ul.append(jobOrderPair(p, { inFold: true, shared: !!shared }));
+    folder.append(ul);
+    out.push(folder);
+  }
+  return out;
+}
+
+/* The pairs of a fold: the first CHECK_SHOWN, a button for the rest, so that a
+   filter run over thousands of pairs draws a few hundred elements, not all. */
+function jobOrderFoldList(hits, d) {
+  const box = jel('div', '');
+  const paint = (n) => box.replaceChildren(...jobOrderFolders(hits, d.open, n));
+  paint(CHECK_SHOWN);
+  const out = [box];
+  if (hits.length > CHECK_SHOWN) {
+    const tail = jel('ul', 'rentries');
+    const li = jel('li', 'muted');
+    const all = jel('button', 'btn sm showall', `Show all ${hits.length}`);
+    all.addEventListener('click', () => {
+      d.dataset.all = '1';
+      d.dataset.touched = '1';
+      paint(Infinity);
+      li.remove();
+    });
+    li.append(all);
+    tail.append(li);
+    out.push(tail);
+  }
+  return out;
 }
 
 async function jobOrderSection(again) {
@@ -10908,7 +11363,8 @@ async function jobOrderSection(again) {
   // The look may have read the files again. Nothing else is drawn again for
   // it: the section is read again on every showing.
   forgetCatalogJobs();
-  const body = jel('div', 'jobs-body');
+  S.reportsCounts.joborder = (order.pairs || []).length;
+  const body = jel('div', 'reportbody');
   renderJobOrder(body, order);
   return [head, body];
 }
@@ -11740,6 +12196,25 @@ function macroGroups(unreached) {
     g.items.push({ id: m.id, name: m.name, call: m.call, file: m.file || '', extra });
   }
   return groups;
+}
+
+/* The figures over the macros: how many the project has, how many no node
+   reaches, and how many of those nothing explains, which is the count the
+   rail and the button carry: a macro called only by macros no node reaches or a
+   generic test no test uses is unexplained, as is a materialization or
+   strategy macro no node names. Worked out from the same payload, so it is the
+   index's number. */
+function macrosTiles(r) {
+  const unreached = r.unreached || [];
+  const unexplained = unreached.filter((m) => {
+    const u = m.used || {};
+    return ['none', 'macros', 'test'].includes(u.why || 'none') || (u.why === 'run' && !!u.run && !u.run.nodes);
+  }).length;
+  return [
+    { label: 'Macros', value: String(r.own), sub: `in ${r.project}`, tone: '' },
+    { label: 'No reference found', value: String(unreached.length), sub: 'reached by no node', tone: '' },
+    { label: 'Left unexplained', value: String(unexplained), sub: 'and nothing explains them', tone: '' },
+  ];
 }
 
 /* How a node in a macro's list reaches it, after its kind: through a macro,
@@ -13953,9 +14428,9 @@ function repaintBuilds() {
     // The grid is drawn again as each environment lands: a filter being typed
     // in keeps its focus and its caret.
     const f = document.activeElement;
-    const typing = f && f.classList && f.classList.contains('buildsfilter') ? [f.selectionStart, f.selectionEnd] : null;
+    const typing = f && f.classList && f.classList.contains('reportfilter') ? [f.selectionStart, f.selectionEnd] : null;
     showReportSection(S.reportsSection).then(() => {
-      const again = typing && $('#reports-view .buildsfilter');
+      const again = typing && $('#reports-view .reportfilter');
       if (again) { again.focus(); again.setSelectionRange(typing[0], typing[1]); }
     });
   } else paintReportsButton();
@@ -14133,9 +14608,9 @@ async function buildsSection() {
   const head = reportHead({ title: 'Builds by environment', tool: 'snowflake', about, extra: [buildsReadButton()] });
   const body = jel('div', 'reportbody');
   if (!read) {
-    body.append(jel('p', 'runnote', 'When each model last ran in each environment and how it ended, from the model_executions and '
+    body.append(reportLever('When each model last ran in each environment and how it ended, from the model_executions and '
       + 'invocations tables of the dbt_artifacts package, in the schema each environment places it in. Nothing is asked until you '
-      + 'press the button, and nothing of the answer is kept past this page.'));
+      + 'press the button, and nothing of the answer is kept past this page.', 'runnote'));
     return [head, body];
   }
   if (read.failed) {
@@ -14151,43 +14626,29 @@ async function buildsSection() {
   }
   const own = (S.meta && S.meta.project) || '';
   const now = Date.now();
+  const groups = [];
   for (const t of read.targets) {
     const got = read.byEnv[t.env];
     const title = jel('h3', 'buildsenv', '');
     const dot = jel('span', 'envdot');
     dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
     title.append(dot, document.createTextNode(buildsEnvLabel(t)));
-    body.append(title);
-    if (!got) { body.append(jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : '')); continue; }
-    if (got.error) { body.append(buildsFailure(got)); continue; }
+    if (!got) { groups.push({ head: [title, jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : '')], folds: [] }); continue; }
+    if (got.error) { groups.push({ head: [title, buildsFailure(got)], folds: [] }); continue; }
+    const head = [title];
     const others = buildsOthersNote(got.target, got.others, got.rows.size);
-    if (others) body.append(jel('p', 'runnote', others));
-    if (got.cut) body.append(jel('p', 'runnote', 'The table held more models than are read, so some below may read as not built.'));
+    if (others) head.push(jel('p', 'runnote', others));
+    if (got.cut) head.push(jel('p', 'runnote', 'The table held more models than are read, so some below may read as not built.'));
     const lists = buildsVerdicts(got, models, own, days, now);
-    const tiles = jel('div', 'reporttiles');
-    for (const [label, key, tone, sub2] of [
-      ['Errored', 'error', 'bad', 'last attempt failed'],
-      ['Stale', 'stale', 'warn', `no success in ${counted(days, 'day', 'days')}`],
-      ['Not built', 'none', '', `no run in ${buildsWindowDays()} days`],
-      ['Fine', 'ok', '', 'built within the threshold'],
-    ]) {
-      const tile = jel('div', 'reporttile');
-      if (tone && lists[key].length) tile.dataset.tone = tone;
-      tile.append(jel('div', 'rlabel', label), jel('div', 'rvalue', String(lists[key].length)), jel('div', 'rsub', sub2));
-      tiles.append(tile);
-    }
-    body.append(tiles);
-    for (const [title2, key, tone, open] of [
-      ['Errored', 'error', 'bad', true], ['Stale', 'stale', 'warn', lists.stale.length <= 20], ['Not built', 'none', '', false],
-    ]) {
-      if (!lists[key].length) continue;
-      const d = jel('details', 'reportfinding');
-      d.open = open;
-      if (tone) d.dataset.tone = tone;
-      const summary = jel('summary', '');
-      summary.append(jel('span', 'rtitle', title2), jel('span', 'rcount', String(lists[key].length)));
-      const ul = jel('ul', 'rentries');
-      for (const item of lists[key].slice(0, 300)) {
+    head.push(reportTiles([
+      { label: 'Errored', value: String(lists.error.length), sub: 'last attempt failed', tone: lists.error.length ? 'bad' : '' },
+      { label: 'Stale', value: String(lists.stale.length), sub: `no success in ${counted(days, 'day', 'days')}`, tone: lists.stale.length ? 'warn' : '' },
+      { label: 'Not built', value: String(lists.none.length), sub: `no run in ${buildsWindowDays()} days`, tone: '' },
+      { label: 'Fine', value: String(lists.ok.length), sub: 'built within the threshold', tone: '' },
+    ]));
+    const fold = (title2, key, tone, open) => ({
+      title: title2, tone, rows: lists[key], open, find: (item) => `${item.name} ${item.id}`,
+      draw: (hits, d, more) => [reportList(hits, (item) => {
         const li = jel('li', '');
         const link = jel('a', 'filelink', item.name);
         link.title = item.id;
@@ -14195,46 +14656,45 @@ async function buildsSection() {
         li.append(link);
         if (key !== 'none') li.append(jel('span', 'muted', ' · ' + buildsSaidBare(item.v, t.name, now, got.target)));
         if (key === 'error' && item.v.last.message) li.append(jel('div', 'rmsg', item.v.last.message));
-        ul.append(li);
-      }
-      if (lists[key].length > 300) ul.append(jel('li', 'muted', `and ${lists[key].length - 300} more`));
-      d.append(summary, ul);
-      body.append(d);
-    }
+        return li;
+      }, d, 300, more)],
+    });
+    groups.push({ head, folds: [fold('Errored', 'error', 'bad', true), fold('Stale', 'stale', 'warn', (n) => n <= 20), fold('Not built', 'none', '', false)] });
   }
-  body.append(buildsGrid(read, models, own, days));
+  const grid = buildsGrid(read, models, own, days);
+  // The one filter drives the folds of each environment and the grid under them.
+  reportLists(body, groups, 'Filter the models', grid.draw);
+  body.append(grid.el);
   if (modelsCut) body.append(jel('p', 'runnote', 'The project holds more models than the server lists at once, so the rest are left out.'));
   return [head, body];
 }
 
 /* Every model against every environment: its last attempt and how long ago,
-   filtered by name, the project's own models unless the packages are asked
-   for. Only the rows on screen are made. */
+   filtered by name through the section's filter, the project's own models
+   unless the packages are asked for. Only the rows on screen are made. */
 function buildsGrid(read, models, own, days) {
   const wrap = jel('div', 'buildsgrid');
   const tools = jel('div', 'buildstools');
-  const filter = jel('input', 'buildsfilter');
-  filter.type = 'search';
-  filter.placeholder = 'Filter models';
-  filter.setAttribute('aria-label', 'Filter the models by name');
-  // Kept in the read, since each environment landing draws the section again.
-  filter.value = read.filter || '';
   const pk = jel('label', 'buildspk');
   const box = jel('input', '');
   box.type = 'checkbox';
   box.checked = !!S.buildsPackages;
   pk.append(box, document.createTextNode(' include packages'));
   const count = jel('span', 'muted', '');
-  tools.append(jel('b', '', 'Every model'), filter, pk, count);
+  tools.append(jel('b', '', 'Every model'), pk, count);
   const table = jel('table', 'buildstable');
   wrap.append(tools, table);
   const envs = read.targets;
-  const draw = () => {
+  // The section's filter, kept here for a change of the checkbox, which draws
+  // the grid without the filter being typed in.
+  let query = '';
+  const draw = (q = query) => {
+    query = q;
     S.buildsPackages = box.checked;
-    read.filter = filter.value;
-    const q = filter.value.trim().toLowerCase();
+    const needle = q.trim().toLowerCase();
     const now = Date.now();
-    const shown = models.filter((m) => (box.checked || !own || m.package === own) && (!q || m.name.toLowerCase().includes(q)));
+    const shown = models.filter((m) => (box.checked || !own || m.package === own)
+      && (!needle || m.name.toLowerCase().includes(needle) || m.id.toLowerCase().includes(needle)));
     const head = jel('tr', '');
     head.append(jel('th', '', 'model'));
     envs.forEach((t) => head.append(jel('th', '', buildsEnvLabel(t))));
@@ -14261,10 +14721,8 @@ function buildsGrid(read, models, own, days) {
     table.replaceChildren(head, ...rows);
     count.textContent = shown.length > 500 ? `${shown.length} models, 500 shown: filter to see the rest` : counted(shown.length, 'model', 'models');
   };
-  filter.addEventListener('input', draw);
-  box.addEventListener('change', draw);
-  draw();
-  return wrap;
+  box.addEventListener('change', () => draw());
+  return { el: wrap, draw };
 }
 
 /* ------------------------------------------------------- builds by job -- */
@@ -14335,7 +14793,10 @@ function jobBuildsCell(res, clock) {
   if (c.error) bits.push(`${c.error} errored`);
   if (c.late) bits.push(`${c.late} late`);
   if (c.none) bits.push(`${c.none} not built`);
-  cell.append(jel('span', 'jobdot'), jel('span', 'jbsay', bits.length ? bits.join(' · ') : c.total === 1 ? 'built' : `all ${c.total} built`));
+  // The dot stays on the first line of the words, which may run over several.
+  const top = jel('span', 'jbtop');
+  top.append(jel('span', 'jobdot'), jel('span', 'jbsay', bits.length ? bits.join(' · ') : c.total === 1 ? 'built' : `all ${c.total} built`));
+  cell.append(top);
   if (clock && res.last !== null) cell.append(jel('span', 'muted jbsince', jobSinceText(res, clock.tz)));
   // A cell with models to list opens the row on its environment; the row's
   // handler wires the click, since it knows the fold.
@@ -14363,6 +14824,60 @@ function jobBuildsPick(listable, kept, last) {
     if (best === null || (rank[e.tone] || 0) > (rank[best.tone] || 0)) best = e;
   }
   return best === null ? null : best.key;
+}
+
+/* The figure of one environment over the jobs: how many of the jobs judged
+   there have every model built, with what ails the rest. A job whose models
+   cannot be told apart across targets (`clash`) or that runs no model is
+   judged by nothing, and `out` counts those left out. */
+function jobBuildsTile(label, results) {
+  const judged = results.filter((r) => !r.clash && r.counts.total);
+  const by = (tone) => judged.filter((r) => r.tone === tone).length;
+  const error = by('error'), late = by('late'), none = by('none');
+  return { label, value: `${by('ok')} of ${judged.length} ${judged.length === 1 ? 'job' : 'jobs'}`,
+    sub: [error && `${error} errored`, late && `${late} late`, none && `${none} not built`].filter(Boolean).join(' · '),
+    tone: error ? 'bad' : late ? 'warn' : '', out: results.length - judged.length };
+}
+
+/* The tiles of every environment, and the line under them saying what ok
+   means and how many jobs were left out, once when it is the same number
+   everywhere; else each tile says its own. `entries` are `{label, results}`. */
+function jobBuildsTiles(entries) {
+  const tiles = entries.map((e) => jobBuildsTile(e.label, e.results));
+  const outs = [...new Set(tiles.map((t) => t.out))];
+  const same = outs.length === 1 ? outs[0] : 0;
+  if (outs.length > 1) for (const t of tiles) if (t.out) t.sub = [t.sub, `${t.out} left out`].filter(Boolean).join(' · ');
+  const said = 'The first figure counts the jobs whose models were all built in time.';
+  const left = same ? ` ${same} ${same === 1 ? 'job is' : 'jobs are'} left out of each count: no model, or a target clash.` : '';
+  return { tiles, note: tiles.length ? said + left : '' };
+}
+
+/* What the environments' tables leave out, a line each kind: those kept to a
+   target that built models there count only that target's runs, while the
+   table also holds the others'; one with no run under its target says so, as
+   Builds by environment does. `envs` are `{name, target, others, rows}`, `rows`
+   being how many models it kept runs of; "each" only when every one is kept. */
+function jobBuildsTargetsNote(envs) {
+  const kept = envs.filter((e) => e.target && e.others && e.others.length);
+  const notes = [];
+  const counting = kept.filter((e) => e.rows);
+  if (counting.length) {
+    const named = counting.map((e) => `${e.name}: ${e.target}`).join(', ');
+    notes.push(counting.length === envs.length
+      ? `Each environment counts only the runs under its own target (${named}); its table also holds runs under other targets, not counted here.`
+      : counting.length === 1
+        ? `An environment kept to a target counts only the runs under it (${named}); its table also holds runs under other targets, not counted here.`
+        : `Environments kept to a target count only the runs under their own target (${named}); their tables also hold runs under other targets, not counted here.`);
+  }
+  for (const e of kept.filter((x) => !x.rows)) {
+    notes.push(`${e.name}: no run under target ${e.target} in the table, which holds runs under ${e.others.join(', ')}: not counted.`);
+  }
+  return notes;
+}
+
+/* What a read cut short leaves out, said of the environments it happened to. */
+function jobBuildsCutNote(labels) {
+  return labels.length ? `${labels.join(', ')}: The table held more models than are read, so some models may read as not built.` : '';
 }
 
 /* The models of one environment worth a look: errored, late, not built. */
@@ -14408,42 +14923,26 @@ async function jobBuildsSection() {
     : 'not read';
   const head = reportHead({ title: 'Builds by job', tool: 'snowflake', about, extra: [buildsReadButton()] });
   const body = jel('div', 'reportbody');
-  body.append(jel('p', 'runnote', (read ? '' : 'How each job\'s models last ended in each environment, against the job\'s own schedule, from the same read '
+  const intro = reportLever((read ? '' : 'How each job\'s models last ended in each environment, against the job\'s own schedule, from the same read '
     + 'as Builds by environment. Nothing is asked until you press the button. ')
     + 'A model\'s status is its last build, whichever job ran it: dbt_artifacts does not record which job did, so a job is the models its '
     + 'selections reach. Late means no success since the run before the last start of the job\'s schedule, in the zone its source names; '
-    + 'a job with no schedule of its own is held to the days set in the Snowflake settings. A model built since the last start is only counted.'));
-  if (!read) return [head, body];
-  if (read.failed) { body.append(buildsFailure({ error: read.failed })); return [head, body]; }
+    + 'a job with no schedule of its own is held to the days set in the Snowflake settings. A model built since the last start is only counted.', 'runnote');
+  // The figures come first once there are some: the intro follows them.
+  const early = (...els) => { body.append(intro, ...els); return [head, body]; };
+  if (!read) return early();
+  if (read.failed) return early(buildsFailure({ error: read.failed }));
   let cfg, models;
   try {
     [cfg, { models }] = await Promise.all([jobBuildsLoad(read), buildsModels(read)]);
   } catch (e) {
-    body.append(jel('p', 'runnote', `The jobs could not be read: ${e.message}`));
-    return [head, body];
+    return early(jel('p', 'runnote', `The jobs could not be read: ${e.message}`));
   }
-  if (cfg.refused) { body.append(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${cfg.refused}.`)); return [head, body]; }
-  if (!cfg.jobs.length) { body.append(jel('p', 'runnote', 'No job was read from the sources.')); return [head, body]; }
+  if (cfg.refused) return early(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${cfg.refused}.`));
+  if (!cfg.jobs.length) return early(jel('p', 'runnote', 'No job was read from the sources.'));
   const names = new Map(models.map((m) => [m.id, m.name]));
   const now = Date.now();
-  // An environment that could not be read says so once, above the jobs.
-  for (const t of read.targets) {
-    const got = read.byEnv[t.env];
-    if (got && !got.error) continue;
-    const title = jel('h3', 'buildsenv', '');
-    const dot = jel('span', 'envdot');
-    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
-    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
-    body.append(title, got ? buildsFailure(got) : jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : ''));
-  }
   const ready = read.targets.filter((t) => read.byEnv[t.env] && !read.byEnv[t.env].error);
-  // What an environment's rows leave out, said as Builds by environment says it.
-  for (const t of ready) {
-    const got = read.byEnv[t.env];
-    const notes = [buildsOthersNote(got.target, got.others, got.rows.size),
-      got.cut ? 'The table held more models than are read, so some models may read as not built.' : ''].filter(Boolean);
-    if (notes.length) body.append(jel('p', 'runnote', `${buildsEnvLabel(t)}: ${notes.join(' ')}`));
-  }
   // Each job's clock and its last two starts are worked out once for the
   // section, and its verdicts once per environment's answer: a new answer is
   // a new object, so an environment landing judges its own and no other.
@@ -14456,23 +14955,38 @@ async function jobBuildsSection() {
     if (!kept.byJob.has(job)) kept.byJob.set(job, jobBuildVerdicts(job, got, clocks.get(job), days, now, kept.worst));
     return kept.byJob.get(job);
   };
-  const tools = jel('div', 'buildstools');
-  const filter = jel('input', 'buildsfilter');
-  filter.type = 'search';
-  filter.placeholder = 'Filter jobs';
-  filter.setAttribute('aria-label', 'Filter the jobs by name');
-  filter.value = read.jobFilter || '';
-  const count = jel('span', 'muted', '');
-  tools.append(jel('b', '', 'Every job'), filter, count);
+  const figures = jobBuildsTiles(ready.map((t) => ({ label: buildsEnvLabel(t), results: cfg.jobs.map((j) => verdictsOf(j, t)) })));
+  body.append(reportTiles(figures.tiles));
+  if (figures.note) body.append(jel('p', 'runnote', figures.note));
+  body.append(intro);
+  // An environment that could not be read says so once, above the jobs.
+  for (const t of read.targets) {
+    const got = read.byEnv[t.env];
+    if (got && !got.error) continue;
+    const title = jel('h3', 'buildsenv', '');
+    const dot = jel('span', 'envdot');
+    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
+    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
+    body.append(title, got ? buildsFailure(got) : jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : ''));
+  }
+  // What the environments' rows leave out, said once for those that share the words.
+  const notes = jobBuildsTargetsNote(ready.map((t) => ({ name: t.name, target: read.byEnv[t.env].target, others: read.byEnv[t.env].others,
+    rows: read.byEnv[t.env].rows.size })));
+  notes.push(jobBuildsCutNote(ready.filter((t) => read.byEnv[t.env].cut).map(buildsEnvLabel)));
+  for (const note of notes.filter(Boolean)) body.append(jel('p', 'runnote', note));
+  const count = jel('p', 'runnote', '');
   const list = jel('div', 'jobbuilds');
   list.style.setProperty('--envs', String(Math.max(1, ready.length)));
+  // The schedule column is as wide as its longest pill, which stays on one
+  // line: each row is a grid of its own, so the width is given to all of them.
+  const widest = Math.max(0, ...cfg.jobs.map((j) => jobsScheduleText(j).length));
+  list.style.setProperty('--sched', `${Math.min(560, Math.ceil(widest * 6.8) + 110)}px`);
   // The table takes the panel's width and shrinks to it; many environments
   // scroll it sideways.
   const scroll = jel('div', 'jbscroll');
   scroll.append(list);
-  body.append(tools, scroll);
   const head2 = jel('div', 'jbrow jbheads');
-  head2.append(jel('span', '', 'job'), jel('span', '', 'schedule'), jel('span', '', 'models'));
+  head2.append(jel('span', '', 'job'), jel('span', '', 'kind'), jel('span', '', 'schedule'), jel('span', '', 'models'));
   ready.forEach((t) => {
     const h = jel('span', 'jbenvh', buildsEnvLabel(t));
     h.title = h.textContent;
@@ -14488,11 +15002,11 @@ async function jobBuildsSection() {
     const nameBox = jel('span', 'jbname');
     const nm = jobBreakable(job.name, twins.get(job));
     nm.title = `${job.source} · ${job.file}:${job.line}`;
-    nameBox.append(nm, jel('span', 'muted jbtag', job.kind === 'dbt_cloud' ? 'dbt Cloud job' : 'DAG'));
+    nameBox.append(nm);
     const meta = jel('span', 'jbmodels', counted(job.models.length, 'model', 'models'));
     const apart = (job.seeds || 0) + (job.snapshots || 0);
     if (apart) meta.append(jel('span', 'muted', ` + ${counted(apart, 'seed or snapshot', 'seeds and snapshots')} not read`));
-    row.append(nameBox, jobBuildsWhen(job, clock), meta);
+    row.append(nameBox, jel('span', 'muted jbtag', job.kind === 'dbt_cloud' ? 'dbt Cloud job' : 'DAG'), jobBuildsWhen(job, clock), meta);
     // A job has something to open only where an environment judged its models.
     const nameKey = `${job.name} ${twins.get(job) || ''}`.toLowerCase();
     // Case-sensitive and per file, unlike the filter's name: two jobs that differ
@@ -14581,9 +15095,8 @@ async function jobBuildsSection() {
     return { name: nameKey, el: d };
   });
   list.replaceChildren(head2, ...rows.map((r) => r.el));
-  const apply = () => {
-    read.jobFilter = filter.value;
-    const q = filter.value.trim().toLowerCase();
+  const apply = (text = '') => {
+    const q = text.trim().toLowerCase();
     let shown = 0;
     for (const r of rows) {
       r.el.hidden = !!q && !r.name.includes(q);
@@ -14591,8 +15104,9 @@ async function jobBuildsSection() {
     }
     count.textContent = counted(shown, 'job', 'jobs');
   };
-  filter.addEventListener('input', apply);
-  apply();
+  // No fold to filter: the filter hides rows of the table.
+  reportLists(body, [], 'Filter the jobs', apply);
+  body.append(count, scroll);
   return [head, body];
 }
 

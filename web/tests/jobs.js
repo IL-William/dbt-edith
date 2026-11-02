@@ -116,11 +116,33 @@ check('a folder that holds two keeps them, with nothing left to say',
 check('a row with no folder at all', shape(jobsCoverageGroups([{ folder: '', name: 'x' }])), ':x');
 check('the server\'s order holds within a group', shape(jobsCoverageGroups([
   { folder: 'models/a/p', name: 'z' }, { folder: 'models/a/q', name: 'b' }])), 'models/a:z@p,b@q');
-check('the line over the lists', jobsCoverageLine({ total: 10, never: [1, 2], unscheduled: [3] }),
-      '7 of 10 models, seeds and snapshots run in a scheduled job; 1 only in unscheduled jobs, 2 in no job.');
-check('all covered', jobsCoverageLine({ total: 2, never: [], unscheduled: [] }), '2 of 2 models, seeds and snapshots run in a scheduled job.');
-check('a schedule not read, counted apart', jobsCoverageLine({ total: 10, never: [1], unscheduled: [2], unread: [3, 4] }),
-      '6 of 10 models, seeds and snapshots run in a scheduled job; 2 only in jobs whose schedule is not read, 1 only in unscheduled jobs, 1 in no job.');
+
+function checkJ(label, got, want) { check(label, JSON.stringify(got), JSON.stringify(want)); }
+print('\n--- the figures over the coverage ---');
+var nightly = { name: 'nightly', scheduled: true, cron: '0 6 * * *' };
+var adhoc = { name: 'adhoc' };
+var J = JSON.stringify;
+function tiled(cov) { return jobsCoverageTiles(cov).map(function (t) { return [t.label, t.value, t.tone || '']; }); }
+checkJ('covered of all by the line\'s own sum, the two kinds apart, the jobs',
+      tiled({ total: 10, never: [1, 2], unscheduled: [3], jobs: [nightly, adhoc], empty: [], unresolved: [] }),
+      [['In a scheduled job', '7 of 10', ''], ['Only in unscheduled jobs', '1', ''], ['In no job', '2', 'warn'], ['Jobs read', '2', '']]);
+checkJ('in no job is not a warning at zero', tiled({ total: 2, never: [], unscheduled: [], jobs: [nightly], empty: [], unresolved: [] })[2], ['In no job', '0', '']);
+checkJ('a schedule not read is a tile only when there is one, and comes out of the covered',
+      tiled({ total: 10, never: [1], unscheduled: [2], unread: [3, 4], jobs: [nightly], empty: [], unresolved: [] }).slice(0, 4),
+      [['In a scheduled job', '6 of 10', ''], ['Only in unscheduled jobs', '1', ''], ['In no job', '1', 'warn'], ['Schedule not read', '2', '']]);
+checkJ('the jobs read say how many are scheduled', jobsCoverageTiles({ total: 1, never: [], unscheduled: [], jobs: [nightly, adhoc, nightly], empty: [], unresolved: [] }).filter(function (t) { return t.label === 'Jobs read'; })
+  .map(function (t) { return [t.value, t.sub]; }), [['3', '2 scheduled']]);
+checkJ('steps to look at: those that select nothing and those not resolved, only when there are some',
+      [tiled({ total: 1, never: [], unscheduled: [], jobs: [], empty: [1], unresolved: [2, 3] }).pop(), tiled({ total: 1, never: [], unscheduled: [], jobs: [], empty: [], unresolved: [] }).length],
+      [['Steps to look at', '3', ''], 4]);
+
+print('\n--- what the server quotes ---');
+checkJ('a span between backticks is code, the rest text', jobsBackticks('the selector `tag:nothing` matches no node'),
+  [{ text: 'the selector ', code: false }, { text: 'tag:nothing', code: true }, { text: ' matches no node', code: false }]);
+checkJ('several, one after the other', jobsBackticks('`a` and `b`').map(function (p) { return [p.text, p.code]; }), [['a', true], [' and ', false], ['b', true]]);
+checkJ('none, one text', jobsBackticks('a templated command'), [{ text: 'a templated command', code: false }]);
+checkJ('an unmatched backtick stays', jobsBackticks('odd ` one'), [{ text: 'odd ` one', code: false }]);
+checkJ('nothing at all', jobsBackticks(''), []);
 
 print('\n--- what the form sends ---');
 var sent = jobSourcesBody([

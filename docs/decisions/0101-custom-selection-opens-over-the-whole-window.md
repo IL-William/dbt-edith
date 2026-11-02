@@ -47,6 +47,9 @@ empty card took about half, for a drawing that is read across its width.
 
 - **Every panel over the sidebar**: the reports and the settings are lists,
   read beside the files they lead to; only a drawing wants the width.
+  *Amended by [0137](0137-reports-open-over-the-whole-window.md): reversed
+  for the reports alone, whose lists are read at full width; the settings
+  stay narrow.*
 - **The card over the canvas, which keeps its width**: it hides the same part
   of the drawing and leaves the band names and the legend under it.
 - **The card held back after every click**: half a second on each, for the

@@ -35,6 +35,8 @@ would decide it a little differently.
   a panel marked `wide`, the Custom selection's, covers the sidebar as well,
   and an `escape` hook closes what a panel opened inside itself before the
   panel.*
+  *Amended by [0137](0137-reports-open-over-the-whole-window.md): the
+  reports are marked `wide` too.*
 - **One panel at a time.** Opening one rolls up the one that was down, what
   is under them staying inert in between, and the first one's hooks run with
   the second already down, so nothing under them counts as seen. The focus a

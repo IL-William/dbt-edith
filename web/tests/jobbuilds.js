@@ -313,3 +313,51 @@ check('the manifest column has an empty key and can be picked', jobBuildsPick(co
 check('a row pick with nothing to list falls through to the last', jobBuildsPick(cols, 'UAT', 'CI'), 'CI');
 check('a last pick with nothing to list falls through to the worst', jobBuildsPick(cols, null, 'UAT'), 'DEV');
 check('nothing listable gives null', jobBuildsPick([], 'CI', 'DEV'), null);
+
+print('\n--- the figure of an environment over the jobs ---');
+function judged(tone, total) { return { tone: tone, counts: { total: total === undefined ? 3 : total }, clash: '' }; }
+check('how many jobs have every model built, of those judged, and only what ails the rest, the zeros left out',
+  jobBuildsTile('QA', [judged('ok'), judged('ok'), judged('error'), judged('late'), judged('none')]),
+  { label: 'QA', value: '2 of 5 jobs', sub: '1 errored · 1 late · 1 not built', tone: 'bad', out: 0 });
+check('late alone is a warning', jobBuildsTile('QA', [judged('ok'), judged('late')]).tone, 'warn');
+check('not built alone is none: the jobs have not run, which is not a fault of theirs', jobBuildsTile('QA', [judged('ok'), judged('none')]).tone, '');
+check('every job fine says nothing under it', jobBuildsTile('QA', [judged('ok'), judged('ok')]).sub, '');
+check('one job, said in the singular', jobBuildsTile('QA', [judged('ok')]).value, '1 of 1 job');
+var clashed = [judged('ok'), { tone: 'none', counts: { total: 0 }, clash: 'two targets' }, judged('none', 0), { tone: 'none', counts: { total: 2 }, clash: 'x' }];
+check('a job with a clash or without a model is left out of the count, and counted apart', [jobBuildsTile('QA', clashed).value, jobBuildsTile('QA', clashed).out], ['1 of 1 job', 3]);
+check('no job at all', jobBuildsTile('QA', []).value, '0 of 0 jobs');
+
+print('\n--- the tiles of every environment, and the line under them ---');
+var okJob = [judged('ok'), judged('error')];
+var same = jobBuildsTiles([{ label: 'DEV', results: okJob.concat([judged('ok', 0)]) }, { label: 'QA', results: okJob.concat([judged('ok', 0)]) }]);
+check('a tile each, the environment its label', same.tiles.map(function (t) { return [t.label, t.value, t.sub]; }), [['DEV', '1 of 2 jobs', '1 errored'], ['QA', '1 of 2 jobs', '1 errored']]);
+check('what ok means and the jobs left out, once, in the line', same.note,
+  'The first figure counts the jobs whose models were all built in time. 1 job is left out of each count: no model, or a target clash.');
+check('and nothing left out of the tiles', same.tiles.map(function (t) { return t.sub; }).join('|').indexOf('left out'), -1);
+var differ = jobBuildsTiles([{ label: 'DEV', results: okJob.concat([judged('ok', 0)]) }, { label: 'QA', results: okJob }]);
+check('left out differently: each tile says its own, the line says only what ok means', [differ.tiles.map(function (t) { return t.sub; }), differ.note],
+  [['1 errored · 1 left out', '1 errored'], 'The first figure counts the jobs whose models were all built in time.']);
+check('nothing left out anywhere, only what ok means', jobBuildsTiles([{ label: 'DEV', results: okJob }]).note, 'The first figure counts the jobs whose models were all built in time.');
+check('no environment, no line', jobBuildsTiles([]), { tiles: [], note: '' });
+
+print('\n--- what the tables leave out ---');
+function envOf(name, target, others, rows) { return { name: name, target: target, others: others, rows: rows }; }
+check('every environment kept to a target: each counts its own, the table holds the others', jobBuildsTargetsNote([
+  envOf('DEV', 'dev', ['qa', 'stg'], 4), envOf('QA', 'qa', ['dev'], 2)]),
+  ['Each environment counts only the runs under its own target (DEV: dev, QA: qa); its table also holds runs under other targets, not counted here.']);
+check('only some kept: they are named, not "each environment"', jobBuildsTargetsNote([
+  envOf('DEV', 'dev', ['qa'], 4), envOf('QA', 'qa', ['dev'], 2), envOf('MAIN', '', [], 9)]),
+  ['Environments kept to a target count only the runs under their own target (DEV: dev, QA: qa); their tables also hold runs under other targets, not counted here.']);
+check('one kept, said in the singular', jobBuildsTargetsNote([envOf('DEV', 'dev', ['qa'], 4), envOf('MAIN', '', [], 9)]),
+  ['An environment kept to a target counts only the runs under it (DEV: dev); its table also holds runs under other targets, not counted here.']);
+check('a table with no other target in it says nothing', jobBuildsTargetsNote([envOf('DEV', 'dev', [], 4), envOf('MAIN', 'x', undefined, 1)]), []);
+check('an environment with no run under its target says so, in the words of Builds by environment', jobBuildsTargetsNote([
+  envOf('DEV', 'dev', ['qa'], 4), envOf('QA', 'qa', ['dev', 'stg'], 0)]),
+  ['An environment kept to a target counts only the runs under it (DEV: dev); its table also holds runs under other targets, not counted here.',
+    'QA: no run under target qa in the table, which holds runs under dev, stg: not counted.']);
+check('one with no run under its target, alone', jobBuildsTargetsNote([envOf('QA', 'qa', ['dev'], 0)]),
+  ['QA: no run under target qa in the table, which holds runs under dev: not counted.']);
+check('none, nothing said', jobBuildsTargetsNote([envOf('DEV', '', undefined, 0)]), []);
+check('a cut read names the environments it was cut for', jobBuildsCutNote(['DEV · target dev', 'QA']),
+  'DEV · target dev, QA: The table held more models than are read, so some models may read as not built.');
+check('none cut, nothing said', jobBuildsCutNote([]), '');

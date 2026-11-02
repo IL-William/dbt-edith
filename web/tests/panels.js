@@ -1,6 +1,6 @@
 // What every panel over the editor and the dock shares (0091): one down at a
 // time, what is under it inert while it is, the sidebar too under a wide one
-// (0101), the focus given back to where it was before the first, and the
+// (0101, the reports 0137), the focus given back to where it was before the first, and the
 // hooks of a panel giving way run with the next one already down, so nothing
 // under them counts as seen in between. Escape closes what a panel opened
 // inside itself before the panel.
@@ -85,7 +85,7 @@ log = [];
 openPanel('reports');
 check('down: named, open, shown to a reader, focused', [S.panel, panelOpen('reports'), els['#reports'].classList.contains('open'),
   els['#reports'].attrs['aria-hidden'], document.activeElement === els['#reports']], ['reports', true, true, 'false', true]);
-check('what it covers is inert, and the sidebar is not', [covers(), side()], [[true, true, true], [false, false]]);
+check('what it covers is inert, the sidebar too: the reports are wide (0137)', [covers(), side()], [[true, true, true], [true, true]]);
 check('the hover card and a popup close first, then its button is painted', log, ['hovercard', 'popup', 'paint reports reports']);
 log = [];
 openPanel('reports');
@@ -120,8 +120,8 @@ check('Escape gives back the focus from before the first', document.activeElemen
 print('\n--- a wide panel ---');
 openPanel('wide');
 check('down: the sidebar and its gutter inert as well', [covers(), side()], [[true, true, true], [true, true]]);
-openPanel('reports');
-check('the reports in its place: the sidebar usable again, the rest not', [covers(), side()], [[true, true, true], [false, false]]);
+openPanel('other');
+check('a narrow panel in its place: the sidebar usable again, the rest not', [covers(), side()], [[true, true, true], [false, false]]);
 openPanel('wide');
 check('and wide again: the sidebar inert again', side(), [true, true]);
 closePanel();

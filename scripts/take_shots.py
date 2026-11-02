@@ -262,7 +262,7 @@ class Shots:
         # collin's report, in the Reports panel.
         self.click("#reports-btn")
         self.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
-        self.js("[...document.querySelectorAll('#reports-nav button, #reports-nav a')].find((b) => b.textContent === \"collin's report\")?.click()")
+        self.js("document.querySelector('#reports-nav [data-key=collin]')?.click()")
         self.until("document.querySelector('#reports-view')?.textContent.includes(\"collin's report\")", "collin's report")
         self.take("collin-report")
 
