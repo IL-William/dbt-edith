@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-10-31.
+belongs here. Last updated 2026-11-02.
 
 ## Shipped
 
@@ -1903,6 +1903,34 @@ it is refused. The menu names the path, the owner or who may write it, and the
 `chmod` or `chown`. Checked with `cargo test` (`collin_run::`, the version route
 in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 25.
 
+Rows with nothing to show keep their place (1.69.1). A job with no model to
+open in Builds by job, drawn narrow and out of the table's columns, and a
+Reports section with nothing to show, drawn in the middle of its row, were
+centred by the global `.empty` rule, which was written for the editor's and
+the lineage's hints. The rule is `.pane-empty` now and only those two hints
+carry it; the job rows and the nav rows keep `empty` with rules of their own.
+
+The card's Last built after the jobs (1.70.0). In the Catalog, Jobs comes
+before Last built. An environment Snowflake could not read is one line there,
+`⚠ could not be read · details in Reports`, its message on hover and the whole
+of it in Builds by environment, which the line opens; a read that fails before
+any environment is asked says `⚠ the builds could not be read` once. The dock
+card's Last built is repainted when a Custom selection panel that was open over
+it rolls up. Checked with `web/tests/builds.js` and `web/tests/selpanel.js`.
+
+Reports in one grammar (0137, 1.71.0), amending 0064, 0091, 0101 and 0131.
+Reports open over the sidebar too, as the Custom selection does, and its rail
+is grouped by who reads the files (dbt, collin, Jobs, Snowflake), each source
+with its colour and its name, a count on a row only when the section shows that
+number. Every section is figures, notes, a filter and folds: the filter is held
+against the data of each fold, so it reaches past a cap such as Show all's
+hundred, a fold says `n of m` while it narrows, and an explanation is folded to
+its first sentence with the rest behind "why". The filter, what Show all
+opened, the open folds, the unfolded whys and the scroll are kept per section.
+Checked with `web/tests/reports.js`, `web/tests/joborder.js` and the other
+harnesses of the sections. Its limits are in the list left by these pull
+requests, below.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2985,7 +3013,9 @@ each a known limit, unranked:
 - **Every listable cell of Builds by job is a tab stop,** so a long table takes
   many presses of Tab.
 - **Reports reopens on a section with news,** Job coverage for one, rather than
-  on Builds by job.
+  on Builds by job. Builds by job is a quiet section, like Builds by
+  environment, Checks and Job order, so Reports never reopens on it, news or
+  not.
 
 Left by the pull requests of 2026-10-30 (#128 to #138, 1.61.1 to 1.69.0), each
 a known limit, unranked:
@@ -3033,6 +3063,24 @@ a known limit, unranked:
   the next flag needs a cut (the skills' sizes are above).
 - **A test to watch:** `web/tests/layout.js` failed once on a loaded machine
   during a full check and passed alone.
+
+Left by the pull requests of 2026-11-02 (#142 to #144, 1.69.1 to 1.71.0), each
+a known limit, unranked:
+
+- **A read that fails as a whole (#143):** Builds by environment and Builds by
+  job print it as "Snowflake did not answer for this environment", though the
+  lookup of the `dbt_artifacts` models in the manifest fails before Snowflake
+  is asked.
+- **The card's line (#143):** it opens Reports from Enter and Space through
+  `linkLike`, which no harness presses. It was shaped with an answer from a
+  stand-in, not with a Snowflake that answers. The hover title is the only
+  place on the card that holds the full message, so a keyboard user reaches it
+  only through Reports.
+- **Older decisions (0137):** 0064, 0091, 0101 and 0131 carry an "Amended by
+  0137" note in their body; their Status lines do not list 0137 yet.
+- **The Reports sections (0137):** the Builds sections were shaped and checked
+  with a stubbed answer on invented names, and the Job order section has no
+  picture, Jaffle Shop's jobs ordering every step and leaving no pair to draw.
 
 Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
 read connects with. One connection, with the active target's role, reads every
