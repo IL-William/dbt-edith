@@ -4485,6 +4485,9 @@ function selectPanelUp() {
   S.cardAsk++;
   S.node = back.node;
   $('#catalog').replaceChildren(...back.card);
+  // The card was kept as painted: builds read while the panel was down are not on it.
+  const builds = $('#catalog .cat-builds');
+  if (builds) paintCatalogBuilds(builds);
   if (back.mode === 'column' && back.colFocus) focusColumn(back.colFocus.id, back.colFocus.column);
   else if (S.focus) focusNode(S.focus, { keepDepth: true });
   else blankLineage();
@@ -13640,8 +13643,8 @@ function catalogPreview(body, n) {
   totals.textContent = `${n.upstream_total} models upstream in total, ${n.downstream_total} downstream (whole graph).`;
   body.append(stats, totals);
   catalogLocation(body, n);
-  catalogBuilds(body, n);
   catalogJobs(body, n);
+  catalogBuilds(body, n);
 
   catalogTags(body, n);
 
@@ -13983,23 +13986,39 @@ function buildsReadButton() {
   return b;
 }
 
+/* What one environment's failure says. A pure sentence, so the card can keep
+   it for a hover and Reports can print it whole. */
+function buildsFailureText(entry) {
+  // An environment that could not place the tables was never asked, and one
+  // after a failed connection was spared: neither is Snowflake's answer.
+  return entry.placed === false ? entry.error
+    : entry.skipped ? `Not asked, since an earlier environment could not be reached: ${entry.error}`
+      : `Snowflake did not answer for ${entry.relation || 'this environment'}: ${entry.error}`;
+}
+
 /* A refused connection or a script that could not start is the profile's
    business, so the file is one click away. */
 function buildsFailure(entry) {
   const p = jel('p', 'runnote', '');
   p.dataset.tone = 'warn';
-  // An environment that could not place the tables was never asked, and one
-  // after a failed connection was spared: neither is Snowflake's answer.
-  const said = entry.placed === false ? entry.error
-    : entry.skipped ? `Not asked, since an earlier environment could not be reached: ${entry.error}`
-      : `Snowflake did not answer for ${entry.relation || 'this environment'}: ${entry.error}`;
-  p.append(document.createTextNode(said));
+  p.append(document.createTextNode(buildsFailureText(entry)));
   const link = (entry.phase === 'connect' || entry.phase === 'start') && profileLink();
   if (link) p.append(document.createTextNode(' The connection comes from '), link, document.createTextNode('.'));
   return p;
 }
 
-/* The Catalog's section, after the location: one block per environment, the
+/* The card says an environment was not read in one line. The message is the
+   same on every model, and Builds by environment says it once per
+   environment, so the line opens that and keeps the message for a hover. */
+function buildsWarning(text, entry) {
+  const w = jel('span', 'buildwarn', `⚠ ${text} · details in Reports`);
+  w.title = buildsFailureText(entry);
+  // A held key must not open the panel again and again.
+  linkLike(w, (ev) => { if (!ev.repeat) openReports('builds'); });
+  return w;
+}
+
+/* The Catalog's section, after the jobs: one block per environment, the
    last attempt on its first line and the last success beside it. */
 function catalogBuilds(body, n) {
   if (!buildsOffered() || n.kind !== 'model' || n.disabled || n.materialized === 'ephemeral') return;
@@ -14022,7 +14041,7 @@ function paintCatalogBuilds(box) {
     parts.push(jel('p', 'muted', 'When this model last ran in each environment, read from the dbt_artifacts tables in Snowflake. '
       + 'Nothing is asked until you press the button.'));
   } else if (read.failed) {
-    parts.push(buildsFailure({ error: read.failed }));
+    parts.push(buildsWarning('the builds could not be read', { placed: false, error: read.failed }));
   } else {
     const now = Date.now();
     for (const t of read.targets) {
@@ -14035,8 +14054,7 @@ function paintCatalogBuilds(box) {
       if (!got) {
         block.append(name, jel('span', 'muted', read.pending ? 'waiting for Snowflake…' : ''));
       } else if (got.error) {
-        block.append(name);
-        block.append(buildsFailure(got));
+        block.append(name, buildsWarning('could not be read', got));
       } else {
         const rows = (got.rows.get(id) || []).slice().sort((a, b) => (Date.parse(buildsWhen(b)) || 0) - (Date.parse(buildsWhen(a)) || 0));
         const v = buildsWorst(rows, buildsStaleDays(), now);

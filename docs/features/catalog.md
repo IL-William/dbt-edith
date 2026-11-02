@@ -111,14 +111,18 @@ and neither is a pair of literal quotes that dbt drops.
 ## Last built
 
 With Snowflake's features on and the dbt_artifacts package in the project, a
-model's Catalog has a **Last built** section after its location: one block per
+model's Catalog has a **Last built** section after its jobs: one block per
 environment, the manifest's own first, with the last run's status (success, error
 or another word as dbt wrote it), how long ago, the last success when the last
 run was not that, the target, the dbt command, whether it was a full refresh,
 rows affected, the invocation id with a Copy button and, for dbt Cloud, the job
 and run ids. A failed run shows dbt's message under it; hover the time for the
-clock time. An environment that cannot place the package's tables says why, one
-with no run says "no run recorded in the last 90 days".
+clock time. An environment that could not be read is one warning line, with the
+reason on hover; the line opens Reports' Builds by environment, where the
+whole message is. A read that fails before any environment is asked, when the
+package's models cannot be looked up, is one such line too, "the builds could
+not be read", with the raw message on hover. An environment with no run says "no
+run recorded in the last 90 days".
 
 Nothing is asked until you press **Read from Snowflake** in the section's head,
 which then says when it was read and offers **Refresh**. The same read feeds the
