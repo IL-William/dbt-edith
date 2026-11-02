@@ -920,7 +920,9 @@ kbd {
 .CodeMirror-merge-r-connect { fill: #1c2c22; stroke: #2f6b47; }
 .CodeMirror-merge-l-connect { fill: #2d1f1f; stroke: #6b4a4a; }
 .CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
-.empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }
+/* The editor's and the lineage's placeholder, named apart so a row elsewhere
+   marked `empty` is not made a centred flex box. */
+.pane-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }
 /* The lineage pane is no flex box, so the hint would sit at its top, under the
    Selection bar that floats there: it fills the pane instead, and its words
    land in the middle. */
@@ -1888,7 +1890,7 @@ kbd {
 /* The chevron of the other folds of Reports (.reportfinding), at their size. */
 .jbname::before { content: "\25b8"; color: var(--fg-dim); width: 10px; flex: 0 0 auto; }
 .jobbuild[open] > summary .jbname::before { content: "\25be"; }
-.jobbuild.empty > summary { cursor: default; }
+.jobbuild.empty > summary { cursor: default; color: var(--fg-dim); }
 .jobbuild.empty > summary .jbname::before { content: ""; }
 .jbname { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .jbname b { font: 600 12px var(--mono); overflow-wrap: break-word; min-width: 0; }
