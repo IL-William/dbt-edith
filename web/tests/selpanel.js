@@ -72,6 +72,8 @@ var cardEl = $('#selpanel-card');
 var jobsBox = fakeEl('');
 els['#catalog .cat-jobs'] = jobsBox;
 function fillCatalogJobs(box) { if (box) log.push('jobs asked'); }
+// The Catalog's Last built box, which a card kept as painted gets drawn again.
+function paintCatalogBuilds(box) { log.push('builds painted'); }
 // The two buttons that open the panel.
 fakeEl('select-btn');
 els['#graph-mode [data-mode=select]'] = fakeEl('');
@@ -171,11 +173,14 @@ step(function () {
   card('stg_orders');
   S.node = { id: 'model.jaffle_shop.stg_orders' };
   log = [];
+  // The dock's card had a Last built box, read while the panel was down.
+  els['#catalog .cat-builds'] = fakeEl('');
   closePanel();
+  delete els['#catalog .cat-builds'];
   check('up: all of it back where it was, in order',
     [dock.childNodes[0] === dockLineage, tools.childNodes.map(function (c) { return c.id; }), where('catalog')],
     [true, ['with-tests', 'folder-tool', 'fit-btn', 'export-btn', 'image-btn'], 'dock-catalog']);
-  check('the column\'s lineage drawn again', log, ['column model.jaffle_shop.orders.customer_id']);
+  check('the column\'s lineage drawn again, after the card\'s Last built is', log, ['builds painted', 'column model.jaffle_shop.orders.customer_id']);
   check('and its card back, the box clicked forgotten', [S.node.id, text(catalog)], ['model.jaffle_shop.orders', 'orders']);
 });
 

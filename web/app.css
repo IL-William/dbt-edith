@@ -1854,7 +1854,11 @@ kbd {
 .buildname { display: inline-flex; align-items: center; gap: 6px; min-width: 84px; }
 .buildname .envdot { align-self: center; }
 .buildrun { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-left: 90px; }
-.buildenv > .runnote, .buildenv > .muted { flex: 1 1 60%; margin: 0; }
+.buildenv > .muted { flex: 1 1 60%; margin: 0; }
+.buildwarn { color: var(--warn); cursor: pointer; }
+.buildwarn:hover { text-decoration: underline; }
+.buildwarn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.cat-builds > .buildwarn { display: block; width: fit-content; margin: 4px 0; font-size: 12px; }
 .bstate { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .4px; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line); }
 .bstate[data-status=ok] { color: var(--ok); border-color: rgba(78, 199, 141, .5); }
 .bstate[data-status=error] { color: var(--bad); border-color: rgba(224, 108, 117, .55); }

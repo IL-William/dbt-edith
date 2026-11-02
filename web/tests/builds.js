@@ -4,6 +4,7 @@
 // Run from the repository root: jsc web/tests/builds.js
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function locationRows'), src.indexOf('function catalogLocation')));
+eval(src.slice(src.indexOf('function buildsFailureText'), src.indexOf('function buildsFailure(entry)')));
 eval(src.slice(src.indexOf('function reportsSections'), src.indexOf('function reportsNews')));
 eval(src.slice(src.indexOf('function reportsDefaultSection'), src.indexOf('function reportsButtonTitle')));
 
@@ -229,3 +230,12 @@ check('after the macros and the checks', reportsSections({ builds: true, checks:
 check('it does not open the panel in place of the section that is there',
   reportsDefaultSection(reportsSections({ builds: true, macros: { unexplained: 1, at: 3 } }), [], ''), 'macros');
 check('and with nothing else, the coverage stays the opening one', reportsDefaultSection(reportsSections({ builds: true }), [], ''), 'jobs');
+
+print('\n--- what an environment that was not read says ---');
+check('one that could not place the tables says only why', buildsFailureText({ placed: false, error: 'META_DB is not defined in .env.qa' }),
+  'META_DB is not defined in .env.qa');
+check('one spared after a failed connection says it was not asked',
+  buildsFailureText({ skipped: true, error: 'no session' }), 'Not asked, since an earlier environment could not be reached: no session');
+check('Snowflake\'s answer names the relation', buildsFailureText({ relation: 'ANALYTICS_PROD.dbt_artifacts.model_executions', error: 'no USAGE' }),
+  'Snowflake did not answer for ANALYTICS_PROD.dbt_artifacts.model_executions: no USAGE');
+check('and without one, this environment', buildsFailureText({ error: 'no USAGE' }), 'Snowflake did not answer for this environment: no USAGE');

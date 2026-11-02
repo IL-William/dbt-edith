@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.70.0 - 2026-11-02
+
+- Show a model's jobs before its last builds in the Catalog.
+- Cut an environment Snowflake could not read to one line in a model's Last
+  built, its message on hover and in Builds by environment, which the line
+  opens, and keep the dock card's Last built current when a selection panel
+  that was open over it rolls up.
+
 ## 1.69.1 - 2026-11-02
 
 - Keep a job with nothing to open in the columns of Builds by job, and a section
