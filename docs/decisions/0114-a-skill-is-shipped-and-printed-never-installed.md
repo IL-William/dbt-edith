@@ -1,6 +1,6 @@
 # 0114. A skill is shipped and printed, never installed
 
-Date: 2026-10-21 · Status: accepted · Amends 0057, 0102 and 0110
+Date: 2026-10-21 · Status: accepted, amended by 0136 · Amends 0057, 0102 and 0110
 
 **Trigger:** read before changing the skill file, `--skill`, or what is written for a client.
 
@@ -29,6 +29,9 @@ questions it answers nearly always was. Written per caller, it goes stale.
   defers MCP tools finds it where it may not find the tool.
 - **Amends 0057 and 0102 (the skill is the caller's) and 0110 (nothing shipped
   for a client).** MCP needs no skill: `--skill` is refused there.
+  *Amended by [0136](0136-a-client-that-defers-tools-gets-its-own-printed-skill.md):
+  a client that defers MCP tools gets `--skill mcp`; `--skill` is still
+  refused over MCP.*
 
 ## Rejected
 

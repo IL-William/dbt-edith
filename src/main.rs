@@ -192,16 +192,19 @@ struct Args {
     )]
     mcp: bool,
 
-    /// Print the agent skill that matches this version, a SKILL.md for a client to load, and exit. It takes nothing beside it and reads, writes and starts nothing
+    /// Print the agent skill that matches this version, a SKILL.md for a client to load, and exit; `--skill mcp` prints the one for a client that defers MCP tools. It takes nothing beside it and reads, writes and starts nothing
     #[arg(
         long,
+        value_enum,
+        num_args = 0..=1,
+        default_missing_value = "command",
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
             "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
             "job_coverage", "count_by", "depth", "output", "mcp",
         ]
     )]
-    skill: bool,
+    skill: Option<skill::Kind>,
 }
 
 /// The first flag that is set beside a mode it does not belong to, as a
@@ -354,8 +357,8 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     // First of all, ahead of even `--mcp`: it is a file printed, and nothing
     // else is read, written or started (0114).
-    if args.skill {
-        std::process::exit(skill::print());
+    if let Some(kind) = args.skill {
+        std::process::exit(skill::print(kind));
     }
     // Before everything a server needs: no port, no settings, no update look,
     // no browser, and no file read until a call asks (0110).
@@ -754,7 +757,7 @@ mod tests {
         // As with --mcp, a default is not typed: `--skill` alone parses with
         // the project and the port it would otherwise have.
         let args = asked("--skill");
-        assert!(args.skill && !args.mcp && question_of(&args).is_none() && stray(&args).is_none());
+        assert!(args.skill == Some(skill::Kind::Command) && !args.mcp && question_of(&args).is_none() && stray(&args).is_none());
         assert_eq!((args.port, args.output), (4321, ls::Output::Name));
         for line in [
             "--skill .",
@@ -778,6 +781,18 @@ mod tests {
                 Err(e) => e.to_string(),
             };
             assert!(why.contains("'--skill"), "{line}: {why}");
+        }
+        // The value is the skill's kind: `mcp` is the other one, and any other
+        // word is refused with the accepted ones.
+        assert_eq!(asked("--skill mcp").skill, Some(skill::Kind::Mcp));
+        assert_eq!(asked("--skill command").skill, Some(skill::Kind::Command));
+        for word in ["tool", "MCP", "."] {
+            let Err(why) = Args::try_parse_from(["dbt-edith", "--skill", word]) else { panic!("{word} was accepted") };
+            let why = why.to_string();
+            assert!(why.contains(&format!("invalid value '{word}' for '--skill")) && why.contains("[possible values: command, mcp]"), "{word}: {why}");
+        }
+        for line in ["--skill mcp .", "--skill mcp --overview", "--skill mcp --mcp"] {
+            assert!(Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())).is_err(), "{line} was accepted");
         }
         // Every other flag is on its list, so one added later is refused
         // beside --skill until someone decides it is not.

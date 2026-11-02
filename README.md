@@ -206,7 +206,7 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--depth N]                     how many folder levels --overview lists or --count-by folder counts, default 3
          [--output name|json|compact]    what those modes print, default one name per line
          [--mcp]                         answer an MCP client over stdio, through one tool taking these flags, and exit when it closes
-         [--skill]                       print the agent skill (a SKILL.md) matching this version and exit, with nothing beside it
+         [--skill [command|mcp]]         print the agent skill (a SKILL.md) matching this version, `mcp` for a client that defers MCP tools, and exit, with nothing beside it
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 
