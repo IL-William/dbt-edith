@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.69.1 - 2026-11-02
+
+- Keep a job with nothing to open in the columns of Builds by job, and a section
+  with nothing to show at the left of the Reports list, where both were drawn
+  centred.
+
 ## 1.69.0 - 2026-10-31
 
 - Print a skill for a client that defers MCP tools with `--skill mcp`, telling
