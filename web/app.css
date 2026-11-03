@@ -340,14 +340,19 @@ kbd {
    its own colour, collin's as collin's, so it reads as the tool's. */
 /* A glyph alone until the pointer or the focus is on it, or the panel is down:
    the top bar is full, and the name only needs saying to whoever reaches for it. */
-.reportsbtn { display: inline-flex; align-items: center; color: var(--fg-dim); padding: 4px 8px; }
+.reportsbtn { display: inline-flex; flex: none; align-items: center; color: var(--fg-dim); padding: 4px 8px; }
 .reportsbtn:hover, .reportsbtn:focus-visible, .reportsbtn.on { color: var(--fg); }
 .reportsbtn svg { flex: 0 0 auto; }
 .reportsbtn .rlabel {
-  max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap;
-  transition: max-width .18s ease-out, opacity .18s ease-out, margin-left .18s ease-out;
+  display: inline-grid; grid-template-columns: 0fr; overflow: hidden; opacity: 0; white-space: nowrap;
+  transition: grid-template-columns .45s cubic-bezier(.4, 0, .2, 1), opacity .35s ease-in-out .05s, margin-left .45s cubic-bezier(.4, 0, .2, 1);
 }
-.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { max-width: 120px; opacity: 1; margin-left: 6px; }
+/* The grid track shrinks around the inner span, and the box clips what the
+   track cannot hold, so the box is as wide as the visible text at every step
+   and the unfold takes the whole time. The span keeps its full width, so the
+   box's scrollWidth stays the name's whole width while it is folded. */
+.reportsbtn .rlabel > span { min-width: 0; }
+.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { grid-template-columns: 1fr; opacity: 1; margin-left: 6px; }
 .reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
 /* No report has anything yet: dimmed rather than hidden, so it can be found (0075). */
 /* .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
