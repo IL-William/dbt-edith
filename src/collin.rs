@@ -34,6 +34,53 @@ pub struct RawColLineage {
     /// without them reads as before, and one saved here keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roots: Vec<RawRoot>,
+    /// The predicates each model applies, which collin writes under
+    /// `--indirect` since its 0.11.0 (its 0050): the text as collin's parser
+    /// prints it (keywords in capitals, spacing normalised, so it is not always
+    /// a substring of the compiled file), and the columns it reads. A cache without them reads as
+    /// before, and one saved here keeps them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<RawRule>,
+    /// What computes a column that is more than a copy, one per model column,
+    /// written beside the rules since the same version.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expressions: Vec<RawExpression>,
+}
+
+/// One predicate of a model: `WHERE`, `HAVING`, `QUALIFY` or `JOIN`, the SQL
+/// that was written (a CTE's alias included), and the real columns it reads.
+/// `cut` is set when collin cut the text at its limit.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RawRule {
+    pub node: String,
+    pub clause: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+    #[serde(default)]
+    pub columns: Vec<RawRuleColumn>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RawRuleColumn {
+    pub node: String,
+    pub column: String,
+}
+
+/// A model column's expression: the loudest one on its path, its role, and
+/// how many steps of the chain of CTEs did something to the value. `steps`
+/// stops counting at collin's limit, which says a recursive CTE.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RawExpression {
+    pub node: String,
+    pub column: String,
+    #[serde(default)]
+    pub kind: String,
+    pub text: String,
+    #[serde(default)]
+    pub steps: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
 }
 
 /// A model's column built from no column, `'web' as channel`, and what the SQL

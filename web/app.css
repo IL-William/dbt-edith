@@ -206,6 +206,7 @@ kbd {
 }
 .hc-note { margin-top: 6px; font-size: 11px; line-height: 1.45; white-space: pre-line; }
 .hc-note.warn { color: var(--warn); }
+.hc-note.hc-rule { margin-top: 2px; padding-left: 12px; }
 .hc-sub s { opacity: .6; }
 #status-branch { cursor: pointer; }
 #status-branch:hover { color: var(--accent); }

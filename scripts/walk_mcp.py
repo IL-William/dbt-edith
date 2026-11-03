@@ -86,7 +86,7 @@ CACHE = {
     "source": "collin",
     "target": "dev",
     "generated_at": "2026-01-01T00:00:00Z",
-    "producer": "collin 0.10.0",
+    "producer": "collin 0.11.0",
     "edges": [
         {"from": "model.jaffle_shop.stg_payments", "from_col": "amount", "to": "model.jaffle_shop.orders", "to_col": "amount", "kind": "rename"},
         {"from": "model.jaffle_shop.stg_payments", "from_col": "amount", "to": "model.jaffle_shop.customers", "to_col": "customer_lifetime_value", "kind": "transform"},
@@ -100,9 +100,9 @@ CATALOG = {
 }
 
 # What a stand-in for collin writes, the same as the cache above, and its
-# report: collin 0.10.0 saying it read the SQL of every model.
+# report: collin 0.11.0 saying it read the SQL of every model.
 STAND_IN = """#!/bin/sh
-[ "$1" = --version ] && echo 'collin 0.10.0' && exit 0
+[ "$1" = --version ] && echo 'collin 0.11.0' && exit 0
 echo "$@" > "$(dirname "$0")/args"
 out=''
 report=''

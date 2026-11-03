@@ -17,6 +17,7 @@ use crate::compiled;
 use crate::envs::{self, Status};
 use crate::graph::{Column, Graph, Kind, Node, Place};
 use crate::jobs::{self, Known};
+use crate::ls_column;
 use crate::ls::{self, find_node, Output, Unnamed, ANSWERED, REFUSED, SUGGESTED};
 use crate::macro_use::{self, Summary, Why};
 use crate::macros::{self, Block, Macro};
@@ -135,6 +136,7 @@ pub fn run_describe(
     names: &[String],
     sql: bool,
     compiled_sql: bool,
+    rules: bool,
     output: Output,
 ) -> i32 {
     // Before the project is opened: reading a manifest and a catalog to say
@@ -150,7 +152,8 @@ pub fn run_describe(
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
     let compiled = compiled_sql.then(|| target_dir(&root, &manifest_path));
-    let written = respond_describe(&root, &graph, None, None, names, sql, compiled.as_deref(), output, &mut out, &mut err);
+    let cache = rules.then_some(manifest_path.as_path());
+    let written = respond_describe(&root, &graph, None, None, names, sql, compiled.as_deref(), cache, output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
@@ -163,6 +166,9 @@ pub(crate) fn target_dir(root: &Path, manifest_path: &Path) -> PathBuf {
 /// What the mode does once the project is open: the cards, flushed, then what
 /// the manifest is worth. The exit code, or the write that failed. `compiled`
 /// is the target folder to read each node's compiled SQL from, when asked for.
+/// `rules` is the manifest whose folder holds the column lineage cache to
+/// look in when `--rules` asks for the predicates of a card (0138): without
+/// it no cache is read, and the card is what it always was.
 pub(crate) fn respond_describe(
     root: &Path,
     graph: &Graph,
@@ -171,13 +177,18 @@ pub(crate) fn respond_describe(
     names: &[String],
     sql: bool,
     compiled: Option<&Path>,
+    rules: Option<&Path>,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let code = describe(graph, root, jobs, standings, names, sql, compiled, output, out, err)?;
+    let with = rules.and_then(|manifest| ls_column::with_rules(root, graph, manifest, err));
+    let code = describe(graph, root, jobs, standings, names, sql, compiled, with.as_ref(), output, out, err)?;
     out.flush()?;
     let _ = ls::provenance(root, graph, err);
+    if let (Some(merged), Some(manifest)) = (&with, rules) {
+        ls_column::cache_said(root, merged, manifest, err);
+    }
     Ok(code)
 }
 
@@ -198,7 +209,8 @@ fn wanted(names: &[String]) -> Vec<&str> {
 /// stdout is buffered and stderr is not, so on a terminal a line of stderr
 /// would reach the screen before the cards written ahead of it: stdout is
 /// flushed before any of stderr is written, and the refusals come after the
-/// last card, as the mode promises.
+/// last card, as the mode promises. `rules` is the graph with the column
+/// lineage cache merged in, when the predicates were asked for.
 fn describe(
     graph: &Graph,
     root: &Path,
@@ -207,6 +219,7 @@ fn describe(
     names: &[String],
     sql: bool,
     compiled: Option<&Path>,
+    rules: Option<&Graph>,
     output: Output,
     out: &mut impl Write,
     err: &mut impl Write,
@@ -216,7 +229,7 @@ fn describe(
         writeln!(err, "{NO_NAME}")?;
         return Ok(REFUSED);
     }
-    let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings);
+    let files = Files::new(graph, root).with_jobs(jobs).with_standings(standings).with_rules(rules);
     let newest_macro = std::cell::OnceCell::new();
     let (found, refused, also) = resolved(graph, &names);
     let code = if refused.is_empty() { ANSWERED } else { REFUSED };
@@ -946,6 +959,7 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
     sheet.line(format!("children ({})", n.children.len()), refs(graph, &n.children, true));
     let entries: Vec<String> = sorted_by_name(graph, &n.tests).iter().map(|t| test_entry(graph, idx, t)).collect();
     sheet.line(format!("tests ({})", entries.len()), entries.join("; "));
+    rules_block(graph, files, idx, sheet);
     // A source has nothing upstream to count.
     let down = graph.reach(idx, false);
     sheet.line(
@@ -953,6 +967,20 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
         if n.kind == Kind::Source { format!("{down} downstream") } else { format!("{} upstream, {down} downstream", graph.reach(idx, true)) },
     );
     jobs_row(graph, files.jobs(), idx, sheet);
+}
+
+/// What the SQL of a node keeps its rows by, when `--rules` asked and collin
+/// wrote them (0138): one predicate a line, its clause first, the text as
+/// collin's parser prints it (not always a substring of the compiled file) and
+/// the columns it reads.
+fn rules_block(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
+    let rules = files.rules_of(idx);
+    if rules.is_empty() {
+        return;
+    }
+    let shared = ls::shared_names(graph);
+    let label = |n: &Node| ls::label(n, &shared);
+    sheet.block("keeps the rows where", "", rules.iter().map(|r| ls_column::rule_line(graph, &label, r)).collect());
 }
 
 /// The steps of the orchestrator's jobs that run a node, when the project
@@ -1157,6 +1185,10 @@ struct Files<'a> {
     /// first time a card asks.
     kept_standings: Option<&'a Standings>,
     standings: Standings,
+    /// The graph with collin's cache merged into a copy, when the card was
+    /// asked for the predicates of its node (`--rules`, 0138). Its nodes are
+    /// numbered as `graph`'s are; only its rules are read.
+    rules: Option<&'a Graph>,
 }
 
 /// Each named selector resolved once, for the whole call or for as long as
@@ -1226,7 +1258,18 @@ impl<'a> Files<'a> {
             jobs: std::cell::OnceCell::new(),
             kept_standings: None,
             standings: Standings::default(),
+            rules: None,
         }
+    }
+
+    fn with_rules(mut self, merged: Option<&'a Graph>) -> Files<'a> {
+        self.rules = merged;
+        self
+    }
+
+    /// The predicates of a node, in collin's order, when they were asked for.
+    fn rules_of(&self, idx: u32) -> Vec<&'a crate::collin::RawRule> {
+        self.rules.and_then(|g| g.cll.as_ref()).map_or_else(Vec::new, |c| c.rules_of(idx).collect())
     }
 
     fn with_standings(mut self, kept: Option<&'a Standings>) -> Files<'a> {
@@ -1516,6 +1559,9 @@ struct Described<'a> {
     /// What dbt compiled it to, with `--compiled-sql`, once it was read.
     #[serde(skip_serializing_if = "Option::is_none")]
     compiled_sql: Option<String>,
+    /// The predicates its SQL applies, as collin wrote them, with `--rules`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    rules: Vec<&'a crate::collin::RawRule>,
 }
 
 #[derive(serde::Serialize)]
@@ -1682,6 +1728,7 @@ impl<'a> Described<'a> {
             selectors_unresolved: selectors.unresolved,
             sql,
             compiled_sql,
+            rules: files.rules_of(idx),
         }
     }
 }
@@ -2481,7 +2528,7 @@ mod tests {
     fn ask_on(g: &Graph, root: &Path, names: &[&str], sql: bool, output: Output) -> (String, String, i32) {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = describe(g, root, None, None, &names, sql, None, output, &mut out, &mut err).unwrap();
+        let code = describe(g, root, None, None, &names, sql, None, None, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -2520,6 +2567,174 @@ mod tests {
         );
         // A card is read, so compact has nothing to drop from it.
         assert_eq!(ask(&["orders"], Output::Compact).0, out);
+    }
+
+    /// `graph()` with the predicates collin 0.11.0 writes for `orders`, and
+    /// one for `stg_orders`.
+    fn with_rules() -> Graph {
+        use crate::collin::{RawColLineage, RawRule, RawRuleColumn};
+        let rule = |node: &str, clause: &str, text: &str, cut: bool, columns: &[(&str, &str)]| RawRule {
+            node: node.into(),
+            clause: clause.into(),
+            text: text.into(),
+            cut,
+            columns: columns.iter().map(|&(node, column)| RawRuleColumn { node: node.into(), column: column.into() }).collect(),
+        };
+        let mut g = graph();
+        g.merge_col_lineage(
+            RawColLineage {
+                version: 1,
+                source: "collin".into(),
+                rules: vec![
+                    rule("model.shop.orders", "WHERE", "status <> 'cancelled'", false, &[("model.shop.stg_orders", "status")]),
+                    rule("model.shop.stg_orders", "QUALIFY", "row_number() over (partition by id order by updated_at desc) = 1", true, &[("source.shop.raw.orders", "id")]),
+                    rule("model.shop.orders", "JOIN", "o.customer_id\t= c.id", false, &[("model.shop.stg_orders", "customer_id"), ("model.shop.customers", "id")]),
+                    rule("model.shop.orders", "HAVING", "count(*) > 0", false, &[]),
+                ],
+                ..Default::default()
+            },
+            1,
+        );
+        g
+    }
+
+    fn ask_rules(names: &[&str], output: Output) -> (String, String, i32) {
+        let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let with = with_rules();
+        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, Some(&with), output, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn rules_are_a_block_of_the_card_in_collins_order_with_what_they_read() {
+        let (plain, _, _) = ask(&["orders"], Output::Name);
+        let (out, err, code) = ask_rules(&["orders"], Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""));
+        // After the tests, before the reach; the clause first, the text with
+        // a tab as a space, then the columns it reads. A rule that reads none
+        // has no `reads`.
+        let block = lines(&[
+            "  keeps the rows where",
+            "    WHERE status <> 'cancelled'  reads stg_orders.status",
+            "    JOIN o.customer_id = c.id  reads stg_orders.customer_id, model.shop.customers.id",
+            "    HAVING count(*) > 0",
+        ]);
+        assert_eq!(out, plain.replace("  reach ", &format!("{block}  reach ")), "{out}");
+        // Another node's rules are its own, a cut text is marked, and a node
+        // with none has the card it always had.
+        let (stg, _, _) = ask_rules(&["stg_orders"], Output::Name);
+        assert!(stg.contains("    QUALIFY row_number() over (partition by id order by updated_at desc) = 1 (cut)  reads raw.orders.id\n"), "{stg}");
+        assert_eq!(ask_rules(&["customers"], Output::Name).0, ask(&["customers"], Output::Name).0);
+        assert_eq!(ask_rules(&["orders"], Output::Compact).0, out);
+    }
+
+    #[test]
+    fn rules_in_json_are_collins_own() {
+        let (out, _, _) = ask_rules(&["orders"], Output::Json);
+        let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+        assert_eq!(v["rules"].as_array().map(Vec::len), Some(3), "{out}");
+        assert_eq!(v["rules"][0], json!({ "node": "model.shop.orders", "clause": "WHERE", "text": "status <> 'cancelled'",
+                                           "columns": [{ "node": "model.shop.stg_orders", "column": "status" }] }));
+        assert!(!ask(&["orders"], Output::Json).0.contains("rules"), "without --rules the card has no such key");
+    }
+
+    /// A project folder whose target holds a cache named `file`.
+    fn cached(tag: &str, file: &str, body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("dbt-edith-describe-rules-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("target")).unwrap();
+        std::fs::write(dir.join("target").join(file), body).unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_card_reads_no_cache_unless_rules_are_asked() {
+        // A cache whose header passes discovery and whose edges do not load: a
+        // card that read it would say so.
+        let dir = cached("unread", "column_lineage.collin.json", r#"{"version":1,"source":"collin","edges":[{"x":1}]}"#);
+        let names = vec!["orders".to_string()];
+        let say = |rules: Option<&Path>| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let g = graph();
+            respond_describe(&dir, &g, None, None, &names, false, None, rules, Output::Name, &mut out, &mut err).unwrap();
+            (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
+        };
+        let (out, err) = say(None);
+        assert_eq!(out, ask(&["orders"], Output::Name).0, "byte for byte the card of before");
+        assert!(!err.contains("--rules") && !err.contains("cache"), "{err}");
+        // Asked for, the unreadable cache is said and the card is still printed.
+        let target = dir.join("target/manifest.json");
+        let (out, err) = say(Some(&target));
+        assert_eq!(out, ask(&["orders"], Output::Name).0);
+        assert!(err.contains("warning: --rules: cannot read"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rules_asked_of_a_cache_that_lists_some_are_printed_and_of_one_that_lists_none_are_not() {
+        let names = vec!["orders".to_string()];
+        let say = |dir: &Path| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let g = graph();
+            let target = dir.join("target/manifest.json");
+            let code = respond_describe(dir, &g, None, None, &names, false, None, Some(&target), Output::Name, &mut out, &mut err).unwrap();
+            (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+        };
+        let with = cached(
+            "with",
+            "column_lineage.collin.json",
+            r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+                "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"status <> 'cancelled'",
+                          "columns":[{"node":"model.shop.stg_orders","column":"status"}]}]}"#,
+        );
+        let (out, _, code) = say(&with);
+        assert_eq!(code, ANSWERED);
+        assert!(out.contains("  keeps the rows where\n    WHERE status <> 'cancelled'  reads stg_orders.status\n  reach"), "{out}");
+        // The card's own columns are the manifest's: the cache names no column
+        // the card did not already list.
+        assert_eq!(out.replace("  keeps the rows where\n    WHERE status <> 'cancelled'  reads stg_orders.status\n", ""), ask(&["orders"], Output::Name).0);
+        std::fs::remove_dir_all(&with).unwrap();
+
+        let none = cached("none", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.10.0","edges":[]}"#);
+        let (out, err, code) = say(&none);
+        assert_eq!(code, ANSWERED);
+        assert_eq!(out, ask(&["orders"], Output::Name).0);
+        assert!(err.contains("no rules in ") && err.contains("column_lineage.collin.json") && err.contains("before 0.11.0"), "{err}");
+        std::fs::remove_dir_all(&none).unwrap();
+
+        // A Fusion cache written later does not hide collin's rules.
+        let both = cached("both", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"status <> 'cancelled'","columns":[]}]}"#);
+        let fusion = both.join("target/column_lineage.fusion.json");
+        std::fs::write(&fusion, r#"{"version":1,"source":"fusion","edges":[]}"#).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&fusion).unwrap().set_modified(later).unwrap();
+        let (out, err, _) = say(&both);
+        assert!(out.contains("    WHERE status <> 'cancelled'\n"), "{out}\n{err}");
+        std::fs::remove_dir_all(&both).unwrap();
+
+        // A cache older than the manifest is said, as `--column` says it: a
+        // rule of a model since changed would read as current.
+        let old = cached("old", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"x","columns":[]}]}"#);
+        let (cache, manifest) = (old.join("target/column_lineage.collin.json"), old.join("target/manifest.json"));
+        std::fs::write(&manifest, "{}").unwrap();
+        let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&cache).unwrap().set_modified(earlier).unwrap();
+        let (out, err, _) = say(&old);
+        assert!(out.contains("    WHERE x\n"), "{out}");
+        assert!(err.contains("column lineage: ") && err.contains("column_lineage.collin.json"), "{err}");
+        assert!(err.contains("warning: the column lineage is older than the manifest"), "{err}");
+        // After the manifest's lines, as `--column` orders them.
+        assert!(err.find("manifest: ").unwrap() < err.find("column lineage: ").unwrap(), "{err}");
+        std::fs::remove_dir_all(&old).unwrap();
+
+        let nothing = cached("nothing", "unrelated.json", "{}");
+        let (out, err, _) = say(&nothing);
+        assert_eq!(out, ask(&["orders"], Output::Name).0);
+        assert!(err.contains("warning: --rules: no column lineage from collin"), "{err}");
+        std::fs::remove_dir_all(&nothing).unwrap();
     }
 
     /// stdout, stderr and the exit code of `--describe NAMES --columns`.
@@ -3072,7 +3287,7 @@ mod tests {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let target = dir.join("target");
-        let code = describe(g, dir, None, None, &names, sql, Some(&target), output, &mut out, &mut err).unwrap();
+        let code = describe(g, dir, None, None, &names, sql, Some(&target), None, output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -3568,7 +3783,7 @@ mod tests {
         let log: Log = Rc::default();
         let (mut out, mut err) = (BufWriter::new(Tap("out", log.clone())), Tap("err", log.clone()));
         let names: Vec<String> = ["stg_orders", "nothing", "weekly_report"].iter().map(|n| n.to_string()).collect();
-        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, Output::Name, &mut out, &mut err).unwrap();
+        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, None, Output::Name, &mut out, &mut err).unwrap();
         assert_eq!(code, REFUSED);
         let seen = log.borrow();
         let first_error = seen.iter().position(|(stream, _)| *stream == "err").unwrap();
@@ -3582,7 +3797,7 @@ mod tests {
         // A project that is nowhere would be the other exit code, 2, had it
         // been opened first.
         let blank = [" ".to_string(), String::new()];
-        assert_eq!(run_describe(Path::new("/nowhere/at/all"), None, None, &blank, false, false, Output::Name), REFUSED);
+        assert_eq!(run_describe(Path::new("/nowhere/at/all"), None, None, &blank, false, false, false, Output::Name), REFUSED);
     }
 
     fn cache(file: &str, source: &str, tool: &'static str, producer: &str, mtime: u64) -> Available {
@@ -4372,7 +4587,7 @@ mod tests {
         let before = RESOLVED.with(|n| n.get());
         for _ in 0..3 {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, None, Output::Name, &mut out, &mut err).unwrap();
+            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, None, None, Output::Name, &mut out, &mut err).unwrap();
             assert!(String::from_utf8(out).unwrap().contains("selectors ("));
         }
         assert_eq!(RESOLVED.with(|n| n.get()) - before, 1);

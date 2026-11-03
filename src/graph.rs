@@ -10,7 +10,7 @@
 //! something to a person, which node a properties file opens on or which
 //! search hit comes first, it goes by name instead of by index.
 
-use crate::collin::RawColLineage;
+use crate::collin::{RawColLineage, RawRule};
 use crate::incremental::{Incremental, Key, Shown};
 use crate::macro_use::{self, MacroUse};
 use crate::macros::Macros;
@@ -392,6 +392,10 @@ pub struct Meta {
     pub cll_source: String,
     /// Which file it was read from.
     pub cll_file: String,
+    /// What wrote it, `collin 0.11.0`, when the cache says. Kept to tell a
+    /// command-line answer why a column has no expression, and never sent.
+    #[serde(skip)]
+    pub cll_producer: String,
     pub cll_target: String,
     pub cll_generated_at: String,
     pub cll_kinds: Vec<KindCount>,
@@ -477,6 +481,45 @@ pub struct ColEdge {
     pub kind: u8,
 }
 
+/// How many steps along a column's chain of CTEs collin counts before it says
+/// the chain recurses: a column that reaches this has a recursive CTE behind
+/// it, and the number would be an accident of the limit (collin's 0050).
+pub const RECURSIVE_STEPS: u32 = 32;
+
+/// What computes a column, as collin wrote it: the role of the loudest edge,
+/// the SQL of the loudest expression on the path, the number of steps that
+/// did something, and whether the text was cut.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Expr {
+    pub kind: String,
+    pub text: String,
+    pub steps: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+}
+
+impl Expr {
+    pub fn recursive(&self) -> bool {
+        self.steps >= RECURSIVE_STEPS
+    }
+
+    /// The count a text answer prints: the number, or `32+` once the chain
+    /// recurses, since the number then says only where the limit was.
+    pub fn steps_said(&self) -> String {
+        if self.recursive() { format!("{RECURSIVE_STEPS}+") } else { self.steps.to_string() }
+    }
+
+    /// The expression with a cut text marked where it ends.
+    pub fn said(&self) -> String {
+        said_cut(&self.text, self.cut)
+    }
+}
+
+/// A text from collin, with ` (cut)` after it when collin cut it.
+pub fn said_cut(text: &str, cut: bool) -> String {
+    if cut { format!("{text} (cut)") } else { text.to_string() }
+}
+
 /// Column-level edges, held flat rather than as per-column vectors: this
 /// large project has hundreds of thousands of columns, and two `Vec`s each would dwarf the edges.
 #[derive(Default, Clone)]
@@ -490,6 +533,13 @@ pub struct ColLineage {
     /// collin's roots (0096). Beside the edges, never among them, since an
     /// edge from nowhere would count as lineage wherever edges are counted.
     roots: Vec<(ColRef, Vec<String>)>,
+    /// What computes each column that is more than a copy, by column
+    /// (collin's `expressions`, since 0.11.0). Beside the edges for the same
+    /// reason as the roots: it is a fact about a column, not a step to it.
+    expressions: Vec<(ColRef, Expr)>,
+    /// The predicates each model applies (collin's `rules`), by the model's
+    /// slot and in the order collin wrote them, so a model's are together.
+    rules: Vec<(u32, RawRule)>,
     /// The columns read from a table no node owns. Its edge has no node to
     /// start from, so it is never drawn, and the column is where the project's
     /// lineage starts, as a source's is.
@@ -526,6 +576,30 @@ impl ColLineage {
 
     pub fn outside(&self, r: ColRef) -> bool {
         self.outside.binary_search(&r).is_ok()
+    }
+
+    /// What computes `r`, when its model's SQL does more than copy it.
+    pub fn expression(&self, r: ColRef) -> Option<&Expr> {
+        self.expressions.binary_search_by(|(c, _)| c.cmp(&r)).ok().map(|i| &self.expressions[i].1)
+    }
+
+    /// The predicates of one model, in collin's order.
+    pub fn rules_of(&self, node: u32) -> impl Iterator<Item = &RawRule> {
+        let lo = self.rules.partition_point(|(n, _)| *n < node);
+        let hi = self.rules.partition_point(|(n, _)| *n <= node);
+        self.rules[lo..hi].iter().map(|(_, r)| r)
+    }
+
+    /// Whether the cache gives any column an expression: one from before collin
+    /// 0.11.0, or from Fusion, gives none.
+    pub fn has_expressions(&self) -> bool {
+        !self.expressions.is_empty()
+    }
+
+    /// Whether the cache lists any predicate: a cache from before collin
+    /// 0.11.0, or written without `--indirect`, lists none.
+    pub fn has_rules(&self) -> bool {
+        !self.rules.is_empty()
     }
 
     pub fn outgoing(&self, r: ColRef) -> &[ColEdge] {
@@ -1294,6 +1368,7 @@ impl Graph {
                 cll_mtime: 0,
                 cll_source: String::new(),
                 cll_file: String::new(),
+                cll_producer: String::new(),
                 cll_target: String::new(),
                 cll_generated_at: String::new(),
                 cll_kinds: Vec::new(),
@@ -1514,15 +1589,35 @@ impl Graph {
             }
         }
         let roots = merged;
+        // An expression needs a column of the manifest, as a root does. A
+        // column named in two spellings keeps the louder reading: more
+        // steps, then the longer text.
+        let mut expressions: Vec<(ColRef, Expr)> = raw
+            .expressions
+            .into_iter()
+            .filter_map(|x| {
+                let n = *self.index.get(x.node.as_str())?;
+                let col = *slot.get(&(n, x.column.to_lowercase()))?;
+                Some((ColRef { node: n, col }, Expr { kind: x.kind, text: x.text, steps: x.steps, cut: x.cut }))
+            })
+            .collect();
+        expressions.sort_by(|(a, x), (b, y)| a.cmp(b).then(y.steps.cmp(&x.steps)).then(y.text.len().cmp(&x.text.len())));
+        expressions.dedup_by(|b, a| a.0 == b.0);
+        // A model the manifest lacks is a stale cache's. The sort is stable,
+        // so a model's rules keep collin's order.
+        let mut rules: Vec<(u32, RawRule)> =
+            raw.rules.into_iter().filter_map(|r| Some((*self.index.get(r.node.as_str())?, r))).collect();
+        rules.sort_by_key(|(n, _)| *n);
         let row_kinds: Vec<u8> = (0..kinds.len().min(256))
             .filter(|&k| is_row_role(&kinds[k]))
             .map(|k| k as u8)
             .collect();
-        self.cll = Some(ColLineage { edges, by_to, kinds, roots, outside, row_kinds });
+        self.cll = Some(ColLineage { edges, by_to, kinds, roots, expressions, rules, outside, row_kinds });
         self.meta.cll_edges = total;
         self.meta.cll_dropped = dropped;
         self.meta.cll_mtime = mtime;
         self.meta.cll_source = raw.source;
+        self.meta.cll_producer = raw.producer;
         self.meta.cll_target = raw.target;
         self.meta.cll_generated_at = raw.generated_at;
         total
@@ -1804,6 +1899,9 @@ impl Graph {
                     rows_of_more: 0,
                     at: Some(c),
                     generated: cll.root(c),
+                    expression: cll.expression(c),
+                    rules: Vec::new(),
+                    rules_more: 0,
                     // Without roots the page badges every start `raw`, so
                     // the mark would say nothing and change the answer.
                     outside: !cll.roots.is_empty() && cll.outside(c),
@@ -1865,6 +1963,9 @@ impl Graph {
             hidden_down: 0,
             at: None,
             generated: None,
+            expression: None,
+            rules: Vec::new(),
+            rules_more: 0,
             outside: false,
         }
     }
@@ -1879,6 +1980,7 @@ impl Graph {
             if let Some(c) = n.at {
                 (n.rows_by, n.rows_by_more) = self.rows_by(cll, c);
                 (n.rows_of, n.rows_of_more) = self.rows_of(cll, c);
+                (n.rules, n.rules_more) = self.rules_read(cll, c);
             }
         }
     }
@@ -1923,6 +2025,33 @@ impl Graph {
         let more = named.len().saturating_sub(ROWS_BY);
         named.truncate(ROWS_BY);
         (named.into_iter().map(|(m, role)| [m.to_string(), role.to_string()]).collect(), more)
+    }
+
+    /// The predicates of the models `c` keeps the rows of that read `c`, as
+    /// `["model", "WHERE text"]` for the page's card, the first `ROWS_BY` and
+    /// how many more. The models are the ones `rows_of` names, so the card's
+    /// two lines agree, and a model's rules come in collin's order.
+    fn rules_read(&self, cll: &ColLineage, c: ColRef) -> (Vec<[String; 2]>, usize) {
+        if !cll.has_indirect() || !cll.has_rules() {
+            return (Vec::new(), 0);
+        }
+        let rank = |kind: u8| row_rank(cll.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
+        let mut models: Vec<u32> = row_models(cll, c, &rank).into_iter().map(|(m, _)| m).collect();
+        models.sort_unstable_by(|a, b| self.nodes[*a as usize].name.cmp(&self.nodes[*b as usize].name).then(a.cmp(b)));
+        let owner = &self.nodes[c.node as usize];
+        let column = &owner.columns[c.col as usize].name;
+        let mut named: Vec<[String; 2]> = Vec::new();
+        let mut more = 0;
+        for m in models {
+            for r in cll.rules_of(m).filter(|r| r.columns.iter().any(|x| x.node == owner.id && x.column.eq_ignore_ascii_case(column))) {
+                if named.len() < ROWS_BY {
+                    named.push([self.nodes[m as usize].name.clone(), format!("{} {}", r.clause, said_cut(&crate::ls::field(&r.text), r.cut))]);
+                } else {
+                    more += 1;
+                }
+            }
+        }
+        (named, more)
     }
 
     /// Folds catalog.json into the graph: fills in missing data types and adds
@@ -2193,6 +2322,9 @@ impl Graph {
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
+                        expression: None,
+                        rules: Vec::new(),
+                        rules_more: 0,
                         outside: false,
                     }
                 })
@@ -2505,6 +2637,9 @@ impl Graph {
                         hidden_down: n.children.iter().filter(|c| !pos.contains_key(c)).count(),
                         at: None,
                         generated: None,
+                        expression: None,
+                        rules: Vec::new(),
+                        rules_more: 0,
                         outside: false,
                     }
                 })
@@ -2643,6 +2778,19 @@ pub struct LineageNode<'a> {
     /// column, as collin read it; empty when it could not tell (0096).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated: Option<&'a [String]>,
+    /// Column mode only: what computes the column, when its model's SQL does
+    /// more than copy it (collin's expressions). The box counts its steps
+    /// past one and the card says the text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expression: Option<&'a Expr>,
+    /// Column mode only, filled with `rows_of`: the predicates of the models
+    /// this column keeps the rows of that read it, `[model, "WHERE text"]`,
+    /// the first `ROWS_BY` in the models' order and collin's.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<[String; 2]>,
+    /// How many more there are than `rules` names.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub rules_more: usize,
     /// Column mode only: read from a table no node owns, which is never drawn.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub outside: bool,
@@ -3160,6 +3308,98 @@ mod tests {
         plain.name_rows_by(&mut l);
         let json = serde_json::to_string(&l).unwrap();
         assert!(!json.contains("rows_of") && !json.contains("rows_by") && !json.contains("most"), "a cache with no indirect edge answers as before: {json}");
+    }
+
+    fn rule_of(node: &str, clause: &str, text: &str, cut: bool, reads: &[(&str, &str)]) -> RawRule {
+        RawRule {
+            node: format!("model.shop.{node}"),
+            clause: clause.into(),
+            text: text.into(),
+            cut,
+            columns: reads
+                .iter()
+                .map(|&(m, c)| crate::collin::RawRuleColumn { node: format!("model.shop.{m}"), column: c.into() })
+                .collect(),
+        }
+    }
+
+    /// The two lists collin 0.11.0 adds are kept by column and by model, and
+    /// the card of a column names the predicates that read it, of the models
+    /// it keeps the rows of, in collin's order (0138).
+    #[test]
+    fn a_column_has_its_expression_and_a_card_the_rules_that_read_it() {
+        let mut g = shop(0);
+        let mut c = cache(vec![
+            link("raw_orders", "amount", "stg_orders", "amount", "transform"),
+            link("stg_orders", "status", "orders", "status", "filter"),
+            link("stg_orders", "status", "customers", "status", "filter"),
+            link("stg_orders", "amount", "orders", "amount", "rename"),
+        ]);
+        c.rules = vec![
+            rule_of("orders", "WHERE", "status <> 'cancelled'", false, &[("stg_orders", "status")]),
+            rule_of("customers", "QUALIFY", "row_number() over (order by status) = 1", true, &[("stg_orders", "Status")]),
+            rule_of("customers", "WHERE", "note = 'a\nb'\tand c", false, &[("stg_orders", "status")]),
+            rule_of("orders", "JOIN", "a.id = b.id", false, &[("stg_orders", "id")]),
+            rule_of("orders", "HAVING", "sum(amount) > 0", false, &[("stg_orders", "status"), ("stg_orders", "amount")]),
+            rule_of("gone", "WHERE", "x", false, &[]),
+        ];
+        c.expressions = vec![
+            crate::collin::RawExpression {
+                node: "model.shop.stg_orders".into(),
+                column: "AMOUNT".into(),
+                kind: "transform".into(),
+                text: "amount * 100".into(),
+                steps: 2,
+                cut: false,
+            },
+            crate::collin::RawExpression { node: "model.shop.stg_orders".into(), column: "nowhere".into(), kind: "cast".into(), text: "x::int".into(), steps: 1, cut: false },
+        ];
+        g.merge_col_lineage(c, 1);
+        let cll = g.cll.as_ref().unwrap();
+        let (orders, customers) = (g.index["model.shop.orders"], g.index["model.shop.customers"]);
+        // A model's own, in collin's order; a model the manifest lacks is a stale cache's.
+        let texts: Vec<&str> = cll.rules_of(orders).map(|r| r.text.as_str()).collect();
+        assert_eq!(texts, ["status <> 'cancelled'", "a.id = b.id", "sum(amount) > 0"]);
+        assert_eq!(cll.rules_of(customers).count(), 2);
+        assert_eq!(cll.rules.len(), 5);
+        // By column, in either spelling of its name; none for a column the manifest does not have.
+        let amount = col(&g, "stg_orders", "amount");
+        let x = cll.expression(amount).unwrap();
+        assert_eq!((x.kind.as_str(), x.text.as_str(), x.steps, x.cut), ("transform", "amount * 100", 2, false));
+        assert!(cll.expression(col(&g, "stg_orders", "status")).is_none());
+        assert_eq!(cll.expressions.len(), 1);
+
+        // The canvas: the expression travels with the column box, the rules
+        // with the card of the columns they read, capped as the models are.
+        let mut l = g.column_lineage(col(&g, "stg_orders", "status"), 0, 0, 100, &[], RowEdges::Hidden);
+        g.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l.nodes[0]).unwrap();
+        assert!(
+            json.contains(r#""rules":[["customers","QUALIFY row_number() over (order by status) = 1 (cut)"],["customers","WHERE note = 'a b' and c"],["orders","WHERE status <> 'cancelled'"],["orders","HAVING sum(amount) > 0"]]"#),
+            "the models in name order, each one's rules in collin's, a cut marked, a newline or tab a space: {json}"
+        );
+        assert!(!json.contains("rules_more") && !json.contains("a.id = b.id"), "a rule that reads another column is not on this card: {json}");
+        let mut l = g.column_lineage(amount, 0, 0, 100, &[], RowEdges::Hidden);
+        g.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l.nodes[0]).unwrap();
+        assert!(json.contains(r#""expression":{"kind":"transform","text":"amount * 100","steps":2}"#), "{json}");
+        assert!(!json.contains(r#""rules""#), "{json}");
+
+        // Without the lists a column's JSON is what it was.
+        let mut old = shop(0);
+        old.merge_col_lineage(cache(vec![link("stg_orders", "status", "orders", "status", "filter")]), 1);
+        let mut l = old.column_lineage(col(&old, "stg_orders", "status"), 0, 0, 100, &[], RowEdges::Hidden);
+        old.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l).unwrap();
+        assert!(!json.contains("expression") && !json.contains("rules"), "{json}");
+    }
+
+    #[test]
+    fn a_chain_of_32_steps_is_recursive() {
+        let at = |steps| Expr { kind: "transform".into(), text: "x".into(), steps, cut: false };
+        assert_eq!((at(31).steps_said(), at(31).recursive()), ("31".to_string(), false));
+        assert_eq!((at(32).steps_said(), at(32).recursive()), ("32+".to_string(), true));
+        assert_eq!(Expr { cut: true, ..at(1) }.said(), "x (cut)");
     }
 
     // stg.x feeds int.x, which feeds fct.x through a window and wide.x through

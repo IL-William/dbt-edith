@@ -33,28 +33,29 @@ pub const HELP: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " answers from the manifest dbt wrote; it never runs dbt. One question per call, no project path.\n",
     "--overview [--depth N]          project shape: kinds, materializations, tags, selectors, folders. Ask first: --depth 2.\n",
-    "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's or macro's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL.\n",
-    "  --columns                     only the columns, also with -s\n",
+    "--describe NAME[,NAME] [--sql] [--compiled-sql]  a node's or macro's card: columns, types, tests, parents, children, reach. --sql: its file; --compiled-sql: dbt's SQL. --columns: columns only, also with -s.\n",
     "-s/--select 'LINE' [--exclude 'LINE']  a dbt selection, as dbt ls answers it, tests included: add --exclude resource_type:test\n",
     "  --count-by kind|materialized|source|folder|tag|package  with -s or --selector: count, not list; folder: --depth N\n",
-    "--selector NAME                 a selector of selectors.yml\n",
+    "--selector NAME                 a named selector\n",
     "--job NAME                      a job's steps, nodes and order\n",
-    "--job-order                     steps that read what another builds, with no file ordering them\n",
-    "--job-coverage                  models no scheduled job runs, those only unscheduled jobs run, steps selecting nothing\n",
+    "--job-order                     steps reading what another builds, no file ordering them\n",
+    "--job-coverage                  models no scheduled job runs, steps selecting nothing\n",
     "--column MODEL.COLUMN           a column's lineage, over the cache beside the manifest\n",
     "  --up N|all --down N|all       how far, 0 by default\n",
     "  --stop-at window,aggregate    roles not walked past downstream\n",
-    "  --indirect                    cross filter, join and dedup keys too\n",
+    "  --indirect                    cross filter, join, dedup keys too\n",
+    "  --rules                       WHERE, HAVING, JOIN, QUALIFY: with --column or --describe\n",
+    "  --casts                       compact: cast text too\n",
     "  --column-tool fusion|collin|snowflake  whose cache answers\n",
-    "  --run-collin                  run collin first, rewriting its cache in target/\n",
-    "--output name|json|compact      name by default; compact: tab-separated lines under a header\n",
-    "Quote a line holding spaces: -s 'stg_orders+1 orders'. No pipe or shell: count with --count-by, or filter the answer yourself.\n",
-    "After the answer: the manifest, then freshness. If stale, run dbt parse and ask again.\n",
+    "  --run-collin                  run collin first, rewrite its cache\n",
+    "--output name|json|compact      name by default; compact: tab-separated under a header\n",
+    "Quote spaces: -s 'stg_orders+1 orders'. No pipe or shell: use --count-by, or filter it yourself.\n",
+    "After the answer: the manifest, then freshness. If stale, run dbt parse, ask again.\n",
 );
 
 /// The flags a line may carry, by clap argument id: the questions and what
 /// shapes their answer.
-const ALLOWED: [&str; 21] = [
+const ALLOWED: [&str; 23] = [
     "select",
     "exclude",
     "selector",
@@ -63,6 +64,8 @@ const ALLOWED: [&str; 21] = [
     "down",
     "stop_at",
     "indirect",
+    "rules",
+    "casts",
     "column_tool",
     "run_collin",
     "describe",
@@ -416,7 +419,7 @@ mod tests {
         assert_eq!(output, Output::Compact);
         assert!(matches!(asked("--select=orders").0, Question::Select(..)), "the = form");
         assert!(matches!(asked("--selector nightly").0, Question::Select(crate::ls::Query::Named(ref n), None) if n == "nightly"));
-        assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false } if names.len() == 2));
+        assert!(matches!(asked("--describe orders,customers --sql").0, Question::Describe { ref names, sql: true, compiled_sql: false, .. } if names.len() == 2));
         assert!(matches!(asked("--describe orders --compiled-sql").0, Question::Describe { sql: false, compiled_sql: true, .. }));
         assert!(matches!(asked("--describe orders,customers --columns").0, Question::DescribeColumns { ref names } if names.len() == 2));
         assert!(matches!(asked("-s orders+ --exclude resource_type:test --columns --output compact").0, Question::SelectColumns(crate::ls::Query::Line { ref select, ref exclude }) if select == "orders+" && exclude == "resource_type:test"));
@@ -532,7 +535,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 32] = [
+    const SAMPLES: [(&str, &str); 34] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -549,6 +552,8 @@ mod tests {
         ("down", "--column orders.amount --down 1"),
         ("stop_at", "--column orders.amount --stop-at window"),
         ("indirect", "--column orders.amount --indirect"),
+        ("rules", "--column orders.amount --up all --rules"),
+        ("casts", "--column orders.amount --output compact --casts"),
         ("column_tool", "--column orders.amount --column-tool collin"),
         ("run_collin", "--column orders.amount --run-collin"),
         ("compiled", "--column orders.amount --run-collin --compiled sql"),

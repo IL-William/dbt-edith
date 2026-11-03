@@ -641,6 +641,38 @@ check('the clause is spelled in one place', [clauseOf('dedup_key'), clauseOf('JO
       'QUALIFY|JOIN|WHERE / HAVING|');
 check('the box\'s label carries both lines on one', /\(kept\[i\] \|\| ''\)\.replace\(\/\\n\/g, ', '\)/.test(lin), true);
 
+print('\n--- the predicates that read a column, and how it is computed (0138) ---');
+// Said under the line of the models it keeps the rows of, one a line, clause
+// first, the cut marked by the server; a cache without them gives the old line.
+var ruled = rowsKept({ nodes: [
+  { id: 'model.shop.stg_orders::status', name: 'status', rows_of: [['orders', 'filter']],
+    rules: [['orders', "WHERE status <> 'cancelled'"], ['orders', 'HAVING count(*) > 0']] },
+  { id: 'model.shop.stg_orders::id', name: 'id', rows_of: [['customers', 'dedup_key']],
+    rules: [['customers', 'QUALIFY row_number() over (order by id) = 1 (cut)']], rules_more: 2 },
+  { id: 'model.shop.stg_orders::amount', name: 'amount', rows_of: [['orders', 'filter']] },
+], edges: [] });
+check('the rules sit under the line of the models, one a line, clause first',
+      ruled[0], "keeps the rows of: orders (WHERE / HAVING)\n  orders: WHERE status <> 'cancelled'\n  orders: HAVING count(*) > 0");
+check('a cut one keeps its mark and the rest are counted',
+      ruled[1], 'keeps the rows of: customers (QUALIFY)\n  customers: QUALIFY row_number() over (order by id) = 1 (cut)\n  and 2 more');
+check('a column with none has the old line alone', ruled[2], 'keeps the rows of: orders (WHERE / HAVING)');
+check('and the box\'s label still carries them on one line', /\(kept\[i\] \|\| ''\)\.replace\(\/\\n\/g, ', '\)/.test(lin), true);
+
+check('one step is not counted', stepsLabel({ kind: 'transform', text: 'x + 1', steps: 1 }), '');
+check('nor a column with no expression', stepsLabel(undefined) + stepsLabel({}), '');
+check('more than one is counted', stepsLabel({ steps: 2 }) + '|' + stepsLabel({ steps: 31 }), '\u00d72|\u00d731');
+check('32 is not a number but a recursive chain', stepsLabel({ steps: 32 }), '32+');
+check('and no more than 32 is ever said', stepsLabel({ steps: 40 }), '32+');
+check('the badge is drawn only for a box that has more than one',
+      /const count = columnMode \? stepsLabel\(n\.expression\) : '';\s*if \(count\) g\.appendChild\(stepsBadge\(count\)\)/.test(lin), true);
+check('the box\'s label says how it is computed, the badge having no tooltip of its own',
+      /computed by \$\{n\.expression\.text/.test(lin) && !/stepsBadge[\s\S]{0,900}el\('title'/.test(lin), true);
+check('a card opened by an expression alone has no dot', /if \(Array\.isArray\(n\.generated\) \|\| rows\) \{\s*tone = /.test(app), true);
+check('the card says the text and the steps', expressionSaid({ text: 'sum(amount)', steps: 2 }).join(' | '), 'expression  sum(amount) | steps  2');
+check('a cut text is marked', expressionSaid({ text: 'sum(a', steps: 1, cut: true })[0], 'expression  sum(a (cut)');
+check('a chain at the limit is recursive, never 32', expressionSaid({ text: 'x', steps: 32 })[1], 'steps  recursive');
+check('a column with none adds nothing', expressionSaid(undefined).length + expressionSaid(null).length, 0);
+
 print('\n--- the cap on a column canvas (0118) ---');
 eval(app.slice(app.indexOf('function colAskKey'), app.indexOf('/* Every control that used to re-run')));
 var capped = { mode: 'column', truncated: true, most: 3000, nodes: new Array(1000) };
@@ -697,4 +729,4 @@ check('whose cell says it, not the dash of a column with nothing',
 check('a column with a value edge keeps its counts', indirectOnlyCell({ up: 1, down: 0, indirect: true }), null);
 check('and one with no indirect edge its dash', indirectOnlyCell({ up: 0, down: 0 }), null);
 check('the box\'s label carries it, as an exported page keeps it', /\(rows \? `\$\{rows\}, ` : ''\)/.test(lin), true);
-check('and its hover opens a card with it', /if \(Array\.isArray\(n\.generated\) \|\| rows\) hoverEnter/.test(app), true);
+check('and its hover opens a card with it', /if \(Array\.isArray\(n\.generated\) \|\| n\.expression \|\| rows\) hoverEnter/.test(app), true);

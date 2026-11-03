@@ -126,6 +126,14 @@ struct Args {
     #[arg(long, requires = "column")]
     indirect: bool,
 
+    /// With --column, print the predicates (WHERE, HAVING, QUALIFY, JOIN) of the models on the walk, upstream first, each with the columns it reads, instead of the columns. With --describe, add them to the card as "keeps the rows where". Needs a cache from collin 0.11.0 written with --indirect; a text cut by collin ends in (cut)
+    #[arg(long, conflicts_with = "columns")]
+    rules: bool,
+
+    /// --column --output compact prints the text of a cast too, which it folds by default; its steps are printed either way
+    #[arg(long, requires = "column")]
+    casts: bool,
+
     /// The tool whose cache --column reads (default: collin's or Fusion's newest, else the newest)
     #[arg(long, value_enum, value_name = "TOOL", requires = "column", conflicts_with = "column_lineage")]
     column_tool: Option<ls_column::Tool>,
@@ -187,7 +195,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
         ]
     )]
     mcp: bool,
@@ -200,7 +208,7 @@ struct Args {
         default_missing_value = "command",
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
-            "column", "up", "down", "stop_at", "indirect", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
+            "column", "up", "down", "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
             "job_coverage", "count_by", "depth", "output", "mcp",
         ]
     )]
@@ -223,6 +231,8 @@ fn stray(args: &Args) -> Option<String> {
         (args.down.is_some(), "--down", "--column", args.column.is_some()),
         (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
         (args.indirect, "--indirect", "--column", args.column.is_some()),
+        (args.rules, "--rules", "--column or --describe", args.column.is_some() || !args.describe.is_empty()),
+        (args.casts, "--casts", "--column", args.column.is_some()),
         (args.column_tool.is_some(), "--column-tool", "--column", args.column.is_some()),
         (args.run_collin, "--run-collin", "--column", args.column.is_some()),
         (args.compiled.is_some(), "--compiled", "--run-collin", args.run_collin),
@@ -251,7 +261,7 @@ fn stray(args: &Args) -> Option<String> {
 enum Question {
     /// A selection, listed or, with a `Count`, counted (0112).
     Select(ls::Query, Option<ls::Count>),
-    Describe { names: Vec<String>, sql: bool, compiled_sql: bool },
+    Describe { names: Vec<String>, sql: bool, compiled_sql: bool, rules: bool },
     /// A selection's columns, one line each, or a card's columns alone (0134).
     SelectColumns(ls::Query),
     DescribeColumns { names: Vec<String> },
@@ -287,7 +297,7 @@ fn question_of(args: &Args) -> Option<Question> {
         return Some(Question::DescribeColumns { names: args.describe.clone() });
     }
     if !args.describe.is_empty() {
-        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql, compiled_sql: args.compiled_sql });
+        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql, compiled_sql: args.compiled_sql, rules: args.rules });
     }
     if args.overview {
         // Not clap's `default_value_t`: a flag with a default is always set,
@@ -312,6 +322,8 @@ fn question_of(args: &Args) -> Option<Question> {
             tool: args.column_tool,
             cache: args.column_lineage.clone(),
             indirect: args.indirect,
+            rules: args.rules,
+            casts: args.casts,
             produce: args.run_collin.then(|| ls_column::Produce {
                 catalog: args.catalog.clone(),
                 compiled: args.compiled.clone(),
@@ -326,7 +338,9 @@ impl Question {
         let (project, manifest, catalog) = (&args.project, args.manifest.as_deref(), args.catalog.as_deref());
         match self {
             Question::Select(query, count) => ls::run(project, manifest, query, *count, args.output),
-            Question::Describe { names, sql, compiled_sql } => describe::run_describe(project, manifest, catalog, names, *sql, *compiled_sql, args.output),
+            Question::Describe { names, sql, compiled_sql, rules } => {
+                describe::run_describe(project, manifest, catalog, names, *sql, *compiled_sql, *rules, args.output)
+            }
             Question::SelectColumns(query) => ls::run_columns(project, manifest, catalog, query, args.output),
             Question::DescribeColumns { names } => describe::run_describe_columns(project, manifest, catalog, names, args.output),
             Question::Overview { depth } => describe::run_overview(project, manifest, catalog, *depth, args.output),
@@ -666,6 +680,11 @@ mod tests {
             ("--describe orders --exclude resource_type:test", "--exclude goes with --select"),
             ("--describe orders --up 1", "--up goes with --column"),
             ("--overview --indirect", "--indirect goes with --column"),
+            ("--overview --rules", "--rules goes with --column or --describe"),
+            ("-s orders --rules", "--rules goes with --column or --describe"),
+            ("--job-order --rules", "--rules goes with --column or --describe"),
+            ("--describe orders --casts", "--casts goes with --column"),
+            ("--overview --casts", "--casts goes with --column"),
             ("--describe orders --run-collin", "--run-collin goes with --column"),
             ("--select orders --down 1", "--down goes with --column"),
             ("--overview --stop-at window", "--stop-at goes with --column"),
@@ -720,6 +739,8 @@ mod tests {
             ("--down", "--mcp --down 1"),
             ("--stop-at", "--mcp --stop-at window"),
             ("--indirect", "--mcp --indirect"),
+            ("--rules", "--mcp --rules"),
+            ("--casts", "--mcp --casts"),
             ("--column-tool", "--mcp --column-tool collin"),
             ("--run-collin", "--mcp --run-collin"),
             ("--compiled", "--mcp --compiled sql"),
@@ -860,7 +881,9 @@ mod tests {
             Some(Question::Select(ls::Query::Line { select, exclude }, None)) => format!("select {select} | {exclude}"),
             Some(Question::Select(ls::Query::Named(name), None)) => format!("selector {name}"),
             Some(Question::Select(_, Some(ls::Count { by, depth }))) => format!("count {by:?} {depth}"),
-            Some(Question::Describe { names, sql, compiled_sql }) => format!("describe {} {sql} {compiled_sql}", names.join(",")),
+            Some(Question::Describe { names, sql, compiled_sql, rules }) => {
+                format!("describe {} {sql} {compiled_sql}{}", names.join(","), if rules { " rules" } else { "" })
+            }
             Some(Question::SelectColumns(ls::Query::Line { select, exclude })) => format!("columns of select {select} | {exclude}"),
             Some(Question::SelectColumns(ls::Query::Named(name))) => format!("columns of selector {name}"),
             Some(Question::DescribeColumns { names }) => format!("columns of describe {}", names.join(",")),
@@ -869,12 +892,14 @@ mod tests {
             Some(Question::JobOrder) => "job-order".to_string(),
             Some(Question::JobCoverage) => "job-coverage".to_string(),
             Some(Question::Column(ask)) => format!(
-                "column {} {} {} {:?} produce={}",
+                "column {} {} {} {:?} produce={}{}{}",
                 ask.column,
                 ask.up,
                 ask.down,
                 ask.stop_at,
-                ask.produce.is_some()
+                ask.produce.is_some(),
+                if ask.rules { " rules" } else { "" },
+                if ask.casts { " casts" } else { "" }
             ),
             None => "page".to_string(),
         };
@@ -896,6 +921,9 @@ mod tests {
         assert_eq!(text("--column orders.amount --up 2 --stop-at window"), "column orders.amount 2 0 [\"window\"] produce=false");
         assert_eq!(text("--column orders.amount --run-collin --indirect"), "column orders.amount 0 0 [] produce=true");
         assert_eq!(text("--column orders.amount --run-collin"), "column orders.amount 0 0 [] produce=true");
+        assert_eq!(text("--column orders.amount --up all --rules"), "column orders.amount 2147483647 0 [] produce=false rules");
+        assert_eq!(text("--column orders.amount --casts"), "column orders.amount 0 0 [] produce=false casts");
+        assert_eq!(text("--describe orders --rules"), "describe orders false false rules");
         assert_eq!(text(""), "page");
     }
 
@@ -910,6 +938,7 @@ mod tests {
             ("--columns --mcp", "--mcp"),
             ("--columns --skill", "--skill"),
             ("--describe orders -s orders --columns", "--describe"),
+            ("--describe orders --columns --rules", "--rules"),
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),

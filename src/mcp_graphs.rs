@@ -475,8 +475,8 @@ pub(crate) mod tests {
         let base = g.base().unwrap().graph;
         let names = ["orders", "helper", "stg_orders"].map(String::from);
         for output in [ls::Output::Name, ls::Output::Json] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, None, output, o, e));
-            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, None, output, o, e));
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, None, None, output, o, e));
+            let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, None, None, output, o, e));
             assert_eq!(got.0, want.0, "describe {output:?}");
             assert!(got.0.contains("helper") && got.0.contains("BIGINT"), "the cards hold the package's model and the catalog's type: {}", got.0);
             assert_eq!(got.2, want.2);
@@ -494,6 +494,36 @@ pub(crate) mod tests {
         assert_eq!(g.manifest().unwrap().nodes[helper].place, "");
         let helper = g.base().unwrap().graph.index["model.dbt_utils.helper"] as usize;
         assert_eq!(g.base().unwrap().graph.nodes[helper].place, "dbt_packages/dbt_utils/models/helper.sql");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn describe_with_rules_is_the_same_over_mcp_and_on_the_command_line() {
+        let dir = project("rules");
+        let cache = r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.jaffle_shop.orders","clause":"WHERE","text":"status <> 'cancelled'",
+                      "columns":[{"node":"model.jaffle_shop.stg_orders","column":"status"}]}]}"#;
+        std::fs::write(dir.join("target/column_lineage.collin.json"), cache).unwrap();
+        let root = dir.canonicalize().unwrap();
+        let manifest = root.join("target/manifest.json");
+        let (_, _, opened) = ls::open_with_catalog(&dir, None, None).unwrap();
+        let names = ["orders".to_string()];
+        let mut g = graphs(&dir);
+        // The ages of both lines are the clock's, per call.
+        let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:") && !l.starts_with("column lineage:")).collect::<Vec<_>>().join("\n");
+        for (line, output) in [("--describe orders --rules", ls::Output::Name), ("--describe orders --rules --output json", ls::Output::Json)] {
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, false, None, Some(&manifest), output, o, e));
+            let got = crate::mcp::answer_line(&mut g, line, &std::sync::atomic::AtomicBool::new(false));
+            assert!(!got.is_error, "{line}: {}", got.err);
+            assert_eq!(got.out, want.0, "{line}");
+            assert_eq!(strip(&got.err), strip(&want.1), "{line}");
+            assert!(got.out.contains("status <> 'cancelled'"), "the rule is in the answer: {}", got.out);
+        }
+        // Without the flag the cache is not read and the card has no block.
+        let plain = crate::mcp::answer_line(&mut g, "--describe orders", &std::sync::atomic::AtomicBool::new(false));
+        assert!(!plain.out.contains("keeps the rows where"), "{}", plain.out);
+        // The kept graph is the manifest's: the cache was merged into a copy.
+        assert!(g.base().unwrap().graph.cll.is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -524,7 +554,7 @@ pub(crate) mod tests {
         let card = |g: &mut Graphs| {
             let (base, jobs) = g.base_and_jobs().unwrap();
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, None, ls::Output::Name, &mut out, &mut err)
+            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, None, None, ls::Output::Name, &mut out, &mut err)
                 .unwrap();
             String::from_utf8(out).unwrap()
         };

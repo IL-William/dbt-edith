@@ -11,7 +11,8 @@
 //! name. stdout carries the answer and nothing else.
 
 use crate::collin::{self, iso_utc, Available, RawColLineage};
-use crate::graph::{ColRef, Graph, Kind, Lineage, RowEdges};
+use crate::collin::RawRule;
+use crate::graph::{ColRef, Expr, Graph, Kind, Lineage, RowEdges};
 use crate::ls::{self, Output, ANSWERED, CANNOT_RUN, REFUSED};
 use crate::{collin_run, files, profiles};
 use std::collections::{BTreeMap, HashMap};
@@ -26,8 +27,14 @@ pub const ALL: u32 = i32::MAX as u32;
 /// The header `--output compact` prints first (0102), so the answer says what
 /// its columns are. The `generated` texts and the `more_up` and `more_down`
 /// counts are not in it: they are JSON's, and a compact line is for reading
-/// a column's reach, not for deciding whether the walk was cut.
-const COMPACT_HEADER: &str = "depth\tcolumn\tfrom\ttests";
+/// a column's reach, not for deciding whether the walk was cut. `steps` and
+/// `expression` are the last two and are left off a line that has none, with
+/// their tabs, so a copy or a rename costs what it did before (0138).
+const COMPACT_HEADER: &str = "depth\tcolumn\tfrom\ttests\tsteps\texpression";
+
+/// The role whose expression a compact line folds unless `--casts` asks for
+/// it: a cast is everywhere and says little, and its step is counted anyway.
+const FOLDED: &str = "cast";
 
 /// What a column's model may be: the nodes with columns. An exposure or an
 /// analysis has none, so one of the same name is no rival.
@@ -67,6 +74,11 @@ pub struct Ask {
     pub indirect: bool,
     /// `--run-collin`: collin writes the cache that answers, first.
     pub produce: Option<Produce>,
+    /// `--rules`: print the predicates of the models the walk reaches, and
+    /// not the columns (0138).
+    pub rules: bool,
+    /// `--casts`: compact prints the text of a cast too (0138).
+    pub casts: bool,
 }
 
 /// What `--run-collin` hands collin besides the manifest: the catalog and the
@@ -196,12 +208,13 @@ fn shape(path: &Path) -> Option<(bool, bool)> {
 /// The cache that answers: the one named, the tool's newest, collin's or
 /// Fusion's newest, or the one the page loads when nothing was picked. Never
 /// a file still to be written: a tool without a cache is an error, Snowflake's
-/// included.
+/// included. `--rules` with no tool named reads collin's, whose cache is the
+/// only one that holds rules: a newer Fusion cache must not hide them (0138).
 fn cache_for(target_dir: &Path, graph: &Graph, ask: &Ask, found: &[Available]) -> Result<PathBuf, String> {
     if let Some(path) = &ask.cache {
         return if path.is_file() { Ok(path.clone()) } else { Err(format!("no column lineage cache at {}", path.display())) };
     }
-    if let Some(tool) = ask.tool {
+    if let Some(tool) = ask.tool.or(ask.rules.then_some(Tool::Collin)) {
         // Named outright, so Snowflake's switch, kept in the settings this
         // mode does not read, has no say: a file on disk asks nothing of the
         // warehouse.
@@ -394,37 +407,13 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
     let row_edges = if ask.indirect { RowEdges::ToColumns } else { RowEdges::Hidden };
     let lineage = graph.column_lineage(at, ask.up, ask.down, usize::MAX, &cut, row_edges);
     let models = reached(graph, &lineage, ask);
-    if output == Output::Compact && !models.is_empty() {
-        writeln!(out, "{COMPACT_HEADER}")?;
-    }
-    // By the column's own depth and not its model's, which is the nearest of
-    // its columns: a model reached at two levels would otherwise hold back
-    // the shallower columns of the next one, and the lines would not read the
-    // way the data flows.
-    let mut compact: Vec<(i32, String, String, String, String)> = Vec::new();
-    for m in &models {
-        match output {
-            Output::Name => {
-                for column in m.columns.keys() {
-                    writeln!(out, "{}.{column}", m.label)?;
-                }
-            }
-            Output::Json => {
-                serde_json::to_writer(&mut *out, m)?;
-                writeln!(out)?;
-            }
-            Output::Compact => {
-                for (column, r) in &m.columns {
-                    let from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
-                    let tests: Vec<String> = r.tests.iter().map(|t| ls::field(t)).collect();
-                    compact.push((r.depth, ls::field(&m.label), ls::field(column), from.join(","), tests.join(",")));
-                }
-            }
+    if ask.rules {
+        rules_answer(graph, ask, &models, output, out, err)?;
+    } else {
+        columns_answer(&models, ask, output, out)?;
+        if output != Output::Name {
+            no_expressions(graph, err)?;
         }
-    }
-    compact.sort();
-    for (depth, label, column, from, tests) in &compact {
-        writeln!(out, "{depth}\t{label}.{column}\t{from}\t{tests}")?;
     }
     if !lineage.stopped_at.is_empty() {
         let at: Vec<&str> = lineage.stopped_at.iter().map(|r| if r.is_empty() { "unknown" } else { r }).collect();
@@ -441,6 +430,217 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
         writeln!(err, "collin's indirect edges, a filter's, a join key's or a dedup key's, are left out: --indirect crosses them too")?;
     }
     Ok(ANSWERED)
+}
+
+/// Said when the answer's `steps` and `expression` are empty for a reason the
+/// cache gives, and not because the columns are copies: a collin before 0.11.0
+/// wrote no expression, nor does Fusion, and a current collin writes one only
+/// for a cast, transform, aggregate or window column (0138). Silence would read
+/// as columns with nothing to compute.
+fn no_expressions(graph: &Graph, err: &mut impl Write) -> io::Result<()> {
+    let Some(cll) = graph.cll.as_ref() else { return Ok(()) };
+    let m = &graph.meta;
+    let producer = m.cll_producer.as_str();
+    let version = producer.strip_prefix("collin ").unwrap_or(producer);
+    let tool = collin::tool_of(&m.cll_source);
+    if tool == "collin" && collin_run::outdated(Some(version).filter(|v| !v.is_empty())) {
+        let by = if producer.is_empty() { "a collin that names no version".to_string() } else { printable(producer) };
+        writeln!(err, "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty", collin_run::WANTS_TEXT)?;
+    } else if !cll.has_expressions() {
+        let from = if tool == "fusion" { "Fusion's cache carries no expression" } else { "this cache lists no expression" };
+        writeln!(err, "note: {from}, so steps and expression are empty; collin writes an expression only for a cast, transform, aggregate or window column")?;
+    }
+    Ok(())
+}
+
+/// The walk's columns, one line each (`--output compact`, `name`) or one JSON
+/// object per model.
+fn columns_answer(models: &[Reached<'_>], ask: &Ask, output: Output, out: &mut impl Write) -> io::Result<()> {
+    if output == Output::Compact && !models.is_empty() {
+        writeln!(out, "{COMPACT_HEADER}")?;
+    }
+    // By the column's own depth and not its model's, which is the nearest of
+    // its columns: a model reached at two levels would otherwise hold back
+    // the shallower columns of the next one, and the lines would not read the
+    // way the data flows.
+    let mut compact: Vec<(i32, String, String, String, String, String, String)> = Vec::new();
+    for m in models {
+        match output {
+            Output::Name => {
+                for column in m.columns.keys() {
+                    writeln!(out, "{}.{column}", m.label)?;
+                }
+            }
+            Output::Json => {
+                serde_json::to_writer(&mut *out, m)?;
+                writeln!(out)?;
+            }
+            Output::Compact => {
+                for (column, r) in &m.columns {
+                    let from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
+                    let tests: Vec<String> = r.tests.iter().map(|t| ls::field(t)).collect();
+                    // The steps whenever collin gave an expression, the text
+                    // unless it is a cast's and none was asked for.
+                    let (steps, text) = match r.expr {
+                        Some(x) => (x.steps_said(), if x.kind == FOLDED && !ask.casts { String::new() } else { ls::field(&x.said()) }),
+                        None => (String::new(), String::new()),
+                    };
+                    compact.push((r.depth, ls::field(&m.label), ls::field(column), from.join(","), tests.join(","), steps, text));
+                }
+            }
+        }
+    }
+    compact.sort();
+    for (depth, label, column, from, tests, steps, text) in &compact {
+        write!(out, "{depth}\t{label}.{column}\t{from}\t{tests}")?;
+        // A field with nothing after it is left off, with its tab, as the
+        // card's columns line does.
+        if !steps.is_empty() {
+            write!(out, "\t{steps}")?;
+            if !text.is_empty() {
+                write!(out, "\t{text}")?;
+            }
+        }
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
+/// What `--rules` prints: for every model of the walk that has rules, upstream
+/// first, a heading and the predicates under it, one a line; or, as JSON, one
+/// object per model, `{node, depth, rules}`. Nothing for a model without rules, and
+/// nothing at all, with a word on stderr, when the cache lists none: it was
+/// written by a collin before 0.11.0, or without `--indirect`.
+fn rules_answer(graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
+    // Named outright: Fusion's cache has no rules to read, whatever it holds.
+    if ask.tool == Some(Tool::Fusion) {
+        writeln!(err, "{}", no_rules(&graph.meta.cll_file, "fusion"))?;
+        return Ok(());
+    }
+    let Some(cll) = graph.cll.as_ref().filter(|c| c.has_rules()) else {
+        writeln!(err, "{}", no_rules(&graph.meta.cll_file, &graph.meta.cll_source))?;
+        return Ok(());
+    };
+    let held: Vec<(&Reached<'_>, Vec<&RawRule>)> = models
+        .iter()
+        .map(|m| (m, graph.index.get(m.unique_id).map_or_else(Vec::new, |&i| cll.rules_of(i).collect())))
+        .filter(|(_, rules)| !rules.is_empty())
+        .collect();
+    if held.is_empty() {
+        writeln!(err, "no model of this walk has a rule in the cache")?;
+    }
+    if output == Output::Json {
+        #[derive(serde::Serialize)]
+        struct Applied<'a> {
+            node: &'a str,
+            depth: i32,
+            rules: &'a [&'a RawRule],
+        }
+        // A line a model, as `--column --output json` prints one: over MCP an
+        // answer is cut between lines, and one long line would be refused whole.
+        for (m, rules) in &held {
+            serde_json::to_writer(&mut *out, &Applied { node: m.unique_id, depth: m.depth, rules })?;
+            writeln!(out)?;
+        }
+        return Ok(());
+    }
+    // A model of the walk is named as its heading names it, any other as
+    // `--describe` names it, so one name is never two.
+    let shared = ls::shared_names(graph);
+    let walked: HashMap<&str, &str> = models.iter().map(|m| (m.unique_id, m.label.as_str())).collect();
+    let label = |n: &crate::graph::Node| walked.get(n.id.as_str()).map_or_else(|| ls::label(n, &shared), |l| l.to_string());
+    for (m, rules) in &held {
+        writeln!(out, "{}  (depth {})", ls::field(&m.label), m.depth)?;
+        for r in rules {
+            writeln!(out, "  {}", rule_line(graph, &label, r))?;
+        }
+    }
+    Ok(())
+}
+
+/// Said when `--rules` finds the cache without any: which file answered, and
+/// why it has none, by the tool it came from.
+pub(crate) fn no_rules(file: &str, source: &str) -> String {
+    let at = if file.is_empty() { "this cache".to_string() } else { file.to_string() };
+    match collin::tool_of(source) {
+        "collin" => format!("no rules in {at}: it was written by a collin before 0.11.0, or without --indirect, so --rules has nothing to print"),
+        "fusion" => format!("no rules in {at}: Fusion's cache carries none, and --rules reads collin's (--column-tool collin)"),
+        _ => format!("no rules in {at}: only collin's cache carries them (--column-tool collin)"),
+    }
+}
+
+/// A rule as one line: its clause, its text with a cut marked, and the
+/// columns it reads as `model.column`. A tab or a newline in the SQL is a
+/// space, so the rule stays one line (0138).
+pub(crate) fn rule_line(graph: &Graph, label: &dyn Fn(&crate::graph::Node) -> String, r: &RawRule) -> String {
+    let mut line = ls::field(&format!("{} {}", r.clause, crate::graph::said_cut(&r.text, r.cut)));
+    let mut reads: Vec<String> = Vec::new();
+    for c in &r.columns {
+        let node = match graph.index.get(c.node.as_str()) {
+            Some(&i) => label(&graph.nodes[i as usize]),
+            // What dbt does not own is named by its object.
+            None => c.node.strip_prefix("rel:").unwrap_or(&c.node).to_string(),
+        };
+        let read = ls::field(&format!("{node}.{}", c.column));
+        if !reads.contains(&read) {
+            reads.push(read);
+        }
+    }
+    if !reads.is_empty() {
+        line.push_str(&format!("  reads {}", reads.join(", ")));
+    }
+    line
+}
+
+/// `graph` with the cache beside `manifest` merged into a copy, for the
+/// rules `--describe --rules` prints. A copy, so the card's own columns are
+/// the manifest's and the catalog's alone: the merge adds the columns the
+/// cache knows (0138). None, with a word on stderr, when there is no cache or
+/// it cannot be read; a cache with no rule gives the copy and a word.
+pub(crate) fn with_rules(root: &Path, graph: &Graph, manifest: &Path, err: &mut impl Write) -> Option<Graph> {
+    let target_dir = &files::folder_of(manifest).unwrap_or_else(|| root.join("target"));
+    let found = collin::discover(target_dir);
+    let named = Ask {
+        column: String::new(),
+        up: 0,
+        down: 0,
+        stop_at: Vec::new(),
+        tool: Some(Tool::Collin),
+        cache: None,
+        indirect: false,
+        produce: None,
+        rules: true,
+        casts: false,
+    };
+    let cache = match cache_for(target_dir, graph, &named, &found) {
+        Ok(path) => path,
+        Err(why) => {
+            let _ = writeln!(err, "warning: --rules: {why}");
+            return None;
+        }
+    };
+    let raw = match load(&cache) {
+        Ok(raw) => raw,
+        Err(why) => {
+            let _ = writeln!(err, "warning: --rules: {why}");
+            return None;
+        }
+    };
+    let mut merged = graph.clone();
+    merged.merge_col_lineage(raw, files::mtime_secs(&cache));
+    merged.meta.cll_file = cache.display().to_string();
+    if !merged.cll.as_ref().is_some_and(|c| c.has_rules()) {
+        let _ = writeln!(err, "{}", no_rules(&merged.meta.cll_file, &merged.meta.cll_source));
+    }
+    Some(merged)
+}
+
+/// Which cache answered and whether it still describes the manifest, said
+/// after the card and the manifest's lines as `--column` says it after its
+/// answer: a rule of a model since changed would read as current.
+pub(crate) fn cache_said(root: &Path, merged: &Graph, manifest: &Path, err: &mut impl Write) {
+    let producer = merged.meta.cll_producer.clone();
+    let _ = cache_lines(root, merged, Path::new(&merged.meta.cll_file), manifest, &producer, false, err);
 }
 
 /// The roles a cache holds, for a message.
@@ -528,6 +728,14 @@ struct Reach<'a> {
     /// collin could not tell all of it (0096).
     #[serde(skip_serializing_if = "Option::is_none")]
     generated: Option<&'a [String]>,
+    /// What computes the column when its model's SQL does more than copy it
+    /// (collin's expressions, since 0.11.0): the expression, its role, the
+    /// steps that did something, whether the text was cut. Kept as collin
+    /// wrote it, a cast's included.
+    #[serde(skip)]
+    expr: Option<&'a Expr>,
+    #[serde(flatten)]
+    said: Option<Said<'a>>,
     /// The data tests on this column, by name.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tests: Vec<&'a str>,
@@ -537,6 +745,16 @@ struct Reach<'a> {
     more_up: usize,
     #[serde(skip_serializing_if = "is_zero")]
     more_down: usize,
+}
+
+/// The keys an expression adds to a column's JSON.
+#[derive(serde::Serialize)]
+struct Said<'a> {
+    expression: &'a str,
+    kind: &'a str,
+    steps: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    cut: bool,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -595,6 +813,8 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
                 depth: c.depth,
                 from: BTreeMap::new(),
                 generated: c.generated,
+                expr: c.expression,
+                said: c.expression.map(|x| Said { expression: &x.text, kind: &x.kind, steps: x.steps, cut: x.cut }),
                 tests,
                 more_up: if c.depth <= 0 && ask.up > 0 { c.hidden_up } else { 0 },
                 more_down: if c.depth >= 0 && ask.down > 0 { c.hidden_down } else { 0 },
@@ -827,6 +1047,11 @@ mod tests {
     /// `graph()` with more edges, each `(from, from column, to, to column,
     /// role)` between unique_ids.
     fn graph_with(more: &[(&str, &str, &str, &str, &str)]) -> Graph {
+        listing(more, Vec::new(), Vec::new())
+    }
+
+    /// `graph_with` with the two lists collin 0.11.0 adds.
+    fn listing(more: &[(&str, &str, &str, &str, &str)], rules: Vec<crate::collin::RawRule>, expressions: Vec<crate::collin::RawExpression>) -> Graph {
         let model = |name: &str, package: &str, file: &str, materialized: &str| {
             json!({ "name": name, "resource_type": "model", "package_name": package,
                     "original_file_path": file, "config": { "materialized": materialized } })
@@ -883,6 +1108,8 @@ mod tests {
                 .into_iter()
                 .chain(more.iter().map(|&(from, from_col, to, to_col, kind)| edge(from, from_col, to, to_col, kind)))
                 .collect(),
+                rules,
+                expressions,
                 ..Default::default()
             },
             1,
@@ -890,8 +1117,52 @@ mod tests {
         g
     }
 
+    fn rule(node: &str, clause: &str, text: &str, cut: bool, columns: &[(&str, &str)]) -> crate::collin::RawRule {
+        crate::collin::RawRule {
+            node: node.into(),
+            clause: clause.into(),
+            text: text.into(),
+            cut,
+            columns: columns.iter().map(|&(node, column)| crate::collin::RawRuleColumn { node: node.into(), column: column.into() }).collect(),
+        }
+    }
+
+    fn expression(node: &str, column: &str, kind: &str, text: &str, steps: u32, cut: bool) -> crate::collin::RawExpression {
+        crate::collin::RawExpression { node: node.into(), column: column.into(), kind: kind.into(), text: text.into(), steps, cut }
+    }
+
+    /// `graph()` with an expression on four columns: an aggregate with two
+    /// steps, a cast with one, a window past the limit whose text was cut,
+    /// and a transform whose text holds a tab and a newline.
+    fn with_expressions() -> Graph {
+        listing(
+            &[],
+            Vec::new(),
+            vec![
+                expression("model.shop.customer_ltv", "lifetime_value", "aggregate", "sum(order_amount)", 2, false),
+                expression("model.audit.audit_orders", "basket", "cast", "basket::number(18, 4)", 1, false),
+                expression("model.audit.audit_orders", "ltv", "window", "sum(ltv) over (order by day rows between", 32, true),
+                expression("model.shop.customer_ltv", "avg_basket", "transform", "avg(\torder_amount\n+ 1)", 3, false),
+            ],
+        )
+    }
+
+    /// `graph()` with predicates on three of its models; the other two apply none.
+    fn with_rules() -> Graph {
+        listing(
+            &[],
+            vec![
+                rule("model.shop.stg_orders", "QUALIFY", "row_number() over (partition by id order by updated_at desc) = 1", true, &[("source.shop.raw.orders", "id"), ("source.shop.raw.orders", "updated_at")]),
+                rule("model.shop.orders", "WHERE", "status <> 'cancelled'", false, &[("model.shop.stg_orders", "status")]),
+                rule("model.shop.orders", "JOIN", "o.customer_id\n  = c.id", false, &[("model.shop.stg_orders", "customer_id"), ("rel:RAW.PUBLIC.CUSTOMERS", "id"), ("model.shop.stg_orders", "customer_id")]),
+                rule("model.shop.customer_ltv", "HAVING", "count(*) > 1", false, &[]),
+            ],
+            Vec::new(),
+        )
+    }
+
     fn ask(column: &str, up: u32, down: u32) -> Ask {
-        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None }
+        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None, rules: false, casts: false }
     }
 
     fn run_on(g: &Graph, a: &Ask, output: Output) -> (String, String, i32) {
@@ -1019,7 +1290,7 @@ mod tests {
         assert_eq!(code, ANSWERED);
         assert_eq!(
             out,
-            "depth\tcolumn\tfrom\ttests\n\
+            "depth\tcolumn\tfrom\ttests\tsteps\texpression\n\
              -1\traw.orders.amount\t\t\n\
              0\tstg_orders.amount\traw.orders.amount:passthrough\t\n\
              1\torders.order_amount\tstg_orders.amount:rename\tnot_null_orders_order_amount\n\
@@ -1038,7 +1309,7 @@ mod tests {
         let (out, _, _) = run_on(&g, &ask("stg_orders.amount", 0, ALL), Output::Compact);
         assert_eq!(
             out,
-            "depth\tcolumn\tfrom\ttests\n\
+            "depth\tcolumn\tfrom\ttests\tsteps\texpression\n\
              0\tstg_orders.amount\t\t\n\
              1\tcustomer_ltv.amount\tstg_orders.amount:passthrough\t\n\
              1\torders.order_amount\tstg_orders.amount:rename\tnot_null_orders_order_amount\n\
@@ -1051,12 +1322,238 @@ mod tests {
 
     #[test]
     fn a_tab_inside_a_name_keeps_the_four_fields() {
+        // A passthrough row keeps its four fields: the two the header gains
+        // are left off a row that has nothing for them.
         let mut g = graph();
         let at = g.index["model.shop.orders"] as usize;
         g.nodes[at].name = "or\tders\u{1b}".into();
         let (out, _, _) = run_on(&g, &ask("stg_orders.amount", 0, 1), Output::Compact);
-        assert!(out.lines().all(|l| l.split('\t').count() == 4), "{out:?}");
+        let (header, rows) = out.split_once('\n').unwrap();
+        assert_eq!(header.split('\t').count(), 6, "{header:?}");
+        assert!(rows.lines().all(|l| l.split('\t').count() == 4), "{out:?}");
         assert!(out.contains("\n1\tor ders .order_amount\t"), "{out:?}");
+    }
+
+    #[test]
+    fn an_expression_adds_its_steps_and_its_text_to_the_compact_line() {
+        let (out, _, _) = run_on(&with_expressions(), &ask("orders.order_amount", 0, ALL), Output::Compact);
+        let rows: Vec<&str> = out.lines().collect();
+        // An aggregate: the steps, then the expression. A copy or a rename has
+        // neither and keeps the four fields it always had.
+        assert!(rows.contains(&"1\tcustomer_ltv.lifetime_value\torders.order_amount:aggregate\t\t2\tsum(order_amount)"), "{out}");
+        assert!(rows.contains(&"0\torders.order_amount\t\tnot_null_orders_order_amount"), "{out}");
+        // A tab and a newline in the SQL are spaces, so the line keeps its fields.
+        assert!(rows.contains(&"1\tcustomer_ltv.avg_basket\torders.order_amount:aggregate\t\t3\tavg( order_amount + 1)"), "{out}");
+    }
+
+    #[test]
+    fn a_cast_says_its_steps_and_keeps_its_text_for_casts() {
+        let g = with_expressions();
+        let cast = "2\taudit_orders.basket\tcustomer_ltv.avg_basket:unknown\t\t1";
+        let (out, _, _) = run_on(&g, &ask("orders.order_amount", 0, ALL), Output::Compact);
+        assert!(out.lines().any(|l| l == cast), "folded, its step still counted: {out}");
+        let (out, _, _) = run_on(&g, &Ask { casts: true, ..ask("orders.order_amount", 0, ALL) }, Output::Compact);
+        assert!(out.lines().any(|l| l == format!("{cast}\tbasket::number(18, 4)")), "{out}");
+        // The JSON is collin's whole, a cast's text included, whatever --casts says.
+        let (json, _, _) = run_on(&g, &ask("orders.order_amount", 0, ALL), Output::Json);
+        let audit = lines(&json).into_iter().find(|l| l["name"] == "audit_orders").unwrap();
+        assert_eq!(audit["columns"]["basket"]["expression"], "basket::number(18, 4)", "{json}");
+    }
+
+    #[test]
+    fn a_chain_at_the_limit_is_32_plus_and_a_cut_text_says_so() {
+        let g = with_expressions();
+        let (out, _, _) = run_on(&g, &ask("orders.order_amount", 0, ALL), Output::Compact);
+        let ltv = out.lines().find(|l| l.contains("audit_orders.ltv")).unwrap();
+        assert_eq!(ltv, "2\taudit_orders.ltv\tcustomer_ltv.lifetime_value:window\t\t32+\tsum(ltv) over (order by day rows between (cut)");
+        assert!(!ltv.contains("\t32\t"), "the number is an accident of the limit: {ltv}");
+        // JSON keeps both raw: the number, and the flag.
+        let (json, _, _) = run_on(&g, &ask("orders.order_amount", 0, ALL), Output::Json);
+        let audit = lines(&json).into_iter().find(|l| l["name"] == "audit_orders").unwrap();
+        assert_eq!(
+            audit["columns"]["ltv"],
+            json!({ "depth": 2, "from": { "customer_ltv.lifetime_value": "window" }, "expression": "sum(ltv) over (order by day rows between",
+                    "kind": "window", "steps": 32, "cut": true })
+        );
+        // A text that was not cut carries no flag, and a column with no
+        // expression none of the keys.
+        let ltv_model = lines(&json).into_iter().find(|l| l["name"] == "customer_ltv").unwrap();
+        assert_eq!(ltv_model["columns"]["lifetime_value"]["steps"], 2);
+        assert!(ltv_model["columns"]["lifetime_value"].get("cut").is_none(), "{json}");
+        let orders = lines(&json).into_iter().find(|l| l["name"] == "orders").unwrap();
+        assert!(orders["columns"]["order_amount"].get("expression").is_none() && orders["columns"]["order_amount"].get("steps").is_none());
+    }
+
+    #[test]
+    fn a_cache_without_the_lists_says_why_its_expressions_are_empty() {
+        // A cache from before collin 0.11.0: compact has its four fields on
+        // every row, and stderr names collin 0.11.0 as the one that writes them.
+        let (out, err, code) = run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Compact);
+        assert_eq!(code, ANSWERED);
+        assert!(out.lines().skip(1).all(|l| l.split('\t').count() == 4), "{out}");
+        assert!(err.contains("older than collin 0.11.0") && err.contains("steps and expression are empty"), "{err}");
+        assert!(!run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Json).0.contains("expression"));
+        // Names only: no such column, nothing to explain.
+        assert!(!run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Name).1.contains("expression"));
+
+        // A collin 0.10.x names itself; Fusion's cache and a cache of the
+        // current collin with no expression say what they lack.
+        let said = |source: &str, producer: &str, expressions: Vec<crate::collin::RawExpression>| {
+            let mut g = graph();
+            g.merge_col_lineage(
+                RawColLineage {
+                    version: 1,
+                    source: source.into(),
+                    producer: producer.into(),
+                    edges: vec![RawColEdge {
+                        from: "model.shop.stg_orders".into(),
+                        from_col: "amount".into(),
+                        to: "model.shop.orders".into(),
+                        to_col: "order_amount".into(),
+                        kind: "rename".into(),
+                    }],
+                    expressions,
+                    ..Default::default()
+                },
+                1,
+            );
+            run_on(&g, &ask("stg_orders.amount", 0, 0), Output::Compact).1
+        };
+        assert!(said("collin", "collin 0.10.1", Vec::new()).contains("written by collin 0.10.1, older than collin 0.11.0"));
+        assert!(said("fusion", "", Vec::new()).contains("Fusion's cache carries no expression"));
+        let current = said("collin", "collin 0.11.0", Vec::new());
+        assert!(current.contains("this cache lists no expression"), "{current}");
+        assert!(current.contains("only for a cast, transform, aggregate or window column") && !current.contains("0.11.0"), "{current}");
+        let some = vec![expression("model.shop.orders", "order_amount", "aggregate", "sum(a)", 1, false)];
+        let none = said("collin", "collin 0.11.0", some);
+        assert!(!none.contains("steps and expression"), "a cache that lists some says nothing: {none}");
+    }
+
+    #[test]
+    fn rules_are_grouped_by_model_upstream_first_with_what_they_read() {
+        let g = with_rules();
+        let a = Ask { rules: true, ..ask("orders.order_amount", ALL, ALL) };
+        let (out, err, code) = run_on(&g, &a, Output::Name);
+        assert_eq!((code, err.as_str()), (ANSWERED, ""), "{err}");
+        // The clause first, then the text; a model without rules is left out
+        // (audit_orders, the source), a tab or a newline in the SQL is a space
+        // and a column read twice is named once; a table dbt does not own is
+        // named by its object.
+        assert_eq!(
+            out,
+            "stg_orders  (depth -1)\n\
+             \x20 QUALIFY row_number() over (partition by id order by updated_at desc) = 1 (cut)  reads raw.orders.id, raw.orders.updated_at\n\
+             orders  (depth 0)\n\
+             \x20 WHERE status <> 'cancelled'  reads stg_orders.status\n\
+             \x20 JOIN o.customer_id   = c.id  reads stg_orders.customer_id, RAW.PUBLIC.CUSTOMERS.id\n\
+             customer_ltv  (depth 1)\n\
+             \x20 HAVING count(*) > 1\n"
+        );
+        // The same text whatever the format of the columns would have been.
+        assert_eq!(run_on(&g, &a, Output::Compact).0, out);
+        // Only the models of the walk: one step down, the models above are out.
+        let (down, _, _) = run_on(&g, &Ask { rules: true, ..ask("orders.order_amount", 0, 1) }, Output::Name);
+        assert_eq!(down.lines().filter(|l| !l.starts_with(' ')).collect::<Vec<_>>(), ["orders  (depth 0)", "customer_ltv  (depth 1)"]);
+    }
+
+    #[test]
+    fn rules_as_json_are_an_object_a_model_a_line_with_collins_own_fields() {
+        let (out, _, _) = run_on(&with_rules(), &Ask { rules: true, ..ask("orders.order_amount", ALL, 0) }, Output::Json);
+        // A line each, so an answer cut over MCP is cut between models.
+        assert_eq!(out.lines().count(), 2, "{out}");
+        let got = serde_json::Value::Array(lines(&out));
+        assert_eq!(got[0]["node"], "model.shop.stg_orders");
+        assert_eq!(got[0]["depth"], -1);
+        assert_eq!(got[0]["rules"][0]["clause"], "QUALIFY");
+        assert_eq!(got[0]["rules"][0]["cut"], true);
+        assert_eq!(got[0]["rules"][0]["columns"], json!([{ "node": "source.shop.raw.orders", "column": "id" }, { "node": "source.shop.raw.orders", "column": "updated_at" }]));
+        assert_eq!((got[1]["node"].as_str(), got[1]["depth"].as_i64()), (Some("model.shop.orders"), Some(0)));
+        assert_eq!(got[1]["rules"].as_array().map(Vec::len), Some(2));
+        assert!(got[1]["rules"][0].get("cut").is_none(), "a flag set only when true: {out}");
+    }
+
+    #[test]
+    fn rules_from_a_cache_without_any_print_nothing_and_say_why() {
+        for output in [Output::Name, Output::Compact, Output::Json] {
+            let (out, err, code) = run_on(&graph(), &Ask { rules: true, ..ask("orders.order_amount", ALL, ALL) }, output);
+            assert_eq!((out.as_str(), code), ("", ANSWERED));
+            assert!(err.contains("predates") || err.contains("before 0.11.0"), "{err}");
+            assert!(err.contains("0.11.0") && err.contains("--indirect"), "{err}");
+        }
+        // A cache that lists rules, none of them on this walk: nothing either,
+        // and the walk is said to hold none.
+        let (out, err, _) = run_on(&with_rules(), &Ask { rules: true, ..ask("audit_orders.ltv", 0, 0) }, Output::Name);
+        assert_eq!(out, "");
+        assert!(err.contains("no model of this walk has a rule"), "{err}");
+        let (out, _, _) = run_on(&with_rules(), &Ask { rules: true, ..ask("audit_orders.ltv", 0, 0) }, Output::Json);
+        assert_eq!(out, "", "an empty array is not printed either");
+    }
+
+    /// A folder holding collin's cache with a rule on `orders`, and a newer
+    /// Fusion cache of the same edges with none.
+    fn both_caches(tag: &str) -> PathBuf {
+        let dir = scratch(tag);
+        let edges = r#"[{"from":"model.shop.stg_orders","from_col":"amount","to":"model.shop.orders","to_col":"order_amount","kind":"rename"}]"#;
+        std::fs::write(dir.join("manifest.json"), "{}").unwrap();
+        std::fs::write(
+            dir.join("column_lineage.collin.json"),
+            format!(
+                r#"{{"version":1,"source":"collin","producer":"collin 0.11.0","edges":{edges},"rules":[{{"node":"model.shop.orders","clause":"WHERE","text":"status <> 'cancelled'","columns":[{{"node":"model.shop.stg_orders","column":"status"}}]}}]}}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("column_lineage.fusion.json"), format!(r#"{{"version":1,"source":"fusion","edges":{edges}}}"#)).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(dir.join("column_lineage.fusion.json")).unwrap().set_modified(later).unwrap();
+        assert_eq!(collin::discover(&dir)[0].tool, "fusion", "the Fusion cache is the newer");
+        dir
+    }
+
+    fn rules_of_walk(dir: &Path, a: &Ask) -> (String, String, i32) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = respond(dir, &dir.join("manifest.json"), graph(), a, Output::Name, &AtomicBool::new(false), collin_run::Located::default, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn rules_are_collins_whatever_newer_cache_lies_beside_it() {
+        let dir = both_caches("rules-tools");
+        let a = Ask { rules: true, ..ask("orders.order_amount", 0, 0) };
+        // No tool named: collin's cache answers the walk and the rules alike,
+        // and stderr says which one it was.
+        let (out, err, code) = rules_of_walk(&dir, &a);
+        assert_eq!((out.as_str(), code), ("orders  (depth 0)\n  WHERE status <> 'cancelled'  reads stg_orders.status\n", ANSWERED), "{err}");
+        assert!(err.contains("column lineage: ") && err.contains("column_lineage.collin.json") && err.contains("collin 0.11.0"), "{err}");
+        // Without the flag the newest of the two still answers, as before.
+        let (_, err, _) = rules_of_walk(&dir, &ask("orders.order_amount", 0, 0));
+        assert!(err.contains("column_lineage.fusion.json"), "{err}");
+        // Fusion named: nothing is printed, and stderr says why.
+        let (out, err, code) = rules_of_walk(&dir, &Ask { tool: Some(Tool::Fusion), ..a });
+        assert_eq!((out.as_str(), code), ("", ANSWERED));
+        assert!(err.contains("Fusion's cache carries none") && err.contains("column_lineage.fusion.json"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_card_reads_the_rules_from_collins_cache_and_not_a_newer_fusion_one() {
+        let dir = both_caches("rules-card");
+        let mut err = Vec::new();
+        let merged = super::with_rules(&dir, &graph(), &dir.join("manifest.json"), &mut err).expect("collin's cache lists a rule");
+        assert!(merged.cll.as_ref().is_some_and(|c| c.has_rules()));
+        assert_eq!(String::from_utf8(err).unwrap(), "", "the cache is named after the card, not before");
+        // The cache that answered is named, as `--column` names it.
+        let mut after = Vec::new();
+        super::cache_said(&dir, &merged, &dir.join("manifest.json"), &mut after);
+        let said = String::from_utf8(after).unwrap();
+        assert!(said.starts_with("column lineage: ") && said.contains("column_lineage.collin.json") && !said.contains("warning"), "{said}");
+        // With collin's cache gone only Fusion's is left, which has none, and
+        // the message names it.
+        std::fs::remove_file(dir.join("column_lineage.collin.json")).unwrap();
+        let mut err = Vec::new();
+        assert!(super::with_rules(&dir, &graph(), &dir.join("manifest.json"), &mut err).is_none());
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.contains("no column lineage from collin"), "{said}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1300,7 +1797,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.10.0","edges":[]}' > "$out"
+    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[]}' > "$out"
 echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 
     #[cfg(unix)]
@@ -1314,13 +1811,13 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         std::fs::create_dir_all(dir.join("sql")).unwrap();
         let p = Produce { catalog: None, compiled: Some(dir.join("sql")) };
         let mut err = Vec::new();
-        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
+        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
         // The names the page's own run writes, so the page shows this run.
         assert_eq!(got, Some(folder.join("column_lineage.collin.json")));
-        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.10.0");
+        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.11.0");
         assert!(folder.join(collin_run::REPORT).is_file());
         let said = String::from_utf8(err).unwrap();
-        assert!(said.starts_with("collin 0.10.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
+        assert!(said.starts_with("collin 0.11.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
         assert!(!said.contains("warning"), "every model had its SQL, from a collin not older than WANTS: {said}");
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         let named = |flag: &str, path: PathBuf| format!("{flag} {}", path.display());
@@ -1334,7 +1831,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         // named.
         std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
         let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
         assert!(args.contains(" --indirect "), "{args}");
@@ -1344,7 +1841,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         let apart = scratch("produce-apart");
         let other = apart.join("manifest.json");
         std::fs::write(&other, "{}").unwrap();
-        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.10.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(!args.contains("--project") && args.contains(&named("--manifest", other.clone())), "{args}");
         std::fs::remove_dir_all(&apart).unwrap();
@@ -1364,7 +1861,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
         let mut err = Vec::new();
         let p = Produce { catalog: None, compiled: None };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.10.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
 
@@ -1377,7 +1874,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
   {"unique_id":"model.jaffle_shop.stg_orders","parse_error":"a python model, not SQL"}]}' > "$report""#;
         let warned = |p: &Produce| {
             let mut err = Vec::new();
-            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.10.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
+            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.11.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
             String::from_utf8(err).unwrap()
         };
         let said = warned(&Produce { catalog: None, compiled: None });
@@ -1426,11 +1923,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         // anything: run, it would replace the cache with name matches. So is
         // a catalog named and not there, which would leave every column
         // unconfirmed.
-        let (got, err) = said(&both, stand_in(&dir, "0.10.0", WRITES));
+        let (got, err) = said(&both, stand_in(&dir, "0.11.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --compiled") && err.contains("not a folder"), "{err}");
         let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None };
-        let (got, err) = said(&no_catalog, stand_in(&dir, "0.10.0", WRITES));
+        let (got, err) = said(&no_catalog, stand_in(&dir, "0.11.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --catalog") && err.contains("not a file"), "{err}");
         assert!(!dir.join("args").exists(), "it never ran");
@@ -1444,11 +1941,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         assert!(!dir.join("args").exists(), "it never ran");
 
         // A failed run says collin's own lines and leaves the cache as it was.
-        let (got, err) = said(&both, stand_in(&dir, "0.10.0", "echo 'collin: no manifest at x' >&2; exit 1"));
+        let (got, err) = said(&both, stand_in(&dir, "0.11.0", "echo 'collin: no manifest at x' >&2; exit 1"));
         assert_eq!(got, None);
         assert!(err.contains("error: collin wrote no cache: no manifest at x"), "{err}");
         assert_eq!(err.matches("no manifest at x").count(), 1, "collin's line is said once: {err}");
-        let (_, err) = said(&both, stand_in(&dir, "0.10.0", "echo 'thread main panicked at boom' >&2; exit 101"));
+        let (_, err) = said(&both, stand_in(&dir, "0.11.0", "echo 'thread main panicked at boom' >&2; exit 101"));
         assert_eq!(err.matches("panicked at boom").count(), 1, "a line without collin's prefix too: {err}");
         assert_eq!(load(&cache).unwrap().producer, "collin 0.8.0");
 

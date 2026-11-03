@@ -416,7 +416,7 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
             Ok(graph) => ls::respond(&root, graph, &query, count, output, &mut out, &mut err),
             Err(why) => return Outcome::failed(&why),
         },
-        Question::Describe { names, sql, compiled_sql } => {
+        Question::Describe { names, sql, compiled_sql, rules } => {
             // As the command line does: before the project is opened.
             if let Some(why) = describe::no_name(&names) {
                 return Outcome::failed(why);
@@ -425,7 +425,10 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
                 Ok((base, jobs)) => {
                     kept_warning(base.warning, &mut err);
                     let compiled = compiled_sql.then(|| describe::target_dir(&root, &manifest_path));
-                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), output, &mut out, &mut err)
+                    // The cache is merged into a copy, as for `--column`: the
+                    // kept graph stays the manifest's.
+                    let cache = rules.then_some(manifest_path.as_path());
+                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), cache, output, &mut out, &mut err)
                 }
                 Err(why) => return Outcome::failed(&why),
             }
@@ -1003,7 +1006,7 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
         let names = ["helper".to_string(), "orders".to_string()];
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, None, None, &names, false, None, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(&root, &graph, None, None, &names, false, None, None, ls::Output::Name, &mut out, &mut err).unwrap();
         let said = s.ask("--describe helper,orders");
         let got = blocks(&said);
         assert_eq!(got[0], String::from_utf8(out).unwrap());
@@ -1071,7 +1074,7 @@ mod tests {
         let (_, _, graph) = ls::open_with_catalog(&root, None, None).unwrap();
 
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        describe::respond_describe(&root, &graph, None, None, &["orders".to_string()], false, None, ls::Output::Name, &mut out, &mut err).unwrap();
+        describe::respond_describe(&root, &graph, None, None, &["orders".to_string()], false, None, None, ls::Output::Name, &mut out, &mut err).unwrap();
         let card = String::from_utf8(out).unwrap();
         assert!(card.contains("  jobs (1)"), "{card}");
         assert_eq!(blocks(&s.ask("--describe orders"))[0], card);
@@ -1599,7 +1602,7 @@ mod tests {
             fn new(dir: &Path, body: &str) -> StandIn {
                 let bin = dir.join("collin");
                 let script = format!(
-                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.10.0' && exit 0\nout=''\nreport=''\n\
+                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.11.0' && exit 0\nout=''\nreport=''\n\
                      while [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; [ \"$1\" = --report ] && report=\"$2\"; shift; done\n\
                      here=\"$(dirname \"$0\")\"\n{body}\n"
                 );
@@ -1657,7 +1660,7 @@ mod tests {
             }
         }
 
-        const OLD_CACHE: &str = r#"{"version":1,"source":"collin","producer":"collin 0.10.0","edges":[]}"#;
+        const OLD_CACHE: &str = r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[]}"#;
 
         /// A project whose cache stands, and a collin that starts, writes part
         /// of a file and waits.
@@ -1738,7 +1741,7 @@ mod tests {
             let changed: Vec<_> = after.iter().filter(|f| !before.contains(f)).map(|(p, _)| p.as_str()).collect();
             assert_eq!(changed, ["target/collin.report.json", "target/column_lineage.collin.json"]);
             assert!(before.iter().all(|(p, _)| after.iter().any(|(q, _)| p == q)), "nothing was removed");
-            assert!(blocks(&said).last().unwrap().contains("collin 0.10.0 wrote"), "{said}");
+            assert!(blocks(&said).last().unwrap().contains("collin 0.11.0 wrote"), "{said}");
         }
     }
 }
