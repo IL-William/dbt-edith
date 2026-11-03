@@ -411,6 +411,9 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
         rules_answer(graph, ask, &models, output, out, err)?;
     } else {
         columns_answer(&models, ask, output, out)?;
+        if output != Output::Name {
+            no_expressions(graph, err)?;
+        }
     }
     if !lineage.stopped_at.is_empty() {
         let at: Vec<&str> = lineage.stopped_at.iter().map(|r| if r.is_empty() { "unknown" } else { r }).collect();
@@ -427,6 +430,27 @@ fn answer(graph: &Graph, ask: &Ask, output: Output, out: &mut impl Write, err: &
         writeln!(err, "collin's indirect edges, a filter's, a join key's or a dedup key's, are left out: --indirect crosses them too")?;
     }
     Ok(ANSWERED)
+}
+
+/// Said when the answer's `steps` and `expression` are empty for a reason the
+/// cache gives, and not because the columns are copies: a collin before 0.11.0
+/// wrote no expression, nor does Fusion, and a current collin writes one only
+/// for a cast, transform, aggregate or window column (0138). Silence would read
+/// as columns with nothing to compute.
+fn no_expressions(graph: &Graph, err: &mut impl Write) -> io::Result<()> {
+    let Some(cll) = graph.cll.as_ref() else { return Ok(()) };
+    let m = &graph.meta;
+    let producer = m.cll_producer.as_str();
+    let version = producer.strip_prefix("collin ").unwrap_or(producer);
+    let tool = collin::tool_of(&m.cll_source);
+    if tool == "collin" && collin_run::outdated(Some(version).filter(|v| !v.is_empty())) {
+        let by = if producer.is_empty() { "a collin that names no version".to_string() } else { printable(producer) };
+        writeln!(err, "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty", collin_run::WANTS_TEXT)?;
+    } else if !cll.has_expressions() {
+        let from = if tool == "fusion" { "Fusion's cache carries no expression" } else { "this cache lists no expression" };
+        writeln!(err, "note: {from}, so steps and expression are empty; collin writes an expression only for a cast, transform, aggregate or window column")?;
+    }
+    Ok(())
 }
 
 /// The walk's columns, one line each (`--output compact`, `name`) or one JSON
@@ -484,7 +508,7 @@ fn columns_answer(models: &[Reached<'_>], ask: &Ask, output: Output, out: &mut i
 
 /// What `--rules` prints: for every model of the walk that has rules, upstream
 /// first, a heading and the predicates under it, one a line; or, as JSON, one
-/// array of `{node, depth, rules}`. Nothing for a model without rules, and
+/// object per model, `{node, depth, rules}`. Nothing for a model without rules, and
 /// nothing at all, with a word on stderr, when the cache lists none: it was
 /// written by a collin before 0.11.0, or without `--indirect`.
 fn rules_answer(graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<()> {
@@ -512,9 +536,10 @@ fn rules_answer(graph: &Graph, ask: &Ask, models: &[Reached<'_>], output: Output
             depth: i32,
             rules: &'a [&'a RawRule],
         }
-        let list: Vec<Applied<'_>> = held.iter().map(|(m, rules)| Applied { node: m.unique_id, depth: m.depth, rules }).collect();
-        if !held.is_empty() {
-            serde_json::to_writer(&mut *out, &list)?;
+        // A line a model, as `--column --output json` prints one: over MCP an
+        // answer is cut between lines, and one long line would be refused whole.
+        for (m, rules) in &held {
+            serde_json::to_writer(&mut *out, &Applied { node: m.unique_id, depth: m.depth, rules })?;
             writeln!(out)?;
         }
         return Ok(());
@@ -567,12 +592,13 @@ pub(crate) fn rule_line(graph: &Graph, label: &dyn Fn(&crate::graph::Node) -> St
     line
 }
 
-/// `graph` with the cache beside the manifest merged into a copy, for the
+/// `graph` with the cache beside `manifest` merged into a copy, for the
 /// rules `--describe --rules` prints. A copy, so the card's own columns are
 /// the manifest's and the catalog's alone: the merge adds the columns the
 /// cache knows (0138). None, with a word on stderr, when there is no cache or
-/// it lists no rule.
-pub(crate) fn with_rules(graph: &Graph, target_dir: &Path, err: &mut impl Write) -> Option<Graph> {
+/// it cannot be read; a cache with no rule gives the copy and a word.
+pub(crate) fn with_rules(root: &Path, graph: &Graph, manifest: &Path, err: &mut impl Write) -> Option<Graph> {
+    let target_dir = &files::folder_of(manifest).unwrap_or_else(|| root.join("target"));
     let found = collin::discover(target_dir);
     let named = Ask {
         column: String::new(),
@@ -602,11 +628,19 @@ pub(crate) fn with_rules(graph: &Graph, target_dir: &Path, err: &mut impl Write)
     };
     let mut merged = graph.clone();
     merged.merge_col_lineage(raw, files::mtime_secs(&cache));
+    merged.meta.cll_file = cache.display().to_string();
     if !merged.cll.as_ref().is_some_and(|c| c.has_rules()) {
-        let _ = writeln!(err, "{}", no_rules(&cache.display().to_string(), &merged.meta.cll_source));
-        return None;
+        let _ = writeln!(err, "{}", no_rules(&merged.meta.cll_file, &merged.meta.cll_source));
     }
     Some(merged)
+}
+
+/// Which cache answered and whether it still describes the manifest, said
+/// after the card and the manifest's lines as `--column` says it after its
+/// answer: a rule of a model since changed would read as current.
+pub(crate) fn cache_said(root: &Path, merged: &Graph, manifest: &Path, err: &mut impl Write) {
+    let producer = merged.meta.cll_producer.clone();
+    let _ = cache_lines(root, merged, Path::new(&merged.meta.cll_file), manifest, &producer, false, err);
 }
 
 /// The roles a cache holds, for a message.
@@ -1351,14 +1385,48 @@ mod tests {
     }
 
     #[test]
-    fn a_cache_without_the_lists_answers_as_before() {
+    fn a_cache_without_the_lists_says_why_its_expressions_are_empty() {
         // A cache from before collin 0.11.0: compact has its four fields on
-        // every row, and nothing is said of what it lacks.
+        // every row, and stderr names collin 0.11.0 as the one that writes them.
         let (out, err, code) = run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Compact);
         assert_eq!(code, ANSWERED);
         assert!(out.lines().skip(1).all(|l| l.split('\t').count() == 4), "{out}");
-        assert!(!err.contains("rules") && !err.contains("0.11.0"), "{err}");
+        assert!(err.contains("older than collin 0.11.0") && err.contains("steps and expression are empty"), "{err}");
         assert!(!run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Json).0.contains("expression"));
+        // Names only: no such column, nothing to explain.
+        assert!(!run_on(&graph(), &ask("stg_orders.amount", ALL, ALL), Output::Name).1.contains("expression"));
+
+        // A collin 0.10.x names itself; Fusion's cache and a cache of the
+        // current collin with no expression say what they lack.
+        let said = |source: &str, producer: &str, expressions: Vec<crate::collin::RawExpression>| {
+            let mut g = graph();
+            g.merge_col_lineage(
+                RawColLineage {
+                    version: 1,
+                    source: source.into(),
+                    producer: producer.into(),
+                    edges: vec![RawColEdge {
+                        from: "model.shop.stg_orders".into(),
+                        from_col: "amount".into(),
+                        to: "model.shop.orders".into(),
+                        to_col: "order_amount".into(),
+                        kind: "rename".into(),
+                    }],
+                    expressions,
+                    ..Default::default()
+                },
+                1,
+            );
+            run_on(&g, &ask("stg_orders.amount", 0, 0), Output::Compact).1
+        };
+        assert!(said("collin", "collin 0.10.1", Vec::new()).contains("written by collin 0.10.1, older than collin 0.11.0"));
+        assert!(said("fusion", "", Vec::new()).contains("Fusion's cache carries no expression"));
+        let current = said("collin", "collin 0.11.0", Vec::new());
+        assert!(current.contains("this cache lists no expression"), "{current}");
+        assert!(current.contains("only for a cast, transform, aggregate or window column") && !current.contains("0.11.0"), "{current}");
+        let some = vec![expression("model.shop.orders", "order_amount", "aggregate", "sum(a)", 1, false)];
+        let none = said("collin", "collin 0.11.0", some);
+        assert!(!none.contains("steps and expression"), "a cache that lists some says nothing: {none}");
     }
 
     #[test]
@@ -1389,10 +1457,11 @@ mod tests {
     }
 
     #[test]
-    fn rules_as_json_are_one_array_of_models_with_collins_own_fields() {
+    fn rules_as_json_are_an_object_a_model_a_line_with_collins_own_fields() {
         let (out, _, _) = run_on(&with_rules(), &Ask { rules: true, ..ask("orders.order_amount", ALL, 0) }, Output::Json);
-        let got: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(got.as_array().map(Vec::len), Some(2), "{out}");
+        // A line each, so an answer cut over MCP is cut between models.
+        assert_eq!(out.lines().count(), 2, "{out}");
+        let got = serde_json::Value::Array(lines(&out));
         assert_eq!(got[0]["node"], "model.shop.stg_orders");
         assert_eq!(got[0]["depth"], -1);
         assert_eq!(got[0]["rules"][0]["clause"], "QUALIFY");
@@ -1469,14 +1538,19 @@ mod tests {
     fn a_card_reads_the_rules_from_collins_cache_and_not_a_newer_fusion_one() {
         let dir = both_caches("rules-card");
         let mut err = Vec::new();
-        let merged = super::with_rules(&graph(), &dir, &mut err).expect("collin's cache lists a rule");
+        let merged = super::with_rules(&dir, &graph(), &dir.join("manifest.json"), &mut err).expect("collin's cache lists a rule");
         assert!(merged.cll.as_ref().is_some_and(|c| c.has_rules()));
-        assert_eq!(String::from_utf8(err).unwrap(), "");
+        assert_eq!(String::from_utf8(err).unwrap(), "", "the cache is named after the card, not before");
+        // The cache that answered is named, as `--column` names it.
+        let mut after = Vec::new();
+        super::cache_said(&dir, &merged, &dir.join("manifest.json"), &mut after);
+        let said = String::from_utf8(after).unwrap();
+        assert!(said.starts_with("column lineage: ") && said.contains("column_lineage.collin.json") && !said.contains("warning"), "{said}");
         // With collin's cache gone only Fusion's is left, which has none, and
         // the message names it.
         std::fs::remove_file(dir.join("column_lineage.collin.json")).unwrap();
         let mut err = Vec::new();
-        assert!(super::with_rules(&graph(), &dir, &mut err).is_none());
+        assert!(super::with_rules(&dir, &graph(), &dir.join("manifest.json"), &mut err).is_none());
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("no column lineage from collin"), "{said}");
         std::fs::remove_dir_all(&dir).unwrap();

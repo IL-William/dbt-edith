@@ -505,13 +505,14 @@ pub(crate) mod tests {
                       "columns":[{"node":"model.jaffle_shop.stg_orders","column":"status"}]}]}"#;
         std::fs::write(dir.join("target/column_lineage.collin.json"), cache).unwrap();
         let root = dir.canonicalize().unwrap();
-        let target = root.join("target");
+        let manifest = root.join("target/manifest.json");
         let (_, _, opened) = ls::open_with_catalog(&dir, None, None).unwrap();
         let names = ["orders".to_string()];
         let mut g = graphs(&dir);
-        let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:")).collect::<Vec<_>>().join("\n");
+        // The ages of both lines are the clock's, per call.
+        let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:") && !l.starts_with("column lineage:")).collect::<Vec<_>>().join("\n");
         for (line, output) in [("--describe orders --rules", ls::Output::Name), ("--describe orders --rules --output json", ls::Output::Json)] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, false, None, Some(&target), output, o, e));
+            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, false, None, Some(&manifest), output, o, e));
             let got = crate::mcp::answer_line(&mut g, line, &std::sync::atomic::AtomicBool::new(false));
             assert!(!got.is_error, "{line}: {}", got.err);
             assert_eq!(got.out, want.0, "{line}");

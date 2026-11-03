@@ -392,6 +392,10 @@ pub struct Meta {
     pub cll_source: String,
     /// Which file it was read from.
     pub cll_file: String,
+    /// What wrote it, `collin 0.11.0`, when the cache says. Kept to tell a
+    /// command-line answer why a column has no expression, and never sent.
+    #[serde(skip)]
+    pub cll_producer: String,
     pub cll_target: String,
     pub cll_generated_at: String,
     pub cll_kinds: Vec<KindCount>,
@@ -479,7 +483,7 @@ pub struct ColEdge {
 
 /// How many steps along a column's chain of CTEs collin counts before it says
 /// the chain recurses: a column that reaches this has a recursive CTE behind
-/// it, and the number would be an accident of the limit (collin's 0049).
+/// it, and the number would be an accident of the limit (collin's 0050).
 pub const RECURSIVE_STEPS: u32 = 32;
 
 /// What computes a column, as collin wrote it: the role of the loudest edge,
@@ -584,6 +588,12 @@ impl ColLineage {
         let lo = self.rules.partition_point(|(n, _)| *n < node);
         let hi = self.rules.partition_point(|(n, _)| *n <= node);
         self.rules[lo..hi].iter().map(|(_, r)| r)
+    }
+
+    /// Whether the cache gives any column an expression: one from before collin
+    /// 0.11.0, or from Fusion, gives none.
+    pub fn has_expressions(&self) -> bool {
+        !self.expressions.is_empty()
     }
 
     /// Whether the cache lists any predicate: a cache from before collin
@@ -1358,6 +1368,7 @@ impl Graph {
                 cll_mtime: 0,
                 cll_source: String::new(),
                 cll_file: String::new(),
+                cll_producer: String::new(),
                 cll_target: String::new(),
                 cll_generated_at: String::new(),
                 cll_kinds: Vec::new(),
@@ -1606,6 +1617,7 @@ impl Graph {
         self.meta.cll_dropped = dropped;
         self.meta.cll_mtime = mtime;
         self.meta.cll_source = raw.source;
+        self.meta.cll_producer = raw.producer;
         self.meta.cll_target = raw.target;
         self.meta.cll_generated_at = raw.generated_at;
         total
@@ -2033,7 +2045,7 @@ impl Graph {
         for m in models {
             for r in cll.rules_of(m).filter(|r| r.columns.iter().any(|x| x.node == owner.id && x.column.eq_ignore_ascii_case(column))) {
                 if named.len() < ROWS_BY {
-                    named.push([self.nodes[m as usize].name.clone(), format!("{} {}", r.clause, said_cut(&r.text, r.cut))]);
+                    named.push([self.nodes[m as usize].name.clone(), format!("{} {}", r.clause, said_cut(&crate::ls::field(&r.text), r.cut))]);
                 } else {
                     more += 1;
                 }
@@ -3326,6 +3338,7 @@ mod tests {
         c.rules = vec![
             rule_of("orders", "WHERE", "status <> 'cancelled'", false, &[("stg_orders", "status")]),
             rule_of("customers", "QUALIFY", "row_number() over (order by status) = 1", true, &[("stg_orders", "Status")]),
+            rule_of("customers", "WHERE", "note = 'a\nb'\tand c", false, &[("stg_orders", "status")]),
             rule_of("orders", "JOIN", "a.id = b.id", false, &[("stg_orders", "id")]),
             rule_of("orders", "HAVING", "sum(amount) > 0", false, &[("stg_orders", "status"), ("stg_orders", "amount")]),
             rule_of("gone", "WHERE", "x", false, &[]),
@@ -3347,8 +3360,8 @@ mod tests {
         // A model's own, in collin's order; a model the manifest lacks is a stale cache's.
         let texts: Vec<&str> = cll.rules_of(orders).map(|r| r.text.as_str()).collect();
         assert_eq!(texts, ["status <> 'cancelled'", "a.id = b.id", "sum(amount) > 0"]);
-        assert_eq!(cll.rules_of(customers).count(), 1);
-        assert_eq!(cll.rules.len(), 4);
+        assert_eq!(cll.rules_of(customers).count(), 2);
+        assert_eq!(cll.rules.len(), 5);
         // By column, in either spelling of its name; none for a column the manifest does not have.
         let amount = col(&g, "stg_orders", "amount");
         let x = cll.expression(amount).unwrap();
@@ -3362,8 +3375,8 @@ mod tests {
         g.name_rows_by(&mut l);
         let json = serde_json::to_string(&l.nodes[0]).unwrap();
         assert!(
-            json.contains(r#""rules":[["customers","QUALIFY row_number() over (order by status) = 1 (cut)"],["orders","WHERE status <> 'cancelled'"],["orders","HAVING sum(amount) > 0"]]"#),
-            "the models in name order, each one's rules in collin's, a cut marked: {json}"
+            json.contains(r#""rules":[["customers","QUALIFY row_number() over (order by status) = 1 (cut)"],["customers","WHERE note = 'a b' and c"],["orders","WHERE status <> 'cancelled'"],["orders","HAVING sum(amount) > 0"]]"#),
+            "the models in name order, each one's rules in collin's, a cut marked, a newline or tab a space: {json}"
         );
         assert!(!json.contains("rules_more") && !json.contains("a.id = b.id"), "a rule that reads another column is not on this card: {json}");
         let mut l = g.column_lineage(amount, 0, 0, 100, &[], RowEdges::Hidden);

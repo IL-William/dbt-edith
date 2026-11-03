@@ -152,8 +152,8 @@ pub fn run_describe(
     let mut err = io::stderr().lock();
     let mut out = BufWriter::new(io::stdout().lock());
     let compiled = compiled_sql.then(|| target_dir(&root, &manifest_path));
-    let cache = rules.then(|| target_dir(&root, &manifest_path));
-    let written = respond_describe(&root, &graph, None, None, names, sql, compiled.as_deref(), cache.as_deref(), output, &mut out, &mut err);
+    let cache = rules.then_some(manifest_path.as_path());
+    let written = respond_describe(&root, &graph, None, None, names, sql, compiled.as_deref(), cache, output, &mut out, &mut err);
     ls::ended(written, &mut err)
 }
 
@@ -166,9 +166,9 @@ pub(crate) fn target_dir(root: &Path, manifest_path: &Path) -> PathBuf {
 /// What the mode does once the project is open: the cards, flushed, then what
 /// the manifest is worth. The exit code, or the write that failed. `compiled`
 /// is the target folder to read each node's compiled SQL from, when asked for.
-/// `rules` is the folder to look for the column lineage cache in when
-/// `--rules` asks for the predicates of a card (0138): without it no cache is
-/// read, and the card is what it always was.
+/// `rules` is the manifest whose folder holds the column lineage cache to
+/// look in when `--rules` asks for the predicates of a card (0138): without
+/// it no cache is read, and the card is what it always was.
 pub(crate) fn respond_describe(
     root: &Path,
     graph: &Graph,
@@ -182,10 +182,13 @@ pub(crate) fn respond_describe(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> io::Result<i32> {
-    let with = rules.and_then(|dir| ls_column::with_rules(graph, dir, err));
+    let with = rules.and_then(|manifest| ls_column::with_rules(root, graph, manifest, err));
     let code = describe(graph, root, jobs, standings, names, sql, compiled, with.as_ref(), output, out, err)?;
     out.flush()?;
     let _ = ls::provenance(root, graph, err);
+    if let (Some(merged), Some(manifest)) = (&with, rules) {
+        ls_column::cache_said(root, merged, manifest, err);
+    }
     Ok(code)
 }
 
@@ -967,8 +970,9 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
 }
 
 /// What the SQL of a node keeps its rows by, when `--rules` asked and collin
-/// wrote them (0138): one predicate a line, its clause first, the text as the
-/// compiled SQL has it and the columns it reads.
+/// wrote them (0138): one predicate a line, its clause first, the text as
+/// collin's parser prints it (not always a substring of the compiled file) and
+/// the columns it reads.
 fn rules_block(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
     let rules = files.rules_of(idx);
     if rules.is_empty() {
@@ -2660,7 +2664,7 @@ mod tests {
         assert_eq!(out, ask(&["orders"], Output::Name).0, "byte for byte the card of before");
         assert!(!err.contains("--rules") && !err.contains("cache"), "{err}");
         // Asked for, the unreadable cache is said and the card is still printed.
-        let target = dir.join("target");
+        let target = dir.join("target/manifest.json");
         let (out, err) = say(Some(&target));
         assert_eq!(out, ask(&["orders"], Output::Name).0);
         assert!(err.contains("warning: --rules: cannot read"), "{err}");
@@ -2673,7 +2677,7 @@ mod tests {
         let say = |dir: &Path| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             let g = graph();
-            let target = dir.join("target");
+            let target = dir.join("target/manifest.json");
             let code = respond_describe(dir, &g, None, None, &names, false, None, Some(&target), Output::Name, &mut out, &mut err).unwrap();
             (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
         };
@@ -2709,6 +2713,22 @@ mod tests {
         let (out, err, _) = say(&both);
         assert!(out.contains("    WHERE status <> 'cancelled'\n"), "{out}\n{err}");
         std::fs::remove_dir_all(&both).unwrap();
+
+        // A cache older than the manifest is said, as `--column` says it: a
+        // rule of a model since changed would read as current.
+        let old = cached("old", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"x","columns":[]}]}"#);
+        let (cache, manifest) = (old.join("target/column_lineage.collin.json"), old.join("target/manifest.json"));
+        std::fs::write(&manifest, "{}").unwrap();
+        let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&cache).unwrap().set_modified(earlier).unwrap();
+        let (out, err, _) = say(&old);
+        assert!(out.contains("    WHERE x\n"), "{out}");
+        assert!(err.contains("column lineage: ") && err.contains("column_lineage.collin.json"), "{err}");
+        assert!(err.contains("warning: the column lineage is older than the manifest"), "{err}");
+        // After the manifest's lines, as `--column` orders them.
+        assert!(err.find("manifest: ").unwrap() < err.find("column lineage: ").unwrap(), "{err}");
+        std::fs::remove_dir_all(&old).unwrap();
 
         let nothing = cached("nothing", "unrelated.json", "{}");
         let (out, err, _) = say(&nothing);

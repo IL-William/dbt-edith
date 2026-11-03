@@ -3060,7 +3060,7 @@ a known limit, unranked:
   measure was on an earlier text, and other clients, Copilot among them, are
   untried.
 - **The MCP help is at its byte cap:** 1792 of its 1792 bytes at 1.72.0, and the
-  two skill files at 4093 and 4095 of 4096, so the next flag needs a cut in all
+  two skill files at 4089 and 4092 of 4096, so the next flag needs a cut in all
   three.
 - **A test to watch:** `web/tests/layout.js` failed once on a loaded machine
   during a full check and passed alone.

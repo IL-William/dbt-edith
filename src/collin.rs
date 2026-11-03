@@ -35,8 +35,9 @@ pub struct RawColLineage {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub roots: Vec<RawRoot>,
     /// The predicates each model applies, which collin writes under
-    /// `--indirect` since its 0.11.0 (its 0049): the text as the compiled SQL
-    /// has it, and the columns it reads. A cache without them reads as
+    /// `--indirect` since its 0.11.0 (its 0050): the text as collin's parser
+    /// prints it (keywords in capitals, spacing normalised, so it is not always
+    /// a substring of the compiled file), and the columns it reads. A cache without them reads as
     /// before, and one saved here keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<RawRule>,

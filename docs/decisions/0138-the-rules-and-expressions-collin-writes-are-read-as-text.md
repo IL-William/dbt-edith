@@ -1,6 +1,6 @@
 # 0138. The rules and expressions collin writes are read as text
 
-Date: 2026-11-03 · Status: accepted · Amends 0088, 0097 and 0102 · Follows dbt-collin's 0049
+Date: 2026-11-03 · Status: accepted · Amends 0088, 0097 and 0102 · Follows dbt-collin's 0050
 
 **Trigger:** read before changing what `--rules` or `--casts` print, what the
 compact `--column` answer carries after `tests`, what a column box counts or its
@@ -34,18 +34,27 @@ by reading the SQL.
 - **A cast is folded in compact.** Its text is everywhere and says little; its
   step is counted, and `--casts` prints the text. JSON always carries it.
 - **`--rules` is the flag that reads the cache for a card.** `--describe` reads
-  no cache today, and an 80 MB file for every card would slow it. Without
+  no cache today, and a cache that holds every edge of every model, read for every card, would slow it. Without
   `--rules` the card is byte for byte what it was and no cache is opened; with
   it, the cache is merged into a copy of the graph so the card's own columns
   stay the manifest's and the catalog's. Over MCP the same copy is made, so the
   command line and the tool answer alike.
-- **A cache without the lists is silent.** Compact is unchanged; `--rules`
-  prints nothing and stderr says the cache predates collin 0.11.0 or was
-  written without `--indirect`; exit 0. `WANTS` moves to 0.11.0 so the Collin
-  pill offers the update.
+- **A cache without the lists says so on stderr.** Compact keeps its header and
+  its four fields per row, and one line says why `steps` and `expression` are
+  empty: the cache was written by a collin older than 0.11.0 (the only case
+  that names 0.11.0), it is Fusion's, or it lists no expression, which a
+  current collin does for a cache whose columns are all copies, renames,
+  hashes or literals: it writes an expression only for a cast, transform,
+  aggregate or window column. It first chose silence, which read as columns with
+  nothing to compute. `--rules` prints nothing and stderr says the cache
+  predates collin 0.11.0 or was written without `--indirect`; exit 0.
+  `--describe --rules` prints the `column lineage:` line and the staleness
+  warning of `--column`, so a rule of a model since changed is not read as
+  current. `WANTS` moves to 0.11.0 so the Collin pill offers the update.
 - **The canvas moves as little as it can.** A column box shows a small count
   above its box, on the left, only when `steps` is above one (`×3`, `32+`), the
-  expression as its tooltip. The hover card opens for an expression too and
+  expression in its label and its hover card, the badge having no tooltip
+  of its own (a native one would land over the card). The hover card opens for an expression too and
   adds `expression` and `steps` or `recursive`. The `keeps the rows of` line of
   0118 stays, and gains under it the predicates that read the column, of the
   models it names, when the cache has rules.

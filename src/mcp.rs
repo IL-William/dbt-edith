@@ -427,8 +427,8 @@ fn answer_capped(graphs: &mut Graphs, line: &str, stop: &AtomicBool, locate: imp
                     let compiled = compiled_sql.then(|| describe::target_dir(&root, &manifest_path));
                     // The cache is merged into a copy, as for `--column`: the
                     // kept graph stays the manifest's.
-                    let cache = rules.then(|| describe::target_dir(&root, &manifest_path));
-                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), cache.as_deref(), output, &mut out, &mut err)
+                    let cache = rules.then_some(manifest_path.as_path());
+                    describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, sql, compiled.as_deref(), cache, output, &mut out, &mut err)
                 }
                 Err(why) => return Outcome::failed(&why),
             }

@@ -284,8 +284,8 @@ feeds.
 A column that is more than a copy shows a small count above its box, on the
 left, when more than one step of its chain did something to its value: `×2`,
 and `32+` where the chain recurses and the number would only be collin's limit.
-Its tooltip is the expression. Hovering the column adds the two lines `expression`
-and `steps` (`recursive` at the limit) to its card, whatever the count: a
+The expression is in the box's label for a screen reader and in its hover card,
+which adds the two lines `expression` and `steps` (`recursive` at the limit) to its card, whatever the count: a
 column with one step has no count and still has its card (0138).
 
 Hovering a column says what keeps its rows, apart from where its value comes

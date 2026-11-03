@@ -175,9 +175,13 @@ cut.
 something to its value, printed whenever collin gave an expression, a cast's
 included. Two marks are collin's own: a text it cut ends in `(cut)`, and a
 chain of 32 steps or more prints `32+`, which says a recursive CTE is behind it
-and not a count. A row with neither, a copy or a rename, ends after `tests`
-as it always did, the empty fields left off with their tabs. A cache from a
-collin before 0.11.0 has neither, and the answer is what it was. `--output
+and not a count. A row with neither ends after `tests` as it always did, the
+empty fields left off with their tabs. There is no expression for a copy, a
+rename, a hash, a compile collin did not trust, or a cache older than collin
+0.11.0 (Fusion's has none); with such a cache the header still has its two
+extra columns, every row ends after `tests`, and stderr says why. The text is
+collin's parser's print, not a slice of the compiled file: read the SQL itself
+with `--describe NAME --compiled-sql`. `--output
 json` adds `expression`, `kind`, `steps` and, when true, `cut` to a column,
 the cast's text included.
 
@@ -194,16 +198,19 @@ orders  (depth 0)
 ```
 
 The models come upstream first, each with its depth and a line a predicate,
-the clause first (`WHERE`, `HAVING`, `QUALIFY` or `JOIN`), the text as the
-compiled SQL writes it, a cut text marked `(cut)`, then `reads` and the
-columns it names as `model.column`. A model with no rule is left out. `--output
-json` prints one array of `{node, depth, rules}`, the rules as collin wrote
-them. The rules come with `--indirect` in collin's cache, whether or not the
-walk crosses the indirect edges; a cache written without it, or by a collin
-before 0.11.0, has none, and `--rules` then prints nothing and says so on
-stderr. Under `--rules` the cache is collin's, the only one that writes rules,
-whatever newer cache lies beside it; a project with no collin cache at all is
-refused, exit 2, with how to write one. `--describe` takes `--rules` too,
+the clause first (`WHERE`, `HAVING`, `QUALIFY` or `JOIN`), the text as
+collin's parser prints it (keywords in capitals, spacing normalised, so a grep
+of the compiled file for it can fail), a cut text marked `(cut)`, then `reads`
+and the columns it names as `model.column`. A model with no rule is left out.
+`--output json` prints one `{node, depth, rules}` object per model, a line
+each, the rules as collin wrote them. The rules come with `--indirect` in
+collin's cache, whether or not the walk crosses the indirect edges; a cache
+written without it, or by a collin before 0.11.0, has none, and `--rules` then
+prints nothing and says so on stderr. Under `--rules` the cache is collin's, the
+only one that writes rules, whatever newer cache lies beside it; a project with
+no collin cache at all is refused, exit 2, with how to write one. stderr names
+the cache that answered and warns when it is older than the manifest, with
+`--describe` as with `--column`. `--describe` takes `--rules` too,
 [below](#the-card).
 
 ## A node
