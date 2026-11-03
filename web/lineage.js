@@ -1480,8 +1480,41 @@ const Lineage = (() => {
     const said = (head, pairs, more) => pairs && pairs.length
       ? `${head}: ${pairs.map(([name, role]) => `${name} (${clauseOf(role) || role})`).join(', ')}${more ? `, and ${more} more` : ''}`
       : '';
-    return d.nodes.map((n) => [said('rows kept by', n.rows_by, n.rows_by_more), said('keeps the rows of', n.rows_of, n.rows_of_more)]
+    // The predicates that read the column, when collin wrote them (0138): one
+    // line each under the models they keep the rows of, `[model, "WHERE text"]`
+    // with the clause first as the command line's card has it, and how many
+    // more than the server names. A cache without them gives the line above alone.
+    const ruled = (n) => n.rules && n.rules.length
+      ? n.rules.map(([model, rule]) => `  ${model}: ${rule}`).concat(n.rules_more ? [`  and ${n.rules_more} more`] : []).join('\n')
+      : '';
+    return d.nodes.map((n) => [said('rows kept by', n.rows_by, n.rows_by_more), said('keeps the rows of', n.rows_of, n.rows_of_more), ruled(n)]
       .filter(Boolean).join('\n'));
+  }
+
+  /* How many steps of its chain of CTEs did something to a column's value,
+     as the small count on its box says it (0138): nothing for one step, which
+     the box's own role says, `×3` for more, and `32+` where collin stops
+     counting and a recursive CTE is behind it, the number then being only
+     where the limit fell. Taken from the same constant as the command line's
+     (`RECURSIVE_STEPS`, graph.rs). */
+  const RECURSIVE_STEPS = 32;
+
+  function stepsLabel(expression) {
+    const steps = expression && Number(expression.steps) || 0;
+    if (steps < 2) return '';
+    return steps >= RECURSIVE_STEPS ? `${RECURSIVE_STEPS}+` : `\u00d7${steps}`;
+  }
+
+  /* The two lines the column's card adds when collin gave it an expression:
+     the text, a cut one marked where it ends, and its steps, or `recursive`
+     where the count stopped at the limit and the number would only be that. */
+  function expressionSaid(expression) {
+    if (!expression) return [];
+    const steps = Number(expression.steps) || 0;
+    return [
+      `expression  ${expression.text || ''}${expression.cut ? ' (cut)' : ''}`,
+      `steps  ${steps >= RECURSIVE_STEPS ? 'recursive' : steps}`,
+    ];
   }
 
   /* Writes the second line into a box's <text>, the struck word in a <tspan>
@@ -2137,6 +2170,8 @@ const Lineage = (() => {
       }
 
       if (roles[i]) g.appendChild(roleBadge(roles[i]));
+      const count = columnMode ? stepsLabel(n.expression) : '';
+      if (count) g.appendChild(stepsBadge(count));
 
       // A hanging test's other inputs are counted on its right: its left is
       // where the stem from its model runs.
@@ -2151,10 +2186,12 @@ const Lineage = (() => {
       const said = strategySaid(n, opts.adapter);
       // The value too, which only a hover shows: an exported page has none.
       const set = roles[i] === 'generated' ? generatedSaid(n.generated).line : '';
+      // What computes the column (0138), said in the label since the badge has no tooltip.
+      const how = columnMode && n.expression ? `computed by ${n.expression.text || ''}${n.expression.cut ? ' (cut)' : ''}` : '';
       // Both lines of the card on one, a label having no line break.
       const rows = (kept[i] || '').replace(/\n/g, ', ');
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
-        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + (rows ? `${rows}, ` : '')
+        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + (how ? `${how}, ` : '') + (rows ? `${rows}, ` : '')
         + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => {
@@ -2260,6 +2297,21 @@ const Lineage = (() => {
       class: 'rolelabel', x: W - w / 2 - 4, y: -4, 'text-anchor': 'middle',
       style: `fill:${colour}`,
     });
+    t.textContent = label;
+    g.appendChild(t);
+    return g;
+  }
+
+  /* The count of a column's transformations, small and on the left above its
+     box, where the role badge is on the right: the same dark pill with a
+     neutral outline. The expression is in the box's label and its hover card,
+     not a <title>, whose native tooltip would land over the card. Only when
+     the box has more than one step to count (`stepsLabel`). */
+  function stepsBadge(label) {
+    const w = label.length * 5.8 + 12;
+    const g = el('g', { class: 'rolebadge stepsbadge' });
+    g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:#131922;stroke:${EDGE_PLAIN}` }));
+    const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:#c9d4e3' });
     t.textContent = label;
     g.appendChild(t);
     return g;
@@ -2712,7 +2764,7 @@ const Lineage = (() => {
 
   return {
     init, render, paintBuilds, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
+    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked, setSkin, isModelBox,
   };
 })();

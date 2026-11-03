@@ -151,11 +151,11 @@ dbt-edith path/to/project --column stg_payments.amount --down all --output compa
 ```
 
 ```
-depth	column	from	tests
-0	stg_payments.amount		
-1	customers.customer_lifetime_value	stg_payments.amount:aggregate	
-1	orders.amount	stg_payments.amount:aggregate	not_null_orders_amount
-1	orders.bank_transfer_amount	stg_payments.amount:aggregate	not_null_orders_bank_transfer_amount
+depth	column	from	tests	steps	expression
+0	stg_payments.amount			1	amount / 100
+1	customers.customer_lifetime_value	stg_payments.amount:aggregate		1	sum(amount)
+1	orders.amount	stg_payments.amount:aggregate	not_null_orders_amount	1	sum(amount)
+1	orders.bank_transfer_amount	stg_payments.amount:aggregate	not_null_orders_bank_transfer_amount	1	sum(CASE WHEN payment_method = 'bank_transfer' THEN amount ELSE 0 END)
 ```
 
 `depth` is the levels from the column asked, negative upstream. `column` is
@@ -166,6 +166,45 @@ the JSON adds is left to it: the `generated` values of a column its model's SQL
 sets from no column, and `more_up` and `more_down`, the edges a depth or a stop
 left out. Ask for `--output json` when the question is whether the walk was
 cut.
+
+`steps` and `expression` are the last two columns and come from collin 0.11.0
+(0138). `expression` is the SQL that computes the column, for a `transform`, an
+`aggregate` or a `window`, with a tab or a newline in it written as a space; a
+`cast` is folded, since a cast is everywhere and says little, unless
+`--casts` is given. `steps` is how many steps of the column's chain of CTEs did
+something to its value, printed whenever collin gave an expression, a cast's
+included. Two marks are collin's own: a text it cut ends in `(cut)`, and a
+chain of 32 steps or more prints `32+`, which says a recursive CTE is behind it
+and not a count. A row with neither, a copy or a rename, ends after `tests`
+as it always did, the empty fields left off with their tabs. A cache from a
+collin before 0.11.0 has neither, and the answer is what it was. `--output
+json` adds `expression`, `kind`, `steps` and, when true, `cut` to a column,
+the cast's text included.
+
+**`--rules`** prints the predicates of the models on the walk, in place of the
+columns, so an agent can ask why a model holds the rows it does:
+
+```
+dbt-edith path/to/project --column orders.amount --up all --rules
+```
+
+```
+orders  (depth 0)
+  JOIN orders.order_id = order_payments.order_id  reads stg_orders.order_id, stg_payments.order_id
+```
+
+The models come upstream first, each with its depth and a line a predicate,
+the clause first (`WHERE`, `HAVING`, `QUALIFY` or `JOIN`), the text as the
+compiled SQL writes it, a cut text marked `(cut)`, then `reads` and the
+columns it names as `model.column`. A model with no rule is left out. `--output
+json` prints one array of `{node, depth, rules}`, the rules as collin wrote
+them. The rules come with `--indirect` in collin's cache, whether or not the
+walk crosses the indirect edges; a cache written without it, or by a collin
+before 0.11.0, has none, and `--rules` then prints nothing and says so on
+stderr. Under `--rules` the cache is collin's, the only one that writes rules,
+whatever newer cache lies beside it; a project with no collin cache at all is
+refused, exit 2, with how to write one. `--describe` takes `--rules` too,
+[below](#the-card).
 
 ## A node
 
@@ -252,6 +291,7 @@ Every line under it is left out when it has nothing to say.
 | `columns (N)` | one line per column, tab-separated: name, type, tests, description on one line, the empty fields at the end left off with their tabs. A column only the warehouse has, from the catalog, says `(catalog only)` after its type |
 | `parents (N)`, `children (N)` | `name (materialized)`, a source or an exposure saying its kind, sorted by name |
 | `tests (N)` | each test on the node: `name: generic on column`, `name (singular)` for a query of its own, then `warn` and each setting off dbt's default (`where x`, `limit 5`); a test declared on another node, as a `relationships` is on the model it points at, names that node: `on orders.customer_id` |
+| `keeps the rows where` | only with `--rules`, and only when collin's cache lists predicates for the node: a block, a line each in collin's order, `WHERE status <> 'cancelled'  reads stg_orders.status`, the clause first and a cut text marked `(cut)`. Without the flag the cache is not read and the card is what it was. After `tests` |
 | `reach` | how many nodes lie upstream and downstream, tests excluded; a source has only downstream |
 | `jobs (N)` | only in a project with a `.dbt-edith/jobs.yml` ([below](#a-job)): the steps of the orchestrator's jobs that run it, scheduled jobs first, `DAG shop_daily › task marts (scheduled 0 5 * * *) via +tag:daily` or `job Daily build › step 3/3 (manual)`, the terms of the step's selection that reached it after `via`; `none` when no step does and every source was read, then `N steps not resolved` for the ones that could not be read or resolved and could act on it, `N job files not read`, and `1 of 3 sources (nothing at this path) not read` for a source whose folder or file could not be walked or was cut at a bound, which says `jobs  not read: 1 of 3 sources (...)` instead of `none`. A file with `jobs: []` says `no sources in .dbt-edith/jobs.yml`, which is not `none`. A file that does not read gives `not read, .dbt-edith/jobs.yml:` and the reason in its place. Left off a test, an exposure and the nodes with no reach line |
 | `selectors (N)` | the project's named selectors (`selectors.yml`) that select it, by name and in name order, as `--selector NAME` lists them, tests counted in as dbt counts them. A selector this build cannot resolve (a `state:` method, say) is named after `not resolvable here:`, since it may select the node too; with none holding the node the row is `selectors  not resolvable here: ci`. In a manifest that lost the `indirect_selection` of `selectors.yml` (Fusion before 2026-08-18 drops it), the selectors are also resolved at both ends of that setting, and what they disagree on is said: a selector holding the node by dbt's default but not in its least generous mode is followed by `(by dbt's default; indirect_selection lost)`, and one that drops it by default but would hold it in its most generous mode is named after `may be held (indirect_selection lost):`. The row is left off when the project defines no selector, when none holds or may hold the node and every one resolves, and on a disabled node, which dbt never selects. It follows `jobs` on a model, seed, snapshot, analysis or source, and ends the card of a test or an exposure |
@@ -431,6 +471,7 @@ names, and leaves out every key that is empty:
 | `jobs`, `jobs_unresolved`, `jobs_files_refused`, `jobs_not_read`, `jobs_sources`, `jobs_refused` | with a `.dbt-edith/jobs.yml`, for the nodes that have a reach: `jobs` the steps that run it, each `kind` (`airflow` or `dbt_cloud`), `job`, `step`, `schedule`, `via` and `file`, an empty list when none does; `jobs_unresolved` the steps not resolved that could act on it and `jobs_files_refused` the job files not read, when not zero; `jobs_not_read` the sources that were not read (`sources`, `of`, `reason`), so an empty `jobs` is not an answer; `jobs_sources` how many sources the file names, when none or when some were not read; `jobs_refused` why the sources file was not read, instead of `jobs` |
 | `selectors`, `selectors_indirect_lost`, `selectors_may_hold`, `selectors_unresolved` | the names of the selectors that select it; those of them that may hold this node only by dbt's default, and the selectors that do not hold it by default but may in their own mode, when the manifest lost an `indirect_selection` that `selectors.yml` sets; the selectors this build cannot resolve, which may select it too. Each is left off when empty |
 | `test` | on a test node: `checks` (the generic's name, or `singular`), `column`, `host` (the unique_id of the node it is declared on), `severity`, `generic`, `settings` |
+| `rules` | with `--rules`, the predicates collin wrote for the node: `clause`, `text`, `cut` (when true) and the `columns` it reads, each a `node` and a `column` |
 | `sql` | with `--sql`, the file, whole, once it was read |
 | `compiled_sql` | with `--compiled-sql`, the compiled file, once it was read |
 
@@ -888,7 +929,8 @@ are safe to run unasked.
 | a model's neighbours | `dbt-edith . -s 'model+1' --exclude resource_type:test --output compact` for its children; `1+model` for its parents, `1+model+1` for both |
 | everything upstream, or downstream, of a model | `dbt-edith . -s '+model' --exclude resource_type:test --output compact`; `model+` for what dropping or renaming it breaks |
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
-| what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it |
+| what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it, and how each column is computed |
+| what rules keep a column's rows | `dbt-edith . --column model.column --up all --rules`: the predicates of every model on the way, with the columns they read |
 | which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
 | what a DAG or dbt Cloud job runs, and what each step waits for | `dbt-edith . --job name`, step by step |
 | the models no job runs, and the steps that select nothing | `dbt-edith . --job-coverage --output compact` |

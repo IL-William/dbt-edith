@@ -11915,18 +11915,30 @@ function hoverLeave() {
 }
 
 /* A column's box, when it has more to say than the box shows: what the SQL
-   sets a generated column to (0096), and apart from it what keeps the rows
-   it is in (0097), and the models it keeps the rows of (0118), so "from no
-   column" and a filter on another column are two facts rather than one
-   contradiction. All in the box's payload, so it
-   paints once. */
+   sets a generated column to (0096), what computes a column that is more than
+   a copy (0138), and apart from it what keeps the rows it is in (0097), and
+   the models it keeps the rows of (0118), so "from no column" and a filter on
+   another column are two facts rather than one contradiction. All in the
+   box's payload, so it paints once. */
 function fillColumnCard(el, n, rows) {
-  const tone = Object.assign(document.createElement('span'), { className: 'dot' });
-  tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
+  // The dot is the role the card is about; a card opened only by an expression
+  // is neither generated nor kept by anything, and gets none.
+  let tone = null;
+  if (Array.isArray(n.generated) || rows) {
+    tone = Object.assign(document.createElement('span'), { className: 'dot' });
+    tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
+  }
   hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
-  // The card's two lines of rows, kept by and kept of (0118), one box each.
-  const lines = (Array.isArray(n.generated) ? [Lineage.generatedSaid(n.generated).long] : []).concat(rows ? rows.split('\n') : []);
-  for (const line of lines) el.append(Object.assign(document.createElement('div'), { className: 'hc-note', textContent: line }));
+  // The card's lines, one box each: what sets the column, what computes it
+  // (0138), and the two lines of rows, kept by and kept of (0118).
+  const lines = (Array.isArray(n.generated) ? [Lineage.generatedSaid(n.generated).long] : [])
+    .concat(Lineage.expressionSaid(n.expression), rows ? rows.split('\n') : []);
+  // A rule under "keeps the rows of" is a sub-line: its indent is padding,
+  // since the note collapses leading spaces.
+  for (const line of lines) {
+    const sub = /^ {2}/.test(line);
+    el.append(Object.assign(document.createElement('div'), { className: 'hc-note' + (sub ? ' hc-rule' : ''), textContent: sub ? line.slice(2) : line }));
+  }
 }
 
 /* Painted twice: once from what the caller already holds, so the card appears
@@ -18045,11 +18057,11 @@ async function boot() {
       // the rect. Chosen when the card is placed, which waits a moment, so a click in between is covered.
       const at = { getBoundingClientRect: () => (g.querySelector('.hw-web') ? g.querySelector('rect.box') || g : g).getBoundingClientRect() };
       // In column mode the box already says everything, but for the value a
-      // generated column is set to (0096) and what keeps its rows (0097),
-      // which have no room on it.
+      // generated column is set to (0096), the expression behind a column
+      // (0138) and what keeps its rows (0097), which have no room on it.
       if (column) {
         const rows = (said && said.rows) || '';
-        if (Array.isArray(n.generated) || rows) hoverEnter('col:' + n.id, () => at.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
+        if (Array.isArray(n.generated) || n.expression || rows) hoverEnter('col:' + n.id, () => at.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
         return;
       }
       hoverEnter('node:' + nodeId, () => at.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));

@@ -569,8 +569,8 @@ button and the menu, and Catalog > Columns gives the share of its edges matched
 by column name rather than read from the SQL, or, from collin's report, how
 many models it read the SQL of, with the reason over each model it could not
 read. The menu offers "Update collin" to a collin that gives no version, or one
-below 0.10.0, which reads a seed's header and lists the columns a literal sets
-(0096, 0098, 0109), and
+below 0.11.0, which writes the rules and expressions, reads a seed's header
+and lists the columns a literal sets (0096, 0098, 0109, 0138), and
 "Check for a newer collin" to any other (0043); a version installed by its tag
 gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
@@ -1054,7 +1054,7 @@ through it, so `dbt-edith --manifest /artifacts/manifest.json` started in
 another project's folder would have given that manifest this folder's seeds.
 `collin_run::manifest_in_project` compares the two paths, resolved and a
 component at a time, in the page's Regenerate and in `--run-collin` alike, and
-the flag goes only when the manifest is under the folder. `WANTS` is 0.10.0.
+the flag goes only when the manifest is under the folder. `WANTS` is 0.11.0.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -3059,8 +3059,9 @@ a known limit, unranked:
 - **Skills (0136):** the shipped skill texts were not measured with agents; the
   measure was on an earlier text, and other clients, Copilot among them, are
   untried.
-- **The MCP help sits near its byte cap:** 1770 of its 1792 bytes at 1.69.0, so
-  the next flag needs a cut (the skills' sizes are above).
+- **The MCP help is at its byte cap:** 1792 of its 1792 bytes at 1.72.0, and the
+  two skill files at 4093 and 4095 of 4096, so the next flag needs a cut in all
+  three.
 - **A test to watch:** `web/tests/layout.js` failed once on a loaded machine
   during a full check and passed alone.
 
@@ -3081,6 +3082,18 @@ a known limit, unranked:
 - **The Reports sections (0137):** the Builds sections were shaped and checked
   with a stubbed answer on invented names, and the Job order section has no
   picture, Jaffle Shop's jobs ordering every step and leaving no pair to draw.
+
+Left by 1.72.0 (0138), each a known limit, unranked:
+
+- **Rules and expressions (0138):** read from collin 0.11.0 on Jaffle Shop
+  fixtures only; the canvas count and the card lines were shaped without a
+  picture on a cache with real chains, and `rules` on a column box lists only
+  the predicates that read that column, capped at eight.
+- **Rules of a model not on the walk:** `--column ... --rules` lists the models
+  of the walk, so a model whose predicate reads a column nothing in the walk
+  reaches is seen with `--describe ... --rules` instead.
+- **The card block (0138):** `--describe ... --rules` merges the cache into a
+  copy of the graph to read the rules, which is more than the rules need.
 
 Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
 read connects with. One connection, with the active target's role, reads every

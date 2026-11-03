@@ -107,8 +107,10 @@ role, and the models where the most moved, each a link to it. A run older than
 the manifest says so (0061).
 
 Once collin is installed and Collin is the tool picked, a line under Collin in
-the menu offers to update it. This dbt-edith expects collin 0.10.0 or later,
-the first to read a seed's columns from its CSV header, after 0.8.0, the first
+the menu offers to update it. This dbt-edith expects collin 0.11.0 or later,
+the first to write the predicates of a model and the expression behind a
+column (0138), after 0.10.0, which reads a seed's columns from its CSV header,
+and 0.8.0, the first
 to list the roots the `generated` tag below is read from: an older
 one, the old repository's 0.2.0 included, or one that gives no version, gets
 "Update collin", which types the command above with `--force`, and the
@@ -279,6 +281,13 @@ while you move from column to column, and is off again after a reload. No badge
 reads an indirect edge: a column only they reach is tagged as one nothing
 feeds.
 
+A column that is more than a copy shows a small count above its box, on the
+left, when more than one step of its chain did something to its value: `×2`,
+and `32+` where the chain recurses and the number would only be collin's limit.
+Its tooltip is the expression. Hovering the column adds the two lines `expression`
+and `steps` (`recursive` at the limit) to its card, whatever the count: a
+column with one step has no count and still has its card (0138).
+
 Hovering a column says what keeps its rows, apart from where its value comes
 from, and what it keeps the rows of, with the button on or off:
 
@@ -287,7 +296,11 @@ rows kept by: raw_orders.status (WHERE / HAVING)
 keeps the rows of: orders (QUALIFY), customers (JOIN)
 ```
 
-Eight names at most on each line, and how many more. Stop at offers none of
+Eight names at most on each line, and how many more. With a cache from collin
+0.11.0, the predicates that read the column come under the second line, one a
+line with the model that applies it, clause first, a cut text ending in
+`(cut)`; a cache without them says the second line alone, as before (0138).
+Stop at offers none of
 the three roles, on or off: an edge that ends on a box has nothing past it to
 stop. The Lineage cell's counts, and its one level on hover, leave the indirect
 edges out and say so; a column only they reach or leave reads `indirect only`
@@ -343,12 +356,14 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | `depth` | levels from the column asked, negative upstream; the model's is its nearest column's |
 | `from` | the columns of the answer this one is read from, with the role of each edge: a rename shows here, under its new name |
 | `generated` | on a column its model's SQL sets from no column, the values it is set to, `["current_timestamp()"]`, one per branch of a union, `[]` when collin could not tell (0096) |
+| `expression`, `kind`, `steps`, `cut` | on a column its model's SQL computes, with collin 0.11.0: the loudest expression on its path, its role, how many steps of the chain did something (32 stands for a recursive chain), and `true` when collin cut the text (0138) |
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
 
 `--output compact` prints a tab-separated line per column reached, under a
-header, without these last two keys: see
-[command-line.md](command-line.md#a-column).
+header, without these last two keys but with `steps` and `expression` after
+`tests`: see [command-line.md](command-line.md#a-column), which also describes
+`--rules`, the predicates of the models on the walk.
 
 Without `--run-collin` it reads a cache already written and writes none:
 collin is never started and Snowflake never asked. `--column-tool collin`,

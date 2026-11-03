@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.72.0 - 2026-11-03
+
+- Read the predicates a model applies and the expression behind a column from
+  collin 0.11.0: `--column` prints `steps` and `expression` after `tests`,
+  `--column ... --rules` and `--describe ... --rules` print the WHERE, JOIN,
+  QUALIFY and HAVING with the columns each reads, a column box counts its
+  transformations past one, and its hover card says the expression (0138).
+
 ## 1.71.0 - 2026-11-02
 
 - Read every section of Reports in one grammar, over the whole window, with the
