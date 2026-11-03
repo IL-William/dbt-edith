@@ -79,8 +79,11 @@ jobs:
   # the job, so a broken install cannot pass for a clean comparison. Shopify is
   # cloned from GitHub and its packages come from dbt's hub (0056), so a network
   # that fails them fails the job too.
+  # ubuntu-latest moved to 26.04 (Python 3.14), where dbt 1.11 cannot import
+  # mashumaro: this job stays on the image it was written on until dbt 1.11
+  # supports 3.14.
   dbt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
