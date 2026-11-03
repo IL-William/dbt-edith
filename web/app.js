@@ -31,6 +31,7 @@ const S = {
   gitPrefixes: [], gitKey: '',
   git: null,                  // full payload of /api/git
   artifactCm: { compiled: null, run: null },  // read-only editors for the two files under target/
+  artifactInfo: { compiled: null, run: null },  // the last answer of each, so another environment repaints without a request
   envs: null,                 // payload of /api/envs
   env: '',                    // this tab's chosen .env file, '' for the manifest as parsed
   node: null,                 // catalog: node currently displayed
@@ -1556,8 +1557,9 @@ function focusDeclared(id) {
   if (!$('#dock-terminal').classList.contains('hidden')) showDock('lineage');
 }
 
-/* The file a macro is defined in, at its `{% macro %}` line. The lineage stays
-   on the model being read: a macro is not a node. */
+/* The file a macro is defined in, at its `{% macro %}` line, or at `t.line`
+   lines into it. The lineage stays on the model being read: a macro is not a
+   node. */
 async function openMacro(t) {
   pushJump();
   await openFile(t.file, { focusLineage: false, preview: true });
@@ -1565,7 +1567,8 @@ async function openMacro(t) {
   if (S.active !== t.file || !f || !f.doc) return;          // it could not be opened
   revealInTree(t.file);
   const at = macroDefLine(f.doc.getValue(), t.name);
-  if (at) gotoPos(at.line, at.ch);
+  // A finding names a line of the macro's own text, counted from its `{% macro %}`.
+  if (at) gotoPos(at.line + (t.line > 1 ? t.line - 1 : 0), t.line > 1 ? 0 : at.ch);
 }
 
 /* A project var's definition in dbt_project.yml, at its key, lit as a test's
@@ -8222,6 +8225,7 @@ async function loadArtifact(kind, id) {
   const body = $('#' + kind + '-body');
   head.textContent = '';
   if (!id) {
+    S.artifactInfo[kind] = null;
     body.textContent = '';
     body.append(Object.assign(document.createElement('div'), {
       className: 'compiled-empty', textContent: 'Select a model first.' }));
@@ -8236,7 +8240,22 @@ async function loadArtifact(kind, id) {
 
   // A test node even when the catalog is showing something else: a dbt
   // unique_id says what it is, and the id is all this has when they disagree.
-  const said = artifactBar(info, name, node ? node.kind === 'test' : id.startsWith('test.'));
+  S.artifactInfo[kind] = { info, name, isTest: node ? node.kind === 'test' : id.startsWith('test.') };
+  paintArtifact(kind);
+}
+
+/* The Compiled or Run pane from the last answer, as it stands: the file as dbt
+   left it, or, with an environment picked in the status bar, the same SQL with
+   its relations swapped for that file's (0139). Repainted from here when the
+   environment changes, with no request. */
+function paintArtifact(kind, keepScroll) {
+  const held = S.artifactInfo[kind];
+  if (!held) return;
+  const { info, name, isTest } = held;
+  const head = $('#' + kind + '-head');
+  const body = $('#' + kind + '-body');
+  head.textContent = '';
+  const said = artifactBar(info, name, isTest);
 
   if (!said.found) {
     if (S.artifactCm[kind]) S.artifactCm[kind].setValue('');
@@ -8278,14 +8297,68 @@ async function loadArtifact(kind, id) {
   bar.append(redo, artifactPath(said));
   head.append(bar);
 
+  const content = artifactContent(info);
+  const shown = envSql(content, info.relations || [], S.env);
+  if (S.env) head.append(artifactEnvBar(shown, info.env_reads));
+
+  // Read while the editor is still attached: emptying the body detaches it, and
+  // a detached editor reports no scroll. setValue then scrolls to the top, which
+  // a change of environment on the SQL being read must not do.
+  const scrolled = keepScroll && S.artifactCm[kind] ? S.artifactCm[kind].getScrollInfo() : null;
   body.textContent = '';
   if (!S.artifactCm[kind]) {
     S.artifactCm[kind] = CodeMirror(body, { lineNumbers: true, readOnly: true, mode: 'text/x-sql', lineWrapping: false });
   } else {
     body.appendChild(S.artifactCm[kind].getWrapperElement());
   }
-  S.artifactCm[kind].setValue(info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : ''));
-  setTimeout(() => S.artifactCm[kind].refresh(), 0);
+  const cm = S.artifactCm[kind];
+  cm.setValue(shown.text);
+  if (scrolled) cm.scrollTo(scrolled.left, scrolled.top);
+  const doc = cm.getDoc();
+  shown.swaps.forEach((w) => doc.markText(doc.posFromIndex(w.start), doc.posFromIndex(w.end), {
+    className: 'cm-env-swap', title: `was ${w.was} in the compiled file` }));
+  shown.kept.forEach((k) => doc.markText(doc.posFromIndex(k.start), doc.posFromIndex(k.end), {
+    className: 'cm-env-kept', title: `${k.name} stays as dbt compiled it: ${k.reason}` }));
+  setTimeout(() => cm.refresh(), 0);
+}
+
+/* The line under the bar naming the environment the SQL is shown for, and the
+   places it may differ beyond its relations. A macro's finding opens the macro
+   at that line, as Cmd+K opens one. */
+function artifactEnvBar(shown, envReads) {
+  const words = artifactEnvWords(shown, envDisplayName(S.env), S.env, envReads);
+  const box = document.createElement('div');
+  box.className = 'env-bar';
+  box.dataset.tone = envTone(envDisplayName(S.env));
+  const line = document.createElement('div');
+  line.className = 'env-line';
+  line.append(Object.assign(document.createElement('span'), { className: 'envdot' }), words.head);
+  line.firstChild.dataset.tone = box.dataset.tone;
+  box.append(line);
+  if (words.findings.length) {
+    // Folded by a click, open to start with: the list is what the person came
+    // to this line for, and the SQL under it is long.
+    const fold = document.createElement('details');
+    fold.className = 'env-differ';
+    fold.open = true;
+    fold.append(Object.assign(document.createElement('summary'), { textContent: words.differ }));
+    const ul = document.createElement('ul');
+    ul.className = 'env-reads';
+    words.findings.forEach((f) => {
+      const li = document.createElement('li');
+      if (f.macro) {
+        const a = Object.assign(document.createElement('a'), { className: 'filelink', textContent: f.text, title: f.macro.file });
+        a.addEventListener('click', (ev) => { ev.preventDefault(); openMacro(f.macro); });
+        li.append(a);
+      } else {
+        li.textContent = f.text;
+      }
+      ul.append(li);
+    });
+    fold.append(ul);
+    box.append(fold);
+  }
+  return box;
 }
 
 /* The file's own line in the bar. A path dbt wrote is long and nobody retypes
@@ -12369,6 +12442,8 @@ function selectEnv(file) {
   if (S.node) renderCatalog(S.node);
   // The dots follow the environment, painted over the canvas as it stands (0117).
   paintLineageBuilds();
+  // So does the SQL of the visible Compiled or Run tab, from the answer it holds (0139).
+  ['compiled', 'run'].forEach((kind) => { if (!$('#dock-' + kind).classList.contains('hidden')) paintArtifact(kind, true); });
   // Remembered as the starting point for the next tab; failure is harmless.
   api.send('/api/envs/select', 'POST', { file: file || null }).catch(() => {});
 }
@@ -12852,6 +12927,143 @@ function lineageRelation(n, env) {
   if (!file) return { text: n.relation, file: '', reason: '' };
   const rel = resolvedRelation(locationRows(n.location, file), n.relation, file);
   return { text: rel.text, file, reason: rel.reason };
+}
+
+/* The Compiled and Run tabs for another environment (0139): the SQL dbt left
+   under target/ with each relation it holds swapped for the one the Location
+   table resolves for the chosen .env file. Nothing is compiled; a relation
+   that file cannot place stays as dbt wrote it and is marked. */
+
+/* One relation the SQL can hold, for `env`: the text to write, or why it stays
+   as compiled. Beyond what lineageRelation refuses, a relation dbt built
+   elsewhere than its config says went through a generate_*_name macro, which
+   is not evaluated, so what the file resolves is not where dbt would put it. */
+function envArtifactRelation(rel, env) {
+  const r = lineageRelation(rel, env);
+  if (r.reason) return { text: '', reason: r.reason };
+  if (env && r.file !== env) return { text: '', reason: `not resolved against ${env}` };
+  const moved = locationRows(rel.location, env).some((row) => row.redirected);
+  if (moved) return { text: '', reason: 'dbt built it elsewhere than configured, through a macro that is not evaluated' };
+  return { text: r.text, reason: '' };
+}
+
+/* A relation with `suffix` on its last part, each part quoted as it was. */
+function relationWithSuffix(text, suffix) {
+  const parts = splitRelation(text);
+  const last = parts.length - 1;
+  return parts.map((p, i) => {
+    const name = i === last ? p.name + suffix : p.name;
+    return p.quoted ? '"' + name.replace(/"/g, '""') + '"' : name;
+  }).join('.');
+}
+
+/* What the editor is given of a file: one line break each, as CodeMirror counts
+   them. dbt on Windows writes these files with \r\n, and a position counted
+   over two characters per line would drift one character further for every
+   line above a relation. */
+function artifactContent(info) {
+  return (info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : '')).replace(/\r\n?/g, '\n');
+}
+
+/* `content` with each relation in `relations` replaced by the one `env`
+   resolves for it. Every occurrence is found first, on identifier boundaries
+   and longest first at one position, and the output is built in one pass, so a
+   swapped name is never read again: QA to UAT cannot chain. The node's own
+   relation is also looked for with the suffixes a run's statement gives it.
+   Positions in `swaps` and `kept` are in the returned text. `unseen` names the
+   parents the SQL never mentions, a node's own relation never being one. */
+function envSql(content, relations, env) {
+  const out = { text: content, swaps: [], kept: [], unseen: [], counts: { swapped: 0, kept: 0, same: 0 } };
+  if (!env) return out;
+  const word = /[A-Za-z0-9_$."]/, tail = /[A-Za-z0-9_$"]/;
+  const cands = [];
+  relations.forEach((rel, id) => {
+    if (!rel.relation) return;
+    const to = envArtifactRelation(rel, env);
+    const forms = [{ from: rel.relation, to: to.text }];
+    if (rel.own) {
+      ['__dbt_tmp', '__dbt_backup'].forEach((suffix) => forms.push({
+        from: relationWithSuffix(rel.relation, suffix), to: to.text ? relationWithSuffix(to.text, suffix) : '',
+      }));
+    }
+    forms.forEach((f) => cands.push({ id, name: rel.name, from: f.from, to: f.to, reason: to.reason }));
+  });
+  const hits = [];
+  cands.forEach((c) => {
+    for (let at = content.indexOf(c.from); at >= 0; at = content.indexOf(c.from, at + 1)) {
+      const end = at + c.from.length;
+      if (at > 0 && word.test(content[at - 1])) continue;
+      if (end < content.length && tail.test(content[end])) continue;
+      hits.push({ at, end, c });
+    }
+  });
+  hits.sort((a, b) => a.at - b.at || (b.end - b.at) - (a.end - a.at));
+  const seen = new Set(), swapped = new Set(), kept = new Set(), same = new Set();
+  let text = '', read = 0, took = null;
+  hits.forEach((h) => {
+    // Another entry naming the same table (a source and a model on one
+    // relation) found it too: it was seen, though only the first is written.
+    if (took && h.at === took.at && h.end === took.end) seen.add(h.c.id);
+    if (h.at < read) return;
+    took = h;
+    seen.add(h.c.id);
+    text += content.slice(read, h.at);
+    read = h.end;
+    const was = h.c.from;
+    if (!h.c.to) {
+      kept.add(h.c.id);
+      out.kept.push({ start: text.length, end: text.length + was.length, name: h.c.name, reason: h.c.reason });
+      text += was;
+    } else if (h.c.to === was) {
+      same.add(h.c.id);
+      text += was;
+    } else {
+      swapped.add(h.c.id);
+      out.swaps.push({ start: text.length, end: text.length + h.c.to.length, was });
+      text += h.c.to;
+    }
+  });
+  out.text = text + content.slice(read);
+  out.counts = { swapped: swapped.size, kept: kept.size, same: same.size };
+  relations.forEach((rel, id) => { if (rel.relation && !rel.own && !seen.has(id)) out.unseen.push(rel.name); });
+  return out;
+}
+
+/* One finding of env_reads as a sentence tail: what it reads. */
+function envReadWords(f) {
+  switch (f.kind) {
+    case 'target': return `reads target.${f.detail}`;
+    case 'env_var': return f.detail ? `reads the environment variable ${f.detail}` : 'reads an environment variable';
+    case 'warehouse': return `asks the warehouse with ${f.detail}()`;
+    case 'incremental': return 'branches on is_incremental(), which depends on the table existing there';
+    case 'placing': return 'follows the target to decide where a model builds, which is not evaluated';
+    default: return 'reads the environment';
+  }
+}
+
+/* The words under the bar for one environment: what was swapped, and where the
+   SQL may differ beyond its relations. A finding in a macro carries what a
+   click needs to open it. */
+function artifactEnvWords(result, envName, file, envReads) {
+  const c = result.counts;
+  const parts = [];
+  if (c.swapped) parts.push(`${c.swapped} ${c.swapped === 1 ? 'relation' : 'relations'} swapped`);
+  if (c.kept) parts.push(`${c.kept} kept as compiled`);
+  if (!c.swapped && !c.kept) {
+    parts.push(c.same ? 'every relation reads the same as compiled' : 'no relation in this SQL to swap');
+  }
+  if (result.unseen.length) parts.push(`${result.unseen.length} not found in this SQL`);
+  const findings = (envReads || []).map((f) => ({
+    text: f.through
+      ? `${f.macro_name}, ${envReadWords(f)}, through ${f.through}`
+      : `${f.macro_id ? f.macro_name : 'this model'}, line ${f.line}, ${envReadWords(f)}`,
+    macro: f.macro_id && f.file ? { file: f.file, name: f.macro_name, line: f.line || 1 } : null,
+  }));
+  return {
+    head: `Shown for ${envName} (${file}): ${parts.join(', ')}`,
+    differ: findings.length ? `May differ beyond its relations (${findings.length})` : '',
+    findings,
+  };
 }
 
 /* The last build of each model per environment is read on a click from the

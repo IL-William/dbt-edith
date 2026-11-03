@@ -3143,13 +3143,102 @@ async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<ArtifactQ
             name: &name,
             alias: &alias,
         };
-        compiled::look_up(&root, &target, kind, &subject, 2 * 1024 * 1024)
+        let info = compiled::look_up(&root, &target, kind, &subject, 2 * 1024 * 1024);
+        if !info.found {
+            return Json(ArtifactBody { info, relations: Vec::new(), env_reads: Vec::new() }).into_response();
+        }
+        // What the page needs to show this SQL for another environment (0139):
+        // every relation it can hold, resolved for each `.env` file the way the
+        // clone plan resolves its items, and what it reads beyond them.
+        let env_files = envs::discover(&root);
+        let relations = compiled::relations(&graph, idx)
+            .into_iter()
+            .map(|(i, own)| {
+                let t = &graph.nodes[i as usize];
+                ArtifactRelation {
+                    id: &t.id,
+                    name: &t.name,
+                    relation: &t.relation,
+                    materialized: &t.materialized,
+                    own,
+                    // Resolved even when nothing is written, so a chosen file
+                    // refuses a node it cannot place, as the clone plan does.
+                    location: Location {
+                        written: &t.written,
+                        parsed: &t.parsed,
+                        built: Place { database: t.database.clone(), schema: t.schema.clone(), alias: t.alias.clone() },
+                        envs: envs::resolve_all(&env_files, &t.written, &t.parsed),
+                    },
+                }
+            })
+            .collect();
+        let mut env_reads = crate::env_reads::for_node(&graph, idx);
+        // Canonicalized once for every macro placed and the node's own file.
+        let canon = root.canonicalize().ok();
+        for f in env_reads.iter_mut().filter(|f| !f.macro_id.is_empty()) {
+            if let (Some(canon), Some(m)) = (&canon, graph.macros.position(&f.macro_id)) {
+                f.file = graph.macros.place_under(&root, canon, graph.macros.at(m)).unwrap_or_default();
+            }
+        }
+        // dbt-core keeps `raw_code` stripped, so a file opening with blank lines
+        // has its own lines further down than the ones counted at load. A file
+        // that cannot be read leaves them as they are.
+        let n = &graph.nodes[idx as usize];
+        if n.reads_stripped && env_reads.iter().any(|f| f.macro_id.is_empty()) {
+            let opening = canon.as_ref().and_then(|canon| file_opening(&graph, n, &root, canon));
+            if let Some(text) = opening {
+                crate::env_reads::shift_own(&mut env_reads, crate::env_reads::leading_lines(&text));
+            }
+        }
+        Json(ArtifactBody { info, relations, env_reads }).into_response()
     })
     .await
     {
-        Ok(info) => Json(info).into_response(),
+        Ok(response) => response,
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+/// The first 8 KB of the file a node is written in, to count the blank lines it
+/// opens with. Not read for a node of a package that is not installed: its
+/// path is relative to the package, and the same path in the
+/// project is another file. Only a regular file is opened, as a FIFO would
+/// block this thread for good.
+fn file_opening(graph: &Graph, n: &crate::graph::Node, root: &Path, canon: &Path) -> Option<String> {
+    use std::io::Read;
+    if !n.package.is_empty() && n.package != graph.meta.project && n.place.is_empty() {
+        return None;
+    }
+    let path = files::resolve_under(root, canon, n.on_disk()).ok()?;
+    if !std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
+        return None;
+    }
+    let mut head = Vec::new();
+    std::fs::File::open(path).ok()?.take(8192).read_to_end(&mut head).ok()?;
+    Some(String::from_utf8_lossy(&head).into_owned())
+}
+
+#[derive(serde::Serialize)]
+struct ArtifactRelation<'a> {
+    id: &'a str,
+    name: &'a str,
+    relation: &'a str,
+    materialized: &'a str,
+    /// The node's own relation, which the SQL rarely names but a run's
+    /// statement does, with a `__dbt_tmp` or `__dbt_backup` suffix.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    own: bool,
+    location: Location<'a>,
+}
+
+#[derive(serde::Serialize)]
+struct ArtifactBody<'a> {
+    #[serde(flatten)]
+    info: compiled::CompiledInfo,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    relations: Vec<ArtifactRelation<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    env_reads: Vec<crate::env_reads::Finding>,
 }
 
 #[derive(Deserialize)]
@@ -5909,6 +5998,128 @@ mod tests {
         assert!(empty.ends_with("[]"), "{empty}");
 
         server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The SQL dbt left for a node comes with every relation it can hold,
+    /// through an ephemeral parent, each placed for each `.env` file even when
+    /// nothing is written for it, and with what it reads from the environment
+    /// beyond them (0139).
+    #[tokio::test]
+    async fn the_compiled_sql_carries_its_relations_resolved_per_env_file_and_what_it_reads() {
+        let root = temp_project("compiled-envs");
+        std::fs::write(root.join(".env.qa"), "DBT_DB=QA_DB\n").unwrap();
+        std::fs::write(root.join(".env.uat"), "DBT_DB=UAT_DB\n").unwrap();
+        let dir = root.join("target/compiled/demo/models");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("orders.sql"), "select * from raw.crm.orders\n").unwrap();
+        // The model's file opens with two blank lines that dbt's stripped
+        // `raw_code` does not hold, so its own findings sit two lines lower.
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        std::fs::write(root.join("models/orders.sql"), "\r\n\n select 1 {{ target.name }}").unwrap();
+        let (port, st, server) = serve(&root).await;
+        let model = |name: &str, materialized: &str, parents: &[&str], code: &str| {
+            serde_json::json!({
+                "name": name, "resource_type": "model", "package_name": "demo",
+                "original_file_path": format!("models/{name}.sql"),
+                "compiled_path": format!("target/compiled/demo/models/{name}.sql"),
+                "database": "analytics", "schema": "marts", "alias": name,
+                "relation_name": if materialized == "ephemeral" { serde_json::Value::Null }
+                    else { format!("analytics.marts.{name}").into() },
+                "unrendered_config": { "database": "{{ env_var('DBT_DB') }}" },
+                "config": { "materialized": materialized },
+                "raw_code": code,
+                "depends_on": { "nodes": parents },
+            })
+        };
+        let manifest: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo", "adapter_type": "snowflake" },
+            "nodes": {
+                "model.demo.orders": model("orders", "table",
+                    &["model.demo.zz_int", "model.demo.stg_orders", "source.demo.crm.orders"],
+                    "select 1 {{ target.name }}"),
+                "model.demo.zz_int": model("zz_int", "ephemeral", &["model.demo.stg_customers"], ""),
+                "model.demo.stg_orders": model("stg_orders", "view", &[], ""),
+                "model.demo.stg_customers": model("stg_customers", "view", &[], ""),
+            },
+            "sources": { "source.demo.crm.orders": {
+                "name": "orders", "resource_type": "source", "source_name": "crm", "package_name": "demo",
+                "database": "raw", "schema": "crm", "identifier": "orders", "relation_name": "raw.crm.orders",
+            } },
+        }))
+        .unwrap();
+        let path = root.join("target").join("manifest.json");
+        *st.graph.write().await = Arc::new(Graph::build(manifest, &path, 0, 0));
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let json = |answer: &str| -> serde_json::Value { serde_json::from_str(past_head(answer)).unwrap() };
+
+        let body = json(&response_of(port, get("/api/compiled?id=model.demo.orders&kind=compiled", &h)).await);
+        let names: Vec<(&str, bool)> = body["relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["name"].as_str().unwrap(), r["own"].as_bool().unwrap_or(false)))
+            .collect();
+        // The ephemeral has no relation: its parent stands in for it.
+        assert_eq!(names, vec![("crm.orders", false), ("orders", true), ("stg_customers", false), ("stg_orders", false)]);
+        let stg = &body["relations"][3];
+        assert_eq!(stg["relation"], "analytics.marts.stg_orders");
+        assert_eq!(stg["location"]["written"]["database"], "{{ env_var('DBT_DB') }}");
+        assert_eq!(stg["location"]["envs"][".env.qa"]["place"]["database"], "QA_DB");
+        assert_eq!(stg["location"]["envs"][".env.uat"]["place"]["database"], "UAT_DB");
+        // A source with nothing written is placed all the same.
+        let source = &body["relations"][0];
+        assert_eq!(source["location"]["envs"][".env.qa"]["place"]["database"], "raw");
+        assert_eq!(body["env_reads"], serde_json::json!([{ "kind": "target", "detail": "name", "line": 3 }]));
+
+        // A node with no file under target has nothing to swap: neither key is sent.
+        let missing = json(&response_of(port, get("/api/compiled?id=model.demo.stg_customers&kind=run", &h)).await);
+        assert_eq!(missing["found"], false);
+        assert!(missing.get("relations").is_none() && missing.get("env_reads").is_none(), "{missing}");
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The node's own file is read for its opening blank lines only when it is
+    /// the project's regular file: a FIFO would block the thread for good, and
+    /// a package node that is not installed would read the project's file at a
+    /// path that is the package's.
+    #[test]
+    fn a_nodes_file_is_opened_only_when_it_is_a_regular_file_of_the_project() {
+        let root = temp_project("file-opening");
+        std::fs::create_dir_all(root.join("models")).unwrap();
+        std::fs::write(root.join("models/orders.sql"), "\n\nselect 1").unwrap();
+        let node = |name: &str, package: &str, file: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": package,
+                "original_file_path": file })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo", "adapter_type": "snowflake" },
+            "nodes": {
+                "model.demo.orders": node("orders", "demo", "models/orders.sql"),
+                "model.pkg.orders": node("orders", "pkg", "models/orders.sql"),
+                "model.demo.pipe": node("pipe", "demo", "models/pipe.sql"),
+            },
+        }))
+        .unwrap();
+        let graph = Graph::build(raw, &root.join("target").join("manifest.json"), 0, 0);
+        let canon = root.canonicalize().unwrap();
+        let at = |id: &str| &graph.nodes[graph.index[id] as usize];
+        assert_eq!(file_opening(&graph, at("model.demo.orders"), &root, &canon).as_deref(), Some("\n\nselect 1"));
+        assert_eq!(file_opening(&graph, at("model.pkg.orders"), &root, &canon), None, "not installed");
+
+        let fifo = root.join("models/pipe.sql");
+        if std::process::Command::new("mkfifo").arg(&fifo).status().is_ok_and(|s| s.success()) {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (g, r, c) = (graph.clone(), root.clone(), canon.clone());
+            std::thread::spawn(move || {
+                let _ = tx.send(file_opening(&g, &g.nodes[g.index["model.demo.pipe"] as usize], &r, &c));
+            });
+            let got = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("the read blocked on a FIFO");
+            assert_eq!(got, None);
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

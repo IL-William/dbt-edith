@@ -2390,6 +2390,20 @@ of its own, and each panel updates the tour, its page under
     from a clone; a release asset for them would need its own build, hash and
     command, and 0123 gives them none.
 
+30. **The Compiled and Run SQL for another environment, left out (0139).**
+    - From the command line and MCP: `--describe --sql --env` would print the
+      swapped SQL as the tabs show it; the tabs do it in the page, from the
+      locations `/api/compiled` carries, and the command line has no copy of
+      that rule.
+    - A database or schema the config leaves to the profile stays as compiled
+      and amber. It could be resolved from the profile target `DBT_TARGET`
+      names, which the clone plan already reads (0058).
+    - `target.name` branches and `generate_*_name` are named, never
+      evaluated: evaluating them is the Jinja this tool does not run (0009).
+    - A file written for another target than the manifest's, a run under dev
+      beside a manifest built for QA, names relations the page does not look
+      for: they are counted as not found and the text is left as it is.
+
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
 

@@ -215,6 +215,36 @@ everything it touches, so your artifacts predate the code you now have, which is
 the answer [0025](../decisions/0025-freshness-is-mtimes-not-commits.md) gives
 for the manifest too.
 
+### For another environment
+
+With an environment picked in the status bar, both tabs show the same SQL as it
+would read under that `.env` file, to paste into Snowsight without compiling
+again. Each relation the SQL holds, the model's parents and, through an
+ephemeral one, that one's parents, is replaced by the relation the Catalog's
+Location table resolves for the file, and a Run statement's own table, with its
+`__dbt_tmp` and `__dbt_backup` names, likewise. A swapped relation is tinted,
+and its tooltip gives the name it had in the file dbt wrote. With none picked,
+the tabs show the file as dbt wrote it.
+
+A line under the bar names the environment and counts what it did: `Shown for
+QA (.env.qa): 12 relations swapped, 1 kept as compiled`. A relation the file
+cannot place stays as dbt compiled it, in amber, and its tooltip says why: a
+variable the file does not define, a placeholder, a database or schema left to
+the profile, or a model dbt built elsewhere than its config says, which means a
+`generate_*_name` macro moved it and that is not evaluated.
+
+Under it, **May differ beyond its relations** lists what in the model, or in a
+macro it reaches, however deep, reads the environment: a key of `target`, an
+`env_var()`, a call that asks the warehouse (`run_query`, `adapter.get_*`...),
+`is_incremental()`, and a project's own `generate_schema_name`,
+`generate_database_name` or `generate_alias_name` that reads the target. Each
+line names the macro and the line in it, and a macro opens at that line when
+clicked; the list is a fold, open to start with, and counts what it holds. A
+`generate_*_name` that reads the target only through a macro it calls says
+`through` that macro and gives no line, and opens at its own first line. A line
+in the model itself counts from the top of the file, blank lines included.
+Nothing is evaluated: a branch on `target.name` is named, not followed. An environment variable that reads as a credential is not named.
+
 dbt-edith never compiles or runs anything itself. dbt runs where you run it, so
 when a file is not there the tab names the paths it checked and offers to type
 `dbt compile --select <model>` or `dbt run --select <model>` into the integrated

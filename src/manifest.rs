@@ -325,8 +325,8 @@ pub struct RawMacro {
     /// Only the ones documented in YAML: dbt never reads a macro's signature.
     #[serde(default)]
     pub arguments: Option<Vec<RawMacroArg>>,
-    #[serde(default, deserialize_with = "strategy_body")]
-    pub macro_sql: Option<String>,
+    #[serde(default, deserialize_with = "macro_body")]
+    pub macro_sql: MacroBody,
     /// The macros this one calls (`RawDependsOn::macros`).
     #[serde(default)]
     pub depends_on: Option<RawDependsOn>,
@@ -344,12 +344,22 @@ const STRATEGY_WORDS: &[&str] = &[
     "incremental_strategy",
 ];
 
-/// A body kept only when it may say something about the strategy. Each one is
-/// read whole all the same, but dropped at once, so no more than one other
-/// body is held at a time.
-fn strategy_body<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+/// What is kept of a macro's `macro_sql`: the body itself only when it may say
+/// something about the strategy, and for every body what it reads from the
+/// environment (`src/env_reads.rs`), which is all the page needs of it.
+#[derive(Default)]
+pub struct MacroBody {
+    pub strategy: Option<String>,
+    pub reads: Vec<crate::env_reads::Read>,
+}
+
+/// Each body is read whole all the same, but dropped at once, so no more than
+/// one other body is held at a time.
+fn macro_body<'de, D: serde::Deserializer<'de>>(d: D) -> Result<MacroBody, D::Error> {
     let body: Option<String> = serde::Deserialize::deserialize(d)?;
-    Ok(body.filter(|b| STRATEGY_WORDS.iter().any(|w| b.contains(w))))
+    let Some(body) = body else { return Ok(MacroBody::default()) };
+    let reads = crate::env_reads::scan(&body);
+    Ok(MacroBody { strategy: Some(body).filter(|b| STRATEGY_WORDS.iter().any(|w| b.contains(w))), reads })
 }
 
 #[derive(serde::Deserialize, Default)]

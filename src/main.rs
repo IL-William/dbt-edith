@@ -11,6 +11,7 @@ mod collin_run;
 mod command;
 mod compiled;
 mod describe;
+mod env_reads;
 mod envs;
 mod files;
 mod freshness;

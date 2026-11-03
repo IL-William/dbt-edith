@@ -359,6 +359,13 @@ pub struct Node {
     attached: String,
     /// Test nodes only: dbt's `file_key_name`, empty when the manifest has none.
     declared_in: String,
+    /// What the node's own SQL reads from the environment it compiles in,
+    /// found once at load; nothing for most (0139).
+    pub reads: Box<[crate::env_reads::Read]>,
+    /// The lines of `reads` were counted in a `raw_code` that begins with its
+    /// first token, as dbt-core stores it stripped: the file may open with
+    /// blank lines they do not count (`env_reads::leading_lines` and `shift_own`).
+    pub reads_stripped: bool,
     pub parents: Vec<u32>,
     pub children: Vec<u32>,
     pub tests: Vec<u32>,
@@ -910,12 +917,16 @@ impl Node {
 struct Calls {
     listed: Vec<String>,
     code: String,
+    reads: Vec<crate::env_reads::Read>,
+    stripped: bool,
     snapshot: Option<String>,
 }
 
 impl Calls {
     fn take(node: &mut RawNode) -> Calls {
         let mut code = node.raw_code.take().unwrap_or_default();
+        let reads = crate::env_reads::scan(&code);
+        let stripped = !code.starts_with(char::is_whitespace);
         for hooks in [node.config.pre_hook.take(), node.config.post_hook.take()].into_iter().flatten() {
             let list = match hooks {
                 serde_json::Value::Array(list) => list,
@@ -931,6 +942,8 @@ impl Calls {
         Calls {
             listed: std::mem::take(&mut node.depends_on.macros),
             code,
+            reads,
+            stripped,
             snapshot: node.config.strategy.take().and_then(|v| v.as_str().map(str::to_string)),
         }
     }
@@ -1115,6 +1128,8 @@ impl Graph {
                 settings,
                 attached: raw_node.attached_node.unwrap_or_default(),
                 declared_in: raw_node.file_key_name.unwrap_or_default(),
+                reads: Box::default(),
+                reads_stripped: false,
                 parents: Vec::new(),
                 children: Vec::new(),
                 tests: Vec::new(),
@@ -1166,8 +1181,12 @@ impl Graph {
         };
         for (id, mut node) in raw.nodes {
             deps.push((id.clone(), node.depends_on.nodes.clone()));
-            let calls = Calls::take(&mut node);
+            let mut calls = Calls::take(&mut node);
             push(id.clone(), node, false, &mut nodes, &mut index);
+            if let Some(&i) = index.get(&id).filter(|_| !calls.reads.is_empty()) {
+                nodes[i as usize].reads = std::mem::take(&mut calls.reads).into();
+                nodes[i as usize].reads_stripped = calls.stripped;
+            }
             calls_of(&id, calls, &nodes, &index);
         }
         for (id, node) in raw.sources {

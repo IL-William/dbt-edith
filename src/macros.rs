@@ -44,6 +44,8 @@ pub struct Macro {
     /// `macro_sql`, kept only for a macro that bears on an incremental
     /// strategy (`crate::manifest`), empty for every other.
     pub body: String,
+    /// What its text reads from the environment, whatever it is (0139).
+    pub reads: Box<[crate::env_reads::Read]>,
 }
 
 #[derive(Clone, Default)]
@@ -83,7 +85,8 @@ impl Macros {
                     .filter_map(|a| a.name)
                     .filter(|a| !a.is_empty())
                     .collect(),
-                body: m.macro_sql.unwrap_or_default(),
+                body: m.macro_sql.strategy.unwrap_or_default(),
+                reads: m.macro_sql.reads.into(),
             });
         }
         Macros { list, by_package, root: root.to_string() }
@@ -179,7 +182,7 @@ impl Macros {
     }
 
     /// `place`, with the project canonicalized once by a caller placing many.
-    fn place_under(&self, project: &Path, canon: &Path, m: &Macro) -> Option<String> {
+    pub(crate) fn place_under(&self, project: &Path, canon: &Path, m: &Macro) -> Option<String> {
         if m.path.is_empty() {
             return None;
         }
@@ -724,6 +727,7 @@ mod tests {
             description: String::new(),
             args: Vec::new(),
             body: String::new(),
+            reads: Box::default(),
         };
         assert!(base.join("shop").join(&outside.path).is_file());
         assert_eq!(macros().place(&base.join("shop"), &outside), None);
