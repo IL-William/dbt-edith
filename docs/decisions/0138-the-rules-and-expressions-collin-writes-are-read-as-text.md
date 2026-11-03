@@ -1,6 +1,6 @@
 # 0138. The rules and expressions collin writes are read as text
 
-Date: 2026-11-03 · Status: accepted · Amends 0088, 0097 and 0102 · Follows dbt-collin's 0050
+Date: 2026-11-04 · Status: accepted · Amends 0088, 0097 and 0102 · Follows dbt-collin's 0050
 
 **Trigger:** read before changing what `--rules` or `--casts` print, what the
 compact `--column` answer carries after `tests`, what a column box counts or its
