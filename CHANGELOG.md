@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.72.1 - 2026-11-04
+
+- Unfold the names of Custom selection, Reports and Settings in the top bar
+  slowly enough to follow, instead of in a flash.
+
 ## 1.72.0 - 2026-11-04
 
 - Read the predicates a model applies and the expression behind a column from
