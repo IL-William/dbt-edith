@@ -83,12 +83,14 @@ const ALLOWED: [&str; 23] = [
 
 /// The flags that are refused on purpose, with why. `project` has a sentence
 /// of its own, since it names the server's root.
-const REFUSED: [(&str, &str); 11] = [
+const REFUSED: [(&str, &str); 13] = [
     ("project", ""),
     ("manifest", "named when the server starts, in its own arguments"),
     ("catalog", "named when the server starts, in its own arguments"),
     ("column_lineage", "a path; the server reads the cache beside its manifest"),
     ("compiled", "a path; the server reads the folder beside its manifest"),
+    ("against", "a path; the server answers about the project it was started on, and the comparison with another is the command line's"),
+    ("with", "a column of the project --against names, and the server takes no --against: the comparison with another project is the command line's"),
     ("port", "not a question"),
     ("shell", "not a question"),
     ("no_open", "not a question"),
@@ -451,6 +453,9 @@ mod tests {
             ("--overview --catalog c.json", "--catalog", "named when the server starts"),
             ("--column a.b --column-lineage c.json", "--column-lineage", "a path"),
             ("--column a.b --run-collin --compiled sql", "--compiled", "a path"),
+            ("--column a.b --against ../legacy", "--against", "a path"),
+            ("--column a.b --against ../legacy --with c.d", "--against", "a path"),
+            ("--column a.b --with c.d", "--with", "the server takes no --against"),
             ("--overview --port 4321", "--port", "not a question"),
             ("--overview --shell bash", "--shell", "not a question"),
             ("--overview --no-open", "--no-open", "not a question"),
@@ -535,7 +540,7 @@ mod tests {
     /// One line per clap argument id that exercises it. A flag added to `Args`
     /// has no line here, and the test below fails until someone decides
     /// whether a line may carry it.
-    const SAMPLES: [(&str, &str); 34] = [
+    const SAMPLES: [(&str, &str); 36] = [
         ("project", "--overview /work/other"),
         ("port", "--overview --port 4321"),
         ("manifest", "--overview --manifest m.json"),
@@ -557,6 +562,8 @@ mod tests {
         ("column_tool", "--column orders.amount --column-tool collin"),
         ("run_collin", "--column orders.amount --run-collin"),
         ("compiled", "--column orders.amount --run-collin --compiled sql"),
+        ("against", "--column orders.amount --against ../legacy"),
+        ("with", "--column orders.amount --against ../legacy --with fct_orders.amount"),
         ("describe", "--describe orders"),
         ("sql", "--describe orders --sql"),
         ("compiled_sql", "--describe orders --compiled-sql"),

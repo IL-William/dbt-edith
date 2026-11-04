@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.77.0 - 2026-11-04
+
+- Compare a column with the same figure in another dbt project with
+  `--against DIR`: the column of that project built from the same source
+  columns, what each reads that the other does not, and the rules one applies
+  and the other lacks, with `--with` to name the column to compare (0146).
+
 ## 1.76.0 - 2026-11-04
 
 - Mark a column collin traced only in part on the canvas with a `PARTIAL` pill

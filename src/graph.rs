@@ -914,6 +914,17 @@ impl Node {
         if self.place.is_empty() { &self.file } else { &self.place }
     }
 
+    /// Where a source table lives for a comparison between two projects:
+    /// `(schema, table)`, each read the way the warehouse compares a name.
+    /// The database is left out on purpose, since each project renders an
+    /// `env_var` database as its own compile environment set it (0146). The
+    /// table is the identifier, else the name dbt gave it.
+    pub fn place(&self) -> (String, String) {
+        let named = self.name.strip_prefix(&format!("{}.", self.source_name)).unwrap_or(&self.name);
+        let table = if self.alias.is_empty() { named } else { &self.alias };
+        (crate::keys::norm(&self.schema), crate::keys::norm(table))
+    }
+
     /// dbt's own name for the kind, the unique_id's first part: a unit test
     /// or a semantic model is named for what it is, though the graph files it
     /// as other.
@@ -1490,6 +1501,17 @@ impl Graph {
             .iter()
             .position(|c| c.name.to_lowercase() == wanted)
             .map(|i| i as u32)
+    }
+
+    /// The source tables by `Node::place`, for the nodes that are not disabled:
+    /// built when asked and not kept, so nothing can go stale. A table two
+    /// sources declare under one place lists both, lowest first.
+    pub fn sources_by_place(&self) -> HashMap<(String, String), Vec<u32>> {
+        let mut by_place: HashMap<(String, String), Vec<u32>> = HashMap::new();
+        for (i, n) in self.nodes.iter().enumerate().filter(|(_, n)| n.kind == Kind::Source && !n.disabled) {
+            by_place.entry(n.place()).or_default().push(i as u32);
+        }
+        by_place
     }
 
     /// Folds a column-lineage cache into the graph.

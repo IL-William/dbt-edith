@@ -222,6 +222,124 @@ the cache that answered and warns when it is older than the manifest, with
 `--describe` as with `--column`. `--describe` takes `--rules` too,
 [below](#the-card).
 
+## Against another project
+
+`--against DIR` with `--column` sets a column beside the same figure in a
+second dbt project, by the source columns the two are built from, so an agent
+can ask what a project reads that its twin does not, or which rule the twin
+applies and this one lacks
+([0146](../decisions/0146-a-column-is-compared-with-another-project-by-its-source-columns.md)):
+
+```
+dbt-edith path/to/project --column orders.amount --against path/to/legacy
+```
+
+```
+orders.amount  against path/to/legacy
+  sources, value   RAW.ORDERS.AMOUNT computed, RAW.PAYMENTS.AMOUNT copy
+  sources, rows    RAW.ORDERS.STATUS
+  databases   RAW.ORDERS, RAW.PAYMENTS   here DEV_DB   there PROD_DB
+  matches
+    fct_orders.amount   shares 2 of 2   missing none   extra RAW.ORDERS.TAX
+    fct_orders.gross   shares 1 of 2   missing RAW.PAYMENTS.AMOUNT   extra none
+  rules, against fct_orders.amount
+  rules, both sides
+    WHERE on RAW.ORDERS.STATUS   here `status <> 'cancelled'`   there `o.status != 'cancelled'`
+  rules, here only
+    QUALIFY on RAW.ORDERS.ID, RAW.ORDERS.UPDATED_AT   `row_number() over (partition by id order by updated_at desc) = 1`
+  rules, there only
+    WHERE on RAW.ORDERS.DELETED   `deleted = 0`
+  rules, here unplaced
+    JOIN   `o.customer_id = c.id`
+```
+
+The other project is opened as this one is: `target/manifest.json` under `DIR`
+and collin's newest cache beside it, the one cache that holds the rules and the
+indirect edges. This project's cache is collin's newest too, a newer Fusion one
+beside it not answering, unless `--column-lineage` names the file. A project
+without a collin cache, either of the two, is refused, exit 1, with the
+steps that write one, `collin generate` ending in `--indirect`; one without a
+manifest is not read, exit 2. Nothing is
+served, written or run. stderr prints the other project's `manifest:`,
+`freshness:` and `column lineage:` lines after this project's, each prefixed
+`against:`, and the stale cache's warning with them.
+
+**A source column** is a schema, a table and a column of a source table, each
+read the way the warehouse compares a name, printed `SCHEMA.TABLE.COLUMN`. The
+database is not part of it: each project renders a database that reads an
+`env_var` as its own compile environment set it, so the tables are told apart
+by schema and table alone, and a `databases` line says which database each
+project renders for the tables that differ. A column no value edge
+enters that is not a source's (a seed's, a snapshot's own), a column the SQL
+generates and a column read from a table dbt does not own are never shared:
+they are listed as `not a shared source`, and the walk goes on through their
+other edges, as it goes through a snapshot to the source it reads.
+
+**The fingerprint of a column** is the source columns it is built from, found by
+walking its edges upstream through every level. `sources, value` lists the ones
+whose values reach it, each with the strongest role met on the way: `copy`
+(passthrough, rename, cast), `computed` (transform, aggregate, window) or
+`hashed`. A role the cache does not name counts as `computed`; collin's
+`inferred` edge, one it guessed from names, counts as `copy` and the line ends
+in `(inferred)`.
+`sources, rows` lists the ones reached only through collin's indirect edges, a
+filter, a join key or a dedup key: they decide which rows the column holds, not
+what it is. The `sources, value` line ends in `(partial)` when collin gave up on
+a name somewhere on the value's path, so the set may be short (a gap met only
+above a filter or a join key is not on it); read the SQL of the model, as for
+`--column` (0141).
+
+**The match.** From the shared source columns of `sources, value`, the other
+project's columns built from them are found by walking downstream over value
+edges, counting for each how many of this column's sources reach it. The twenty
+reached by most, then those whose edges from the sources are nearest this
+column's own depth (the fewest edges from it up to a shared source), then those
+nearest the sources, then by name, are fingerprinted and ranked by the share of
+the source columns the two have together, then by that same distance from this
+column's depth (so in a copy chain a column is set beside the same step of the
+other chain), then by the fewer edges, then by how many shared sources reach
+both by the same class (a copy against a copy before a copy against a
+computed), then, among columns the lineage cannot tell apart, the one named as
+this column and in a model named as this one (case-folded; a tie-break, never
+how a match is found), then by name; the five best are printed. `shares a of
+b` counts the value sources the two have in common, out of the `b` this column
+has; `missing` are the ones only this column has, `extra` the ones only the
+other has. `--with model.column` names the column of the other project and
+skips the search, so one pair can be asked about whatever its score: a name
+the other project lacks is refused with the nearest names, as `--column` refuses
+one.
+
+**The rules** are those of the models the two walks crossed, for this column and
+for the best match (or the `--with` column), as `--rules` lists them; the
+`rules, against` line names that column. Each is resolved to source columns
+through the value sources of the columns it reads, one memo for a side, so a
+column is resolved once however many rules read it, and two rules are the same when their
+clause and their source columns are: `rules, both sides` prints both texts so
+the literals can be compared, `here only` and `there only` the rest. A rule none
+of whose columns resolves to a source column is listed under `unplaced` for its
+side. A side whose cache lists no rule, one from a collin before 0.11.0 or
+written without `--indirect`, says `no rules in the cache`, and nothing is
+compared then, since every rule of the other side would read as one that is not
+applied there; stderr says why, in the words `--rules` uses.
+
+A list is cut at twelve names, and each group of rules (`both sides`, `here
+only`, `there only`, `unplaced`) at twelve lines, `+N` counting the rest and a
+note on stderr saying so; `--output json` has them all. `--output json` prints one object:
+`fingerprint` and, for each of the (up to twenty) `matches`, its own with
+`shares`, `of`, `union`, `hops`, `missing` and `extra`, `candidates_considered` (how
+many columns the walk reached), `tables`, and `rules`. `--output name` and
+`compact` print the same card.
+
+No source table is shared between the two projects: exit 0 and one line on
+stderr saying how many source tables each has. A column whose fingerprint has no
+source column, a seed alone, prints the card with `matches   none` and why.
+`--against` goes with `--column`, and `--with` with `--against`; `--up`,
+`--down`, `--stop-at`, `--indirect`, `--rules`, `--casts`, `--column-tool` and
+`--run-collin` are refused beside it, the comparison walking every level,
+crossing the indirect edges and reading the rules itself. It is not offered
+[over MCP](#over-mcp): it names a path outside the project the server was
+started on.
+
 ## A node
 
 `--describe NAMES` prints a node's card, what the Catalog shows of it, so
@@ -947,6 +1065,7 @@ are safe to run unasked.
 | how many nodes sit in each layer upstream of a model | `dbt-edith . -s '+model' --exclude resource_type:test --count-by folder`; `--count-by source` for the sources that feed it |
 | what a column feeds | `dbt-edith . --column model.column --down all --output compact`; `--up all` for what feeds it, and how each column is computed |
 | what rules keep a column's rows | `dbt-edith . --column model.column --up all --rules`: the predicates of every model on the way, with the columns they read |
+| the same figure in another project, and what only one of them reads or applies | `dbt-edith . --column model.column --against DIR`, `--with model.column` to name the match; the command line only |
 | which DAGs or jobs run a model, when the project names its jobs | the `jobs` line of `dbt-edith . --describe model` |
 | what a DAG or dbt Cloud job runs, and what each step waits for | `dbt-edith . --job name`, step by step |
 | the models no job runs, and the steps that select nothing | `dbt-edith . --job-coverage --output compact` |
@@ -1085,7 +1204,7 @@ project.
   reads it. A leading `dbt-edith` and `.` are dropped, so a recipe pastes as it
   is.
 - **Only the questions' flags pass.** `--port`, `--manifest`, `--catalog`,
-  `--column-lineage`, `--compiled`, `--shell`, `--no-open`,
+  `--column-lineage`, `--compiled`, `--against`, `--with`, `--shell`, `--no-open`,
   `--no-update-check`, `--mcp` and `--skill` are refused, and so is any flag added to the
   command line later until someone decides it is a question.
 - **A selection holding spaces is quoted**: `-s 'stg_orders orders'`. The dbt

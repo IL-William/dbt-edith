@@ -384,7 +384,9 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 `--output compact` prints a tab-separated line per column reached, under a
 header, without these last two keys but with `steps` and `expression` after
 `tests`: see [command-line.md](command-line.md#a-column), which also describes
-`--rules`, the predicates of the models on the walk.
+`--rules`, the predicates of the models on the walk. `--against DIR` sets a
+column beside the same figure in another project, by the source columns they
+share: [command-line.md](command-line.md#against-another-project).
 
 Without `--run-collin` it reads a cache already written and writes none:
 collin is never started and Snowflake never asked. `--column-tool collin`,
