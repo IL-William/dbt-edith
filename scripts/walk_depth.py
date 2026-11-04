@@ -14,7 +14,9 @@ makes for the lineage:
     and leave the other, on a box clicked on the canvas too;
   - Back and Forward to another tab bring back the depth it was left with,
     whether the canvas moves or stays on the same model;
-  - the same model drawn again, from Custom selection and back, keeps it.
+  - the same model drawn again, from the Lineage space and back, keeps it;
+  - the top bar, just above the width where its tabs fold, still fits and folds
+    the same with the settings open and back on Code.
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
 DevTools client it borrows: it needs dbt to parse the copy, and Chrome, and
@@ -82,6 +84,76 @@ class Walk:
 
     def nav(self, which):
         self.page.js(f"document.querySelector('.crumb.nav[aria-label^={which}]').click()")
+
+    def fold(self):
+        """The top bar's fold (0140): the gear's name has its room held back
+        while the bar has no fold class; just above the width where its tabs
+        fold, opening the settings and coming back to Code leaves it inside
+        the window and folded as it was; and a long project name is cut
+        before the counts go."""
+        page = self.page
+        # Fits, classes, the manifest badge (whose age repaints and so refolds
+        # the bar), the name's room, and what the gear's name still needs.
+        state = """(b => [b.scrollWidth <= b.clientWidth, b.className,
+          document.querySelector('#fresh-badge .lbl').textContent,
+          document.querySelector('#project').clientWidth,
+          document.querySelector('#project').scrollWidth > document.querySelector('#project').clientWidth,
+          b.querySelector('.grow').offsetWidth - (b.querySelector('#settings-btn .rlabel').scrollWidth + 6)])(document.querySelector('#topbar'))"""
+
+        def at(width):
+            page.call("Emulation.setDeviceMetricsOverride", width=width, height=800, deviceScaleFactor=1, mobile=False)
+            time.sleep(0.4)
+            return page.js(state)
+
+        wide = at(1400)
+        self.check("wide, nothing folded and room for the gear's name to unfold", wide[1] == "" and wide[5] >= 0, str(wide))
+
+        def round_trip(width, what):
+            """The settings opened and left for Code at `width`: the bar fits and
+            keeps its classes the whole way. Read again when the badge's age
+            repainted, and so refolded, between two reads."""
+            for _ in range(3):
+                before = at(width)
+                page.js("document.querySelector('#settings-btn').click()")
+                time.sleep(0.6)
+                during = page.js(state)
+                page.js("document.querySelector('#space-code').click()")
+                time.sleep(0.6)
+                after = page.js(state)
+                if before[2] == during[2] == after[2]:
+                    break
+            self.check(f"{what}, at {width}px, the bar fits", before[0], str(before))
+            self.check("  with the settings open it still fits, and folds as before",
+                       during[0] and during[1] == before[1], f"{before}, then {during}")
+            self.check("  and back on Code the same", after[0] and after[1] == before[1], f"{before}, then {after}")
+
+        def first_below(cls, from_width):
+            width = from_width
+            while width > 600 and cls not in at(width)[1]:
+                width -= 10
+            self.check(f"the bar gets {cls} somewhere above 600px", width > 600, f"still without it at {width}")
+            return width
+
+        # Past each fold by 20px, so a badge repainting between two reads is the
+        # only thing that can move it. Above the first, the gear's name still
+        # unfolds under the settings, and only the room held back for it keeps
+        # the bar inside the window.
+        round_trip(first_below("nolabel", 1300) + 20, "just above the gear's name folding")
+        round_trip(first_below("folded", 1200) + 20, "just above the tabs folding")
+
+        name = "a_long_invented_project_name_for_the_jaffle_shop_staging_and_marts_models"
+        page.js(f"document.querySelector('#project').textContent = '{name}'")
+        cut_with_counts, counts_with_name_cut_short = False, True
+        for width in range(1400, 700, -10):
+            now = at(width)
+            if "nocounts" not in now[1]:
+                cut_with_counts = cut_with_counts or now[4]
+                # Never cut under 120px while the counts are still there.
+                counts_with_name_cut_short = counts_with_name_cut_short and (not now[4] or now[3] >= 120)
+        self.check("a long project name is cut, its counts still there", cut_with_counts)
+        self.check("  down to 120px, never less, before they go", counts_with_name_cut_short)
+        page.js("document.querySelector('#project').textContent = 'jaffle_shop'")
+        page.call("Emulation.clearDeviceMetricsOverride")
 
     def run(self, url):
         page = self.page
@@ -153,11 +225,14 @@ class Walk:
         print("--- the same model ---")
         self.depth(2, 3)
         page.js("document.querySelector('[data-mode=select]').click()")
-        page.until("!document.querySelector('#select-bar').classList.contains('hidden')", "Custom selection")
-        # In its panel over the dock (0092): its close button is the way back.
-        page.js("document.querySelector('#selpanel-close').click()")
+        page.until("!document.querySelector('#select-bar').classList.contains('hidden')", "the Lineage space")
+        # In its panel over the dock (0092): the Code tab is the way back (0140).
+        page.js("document.querySelector('#space-code').click()")
         page.until("document.querySelector('#select-bar').classList.contains('hidden')", "Models")
-        self.drawn("Custom selection and back on orders, still 2 and 3", "orders", "2/3")
+        self.drawn("the Lineage space and back on orders, still 2 and 3", "orders", "2/3")
+
+        print("--- the top bar's fold ---")
+        self.fold()
 
         self.check("no error in the page", not page.errors, "; ".join(page.errors))
         return self.failed

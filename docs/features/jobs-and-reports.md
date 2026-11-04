@@ -9,7 +9,7 @@ The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
 the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
 step of it. The jobs are read from their YAML, wherever it lives, which is often
 another repository, and each step's dbt command is resolved by the same engine
-as Custom selection, never by running dbt. Only a step that runs, builds, tests
+as a selection is, never by running dbt. Only a step that runs, builds, tests
 or checks the node is listed: a `dbt compile` selects every model and runs
 none, so its job would sit under each of them.
 
@@ -118,8 +118,8 @@ Saving reads them at once. When every source found jobs, no file was refused
 and the sources were saved, the form closes on what it found: the Jobs tab when
 it is showing a model, Job coverage otherwise. Anything else keeps it open on
 what went wrong, file by file, with the line of anything it could not read, and
-so do edits made while it read. Opened from Job coverage, Escape or the × goes
-back to it. They are read again only when something moved:
+so do edits made while it read. Opened from Job coverage, Escape goes back to
+it, and the Code tab goes to Code. They are read again only when something moved:
 when the manifest is reloaded, or when the Jobs tab or the sources form opens
 and a job file was added, removed or changed since. A click inside the tab reads
 nothing, so a `git pull` in the jobs repository shows the next time the tab is
@@ -192,8 +192,8 @@ freshness configured. A `--project-dir` is taken to name this project.
 
 ## Reports
 
-**Reports**, a sheet with a bar chart in the top bar whose name unfolds under
-the pointer, rolls a panel down over the editor and the dock with what speaks of
+**Reports**, a tab with a sheet and a bar chart in the top bar, beside Code and
+Lineage, rolls a panel down over the editor and the dock with what speaks of
 the whole project, a section each, listed on its left: the last dbt command's
 results once dbt has written them, the warnings dbt would give as it parses once
 there is one, collin's report once collin has written one, the coverage of your
@@ -202,9 +202,10 @@ project's macros while one is reached by no node and nothing explains it, this
 tool's own checks while one finds a node, and the builds of each environment
 once the dbt_artifacts package is there. The order of the steps, the checks and
 the builds are listed but never light the button. The panel covers the whole
-window, the sidebar too, so a list is read at full width; the settings keep to
-the editor and the dock (0137). Anything that shows a file or a dock tab rolls
-it up again: a name in a report, the palette, a dock tab, Escape. The list on
+window, the sidebar too, so a list is read at full width, as the settings do
+(0137, 0140). The tab is lit while the panel is down and does nothing when
+clicked then. Anything that shows a file or a dock tab rolls it up again: a name
+in a report, the palette, a dock tab, the Code tab, Escape. The list on
 its left is grouped by who reads the files, dbt, collin, Jobs and Snowflake,
 each in its own colour and always named, in the rail and in a chip at the head
 of its sections, and a row with something to count carries it, as the section

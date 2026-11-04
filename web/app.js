@@ -4461,8 +4461,8 @@ function canvasOptions() {
    for it (0024): the terminal button is how you check that against dbt itself. */
 let selectTimer = null;
 
-/* Custom selection over the whole window, in a panel of its own (0092,
-   0101). The canvas is one: the dock's lineage pane, the selector bar over
+/* The Lineage space, over the whole window, in a panel of its own (0092, 0101,
+   0140). The canvas is one: the dock's lineage pane, the selector bar over
    it, comes up into the panel while it is down, with the canvas's own tools
    and the Catalog, in a card beside the canvas once a box is clicked. All of
    it goes back to the dock as the panel rolls up. Moved rather than copied,
@@ -4610,25 +4610,34 @@ function selCardWidth(x, left, right) {
   return Math.round(Math.max(280, Math.min(right - left - 320, right - x)));
 }
 
-/* The way in: the top bar's button, the dock's, and the tour. */
+/* What an empty selector box is filled with when the space opens on a model:
+   it and one level either side, the dock's default depth, in the name the
+   Catalog copies, a version's included (0104). A source, a test or anything
+   but the node the lineage is on gets nothing. Until the space has its own
+   Models mode this is what it opens on (0140). */
+function selectionSeed(node, focus) {
+  if (!node || node.id !== focus || !['model', 'seed', 'snapshot'].includes(node.kind) || !node.name) return '';
+  return `1+${node.name}+1`;
+}
+
+/* The way in: the top bar's tab, the dock's button, and the tour. A box that
+   is empty or still holds the last seed is seeded again, from the model in
+   front now, or emptied when there is none; a line typed or edited is kept
+   as it is. */
 function openSelection() {
+  const box = $('#select-input');
+  const seed = selectionSeed(S.node, S.focus);
+  if (seed && (!box.value.trim() || box.value === S.selectSeed)) {
+    box.value = seed;
+    S.selectSeed = seed;
+  } else if (!seed && S.selectSeed && box.value === S.selectSeed) {
+    // Nothing to seed it from now: the old seed would name a model no longer in front.
+    box.value = '';
+    S.selectSeed = '';
+  }
   const run = runSelection();
-  $('#select-input').focus();
+  box.focus();
   return run;
-}
-
-function toggleSelection() {
-  if (panelOpen('select')) closePanel({ restore: true });
-  else openSelection();
-}
-
-/* The top bar's button lit while the panel is down, as the Reports one is,
-   and both buttons saying whether it is. */
-function paintSelectButtons() {
-  const open = panelOpen('select');
-  $('#select-btn').classList.toggle('on', open);
-  $('#select-btn').setAttribute('aria-expanded', String(open));
-  $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(open));
 }
 
 async function runSelection() {
@@ -4665,7 +4674,9 @@ async function runSelection() {
     // box and the picture never say two different things.
     if (sub.stripped) $('#select-input').value = selectionText(sub);
     const line = $('#select-input').value.trim();
-    rememberSelection(line);
+    // A seed was never typed: it is made again each time, and would only
+    // push the lines that were out of the ArrowUp history.
+    if (line !== S.selectSeed) rememberSelection(line);
     // The note names the button when there is one, so it is asked first.
     const offer = capOffer(sub, raise);
     // Before drawing: the warnings make the bar taller, and the folder names
@@ -6366,14 +6377,11 @@ function followBuildsSwitch() {
   });
 }
 
-/* The gear: lit while its panel is down, with a dot while the profile is
-   missing or refused (0100). */
+/* The gear: a dot while the profile is missing or refused (0100). It is lit
+   by paintSpaces(), as a space. */
 function paintSettingsButton() {
   const b = $('#settings-btn');
-  const open = panelOpen('settings');
   const warn = profileWarning(S.profiles);
-  b.classList.toggle('on', open);
-  b.setAttribute('aria-expanded', String(open));
   b.dataset.warn = String(!!warn);
   b.title = ['Settings: the project\'s profile, environments and Python, column lineage, Snowflake, '
     + 'orchestration, updates, and help', warn].filter(Boolean).join('\n');
@@ -7758,7 +7766,7 @@ function exportFreshness(f) {
    paths, the manifest's and the column cache's, which have no business in a
    file that leaves the machine. */
 function exportFacts(sub, ctx) {
-  const kicker = { select: 'Custom selection', model: 'Lineage of a model', column: 'Column lineage' }[sub.mode] || 'Lineage';
+  const kicker = { select: 'Selection', model: 'Lineage of a model', column: 'Column lineage' }[sub.mode] || 'Lineage';
   const depths = sub.nodes.map((n) => n.depth || 0);
   const up = Math.max(0, ...depths.map((d) => -d));
   const down = Math.max(0, ...depths);
@@ -9768,10 +9776,49 @@ function jobSourcesRead(answer) {
 }
 
 
+// ----------------------------------------------------------------- spaces --
+/* The top bar's tabs (0140): Code, Lineage and Reports, and the gear beside
+   Search. A space is a panel without an ×, and Code is no panel down. A tab is
+   a place, never a switch: the one in front does nothing when clicked, and
+   what takes you back to Code is its tab or Escape. */
+const SPACE_OF = { '': 'code', select: 'lineage', reports: 'reports', settings: 'settings' };
+
+const spaceNow = () => SPACE_OF[S.panel] || 'code';
+
+function goSpace(name) {
+  if (name === spaceNow()) return;
+  if (name === 'code') {
+    // Cleared first: the settings opened from Reports would give Reports back.
+    S.settingsFrom = '';
+    closePanel({ restore: true });
+  } else if (name === 'lineage') {
+    openSelection();
+  } else if (name === 'reports') {
+    openReports();
+  } else if (name === 'settings') {
+    openSettings();
+  }
+}
+
+/* Lights the tab of the space in front, and the gear while the settings are
+   open; the dock's Custom selection button says whether its space is. Called
+   by every panel's paint. */
+function paintSpaces() {
+  const now = spaceNow();
+  for (const b of $$('#spaces .sp')) {
+    if (b.dataset.space === now) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+  const gear = $('#settings-btn');
+  gear.classList.toggle('on', now === 'settings');
+  gear.setAttribute('aria-expanded', String(now === 'settings'));
+  $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(now === 'lineage'));
+}
+
 // ----------------------------------------------------------------- panels --
 /* What rolls down over the editor and the dock, the sidebar staying beside
-   it unless the panel is wide (0064, 0091, 0101, 0137): what speaks of the
-   whole project, or wants the window's height. What follows the file in front
+   it unless the panel is wide (0064, 0091, 0101, 0137, 0140): what speaks of
+   the whole project, or wants the window's height. What follows the file in front
    stays in the dock. One panel at a
    time, opening one rolls up the one that was down. Each names its element,
    what paints its button, what it does once rolled up, and how the tour puts
@@ -9781,7 +9828,7 @@ const PANELS = {
     el: '#reports',
     // Over the sidebar too: a list of hundreds is read at full width (0137).
     wide: true,
-    paint: paintReportsButton,
+    paint: () => { paintReportsButton(); paintSpaces(); },
     // The Catalog it covered asks for its jobs if it has not, once it is
     // seen again: not when another panel takes this one's place (0063).
     closed: () => fillCatalogJobs($('#catalog .cat-jobs')),
@@ -9792,7 +9839,7 @@ const PANELS = {
     el: '#select-panel',
     // Over the sidebar too: a selection is read across the whole window (0101).
     wide: true,
-    paint: () => paintSelectButtons(),
+    paint: () => paintSpaces(),
     // Its card closes first, as it opened inside the panel.
     escape: () => closeSelCard(),
     closed: () => selectPanelUp(),
@@ -9802,7 +9849,9 @@ const PANELS = {
   },
   settings: {
     el: '#settings',
-    paint: () => paintSettingsButton(),
+    // Over the sidebar too, as every space but Code is (0140).
+    wide: true,
+    paint: () => { paintSettingsButton(); paintSpaces(); },
     // A form left half filled goes with the panel, as it went with its
     // dialog, but for the tour's, which puts it back as it was left. Rolled
     // down over Reports, by a Sources… there or the gear, a close from the
@@ -10385,7 +10434,7 @@ function reportsNow() {
 }
 
 function paintReportsButton() {
-  const btn = $('#reports-btn');
+  const btn = $('#space-reports');
   const { sections, news } = reportsNow();
   // In view from the first paint, so the panel is found before it has
   // anything, and dimmed until a section does, with no chip until then:
@@ -10396,8 +10445,6 @@ function paintReportsButton() {
   const open = panelOpen('reports');
   btn.classList.toggle('dim', !some && !open);
   if (!some) news.length = 0;
-  btn.classList.toggle('on', open);
-  btn.setAttribute('aria-expanded', String(open));
   btn.title = reportsButtonTitle(sections, news, keyLabel('Mod+Alt+R', IS_MAC));
   const texts = reportsChipTexts(news);
   btn.querySelector('.rnews').replaceChildren(...news.map((n, i) => newsChip(Object.assign({}, n, { text: texts[i] }))));
@@ -10421,11 +10468,6 @@ async function openReports(section, { reread = true } = {}) {
     return;
   }
   showReportSection(key);
-}
-
-function toggleReports() {
-  if (panelOpen('reports')) closePanel({ restore: true });
-  else openReports();
 }
 
 /* The rail: the sections under who reads their files, each with what it
@@ -10506,16 +10548,11 @@ function reportHead({ title, tool, tone, about, again, extra = [] }) {
     row.append(dot);
   }
   row.append(jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
-  const close = jel('button', 'icon', '×');
-  close.title = `Close the reports (${keyLabel('Escape', IS_MAC)})`;
-  close.setAttribute('aria-label', 'Close the reports');
-  close.addEventListener('click', () => closePanel({ restore: true }));
   if (typeof again === 'function') {
     const read = jel('button', 'btn sm reports-again', 'Read again');
     read.addEventListener('click', again);
     row.append(read);
   }
-  row.append(close);
   head.append(row);
   return head;
 }
@@ -11528,11 +11565,6 @@ function openSettings(section, { add = false } = {}) {
   showSettingsSection(key, { add });
 }
 
-function toggleSettings() {
-  if (panelOpen('settings')) closePanel({ restore: true });
-  else openSettings();
-}
-
 /* A glyph per section, as the menus they replace drew them. */
 function settingsIcon(sec) {
   const wrap = jel('span', 'seticon');
@@ -11586,11 +11618,7 @@ function showSettingsSection(key, { add = false } = {}) {
   }
   const head = jel('div', 'diff-head');
   const row = jel('div', 'diff-title');
-  const close = jel('button', 'icon', '×');
-  close.title = `Close the settings (${keyLabel('Escape', IS_MAC)})`;
-  close.setAttribute('aria-label', 'Close the settings');
-  close.addEventListener('click', () => closePanel({ restore: true }));
-  row.append(settingsIcon(sec), jel('b', '', sec.label), jel('div', 'grow'), close);
+  row.append(settingsIcon(sec), jel('b', '', sec.label), jel('div', 'grow'));
   head.append(row);
   $('#settings-view').replaceChildren(head, body);
   paintSettingsLive();
@@ -16259,6 +16287,7 @@ function wireTabs() {
   });
   watch.observe(tools, { subtree: true, childList: true, characterData: true, attributes: true });
   watch.observe($('#history-tab'), { attributes: true, attributeFilter: ['class'] });
+  wireTopbar();
 }
 
 /* Pulled out of wireTabs because a link into the file tree has to bring the
@@ -16347,6 +16376,50 @@ function foldDockTabs() {
     else if (about) t.title = about;
     else t.removeAttribute('title');
   });
+}
+
+/* The top bar never breaks onto a second line, and never runs past the
+   window (docs/state.md had it do both on a narrow one). The project's name
+   gives way first, cut with an ellipsis down to PROJECT_MIN, and what it
+   could still give up counts as room. Then, cheapest first: the gear keeps its
+   name from unfolding, the counts go, and the tabs not lit keep their glyph
+   alone, named by their tooltip and still read out. Measured, never set at a
+   width, because the room moves with the name, the counts, the news on the
+   Reports tab and the look's buttons: it is measured with every tab's name
+   shown, whichever is lit, so a click on a tab never changes what folds
+   (0140). The gear's name unfolds on hover and while the settings are open,
+   so the first check holds back the room it will take, whatever point of its
+   transition the bar is in: neither can push the bar past the window, and
+   opening the settings and coming back never changes what folds. Only the
+   bar's own classes change, so the observers below never hear it. */
+const PROJECT_MIN = 120;
+
+function foldTopbar() {
+  const bar = $('#topbar');
+  const name = $('#project');
+  const grow = $('#topbar > .grow');
+  bar.classList.remove('nolabel', 'nocounts', 'folded');
+  // What the gear's name has still to take to be unfolded, with its margin.
+  const label = $('#settings-btn .rlabel');
+  const unfolds = Math.max(0, label.scrollWidth + 6 - label.offsetWidth - parseFloat(getComputedStyle(label).marginLeft));
+  // The room left over, and what the name could still give up; none of either once the bar overflows.
+  const fits = (need) => bar.scrollWidth <= bar.clientWidth
+    && grow.offsetWidth + Math.max(0, name.clientWidth - PROJECT_MIN) >= need
+    && (name.scrollWidth <= name.clientWidth || name.clientWidth >= PROJECT_MIN);
+  if (fits(unfolds)) return;
+  bar.classList.add('nolabel');
+  if (fits(0)) return;
+  bar.classList.add('nocounts');
+  if (fits(0)) return;
+  bar.classList.add('folded');
+}
+
+function wireTopbar() {
+  const bar = $('#topbar');
+  new ResizeObserver(foldTopbar).observe(bar);
+  new MutationObserver((records) => {
+    if (records.some((r) => r.target !== bar)) foldTopbar();
+  }).observe(bar, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden'] });
 }
 
 /* The Halloween look (0106): a class on the body that every rule of the theme
@@ -16756,7 +16829,7 @@ function wireSplitters() {
    (0074). Each step points at a part of the page and says what it is for,
    on a model the server picks with parents and children. It runs nothing and
    changes no setting: it opens a file as a preview, moves the lineage and the
-   dock, draws a Custom selection in its panel, rolls the settings down on
+   dock, draws a selection in the Lineage space, rolls the settings down on
    their Column lineage section, and puts them back as they were when it
    ends. The pure part runs from tourSteps to tourPlace, which
    web/tests/tour.js slices. */
@@ -16815,11 +16888,12 @@ function tourSteps(c) {
         + 'nothing here runs dbt. Click a box to read its file, double-click to centre the lineage on it, and a `+N` '
         + 'badge pulls in one more level. Opening a model\'s file moves the lineage onto it. '
         + `${key('Mod+F')} over the canvas finds a box by its name and brings it to the middle.` });
-    steps.push({ key: 'select', target: '#select-bar', title: 'Custom selection',
+    steps.push({ key: 'select', target: '#select-bar', title: 'Lineage, as a selection',
       text: 'Any set of nodes, written the way dbt reads a selection: names, `tag:`, `path:`, `+` and `@`, or a named '
         + `selector from \`selectors.yml\`. This one, \`+${m.name}+\`, is everything it is built from and everything `
-        + 'built from it. It opens over the whole window, from its button in the top bar or in the lineage\'s bar: '
-        + 'a click on a box opens its card beside the canvas, a double-click opens its file. dbt ls types the same '
+        + 'built from it. It opens over the whole window, from the Lineage tab in the top bar or the lineage\'s bar, '
+        + 'and an empty box starts as the model in front with a level either side. '
+        + 'A click on a box opens its card beside the canvas, a double-click opens its file. dbt ls types the same '
         + 'selection into the terminal, for you to check against dbt itself.' });
     steps.push({ key: 'share', target: ['#export-btn', '#image-btn', '#select-copy'], title: 'Export, or copy as an image',
       text: 'Whatever the canvas shows, this selection included. Export saves it as one HTML file that opens offline, '
@@ -16846,14 +16920,14 @@ function tourSteps(c) {
     steps.push({ key: 'jobs', target: '#dock-jobs', title: 'Jobs',
       text: c.jobs
         ? `Which of your orchestrator's jobs run \`${m.name}\`: an Airflow DAG and its task, or a dbt Cloud job and `
-          + 'its step, with its schedule and its dbt command, resolved here as Custom selection is. Sources… says '
+          + 'its step, with its schedule and its dbt command, resolved here as a selection is. Sources… says '
           + 'where the jobs are read from.'
         : 'Which of your orchestrator\'s jobs run a model, read from their YAML, often in another repository: '
           + 'Airflow DAGs or dbt Cloud jobs. None is read yet: Add a source names the folder they are in, and '
           + 'nothing outside the project is read before.' });
   }
   const reportsKey = key('Mod+Alt+R');
-  steps.push({ key: 'reports', target: '#reports-btn', title: 'Reports',
+  steps.push({ key: 'reports', target: '#space-reports', title: 'Reports',
     text: c.reports.length
       ? `Reports on the whole project: ${c.reports.join(', ')}. A chip on the button says what is new in them `
         + `since you last looked, and ${reportsKey} opens them from anywhere.`
@@ -17379,8 +17453,8 @@ function shortcutSheet(os) {
       [['Mod+Alt+R'], 'Open or close the reports'],
       [['?', 'F1'], 'This list: ? outside a text box, F1 from anywhere'],
     ] },
-    { title: 'Reports and settings', keys: [
-      [['Escape'], 'Close them, from inside'],
+    { title: 'Lineage, Reports and settings', keys: [
+      [['Escape'], 'Back to Code, from inside: a card, menu or find bar open in them closes first'],
       [['Mod+Alt+X', 'Alt+W'], 'Close them too, rather than the tab under them'],
     ] },
     { title: 'Find', keys: [
@@ -17408,7 +17482,7 @@ function shortcutSheet(os) {
       [['Enter'], 'Open or pick'],
       [['Escape'], 'Close'],
     ] },
-    { title: 'Custom selection box, in its panel', keys: [
+    { title: 'Selection box, in the Lineage space', keys: [
       [['Enter'], 'Draw it now'],
       [['ArrowUp', 'ArrowDown'], 'Earlier expressions'],
     ] },
@@ -17578,7 +17652,7 @@ function wireKeys() {
       case 'Mod+`': e.preventDefault(); closePanel(); showDock('terminal'); return;
       /* R for reports, in the same place on every layout, with Cmd so that
          keyCombo reads the key and not what Option typed (0037). */
-      case 'Mod+Alt+R': e.preventDefault(); toggleReports(); return;
+      case 'Mod+Alt+R': e.preventDefault(); goSpace(panelOpen('reports') ? 'code' : 'reports'); return;
       // An editor with the focus has answered this already, and said so.
       case 'Mod+F':
         if (!e.defaultPrevented && findInPane(paneOf(e.target) || S.lastPane)) e.preventDefault();
@@ -17696,10 +17770,7 @@ function wireKeys() {
   // one thing the user would type next. dbt still runs in their terminal, under
   // their environment, never from the server (0002).
   $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd)));
-  $('#reports-btn').addEventListener('click', toggleReports);
-  $('#select-btn').addEventListener('click', toggleSelection);
-  $('#selpanel-close').title = `Close the selection (${keyLabel('Escape', IS_MAC)})`;
-  $('#selpanel-close').addEventListener('click', () => closePanel({ restore: true }));
+  $$('#spaces .sp').forEach((b) => b.addEventListener('click', () => goSpace(b.dataset.space)));
   $('#selpanel-card-close').title = `Close the card (${keyLabel('Escape', IS_MAC)})`;
   $('#selpanel-card-close').addEventListener('click', () => closeSelCard());
   // On each panel rather than the document: a dialog over it answers its own
@@ -17738,6 +17809,7 @@ function applyMeta(meta) {
   // Another cache may hold indirect edges where this one had none.
   paintIndirectToggle();
   $('#project').textContent = meta.project || '(no manifest)';
+  $('#project').title = meta.project || '';
   $('#tree-title').textContent = meta.project || 'Project';
   const c = meta.counts || {};
   $('#counts').textContent = '';
@@ -18326,7 +18398,7 @@ async function boot() {
   $('#editor-host').style.display = 'none';
 
   paintTestsToggle(false);
-  $('#settings-btn').addEventListener('click', toggleSettings);
+  $('#settings-btn').addEventListener('click', () => goSpace('settings'));
   wireLook();
   loadLook();
   const info = await api.get('/api/meta');

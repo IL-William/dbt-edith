@@ -217,26 +217,35 @@
   <button id="brand" class="brand" type="button" aria-haspopup="menu"><span class="hw-ghost" aria-hidden="true"><svg class="calm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost"/></svg><svg class="warm" viewBox="0 0 24 28" aria-hidden="true"><use href="#hw-s-ghost-warm"/></svg></span><b>Edith</b></button>
   <span class="sep"></span>
   <span id="project" class="muted">loading…</span>
+  <!-- The spaces: one is in front at a time, Code when no panel is down. A tab never
+       toggles; the lit one is the place you are in (0140). Each has its glyph drawn
+       here, like the dock's. Reports is dimmed while no report has anything to show
+       (0075), and reportsNews() says what is new in them (0066). -->
+  <nav id="spaces" class="spaces" aria-label="Spaces">
+    <button id="space-code" class="sp" type="button" data-space="code" aria-current="page"
+            title="Code: the files, the editor and the terminal">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.75 1.75h5.5l3 3v9.5h-8.5z"/>
+           <path d="M9.25 1.75v3h3M6 8h4M6 10.5h4M6 13h2"/></svg>
+      <span class="nm">Code</span>
+    </button>
+    <button id="space-lineage" class="sp" type="button" data-space="lineage" aria-controls="select-panel"
+            title="Lineage: any set of nodes a dbt selector names, drawn over the whole window">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.25" y="5.75" width="4.5" height="4.5" rx="1"/>
+           <rect x="10.25" y="1.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="9.75" width="4.5" height="4.5" rx="1"/>
+           <path d="M5.75 8C8 8 8 4 10.25 4M5.75 8C8 8 8 12 10.25 12"/></svg>
+      <span class="nm">Lineage</span>
+    </button>
+    <button id="space-reports" class="sp dim" type="button" data-space="reports" aria-controls="reports">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="1.75" width="10.5" height="12.5" rx="1.5"/>
+           <path d="M5.5 11.5V9M8 11.5V5.5M10.5 11.5V7.5"/></svg>
+      <span class="nm">Reports</span><span class="rnews"></span>
+    </button>
+  </nav>
   <span id="counts" class="chips"></span>
   <div class="grow"></div>
-  <!-- Custom selection, over the whole window (0101). Two boxes, one feeding
-       the other, inside the corners of a frame: nodes picked out. Its name
-       unfolds on hover, as the Reports button's does. -->
-  <button id="select-btn" class="btn reportsbtn" type="button" aria-controls="select-panel" aria-expanded="false"
-          title="Custom selection: any set of nodes a dbt selector names, drawn over the whole window">
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 5V2.75a1 1 0 0 1 1-1H5M11 1.75h2.25a1 1 0 0 1 1 1V5M14.25 11v2.25a1 1 0 0 1-1 1H11M5 14.25H2.75a1 1 0 0 1-1-1V11"/>
-         <rect x="4.75" y="4.75" width="3" height="3" rx=".5"/><rect x="8.25" y="8.25" width="3" height="3" rx=".5"/><path d="M7.75 6.25h2v2"/></svg>
-    <span class="rlabel"><span>Custom selection</span></span>
-  </button>
-  <!-- Dimmed while no report has anything to show (0075); reportsNews() says what is new in them.
-       A sheet with a bar chart on it, drawn here like the other glyphs: its name unfolds on hover. -->
-  <button id="reports-btn" class="btn reportsbtn dim" type="button" aria-controls="reports" aria-expanded="false">
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="1.75" width="10.5" height="12.5" rx="1.5"/>
-         <path d="M5.5 11.5V9M8 11.5V5.5M10.5 11.5V7.5"/></svg>
-    <span class="rlabel"><span>Reports</span></span><span class="rnews"></span>
-  </button>
   <button id="palette-btn" class="btn" title="Search models, macros and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
   <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
   <!-- The Halloween look, off until pressed, and its sound, shown only while the look is on. Kept per machine (0106). -->
@@ -257,8 +266,8 @@
           aria-label="dbt-edith on GitHub" aria-haspopup="menu">
     <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
   </button>
-  <!-- Every setting, in a panel of its own (0100). A gear drawn here, like the
-       Reports glyph, its name unfolding on hover as that one's does. -->
+  <!-- Every setting, in a space of its own (0100, 0140). A gear drawn here, its name
+       unfolding on hover and while the settings are open, when it is lit. -->
   <button id="settings-btn" class="btn reportsbtn setbtn" type="button" aria-controls="settings" aria-expanded="false">
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/>
@@ -404,7 +413,7 @@
                     title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
             <button class="segbtn" data-mode="select" aria-controls="select-panel" aria-expanded="false"
-                    title="Any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
+                    title="Opens the Lineage space: any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
@@ -441,7 +450,7 @@
       </div>
       <div id="dock-lineage" class="dock-pane">
         <!-- What floats over the top of the canvas, one under the other: the
-             selector bar in Custom selection, or the note on a canvas that
+             selector bar in the Lineage space, or the note on a canvas that
              is not of the file in front in model mode, then the find bar,
              which app.js adds on Cmd+F. -->
         <div id="lineage-top" class="lineage-top">
@@ -492,33 +501,37 @@
       </div>
     </section>
 
-    <!-- The settings, a section at a time, as the reports are (0100): over the
-         editor and the dock rather than in their place, so nothing under them is
-         measured again when they roll up or down (0064, 0091). -->
-    <section id="settings" class="panel settings" tabindex="-1" aria-label="Settings" aria-hidden="true">
-      <nav id="settings-nav" class="reports-nav" aria-label="Settings"></nav>
-      <div id="settings-view" class="reports-view"></div>
-    </section>
   </main>
 
   <!-- The reports over the whole window, the sidebar too, since a list of
-       hundreds is read at full width; the settings above keep to the editor
-       and the dock (0137). -->
+       hundreds is read at full width (0137), and the settings the same: every
+       space but Code owns the window (0140). Over the editor and the dock rather
+       than in their place, so nothing under them is measured again when they
+       roll up or down (0064, 0091). -->
+  <section id="settings" class="panel settings" tabindex="-1" aria-label="Settings" aria-hidden="true">
+    <nav id="settings-nav" class="reports-nav" aria-label="Settings"></nav>
+    <div id="settings-view" class="reports-view"></div>
+  </section>
+
   <section id="reports" class="panel reports" tabindex="-1" aria-label="Reports" aria-hidden="true">
     <nav id="reports-nav" class="reports-nav" aria-label="Reports"></nav>
     <div id="reports-view" class="reports-view"></div>
   </section>
 
-  <!-- Custom selection over the whole window, the sidebar too (0092, 0101). It
-       holds nothing of its own: selectPanelDown() brings the dock's canvas up
+  <!-- The Lineage space, over the whole window, the sidebar too (0092, 0101, 0140).
+       It holds nothing of its own: selectPanelDown() brings the dock's canvas up
        into it, the selector bar over it and the canvas's tools, and the
-       Catalog into the card, which a box clicked opens. -->
-  <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Custom selection" aria-hidden="true">
+       Catalog into the card, which a box clicked opens. It has no ×: the top bar
+       goes back to Code, and so does Escape. Inside it the mode is still
+       "Selection", with the frame glyph it had as a button. -->
+  <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Lineage" aria-hidden="true">
     <div class="selpanel-head">
-      <span class="selpanel-title">Custom selection</span>
+      <svg class="selpanel-glyph" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 5V2.75a1 1 0 0 1 1-1H5M11 1.75h2.25a1 1 0 0 1 1 1V5M14.25 11v2.25a1 1 0 0 1-1 1H11M5 14.25H2.75a1 1 0 0 1-1-1V11"/>
+           <rect x="4.75" y="4.75" width="3" height="3" rx=".5"/><rect x="8.25" y="8.25" width="3" height="3" rx=".5"/><path d="M7.75 6.25h2v2"/></svg>
+      <span class="selpanel-title">Selection</span>
       <div class="grow"></div>
       <span id="selpanel-tools" class="tools"></span>
-      <button class="icon" id="selpanel-close" type="button" aria-label="Close the selection">×</button>
     </div>
     <div class="selpanel-body">
       <div id="selpanel-canvas" class="selpanel-canvas"></div>

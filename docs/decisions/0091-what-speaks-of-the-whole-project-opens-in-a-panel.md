@@ -1,6 +1,6 @@
 # 0091. What speaks of the whole project opens in a panel
 
-Date: 2026-10-16 · Status: accepted, amended by 0101 · Amends 0064
+Date: 2026-10-16 · Status: accepted, amended by 0101 and 0140 · Amends 0064
 
 **Trigger:** read before adding a panel over the editor and the dock, moving
 a view between the dock and a panel, or changing what opens, closes or covers
@@ -37,6 +37,9 @@ would decide it a little differently.
   panel.*
   *Amended by [0137](0137-reports-open-over-the-whole-window.md): the
   reports are marked `wide` too.*
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the
+  settings are `wide` too, a panel is a space with a tab or the gear in the
+  top bar and no ×, and Code is no panel down.*
 - **One panel at a time.** Opening one rolls up the one that was down, what
   is under them staying inert in between, and the first one's hooks run with
   the second already down, so nothing under them counts as seen. The focus a

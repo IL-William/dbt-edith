@@ -48,6 +48,15 @@ kbd {
   flex: 0 0 auto;
 }
 #topbar { height: 38px; }
+/* Nothing in the bar breaks onto a second line (docs/state.md had it break under
+   about 1000px). The project's name gives way first, cut with an ellipsis, then
+   the counts and the tabs' names fold, measured by foldTopbar() (0140). */
+#topbar > * { flex: 0 0 auto; white-space: nowrap; }
+#topbar > .grow { flex: 1 1 0; min-width: 0; }
+#topbar > #project { flex: 0 1 auto; min-width: 40px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+#topbar.nocounts #counts { display: none; }
+/* The gear's name stays folded, lit or not: the first thing to give up (0140). */
+#topbar.nolabel #settings-btn .rlabel { display: none; }
 /* Environment colours. Filled, so the environment behind every resolved value
    stays visible from anywhere; manifest mode is only outlined. */
 [data-tone] { --tone: #c9b458; }
@@ -336,10 +345,36 @@ kbd {
 .reloadbtn[aria-busy=true] svg { animation: reload-turn .9s linear infinite; }
 @keyframes reload-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .reloadbtn[aria-busy=true] svg { animation: none; opacity: .5; } }
-/* The Reports button, and what is new in them on it: each section's news in
-   its own colour, collin's as collin's, so it reads as the tool's. */
-/* A glyph alone until the pointer or the focus is on it, or the panel is down:
-   the top bar is full, and the name only needs saying to whoever reaches for it. */
+/* The spaces (0140): Code, Lineage and Reports side by side, the one in front lit
+   and marked aria-current. Reports carries what is new in them on its tab: each
+   section's news in its own colour, collin's as collin's, so it reads as the
+   tool's. When the bar runs out of room the tabs not lit keep their glyph alone
+   (the name stays read out), as the dock's do. */
+.spaces {
+  display: inline-flex; align-items: stretch; height: 26px; padding: 2px; gap: 2px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
+}
+.sp {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;
+  background: none; border: 1px solid transparent; border-radius: 5px;
+  color: var(--fg-dim); font: 12px var(--ui); cursor: pointer;
+}
+.sp svg { flex: 0 0 auto; }
+.sp:hover, .sp:focus-visible { color: var(--fg); background: var(--bg-3); }
+.sp[aria-current=page] { color: var(--fg); background: var(--accent-dim); border-color: var(--accent); }
+/* No report has anything yet: dimmed rather than hidden, so it can be found (0075).
+   .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
+.sp.dim { opacity: .7; }
+.sp.dim:hover, .sp.dim:focus-visible { opacity: 1; }
+.sp .rnews { display: inline-flex; gap: 4px; }
+.sp .rnews:empty { display: none; }
+#topbar.folded .sp:not([aria-current=page]) { padding: 0 7px; }
+#topbar.folded .sp:not([aria-current=page]) .nm {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+/* The gear is a space too, lit while the settings are open. A glyph alone until
+   the pointer or the focus is on it, or they are open: the top bar is full, and
+   the name only needs saying to whoever reaches for it. */
 .reportsbtn { display: inline-flex; flex: none; align-items: center; color: var(--fg-dim); padding: 4px 8px; }
 .reportsbtn:hover, .reportsbtn:focus-visible, .reportsbtn.on { color: var(--fg); }
 .reportsbtn svg { flex: 0 0 auto; }
@@ -354,12 +389,6 @@ kbd {
 .reportsbtn .rlabel > span { min-width: 0; }
 .reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { grid-template-columns: 1fr; opacity: 1; margin-left: 6px; }
 .reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
-/* No report has anything yet: dimmed rather than hidden, so it can be found (0075). */
-/* .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
-.reportsbtn.dim { opacity: .7; }
-.reportsbtn.dim:hover, .reportsbtn.dim:focus-visible { opacity: 1; }
-.reportsbtn .rnews { display: inline-flex; gap: 4px; margin-left: 6px; }
-.reportsbtn .rnews:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { .reportsbtn .rlabel { transition: none; } }
 .rnew { font: 10.5px var(--mono); color: var(--tool, var(--accent)); border: 1px solid var(--tool, var(--accent)); border-radius: 8px; padding: 0 6px; }
 .versioninput {
@@ -749,15 +778,16 @@ kbd {
 .navcount ~ .rnew { margin-left: 0; }
 .reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* Custom selection in its panel (0092), over the whole window (0101): its
+/* The Lineage space (0092, 0101, 0140), over the whole window: its
    head across the top, the dock's canvas under it, and the Catalog of the box
    clicked beside the canvas once one is, as wide as a card is read. */
 .selpanel { flex-direction: column; container: selmain / inline-size; }
 .selpanel-head {
-  flex: none; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 6px 0 12px;
+  flex: none; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 12px;
   background: var(--bg-2); border-bottom: 1px solid var(--line);
 }
 .selpanel-title { font: 12px var(--ui); color: var(--fg); white-space: nowrap; }
+.selpanel-glyph { flex: 0 0 auto; margin-right: -4px; color: var(--fg-dim); }
 .selpanel-body { flex: 1; min-height: 0; display: flex; }
 .selpanel-canvas { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* As wide as its edge was last dragged to, which selCardWidth() holds

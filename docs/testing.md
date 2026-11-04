@@ -62,7 +62,8 @@ $JSC web/tests/builds.js      # the last build per environment: where the tables
 $JSC web/tests/joborder.js    # Job order in Reports: the groups, a pair's lines, the edges and the ten drawn, what the answer leaves out, and the pieces every section is drawn from
 $JSC web/tests/jobbuilds.js   # builds by job: a cron read in its source's zone, the last start across a clock change, a job's models late, built since, not built
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
-$JSC web/tests/selpanel.js    # Custom selection's panel: what the dock gets back, its card, a line dropped
+$JSC web/tests/selpanel.js    # the Lineage space's panel: what the dock gets back, its card, a line dropped, what an empty box opens on
+$JSC web/tests/spaces.js      # the top bar's tabs: the lit one, a click on it, Code from the settings opened over Reports, Escape
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header
@@ -76,7 +77,7 @@ PyYAML, so they need no warehouse and nothing installed:
 python3 tools/test_sf_lineage.py
 ```
 
-The Custom selection box, `--select` and the lineage are compared with dbt
+The selection box of the Lineage space, `--select` and the lineage are compared with dbt
 itself: every named selector and a list of typed expressions, asked of the box
 and of the command line, and the nodes drawn around each model at one, two and
 twenty levels, resolved by dbt-edith and by `dbt ls`, have to name the same

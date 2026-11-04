@@ -48,6 +48,8 @@ function closePopup() {
   if (document.activeElement === popupButton) document.activeElement = document.body;
 }
 function paintReportsButton() { log.push('paint reports ' + S.panel); }
+// The tabs' own painter is spaces.js's: here a panel only has to call it.
+function paintSpaces() {}
 function fillCatalogJobs() { log.push('jobs, panel ' + JSON.stringify(S.panel)); }
 function openReports(section) { log.push('reopen reports ' + section); }
 

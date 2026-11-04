@@ -15,7 +15,7 @@ cannot see:
   - the tour is offered once, beside the ? button, and not after a reload;
   - every step rings the element it is about, with its card on screen, and
     the page under it shows what the step says: the model's file, its
-    lineage, the Custom selection, the Catalog, the settings on their
+    lineage, the selection in the Lineage space, the Catalog, the settings on their
     Column lineage section, the Jobs tab;
   - Back sets a step up as Next does;
   - it runs nothing: the terminal never starts, and no setting is written,
@@ -287,7 +287,7 @@ STEPS = [
      "!document.querySelector('#dock-lineage').classList.contains('hidden')"
      f" && [...document.querySelectorAll('#graph text')].some((t) => t.textContent === '{MODEL}')"
      " && document.querySelector('#graph-mode .active').dataset.mode === 'model'"),
-    ("Custom selection", "#select-bar",
+    ("Lineage, as a selection", "#select-bar",
      f"document.querySelector('#select-input').value === '+{MODEL}+'"
      " && document.querySelector('#graph-mode .active').dataset.mode === 'select'"
      " && document.querySelector('#select-sum').textContent !== ''"
@@ -303,8 +303,8 @@ STEPS = [
      " && [...document.querySelectorAll('#settings-view [data-live=columns] .lbl')].some((l) => l.textContent === 'Collin')"),
     ("Jobs", "#dock-jobs",
      "!document.querySelector('#dock-jobs').classList.contains('hidden') && !!document.querySelector('#jobs-body .jobs-none')"),
-    ("Reports", "#reports-btn",
-     "(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"),
+    ("Reports", "#space-reports",
+     "(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#space-reports'))"),
     ("Terminal", "#dock [data-dock=terminal]", None),
     ("Search", "#palette-btn", None),
     ("Every shortcut, and this tour", "#keys-btn", None),
@@ -319,7 +319,8 @@ STATE = """(() => ({
   depth: document.querySelector('#up').value + ' up, ' + document.querySelector('#down').value + ' down',
   catalog: document.querySelector('.cat-title')?.textContent || document.querySelector('#catalog').textContent,
   jobs: document.querySelector('#jobs-head .jobs-about')?.textContent || '',
-  reports: document.querySelector('#reports-btn').className,
+  reports: document.querySelector('#space-reports').className,
+  space: [...document.querySelectorAll('#spaces [aria-current]')].map((b) => b.dataset.space).join() + (document.querySelector('#settings-btn').classList.contains('on') ? ',settings' : ''),
   panel: document.querySelector('#reports').classList.contains('open'),
   settings: document.querySelector('#settings').classList.contains('open'),
 }))()"""
@@ -450,7 +451,7 @@ class Walk:
         self.check("  under the ? button", under)
         self.check("  and noted at once", (self.config / "tour.json").exists())
         self.check("the Reports button in view before any report, dimmed (0075)",
-                   page.js("(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#reports-btn'))"))
+                   page.js("(b => !b.classList.contains('hidden') && b.classList.contains('dim'))(document.querySelector('#space-reports'))"))
         if self.shots:
             page.shot(self.shots / "00-the-offer.png")
         before = page.js(STATE)
@@ -527,7 +528,7 @@ class Walk:
         page.until("document.querySelector('#select-sum').textContent !== ''", "the selection")
         page.js("document.querySelector('[data-dock=jobs]').click()")
         page.until("document.querySelector('#jobs-head .jobs-about')?.textContent === 'customers'", "the Jobs tab on customers")
-        page.js("document.querySelector('#reports-btn').click()")
+        page.js("document.querySelector('#space-reports').click()")
         page.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
         in_use = page.js(STATE)
         page.js("performance.setResourceTimingBufferSize(100000)")
@@ -564,7 +565,8 @@ class Walk:
                    page.js(LOOKS) == looks, f"{looks} requests looking at them before, {page.js(LOOKS)} after")
 
         print("--- ended while a step is still setting the page up ---")
-        page.js("document.querySelector('#reports-btn').click()")
+        # A tab never toggles: Code is the way back.
+        page.js("document.querySelector('#space-code').click()")
         page.until("!document.querySelector('#reports').classList.contains('open')", "the panel rolled up")
         in_use = page.js(STATE)
         page.js("document.body.focus()")

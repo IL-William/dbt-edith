@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.74.0 - 2026-11-04
+
+- Switch between Code, Lineage and Reports from tabs in the top bar, the one in
+  front lit and a click on it doing nothing, the Custom selection renamed
+  Lineage and opening on the model in front, the settings over the whole window
+  like the others, and the bar folding its counts, then the names of the tabs
+  not lit, rather than breaking onto lines (0140).
+
 ## 1.73.0 - 2026-11-04
 
 - Show the Compiled and Run SQL as it would read under the environment picked

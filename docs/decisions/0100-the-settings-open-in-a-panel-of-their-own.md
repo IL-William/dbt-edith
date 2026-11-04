@@ -1,6 +1,6 @@
 # 0100. The settings open in a panel of their own
 
-Date: 2026-10-19 · Status: accepted · Amends 0031, 0049, 0072 and 0079
+Date: 2026-10-19 · Status: accepted, amended by 0140 · Amends 0031, 0049, 0072 and 0079
 
 **Trigger:** read before adding a setting, moving one between the settings
 and another place, or changing what the gear, a status bar pill or a section
@@ -48,6 +48,10 @@ as one of them.
   where a Sources… in Reports came from. Rolled down over Reports, by a
   Sources… there or the gear, the panel gives Reports back when Escape, its ×
   or the gear rolls it up, as the dialog left Reports down under it.
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the gear
+  opens the settings and does nothing while they are open, and the Code tab
+  goes to Code, never back to Reports; Escape still gives Reports back. The
+  panel has no × now and covers the sidebar too.*
 - **A section is drawn from what the page knows**, and drawn again when that
   changes: Snowflake switched, a script starting, collin running, an update
   looked for, a venv the terminal reports. Only a block whose drawing would

@@ -1,6 +1,6 @@
 # 0137. Reports open over the whole window, in one grammar
 
-Date: 2026-11-02 · Status: accepted · Amends 0064, 0091, 0101 and 0131
+Date: 2026-11-02 · Status: accepted, amended by 0140 · Amends 0064, 0091, 0101 and 0131
 
 **Trigger:** read before changing what the Reports panel covers, how its rail
 is grouped or counts, how a section lays out its lists, or what its filter
@@ -22,6 +22,9 @@ line and compact entries.
   sits in `#body` beside the Custom selection's, and the sidebar and its gutter
   go inert while it is down. The settings stay narrow: opened from Sources…
   they give the sidebar back, and their `closed` hook puts the wide Reports back.
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the
+  settings are wide too, and the `closed` hook still puts Reports back on
+  Escape.*
 - **The rail is grouped by who reads the files**: dbt, collin, Jobs, Snowflake.
   A row carries a count with a title when it has one, and every count is a
   number its section shows: from the index, or, for Job order, from what the

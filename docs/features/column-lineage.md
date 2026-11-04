@@ -145,7 +145,7 @@ compiled SQL, read from a CTE that lacks it, read downstream but missing here,
 or matched by name to several parents. The note over the table names those the
 table has no row for.
 
-**collin's report, whole.** After a run, the Reports button in the top bar says
+**collin's report, whole.** After a run, the Reports tab in the top bar says
 how many models and tables collin named, "12 to investigate", until you open
 the report; "Open collin's report", under Collin in the menu, opens it at any
 time. It is a section of [Reports](jobs-and-reports.md#reports): collin's figures first, then every
