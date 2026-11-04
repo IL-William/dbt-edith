@@ -195,6 +195,8 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [--column-tool collin]          whose cache --column reads, default collin's or Fusion's newest
          [--run-collin]                  run collin over the manifest first, and answer --column from its cache
          [--compiled DIR]                the compiled SQL --run-collin reads, default compiled/ beside the manifest
+         [--against DIR]                 with --column, compare it with the same figure in the dbt project at DIR, by the source columns they share; reads DIR's target/manifest.json and collin's cache beside it
+         [--with model.column]           with --against, the column of that project to compare with, instead of searching for the closest
          [--describe name[,name...]]     print a node's card as the Catalog shows it, or a macro's, and exit, without serving
          [--sql]                         --describe prints the node's own SQL file, or the macro's lines of its file, after its card
          [--columns]                     with --describe or --select, print only the columns: a line each for a selection
@@ -210,8 +212,8 @@ dbt-edith [PROJECT]                       dbt project root, default the current 
          [-V, --version]                 print the version and the build it came from, and exit
 ```
 
-A relative path in `--manifest`, `--catalog`, `--column-lineage` or
-`--compiled` is relative to where you run the command, not to the project.
+A relative path in `--manifest`, `--catalog`, `--column-lineage`, `--compiled`
+or `--against` is relative to where you run the command, not to the project.
 `dbt-edith --help` prints the same list.
 
 ## Changing dbt-edith

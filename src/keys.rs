@@ -59,7 +59,7 @@ impl NodeKey {
 
 /// A column name as the warehouse compares it: trimmed, quotes off, lower case.
 /// The same reading as the page's `columnKey`.
-fn norm(name: &str) -> String {
+pub(crate) fn norm(name: &str) -> String {
     let s = name.trim();
     let quoted = [('"', '"'), ('`', '`'), ('[', ']')];
     for (open, close) in quoted {

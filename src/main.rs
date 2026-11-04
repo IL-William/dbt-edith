@@ -1,6 +1,7 @@
 //! dbt-edith: a small browser IDE for dbt projects.
 //! Editor + terminal + lineage, served from one self-contained binary.
 
+mod against;
 mod api;
 mod checks;
 mod clone;
@@ -111,6 +112,14 @@ struct Args {
     #[arg(long, value_name = "MODEL.COLUMN", conflicts_with_all = ["select", "selector"])]
     column: Option<String>,
 
+    /// With --column, compare the column with the same figure in the dbt project at DIR, by the source columns the two share: which column there is built from them, what it reads that this one does not, which rules apply on one side only. Reads DIR's target/manifest.json and the collin cache beside it (written with --indirect for the rules); nothing is served or written. Not over MCP
+    #[arg(long, value_name = "DIR")]
+    against: Option<PathBuf>,
+
+    /// With --against, the column of the other project to compare with, as MODEL.COLUMN, instead of searching for the closest
+    #[arg(long, value_name = "MODEL.COLUMN")]
+    with: Option<String>,
+
     /// Levels --column walks upstream: a number, or all (default 0)
     #[arg(long, value_name = "N", value_parser = ls_column::levels, requires = "column")]
     up: Option<u32>,
@@ -196,7 +205,7 @@ struct Args {
         long,
         conflicts_with_all = [
             "port", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector", "column", "up", "down",
-            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill",
+            "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order", "job_coverage", "count_by", "depth", "output", "skill", "against", "with",
         ]
     )]
     mcp: bool,
@@ -210,7 +219,7 @@ struct Args {
         conflicts_with_all = [
             "project", "port", "manifest", "catalog", "column_lineage", "shell", "no_open", "no_update_check", "select", "exclude", "selector",
             "column", "up", "down", "stop_at", "indirect", "rules", "casts", "column_tool", "run_collin", "compiled", "describe", "sql", "compiled_sql", "columns", "overview", "job", "job_order",
-            "job_coverage", "count_by", "depth", "output", "mcp",
+            "job_coverage", "count_by", "depth", "output", "mcp", "against", "with",
         ]
     )]
     skill: Option<skill::Kind>,
@@ -228,6 +237,8 @@ fn stray(args: &Args) -> Option<String> {
         (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
         (args.count_by.is_some(), "--count-by", "--select or --selector", args.select.is_some() || args.selector.is_some()),
         (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
+        (args.against.is_some(), "--against", "--column", args.column.is_some()),
+        (args.with.is_some(), "--with", "--against", args.against.is_some()),
         (args.up.is_some(), "--up", "--column", args.column.is_some()),
         (args.down.is_some(), "--down", "--column", args.column.is_some()),
         (!args.stop_at.is_empty(), "--stop-at", "--column", args.column.is_some()),
@@ -248,6 +259,23 @@ fn stray(args: &Args) -> Option<String> {
         ),
     ];
     let stray = flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"));
+    // The comparison walks every level, crosses the indirect edges and reads
+    // the rules by itself, so a flag that shapes one walk of `--column` would
+    // be dropped without a word (0146).
+    let beside = [
+        (args.up.is_some(), "--up"),
+        (args.down.is_some(), "--down"),
+        (!args.stop_at.is_empty(), "--stop-at"),
+        (args.indirect, "--indirect"),
+        (args.rules, "--rules"),
+        (args.casts, "--casts"),
+        (args.column_tool.is_some(), "--column-tool"),
+        (args.run_collin, "--run-collin"),
+    ];
+    let stray = stray.or_else(|| {
+        let flag = beside.iter().find(|(set, _)| *set && args.against.is_some())?.1;
+        Some(format!("{flag} does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"))
+    });
     // Every folder is deeper than level 0, so a count to that depth would be
     // one row of nothing. The overview's 0 leaves its folders out on purpose.
     stray.or_else(|| {
@@ -325,6 +353,8 @@ fn question_of(args: &Args) -> Option<Question> {
             indirect: args.indirect,
             rules: args.rules,
             casts: args.casts,
+            against: args.against.clone(),
+            with: args.with.clone(),
             produce: args.run_collin.then(|| ls_column::Produce {
                 catalog: args.catalog.clone(),
                 compiled: args.compiled.clone(),
@@ -706,6 +736,18 @@ mod tests {
             ("--job-coverage --count-by kind", "--count-by goes with --select or --selector"),
             ("--job-coverage --up 1", "--up goes with --column"),
             ("--job-coverage --column-lineage n.json", "--column-lineage goes with --column, or the page"),
+            ("--against ../legacy", "--against goes with --column"),
+            ("--overview --against ../legacy", "--against goes with --column"),
+            ("--with fct_orders.amount", "--with goes with --against"),
+            ("--column a.b --with fct_orders.amount", "--with goes with --against"),
+            ("--column a.b --against ../legacy --up 1", "--up does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --down all", "--down does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --stop-at window", "--stop-at does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --indirect", "--indirect does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --rules", "--rules does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --casts", "--casts does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --column-tool collin", "--column-tool does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
+            ("--column a.b --against ../legacy --run-collin", "--run-collin does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"),
         ] {
             assert_eq!(stray(&asked(line)).as_deref(), Some(flag), "{line}");
         }
@@ -744,6 +786,8 @@ mod tests {
             ("--casts", "--mcp --casts"),
             ("--column-tool", "--mcp --column-tool collin"),
             ("--run-collin", "--mcp --run-collin"),
+            ("--against", "--mcp --against ../legacy"),
+            ("--with", "--mcp --with a.b"),
             ("--compiled", "--mcp --compiled sql"),
             ("--describe", "--mcp --describe orders"),
             ("--sql", "--mcp --sql"),
@@ -796,6 +840,8 @@ mod tests {
             "--skill --job-coverage",
             "--skill --output json",
             "--skill --mcp",
+            "--skill --against ../legacy",
+            "--skill --with a.b",
             "--mcp --skill",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
@@ -862,6 +908,9 @@ mod tests {
             "--column a.b --down all --stop-at window --indirect --column-tool collin",
             "--column a.b --run-collin --compiled compiled",
             "--column a.b --column-lineage c.json",
+            "--column a.b --against ../legacy",
+            "--column a.b --against ../legacy --with fct_orders.amount --output json",
+            "--column a.b --against ../legacy --column-lineage c.json",
             "--column-lineage c.json",
             "--overview",
             "--job jaffle_daily",
@@ -893,14 +942,16 @@ mod tests {
             Some(Question::JobOrder) => "job-order".to_string(),
             Some(Question::JobCoverage) => "job-coverage".to_string(),
             Some(Question::Column(ask)) => format!(
-                "column {} {} {} {:?} produce={}{}{}",
+                "column {} {} {} {:?} produce={}{}{}{}{}",
                 ask.column,
                 ask.up,
                 ask.down,
                 ask.stop_at,
                 ask.produce.is_some(),
                 if ask.rules { " rules" } else { "" },
-                if ask.casts { " casts" } else { "" }
+                if ask.casts { " casts" } else { "" },
+                ask.against.as_ref().map_or(String::new(), |p| format!(" against={}", p.display())),
+                ask.with.as_ref().map_or(String::new(), |w| format!(" with={w}"))
             ),
             None => "page".to_string(),
         };
@@ -925,6 +976,11 @@ mod tests {
         assert_eq!(text("--column orders.amount --up all --rules"), "column orders.amount 2147483647 0 [] produce=false rules");
         assert_eq!(text("--column orders.amount --casts"), "column orders.amount 0 0 [] produce=false casts");
         assert_eq!(text("--describe orders --rules"), "describe orders false false rules");
+        assert_eq!(text("--column orders.amount --against ../legacy"), "column orders.amount 0 0 [] produce=false against=../legacy");
+        assert_eq!(
+            text("--column orders.amount --against ../legacy --with fct_orders.amount"),
+            "column orders.amount 0 0 [] produce=false against=../legacy with=fct_orders.amount"
+        );
         assert_eq!(text(""), "page");
     }
 

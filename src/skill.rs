@@ -217,8 +217,15 @@ mod tests {
             if question_of(&args).is_none() {
                 flaws.push(format!("{command} asks nothing"));
             }
-            // Over MCP the same line, which the server reads as its own.
-            if mcp_line::read(command, std::path::Path::new("."), None, None).is_err() {
+            // Over MCP the same line, which the server reads as its own, bar the
+            // comparison with another project: it names a path, which the
+            // command line alone may (0146).
+            let over_mcp = mcp_line::read(command, std::path::Path::new("."), None, None);
+            if args.against.is_some() {
+                if over_mcp.is_ok() {
+                    flaws.push(format!("{command} is accepted over MCP, which leaves --against out"));
+                }
+            } else if over_mcp.is_err() {
                 flaws.push(format!("{command} is refused over MCP"));
             }
         }

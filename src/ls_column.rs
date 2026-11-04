@@ -79,6 +79,12 @@ pub struct Ask {
     pub rules: bool,
     /// `--casts`: compact prints the text of a cast too (0138).
     pub casts: bool,
+    /// `--against DIR`: the column is compared with the same figure in the
+    /// project there, by the source columns they share (0146).
+    pub against: Option<PathBuf>,
+    /// `--with MODEL.COLUMN`: the column of the other project to compare
+    /// with, where the search would otherwise pick one.
+    pub with: Option<String>,
 }
 
 /// What `--run-collin` hands collin besides the manifest: the catalog and the
@@ -139,7 +145,8 @@ pub(crate) fn respond(
     }
     // Only where the flag would be taken: it names its own cache, so clap
     // refuses it beside one named another way.
-    let offer_run = ask.produce.is_none() && ask.tool.is_none() && ask.cache.is_none();
+    // Nor under `--against`, which refuses that flag.
+    let offer_run = ask.produce.is_none() && ask.tool.is_none() && ask.cache.is_none() && ask.against.is_none();
     let written = match &ask.produce {
         Some(p) => match produce(root, manifest_path, &target_dir, p, locate(), stop, err) {
             Ok(Some(cache)) => Some(cache),
@@ -150,32 +157,132 @@ pub(crate) fn respond(
     // A file named outright, or the one just written, needs no listing, which
     // reads every cache.
     let found = if ask.cache.is_some() || written.is_some() { Vec::new() } else { collin::discover(&target_dir) };
-    let cache = match written.map_or_else(|| cache_for(&target_dir, &graph, ask, &found), Ok) {
+    // The comparison reads rules and indirect edges on both sides, which only
+    // collin's cache holds: a newer Fusion cache must not answer for this one
+    // while the other project is read from collin's (0146).
+    let against = ask.against.is_some() && ask.cache.is_none();
+    let collins = collin_ask();
+    let cache = match written.map_or_else(|| cache_for(&target_dir, &graph, if against { &collins } else { ask }, &found), Ok) {
         Ok(path) => path,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
-            let _ = regenerate(root, &graph, &target_dir, ask.tool.map_or("", Tool::name), offer_run, err);
-            return Ok(CANNOT_RUN);
+            let _ = regenerate(root, &graph, &target_dir, if against { "collin" } else { ask.tool.map_or("", Tool::name) }, offer_run, against, err);
+            return Ok(if against { REFUSED } else { CANNOT_RUN });
         }
     };
-    let raw = match load(&cache) {
-        Ok(raw) => raw,
+    let producer = match merge_cache(&mut graph, &cache) {
+        Ok(producer) => producer,
         Err(why) => {
             let _ = writeln!(err, "error: {why}");
             return Ok(CANNOT_RUN);
         }
     };
-    let producer = raw.producer.clone();
-    graph.merge_col_lineage(raw, files::mtime_secs(&cache));
-    graph.meta.cll_file = cache.display().to_string();
 
-    let code = answer(&graph, ask, output, out, err)?;
+    let (code, other) = match &ask.against {
+        Some(dir) => {
+            // This project's half is checked first: the other project is a
+            // second manifest to read, and a name that is wrong spares it.
+            // A refusal still ends on this project's lines below, as for `--column`.
+            if let Err(why) = focus(&graph, &ask.column) {
+                let _ = writeln!(err, "error: {why}");
+                (REFUSED, None)
+            } else {
+                match open_with_cache(dir, err) {
+                    Ok(other) => (crate::against::respond(&graph, &other.graph, ask, output, out, err)?, Some(other)),
+                    Err(code) => (code, None),
+                }
+            }
+        }
+        None => (answer(&graph, ask, output, out, err)?, None),
+    };
     out.flush()?;
     // After the answer, as for `--select`: the freshness walk is most of the
     // time on a large project. A refusal says which cache it looked in too.
     let _ = ls::provenance(root, &graph, err);
-    let _ = cache_lines(root, &graph, &cache, manifest_path, &producer, offer_run, err);
+    let _ = cache_lines(root, &graph, &cache, manifest_path, &producer, offer_run, ask.against.is_some(), err);
+    if let Some(other) = other {
+        let _ = other_lines(&other, err);
+    }
     Ok(code)
+}
+
+/// The other project of `--against`, open with collin's cache merged.
+pub(crate) struct Other {
+    root: PathBuf,
+    manifest: PathBuf,
+    pub(crate) graph: Graph,
+    cache: PathBuf,
+    producer: String,
+}
+
+/// Opens the project `--against` names the way `respond` opens this one, its
+/// manifest, and collin's newest cache beside it, which is the one cache that
+/// holds rules and the indirect edges the comparison reads. The exit code
+/// when it cannot: a missing manifest cannot be read (2), a project without a
+/// collin cache is refused (1) with the steps that write one, as for a
+/// column of this project (0146).
+pub(crate) fn open_with_cache(project: &Path, err: &mut impl Write) -> Result<Other, i32> {
+    let (root, manifest, mut graph) = ls::open(project, None).map_err(|why| {
+        let why = why.strip_prefix("error: ").unwrap_or(&why).replace(", or pass --manifest", "");
+        let _ = writeln!(err, "error: --against: {why}");
+        CANNOT_RUN
+    })?;
+    let target_dir = files::folder_of(&manifest).unwrap_or_else(|| root.join("target"));
+    let found = collin::discover(&target_dir);
+    let cache = match cache_for(&target_dir, &graph, &collin_ask(), &found) {
+        Ok(path) => path,
+        Err(why) => {
+            let _ = writeln!(err, "error: --against: {why}");
+            let _ = regenerate(&root, &graph, &target_dir, "collin", false, true, err);
+            return Err(REFUSED);
+        }
+    };
+    let producer = merge_cache(&mut graph, &cache).map_err(|why| {
+        let _ = writeln!(err, "error: --against: {why}");
+        CANNOT_RUN
+    })?;
+    Ok(Other { root, manifest, graph, cache, producer })
+}
+
+/// The other project's manifest and cache lines, each prefixed `against:` so
+/// they read apart from this project's.
+fn other_lines(other: &Other, err: &mut impl Write) -> io::Result<()> {
+    let mut said: Vec<u8> = Vec::new();
+    ls::provenance(&other.root, &other.graph, &mut said)?;
+    cache_lines(&other.root, &other.graph, &other.cache, &other.manifest, &other.producer, false, true, &mut said)?;
+    for line in String::from_utf8_lossy(&said).lines() {
+        writeln!(err, "against: {line}")?;
+    }
+    Ok(())
+}
+
+/// The cache at `cache` read and merged into `graph`, and the producer it
+/// names. The merge also records the file as the one that answered.
+fn merge_cache(graph: &mut Graph, cache: &Path) -> Result<String, String> {
+    let raw = load(cache)?;
+    let producer = raw.producer.clone();
+    graph.merge_col_lineage(raw, files::mtime_secs(cache));
+    graph.meta.cll_file = cache.display().to_string();
+    Ok(producer)
+}
+
+/// What names collin's cache without a column or a flag of the line behind
+/// it: `--rules` and the other project of `--against` both want collin's.
+fn collin_ask() -> Ask {
+    Ask {
+        column: String::new(),
+        up: 0,
+        down: 0,
+        stop_at: Vec::new(),
+        tool: Some(Tool::Collin),
+        cache: None,
+        indirect: false,
+        produce: None,
+        rules: true,
+        casts: false,
+        against: None,
+        with: None,
+    }
 }
 
 /// The cache at `path`, or why it is not one. Discovery passes over a file
@@ -603,18 +710,7 @@ pub(crate) fn rule_line(graph: &Graph, label: &dyn Fn(&crate::graph::Node) -> St
 pub(crate) fn with_rules(root: &Path, graph: &Graph, manifest: &Path, err: &mut impl Write) -> Option<Graph> {
     let target_dir = &files::folder_of(manifest).unwrap_or_else(|| root.join("target"));
     let found = collin::discover(target_dir);
-    let named = Ask {
-        column: String::new(),
-        up: 0,
-        down: 0,
-        stop_at: Vec::new(),
-        tool: Some(Tool::Collin),
-        cache: None,
-        indirect: false,
-        produce: None,
-        rules: true,
-        casts: false,
-    };
+    let named = collin_ask();
     let cache = match cache_for(target_dir, graph, &named, &found) {
         Ok(path) => path,
         Err(why) => {
@@ -622,16 +718,11 @@ pub(crate) fn with_rules(root: &Path, graph: &Graph, manifest: &Path, err: &mut 
             return None;
         }
     };
-    let raw = match load(&cache) {
-        Ok(raw) => raw,
-        Err(why) => {
-            let _ = writeln!(err, "warning: --rules: {why}");
-            return None;
-        }
-    };
     let mut merged = graph.clone();
-    merged.merge_col_lineage(raw, files::mtime_secs(&cache));
-    merged.meta.cll_file = cache.display().to_string();
+    if let Err(why) = merge_cache(&mut merged, &cache) {
+        let _ = writeln!(err, "warning: --rules: {why}");
+        return None;
+    }
     if !merged.cll.as_ref().is_some_and(|c| c.has_rules()) {
         let _ = writeln!(err, "{}", no_rules(&merged.meta.cll_file, &merged.meta.cll_source));
     }
@@ -643,7 +734,7 @@ pub(crate) fn with_rules(root: &Path, graph: &Graph, manifest: &Path, err: &mut 
 /// answer: a rule of a model since changed would read as current.
 pub(crate) fn cache_said(root: &Path, merged: &Graph, manifest: &Path, err: &mut impl Write) {
     let producer = merged.meta.cll_producer.clone();
-    let _ = cache_lines(root, merged, Path::new(&merged.meta.cll_file), manifest, &producer, false, err);
+    let _ = cache_lines(root, merged, Path::new(&merged.meta.cll_file), manifest, &producer, false, false, err);
 }
 
 /// The roles a cache holds, for a message.
@@ -659,7 +750,7 @@ fn roles(kinds: &[String]) -> String {
 /// `model.column`, `source_name.table.column` or `unique_id.column`: the
 /// column is what follows the last dot, the node what `--output name` prints
 /// for it, or its unique_id.
-fn focus(graph: &Graph, spec: &str) -> Result<ColRef, String> {
+pub(crate) fn focus(graph: &Graph, spec: &str) -> Result<ColRef, String> {
     let (idx, node, column) = model_of(graph, spec)?;
     match graph.col_slot(idx, column) {
         Some(col) => Ok(ColRef { node: idx, col }),
@@ -859,6 +950,7 @@ fn cache_lines(
     manifest: &Path,
     producer: &str,
     offer_run: bool,
+    indirect: bool,
     err: &mut impl Write,
 ) -> io::Result<()> {
     let m = &graph.meta;
@@ -897,7 +989,7 @@ fn cache_lines(
     }
     if collin_run::stale(cache, manifest) {
         writeln!(err, "warning: the column lineage is older than the manifest: a column added, renamed or moved since may be missing or wrong")?;
-        regenerate(root, graph, &files::folder_of(manifest).unwrap_or_else(|| root.join("target")), tool, offer_run, err)?;
+        regenerate(root, graph, &files::folder_of(manifest).unwrap_or_else(|| root.join("target")), tool, offer_run, indirect, err)?;
     }
     if tool == "collin" {
         if let Some(line) = alignment(cache) {
@@ -936,7 +1028,8 @@ fn alignment(cache: &Path) -> Option<String> {
 /// collin's run must come from one target under its own environment, and
 /// nothing here can tell which one they mean. `folder` is where the manifest
 /// was read, which dbt and collin are pointed at when it is not their default.
-fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: bool, err: &mut impl Write) -> io::Result<()> {
+/// `indirect` adds collin's `--indirect`, for a mode that reads rules and rows.
+fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: bool, indirect: bool, err: &mut impl Write) -> io::Result<()> {
     match tool {
         "snowflake" => {
             return writeln!(
@@ -971,10 +1064,13 @@ fn regenerate(root: &Path, graph: &Graph, folder: &Path, tool: &str, offer_run: 
     // defaults: the page then loads the cache this run wrote, and reads its
     // report, rather than older ones of the names it keeps.
     let to_collin = format!(
-        "{} --out {} --report {}",
+        "{} --out {} --report {}{}",
         if elsewhere { format!(" --manifest {} --catalog {}", under("manifest.json"), under("catalog.json")) } else { String::new() },
         under("column_lineage.collin.json"),
         under(collin_run::REPORT),
+        // The comparison reads rules and indirect edges, which collin writes
+        // only when asked (0146).
+        if indirect { " --indirect" } else { "" },
     );
     let version = graph.meta.dbt_version.as_str();
     let fusion = version.starts_with("2.");
@@ -1219,7 +1315,7 @@ mod tests {
     }
 
     fn ask(column: &str, up: u32, down: u32) -> Ask {
-        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None, rules: false, casts: false }
+        Ask { column: column.into(), up, down, stop_at: Vec::new(), tool: None, cache: None, indirect: false, produce: None, rules: false, casts: false, against: None, with: None }
     }
 
     fn run_on(g: &Graph, a: &Ask, output: Output) -> (String, String, i32) {
@@ -1489,7 +1585,7 @@ mod tests {
         std::fs::write(&cache, r#"{"version":1,"source":"collin","edges":[]}"#).unwrap();
         let said = |g: &Graph| {
             let mut err = Vec::new();
-            cache_lines(&dir, g, &cache, &manifest, "", false, &mut err).unwrap();
+            cache_lines(&dir, g, &cache, &manifest, "", false, false, &mut err).unwrap();
             String::from_utf8(err).unwrap()
         };
         // One column lost names; the capped one has all its edges and is not counted.
@@ -1770,6 +1866,133 @@ mod tests {
         assert_eq!(at("totals.id").unwrap(), "model.shop.totals.v2", "the latest, as a ref() reaches it");
     }
 
+    /// A project folder with a manifest of one model reading one source table,
+    /// and, if asked, collin's cache for it.
+    fn twin(tag: &str, source: &str, database: &str, cache: bool) -> PathBuf {
+        let dir = scratch(tag);
+        let target = dir.join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let id = format!("source.{tag}.raw.orders");
+        let manifest = json!({
+            "metadata": { "dbt_version": "1.11.2", "adapter_type": "snowflake" },
+            "nodes": { format!("model.{tag}.{source}"): { "name": source, "resource_type": "model", "package_name": tag, "original_file_path": "models/m.sql" } },
+            "sources": { id.clone(): { "name": "orders", "source_name": "raw", "resource_type": "source", "package_name": tag,
+                "identifier": "orders", "schema": "RAW", "database": database, "original_file_path": "models/sources.yml" } },
+            "child_map": {}, "parent_map": {}
+        });
+        std::fs::write(target.join("manifest.json"), manifest.to_string()).unwrap();
+        if cache {
+            let edges = json!([{ "from": id, "from_col": "amount", "to": format!("model.{tag}.{source}"), "to_col": "amount", "kind": "rename" }]);
+            let body = json!({ "version": 1, "source": "collin", "producer": "collin 0.12.0", "edges": edges });
+            std::fs::write(target.join("column_lineage.collin.json"), body.to_string()).unwrap();
+        }
+        dir
+    }
+
+    fn against_run(here: &Path, a: &Ask) -> (String, String, i32) {
+        let (root, manifest, graph) = ls::open(here, None).unwrap();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = respond(&root, &manifest, graph, a, Output::Name, &AtomicBool::new(false), collin_run::Located::default, &mut out, &mut err).unwrap();
+        (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
+    }
+
+    #[test]
+    fn another_project_is_opened_like_this_one_and_its_lines_are_prefixed() {
+        let (here, there) = (twin("against-here", "orders", "DEV_DB", true), twin("against-there", "fct_orders", "PROD_DB", true));
+        let a = Ask { against: Some(there.clone()), ..ask("orders.amount", 0, 0) };
+        let (out, err, code) = against_run(&here, &a);
+        assert_eq!(code, ANSWERED, "{err}");
+        assert!(out.contains("  matches\n    fct_orders.amount   shares 1 of 1   missing none   extra none\n"), "{out}");
+        assert!(out.contains("  databases   RAW.ORDERS   here DEV_DB   there PROD_DB\n"), "{out}");
+        // This project's lines first, then the other's, each told apart.
+        let lines: Vec<&str> = err.lines().collect();
+        let at = |prefix: &str| lines.iter().position(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("no {prefix:?} in {err}"));
+        assert!(at("manifest: ") < at("column lineage: ") && at("column lineage: ") < at("against: manifest: "), "{err}");
+        assert!(at("against: manifest: ") < at("against: column lineage: "), "{err}");
+        assert!(err.contains("against: column lineage: ") && err.contains("collin 0.12.0"), "{err}");
+        std::fs::remove_dir_all(&here).unwrap();
+        std::fs::remove_dir_all(&there).unwrap();
+    }
+
+    #[test]
+    fn the_other_project_without_a_collin_cache_is_refused_with_how_to_write_one() {
+        let (here, there) = (twin("against-cache-here", "orders", "D", true), twin("against-cache-there", "fct_orders", "D", false));
+        let a = Ask { against: Some(there.clone()), ..ask("orders.amount", 0, 0) };
+        let (out, err, code) = against_run(&here, &a);
+        assert_eq!((out.as_str(), code), ("", REFUSED), "{err}");
+        assert!(err.starts_with("error: --against: no column lineage from collin in "), "{err}");
+        assert!(err.contains("collin generate --project . --target <TARGET>"), "{err}");
+        // A project that is not one is not read at all.
+        let a = Ask { against: Some(here.join("nowhere")), ..ask("orders.amount", 0, 0) };
+        let (_, err, code) = against_run(&here, &a);
+        assert_eq!(code, CANNOT_RUN);
+        assert!(err.starts_with("error: --against: cannot open "), "{err}");
+        let empty = scratch("against-empty");
+        let a = Ask { against: Some(empty.clone()), ..ask("orders.amount", 0, 0) };
+        let (_, err, code) = against_run(&here, &a);
+        assert_eq!(code, CANNOT_RUN);
+        assert!(err.contains("--against: no manifest at ") && !err.contains("--manifest"), "{err}");
+        // A wrong column here is refused before the other project is read.
+        let a = Ask { against: Some(empty.clone()), ..ask("orders.nope", 0, 0) };
+        let (_, err, code) = against_run(&here, &a);
+        assert_eq!(code, REFUSED);
+        assert!(err.starts_with("error: orders has no column nope"), "{err}");
+        for d in [here, there, empty] {
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
+    fn touch_later(file: &Path, secs: u64) {
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(secs);
+        std::fs::File::options().write(true).open(file).unwrap().set_modified(later).unwrap();
+    }
+
+    /// This project's side of the comparison is read from collin's cache as
+    /// the other's is, though a Fusion cache lies beside it and is newer.
+    #[test]
+    fn against_reads_collins_cache_on_this_side_too_and_never_offers_the_flag_it_refuses() {
+        let (here, there) = (twin("against-fusion-here", "orders", "D", true), twin("against-fusion-there", "fct_orders", "D", true));
+        let target = here.join("target");
+        let edges = r#"[{"from":"source.against-fusion-here.raw.orders","from_col":"amount","to":"model.against-fusion-here.orders","to_col":"amount","kind":"rename"}]"#;
+        std::fs::write(target.join("column_lineage.fusion.json"), format!(r#"{{"version":1,"source":"fusion","edges":{edges}}}"#)).unwrap();
+        touch_later(&target.join("column_lineage.fusion.json"), 120);
+        // The manifest is newer than collin's cache: the stale warning and its steps are said.
+        touch_later(&target.join("manifest.json"), 60);
+        touch_later(&there.join("target").join("manifest.json"), 60);
+        let a = Ask { against: Some(there.clone()), ..ask("orders.amount", 0, 0) };
+        let (out, err, code) = against_run(&here, &a);
+        assert_eq!(code, ANSWERED, "{err}");
+        assert!(out.contains("fct_orders.amount   shares 1 of 1"), "{out}");
+        let line = err.lines().find(|l| l.starts_with("column lineage: ")).unwrap();
+        assert!(line.contains("column_lineage.collin.json") && !err.contains("column_lineage.fusion.json"), "{err}");
+        assert!(err.contains("older than the manifest") && !err.contains("--run-collin"), "{err}");
+        // The steps it offers write the rules and rows the comparison reads.
+        let generates: Vec<&str> = err.lines().filter(|l| l.contains("collin generate")).collect();
+        assert!(!generates.is_empty() && generates.iter().all(|l| l.ends_with(" --indirect")), "{err}");
+        assert!(generates.iter().any(|l| l.starts_with("against: ")), "the other side's steps too: {err}");
+
+        // Only a Fusion cache here: refused, exit 1, with the steps that write collin's.
+        std::fs::remove_file(target.join("column_lineage.collin.json")).unwrap();
+        let (out, err, code) = against_run(&here, &a);
+        assert_eq!((out.as_str(), code), ("", REFUSED), "{err}");
+        assert!(err.contains("no column lineage from collin in ") && err.contains("collin generate --project . --target <TARGET>"), "{err}");
+
+        // A wrong column is refused and this project's lines still end the answer.
+        std::fs::write(target.join("column_lineage.collin.json"), format!(r#"{{"version":1,"source":"collin","producer":"collin 0.12.0","edges":{edges}}}"#)).unwrap();
+        let wrong = Ask { against: Some(there.clone()), ..ask("orders.nope", 0, 0) };
+        let (_, err, code) = against_run(&here, &wrong);
+        assert_eq!(code, REFUSED);
+        assert!(err.starts_with("error: orders has no column nope") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "), "{err}");
+        // So does a failure to open the other project.
+        let gone = Ask { against: Some(here.join("nowhere")), ..ask("orders.amount", 0, 0) };
+        let (_, err, code) = against_run(&here, &gone);
+        assert_eq!(code, CANNOT_RUN);
+        assert!(err.contains("error: --against: cannot open ") && err.contains("\nmanifest: ") && err.contains("\ncolumn lineage: "), "{err}");
+        for d in [here, there] {
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+
     #[test]
     fn no_walk_asked_says_how_to_ask() {
         let (out, err, _) = run_on(&graph(), &ask("orders.order_amount", 0, 0), Output::Name);
@@ -1850,7 +2073,7 @@ mod tests {
             1,
         );
         let mut err = Vec::new();
-        cache_lines(&dir, &g, &cache, &manifest, "", true, &mut err).unwrap();
+        cache_lines(&dir, &g, &cache, &manifest, "", true, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("1 edge ends name nothing in the manifest"), "{said}");
         assert!(said.contains("holds only the columns fetched so far"), "{said}");
@@ -1866,7 +2089,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("target")).unwrap();
         let mut g = graph();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "collin", true, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "collin", true, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("ask the user which target"), "{said}");
         assert!(said.contains(".env.odd,") && !said.contains('\u{1b}') && !said.contains("title"), "{said}");
@@ -1881,24 +2104,30 @@ mod tests {
         // Beside --column-tool or --column-lineage, which clap refuses with
         // it, the flag is not offered.
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "collin", false, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "collin", false, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("collin generate --project .") && !said.contains("--run-collin"), "{said}");
+        assert!(!said.contains("--indirect"), "{said}");
+        // `--against` reads rules and rows, which collin writes with it.
+        let mut err = Vec::new();
+        regenerate(&dir, &g, &dir.join("target"), "collin", false, true, &mut err).unwrap();
+        let said = String::from_utf8(err).unwrap();
+        assert!(said.contains("--report target/collin.report.json --indirect\n"), "{said}");
         // A manifest dbt Fusion wrote gets Fusion's command, whose
         // `docs generate` writes no catalog unless told.
         g.meta.dbt_version = "2.0.8".into();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "collin", true, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "collin", true, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("dbt compile --target <TARGET> --write-catalog") && !said.contains("docs generate"), "{said}");
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target"), "snowflake", true, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target"), "snowflake", true, false, &mut err).unwrap();
         assert!(String::from_utf8(err).unwrap().contains("never asks the warehouse"));
         // A manifest read from another folder: dbt and collin are sent there,
         // or the steps would leave its cache as stale as it was.
         std::fs::create_dir_all(dir.join("target-qa")).unwrap();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target-qa"), "collin", true, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target-qa"), "collin", true, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("--write-catalog --target-path target-qa"), "{said}");
         assert!(
@@ -1907,7 +2136,7 @@ mod tests {
         );
         std::fs::create_dir_all(dir.join("target qa")).unwrap();
         let mut err = Vec::new();
-        regenerate(&dir, &g, &dir.join("target qa"), "collin", true, &mut err).unwrap();
+        regenerate(&dir, &g, &dir.join("target qa"), "collin", true, false, &mut err).unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("--target-path \"target qa\"") && said.contains("--out \"target qa/column_lineage.collin.json\""), "{said}");
         std::fs::remove_dir_all(&dir).unwrap();
