@@ -1,6 +1,6 @@
 # 0092. Custom selection opens in a panel
 
-Date: 2026-10-16 · Status: accepted, amended by 0101
+Date: 2026-10-16 · Status: accepted, amended by 0101 and 0140
 
 **Trigger:** read before changing where a selection is drawn, what a click or
 a double-click on a box does there, or what goes back to the dock when its
@@ -32,6 +32,9 @@ are. 0091 sorts views of that kind into a panel.
   a button in the top bar opens the panel too, which covers the sidebar as
   well, and the card opens only once a box is clicked, the canvas having the
   panel's width until then.*
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the panel
+  is the Lineage space, named so everywhere but inside it, where the mode is
+  still Selection, and an empty box opens on the model in front.*
 - **Rolled up any other way**, by Escape, its ×, a file from the sidebar or
   the terminal's key, the panel leaves the dock as it found it: the model's
   lineage or the column's, drawn again, and the Catalog's card. A line typed

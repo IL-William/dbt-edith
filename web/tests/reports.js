@@ -293,15 +293,12 @@ var document = { createElement: function (tag) {
 } };
 function jel(tag, className, textContent) { var e = document.createElement(tag); e.className = className; e.textContent = textContent || ''; return e; }
 function runEndWords() { return ''; }
-function keyLabel() { return ''; }
-function closePanel() {}
-var IS_MAC = false;
 eval(app.slice(app.indexOf('function reportHead'), app.indexOf('/* A fold of a section')));
 function buttons(head) { return head.children[0].children.filter(function (c) { return c.tag === 'button'; }).map(function (c) { return c.textContent; }); }
-check('Read again and Close when the section can redraw itself',
-      buttons(reportHead({ title: 'T', tool: 'dbt', again: function () {} })), ['Read again', '×']);
-check('Close alone when it is not given a way to (the builds, whose own button asks Snowflake)',
-      buttons(reportHead({ title: 'T', tool: 'snowflake', extra: [jel('button', '', 'Refresh')] })), ['Refresh', '×']);
+check('Read again when the section can redraw itself, and no ×: a space is left by its tab or Escape (0140)',
+      buttons(reportHead({ title: 'T', tool: 'dbt', again: function () {} })), ['Read again']);
+check('no button of its own when it is not given a way to (the builds, whose own button asks Snowflake)',
+      buttons(reportHead({ title: 'T', tool: 'snowflake', extra: [jel('button', '', 'Refresh')] })), ['Refresh']);
 
 print('\n--- an explanation folded to its first sentence ---');
 check('split at the first full stop followed by a space', leverSplit('No freshness. Neither warn_after nor error_after holds a count.'),

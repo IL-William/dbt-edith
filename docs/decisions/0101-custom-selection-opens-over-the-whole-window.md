@@ -1,6 +1,6 @@
 # 0101. Custom selection opens over the whole window, its card on a click
 
-Date: 2026-10-19 · Status: accepted · Amends 0091 and 0092
+Date: 2026-10-19 · Status: accepted, amended by 0137 and 0140 · Amends 0091 and 0092
 
 **Trigger:** read before changing what a panel covers, where the Custom
 selection is opened from, or when its card shows.
@@ -20,6 +20,8 @@ empty card took about half, for a drawing that is read across its width.
   like it and like Settings, a glyph whose name unfolds on hover and while
   its panel is down, lit then. The dock's button stays, as the way in from a
   model's lineage.
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the
+  button is the Lineage tab, named always, which never closes it.*
 - **The panel covers the sidebar too**, from the top bar to the status bar.
   `PANELS` marks it `wide`, and the sidebar and its gutter go inert with the
   rest while it is down. The reports, and any panel not marked, keep the
@@ -50,6 +52,8 @@ empty card took about half, for a drawing that is read across its width.
   *Amended by [0137](0137-reports-open-over-the-whole-window.md): reversed
   for the reports alone, whose lists are read at full width; the settings
   stay narrow.*
+  *Amended by [0140](0140-the-top-bar-switches-between-spaces.md): the
+  settings are over the sidebar too; only Code has it.*
 - **The card over the canvas, which keeps its width**: it hides the same part
   of the drawing and leaves the band names and the legend under it.
 - **The card held back after every click**: half a second on each, for the

@@ -1,14 +1,21 @@
 # Selection
 
-Drawing what a dbt selector matches, in the Custom selection box or from the
-command line.
+Drawing what a dbt selector matches, in the Lineage space or from the command
+line.
 
-## Custom selection
+## The Lineage space
 
-The **Custom selection** button in the top bar, or the one above the graph,
-opens a panel over the whole window, the sidebar included, and draws there
-whatever a dbt selector matches, at the window's width and height, so you can
-draw the set you actually work on:
+The **Lineage** tab in the top bar, or the Custom selection button above the
+graph, opens a space over the whole window, the sidebar included, and draws
+there whatever a dbt selector matches, at the window's width and height, so you
+can draw the set you actually work on. Inside it the mode is called Selection.
+The tab is lit while the space is in front and does nothing when clicked then:
+**Code**, the tab before it, is the way back. With the selector box empty and a
+model, a seed or a snapshot in front, the box opens on `1+<name>+1`, that node
+and a level either side, in the name the Catalog copies (`my_model.v2` for a
+version). A seed is made again for the model in front each time the space opens
+while the box still holds it; a line you typed or edited is kept as it is, and a
+seed never goes into the Up arrow's history:
 
 ```
 stg_customers dim_customers+ fct_orders
@@ -21,14 +28,14 @@ later, so that a double-click still finds the box, and if you pan or zoom
 meanwhile the canvas stays where you left it. Drag the card's left edge to make
 it wider or narrower, for the rest of the session. The card's × or Escape
 closes it, and so does a selection drawn without that box. A double-click opens its
-file, and the panel rolls up, the dock's lineage moving onto that model.
-Escape with no card open, the × at the top right, the top bar's button or a
-file opened from the search rolls it up as well, and the dock is back as it
-was: the model's lineage or the column's, and its card in the Catalog. With
-the find bar open, Escape closes the bar first. The selection is kept: either
-button draws it again
+file, and the space rolls up, the dock's lineage moving onto that model.
+Escape with no card open, the Code tab or a file opened from the search rolls
+it up as well, and the dock is back as it was: the model's lineage or the
+column's, and its card in the Catalog. With the find bar open, Escape closes
+the bar first. The selection is kept: either button draws it again
 ([0092](../decisions/0092-custom-selection-opens-in-a-panel.md),
-[0101](../decisions/0101-custom-selection-opens-over-the-whole-window.md)).
+[0101](../decisions/0101-custom-selection-opens-over-the-whole-window.md),
+[0140](../decisions/0140-the-top-bar-switches-between-spaces.md)).
 
 A space is a union, a comma is an intersection, and `--exclude` may follow on
 the same line. Whole commands paste in: `dbt ls -s "a b" --exclude tag:x` is

@@ -222,8 +222,8 @@ Three buttons at the right of the bar above the canvas, each with a glyph
 before its name: **Fit**, four corners, brings the whole graph into the pane;
 **Export**, a file coming down into a tray, and **Copy image**, a picture, send
 it out. Copy image copies the picture alone, never the names: those are
-**Copy names**, under a list glyph, in the bar of a
-[Custom selection](selection.md). On a narrow window the dock's tabs show
+**Copy names**, under a list glyph, in the bar of the
+[Lineage space](selection.md). On a narrow window the dock's tabs show
 their glyphs alone first; on a narrower one still, when the row runs out of
 room even then, these three keep theirs alone too, each named by its tooltip.
 

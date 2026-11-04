@@ -69,7 +69,8 @@ class Walk:
         page.until(f"!!document.querySelector('[data-key=look-boxes-{name}]')", "the Theme section")
         page.js(f"document.querySelector('[data-key=look-boxes-{name}]').click()")
         time.sleep(0.4)
-        page.js("document.querySelector('#settings-btn').click()")
+        # A tab never toggles: Code is the way back.
+        page.js("document.querySelector('#space-code').click()")
         self.settle(f"document.body.classList.contains('hw-boxes-{name}')", f"the {name}")
 
     def run(self, url):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Custom selection box and the lineage against dbt itself, on two public projects.
+"""The selection box of the Lineage space and the lineage against dbt itself, on two public projects.
 
 Jaffle Shop is copied from tests/fixtures/. Fivetran's Shopify package is
 fetched at the tag and commit tests/fixtures/shopify/ names (0056). On each,

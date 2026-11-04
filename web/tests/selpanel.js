@@ -1,4 +1,4 @@
-// Custom selection's panel (0092): what the dock had is noted before a
+// The Lineage space's panel (0092, 0140): what the dock had is noted before a
 // selection changes the mode, a column's lineage included, and given back as
 // the panel rolls up, its card too; the card starts closed, opens on a click,
 // at once or once a double-click is past when it would move the box, and
@@ -74,9 +74,6 @@ els['#catalog .cat-jobs'] = jobsBox;
 function fillCatalogJobs(box) { if (box) log.push('jobs asked'); }
 // The Catalog's Last built box, which a card kept as painted gets drawn again.
 function paintCatalogBuilds(box) { log.push('builds painted'); }
-// The two buttons that open the panel.
-fakeEl('select-btn');
-els['#graph-mode [data-mode=select]'] = fakeEl('');
 var cardShown = function () { return !cardEl.classList.contains('hidden'); };
 
 var S, log, answers;
@@ -314,14 +311,78 @@ step(function () {
     [selCardWidth(700, 0, 1000), selCardWidth(990, 0, 1000), selCardWidth(1020, 0, 1000), selCardWidth(-50, 0, 1000)],
     [300, 280, 280, 680]);
 
-  paintSelectButtons();
-  check('the buttons lit and expanded while the panel is down',
-    [$('#select-btn').classList.contains('on'), $('#select-btn')['aria-expanded'], els['#graph-mode [data-mode=select]']['aria-expanded']],
-    [true, 'true', 'true']);
-  toggleSelection();
-  paintSelectButtons();
-  check('the top bar\'s button again: the panel rolls up, the buttons unlit',
-    [S.panel, $('#select-btn').classList.contains('on'), $('#select-btn')['aria-expanded']], ['', false, 'false']);
+});
+
+step(function () {
+  print('\n--- what an empty box starts as ---');
+  var orders = { id: 'model.jaffle_shop.orders', name: 'orders', kind: 'model' };
+  check('a model in front: it and a level either side',
+    selectionSeed(orders, 'model.jaffle_shop.orders'), '1+orders+1');
+  check('a version is named as the Catalog copies it, which a selector reads',
+    selectionSeed({ id: 'model.shop.totals.v2', name: 'totals.v2', kind: 'model' }, 'model.shop.totals.v2'), '1+totals.v2+1');
+  check('a seed and a snapshot too',
+    [selectionSeed({ id: 'a', name: 'raw_orders', kind: 'seed' }, 'a'), selectionSeed({ id: 'a', name: 'snap', kind: 'snapshot' }, 'a')],
+    ['1+raw_orders+1', '1+snap+1']);
+  check('a source, a test, nothing in front, or a card of another node than the lineage\'s: none',
+    [selectionSeed({ id: 'a', name: 's.t', kind: 'source' }, 'a'), selectionSeed({ id: 'a', name: 't', kind: 'test' }, 'a'),
+      selectionSeed(null, 'a'), selectionSeed(orders, 'model.jaffle_shop.customers'), selectionSeed(orders, null)],
+    ['', '', '', '', '']);
+
+  reset('model', { focus: 'model.jaffle_shop.orders', node: orders });
+  $('#select-input').value = '';
+  var run = openSelection();
+  check('opened on an empty box with a model in front: the box is seeded and drawn', [$('#select-input').value, log], ['1+orders+1', ['ask 1+orders+1']]);
+  answers.shift()(['model.jaffle_shop.orders']);
+  return run;
+});
+step(function () {
+  closePanel();
+  reset('model', { focus: 'model.jaffle_shop.orders', node: { id: 'model.jaffle_shop.orders', name: 'orders', kind: 'model' } });
+  $('#select-input').value = '  tag:daily ';
+  var run = openSelection();
+  check('a selection typed is never overwritten', [$('#select-input').value, log], ['  tag:daily ', ['ask tag:daily']]);
+  answers.shift()(['model.jaffle_shop.orders']);
+  return run;
+});
+step(function () {
+  // The seed is made again for the model in front now, while it is what the box holds.
+  closePanel();
+  reset('model', { selectSeed: '1+orders+1', selectHistory: ['tag:daily'], focus: 'model.jaffle_shop.customers',
+    node: { id: 'model.jaffle_shop.customers', name: 'customers', kind: 'model' } });
+  $('#select-input').value = '1+orders+1';
+  var run = openSelection();
+  check('a seed left in the box is replaced by the model in front now', [$('#select-input').value, log], ['1+customers+1', ['ask 1+customers+1']]);
+  answers.shift()(['model.jaffle_shop.customers']);
+  return run;
+});
+step(function () {
+  check('and no seed goes into the ArrowUp history', S.selectHistory, ['tag:daily']);
+  closePanel();
+  $('#select-input').value = '1+customers+1 tag:x';
+  S.focus = 'model.jaffle_shop.orders';
+  S.node = { id: 'model.jaffle_shop.orders', name: 'orders', kind: 'model' };
+  var run = openSelection();
+  check('a seed the line was edited from is kept', [$('#select-input').value, S.selectSeed], ['1+customers+1 tag:x', '1+customers+1']);
+  answers.shift()(['model.jaffle_shop.orders']);
+  return run;
+});
+step(function () {
+  // Nothing in front to seed from now: the old seed is emptied, not left naming another model.
+  closePanel();
+  reset('model', { selectSeed: '1+orders+1', node: { id: 'source.jaffle_shop.raw.orders', name: 'raw.orders', kind: 'source' },
+    focus: 'source.jaffle_shop.raw.orders' });
+  $('#select-input').value = '1+orders+1';
+  var run = openSelection();
+  check('a seed left in the box with nothing to seed from: emptied', [$('#select-input').value, S.selectSeed, log], ['', '', ['cleared']]);
+  return run;
+});
+step(function () {
+  closePanel();
+  reset('model');
+  $('#select-input').value = '';
+  var run = openSelection();
+  check('no model in front: the box stays empty, and nothing is asked', [$('#select-input').value, log], ['', ['cleared']]);
+  return run;
 });
 
 var asked = [];

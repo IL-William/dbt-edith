@@ -58,7 +58,7 @@ back.
 ## A selection
 
 `--select`, `--exclude` and `--selector` resolve a dbt selection, as the
-Custom selection box does; the syntax, the exit codes and `--output json` are
+selection box of the Lineage space does; the syntax, the exit codes and `--output json` are
 in [selection.md](selection.md#from-the-command-line).
 
 `--output compact` prints one line per node under a header, sorted by name:

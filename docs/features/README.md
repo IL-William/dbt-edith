@@ -14,7 +14,7 @@ pull request.
 | [editor.md](editor.md) | links in the editor, Jinja colours, hover cards, find, tabs, breadcrumbs |
 | [explorer-and-search.md](explorer-and-search.md) | the file tree, the dbt profile, search by name and inside files |
 | [lineage.md](lineage.md) | the graph, how it follows the editor, whether it is still true, reading it, sharing it |
-| [selection.md](selection.md) | Custom selection, named selectors, `--select` on the command line |
+| [selection.md](selection.md) | the Lineage space, named selectors, `--select` on the command line |
 | [catalog.md](catalog.md) | the Catalog tab, where a model lives, environments, Compiled and Run |
 | [column-lineage.md](column-lineage.md) | column lineage from Fusion, Collin or Snowflake, `--column` on the command line |
 | [command-line.md](command-line.md) | what the command line answers without a server: a node, the project, a selection, a column, and how an agent asks, by the skill it ships or over MCP |
@@ -48,7 +48,8 @@ pull request.
 | `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
-| the gear in the top bar | the settings, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber dot on it when dbt would find no profile |
+| the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar folds the counts, then the names of the tabs not lit, when it runs short |
+| the gear in the top bar | the settings, over the whole window, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber dot on it when dbt would find no profile |
 | the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
 | the `env`, venv or update pill in the status bar | its section of the settings: Project, or Updates |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
@@ -63,8 +64,8 @@ pull request.
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |
 | double-click a lineage node | re-centre the lineage on it and open its file, pinned |
 | `+N` badge on a node | pull in one more level of parents or children |
-| the Custom selection button in the top bar or above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a panel over the whole window |
-| click a box in the Custom selection's panel | open its card beside the canvas, its left edge dragged to resize it, closed again by its × or Escape; a double-click opens its file and rolls the panel up |
+| the Lineage tab in the top bar, or the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a space over the whole window; an empty box opens on the model in front, a level either side |
+| click a box in the Lineage space | open its card beside the canvas, its left edge dragged to resize it, closed again by its × or Escape; a double-click opens its file and rolls the space up |
 | wheel / drag | zoom and pan the lineage; a drag that starts on a box pans too, and opens nothing |
 | Export above the graph | save what the canvas shows as one HTML file anyone can open |
 | Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
@@ -79,7 +80,7 @@ Give me a tour, at the top of the shortcut list, walks through each part of the
 page on a model of your project with parents and children, and one a job runs
 once the Jobs tab has a source, picked the same way every time: the
 `manifest.json` everything is read from and how fresh it is, the editor and the
-`dbt_project.yml` button, the lineage, a Custom selection and how to share it,
+`dbt_project.yml` button, the lineage, a selection in the Lineage space and how to share it,
 the Catalog, column lineage, Jobs, Reports, the terminal and Search. Each step rings what it is about and says what it is for,
 and a feature that is off says how to turn it on. It runs nothing and changes
 no setting, and when it ends the page is as you left it. The arrow keys walk it

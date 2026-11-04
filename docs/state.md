@@ -2243,22 +2243,15 @@ are never edited, so find an item by its title.
       - the first tour's steps predate the field, and stay out of every tour
         of what is new.
 
-10. **The top bar on a narrow window.** Under about 1000px its chips break
-    onto two or three lines ("5 / models", "Search / ⌘K", "Reload /
-    manifest"), and under about 850px the bar runs past the window. The
-    GitHub mark (1.25.0) brings both about 26px sooner. The status bar does
-    not break, since `#statusbar > *` is `nowrap`; nothing in `#topbar` is.
-    - **The likely answer:** `nowrap` on the bar's items, and the project's
-      name shrinking with an ellipsis, its full name in the tooltip. The
-      settings panel (0100) took three buttons out of the bar, and Reload
-      manifest became the arrows at the end of the manifest's pill: on Jaffle
-      Shop it broke under about 780px rather than 1050px, where the chips,
-      Search and the manifest's pill take a second line. The Custom selection
-      button (0101) brings that about 50px sooner, to about 830px, and to
-      about 930px while its panel is down, its name unfolded beside its
-      glyph, as Reports' and the gear's are while theirs are.
-    - **How to check it:** item 8's two measures, at several widths, with
-      Snowflake's features on and off.
+10. **The top bar on a very narrow window.** The bar no longer breaks onto
+    lines: it folds its counts, then the names of the tabs not lit (0140).
+    On Jaffle Shop it still runs past the window under about 650px, where the
+    project's name is already cut to 40px and the Search, the shortcut list,
+    the pumpkin, GitHub, the gear and the manifest's pill are what is left.
+    - **Possible answers:** fold the Search button to its glyph, or move the
+      look's and GitHub's buttons into one menu.
+    - **How to check it:** measured with Snowflake's features off only; the
+      news chips on the Reports tab, which several reports can fill, were not.
 11. **The README's options, held to `--help`.** The README writes its options
     by hand, and they have drifted once already: `--help` says `--shell`
     starts `$SHELL`, while `src/pty.rs` and the README say `$SHELL -l`. Fix
@@ -2300,8 +2293,18 @@ Items 16 to 18 are the rest of the plan chosen with the panels' mechanism
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-16. **A model's lineage seen whole.** The dock's lineage of the model in
-    front, opened in a panel at the window's height, as Custom selection is.
+16. **The Lineage space takes every mode.** Since 0140 the space is the
+    Custom selection's, renamed, and holds only the selector bar, its canvas
+    tools and a card. A model's lineage seen whole is the same space with
+    its Models and Columns modes: `#lineage-tools` moves into it as a whole
+    rather than the five tools `SELECT_MOVES` lists, so the up and down
+    boxes, stop at and indirect come along. A click on a box moves the focus
+    as in the dock and the card follows it, a double-click opens the file and
+    switches to Code, and the dock's lineage gains an "open in Lineage"
+    button carrying the model, the mode and the depth. Until then an empty
+    box opens on `1+<model>+1`. `focusNode` and `paintMode` are the risky
+    parts, since both assume the dock's canvas; it wants its own planning
+    pass and its own decision.
 17. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
 18. **Boxes without their text far out, then the cap again.** Past 3 000

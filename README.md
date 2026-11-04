@@ -22,7 +22,7 @@ dbt-edith
 - **[Lineage](docs/features/lineage.md)** of the model you are editing, drawn
   from the manifest and following the editor, with a dot that says whether the
   manifest still matches your files.
-- **[Custom selection](docs/features/selection.md)**: what any dbt selector or
+- **[Lineage space](docs/features/selection.md)**: what any dbt selector or
   named selector matches, drawn on the canvas, and answered on the command line
   by `--select` without a server.
 - **[Editor](docs/features/editor.md)** links: `ref()`, `source()`, macro calls

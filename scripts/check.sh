@@ -93,7 +93,7 @@ fi
 
 echo
 echo "== dbt itself =="
-# The Custom selection box and the lineage against `dbt ls`, on tests/fixtures/jaffle_shop
+# The selection box of the Lineage space and the lineage against `dbt ls`, on tests/fixtures/jaffle_shop
 # and on Fivetran's Shopify, cloned at a pinned tag (0033, 0056). It needs dbt-core and
 # dbt-duckdb, so it skips itself without them, and Shopify without the network; CI runs
 # it on every model for two versions of dbt-core, here every eighth model of Shopify.

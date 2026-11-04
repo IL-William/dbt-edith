@@ -194,8 +194,8 @@ class Shots:
         self.take("editor")
         self.rest()
 
-        # The lineage: the whole project as a Custom selection, by folder, its
-        # tests hanging under their models.
+        # The lineage: the whole project as a selection in the Lineage space,
+        # by folder, its tests hanging under their models.
         self.dock_to(170)
         self.click("[data-mode=select]")
         self.js("document.querySelector('#select-input').value = '+customers +orders'")
@@ -214,7 +214,7 @@ class Shots:
         self.take("lineage")
         self.click("#by-folder")
         self.click("#with-tests")
-        self.click("#selpanel-close")
+        self.click("#space-code")
 
         # Jobs: which of them run customers, and the one that cannot be told.
         self.dock_to(380)
@@ -233,7 +233,7 @@ class Shots:
         self.until(f"!!{collin}", "the Column lineage section")
         self.js(f"{collin}.click()")
         self.until("/\\d+ col edges/.test(document.querySelector('#settings-view .cllnow').textContent)", "collin's run", 120)
-        self.click("#settings-btn")
+        self.click("#space-code")
         # Rolled up, not rolling: the panel still covers the dock's edge while
         # it goes, and a drag started on it selects its text instead.
         self.until("getComputedStyle(document.querySelector('#settings')).visibility === 'hidden'", "the settings to roll up")
@@ -260,7 +260,7 @@ class Shots:
         self.take("column-lineage")
 
         # collin's report, in the Reports panel.
-        self.click("#reports-btn")
+        self.click("#space-reports")
         self.until("document.querySelector('#reports').classList.contains('open')", "the Reports panel")
         self.js("document.querySelector('#reports-nav [data-key=collin]')?.click()")
         self.until("document.querySelector('#reports-view')?.textContent.includes(\"collin's report\")", "collin's report")
