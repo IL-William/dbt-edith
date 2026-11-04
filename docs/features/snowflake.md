@@ -27,6 +27,8 @@ say what a source is
 
 ## Clone into my schema
 
+![The Clone into my schema window for customers, set to copy it and its direct parents from the manifest's own build into ANALYTICS.DBT_JAFFLE, with the statements it writes](../shots/catalog-clone.png)
+
 With Snowflake's features on, **Clone into my schema** sits beside the Location
 heading of a model, a seed or a snapshot. It writes the statements that copy the
 node and its direct parents from an environment into your own schema, so you can
@@ -54,6 +56,8 @@ listed may not be the ones the model reads now
 ([0058](../decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md)).
 
 ## Query history
+
+![The Query history tab: the user's own Snowflake queries of the last seven days, each linked to Snowsight](../shots/snowflake-history.png)
 
 With Snowflake's features on, the dock has a **Query history** tab: the queries
 your Snowflake user ran in the last seven days, from dbt in the terminal, from

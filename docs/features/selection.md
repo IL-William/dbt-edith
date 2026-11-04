@@ -5,6 +5,8 @@ line.
 
 ## The Lineage space
 
+![The Lineage space drawing a selection by folder, seeds, staging and models, with each model's tests hanging under it](../shots/lineage.png)
+
 The **Lineage** tab in the top bar, or the Custom selection button above the
 graph, opens a space over the whole window, the sidebar included, and draws
 there whatever a dbt selector matches, at the window's width and height, so you
@@ -111,6 +113,8 @@ rather than ignored, because a silently dropped term would draw far too much and
 look right doing it.
 
 ### Named selectors
+
+![The Lineage space on the named selector staging_only, its three models drawn, and the card of the stg_orders box open beside the canvas](../shots/selection-card.png)
 
 The **Selectors** button beside the box lists the selectors the project defines
 in `selectors.yml`, with their descriptions, filtered as you type. Picking one

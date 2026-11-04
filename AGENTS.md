@@ -134,8 +134,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
   and the common fixes, and it changes only when one of those does. Nor is
   either page a record of what went wrong on the way: a trap a change ran into
   goes in its commit body, or in a decision when it shapes the code. A change
-  that alters what one of the README's pictures shows retakes them all with
-  `scripts/take_shots.py` (0082).
+  that alters what one of the pictures in the README or in a feature page shows
+  retakes it with `scripts/take_shots.py`, copying only the names whose screen
+  changed (0082, 0144).
 - **Comments say why, not what.** The code already says what it does.
 - **No em dash** in code, comments or documentation.
 
@@ -265,7 +266,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | get, build or install the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
 | change what the `.exe`'s properties say, or what a Windows build does without `windres` | [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md) |
 | change what a feature does, or check what it does now | its page in [docs/features/](docs/features/) |
-| add a picture to the README, or retake them | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md) |
+| add a picture to the README or to a feature page, or retake one | [0082](docs/decisions/0082-the-readmes-pictures-are-committed-and-retaken-by-a-script.md), [0144](docs/decisions/0144-the-pictures-also-illustrate-the-feature-pages-and-are-retaken-by-name.md) |
 | pick up the next piece of work | [docs/state.md](docs/state.md) |
 | find out when something shipped, or in which version | [CHANGELOG.md](CHANGELOG.md) |
 | release a version, or change how one is tagged and published | [0045](docs/decisions/0045-merging-a-version-bump-releases-it.md) |

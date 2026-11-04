@@ -19,6 +19,8 @@ and Check for updates asks again at once. Nothing about your project is sent, a
 failed look is tried again within the hour and stays out of the status bar, and
 `--no-update-check` turns it off (0068, 0079).
 
+![The Updates section of the settings: the build you run, the two releases since it, and a button to check again](../shots/updates.png)
+
 The update is the menu's button, `Update to` the newest release, and right under
 it is how it goes: it types the command into the terminal below, Enter there
 runs it, a minute or two, and dbt-edith then has to be stopped where it was

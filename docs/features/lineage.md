@@ -30,6 +30,8 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ## Is the lineage still true?
 
+![The amber manifest pill in the top bar and its card, saying a saved edit is not in the manifest yet](../shots/manifest-pill.png)
+
 At the right of the top bar a pill gives the manifest's age and a dot, and
 ends in circling arrows that read `manifest.json` again at once, for the rare
 time the poll has not. The dot answers one question: does the manifest still
@@ -61,6 +63,8 @@ as your remote refs, so dbt-edith fetches every ten minutes in the background,
 read only, and the card says when the refs were last refreshed.
 
 ## Reading the graph
+
+![The dock's lineage of orders, two levels up and one down, with the depth boxes above it and the orders box selected](../shots/lineage-node.png)
 
 Node colour is the materialization, not the resource type, because that is what
 you reason about when reading a DAG: what exists in the warehouse and what gets

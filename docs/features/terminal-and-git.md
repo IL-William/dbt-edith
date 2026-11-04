@@ -4,6 +4,8 @@ The shell in the dock, the Python environment it runs in, and the Git tab.
 
 ## Terminal
 
+![The terminal in the dock, in the project's folder with its Python environment on, after a git log](../shots/terminal.png)
+
 The terminal runs `$SHELL -l` on macOS
 and Linux, and Git Bash on Windows, falling back to PowerShell when Git Bash is
 not installed. It starts with the environment dbt-edith was started in: activate
@@ -63,6 +65,8 @@ the Snowflake script; the tooltip names it
 ([0053](../decisions/0053-a-project-is-read-before-anything-in-it-runs.md)).
 
 ## Git
+
+![The Git tab with two changed files, one edited and one new, and the side-by-side diff of docs/building.md above the lineage](../shots/git.png)
 
 A third sidebar tab stages, commits, pulls and pushes, and the branch name in
 its header (and in the status bar) opens a filtered branch switcher rather than a

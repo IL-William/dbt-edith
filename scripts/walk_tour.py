@@ -109,14 +109,17 @@ def free_port():
 
 
 class Edith:
-    def __init__(self, binary, project, home):
+    def __init__(self, binary, project, home, update_check=False):
         self.port = free_port()
         self.log_path = home / "server.log"
         self.log = open(self.log_path, "w")
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"), HOME=str(home / "home"))
         env.pop("DBT_PROFILES_DIR", None)
+        # Off unless asked: a walk never reaches GitHub. take_shots.py asks, to
+        # picture the update pill, with a release list it wrote itself.
+        flags = [] if update_check else ["--no-update-check"]
         self.proc = subprocess.Popen(
-            [str(binary), str(project), "--port", str(self.port), "--no-open", "--no-update-check"],
+            [str(binary), str(project), "--port", str(self.port), "--no-open", *flags],
             stdout=self.log, stderr=subprocess.STDOUT, env=env,
         )
         deadline = time.time() + 60

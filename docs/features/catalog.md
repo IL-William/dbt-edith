@@ -5,6 +5,8 @@ and the Compiled and Run tabs over the SQL dbt left under `target/`.
 
 ## The Catalog tab
 
+![The Catalog's Columns tab for customers: types, descriptions, tests and lineage](../shots/catalog.png)
+
 The **Catalog** tab mirrors what dbt's own catalog shows: materialization,
 column count, upstream and downstream counts, tags and description under
 Preview, and a Column / Type / Description / Tests table under Columns. The
@@ -75,6 +77,8 @@ are not documented (shown in italics).
 
 ## Where a model lives
 
+![The Catalog of customers with a Snowsight menu beside each Copy of its Location table, and under its jobs the last builds read from Snowflake for each environment](../shots/catalog-snowflake.png)
+
 The Catalog preview shows each node's database, schema and alias at three
 stages, because in a project driven by `env_var()` and `generate_*_name`
 macros no single value tells the whole story:
@@ -131,6 +135,8 @@ closes ([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
 
 ## Environments
+
+![The Location table of customers for PROD, picked among DEV, QA, PROD and the manifest, each relation resolved from its .env file](../shots/catalog-location.png)
 
 The `env` pill in the status bar says which of the project's `.env` files the
 *resolved* column is evaluated against, so a model's location can be read for
@@ -219,6 +225,8 @@ the answer [0025](../decisions/0025-freshness-is-mtimes-not-commits.md) gives
 for the manifest too.
 
 ### For another environment
+
+![The Compiled tab for customers shown for PROD, its three relations swapped and a note on what may differ](../shots/catalog-compiled.png)
 
 With an environment picked in the status bar, both tabs show the same SQL as it
 would read under that `.env` file, to paste into Snowsight without compiling

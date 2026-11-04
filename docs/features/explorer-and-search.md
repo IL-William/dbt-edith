@@ -56,6 +56,8 @@ rather than holding one
 
 ## Search
 
+![The Cmd/Ctrl + K palette on the letter s, listing models, seeds, a macro and files](../shots/search-palette.png)
+
 `Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
 macros it lists, and a flat index of every file in the project. That last half
 matters more than it sounds: a script or a dotfile is not a dbt node, and a
@@ -78,6 +80,8 @@ files, so reading an automate_dv macro is one search away without ever
 outranking your own code.
 
 ## Search in file contents
+
+![The Search tab for the word amount, its matching lines grouped by file, beside stg_payments.sql](../shots/search-files.png)
 
 The **Search** tab in the sidebar looks inside every indexed file, which
 `Cmd/Ctrl + K` cannot: that one matches names, so a column used in forty models

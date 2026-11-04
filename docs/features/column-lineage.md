@@ -4,6 +4,8 @@ Edges between columns, from one of three tools picked in the settings.
 
 ## Column lineage
 
+![The amount column of stg_payments, from its seed to every column of orders and customers built from it](../shots/column-lineage.png)
+
 Column-level edges come from one of three tools, picked in the settings'
 Column lineage section, behind the gear in the top bar, which says above the
 list which one is on screen. The same choices sit in a menu in Catalog >
