@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.73.0 - 2026-11-04
+
+- Show the Compiled and Run SQL as it would read under the environment picked
+  in the status bar, each relation swapped for the one that .env file resolves,
+  one dbt could not place kept as compiled and marked, and name what in the
+  model or the macros it reaches may still differ (0139).
+
 ## 1.72.1 - 2026-11-04
 
 - Unfold the names of Custom selection, Reports and Settings in the top bar

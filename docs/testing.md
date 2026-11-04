@@ -44,6 +44,7 @@ $JSC web/tests/grep.js        # what a search result says, and where the match f
 $JSC web/tests/selection.js   # what a resolved selector says: counts, warnings, dbt ls, named selectors
 $JSC web/tests/breadcrumb.js  # the breadcrumb's path segments and document outline
 $JSC web/tests/compiled.js    # what the Compiled and Run bars say about their file
+$JSC web/tests/compiledenv.js # the Compiled and Run SQL for another environment: relations swapped, kept, and the words
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, the columns its key names, and the tag of a key

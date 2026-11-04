@@ -37,6 +37,11 @@ code gives them, and compared with what the report lists. A fourth copy, of
 Jaffle Shop with sources, models and tests of every shape those rules tell
 apart, makes that comparison say something.
 
+On each project, dbt compiles every node too, and each non-ephemeral parent's
+relation has to occur verbatim in its child's compiled SQL, through ephemeral
+parents: the assumption the Compiled and Run tabs rest on when they show a
+node for another environment by swapping its relations (0139).
+
 The lineage of every model is compared with --every-model, which CI passes.
 Without it, a project with more than 40 models has every eighth compared,
 which keeps this step of check.sh to about twenty seconds here.
@@ -694,6 +699,12 @@ class Edith:
         self.log.close()
 
 
+# Shopify's metafield models ask the warehouse for the values of a column as
+# they compile (`get_column_values`), and a failure there leaves every node
+# uncompiled. The comparison has no warehouse to ask, so they are left out.
+NEEDS_WAREHOUSE = "*metafield*"
+
+
 class Dbt:
     """`dbt deps`, `dbt parse` and `dbt ls` against a project copy: in this
     process, or through the executable DBT names."""
@@ -755,6 +766,27 @@ class Dbt:
 
     def ls(self, args):
         return sorted(self.invoke(["ls", "--output", "name"] + args) or [])
+
+    def compile(self, work):
+        """`dbt compile` into a target of its own, so the manifest the other
+        comparisons read is left as `parse` wrote it, and the manifest it
+        wrote. It opens a connection, which a relative DuckDB path would put
+        in the current folder: it runs from inside `work`. A model that fails
+        to compile is left without `compiled_code`, which the caller counts."""
+        target = work / "target_compiled"
+        args = ["compile"] + self.where + ["--target-path", str(target), "--log-path", str(work / "logs")]
+        args += ["--exclude", NEEDS_WAREHOUSE]
+        here = os.getcwd()
+        os.chdir(work)
+        try:
+            if EXECUTABLE:
+                subprocess.run([EXECUTABLE] + args + ["--quiet"], capture_output=True, text=True, cwd=work)
+            else:
+                dbtRunner().invoke(args + ["--log-level", "none"])
+        finally:
+            os.chdir(here)
+        written = target / "manifest.json"
+        return json.loads(written.read_text()) if written.exists() else None
 
 
 def search_name(node):
@@ -851,12 +883,74 @@ def compare_jobs(tally, edith, oracle):
     print(f"{verdict}  the job fixtures: {agreed} of {asked} steps select what dbt ls lists")
 
 
+def compare_relations(tally, oracle, work):
+    """The assumption the Compiled and Run tabs rest on when they show a node
+    for another environment (0139): every non-ephemeral parent's
+    `relation_name` occurs verbatim in the child's compiled SQL, so swapping
+    that text for another environment's is a swap of what dbt wrote. An
+    ephemeral parent has no relation and is inlined as a CTE, so its own
+    parents are the ones looked for, as far up as ephemerals go."""
+    compiled = oracle.compile(work)
+    if compiled is None:
+        tally.fail("dbt compile wrote no manifest to read the compiled SQL from")
+        return
+    nodes = compiled["nodes"]
+    parents = {**nodes, **compiled.get("sources", {})}
+
+    def held_by(uid, seen):
+        """The relations the SQL of `uid` can hold: its parents', through ephemerals."""
+        found = []
+        for p in nodes[uid]["depends_on"].get("nodes", []):
+            if p in seen or p not in parents:
+                continue
+            seen.add(p)
+            node = parents[p]
+            if node["resource_type"] == "model" and node["config"].get("materialized") == "ephemeral":
+                found += held_by(p, seen)
+            elif node.get("relation_name"):
+                found.append(node["relation_name"])
+        return found
+
+    checked = relations = empty = 0
+    missing = []
+    for uid, node in sorted(nodes.items()):
+        if node["resource_type"] not in ("model", "snapshot", "test") or not node.get("compiled_code"):
+            continue
+        code = node["compiled_code"]
+        wanted = held_by(uid, {uid})
+        # Fivetran's staging models ask the warehouse whether a source table
+        # exists, and where it does not, as here, compile to an empty select
+        # that names none of their parents: the SQL was decided by the
+        # warehouse, which no environment swap could follow either.
+        if wanted and not any(r in code for r in wanted) and re.search(r"\blimit\s+0\b", code):
+            empty += 1
+            continue
+        checked += 1
+        for relation in wanted:
+            relations += 1
+            if relation not in code:
+                missing.append(f"{uid} lacks {relation}")
+    print(f"   {relations} parent relations looked for in the compiled SQL of {checked} nodes, "
+          f"{empty} left out for compiling to an empty select")
+    # Fewer than this means nothing compiled, not that the assumption holds.
+    if not checked or not relations:
+        tally.fail("no compiled SQL with a parent relation to look for")
+    elif missing:
+        tally.fail("every parent relation occurs verbatim in its child's compiled SQL")
+        for line in missing:
+            print(f"        {line}")
+    else:
+        tally.compared += 1
+        print(f"PASS  every parent relation occurs verbatim in its child's compiled SQL ({relations})")
+
+
 def compare_project(tally, binary, project, work, expressions, every_model, jobs=False):
     """Every named selector, the typed lines, and the lineage of the models.
     Returns how many answers were compared, so a project that compared too few
     can be told from one that agreed."""
     oracle = Dbt(project, work)
     oracle.parse()
+    compare_relations(tally, oracle, work)
     manifest = work / "target" / "manifest.json"
     parsed = json.loads(manifest.read_text())
     recorded = sorted(parsed.get("selectors") or {})

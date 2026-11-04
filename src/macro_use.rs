@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 
 /// The three macros dbt calls for every node to place it, never from a
 /// node's own SQL.
-const PLACING: &[&str] = &["generate_schema_name", "generate_alias_name", "generate_database_name"];
+pub(crate) const PLACING: &[&str] = &["generate_schema_name", "generate_alias_name", "generate_database_name"];
 
 /// Adapters whose macros another's inherit, child then parent: dbt looks in
 /// the parent's package after the adapter's own.
@@ -276,6 +276,36 @@ impl MacroUse {
     /// Whether some node reaches the macro at `m`.
     pub fn reached(&self, m: u32) -> bool {
         self.reached.get(m as usize).copied().unwrap_or(false)
+    }
+
+    /// The macros node `node` calls itself: those it lists and those its SQL
+    /// or hooks call where dbt recorded none, by position.
+    pub fn called_by(&self, node: u32) -> Vec<u32> {
+        let has = |list: &Vec<u32>| list.binary_search(&node).is_ok();
+        (0..self.users.len() as u32).filter(|&m| has(&self.users[m as usize]) || has(&self.written[m as usize])).collect()
+    }
+
+    /// `starts` and every macro they call, however deep, each once, in the
+    /// order of the walk. A macro `descend` refuses is neither listed nor
+    /// walked through.
+    pub fn below(&self, starts: Vec<u32>, descend: impl Fn(u32) -> bool) -> Vec<u32> {
+        let mut seen = vec![false; self.callees.len()];
+        let mut out = Vec::new();
+        let mut stack: Vec<u32> = Vec::new();
+        for m in starts.into_iter().rev() {
+            if descend(m) && !std::mem::replace(&mut seen[m as usize], true) {
+                stack.push(m);
+            }
+        }
+        while let Some(m) = stack.pop() {
+            out.push(m);
+            for &c in self.callees[m as usize].iter().rev() {
+                if descend(c) && !std::mem::replace(&mut seen[c as usize], true) {
+                    stack.push(c);
+                }
+            }
+        }
+        out
     }
 
     /// Every node reaching the macro at `m`, once each, with how: listing
@@ -669,7 +699,7 @@ pub fn jinja_calls(code: &str) -> Vec<&str> {
 
 /// What follows the `{% endraw %}` that closes a raw block, whitespace
 /// control and all.
-fn endraw(text: &str) -> Option<&str> {
+pub(crate) fn endraw(text: &str) -> Option<&str> {
     let mut rest = text;
     while let Some(at) = rest.find("{%") {
         let body = &rest[at + 2..];

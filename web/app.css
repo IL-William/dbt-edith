@@ -1321,6 +1321,22 @@ kbd {
 }
 .compiled-empty ul { font: 10.5px var(--mono); padding-left: 16px; color: #5d6b7d; }
 
+/* The SQL shown for another environment (0139): a swapped relation is tinted in
+   the environment's colour, one kept as dbt compiled it is amber. */
+.env-bar {
+  padding: 5px 12px 6px; font-size: 11.5px; border-left: 3px solid var(--tone);
+  background: var(--bg-2); border-top: 1px solid var(--line);
+}
+.env-line { display: flex; align-items: center; gap: 7px; }
+.env-differ { margin-top: 4px; }
+.env-differ > summary { cursor: pointer; color: var(--tone); font-weight: 600; }
+.env-bar[data-tone=manifest] .env-differ > summary { color: var(--fg); }
+.env-reads { margin: 2px 0 0; padding-left: 18px; font: 11px var(--mono); color: var(--fg-dim); }
+.env-reads li { margin: 1px 0; }
+.env-bar[data-tone=manifest] { border-left-color: #4a5870; }
+.cm-env-swap { background: rgba(120, 160, 220, .16); border-bottom: 1px dotted var(--accent); }
+.cm-env-kept { background: rgba(224, 163, 75, .2); border-bottom: 1px solid var(--warn); }
+
 /* ------------------------------------------------------------------ jobs -- */
 /* The Jobs tab (0063): a card per job, its steps that act on the node under
    it. A job nothing schedules is said in grey, never in red: a manual DAG is

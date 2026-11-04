@@ -76,6 +76,38 @@ pub struct CompiledInfo {
     pub bytes: u64,
 }
 
+/// The nodes whose relation the SQL of `idx` can hold, each with whether it is
+/// the node itself: its parents, and through an ephemeral parent, which dbt
+/// inlines as a CTE and gives no relation, that one's parents in turn. Verified
+/// against dbt: a non-ephemeral parent's `relation_name` occurs verbatim in the
+/// child's compiled SQL (`scripts/compare_with_dbt.py`). Only nodes with a
+/// relation are listed, by name then id so the answer is the same on every
+/// start (0055).
+pub fn relations(graph: &crate::graph::Graph, idx: u32) -> Vec<(u32, bool)> {
+    let node = |i: u32| &graph.nodes[i as usize];
+    let ephemeral = |i: u32| node(i).kind == crate::graph::Kind::Model && node(i).materialized == "ephemeral";
+    // Membership only: never iterated into the answer.
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    seen.insert(idx);
+    let mut out = vec![(idx, true)];
+    let mut stack = vec![idx];
+    while let Some(i) = stack.pop() {
+        for &p in &node(i).parents {
+            if !seen.insert(p) {
+                continue;
+            }
+            if ephemeral(p) {
+                stack.push(p);
+            } else {
+                out.push((p, false));
+            }
+        }
+    }
+    out.retain(|&(i, _)| !node(i).relation.is_empty());
+    out.sort_by(|a, b| node(a.0).name.cmp(&node(b.0).name).then_with(|| node(a.0).id.cmp(&node(b.0).id)));
+    out
+}
+
 fn mtime(path: &Path) -> u64 {
     std::fs::metadata(path)
         .and_then(|m| m.modified())

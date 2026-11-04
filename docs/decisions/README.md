@@ -142,6 +142,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0136](0136-a-client-that-defers-tools-gets-its-own-printed-skill.md) | A client that defers tools gets its own printed skill | changing `docs/agent-skill/mcp/SKILL.md`, what `--skill` accepts, or the name of either skill |
 | [0137](0137-reports-open-over-the-whole-window.md) | Reports open over the whole window, in one grammar | changing what the Reports panel covers, how its rail is grouped or counts, how a section lays out its lists, or what its filter searches |
 | [0138](0138-the-rules-and-expressions-collin-writes-are-read-as-text.md) | The rules and expressions collin writes are read as text | changing what `--rules` or `--casts` print, what the compact `--column` line carries after `tests`, what a column box counts, or what a card reads from collin's cache |
+| [0139](0139-compiled-sql-is-shown-per-environment-by-swapping-its-relations.md) | The Compiled and Run SQL is shown per environment by swapping its relations | changing what the Compiled or Run tab shows when an environment is picked, which text the page replaces in the SQL, what `/api/compiled` carries, or what the page says the SQL may differ in |
 
 ## Keeping these honest
 
