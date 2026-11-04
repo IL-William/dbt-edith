@@ -12,7 +12,7 @@
 
 use crate::collin::{self, iso_utc, Available, RawColLineage};
 use crate::collin::RawRule;
-use crate::graph::{ColRef, Expr, Graph, Kind, Lineage, RowEdges};
+use crate::graph::{ColRef, Expr, Gap, Graph, Kind, Lineage, RowEdges};
 use crate::ls::{self, Output, ANSWERED, CANNOT_RUN, REFUSED};
 use crate::{collin_run, files, profiles};
 use std::collections::{BTreeMap, HashMap};
@@ -443,9 +443,9 @@ fn no_expressions(graph: &Graph, err: &mut impl Write) -> io::Result<()> {
     let producer = m.cll_producer.as_str();
     let version = producer.strip_prefix("collin ").unwrap_or(producer);
     let tool = collin::tool_of(&m.cll_source);
-    if tool == "collin" && collin_run::outdated(Some(version).filter(|v| !v.is_empty())) {
+    if tool == "collin" && collin_run::older_than(Some(version).filter(|v| !v.is_empty()), collin_run::EXPRESSIONS_SINCE) {
         let by = if producer.is_empty() { "a collin that names no version".to_string() } else { printable(producer) };
-        writeln!(err, "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty", collin_run::WANTS_TEXT)?;
+        writeln!(err, "note: this cache was written by {by}, older than collin {}: it lists no expression, so steps and expression are empty", collin_run::EXPRESSIONS_SINCE_TEXT)?;
     } else if !cll.has_expressions() {
         let from = if tool == "fusion" { "Fusion's cache carries no expression" } else { "this cache lists no expression" };
         writeln!(err, "note: {from}, so steps and expression are empty; collin writes an expression only for a cast, transform, aggregate or window column")?;
@@ -477,7 +477,13 @@ fn columns_answer(models: &[Reached<'_>], ask: &Ask, output: Output, out: &mut i
             }
             Output::Compact => {
                 for (column, r) in &m.columns {
-                    let from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
+                    let mut from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
+                    // A name collin gave up on, after the edges. A capped chain
+                    // is left out: the `32+` in its steps says it already (0141).
+                    let mut lost: Vec<&str> = r.partial.iter().filter(|g| g.reason != "steps_capped" && !g.name.is_empty()).map(|g| g.name.as_str()).collect();
+                    lost.sort_unstable();
+                    lost.dedup();
+                    from.extend(lost.into_iter().map(|name| ls::field(&format!("(partial: {name})"))));
                     let tests: Vec<String> = r.tests.iter().map(|t| ls::field(t)).collect();
                     // The steps whenever collin gave an expression, the text
                     // unless it is a cast's and none was asked for.
@@ -734,6 +740,11 @@ struct Reach<'a> {
     /// wrote it, a cast's included.
     #[serde(skip)]
     expr: Option<&'a Expr>,
+    /// What collin could not trace of the column (its `partial`, since 0.12.0):
+    /// a name it gave up on inside the model, or a chain it cut at 32 steps.
+    /// Every gap is kept here, `steps_capped` included (0141).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    partial: Vec<&'a Gap>,
     #[serde(flatten)]
     said: Option<Said<'a>>,
     /// The data tests on this column, by name.
@@ -814,6 +825,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
                 from: BTreeMap::new(),
                 generated: c.generated,
                 expr: c.expression,
+                partial: graph.cll.as_ref().map_or_else(Vec::new, |cll| cll.partial(here).collect()),
                 said: c.expression.map(|x| Said { expression: &x.text, kind: &x.kind, steps: x.steps, cut: x.cut }),
                 tests,
                 more_up: if c.depth <= 0 && ask.up > 0 { c.hidden_up } else { 0 },
@@ -858,11 +870,16 @@ fn cache_lines(
     let target = if m.cll_target.is_empty() { "target not recorded".to_string() } else { format!("target {}", m.cll_target) };
     writeln!(
         err,
-        "column lineage: {}, from {from}, {target}, written {} ({} ago), {} edges",
+        "column lineage: {}, from {from}, {target}, written {} ({} ago), {} edges{partly}",
         cache.display(),
         iso_utc(m.cll_mtime),
         ls::age(now.saturating_sub(m.cll_mtime)),
         m.cll_edges,
+        partly = match graph.cll.as_ref().map_or(0, |c| c.partial_columns()) {
+            0 => String::new(),
+            1 => ", 1 column partly traced".to_string(),
+            n => format!(", {n} columns partly traced"),
+        },
     )?;
     // The surest sign a cache describes another manifest, when the times
     // say nothing: its edges name what this one does not hold.
@@ -1052,6 +1069,16 @@ mod tests {
 
     /// `graph_with` with the two lists collin 0.11.0 adds.
     fn listing(more: &[(&str, &str, &str, &str, &str)], rules: Vec<crate::collin::RawRule>, expressions: Vec<crate::collin::RawExpression>) -> Graph {
+        listing_with(more, rules, expressions, Vec::new())
+    }
+
+    /// `listing` with the list collin 0.12.0 adds.
+    fn listing_with(
+        more: &[(&str, &str, &str, &str, &str)],
+        rules: Vec<crate::collin::RawRule>,
+        expressions: Vec<crate::collin::RawExpression>,
+        partial: Vec<crate::collin::RawPartial>,
+    ) -> Graph {
         let model = |name: &str, package: &str, file: &str, materialized: &str| {
             json!({ "name": name, "resource_type": "model", "package_name": package,
                     "original_file_path": file, "config": { "materialized": materialized } })
@@ -1110,11 +1137,35 @@ mod tests {
                 .collect(),
                 rules,
                 expressions,
+                partial,
                 ..Default::default()
             },
             1,
         );
         g
+    }
+
+    fn gap(node: &str, column: &str, reason: &str, name: &str) -> crate::collin::RawPartial {
+        crate::collin::RawPartial { node: node.into(), column: column.into(), reason: reason.into(), name: name.into() }
+    }
+
+    /// `graph()` with gaps on two columns: `order_amount` lost two names, one
+    /// of them under two reasons, and `ltv` was cut at 32 steps. A third entry
+    /// names a model the manifest lacks.
+    fn with_partial() -> Graph {
+        listing_with(
+            &[],
+            Vec::new(),
+            vec![expression("model.audit.audit_orders", "ltv", "window", "sum(ltv) over (order by day)", 32, false)],
+            vec![
+                gap("model.shop.orders", "order_amount", "window_key_unbound", "shipped_at"),
+                gap("model.shop.orders", "ORDER_AMOUNT", "relation_unknown", "raw_events"),
+                gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"),
+                gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"),
+                gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value"),
+                gap("model.shop.nowhere", "order_amount", "name_unresolved", "ghost"),
+            ],
+        )
     }
 
     fn rule(node: &str, clause: &str, text: &str, cut: bool, columns: &[(&str, &str)]) -> crate::collin::RawRule {
@@ -1382,6 +1433,72 @@ mod tests {
         assert!(ltv_model["columns"]["lifetime_value"].get("cut").is_none(), "{json}");
         let orders = lines(&json).into_iter().find(|l| l["name"] == "orders").unwrap();
         assert!(orders["columns"]["order_amount"].get("expression").is_none() && orders["columns"]["order_amount"].get("steps").is_none());
+    }
+
+    #[test]
+    fn a_name_collin_lost_is_marked_partial_after_the_edges_and_a_capped_chain_is_not() {
+        let g = with_partial();
+        let (out, _, _) = run_on(&g, &ask("stg_orders.amount", 0, ALL), Output::Compact);
+        let rows: Vec<&str> = out.lines().collect();
+        // Two names, the repeated one once, sorted, after the edge. The entry
+        // for a model the manifest lacks is dropped.
+        assert!(
+            rows.contains(&"1\torders.order_amount\tstg_orders.amount:rename,(partial: raw_events),(partial: shipped_at)\tnot_null_orders_order_amount"),
+            "{out}"
+        );
+        assert!(!out.contains("ghost"), "{out}");
+        // A chain cut at 32 steps has `32+` already and no marker.
+        let ltv = rows.iter().find(|l| l.contains("audit_orders.ltv")).unwrap();
+        assert_eq!(*ltv, "3\taudit_orders.ltv\tcustomer_ltv.lifetime_value:window\t\t32+\tsum(ltv) over (order by day)");
+        // A column with no gap carries no marker.
+        assert!(!rows.iter().find(|l| l.contains("customer_ltv.avg_basket")).unwrap().contains("partial"), "{out}");
+
+        // The JSON keeps every gap, the capped one included, in the order of
+        // reason then name, and a column without any has no key.
+        let (json, _, _) = run_on(&g, &ask("stg_orders.amount", 0, ALL), Output::Json);
+        let all = lines(&json);
+        let model = |name: &str| all.iter().find(|l| l["name"] == name).unwrap().clone();
+        assert_eq!(
+            model("orders")["columns"]["order_amount"]["partial"],
+            json!([
+                { "reason": "name_unresolved", "name": "shipped_at" },
+                { "reason": "relation_unknown", "name": "raw_events" },
+                { "reason": "window_key_unbound", "name": "shipped_at" },
+            ])
+        );
+        assert_eq!(model("audit_orders")["columns"]["ltv"]["partial"], json!([{ "reason": "steps_capped", "name": "lifetime_value" }]));
+        assert!(model("stg_orders")["columns"]["amount"].get("partial").is_none(), "{json}");
+    }
+
+    #[test]
+    fn the_cache_line_counts_the_columns_partly_traced_and_an_old_cache_has_none() {
+        let dir = scratch("partly");
+        let (cache, manifest) = (dir.join("column_lineage.collin.json"), dir.join("manifest.json"));
+        std::fs::write(&manifest, "{}").unwrap();
+        std::fs::write(&cache, r#"{"version":1,"source":"collin","edges":[]}"#).unwrap();
+        let said = |g: &Graph| {
+            let mut err = Vec::new();
+            cache_lines(&dir, g, &cache, &manifest, "", false, &mut err).unwrap();
+            String::from_utf8(err).unwrap()
+        };
+        // One column lost names; the capped one has all its edges and is not counted.
+        let one = said(&with_partial());
+        let line = one.lines().find(|l| l.starts_with("column lineage:")).unwrap();
+        assert!(line.ends_with(", 1 column partly traced"), "{line}");
+        // Two columns lost names: plural.
+        let mut two = vec![gap("model.shop.orders", "order_amount", "name_unresolved", "a"), gap("model.shop.stg_orders", "amount", "cte_lacks_name", "b")];
+        let line = said(&listing_with(&[], Vec::new(), Vec::new(), std::mem::take(&mut two)));
+        assert!(line.lines().find(|l| l.starts_with("column lineage:")).unwrap().ends_with(", 2 columns partly traced"), "{line}");
+        // Only a capped chain: nothing is said. A cache without the list: the same.
+        let capped = listing_with(&[], Vec::new(), Vec::new(), vec![gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value")]);
+        for g in [capped, graph()] {
+            assert!(!said(&g).contains("partly traced"), "{}", said(&g));
+        }
+        let (out, _, _) = run_on(&graph(), &ask("stg_orders.amount", 0, ALL), Output::Compact);
+        assert!(!out.contains("partial"), "{out}");
+        let (json, _, _) = run_on(&graph(), &ask("stg_orders.amount", 0, ALL), Output::Json);
+        assert!(!json.contains("partial"), "{json}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1797,7 +1914,7 @@ mod tests {
     }
 
     #[cfg(unix)]
-    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[]}' > "$out"
+    const WRITES: &str = r#"echo '{"version":1,"source":"collin","producer":"collin 0.12.0","edges":[]}' > "$out"
 echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 
     #[cfg(unix)]
@@ -1811,13 +1928,13 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         std::fs::create_dir_all(dir.join("sql")).unwrap();
         let p = Produce { catalog: None, compiled: Some(dir.join("sql")) };
         let mut err = Vec::new();
-        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
+        let got = produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.12.0", WRITES), &AtomicBool::new(false), &mut err).unwrap();
         // The names the page's own run writes, so the page shows this run.
         assert_eq!(got, Some(folder.join("column_lineage.collin.json")));
-        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.11.0");
+        assert_eq!(load(&folder.join("column_lineage.collin.json")).unwrap().producer, "collin 0.12.0");
         assert!(folder.join(collin_run::REPORT).is_file());
         let said = String::from_utf8(err).unwrap();
-        assert!(said.starts_with("collin 0.11.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
+        assert!(said.starts_with("collin 0.12.0 wrote") && said.contains("read the SQL of 4 of 5 models"), "{said}");
         assert!(!said.contains("warning"), "every model had its SQL, from a collin not older than WANTS: {said}");
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         let named = |flag: &str, path: PathBuf| format!("{flag} {}", path.display());
@@ -1831,7 +1948,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         // named.
         std::fs::write(dir.join("elsewhere.json"), "{}").unwrap();
         let p = Produce { catalog: Some(dir.join("elsewhere.json")), compiled: None };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.12.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(args.contains(&named("--catalog", dir.join("elsewhere.json"))) && !args.contains("--compiled"), "{args}");
         assert!(args.contains(" --indirect "), "{args}");
@@ -1841,7 +1958,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
         let apart = scratch("produce-apart");
         let other = apart.join("manifest.json");
         std::fs::write(&other, "{}").unwrap();
-        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.11.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
+        produce(&dir, &other, &apart, &p, stand_in(&dir, "0.12.0", WRITES), &AtomicBool::new(false), &mut Vec::new()).unwrap().unwrap();
         let args = std::fs::read_to_string(dir.join("args")).unwrap();
         assert!(!args.contains("--project") && args.contains(&named("--manifest", other.clone())), "{args}");
         std::fs::remove_dir_all(&apart).unwrap();
@@ -1861,7 +1978,7 @@ echo '{"totals":{"models":5,"parsed":4},"models":[]}' > "$report""#;
 echo '{"totals":{"models":5,"parsed":5,"sql_from_files":2,"sql_from_files_set_aside":1},"models":[]}' > "$report""#;
         let mut err = Vec::new();
         let p = Produce { catalog: None, compiled: None };
-        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.11.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
+        produce(&dir, &manifest, &folder, &p, stand_in(&dir, "0.12.0", aside), &AtomicBool::new(false), &mut err).unwrap().unwrap();
         let said = String::from_utf8(err).unwrap();
         assert!(said.contains("read the SQL of 4 of 5 models"), "{said}");
 
@@ -1874,7 +1991,7 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
   {"unique_id":"model.jaffle_shop.stg_orders","parse_error":"a python model, not SQL"}]}' > "$report""#;
         let warned = |p: &Produce| {
             let mut err = Vec::new();
-            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.11.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
+            produce(&dir, &manifest, &folder, p, stand_in(&dir, "0.12.0", unread), &AtomicBool::new(false), &mut err).unwrap().unwrap();
             String::from_utf8(err).unwrap()
         };
         let said = warned(&Produce { catalog: None, compiled: None });
@@ -1923,11 +2040,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         // anything: run, it would replace the cache with name matches. So is
         // a catalog named and not there, which would leave every column
         // unconfirmed.
-        let (got, err) = said(&both, stand_in(&dir, "0.11.0", WRITES));
+        let (got, err) = said(&both, stand_in(&dir, "0.12.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --compiled") && err.contains("not a folder"), "{err}");
         let no_catalog = Produce { catalog: Some(dir.join("nocat.json")), compiled: None };
-        let (got, err) = said(&no_catalog, stand_in(&dir, "0.11.0", WRITES));
+        let (got, err) = said(&no_catalog, stand_in(&dir, "0.12.0", WRITES));
         assert_eq!(got, None);
         assert!(err.contains("error: --catalog") && err.contains("not a file"), "{err}");
         assert!(!dir.join("args").exists(), "it never ran");
@@ -1941,11 +2058,11 @@ echo '{"totals":{"models":3,"parsed":1},"compiled_files":"/ci/target/compiled","
         assert!(!dir.join("args").exists(), "it never ran");
 
         // A failed run says collin's own lines and leaves the cache as it was.
-        let (got, err) = said(&both, stand_in(&dir, "0.11.0", "echo 'collin: no manifest at x' >&2; exit 1"));
+        let (got, err) = said(&both, stand_in(&dir, "0.12.0", "echo 'collin: no manifest at x' >&2; exit 1"));
         assert_eq!(got, None);
         assert!(err.contains("error: collin wrote no cache: no manifest at x"), "{err}");
         assert_eq!(err.matches("no manifest at x").count(), 1, "collin's line is said once: {err}");
-        let (_, err) = said(&both, stand_in(&dir, "0.11.0", "echo 'thread main panicked at boom' >&2; exit 101"));
+        let (_, err) = said(&both, stand_in(&dir, "0.12.0", "echo 'thread main panicked at boom' >&2; exit 101"));
         assert_eq!(err.matches("panicked at boom").count(), 1, "a line without collin's prefix too: {err}");
         assert_eq!(load(&cache).unwrap().producer, "collin 0.8.0");
 

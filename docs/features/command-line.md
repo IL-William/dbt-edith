@@ -185,6 +185,15 @@ with `--describe NAME --compiled-sql`. `--output
 json` adds `expression`, `kind`, `steps` and, when true, `cut` to a column,
 the cast's text included.
 
+A column collin traced only in part, from collin 0.12.0, ends its `from` with
+`(partial: name)` after its edges, one for each name collin gave up on inside
+that model: its edges stand and are not all of it, so read the model's SQL for
+the rest. A chain past the limit is not marked there, `32+` says it. `--output
+json` lists every entry as `partial`, each a `reason` and a `name`, and the
+`column lineage:` line on stderr ends with `, N columns partly traced` when the
+cache has any, counting the columns compact marks; a name read from a CTE that
+lacks it is among them, which collin's report counts apart (0141).
+
 **`--rules`** prints the predicates of the models on the walk, in place of the
 columns, so an agent can ask why a model holds the rows it does:
 

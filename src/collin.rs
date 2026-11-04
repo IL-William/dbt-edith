@@ -45,6 +45,12 @@ pub struct RawColLineage {
     /// written beside the rules since the same version.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expressions: Vec<RawExpression>,
+    /// The columns collin could not trace whole, written beside the expressions
+    /// since its 0.12.0 (its 0051): a name it gave up on inside a model, or a
+    /// chain it cut. A cache without them reads as before, and one saved here
+    /// keeps them (0141).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub partial: Vec<RawPartial>,
 }
 
 /// One predicate of a model: `WHERE`, `HAVING`, `QUALIFY` or `JOIN`, the SQL
@@ -81,6 +87,22 @@ pub struct RawExpression {
     pub steps: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cut: bool,
+}
+
+/// One thing collin could not trace for a model column. `reason` is
+/// `name_unresolved`, `relation_unknown`, `cte_lacks_name` or
+/// `window_key_unbound` (`name` is the one it gave up on inside that model),
+/// or `steps_capped` (the edges are all there but the chain is longer than 32
+/// steps, and `name` is the column the walk was entering). One entry per
+/// column, reason and name (0141).
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct RawPartial {
+    pub node: String,
+    pub column: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub name: String,
 }
 
 /// A model's column built from no column, `'web' as channel`, and what the SQL
@@ -742,6 +764,34 @@ mod tests {
             serde_json::from_str(&format!(r#"{{"version":1,"source":"collin","producer":"collin 0.7.0","edges":[{edge}]}}"#)).unwrap();
         assert!(old.roots.is_empty());
         assert!(!serde_json::to_string(&old).unwrap().contains("roots"), "nor does a cache without any grow the field");
+    }
+
+    /// collin 0.12.0 lists the columns it could not trace whole beside the
+    /// expressions (0141); an older cache has none and saves without the key.
+    #[test]
+    fn partial_columns_survive_a_save_and_an_older_cache_has_none() {
+        let edge = r#"{"from":"source.shop.raw.orders","from_col":"id","to":"model.shop.stg_orders","to_col":"order_id","kind":"rename"}"#;
+        let new = format!(
+            r#"{{"version":1,"source":"collin","producer":"collin 0.12.0","edges":[{edge}],
+                "partial":[{{"node":"model.shop.orders","column":"line_no","reason":"window_key_unbound","name":"shipped_at"}},
+                           {{"node":"model.shop.orders","column":"total"}}]}}"#
+        );
+        let cache: RawColLineage = serde_json::from_str(&new).unwrap();
+        assert_eq!(
+            cache.partial,
+            [
+                RawPartial { node: "model.shop.orders".into(), column: "line_no".into(), reason: "window_key_unbound".into(), name: "shipped_at".into() },
+                RawPartial { node: "model.shop.orders".into(), column: "total".into(), reason: String::new(), name: String::new() },
+            ]
+        );
+        let saved = serde_json::to_string(&cache).unwrap();
+        assert!(saved.contains(r#""partial":[{"node""#), "a save keeps them");
+        assert_eq!(serde_json::from_str::<RawColLineage>(&saved).unwrap().partial, cache.partial);
+
+        let old: RawColLineage =
+            serde_json::from_str(&format!(r#"{{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[{edge}]}}"#)).unwrap();
+        assert!(old.partial.is_empty());
+        assert!(!serde_json::to_string(&old).unwrap().contains("partial"), "nor does a cache without any grow the key");
     }
 
     #[test]
