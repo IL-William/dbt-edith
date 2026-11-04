@@ -51,7 +51,8 @@ pull request.
 | the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar folds the counts, then the names of the tabs not lit, when it runs short |
 | the gear in the top bar | the settings, over the whole window, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber dot on it when dbt would find no profile |
 | the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
-| the `env`, venv or update pill in the status bar | its section of the settings: Project, or Updates |
+| the `env` pill in the status bar | the environment menu: a `.env` file, the manifest, or Manage environments... for the settings' Project section |
+| the venv or update pill in the status bar | its section of the settings: Project, or Updates |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
 | Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |

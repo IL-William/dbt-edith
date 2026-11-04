@@ -1,6 +1,6 @@
 # 0100. The settings open in a panel of their own
 
-Date: 2026-10-19 · Status: accepted, amended by 0140 · Amends 0031, 0049, 0072 and 0079
+Date: 2026-10-19 · Status: accepted, amended by 0140 and 0142 · Amends 0031, 0049, 0072 and 0079
 
 **Trigger:** read before adding a setting, moving one between the settings
 and another place, or changing what the gear, a status bar pill or a section
@@ -39,6 +39,8 @@ as one of them.
   the button that types its line, Enter still left to the user (amends
   0072). The Catalog's `env` pill keeps its menu, beside the locations it
   changes, and that menu's Manage environments opens Project.
+  *Amended by [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md):
+  the status bar's `env` pill opens the same menu, and no longer Project.*
 - **The forms sit in their section**, not in a dialog: the environments'
   names and visibility, and the job sources. A form stays as it was left
   through another section and back, and goes when the panel rolls up, as it
@@ -70,6 +72,8 @@ as one of them.
   column lineage list run long, and a pill would land in the middle of them.
 - **The pills keeping their menu, with a link to the settings**: a setting
   found in two places, behind two different gestures.
+  *Amended by [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md):
+  the env pill keeps its menu again.*
 - **A dialog for the settings**: a box over the page with Escape and a focus
   of its own, which 0091 settles once for every panel.
 - **Edith's menu moving into the settings**: it opens under the pointer to
@@ -85,3 +89,5 @@ of docs/state.md. Picking an
 environment from the status bar takes two clicks, as does activating a venv:
 the pill, then the choice. The column lineage on screen is no longer named in
 the top bar, only in the settings' rail and the Columns tab's menu.
+*Amended by [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md):
+picking an environment takes one click.*

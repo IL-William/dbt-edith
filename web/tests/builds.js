@@ -55,6 +55,8 @@ check('a file that cannot place them says why, and asks nothing', [targets[3].ex
 check('a file the package was never resolved against says so, and is not read as the built place',
   [targets[4].executions, targets[4].reason], ['', 'model_executions was not resolved against .env.ci']);
 check('every environment is named as the page names it', targets.map(function (t) { return t.name; }), ['manifest', 'PROD', 'UAT', 'QA', 'CI']);
+check('a sandbox manifest\'s name reaches the manifest row', buildsTargets(both[0], both[1], files, 'my compile').map(function (t) { return buildsEnvLabel(t); }).slice(0, 2),
+  ['my compile', 'PROD']);
 check('a manifest without the package places nothing', buildsTargets(null, null, [])[0].reason, 'model_executions is not in the manifest');
 check('one table missing is enough', buildsTargets(both[0], null, [])[0].reason, 'invocations is not in the manifest');
 var ephemeral = table('invocations', {});

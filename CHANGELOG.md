@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.75.1 - 2026-11-04
+
+- Pick an environment from the status bar's `env` pill in one click again, the
+  menu ending in Manage environments (0142).
+- Swap the relations of the Compiled and Run SQL on a manifest built into a
+  developer sandbox, where every model sits away from its config (0143).
+- Name the manifest's choice of the environment menu `my compile` on a manifest
+  built into a developer sandbox, with that sandbox (0143).
+
 ## 1.75.0 - 2026-11-04
 
 - Mark a column collin traced only in part with `(partial: name)` in the compact
