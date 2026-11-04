@@ -569,8 +569,9 @@ button and the menu, and Catalog > Columns gives the share of its edges matched
 by column name rather than read from the SQL, or, from collin's report, how
 many models it read the SQL of, with the reason over each model it could not
 read. The menu offers "Update collin" to a collin that gives no version, or one
-below 0.11.0, which writes the rules and expressions, reads a seed's header
-and lists the columns a literal sets (0096, 0098, 0109, 0138), and
+below 0.12.0, which lists the columns it traced in part, writes the rules
+and expressions, reads a seed's header and lists the columns a literal sets
+(0096, 0098, 0109, 0138, 0141), and
 "Check for a newer collin" to any other (0043); a version installed by its tag
 gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
@@ -1054,7 +1055,7 @@ through it, so `dbt-edith --manifest /artifacts/manifest.json` started in
 another project's folder would have given that manifest this folder's seeds.
 `collin_run::manifest_in_project` compares the two paths, resolved and a
 component at a time, in the page's Regenerate and in `--run-collin` alike, and
-the flag goes only when the manifest is under the folder. `WANTS` is 0.11.0.
+the flag goes only when the manifest is under the folder. `WANTS` is 0.12.0.
 
 Same answers on every start (0055): the manifest's sections are read sorted by
 unique_id, so a node's index, and every list and first-of-several that follows
@@ -2002,6 +2003,15 @@ goes back to the model's lineage with a toast saying why. The column still
 opens in the dock's Lineage tab. Checked with `web/tests/colwait.js`. Its
 limits are in the list left by these pull requests, below.
 
+Partly traced columns from collin 0.12.0 (0141, 1.75.0). `WANTS` moves to
+0.12.0, which lists beside the edges the columns it traced only in part, each
+name it gave up on inside a model and why. `--column ... --output compact`
+ends a column's `from` with `(partial: name)` per name dropped, a chain capped
+at 32 steps left to `32+`; JSON carries every entry as `partial`, and the
+`column lineage:` line counts the columns partly traced. The two skills tell an
+agent to read the model's SQL for the rest. The canvas has no mark yet, item
+31. Checked with `cargo test` on a hand-written cache.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2477,6 +2487,10 @@ of its own, and each panel updates the tour, its page under
     - A file written for another target than the manifest's, a run under dev
       beside a manifest built for QA, names relations the page does not look
       for: they are counted as not found and the text is left as it is.
+31. **A column collin traced in part, on the canvas (0141).** The command line
+    and MCP mark it `(partial: name)` in the compact `from`; a column box and
+    its hover card do not yet, and the card would name the names collin gave
+    up on and point at the model's SQL.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

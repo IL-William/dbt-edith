@@ -51,6 +51,9 @@ by reading the SQL.
   `--describe --rules` prints the `column lineage:` line and the staleness
   warning of `--column`, so a rule of a model since changed is not read as
   current. `WANTS` moves to 0.11.0 so the Collin pill offers the update.
+  *Amended by [0141](0141-a-column-collin-traced-in-part-says-so-in-from.md):
+  `WANTS` is 0.12.0; the note that a cache lists no expression still names
+  0.11.0.*
 - **The canvas moves as little as it can.** A column box shows a small count
   above its box, on the left, only when `steps` is above one (`×3`, `32+`), the
   expression in its label and its hover card, the badge having no tooltip

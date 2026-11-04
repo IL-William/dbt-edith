@@ -111,9 +111,10 @@ role, and the models where the most moved, each a link to it. A run older than
 the manifest says so (0061).
 
 Once collin is installed and Collin is the tool picked, a line under Collin in
-the menu offers to update it. This dbt-edith expects collin 0.11.0 or later,
+the menu offers to update it. This dbt-edith expects collin 0.12.0 or later,
+the first to list the columns it traced only in part (0141), after 0.11.0,
 the first to write the predicates of a model and the expression behind a
-column (0138), after 0.10.0, which reads a seed's columns from its CSV header,
+column (0138), 0.10.0, which reads a seed's columns from its CSV header,
 and 0.8.0, the first
 to list the roots the `generated` tag below is read from: an older
 one, the old repository's 0.2.0 included, or one that gives no version, gets
@@ -361,6 +362,7 @@ with dbt's key names (`unique_id`, `package_name`, `original_file_path`,
 | `from` | the columns of the answer this one is read from, with the role of each edge: a rename shows here, under its new name |
 | `generated` | on a column its model's SQL sets from no column, the values it is set to, `["current_timestamp()"]`, one per branch of a union, `[]` when collin could not tell (0096) |
 | `expression`, `kind`, `steps`, `cut` | on a column its model's SQL computes, with collin 0.11.0: the loudest expression on its path, its role, how many steps of the chain did something (32 stands for a recursive chain), and `true` when collin cut the text (0138) |
+| `partial` | on a column collin traced only in part, with collin 0.12.0: every entry, a `reason` and a `name`, `steps_capped` (a chain past 32 steps, nothing lost) included; compact ends `from` with `(partial: name)` for each name dropped (0141) |
 | `tests` | the data tests on the column |
 | `more_up`, `more_down` | edges the answer leaves out on the side walked, where the depth or a stop ran out |
 

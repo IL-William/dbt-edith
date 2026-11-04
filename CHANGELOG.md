@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.75.0 - 2026-11-04
+
+- Mark a column collin traced only in part with `(partial: name)` in the compact
+  `from` of `--column`, list why in its JSON, and count such columns on the
+  `column lineage:` line, from collin 0.12.0 (0141).
+
 ## 1.74.1 - 2026-11-04
 
 - Wait for collin's run on a cleared canvas, with a small lineage tracing itself

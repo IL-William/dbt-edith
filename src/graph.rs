@@ -522,6 +522,14 @@ impl Expr {
     }
 }
 
+/// One thing collin could not trace of a column: why, and the name it gave up
+/// on (or, for `steps_capped`, the column the walk was entering).
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+pub struct Gap {
+    pub reason: String,
+    pub name: String,
+}
+
 /// A text from collin, with ` (cut)` after it when collin cut it.
 pub fn said_cut(text: &str, cut: bool) -> String {
     if cut { format!("{text} (cut)") } else { text.to_string() }
@@ -544,6 +552,9 @@ pub struct ColLineage {
     /// (collin's `expressions`, since 0.11.0). Beside the edges for the same
     /// reason as the roots: it is a fact about a column, not a step to it.
     expressions: Vec<(ColRef, Expr)>,
+    /// What collin could not trace of a column (its `partial`, since 0.12.0),
+    /// by column, then reason, then name (0141).
+    partial: Vec<(ColRef, Gap)>,
     /// The predicates each model applies (collin's `rules`), by the model's
     /// slot and in the order collin wrote them, so a model's are together.
     rules: Vec<(u32, RawRule)>,
@@ -588,6 +599,21 @@ impl ColLineage {
     /// What computes `r`, when its model's SQL does more than copy it.
     pub fn expression(&self, r: ColRef) -> Option<&Expr> {
         self.expressions.binary_search_by(|(c, _)| c.cmp(&r)).ok().map(|i| &self.expressions[i].1)
+    }
+
+    /// What collin could not trace of `r`: empty for a column it read whole.
+    pub fn partial(&self, r: ColRef) -> impl Iterator<Item = &Gap> {
+        let lo = self.partial.partition_point(|(c, _)| *c < r);
+        let hi = self.partial.partition_point(|(c, _)| *c <= r);
+        self.partial[lo..hi].iter().map(|(_, g)| g)
+    }
+
+    /// How many columns have a gap that is a lost name. A `steps_capped` one
+    /// is not counted: its edges are all there (0141).
+    pub fn partial_columns(&self) -> usize {
+        let mut cols: Vec<ColRef> = self.partial.iter().filter(|(_, g)| g.reason != "steps_capped" && !g.name.is_empty()).map(|(c, _)| *c).collect();
+        cols.dedup();
+        cols.len()
     }
 
     /// The predicates of one model, in collin's order.
@@ -1622,6 +1648,19 @@ impl Graph {
             .collect();
         expressions.sort_by(|(a, x), (b, y)| a.cmp(b).then(y.steps.cmp(&x.steps)).then(y.text.len().cmp(&x.text.len())));
         expressions.dedup_by(|b, a| a.0 == b.0);
+        // A gap needs a column of the manifest too. Sorted so a column's are
+        // together, and deduped since two spellings of a column can repeat one.
+        let mut partial: Vec<(ColRef, Gap)> = raw
+            .partial
+            .into_iter()
+            .filter_map(|x| {
+                let n = *self.index.get(x.node.as_str())?;
+                let col = *slot.get(&(n, x.column.to_lowercase()))?;
+                Some((ColRef { node: n, col }, Gap { reason: x.reason, name: x.name }))
+            })
+            .collect();
+        partial.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.reason.cmp(&y.reason)).then_with(|| x.name.cmp(&y.name)));
+        partial.dedup();
         // A model the manifest lacks is a stale cache's. The sort is stable,
         // so a model's rules keep collin's order.
         let mut rules: Vec<(u32, RawRule)> =
@@ -1631,7 +1670,7 @@ impl Graph {
             .filter(|&k| is_row_role(&kinds[k]))
             .map(|k| k as u8)
             .collect();
-        self.cll = Some(ColLineage { edges, by_to, kinds, roots, expressions, rules, outside, row_kinds });
+        self.cll = Some(ColLineage { edges, by_to, kinds, roots, expressions, partial, rules, outside, row_kinds });
         self.meta.cll_edges = total;
         self.meta.cll_dropped = dropped;
         self.meta.cll_mtime = mtime;

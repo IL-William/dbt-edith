@@ -1602,7 +1602,7 @@ mod tests {
             fn new(dir: &Path, body: &str) -> StandIn {
                 let bin = dir.join("collin");
                 let script = format!(
-                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.11.0' && exit 0\nout=''\nreport=''\n\
+                    "#!/bin/sh\n[ \"$1\" = --version ] && echo 'collin 0.12.0' && exit 0\nout=''\nreport=''\n\
                      while [ $# -gt 0 ]; do [ \"$1\" = --out ] && out=\"$2\"; [ \"$1\" = --report ] && report=\"$2\"; shift; done\n\
                      here=\"$(dirname \"$0\")\"\n{body}\n"
                 );
@@ -1741,7 +1741,7 @@ mod tests {
             let changed: Vec<_> = after.iter().filter(|f| !before.contains(f)).map(|(p, _)| p.as_str()).collect();
             assert_eq!(changed, ["target/collin.report.json", "target/column_lineage.collin.json"]);
             assert!(before.iter().all(|(p, _)| after.iter().any(|(q, _)| p == q)), "nothing was removed");
-            assert!(blocks(&said).last().unwrap().contains("collin 0.11.0 wrote"), "{said}");
+            assert!(blocks(&said).last().unwrap().contains("collin 0.12.0 wrote"), "{said}");
         }
     }
 }

@@ -52,12 +52,18 @@ pub const UPDATE: &str = "cargo install --locked --force --git https://github.co
 /// 0.11.0 writes the predicates each model applies and the expression behind
 /// each column, which `--rules` and the compact `expression` column read
 /// (0138).
+/// 0.12.0 lists the columns it could not trace whole, which the compact `from`
+/// marks `(partial: name)` (0141).
 /// collin's numbers restarted at 0.1.0 with its repository, so the old
 /// repository's 0.2.0, which writes no roots, is older again (0047). Every
 /// collin since answers `--version`, as that 0.2.0 did and nothing before it,
 /// so one that does not is older too (0043, 0098).
-pub const WANTS: (u32, u32, u32) = (0, 11, 0);
-pub const WANTS_TEXT: &str = "0.11.0";
+pub const WANTS: (u32, u32, u32) = (0, 12, 0);
+pub const WANTS_TEXT: &str = "0.12.0";
+/// The first collin whose cache lists expressions, which `WANTS` has passed:
+/// a 0.11.0 cache still lists them, so the note about their absence names this.
+pub const EXPRESSIONS_SINCE: (u32, u32, u32) = (0, 11, 0);
+pub const EXPRESSIONS_SINCE_TEXT: &str = "0.11.0";
 
 /// Where collin's coverage report goes. Not `column_lineage*.json`: discovery
 /// would offer it as a cache.
@@ -261,7 +267,12 @@ pub fn semver(version: &str) -> Option<(u32, u32, u32)> {
 /// Whether the collin found is older than this dbt-edith accepts. One that
 /// gave no version is.
 pub fn outdated(version: Option<&str>) -> bool {
-    version.and_then(semver).map_or(true, |v| v < WANTS)
+    older_than(version, WANTS)
+}
+
+/// Whether the collin found is older than `since`. One that gave no version is.
+pub fn older_than(version: Option<&str>, since: (u32, u32, u32)) -> bool {
+    version.and_then(semver).map_or(true, |v| v < since)
 }
 
 /// The version each collin last asked gave, kept while its binary is the same
@@ -1395,7 +1406,7 @@ pub(crate) mod tests {
         let beside = [pinned("0.4.0")];
         assert!(update_offered(Some(&default), &beside, old), "a version installed beside a default that runs changes nothing");
         assert!(!update_offered(Some(&beside[0].bin), &beside, Some("0.4.0")), "nor is an older one picked to compare");
-        assert!(!update_offered(Some(&default), &beside, Some("0.11.0 (86decf5)")), "a default at WANTS is not");
+        assert!(!update_offered(Some(&default), &beside, Some("0.12.0 (86decf5)")), "a default at WANTS is not");
         assert!(!update_offered(None, &[], None), "no collin running has nothing to update");
     }
 
@@ -1771,7 +1782,9 @@ pub(crate) mod tests {
         let d = dir("version");
         let new = fake(&d, "echo 'collin 0.11.0 (86decf5)'");
         assert_eq!(version(&new).as_deref(), Some("0.11.0 (86decf5)"));
-        assert!(!outdated(version(&new).as_deref()));
+        assert!(outdated(version(&new).as_deref()), "0.11.0 lists no partial columns (0141)");
+        assert!(!older_than(version(&new).as_deref(), EXPRESSIONS_SINCE), "but it does list expressions (0138)");
+        assert!(!outdated(Some("0.12.0 (abc)")));
         assert!(outdated(Some("0.7.0 (77cbad3)")), "0.7.0 lists no roots, which the generated badge needs");
         assert!(outdated(Some("0.9.0 (c37bff0)")), "0.9.0 reads no seed's header (0109)");
         assert!(outdated(Some("0.10.0 (86decf5)")), "0.10.0 writes no rules and no expressions (0138)");
@@ -1784,10 +1797,11 @@ pub(crate) mod tests {
         assert_eq!(version(&old), None, "a collin from before --version has none");
         assert!(outdated(None));
         assert!(outdated(Some("0.0.9")));
-        assert!(!outdated(Some("0.11.0 (abc)")), "compared as numbers, not text");
-        assert!(outdated(Some("0.9.9")), "0.9.9 is below 0.11.0, which a text comparison gets wrong");
+        assert!(!outdated(Some("0.12.0 (abc)")), "compared as numbers, not text");
+        assert!(outdated(Some("0.9.9")), "0.9.9 is below 0.12.0, which a text comparison gets wrong");
         assert!(outdated(Some("0.10.1")), "0.10.1 writes no rules and no expressions, which --rules and compact read (0138)");
-        assert_eq!(WANTS_TEXT, "0.11.0");
+        assert_eq!(WANTS_TEXT, "0.12.0");
+        assert_eq!(semver(EXPRESSIONS_SINCE_TEXT), Some(EXPRESSIONS_SINCE));
         assert!(!outdated(Some("1.0.0")));
         assert!(outdated(Some("garbage")));
         assert_eq!(semver(WANTS_TEXT), Some(WANTS), "the menu names the version the comparison uses");
