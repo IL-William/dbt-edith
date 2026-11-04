@@ -36,7 +36,9 @@ sign-in tab.
 **Collin runs when you need it.** Picking it runs collin if its cache is missing
 or older than the manifest, and clicking a column while it is behind runs it
 first. While it runs the canvas is cleared and says which column it is waiting
-to draw, under a small lineage that traces itself around that column's name; a
+to draw, under a lineage that traces itself around that column's name, up to
+half the pane's width, as tall as the pane leaves room for, and moving even
+when the system asks for reduced motion; a
 column clicked during the run waits too, and the one clicked last is drawn when
 it ends. If the run fails, the canvas goes back to the column's model.
 Regenerate, in Catalog > Columns, runs it at any time. collin reads the compiled
