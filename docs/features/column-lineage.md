@@ -35,9 +35,13 @@ sign-in tab.
 
 **Collin runs when you need it.** Picking it runs collin if its cache is missing
 or older than the manifest, and clicking a column while it is behind runs it
-first; Regenerate, in Catalog > Columns, runs it at any time. collin reads the
-compiled SQL, so run `dbt compile` before it for SQL that changed. It takes a
-few seconds on a project of thousands of models and never runs at startup.
+first. While it runs the canvas is cleared and says which column it is waiting
+to draw, under a small lineage that traces itself around that column's name; a
+column clicked during the run waits too, and the one clicked last is drawn when
+it ends. If the run fails, the canvas goes back to the column's model.
+Regenerate, in Catalog > Columns, runs it at any time. collin reads the compiled
+SQL, so run `dbt compile` before it for SQL that changed. It takes a few seconds
+on a project of thousands of models and never runs at startup.
 dbt-edith looks for `collin` beside itself, then on your `PATH`. Without it,
 Collin's entry types the command that installs it into the terminal, for you to
 run:

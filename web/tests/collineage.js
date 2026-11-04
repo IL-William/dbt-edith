@@ -29,6 +29,15 @@ check('source: column', src.column, 'customer_id');
 var odd = splitColId('model.x.y::weird:name');
 check('column containing a colon', odd.column, 'weird:name');
 
+// A column asked for while collin runs waits for it; no other state or tool does.
+print('\n--- column waits for a collin run ---');
+check('a run of collin waits', collinRunning('collin', { state: 'running' }), true);
+check('a finished run does not wait', collinRunning('collin', { state: 'done' }), false);
+check('a failed run does not wait', collinRunning('collin', { state: 'failed' }), false);
+check('Snowflake does not wait on collin', collinRunning('snowflake', { state: 'running' }), false);
+check('another cache does not wait', collinRunning('fusion', { state: 'running' }), false);
+check('no collin info does not wait', collinRunning('collin', null), false);
+
 print('\n--- node subtitle ---');
 check('column mode uses sub',
       subtitle({ sub: 'stg_crm__customers  ·  varchar', kind: 'model', materialized: 'view', schema: 'analytics', tests: 3 }),
