@@ -957,8 +957,9 @@ the profile, the environments and Python, Column lineage, Snowflake,
 Orchestration, Updates, and Help and tour. The rail names the column lineage on
 screen, says whether Snowflake is on and whether a newer release is out, and
 the gear and the Project row carry the amber dot the profile's button had when
-dbt would find no profile. The status bar's `env` and venv pills open Project,
-the update pill Updates; a venv is activated from its button there, the click
+dbt would find no profile. The status bar's venv pill opens Project, the update
+pill Updates, and the `env` pill the environment menu, whose last row opens
+Project (0142, 1.75.1); a venv is activated from its button there, the click
 on the pill no longer typing the line. The environments' table and the job
 sources are forms in their section rather than dialogs, kept as they were left
 until the panel rolls up, and a clean read of the sources goes on to the
@@ -2023,6 +2024,62 @@ lost names and links the model's file and its compiled SQL, each opened
 with the find bar on those names (`showDock` takes the model to load), and the
 status line counts the columns. Catalog and model canvas are left as they are.
 Checked with `cargo test` and `web/tests/collineage.js`.
+
+The `env` pill opens the environment menu (0142, 1.75.1), amending 0100. One
+click on the status bar's pill opens the menu the Catalog's pill and the header
+of its resolved column open: the `.env` files, the manifest as dbt parsed it,
+and Manage environments... at the end, which opens the settings' Project
+section; a second click closes it, and it opens above the pill when there is no
+room below. The settings no longer roll down over the SQL being compared. The
+venv and update pills still open their section of the settings. A sandbox
+manifest is swapped too (0143, amending 0139): a relation built into the one
+`database.schema` nearly every model was built into is moved to where the
+chosen `.env` file places it, instead of being kept as compiled for every
+environment; a model built outside the sandbox, or whose alias moved, is still
+kept, in amber, with its reason. On such a manifest the manifest's choice is
+named `my compile`, with the sandbox beside it, in the environment menu, the
+settings' pick, the pill with no file picked and the Builds labels; the `.env`
+files keep their meaning. Checked with `web/tests/settings.js`,
+`compiledenv.js` and `builds.js`. Its limits are in the list left by these
+pull requests, below.
+
+A Job order file stays on its step's line (1.75.2). In Reports > Job order the
+file of a pair was drawn with the clocks, in a line capped at 32% of the row,
+so a long path wrapped to three lines and, inside a DAG fold that says the
+clocks once, stood alone far to the right and read as a blank line. The file is
+now on the step's own line, beside "should wait for ...", pinned right and
+whole up to half of the row; under about 16em of text it drops below. The
+clocks are drawn only when the pair's fold does not already say them, so no
+line holds a path alone. Job coverage keeps its 32% share, so its bars still
+end at the same place. Checked with `web/tests/joborder.js`. Its limits are in
+the list left by these pull requests, below.
+
+A column compared with another project (0146, 1.77.0). `--against DIR --column
+model.column` sets a column of this project beside the columns of another
+project built from the same source columns, and says what each reads that the
+other does not and which rules apply on one side only. A source column is its
+schema, table and column, case-folded; the database is shown and never
+compared. Only source nodes are shared, so a seed, a snapshot's own columns or
+a generated value is `not a shared source`. Each side is fingerprinted by the
+source columns its walk reaches, with the strongest class on the path (copy,
+computed, hashed), and by the `rows` set the indirect edges reach; a `(partial)`
+or `(inferred)` edge on the value's path marks the line. Without `--with`, the
+other project's columns reached downstream of the shared sources are cut to
+twenty, ranked by shared sources over the union, then by how far their hops are
+from this column's depth, then hops, class agreement, the same name and the
+alphabet, and five are printed as `shares a of b`, `missing`, `extra`; with
+`--with model.column` that column is the one compared. The rules of the models
+both walks cross are resolved to source columns in one memoised pass a side
+over value edges, matched by clause and source set, and printed as `both
+sides`, `here only`, `there only` and `unplaced`, each group cut at twelve with
+`+N`; `--output json` keeps everything. Both sides read collin's cache, and a
+side without one is refused with the command that writes it, ending in
+`--indirect`. Not over MCP, where a path never comes from the line (0110).
+Checked with `cargo test`, whose tests cover the classes, the table matched
+across database and case, a copy chain matched step for step, the tie-breaks,
+`--with`, the rule groups and their cut, a side without rules or cache, and the
+refusals over MCP, and with an ignored benchmark on two layered caches of
+invented models. Its limits are in the list left by these pull requests, below.
 
 ## Deferred, in the order they were chosen
 
@@ -3213,8 +3270,9 @@ each a known limit, unranked:
 - **Warnings out of order (#146):** the stderr warnings of `--describe` and
   `--rules` are printed before the cards, where the documentation says after
   the last card.
-- **The skills are at their cap (#146):** the two skills are at 4089 and 4092
-  of 4096 bytes, so any new sentence needs a cut elsewhere.
+- **The skills are at their cap (#146):** the two skills were at 4089 and 4092
+  of 4096 bytes at 1.72.0, and are at 4094 and 4079 since 1.77.0 (#156), so any
+  new sentence needs a cut elsewhere.
 - **The unfold in one browser (#149):** the top bar's .45s unfold was measured
   in Chrome only. Firefox and Safari follow the same grid rule.
 - **The bar at 650px (#147):** a window of 650px overflows the top bar by a few
@@ -3234,6 +3292,84 @@ each a known limit, unranked:
   end while the server keeps failing.
 - **collin for the README's shots:** the collin on `PATH` is 0.2.0 when they are
   taken, so install a current one there before the next retake.
+
+Left by the pull requests of the evening of 2026-11-04 (#154 to #159, 1.75.1
+to 1.77.0), each a known limit, unranked:
+
+- **What `--against` does not cover yet (#156, 0146):** whole-project coverage,
+  the source columns one project reads that the other never reaches, and key
+  composition, the hash edges set against `unique_key` and the tests (0127).
+- **Where `--against` runs (#156):** the command line only, with no canvas or
+  page view; it is refused over MCP, a path never coming from the MCP line
+  (0110).
+- **What `--against` shares (#156):** only source nodes count, so a seed, a
+  snapshot collin does not trace and a generated column stop as `not a shared
+  source`; the database line reads the parsed manifest, not the databases of
+  the `.env` files (0113).
+- **Candidates for `--against` (#156):** the search is bounded to twenty
+  columns and five are printed, with no `--top N`; the JSON keeps the twenty
+  and `candidates_considered`.
+- **How the rules are compared (#156):** the groups are set against the best
+  match only, or `--with`, so the other four printed matches have no rules
+  section; literals are not compared, so one clause on one source set lands in
+  `both sides` even when the values differ (both texts are printed); a model
+  column read by a rule resolves through its value fingerprint only, its row
+  sources not added.
+- **The JSON of `--against` (#156):** it keeps every rule with its source
+  lists and is not cut, so one column's answer can be very large on a deep
+  project.
+- **The steps `--against` offers (#156):** the stale-cache and no-cache steps
+  end in `--indirect` only under `--against`, while a plain `--column` keeps
+  them without; whether that is wanted is not decided. The two skills are at
+  4094 and 4079 of 4096 bytes, so the next line added needs a trim, and the
+  trims dropped "say which were skipped" from the jobs habit.
+- **What the canvas marks (#154, 0145):** only the column canvas; the Catalog
+  has no row for it and a box in the model canvas no mark. An empty name is not
+  marked (the JSON keeps it) and `steps_capped` never is.
+- **The find bar of a partly traced column (#154):** a file or compiled SQL
+  that names none of the lost names just opens, with no message; the pattern
+  uses `\w`, which is ASCII, so a non-ASCII letter right after a longer name
+  falls back to the whole-word test.
+- **The pictures of the feature pages (#155, 0144):** a long relation is cut in
+  the Lineage space picture's card, and a note wraps in Builds by job; the
+  Snowflake pictures show the stub `dbt_artifacts` models and `dbt_packages/`;
+  the update picture shows the path of a temporary folder; the script was
+  checked with zsh as the shell, and with bash the status bar could name the
+  folder of the Python environment.
+- **The Job order's schedules said twice (#155, #157):** a lone pair outside a
+  DAG fold keeps its own clocks line, so the same schedule sentence repeats
+  from one lone pair to the next; and one picture showed Reports > Job order,
+  "waits for", listing "Nightly build: scheduled 0 2 * * *" twice, which may be
+  a bug to look at.
+- **The Job order file's layout (#157):** a path longer than half of the row
+  still wraps; under about 16em of text the file drops below it; Job coverage
+  keeps its fixed 32% file column, where a long path still wraps at narrow
+  widths and a column width shared by the list would fix it; no CSS rule names
+  `.rsched` any more, only `web/tests/joborder.js` uses the class; no harness
+  sees layout, so the alignment and the half-row cap are measured only in
+  headless Chrome.
+- **The column wait's size and motion (#158):** reduced motion is ignored for
+  this drawing, with no setting to bring it back (chosen); the hint under it
+  stays 13px beside a drawing up to 2.5 times larger and its strokes scale with
+  it (no `vector-effect`); it was checked in Chrome only, and
+  `scripts/take_shots.py` has no shot of it.
+- **A very short pane for the column wait (#158):** at about 50px the stack was
+  seen about 3px above the pane's top, and is to be looked at again after the
+  height rule.
+- **Builds after a reload (#159):** the rows keep the label read when they were
+  fetched until the next read.
+- **The `.env.ci` swap (#159):** it writes the names the config gives, though a
+  project macro may send the target `ci` to the target schema; the finding
+  under the bar warns of it.
+- **When a manifest reads `my compile` (#159, 0143):** the sandbox rule is 95%
+  of at least 20 models in one `database.schema`, so a project with no custom
+  schemas, compiled for prod or CI, reads `my compile` too.
+- **A comment in the status bar's code (#159):** the settings comment in
+  `web/app.js` is one 114-character line where its block wraps near 80.
+- **A test to fix (mcp):** `an_answer_under_the_cap_is_the_uncapped_one` in
+  `src/mcp.rs` (near line 1426) compares two answers that each carry "written
+  <time> (N s ago)", and two calls can straddle a second; it should compare
+  without the "ago" part or hold the clock.
 
 Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
 read connects with. One connection, with the active target's role, reads every
