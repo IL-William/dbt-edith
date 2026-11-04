@@ -480,10 +480,7 @@ fn columns_answer(models: &[Reached<'_>], ask: &Ask, output: Output, out: &mut i
                     let mut from: Vec<String> = r.from.iter().map(|(parent, role)| ls::field(&format!("{parent}:{role}"))).collect();
                     // A name collin gave up on, after the edges. A capped chain
                     // is left out: the `32+` in its steps says it already (0141).
-                    let mut lost: Vec<&str> = r.partial.iter().filter(|g| g.reason != "steps_capped" && !g.name.is_empty()).map(|g| g.name.as_str()).collect();
-                    lost.sort_unstable();
-                    lost.dedup();
-                    from.extend(lost.into_iter().map(|name| ls::field(&format!("(partial: {name})"))));
+                    from.extend(r.lost.iter().map(|name| ls::field(&format!("(partial: {name})"))));
                     let tests: Vec<String> = r.tests.iter().map(|t| ls::field(t)).collect();
                     // The steps whenever collin gave an expression, the text
                     // unless it is a cast's and none was asked for.
@@ -745,6 +742,9 @@ struct Reach<'a> {
     /// Every gap is kept here, `steps_capped` included (0141).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     partial: Vec<&'a Gap>,
+    /// The names of `partial` the compact `from` marks (`ColLineage::lost`).
+    #[serde(skip)]
+    lost: Vec<&'a str>,
     #[serde(flatten)]
     said: Option<Said<'a>>,
     /// The data tests on this column, by name.
@@ -826,6 +826,7 @@ fn reached<'a>(graph: &'a Graph, lineage: &Lineage<'a>, ask: &Ask) -> Vec<Reache
                 generated: c.generated,
                 expr: c.expression,
                 partial: graph.cll.as_ref().map_or_else(Vec::new, |cll| cll.partial(here).collect()),
+                lost: c.partial.clone(),
                 said: c.expression.map(|x| Said { expression: &x.text, kind: &x.kind, steps: x.steps, cut: x.cut }),
                 tests,
                 more_up: if c.depth <= 0 && ask.up > 0 { c.hidden_up } else { 0 },
@@ -1150,8 +1151,10 @@ mod tests {
     }
 
     /// `graph()` with gaps on two columns: `order_amount` lost two names, one
-    /// of them under two reasons, and `ltv` was cut at 32 steps. A third entry
-    /// names a model the manifest lacks.
+    /// of them under two reasons, and `ltv` was cut at 32 steps. An entry
+    /// names a model the manifest lacks. Three more are the odd ones: a name
+    /// with a control character, a reason this build does not know (marked all
+    /// the same), and an empty name under a real reason (nothing to point at).
     fn with_partial() -> Graph {
         listing_with(
             &[],
@@ -1164,6 +1167,9 @@ mod tests {
                 gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"),
                 gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value"),
                 gap("model.shop.nowhere", "order_amount", "name_unresolved", "ghost"),
+                gap("model.shop.customer_ltv", "lifetime_value", "name_unresolved", "ship\u{7}ped"),
+                gap("model.audit.audit_orders", "basket", "reason_from_later", "refund_total"),
+                gap("model.shop.customer_ltv", "avg_basket", "cte_lacks_name", ""),
             ],
         )
     }
@@ -1450,7 +1456,11 @@ mod tests {
         // A chain cut at 32 steps has `32+` already and no marker.
         let ltv = rows.iter().find(|l| l.contains("audit_orders.ltv")).unwrap();
         assert_eq!(*ltv, "3\taudit_orders.ltv\tcustomer_ltv.lifetime_value:window\t\t32+\tsum(ltv) over (order by day)");
-        // A column with no gap carries no marker.
+        // A control character in a name is shown as a space, as everywhere.
+        assert!(rows.iter().any(|l| l.contains("customer_ltv.lifetime_value") && l.contains("(partial: ship ped)")), "{out}");
+        // A reason this build does not know is marked like the others.
+        assert!(rows.iter().any(|l| l.contains("audit_orders.basket") && l.contains("(partial: refund_total)")), "{out}");
+        // An empty name has nothing to point at: no marker, but the JSON keeps it.
         assert!(!rows.iter().find(|l| l.contains("customer_ltv.avg_basket")).unwrap().contains("partial"), "{out}");
 
         // The JSON keeps every gap, the capped one included, in the order of
@@ -1468,6 +1478,7 @@ mod tests {
         );
         assert_eq!(model("audit_orders")["columns"]["ltv"]["partial"], json!([{ "reason": "steps_capped", "name": "lifetime_value" }]));
         assert!(model("stg_orders")["columns"]["amount"].get("partial").is_none(), "{json}");
+        assert_eq!(model("customer_ltv")["columns"]["avg_basket"]["partial"], json!([{ "reason": "cte_lacks_name", "name": "" }]));
     }
 
     #[test]
@@ -1482,9 +1493,13 @@ mod tests {
             String::from_utf8(err).unwrap()
         };
         // One column lost names; the capped one has all its edges and is not counted.
-        let one = said(&with_partial());
+        let one = said(&listing_with(&[], Vec::new(), Vec::new(), vec![gap("model.shop.orders", "order_amount", "name_unresolved", "shipped_at"), gap("model.audit.audit_orders", "ltv", "steps_capped", "lifetime_value")]));
         let line = one.lines().find(|l| l.starts_with("column lineage:")).unwrap();
         assert!(line.ends_with(", 1 column partly traced"), "{line}");
+        // The odd rows of `with_partial`: three columns are marked, the one
+        // with an empty name is not.
+        let line = said(&with_partial());
+        assert!(line.lines().find(|l| l.starts_with("column lineage:")).unwrap().ends_with(", 3 columns partly traced"), "{line}");
         // Two columns lost names: plural.
         let mut two = vec![gap("model.shop.orders", "order_amount", "name_unresolved", "a"), gap("model.shop.stg_orders", "amount", "cte_lacks_name", "b")];
         let line = said(&listing_with(&[], Vec::new(), Vec::new(), std::mem::take(&mut two)));

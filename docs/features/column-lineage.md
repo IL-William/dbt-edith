@@ -297,6 +297,17 @@ The expression is in the box's label for a screen reader and in its hover card,
 which adds the two lines `expression` and `steps` (`recursive` at the limit) to its card, whatever the count: a
 column with one step has no count and still has its card (0138).
 
+A column collin traced only in part, one that kept an edge while collin gave up
+on a name inside its model, carries an amber `PARTIAL` pill above its box, after
+the count when it has one. Hovering it adds to the card the names, eight at most
+and how many more, in the warn colour, and a line saying collin could not trace
+them and to read the SQL, with two links: `open the file` opens the model and
+`compiled SQL` opens the Compiled tab of its model, each with the find bar open
+on every one of the names, whole words and case aside, at the first. A chain cut
+at 32 steps is not marked (its `32+` says it), nor an entry with no name. The
+status line adds `N partly traced` after the columns count. The Catalog and the
+model canvas say nothing of it (0145).
+
 Hovering a column says what keeps its rows, apart from where its value comes
 from, and what it keeps the rows of, with the button on or off:
 
