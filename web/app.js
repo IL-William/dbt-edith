@@ -4769,7 +4769,7 @@ async function runSelection() {
   }
 }
 
-/* `waiting` puts a small lineage above the text, drawing itself around the
+/* `waiting` puts a lineage above the text, drawing itself around the
    column named, for a canvas that will be drawn by itself and is not empty for
    lack of a choice. Any other hint takes it away. */
 const emptyHint = (text, { waiting = false, column = '' } = {}) => {
@@ -4812,8 +4812,10 @@ function waitArm(name) {
     return el;
   };
   const svg = make('svg', {
-    class: 'wait-arm', viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, 'aria-hidden': 'true',
+    class: 'wait-arm', viewBox: `0 0 ${L.width} ${L.height}`, 'aria-hidden': 'true',
   });
+  // The size the stylesheet scales from; the viewBox keeps the proportions.
+  svg.style.setProperty('--wait-w', L.width);
   // Upstream arms run from the column outwards, like the downstream ones.
   const arm = (x0, x1, y, down) => {
     const dir = x1 > x0 ? 1 : -1;

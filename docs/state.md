@@ -1995,13 +1995,14 @@ space has yet to take, item 16.
 A column click waits for collin (1.74.1). A first click on a column in
 Catalog > Columns while collin's cache was behind the manifest drew the model's
 lineage. It now clears the canvas and says which column it waits to draw, under
-a small lineage that draws itself around the column's name: a centre box with
-the name, and two dashed, nameless boxes on each side whose arms draw outwards
-(static with reduced motion). A column clicked during the run waits too, and
-the one clicked last is drawn when the run ends; if the run fails, the canvas
-goes back to the model's lineage with a toast saying why. The column still
-opens in the dock's Lineage tab. Checked with `web/tests/colwait.js`. Its
-limits are in the list left by these pull requests, below.
+a lineage that draws itself around the column's name: a centre box with the
+name, and two dashed, nameless boxes on each side whose arms draw outwards; it
+grows with the pane and keeps moving with reduced motion (1.75.3). A column
+clicked during the run waits too, and the one clicked last is drawn when the
+run ends; if the run fails, the canvas goes back to the model's lineage with a
+toast saying why. The column still opens in the dock's Lineage tab. Checked
+with `web/tests/colwait.js`. Its limits are in the list left by these pull
+requests, below.
 
 Partly traced columns from collin 0.12.0 (0141, 1.75.0). `WANTS` moves to
 0.12.0, which lists beside the edges the columns it traced only in part, each

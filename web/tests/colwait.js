@@ -16,6 +16,7 @@ function node(tag, parent) {
   var n = {
     tag: tag, attrs: {}, children: [], textContent: '', parent: null,
     setAttribute: function (k, v) { this.attrs[k] = v; },
+    style: { props: {}, setProperty: function (k, v) { this.props[k] = v; } },
     appendChild: function (c) { c.parent = this; this.children.push(c); return c; },
     remove: function () { var at = this.parent.children.indexOf(this); this.parent.children.splice(at, 1); this.parent = null; },
   };
@@ -243,6 +244,29 @@ step(function () {
     [true, true, '\u2026']);
   check('the name that just fits is not cut', waitArmLayout('abcdefghijklmnopqrstuvwxy').label, 'abcdefghijklmnopqrstuvwxy');
   check('the right side follows the centre box', [long.ghostR, long.width], [long.cx1 + 45, long.ghostR + 58 + 8]);
+});
+
+step(function () {
+  print('\n--- the drawing grows with the pane and keeps moving ---');
+  reset();
+  S.collin.state = 'running';
+  focusColumn(ORDERS.id, 'amount');
+  check('the svg carries its own width for the stylesheet to scale from', [drawing().style.props['--wait-w'], drawing().attrs.viewBox],
+    [waitArmLayout('amount').width, '0 0 280 100']);
+  var css = read('web/app.css');
+  // Each block up to its closing brace, so a rule after it is not taken for its own.
+  var rm = [], at = -1;
+  while ((at = css.indexOf('@media (prefers-reduced-motion', at + 1)) >= 0) {
+    var depth = 0, end = css.indexOf('{', at);
+    do { depth += css[end] === '{' ? 1 : css[end] === '}' ? -1 : 0; end++; } while (depth > 0);
+    rm.push(css.slice(at, end));
+  }
+  check('reduced-motion blocks exist and none stills the wait drawing', [rm.length > 0, rm.filter(function (b) { return b.indexOf('wait-arm') >= 0; }).length],
+    [true, 0]);
+  // jsc does no layout: this reads the rule's text only. The size it gives is
+  // measured by hand in headless Chrome, at the dock's default height too.
+  var rule = css.match(/\n\.wait-arm \{[\s\S]*?\n\}/);
+  check('the drawing\'s width follows its --wait-w', [!!rule, !!rule && /width: clamp\([^;]*var\(--wait-w\)/.test(rule[0])], [true, true]);
 });
 
 // A step that throws would otherwise end the file silently, and check.sh would

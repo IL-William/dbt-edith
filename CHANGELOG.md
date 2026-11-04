@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.75.3 - 2026-11-04
+
+- Draw the column wait up to half the canvas's width, as tall as the canvas
+  leaves room for, and keep it moving when the system asks for reduced motion.
+
 ## 1.75.2 - 2026-11-04
 
 - Put a Job order step's file on the step's own line, whole up to half of the

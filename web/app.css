@@ -1038,13 +1038,26 @@ kbd {
    land in the middle. */
 #lineage-empty { position: absolute; inset: 0; pointer-events: none; }
 /* A canvas waiting for a collin run to end, not one empty for lack of a choice:
-   a small lineage draws itself above the words, the column clicked in the
-   middle and boxes it does not know yet on each side, lit as its arms reach
-   them. Classes of its own: nothing of the canvas's (.nd, .edge, .box) is
-   reused, so no export or look restyles it. */
-#lineage-empty.waiting { flex-direction: column; gap: 10px; }
+   a lineage draws itself above the words, the column clicked in the middle
+   and boxes it does not know yet on each side, lit as its arms reach them,
+   up to half the pane wide. Classes of its own: nothing of the canvas's (.nd,
+   .edge, .box) is reused, so no export or look restyles it. */
+#lineage-empty.waiting { flex-direction: column; gap: 18px; }
 #lineage-empty.waiting p { margin: 0; }
-.wait-arm { flex: 0 0 auto; overflow: visible; max-width: 100%; height: auto; }
+.wait-arm {
+  /* --wait-w is the drawing's own width in its viewBox: it is never drawn
+     smaller than that unless the pane is narrower, or too short to hold it
+     above the words, and not past 2.5 times. The height it may take is the
+     pane less the words and the gap under it (4.5em, a little over their
+     height), not a share of the pane: the dock's default height would
+     otherwise draw it smaller than it was. The bar that floats over the pane's
+     top costs nothing here: it is empty during a wait (paintMode clears
+     #lineage-note). The 20px floor keeps some motion on screen in a dock
+     dragged almost shut. */
+  flex: 0 0 auto; overflow: visible;
+  width: clamp(calc(var(--wait-w) * 1px), 50%, calc(var(--wait-w) * 2.5px));
+  max-width: 100%; height: auto; max-height: max(20px, calc(100% - 4.5em));
+}
 .wait-arm .wait-base { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .wait-arm .wait-grow { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 1; stroke-dashoffset: 1; }
 .wait-arm .wait-centre { fill: #1b2a3d; stroke: var(--accent); stroke-width: 2; }
@@ -1055,7 +1068,10 @@ kbd {
 .wait-arm .wait-bar { fill: var(--line); }
 /* One loop: the centre pulses, the arms draw outwards, each box lights as its
    arm arrives and stays lit, then all of it fades. The downstream side runs
-   a quarter second behind the upstream one. */
+   a quarter second behind the upstream one. Unlike the app's other motion this
+   ignores prefers-reduced-motion: it is the only sign the wait is alive, and a
+   Windows machine with animation effects off, which browsers report as reduced
+   motion, showed it frozen, which reads as a hang. */
 .wait-arm .wait-halo { animation: wait-halo 3s ease-in-out infinite; }
 .wait-arm .wait-grow { animation: wait-grow 3s ease-in-out infinite; }
 .wait-arm .wait-lit { animation: wait-lit 3s ease-in-out infinite; }
@@ -1071,12 +1087,6 @@ kbd {
 @keyframes wait-lit { 0%, 36% { opacity: .35; } 48%, 82% { opacity: 1; } 100% { opacity: .35; } }
 @keyframes wait-box { 0%, 36% { stroke: var(--edge-col, #33445c); } 48%, 82% { stroke: var(--accent); } 100% { stroke: var(--edge-col, #33445c); } }
 @keyframes wait-bar { 0%, 36% { fill: var(--line); } 48%, 82% { fill: var(--accent-dim); } 100% { fill: var(--line); } }
-@media (prefers-reduced-motion: reduce) {
-  .wait-arm .wait-halo, .wait-arm .wait-grow, .wait-arm .wait-lit, .wait-arm .wait-box, .wait-arm .wait-bar { animation: none; }
-  .wait-arm .wait-grow { stroke-dashoffset: 0; }
-  .wait-arm .wait-halo { opacity: 0; }
-  .wait-arm .wait-lit { opacity: .6; }
-}
 
 .CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
