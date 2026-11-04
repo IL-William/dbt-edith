@@ -1612,14 +1612,15 @@ moved into invented sub-folders, Escape, Cmd+F again, Cmd+G from the canvas,
 and the Catalog's filter still answering there. Column mode only by the
 harness, Jaffle Shop having no column lineage.
 
-Pictures in the README: the editor with a hover card, the lineage of the
+Pictures: the README's six (the editor with a hover card, the lineage of the
 whole project by folder, the Catalog's columns, one column's lineage from
-collin, the Jobs tab and collin's report, all on Jaffle Shop with invented
-jobs. `scripts/take_shots.py` builds the copy on duckdb, commits it, names the
-job sources and takes them through headless Chrome with walk_tour.py's
-client, into `docs/shots/`, committed with the README so a tag shows its own
-interface (0082). It is not in `check.sh`, since it writes into the
-repository: retake them when a change alters what one shows.
+collin, the Jobs tab and collin's report) and one per feature of the pages
+under `docs/features/`, 24 in all, on Jaffle Shop with invented jobs, invented
+releases and a fake Snowflake connector. `scripts/take_shots.py` builds the
+copy on duckdb, commits it, names the job sources and takes them all through
+headless Chrome with walk_tour.py's client, then copies the names it is given,
+or every one, into `docs/shots/` (0082, 0144). It is not in `check.sh`, since
+it writes into the repository: retake the ones whose screen a change alters.
 
 A `generated` badge from collin's roots (0096, 1.32.0): collin 0.8.0 lists
 the columns a literal sets, with the value, and the column lineage now badges

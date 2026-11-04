@@ -77,6 +77,8 @@ reason (0037).
 
 ## The tour
 
+![The list of every shortcut, opened by the ? button, with Give me a tour at its top right](../shots/shortcuts.png)
+
 Give me a tour, at the top of the shortcut list, walks through each part of the
 page on a model of your project with parents and children, and one a job runs
 once the Jobs tab has a source, picked the same way every time: the

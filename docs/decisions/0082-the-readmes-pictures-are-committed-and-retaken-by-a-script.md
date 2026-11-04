@@ -1,6 +1,6 @@
 # 0082. The README's pictures are committed, and retaken by a script
 
-Date: 2026-10-14 · Status: accepted
+Date: 2026-10-14 · Status: accepted, amended by 0144
 
 **Trigger:** read before adding a picture to the README or the docs, or
 changing where one is kept or how it is taken.
@@ -24,6 +24,9 @@ figure (0014).
   interface.
 - **Retaken all at once, when a change alters what one shows**, and not at
   every release: each retake adds its bytes to the history for good.
+  *Amended by [0144](0144-the-pictures-also-illustrate-the-feature-pages-and-are-retaken-by-name.md):
+  the pictures of the feature pages join the README's, and a retake copies only
+  the names whose screen changed.*
 
 ## Rejected
 

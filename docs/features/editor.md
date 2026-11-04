@@ -60,6 +60,8 @@ own folder rather than at a guess. Hovering a key that did link names the folder
 resource in the manifest sits under it, and names the other roots it exists
 under when a project has several.
 
+![The violet dbt_project.yml button at the end of customers.sql's breadcrumb, with the list of keys that reach it](../shots/editor-project-keys.png)
+
 The other way round, a model, seed, snapshot, analysis or singular test has a
 round violet button at the end of its breadcrumb, a file with an arrow coming
 into it, for `dbt_project.yml`. It lists every key of that file
@@ -81,6 +83,8 @@ colouring is never shown the Jinja, so an apostrophe in a Jinja comment cannot
 turn the rest of the file into a string.
 
 ## Hover cards
+
+![customers.sql in the editor, the card of the stg_orders it reads under the pointer, and its lineage below](../shots/editor.png)
 
 Pausing on a lineage box, or on a `ref()` / `source()` in the editor, opens a
 small card with the model's description, its first columns and their types, the

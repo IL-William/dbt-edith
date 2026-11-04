@@ -5,6 +5,8 @@ the whole project.
 
 ## Jobs
 
+![The Jobs tab for customers: an Airflow DAG and a dbt Cloud job that run it, and a CI job it cannot resolve](../shots/jobs.png)
+
 The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
 the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
 step of it. The jobs are read from their YAML, wherever it lives, which is often
@@ -40,6 +42,8 @@ never guessed at: it is listed apart, under *Not resolved*, with the reason. A
 `state:modified+` compares with another run's artifacts, a `$MODELS` or a
 `{{ var }}` is only known when the job runs, and a flag this tool does not know
 might take a value or not.
+
+![The Job coverage section of Reports: how many models a scheduled job runs, and the steps it could not resolve](../shots/reports-coverage.png)
 
 **Job coverage**, a section of [Reports](#reports) that **Coverage in Reports**
 in the tab opens, turns the question round: which of the
@@ -192,6 +196,8 @@ freshness configured. A `--project-dir` is taken to name this project.
 
 ## Reports
 
+![collin's report in the Reports panel: what it read and what to fix in the project](../shots/collin-report.png)
+
 **Reports**, a tab with a sheet and a bar chart in the top bar, beside Code and
 Lineage, rolls a panel down over the editor and the dock with what speaks of
 the whole project, a section each, listed on its left: the last dbt command's
@@ -271,6 +277,8 @@ key reached through a YAML alias is marked at the alias, and keys sharing a
 line share one mark, whose card lists each. A `dbt_project.yml`
 this cannot read, a key written twice for one, lists the section to say at
 which line (0103).
+
+![The Job order section of Reports: two pairs of steps that only the clock orders, each with the models that link them](../shots/reports-job-order.png)
 
 **Job order** is listed beside the coverage once a source is named, and never
 lights the button nor opens the panel: it is a question asked, and a project
@@ -391,6 +399,8 @@ Every enabled model is listed, by name, and the section stays where it is in the
 list and leaves the button dimmed until it has been read
 ([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
+
+![The Builds by job section of Reports: one row per job and, for the manifest, DEV and PROD, how many of its models errored or were late](../shots/reports-builds.png)
 
 **Builds by job** is listed beside it once a source is named as well, and is
 filled by the same button and the same read: nothing more is asked of Snowflake.
