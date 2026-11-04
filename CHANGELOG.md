@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.76.0 - 2026-11-04
+
+- Mark a column collin traced only in part on the canvas with a `PARTIAL` pill
+  above its box, name the lost names in its hover card with links that open the
+  model's file and its compiled SQL on them, and count such columns in the
+  status line, from collin 0.12.0 (0145).
+
 ## 1.75.3 - 2026-11-04
 
 - Draw the column wait up to half the canvas's width, as tall as the canvas

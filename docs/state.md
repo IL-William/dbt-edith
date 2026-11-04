@@ -2011,8 +2011,18 @@ name it gave up on inside a model and why. `--column ... --output compact`
 ends a column's `from` with `(partial: name)` per name dropped, a chain capped
 at 32 steps left to `32+`; JSON carries every entry as `partial`, and the
 `column lineage:` line counts the columns partly traced. The two skills tell an
-agent to read the model's SQL for the rest. The canvas has no mark yet, item
-31. Checked with `cargo test` on a hand-written cache.
+agent to read the model's SQL for the rest. Checked with `cargo test` on a
+hand-written cache.
+
+Partly traced columns on the canvas (0145, 1.76.0). One test, `marked`, is the
+rule for what is marked; `ColLineage::lost` (read by the compact `from` and the
+canvas) and the count on the `column lineage:` line both use it.
+`/api/collineage` sends the names as `partial` on a column's node. The box
+draws an amber `PARTIAL` pill after the steps pill, the hover card names the
+lost names and links the model's file and its compiled SQL, each opened
+with the find bar on those names (`showDock` takes the model to load), and the
+status line counts the columns. Catalog and model canvas are left as they are.
+Checked with `cargo test` and `web/tests/collineage.js`.
 
 ## Deferred, in the order they were chosen
 
@@ -2489,10 +2499,6 @@ of its own, and each panel updates the tour, its page under
     - A file written for another target than the manifest's, a run under dev
       beside a manifest built for QA, names relations the page does not look
       for: they are counted as not found and the text is left as it is.
-31. **A column collin traced in part, on the canvas (0141).** The command line
-    and MCP mark it `(partial: name)` in the compact `from`; a column box and
-    its hover card do not yet, and the card would name the names collin gave
-    up on and point at the model's SQL.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

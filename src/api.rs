@@ -5202,6 +5202,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The route carries the names collin lost on the column's box, and no key
+    /// on a column read whole or cut only at 32 steps (0145).
+    #[tokio::test]
+    async fn the_column_route_carries_the_names_collin_lost() {
+        let root = temp_project("col-partial");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str| serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo" });
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.demo.stg_orders": model("stg_orders"), "model.demo.orders": model("orders"),
+        } }))
+        .unwrap();
+        let mut g = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        let link = |col: &str| crate::collin::RawColEdge {
+            from: "model.demo.stg_orders".into(),
+            from_col: col.into(),
+            to: "model.demo.orders".into(),
+            to_col: col.into(),
+            kind: "passthrough".into(),
+        };
+        let gap = |column: &str, reason: &str, name: &str| crate::collin::RawPartial {
+            node: "model.demo.orders".into(),
+            column: column.into(),
+            reason: reason.into(),
+            name: name.into(),
+        };
+        let edges = vec![link("shipped_at"), link("status"), link("amount")];
+        let partial = vec![
+            gap("shipped_at", "name_unresolved", "refunded_at"),
+            gap("shipped_at", "relation_unknown", "customer_ref"),
+            gap("status", "steps_capped", "status"),
+        ];
+        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges, partial, ..Default::default() }, 1);
+        *st.graph.write().await = Arc::new(g);
+
+        let lost = response_of(port, get("/api/collineage?id=model.demo.stg_orders&column=shipped_at&up=0&down=1", &h)).await;
+        assert!(lost.contains(r#""partial":["customer_ref","refunded_at"]"#), "{lost}");
+        for col in ["status", "amount"] {
+            let body = response_of(port, get(&format!("/api/collineage?id=model.demo.stg_orders&column={col}&up=0&down=1"), &h)).await;
+            assert!(!body.contains("partial"), "{col}: {body}");
+        }
+
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The page is told the repository and the system, which an issue opened
     /// from the top bar starts with.
     #[tokio::test]

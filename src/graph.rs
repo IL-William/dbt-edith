@@ -530,6 +530,13 @@ pub struct Gap {
     pub name: String,
 }
 
+/// Whether a gap is a name worth marking: one lost inside a model. A
+/// `steps_capped` gap drops nothing, and an empty name leaves nothing to point
+/// at. The one predicate behind `lost` and `partial_columns` (0141, 0145).
+fn marked(g: &Gap) -> bool {
+    g.reason != "steps_capped" && !g.name.is_empty()
+}
+
 /// A text from collin, with ` (cut)` after it when collin cut it.
 pub fn said_cut(text: &str, cut: bool) -> String {
     if cut { format!("{text} (cut)") } else { text.to_string() }
@@ -608,10 +615,20 @@ impl ColLineage {
         self.partial[lo..hi].iter().map(|(_, g)| g)
     }
 
-    /// How many columns have a gap that is a lost name. A `steps_capped` one
-    /// is not counted: its edges are all there (0141).
+    /// The names collin gave up on inside the model of `r`, the ones every
+    /// surface marks: sorted, each once whatever its reasons. A `steps_capped`
+    /// gap is left out, its edges are all there and `32+` says the rest, and so
+    /// is a gap with no name, since there is nothing to point at (0141, 0145).
+    pub fn lost(&self, r: ColRef) -> Vec<&str> {
+        let mut names: Vec<&str> = self.partial(r).filter(|g| marked(g)).map(|g| g.name.as_str()).collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
+    /// How many columns have a lost name (see `lost`).
     pub fn partial_columns(&self) -> usize {
-        let mut cols: Vec<ColRef> = self.partial.iter().filter(|(_, g)| g.reason != "steps_capped" && !g.name.is_empty()).map(|(c, _)| *c).collect();
+        let mut cols: Vec<ColRef> = self.partial.iter().filter(|(_, g)| marked(g)).map(|(c, _)| *c).collect();
         cols.dedup();
         cols.len()
     }
@@ -1958,6 +1975,7 @@ impl Graph {
                     at: Some(c),
                     generated: cll.root(c),
                     expression: cll.expression(c),
+                    partial: cll.lost(c),
                     rules: Vec::new(),
                     rules_more: 0,
                     // Without roots the page badges every start `raw`, so
@@ -2022,6 +2040,7 @@ impl Graph {
             at: None,
             generated: None,
             expression: None,
+            partial: Vec::new(),
             rules: Vec::new(),
             rules_more: 0,
             outside: false,
@@ -2381,6 +2400,7 @@ impl Graph {
                         at: None,
                         generated: None,
                         expression: None,
+                        partial: Vec::new(),
                         rules: Vec::new(),
                         rules_more: 0,
                         outside: false,
@@ -2696,6 +2716,7 @@ impl Graph {
                         at: None,
                         generated: None,
                         expression: None,
+                        partial: Vec::new(),
                         rules: Vec::new(),
                         rules_more: 0,
                         outside: false,
@@ -2841,6 +2862,11 @@ pub struct LineageNode<'a> {
     /// past one and the card says the text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expression: Option<&'a Expr>,
+    /// Column mode only: the names collin gave up on inside the column's
+    /// model, for the box's mark and the card (0145). Empty for a column it
+    /// read whole, and for one cut only at 32 steps.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub partial: Vec<&'a str>,
     /// Column mode only, filled with `rows_of`: the predicates of the models
     /// this column keeps the rows of that read it, `[model, "WHERE text"]`,
     /// the first `ROWS_BY` in the models' order and collin's.
@@ -3450,6 +3476,53 @@ mod tests {
         old.name_rows_by(&mut l);
         let json = serde_json::to_string(&l).unwrap();
         assert!(!json.contains("expression") && !json.contains("rules"), "{json}");
+    }
+
+    /// The names a column box and its card mark are the ones the command line
+    /// marks: sorted, each once, no capped chain, no empty name (0145).
+    #[test]
+    fn a_column_lists_the_names_collin_lost_and_its_box_carries_them() {
+        let mut g = shop(0);
+        let mut c = cache(vec![
+            link("raw_orders", "amount", "stg_orders", "amount", "transform"),
+            link("raw_orders", "status", "stg_orders", "status", "passthrough"),
+            link("raw_orders", "id", "stg_orders", "id", "passthrough"),
+            link("raw_orders", "note", "stg_orders", "note", "passthrough"),
+        ]);
+        let gap = |column: &str, reason: &str, name: &str| crate::collin::RawPartial {
+            node: "model.shop.stg_orders".into(),
+            column: column.into(),
+            reason: reason.into(),
+            name: name.into(),
+        };
+        c.partial = vec![
+            gap("amount", "window_key_unbound", "shipped_at"),
+            gap("amount", "relation_unknown", "refund_total"),
+            gap("amount", "name_unresolved", "shipped_at"),
+            gap("amount", "steps_capped", "amount"),
+            gap("status", "steps_capped", "status"),
+            gap("id", "cte_lacks_name", ""),
+            gap("note", "reason_from_later", "memo"),
+        ];
+        g.merge_col_lineage(c, 1);
+        let cll = g.cll.as_ref().unwrap();
+        let on = |name: &str| cll.lost(col(&g, "stg_orders", name));
+        assert_eq!(on("amount"), ["refund_total", "shipped_at"]);
+        assert!(on("status").is_empty() && on("id").is_empty());
+        assert_eq!(on("note"), ["memo"], "a reason this build does not know is marked");
+        assert_eq!(cll.partial_columns(), 2);
+
+        // The box carries the names and a column read whole has no key.
+        let mut l = g.column_lineage(col(&g, "stg_orders", "amount"), 0, 0, 100, &[], RowEdges::Hidden);
+        g.name_rows_by(&mut l);
+        let json = serde_json::to_string(&l.nodes[0]).unwrap();
+        assert!(json.contains(r#""partial":["refund_total","shipped_at"]"#), "{json}");
+        for name in ["status", "id"] {
+            let mut l = g.column_lineage(col(&g, "stg_orders", name), 0, 0, 100, &[], RowEdges::Hidden);
+            g.name_rows_by(&mut l);
+            let json = serde_json::to_string(&l.nodes[0]).unwrap();
+            assert!(!json.contains("partial"), "{name}: {json}");
+        }
     }
 
     #[test]

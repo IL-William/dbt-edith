@@ -50,7 +50,8 @@ all there and the chain is longer than `steps` counts, which `32+` already says.
 - **The reason in compact**: it says why collin gave up, which the SQL says
   better, and the JSON keeps it.
 - **A marker on the canvas** in this change: the command line is where an agent
-  reads the lineage, and the canvas is its own change.
+  reads the lineage, and the canvas is its own change. *Made by
+  [0145](0145-a-column-collin-traced-in-part-is-marked-on-the-canvas.md).*
 
 ## Consequences
 

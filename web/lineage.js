@@ -1517,6 +1517,27 @@ const Lineage = (() => {
     ];
   }
 
+  /* The two lines the column's card adds when collin gave up on a name inside
+     its model (0145): the names, the first eight and a count of the rest, and
+     what to do about it. The server sends them sorted and each once, with no
+     capped chain and no empty name (`ColLineage::lost`). A control character
+     in a name is shown as a space, as the command line shows it. */
+  const PARTIAL_NAMES = 8;
+
+  function partialList(names) {
+    const shown = names.slice(0, PARTIAL_NAMES).map((n) => String(n).replace(/[\u0000-\u001f\u007f-\u009f]/g, ' '));
+    const more = names.length - shown.length;
+    return shown.join(', ') + (more > 0 ? `, and ${more} more` : '');
+  }
+
+  function partialSaid(names) {
+    if (!names || !names.length) return [];
+    return [
+      `partial  ${partialList(names)}`,
+      `collin could not trace ${names.length > 1 ? 'these names' : 'this name'}: read the SQL`,
+    ];
+  }
+
   /* Writes the second line into a box's <text>, the struck word in a <tspan>
      of its own, which a clip or a textContent would flatten. `max` cuts the
      line from its end, the test count first and then the schema, never the
@@ -2172,6 +2193,9 @@ const Lineage = (() => {
       if (roles[i]) g.appendChild(roleBadge(roles[i]));
       const count = columnMode ? stepsLabel(n.expression) : '';
       if (count) g.appendChild(stepsBadge(count));
+      // After the steps pill when there is one, so the two never overlap.
+      const lost = columnMode && n.partial && n.partial.length;
+      if (lost) g.appendChild(partialBadge(count ? 4 + pillWidth(count) + 4 : 4));
 
       // A hanging test's other inputs are counted on its right: its left is
       // where the stem from its model runs.
@@ -2188,10 +2212,11 @@ const Lineage = (() => {
       const set = roles[i] === 'generated' ? generatedSaid(n.generated).line : '';
       // What computes the column (0138), said in the label since the badge has no tooltip.
       const how = columnMode && n.expression ? `computed by ${n.expression.text || ''}${n.expression.cut ? ' (cut)' : ''}` : '';
+      const partly = lost ? `partly traced: ${partialList(n.partial)}` : '';
       // Both lines of the card on one, a label having no line break.
       const rows = (kept[i] || '').replace(/\n/g, ', ');
       g.setAttribute('aria-label', (b.rider ? `${b.label}, ${matLabel(n)}${n.warn ? ', severity warn' : ''}, ` : '')
-        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + (how ? `${how}, ` : '') + (rows ? `${rows}, ` : '')
+        + (said ? `${said}, ` : '') + (set ? `${set}, ` : '') + (how ? `${how}, ` : '') + (partly ? `${partly}, ` : '') + (rows ? `${rows}, ` : '')
         + `${n.id} ${n.file}${n.context ? ' (context, not selected)' : ''}`);
 
       g.addEventListener('click', (e) => {
@@ -2307,11 +2332,28 @@ const Lineage = (() => {
      neutral outline. The expression is in the box's label and its hover card,
      not a <title>, whose native tooltip would land over the card. Only when
      the box has more than one step to count (`stepsLabel`). */
+  function pillWidth(label) { return label.length * 5.8 + 12; }
+
   function stepsBadge(label) {
-    const w = label.length * 5.8 + 12;
+    const w = pillWidth(label);
     const g = el('g', { class: 'rolebadge stepsbadge' });
     g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:#131922;stroke:${EDGE_PLAIN}` }));
     const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:#c9d4e3' });
+    t.textContent = label;
+    g.appendChild(t);
+    return g;
+  }
+
+  /* A column collin traced only in part (0145): an amber pill on the left
+     above the box, after the steps pill when it has one, in the warn colour the
+     rest of the page uses. Inline colours, as the other pills, so an export
+     keeps them. */
+  function partialBadge(x) {
+    const label = 'PARTIAL';
+    const w = pillWidth(label);
+    const g = el('g', { class: 'rolebadge partialbadge' });
+    g.appendChild(el('rect', { x, y: -14, width: w, height: 14, rx: 3, style: 'fill:#131922;stroke:#e0a34b' }));
+    const t = el('text', { class: 'rolelabel', x: x + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:#e0a34b' });
     t.textContent = label;
     g.appendChild(t);
     return g;
@@ -2764,7 +2806,7 @@ const Lineage = (() => {
 
   return {
     init, render, paintBuilds, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
+    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, partialSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked, setSkin, isModelBox,
   };
 })();

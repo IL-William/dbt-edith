@@ -738,4 +738,220 @@ check('whose cell says it, not the dash of a column with nothing',
 check('a column with a value edge keeps its counts', indirectOnlyCell({ up: 1, down: 0, indirect: true }), null);
 check('and one with no indirect edge its dash', indirectOnlyCell({ up: 0, down: 0 }), null);
 check('the box\'s label carries it, as an exported page keeps it', /\(rows \? `\$\{rows\}, ` : ''\)/.test(lin), true);
-check('and its hover opens a card with it', /if \(Array\.isArray\(n\.generated\) \|\| n\.expression \|\| rows\) hoverEnter/.test(app), true);
+check('and its hover opens a card with it', /if \(Array\.isArray\(n\.generated\) \|\| n\.expression \|\| \(n\.partial && n\.partial\.length\) \|\| rows\) hoverEnter/.test(app), true);
+
+print('\n--- a column collin traced in part (0145) ---');
+check('a column read whole says nothing', partialSaid(undefined).length + partialSaid([]).length, 0);
+check('one name', partialSaid(['shipped_at']).join(' | '), 'partial  shipped_at | collin could not trace this name: read the SQL');
+check('two names', partialSaid(['refund_total', 'shipped_at']).join(' | '),
+      'partial  refund_total, shipped_at | collin could not trace these names: read the SQL');
+var many = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+check('the first eight and a count of the rest', partialSaid(many)[0], 'partial  a, b, c, d, e, f, g, h, and 2 more');
+check('exactly eight is not cut', partialSaid(many.slice(0, 8))[0], 'partial  a, b, c, d, e, f, g, h');
+check('a control character is a space', partialSaid(['ship\u0007ped'])[0], 'partial  ship ped');
+check('the pill is drawn only in column mode, for a box with names',
+      /const lost = columnMode && n\.partial && n\.partial\.length;/.test(lin), true);
+check('...after the steps pill when there is one, at the left',
+      /if \(lost\) g\.appendChild\(partialBadge\(count \? 4 \+ pillWidth\(count\) \+ 4 : 4\)\)/.test(lin)
+      && lin.indexOf('stepsBadge(count)') < lin.indexOf('partialBadge(count'), true);
+check('...in inline colours, so an export keeps them',
+      /function partialBadge[\s\S]{0,600}style: 'fill:#131922;stroke:#e0a34b'[\s\S]{0,300}style: 'fill:#e0a34b'/.test(lin), true);
+check('the box\'s label says which names', /partly traced: \$\{partialList\(n\.partial\)\}/.test(lin), true);
+check('the card opens for a column with names alone',
+      /\(n\.partial && n\.partial\.length\) \|\| rows\) hoverEnter/.test(app), true);
+check('the card lays out the two lines, then the two links',
+      /function fillPartialCard[\s\S]*hc-note warn[\s\S]*hc-note muted[\s\S]*open the file[\s\S]*compiled SQL/.test(app), true);
+check('the compiled link asks for the column\'s model, not the focus',
+      /showDock\('compiled', \{ id \}\)/.test(app) && /loadArtifact\(which, id \|\| S\.focus\)/.test(app), true);
+
+eval(app.slice(app.indexOf('function canvasStatus'), app.indexOf('function selectWarnings')));
+var cols = [{ id: 'model.shop.stg_orders::status' }, { id: 'model.shop.orders::status', partial: ['shipped_at'] },
+            { id: 'model.shop.customers::status', partial: ['a', 'b'] }];
+check('the status line counts the columns partly traced',
+      canvasStatus({ mode: 'column', focus_column: 'status', nodes: cols, edges: [] }, null), 'status · 3 columns · 2 partly traced · 0 edges');
+check('and says nothing when there are none',
+      canvasStatus({ mode: 'column', focus_column: 'status', nodes: [cols[0]], edges: [] }, null), 'status · 1 columns · 0 edges');
+check('a model canvas never counts them',
+      canvasStatus({ mode: 'model', nodes: [{ partial: ['x'] }], edges: [] }, null), '1 nodes · 0 edges');
+
+var seen = null;
+var findPrefs = { query: '', caseSensitive: true, wholeWord: false, regex: false };
+var bar = { q: null, origin: null };
+function findBar() { return bar; }
+function showFind(st) { seen = { q: st.q, origin: st.origin }; }
+function stepFind(cm, dir) { seen.dir = dir; }
+var cursor = null, focused = 0;
+var fakeCm = { setCursor: function (p) { cursor = p; }, focus: function () { focused++; } };
+eval(app.slice(app.indexOf('function namesPattern'), app.indexOf('/* Enter and Shift+Enter in the bar')));
+eval(app.slice(app.indexOf('function escapeRegExp'), app.indexOf('/* Every match painted, as an overlay mode')));
+findNames(fakeCm, ['a.b', 'ship_date']);
+check('the names become one escaped pattern, the longest first', seen.q.query, 'ship_date|a\\.b');
+check('whole words, any case, as a pattern', [seen.q.wholeWord, seen.q.caseSensitive, seen.q.regex].join(), 'true,false,true');
+check('from the top, then on to the first', JSON.stringify(cursor) + ' ' + JSON.stringify(seen.origin) + ' ' + seen.dir,
+      '{"line":0,"ch":0} {"line":0,"ch":0} 1');
+check('the text takes the focus, so Escape and Cmd+G reach the bar', focused, 1);
+check('the options other bars open with are left as they were',
+      [findPrefs.query, findPrefs.caseSensitive, findPrefs.wholeWord, findPrefs.regex].join(), ',true,false,false');
+seen = null;
+findNames(fakeCm, []);
+check('no names, no find', seen, null);
+
+// A name that begins another: the sorted list has `refund` first, and an
+// alternation keeps the first branch that matches.
+var overlap = namesPattern(['refund', 'refund_total']);
+check('a name another begins comes after it, and stops short of a word char (0145)', overlap, 'refund_total(?!\\w)|refund');
+var pat = findPattern(overlap, { caseSensitive: false, wholeWord: true, regex: true });
+var found = findMatches(['select refund_total, refund from x', 'where refund_total > 0'], pat.re, true, 100);
+check('every one is lit, the longer included', found.hits.map(function (h) { return h.line + ':' + h.from + '-' + h.to; }).join(), '0:7-19,0:21-27,1:6-18');
+check('names no other begins are joined as they are', namesPattern(['payment_method', 'order_date']), 'payment_method|order_date');
+// The shorter name is lit where the longer one is not a whole word, through the
+// real pattern and matcher.
+function litBy(names, line) {
+  var p = findPattern(namesPattern(names), { caseSensitive: false, wholeWord: true, regex: true });
+  return findMatches([line], p.re, true, 100).hits.map(function (h) { return h.from + '-' + h.to; }).join();
+}
+check('a dotted name another begins stops short of a word char (0145)',
+      namesPattern(['orders', 'orders.status']), 'orders\\.status(?!\\w)|orders');
+check('the short name is lit where the long one is not a whole word', litBy(['orders', 'orders.status'], 'select orders.status_code'), '7-13');
+check('the long one is lit where it is a whole word', litBy(['orders', 'orders.status'], 'select orders.status from x'), '7-20');
+check('only the trailing short name is lit after a longer word that starts the same',
+      litBy(['refund', 'refund_total'], 'refund_total_x, refund'), '16-22');
+check('the tie between equal lengths is by name', namesPattern(['b', 'a']), 'a|b');
+check('a name with a dot is escaped', namesPattern(['a.b']), 'a\\.b');
+check('a name with C1 control is shown with a space', partialSaid(['ship\u0085ped'])[0], 'partial  ship ped');
+
+print('\n--- a card\'s names through the real find bar (0145) ---');
+// findNames above runs on a stubbed bar; this one keeps the real showFind,
+// refreshFind, stepFind and the rest, and stubs only findBar (which builds DOM)
+// and the editor, a few lines of SQL.
+function fakeEditor(lines) {
+  var anchor = { line: 0, ch: 0 }, head = { line: 0, ch: 0 };
+  var cm = {
+    overlays: [], keymaps: 0, wrapper: { classList: { add: function () {}, remove: function () {} } },
+    getCursor: function (which) {
+      var a = anchor, h = head, before = a.line < h.line || (a.line === h.line && a.ch <= h.ch);
+      if (which === 'from') return before ? a : h;
+      if (which === 'to') return before ? h : a;
+      return h;
+    },
+    setCursor: function (p) { anchor = head = p; },
+    setSelection: function (a, h) { anchor = a; head = h; },
+    getSelection: function () { return ''; },
+    getDoc: function () { return { eachLine: function (f) { lines.forEach(function (t) { f({ text: t }); }); } }; },
+    scrollIntoView: function () {}, getScrollInfo: function () { return { clientHeight: 300 }; },
+    markText: function () { return { clear: function () {} }; },
+    addKeyMap: function () { cm.keymaps++; }, getWrapperElement: function () { return cm.wrapper; },
+    refresh: function () {}, focus: function () {},
+    addOverlay: function (o) { cm.overlays.push(o); },
+    removeOverlay: function (o) { cm.overlays.splice(cm.overlays.indexOf(o), 1); },
+  };
+  return cm;
+}
+function realFindHarness() {
+  function clearTimeout() {}
+  function findBar(cm) {
+    if (cm.state) return cm.state.findBar;
+    cm.state = {};
+    return cm.state.findBar = {
+      cm: cm, open: false, q: { query: '', caseSensitive: false, wholeWord: false, regex: false },
+      key: '', re: null, error: '', lines: [], found: { hits: [], capped: false }, at: -1, cur: null,
+      mark: null, overlay: null, origin: { line: 0, ch: 0 }, moving: false, timer: 0, keys: {}, opts: [],
+      bar: { classList: { add: function () {}, remove: function () {} } },
+      input: { value: '', title: '', classList: { toggle: function () {} } },
+      count: { textContent: '', classList: { toggle: function () {} } },
+    };
+  }
+  eval(app.slice(app.indexOf('function escapeRegExp'), app.indexOf('/* One editor\'s bar, built the first time'))
+     + app.slice(app.indexOf('/* Counts again and repaints.'), app.indexOf('/* Cmd+F. A selection'))
+     + app.slice(app.indexOf('/* The pattern a card\'s names are found with'), app.indexOf('/* The selection stays on the last match')));
+  return { findNames: findNames, findBar: findBar };
+}
+var realFind = realFindHarness();
+var sql = ['select o.order_date,', '       p.payment_method', 'from orders o', 'where order_date > 0'];
+function chosen(cm) { var a = cm.getCursor('from'), b = cm.getCursor('to'); return a.line + ':' + a.ch + '-' + b.line + ':' + b.ch; }
+
+var cmShut = fakeEditor(sql);
+cmShut.setCursor({ line: 3, ch: 0 });
+realFind.findNames(cmShut, ['order_date', 'payment_method']);
+var stShut = realFind.findBar(cmShut);
+check('from a closed bar it lands on the first match from the top, not from the old cursor', chosen(cmShut), '0:9-0:19');
+check('the count says which of how many', stShut.count.textContent, '1 of 3');
+check('the box holds the pattern', stShut.input.value, 'payment_method|order_date');
+check('the bar is open and paints one overlay', [stShut.open, cmShut.overlays.length].join(), 'true,1');
+
+var cmOpen = fakeEditor(sql);
+realFind.findNames(cmOpen, ['orders']);
+var stOpen = realFind.findBar(cmOpen);
+check('an open bar on another query is on its own match', [stOpen.count.textContent, chosen(cmOpen)].join(' '), '1 of 1 2:5-2:11');
+cmOpen.setCursor({ line: 3, ch: 8 });
+realFind.findNames(cmOpen, ['order_date', 'payment_method']);
+check('the same call replaces the query, recounts and lands on the first match from the top',
+      [stOpen.input.value, stOpen.count.textContent, chosen(cmOpen)].join(' '), 'payment_method|order_date 1 of 3 0:9-0:19');
+check('the old overlay is gone for the new one', cmOpen.overlays.length, 1);
+
+print('\n--- loadArtifact keeps the pane for the latest ask (0145) ---');
+// The real loadArtifact with the page around it stubbed: the answers are
+// promises the test settles by hand, so a later load can overtake an earlier.
+function artifactHarness() {
+  var S = { artifactAsk: { compiled: 0 }, artifactInfo: {}, node: null };
+  var toasts = [], painted = [], asks = [], bodyText = 'old';
+  var head = { textContent: 'old' };
+  var body = { get textContent() { return bodyText; }, set textContent(t) { bodyText = t; }, append: function () { bodyText = 'empty-note'; } };
+  var document = { createElement: function () { return {}; } };
+  function $(sel) { return sel === '#compiled-head' ? head : body; }
+  function nameOfId(id) { return id.split('.').pop(); }
+  function toast(msg, kind) { toasts.push(msg + '|' + kind); }
+  var api = { get: function (url) { return new Promise(function (ok, no) { asks.push({ url: url, ok: ok, no: no }); }); } };
+  function paintArtifact(kind) { painted.push(kind); return true; }
+  eval(app.slice(app.indexOf('async function loadArtifact'), app.indexOf('/* The Compiled or Run pane from the last answer')));
+  return { S: S, toasts: toasts, painted: painted, asks: asks, load: loadArtifact, body: function () { return bodyText; } };
+}
+function drain() { var p = Promise.resolve(); for (var i = 0; i < 8; i++) p = p.then(function () {}); return p; }
+
+var art = artifactHarness();
+var first = art.load('compiled', 'model.shop.orders');
+var second = art.load('compiled', 'model.shop.customers');
+var results = {};
+first.then(function (r) { results.first = r; });
+second.then(function (r) { results.second = r; });
+art.asks[1].ok({ sql: 'customers' });
+art.asks[0].ok({ sql: 'orders' });
+drain().then(function () {
+  check('overlapping loads: the later one, answered first, paints and resolves true', results.second, true);
+  check('the earlier one, answered last, resolves false and paints nothing more', [results.first, art.painted.length].join(), 'false,1');
+  check('the pane holds the later load\'s answer', [art.S.artifactInfo.compiled.info.sql, art.S.artifactInfo.compiled.name].join(), 'customers,customers');
+  check('and no toast was shown', art.toasts.length, 0);
+
+  var stale = art.load('compiled', 'model.shop.orders');
+  var current = art.load('compiled', 'model.shop.customers');
+  var out = {};
+  stale.then(function (r) { out.stale = r; });
+  current.then(function (r) { out.current = r; });
+  art.asks[2].no(new Error('stale boom'));
+  art.asks[3].ok({ sql: 'x' });
+  return drain().then(function () {
+    check('a rejected load a later one overtook shows no toast and resolves false', [out.stale, art.toasts.length].join(), 'false,0');
+    var last = art.load('compiled', 'model.shop.orders');
+    var res;
+    last.then(function (r) { res = r; });
+    art.asks[4].no(new Error('boom'));
+    return drain().then(function () {
+      check('a rejected current load shows one toast and resolves false', [res, art.toasts.join()].join(), 'false,compiled: boom|err');
+    });
+  });
+}).then(function () {
+  var painted = art.painted.length;
+  var late = art.load('compiled', 'model.shop.orders');
+  var res;
+  late.then(function (r) { res = r; });
+  var before = art.S.artifactAsk.compiled;
+  var none = art.load('compiled', '');
+  var noneRes;
+  none.then(function (r) { noneRes = r; });
+  art.asks[5].ok({ sql: 'late' });
+  return drain().then(function () {
+    check('an empty id resolves false and bumps the counter', [noneRes, art.S.artifactAsk.compiled - before].join(), 'false,1');
+    check('so an answer on its way is dropped, unpainted', [res, art.painted.length - painted].join(), 'false,0');
+    check('and the pane is emptied', [art.S.artifactInfo.compiled, art.body()].join(), ',empty-note');
+  });
+}).then(function () { print('\ndone'); }, function (e) { print('FAIL  a step threw ' + e); });

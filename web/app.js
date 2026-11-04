@@ -30,6 +30,7 @@ const S = {
   gitModDirs: new Set(), gitUntDirs: new Set(),
   gitPrefixes: [], gitKey: '',
   git: null,                  // full payload of /api/git
+  artifactAsk: { compiled: 0, run: 0 },        // the latest load of each pane, so an older answer never paints
   artifactCm: { compiled: null, run: null },  // read-only editors for the two files under target/
   artifactInfo: { compiled: null, run: null },  // the last answer of each, so another environment repaints without a request
   envs: null,                 // payload of /api/envs
@@ -1572,6 +1573,29 @@ async function openMacro(t) {
   if (at) gotoPos(at.line + (t.line > 1 ? t.line - 1 : 0), t.line > 1 ? 0 : at.ch);
 }
 
+/* The model's file opened as a macro's is, with the names a card lists lit in
+   it (0145). */
+async function openFileOnNames(file, names) {
+  pushJump();
+  await openFile(file, { focusLineage: false, preview: true });
+  const f = S.open.get(file);
+  if (S.active !== file || !f || !f.doc) return;             // it could not be opened
+  revealInTree(file);
+  findNames(S.cm, names);
+}
+
+/* The model's compiled SQL in the dock, with the same names lit once it is
+   painted. A text dbt has not compiled is left as the pane says. */
+async function openCompiledOnNames(id, names) {
+  // Only when this load painted the model's compiled SQL: not a text dbt has
+  // not compiled, nor an error, nor an answer a later load has passed.
+  if (!await showDock('compiled', { id })) return;
+  // The pane measures itself in a timer queued as it was painted; the match is
+  // scrolled to only after it, or it lands on stale heights.
+  await new Promise((done) => setTimeout(done, 0));
+  findNames(S.artifactCm.compiled, names);
+}
+
 /* A project var's definition in dbt_project.yml, at its key, lit as a test's
    line is. The server says whether the block defines it, as the card does, so
    a var it would not find there opens nothing, and the line is the buffer's
@@ -2110,6 +2134,46 @@ function openFind(cm) {
   showFind(st);
   st.input.focus();
   st.input.select();
+}
+
+/* The pattern a card's names are found with (0145): longest first, because an
+   alternation keeps the first branch that matches and the whole-word test comes
+   after it, so `refund` ahead of `refund_total` would never let the longer one
+   be lit. Ties by name, so the pattern is the same on every start.
+
+   The other way round needs help too: the bar retries a rejected match one
+   character on, so a shorter name at the same place is never tried, and
+   `orders.status_code` would light neither `orders.status` (not a whole word)
+   nor the `orders` before it. A name another, shorter name begins therefore
+   ends in `(?!\w)`, and the pattern itself falls through to the shorter one
+   where the whole-word test would have said no. Every branch that matches at
+   one place starts at the same character, so only the right edge differs. `\w`
+   is ASCII without the `u` flag: a letter of another script right after is
+   still left to the whole-word test, which rejects it, so nothing false is lit.
+   Names no other begins stay as they are. */
+function namesPattern(names) {
+  const sorted = [...names].sort((x, y) => y.length - x.length || (x < y ? -1 : x > y ? 1 : 0));
+  const lower = sorted.map((n) => n.toLowerCase());     // the bar runs with case off
+  return sorted.map((n, i) => {
+    const begun = lower.some((o) => o.length < lower[i].length && lower[i].startsWith(o));
+    return escapeRegExp(n) + (begun && isWordChar(n[n.length - 1]) ? '(?!\\w)' : '');
+  }).join('|');
+}
+
+/* A card's names lit in an editor (0145): this editor's find bar opened on all
+   of them as whole words, case aside, with the first one reached and the focus
+   in the text, so Escape and Cmd+G reach the bar. Only this bar's own query:
+   the options other bars open with are left as they were. A text that holds
+   none of the names is just shown. */
+function findNames(cm, names) {
+  if (!cm || !names || !names.length) return;
+  const st = findBar(cm);
+  st.q = { query: namesPattern(names), caseSensitive: false, wholeWord: true, regex: true };
+  cm.setCursor({ line: 0, ch: 0 });
+  st.origin = { line: 0, ch: 0 };
+  showFind(st);
+  stepFind(cm, 1);
+  cm.focus();
 }
 
 /* Enter and Shift+Enter in the bar, Cmd+G and F3 in the text. With the bar
@@ -4986,8 +5050,10 @@ function canvasStatus(sub, drawn) {
   const tail = `${sub.edges.length} edges${stopped}${indirect}${cut}`;
   // The indirect edges' boxes stand for a model each, which no column is.
   const models = sub.mode === 'column' ? sub.nodes.filter((n) => n.id && !String(n.id).includes('::')).length : 0;
+  // The columns collin traced only in part (0145), counted among those drawn.
+  const partly = sub.mode === 'column' ? sub.nodes.filter((n) => n.partial && n.partial.length).length : 0;
   return (sub.mode === 'column'
-    ? `${sub.focus_column} · ${sub.nodes.length - models} columns${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
+    ? `${sub.focus_column} · ${sub.nodes.length - models} columns${partly ? ` · ${partly} partly traced` : ''}${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
     : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
 }
 
@@ -8376,23 +8442,27 @@ async function loadArtifact(kind, id) {
   const body = $('#' + kind + '-body');
   head.textContent = '';
   if (!id) {
+    S.artifactAsk[kind]++;                    // an answer on its way is no longer wanted
     S.artifactInfo[kind] = null;
     body.textContent = '';
     body.append(Object.assign(document.createElement('div'), {
       className: 'compiled-empty', textContent: 'Select a model first.' }));
-    return;
+    return false;
   }
   const node = S.node && S.node.id === id ? S.node : null;
   const name = nameOfId(id, node);
 
+  // Resolves to whether this load painted found SQL for `id` (0145).
+  const ask = ++S.artifactAsk[kind];
   let info;
   try { info = await api.get('/api/compiled?kind=' + kind + '&id=' + encodeURIComponent(id)); }
-  catch (e) { return toast(kind + ': ' + e.message, 'err'); }
+  catch (e) { if (ask === S.artifactAsk[kind]) toast(kind + ': ' + e.message, 'err'); return false; }
+  if (ask !== S.artifactAsk[kind]) return false;          // a later load has the pane
 
   // A test node even when the catalog is showing something else: a dbt
   // unique_id says what it is, and the id is all this has when they disagree.
   S.artifactInfo[kind] = { info, name, isTest: node ? node.kind === 'test' : id.startsWith('test.') };
-  paintArtifact(kind);
+  return paintArtifact(kind);
 }
 
 /* The Compiled or Run pane from the last answer, as it stands: the file as dbt
@@ -8401,7 +8471,7 @@ async function loadArtifact(kind, id) {
    environment changes, with no request. */
 function paintArtifact(kind, keepScroll) {
   const held = S.artifactInfo[kind];
-  if (!held) return;
+  if (!held) return false;
   const { info, name, isTest } = held;
   const head = $('#' + kind + '-head');
   const body = $('#' + kind + '-body');
@@ -8432,7 +8502,7 @@ function paintArtifact(kind, keepScroll) {
     det.append(ul);
     box.append(det);
     body.append(box);
-    return;
+    return false;
   }
 
   const bar = document.createElement('div');
@@ -8471,6 +8541,7 @@ function paintArtifact(kind, keepScroll) {
   shown.kept.forEach((k) => doc.markText(doc.posFromIndex(k.start), doc.posFromIndex(k.end), {
     className: 'cm-env-kept', title: `${k.name} stays as dbt compiled it: ${k.reason}` }));
   setTimeout(() => cm.refresh(), 0);
+  return true;
 }
 
 /* The line under the bar naming the environment the SQL is shown for, and the
@@ -12187,6 +12258,30 @@ function fillColumnCard(el, n, rows) {
     const sub = /^ {2}/.test(line);
     el.append(Object.assign(document.createElement('div'), { className: 'hc-note' + (sub ? ' hc-rule' : ''), textContent: sub ? line.slice(2) : line }));
   }
+  fillPartialCard(el, n);
+}
+
+/* The names collin gave up on inside this column's model (0145), in the warn
+   colour, what to do about it, and the two places the SQL is: the model's
+   file and its compiled text, each lit on the names. */
+function fillPartialCard(el, n) {
+  const said = Lineage.partialSaid(n.partial);
+  if (!said.length) return;
+  el.append(Object.assign(document.createElement('div'), { className: 'hc-note warn', textContent: said[0] }));
+  el.append(Object.assign(document.createElement('div'), { className: 'hc-note muted', textContent: said[1] }));
+  const row = document.createElement('div');
+  row.className = 'hc-counts';
+  const link = (text, title, run) => {
+    const a = Object.assign(document.createElement('span'), { className: 'hc-link', textContent: text, title });
+    a.addEventListener('click', () => { closeHoverCard(); run(); });
+    return a;
+  };
+  row.append(
+    link('open the file', 'Open the model and find these names', () => openFileOnNames(n.file, n.partial)),
+    '  ·  ',
+    link('compiled SQL', 'Open the compiled SQL of the model and find these names', () => openCompiledOnNames(splitColId(n.id).node, n.partial)),
+  );
+  el.append(row);
 }
 
 /* Painted twice: once from what the caller already holds, so the card appears
@@ -16488,7 +16583,7 @@ function showSide(which) {
    are left as they are: a column's lineage brings the canvas forward when
    its answer lands, seconds later with Snowflake, and must not roll up a
    panel opened since. What the user asks for rolls them up itself. */
-function showDock(which, { look = true } = {}) {
+function showDock(which, { look = true, id = '' } = {}) {
   let loading = null;
   S.dock = which;
   $$('[data-dock]').forEach((x) => x.classList.toggle('active', x.dataset.dock === which));
@@ -16500,7 +16595,9 @@ function showDock(which, { look = true } = {}) {
   $('#dock-run').classList.toggle('hidden', which !== 'run');
   $('#dock-history').classList.toggle('hidden', which !== 'history');
   $('#dock-jobs').classList.toggle('hidden', which !== 'jobs');
-  if (which === 'compiled' || which === 'run') loadArtifact(which, S.focus);
+  // `id` is a model other than the focused one, asked for by a card that
+  // points at its SQL (0145); the load is returned so the card can wait for it.
+  if (which === 'compiled' || which === 'run') loading = loadArtifact(which, id || S.focus);
   if (which === 'jobs') loading = loadJobs({ look });
   if (which === 'catalog') fillCatalogJobs($('#catalog .cat-jobs'));
   // A column box clicked with the lineage in front asked for its row.
@@ -18526,7 +18623,7 @@ async function boot() {
       // (0138) and what keeps its rows (0097), which have no room on it.
       if (column) {
         const rows = (said && said.rows) || '';
-        if (Array.isArray(n.generated) || n.expression || rows) hoverEnter('col:' + n.id, () => at.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
+        if (Array.isArray(n.generated) || n.expression || (n.partial && n.partial.length) || rows) hoverEnter('col:' + n.id, () => at.getBoundingClientRect(), (el) => fillColumnCard(el, n, rows));
         return;
       }
       hoverEnter('node:' + nodeId, () => at.getBoundingClientRect(), (el) => fillNodeCard(el, nodeId, n));
