@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.75.2 - 2026-11-04
+
+- Put a Job order step's file on the step's own line, whole up to half of the
+  row, rather than wrapped on a line of its own.
+
 ## 1.75.1 - 2026-11-04
 
 - Pick an environment from the status bar's `env` pill in one click again, the
