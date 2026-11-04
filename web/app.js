@@ -79,6 +79,7 @@ const S = {
   profiles: null,             // { path, found }: where dbt looks for its profile, null with nowhere to look
   colAsk: 0,                  // bumped on every column click, so only the latest answer is drawn
   colDraw: 0,                 // bumped per column request and on leaving column mode: only the last answer is drawn
+  colWait: false,             // the canvas is cleared, waiting for a collin run to end before it draws S.colFocus
   colAnswered: false,         // Snowflake has answered once on this page, so no sign-in tab is expected
   history: null,              // the query history on screen: rows, more, session, targets, busy, error
   historyRole: null,          // whose queries it shows: null for the target's role, '*' for all, or a role
@@ -4307,6 +4308,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.graphMode = 'model';
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
+  leaveColumnWait();
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
   const tests = testsOn() ? 1 : 0;
@@ -4340,6 +4342,25 @@ function splitColId(id) {
   return at < 0 ? { node: id, column: '' } : { node: id.slice(0, at), column: id.slice(at + 2) };
 }
 
+/* Whether a column asked for now would be drawn from a cache that is about to
+   change: collin is the tool and a run is on. Only collin's cache is rewritten
+   by a run, so no other tool waits (0042). */
+function collinRunning(tool, collin) {
+  return tool === 'collin' && !!collin && collin.state === 'running';
+}
+
+/* The canvas stops waiting for a collin run, however that came about: the
+   hint and the status line it set go with it, so that nothing leaves a
+   drawing that traces itself over a canvas that will not be drawn by itself. */
+function leaveColumnWait() {
+  if (!S.colWait) return;
+  S.colWait = false;
+  $('#lineage-empty').classList.add('hidden');
+  $('#lineage-empty').classList.remove('waiting');
+  dropWaitArm();
+  $('#lineage-status').textContent = '';
+}
+
 /* Column-level lineage. Sibling of focusNode: same canvas, same pan/zoom, the
    nodes are columns instead of models. */
 async function focusColumn(id, column) {
@@ -4349,6 +4370,28 @@ async function focusColumn(id, column) {
   if (!S.colFocus || S.colFocus.id !== id || S.colFocus.column !== column) S.colSub = null;
   S.colFocus = { id, column };
   paintMode();
+  // The cache on disk is the one the run is replacing, and drawing it would
+  // show a column that is about to change, or the model's own canvas under a
+  // column's chip. The canvas waits, cleared, and whatever column was asked for
+  // last is drawn by the redraw the run's end makes (0042).
+  if (collinRunning(S.cllTool, S.collin)) {
+    ++S.colDraw;                              // a column answer still on its way is not drawn over the wait
+    S.colWait = true;
+    S.colSub = null;
+    Lineage.clear();
+    paintColCap(null);
+    // Emptied here and not through paintLegend, which would drop the pick: the
+    // column drawn at the end gets it back.
+    $('#lineage-legend').textContent = '';
+    paintTestsCount(null);
+    if (stopAtMenu) stopAtMenu.recount([]);
+    emptyHint(`collin is running over the compiled SQL: ${column}'s lineage is drawn once it ends`,
+      { waiting: true, column });
+    // The centre says it: the status line would say it twice.
+    $('#lineage-status').textContent = '';
+    showDock('lineage');
+    return;
+  }
   const up = +$('#up').value, down = +$('#down').value;
   // Drawing past the cap was asked for this request and no other: any change
   // of column, depth, stop or indirect button is cut at the cap again, so a
@@ -4366,6 +4409,7 @@ async function focusColumn(id, column) {
     if (ask !== S.colDraw) return;            // a later tick or click already asked
     S.colSub = sub;
     if (stopAtMenu) stopAtMenu.recount(sub.edge_kinds);
+    S.colWait = false;
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
@@ -4379,11 +4423,16 @@ async function focusColumn(id, column) {
   } catch (e) {
     if (ask !== S.colDraw) return;
     toast('column lineage: ' + e.message, 'err');
+    // The hint and the ring of a wait this draw followed go with it, and the
+    // canvas, cleared for the wait, gets its model back.
+    const fromWait = S.colWait;
+    leaveColumnWait();
     S.graphMode = 'model';
     S.colFocus = null;
     S.colSub = null;
     closeStopAt();
     paintMode();
+    if (fromWait) focusNode(id);
   }
 }
 
@@ -4527,6 +4576,7 @@ function selectPanelUp() {
 
 /* No model to draw: the canvas empty, and saying how to fill it. */
 function blankLineage() {
+  leaveColumnWait();
   S.graphMode = 'model';
   paintMode();
   Lineage.clear();
@@ -4646,6 +4696,7 @@ async function runSelection() {
   S.graphMode = 'select';
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
+  leaveColumnWait();
   paintMode();
   const expr = $('#select-input').value.trim();
   const ask = ++S.selectAsk;
@@ -4718,10 +4769,76 @@ async function runSelection() {
   }
 }
 
-const emptyHint = (text) => {
-  $('#lineage-empty').classList.remove('hidden');
-  $('#lineage-empty').querySelector('p').textContent = text;
+/* `waiting` puts a small lineage above the text, drawing itself around the
+   column named, for a canvas that will be drawn by itself and is not empty for
+   lack of a choice. Any other hint takes it away. */
+const emptyHint = (text, { waiting = false, column = '' } = {}) => {
+  const host = $('#lineage-empty');
+  host.classList.remove('hidden');
+  host.classList.toggle('waiting', waiting);
+  const p = host.querySelector('p');
+  p.textContent = text;
+  dropWaitArm();
+  if (waiting) host.insertBefore(waitArm(column), p);
 };
+
+function dropWaitArm() {
+  const old = $('#lineage-empty').querySelector('.wait-arm');
+  if (old) old.remove();
+}
+
+/* Where the small lineage of a wait puts its boxes: the column's own, as wide
+   as its name needs between a minimum and a cap, truncated past that, with an
+   unknown box either side whose x follows it. Measured at about 5.2px a
+   character of the 8.5px mono text, which is near enough to fit a name in. */
+function waitArmLayout(name) {
+  const MIN = 58, MAX = 150, CHAR = 5.2, PAD = 16, GHOST = 58, GAP = 45, EDGE = 8;
+  const room = Math.floor((MAX - PAD) / CHAR);
+  const label = name.length > room ? name.slice(0, room - 1) + '\u2026' : name;
+  const cw = Math.max(MIN, Math.round(label.length * CHAR + PAD));
+  const cx0 = EDGE + GHOST + GAP, cx1 = cx0 + cw, ghostR = cx1 + GAP;
+  return { label, cw, ghostW: GHOST, ghostL: EDGE, cx0, cx1, ghostR, width: ghostR + GHOST + EDGE, height: 100 };
+}
+
+/* The drawing itself, for the column named. The name is the project's: it goes
+   in as text, never as markup. */
+function waitArm(name) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const L = waitArmLayout(name);
+  const make = (tag, attrs, parent) => {
+    const el = document.createElementNS(ns, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(el);
+    return el;
+  };
+  const svg = make('svg', {
+    class: 'wait-arm', viewBox: `0 0 ${L.width} ${L.height}`, width: L.width, height: L.height, 'aria-hidden': 'true',
+  });
+  // Upstream arms run from the column outwards, like the downstream ones.
+  const arm = (x0, x1, y, down) => {
+    const dir = x1 > x0 ? 1 : -1;
+    const d = `M${x0},50 C${x0 + dir * 22},50 ${x1 - dir * 22},${y} ${x1},${y}`;
+    make('path', { class: 'wait-base', d }, svg);
+    make('path', { class: 'wait-grow' + (down ? ' wait-down' : ''), d, pathLength: 1 }, svg);
+  };
+  const ghost = (x, y, down, bar) => {
+    const g = make('g', { class: 'wait-lit' + (down ? ' wait-down' : '') }, svg);
+    make('rect', { class: 'wait-box' + (down ? ' wait-down' : ''), x, y, width: L.ghostW, height: 20, rx: 5 }, g);
+    make('rect', { class: 'wait-bar' + (down ? ' wait-down' : ''), x: x + 10, y: y + 8, width: bar, height: 4, rx: 2 }, g);
+  };
+  arm(L.cx0, L.ghostL + L.ghostW, 24, false);
+  arm(L.cx0, L.ghostL + L.ghostW, 76, false);
+  arm(L.cx1, L.ghostR, 24, true);
+  arm(L.cx1, L.ghostR, 76, true);
+  ghost(L.ghostL, 14, false, 36);
+  ghost(L.ghostL, 66, false, 28);
+  ghost(L.ghostR, 14, true, 32);
+  ghost(L.ghostR, 66, true, 38);
+  make('rect', { class: 'wait-halo', x: L.cx0, y: 40, width: L.cw, height: 20, rx: 5 }, svg);
+  make('rect', { class: 'wait-centre', x: L.cx0, y: 40, width: L.cw, height: 20, rx: 5 }, svg);
+  make('text', { class: 'wait-name', x: L.cx0 + L.cw / 2, y: 53.5 }, svg).textContent = L.label;
+  return svg;
+}
 
 /* Session history, and no further. Persisting it would need a settings route
    of its own (0011), which retyping a selector has not yet been worth. */
@@ -5696,8 +5813,18 @@ async function regenerateCollin() {
     // Forgotten first, so paintCollin does not say the failure a second time.
     S.collin = null;
     try { applyInfo(await api.get('/api/meta')); } catch { /* the toast already said it */ }
+    giveUpColumnWait();
     return false;
   }
+}
+
+/* A run that failed leaves nothing to wait for: the canvas goes back to the
+   model of the column that was asked for, as it did before a column waited
+   for the run. The toast says why. */
+function giveUpColumnWait() {
+  if (!S.colWait) return;
+  leaveColumnWait();
+  if (S.graphMode === 'column' && S.colFocus) focusNode(S.colFocus.id);
 }
 
 /* Paints what collin's state shows in, and keeps asking while a run started by
@@ -5710,7 +5837,15 @@ function paintCollin(was) {
   clearTimeout(S.collinPoll);
   if (now === 'running') {
     S.collinPoll = setTimeout(async () => {
-      try { applyInfo(await api.get('/api/meta')); } catch { /* asked again on the next pick */ }
+      try {
+        applyInfo(await api.get('/api/meta'));
+      } catch {
+        // Asked again at the same pace: a run whose end is never heard would
+        // leave every column click waiting for it.
+        // Only while the run is still the last thing known of: another
+        // answer may have ended it, and replaying it would redraw twice.
+        if (S.collin && S.collin.state === 'running') paintCollin('running');
+      }
     }, 1500);
   } else if (was === 'running' && now === 'done') {
     redrawLineage();
@@ -5719,6 +5854,7 @@ function paintCollin(was) {
     loadReportsIndex();
   } else if (was === 'running' && now === 'failed') {
     toast('collin: ' + (S.collin.error || 'the run failed'), 'err');
+    giveUpColumnWait();
   }
 }
 
@@ -6394,7 +6530,9 @@ async function redrawLineage() {
     try { renderCatalog(await nodeDetail({ id: S.node.id })); } catch { /* gone with the last manifest */ }
   }
   if (S.graphMode === 'column' && !(S.meta && S.meta.cll_edges)) {
-    if (S.focus) focusNode(S.focus);
+    const id = S.focus || (S.colFocus && S.colFocus.id);
+    if (id) focusNode(id);
+    else { leaveColumnWait(); blankLineage(); }
   } else {
     rerender();
   }
@@ -7180,12 +7318,15 @@ function toggleHistoryRow(tr, row, session) {
    Snowflake picked, its lineage is fetched from Snowflake before it is drawn;
    otherwise the cache is drawn as it is. */
 async function openColumn(n, column) {
-  // Collin's cache is behind the manifest: one run brings it level first.
+  // Collin's cache is behind the manifest: one run brings it level first. The
+  // run's state is set before it yields, so focusColumn puts the column on a
+  // waiting canvas at once, and the run's end draws the column asked for last:
+  // drawing here as well would put this one over a column clicked meanwhile.
   if (S.cllTool === 'collin' && S.collin && S.collin.found && S.collin.stale && S.collin.state !== 'running') {
-    showDock('lineage');
-    $('#lineage-status').textContent = 'running collin over the compiled SQL';
-    if (!(await regenerateCollin())) return;
-    $('#lineage-status').textContent = '';
+    const run = regenerateCollin();
+    focusColumn(n.id, column);
+    await run;
+    return;
   }
   if (!sidecarOn()) return focusColumn(n.id, column);
   const rel = lineageRelation(n, S.env);

@@ -61,6 +61,8 @@ var dock = fakeEl('dock');
 var dockLineage = fakeEl('dock-lineage', dock);
 var empty = fakeEl('lineage-empty', dockLineage);
 var hint = fakeEl('', empty);
+// This fake answers any query with the hint: removing it, as dropWaitArm does, is no-op.
+hint.remove = function () {};
 ['select-input', 'select-sum', 'lineage-status'].forEach(function (id) { fakeEl(id, dockLineage); });
 var tools = fakeEl('lineage-tools', dock);
 ['with-tests', 'folder-tool', 'fit-btn', 'export-btn', 'image-btn'].forEach(function (id) { fakeEl(id, tools); });
@@ -126,6 +128,7 @@ function closePanel() { if (S.panel !== 'select') return; S.panel = ''; selectPa
 function focusColumn(id, column) { S.graphMode = 'column'; S.colFocus = { id: id, column: column }; log.push('column ' + id + '.' + column); }
 function focusNode(id) { S.graphMode = 'model'; log.push('model ' + id); }
 function closeHoverCard() {}
+function leaveColumnWait() {}
 function paintMode() {}
 function testsOn() { return false; }
 function raiseFor() { return null; }

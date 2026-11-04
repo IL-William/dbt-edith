@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.74.1 - 2026-11-04
+
+- Wait for collin's run on a cleared canvas, with a small lineage tracing itself
+  around the column's name, when a column is clicked while its cache is behind,
+  and draw the column clicked last once it ends, instead of the model's lineage
+  and a stale column.
+
 ## 1.74.0 - 2026-11-04
 
 - Switch between Code, Lineage and Reports from tabs in the top bar, the one in
@@ -40,6 +47,7 @@ newest dated heading has to be the version `Cargo.toml` names.
   `--column ... --rules` and `--describe ... --rules` print the WHERE, JOIN,
   QUALIFY and HAVING with the columns each reads, a column box counts its
   transformations past one, and its hover card says the expression (0138).
+
 
 ## 1.71.0 - 2026-11-02
 

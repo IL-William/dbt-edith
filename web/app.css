@@ -1030,6 +1030,46 @@ kbd {
    Selection bar that floats there: it fills the pane instead, and its words
    land in the middle. */
 #lineage-empty { position: absolute; inset: 0; pointer-events: none; }
+/* A canvas waiting for a collin run to end, not one empty for lack of a choice:
+   a small lineage draws itself above the words, the column clicked in the
+   middle and boxes it does not know yet on each side, lit as its arms reach
+   them. Classes of its own: nothing of the canvas's (.nd, .edge, .box) is
+   reused, so no export or look restyles it. */
+#lineage-empty.waiting { flex-direction: column; gap: 10px; }
+#lineage-empty.waiting p { margin: 0; }
+.wait-arm { flex: 0 0 auto; overflow: visible; max-width: 100%; height: auto; }
+.wait-arm .wait-base { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.wait-arm .wait-grow { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.wait-arm .wait-centre { fill: #1b2a3d; stroke: var(--accent); stroke-width: 2; }
+.wait-arm .wait-halo { fill: none; stroke: var(--accent); stroke-width: 6; opacity: 0; }
+.wait-arm .wait-name { font: 8.5px var(--mono); fill: var(--fg); text-anchor: middle; }
+.wait-arm .wait-lit { opacity: .35; }
+.wait-arm .wait-box { fill: var(--bg-2); stroke: var(--edge-col, #33445c); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.wait-arm .wait-bar { fill: var(--line); }
+/* One loop: the centre pulses, the arms draw outwards, each box lights as its
+   arm arrives and stays lit, then all of it fades. The downstream side runs
+   a quarter second behind the upstream one. */
+.wait-arm .wait-halo { animation: wait-halo 3s ease-in-out infinite; }
+.wait-arm .wait-grow { animation: wait-grow 3s ease-in-out infinite; }
+.wait-arm .wait-lit { animation: wait-lit 3s ease-in-out infinite; }
+.wait-arm .wait-box { animation: wait-box 3s ease-in-out infinite; }
+.wait-arm .wait-bar { animation: wait-bar 3s ease-in-out infinite; }
+.wait-arm .wait-down { animation-delay: .25s; }
+@keyframes wait-halo { 0% { opacity: 0; } 10% { opacity: .35; } 30%, 100% { opacity: 0; } }
+@keyframes wait-grow {
+  0%, 10% { stroke-dashoffset: 1; opacity: 1; }
+  42%, 82% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+@keyframes wait-lit { 0%, 36% { opacity: .35; } 48%, 82% { opacity: 1; } 100% { opacity: .35; } }
+@keyframes wait-box { 0%, 36% { stroke: var(--edge-col, #33445c); } 48%, 82% { stroke: var(--accent); } 100% { stroke: var(--edge-col, #33445c); } }
+@keyframes wait-bar { 0%, 36% { fill: var(--line); } 48%, 82% { fill: var(--accent-dim); } 100% { fill: var(--line); } }
+@media (prefers-reduced-motion: reduce) {
+  .wait-arm .wait-halo, .wait-arm .wait-grow, .wait-arm .wait-lit, .wait-arm .wait-box, .wait-arm .wait-bar { animation: none; }
+  .wait-arm .wait-grow { stroke-dashoffset: 0; }
+  .wait-arm .wait-halo { opacity: 0; }
+  .wait-arm .wait-lit { opacity: .6; }
+}
 
 .CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
