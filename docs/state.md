@@ -569,8 +569,9 @@ button and the menu, and Catalog > Columns gives the share of its edges matched
 by column name rather than read from the SQL, or, from collin's report, how
 many models it read the SQL of, with the reason over each model it could not
 read. The menu offers "Update collin" to a collin that gives no version, or one
-below 0.11.0, which writes the rules and expressions, reads a seed's header
-and lists the columns a literal sets (0096, 0098, 0109, 0138), and
+below 0.12.0, which lists the columns it traced in part, writes the rules
+and expressions, reads a seed's header and lists the columns a literal sets
+(0096, 0098, 0109, 0138, 0141), and
 "Check for a newer collin" to any other (0043); a version installed by its tag
 gets neither (0060). Both type
 the install command, which cargo answers. On the 18 825 node project that
