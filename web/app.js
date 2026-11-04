@@ -11646,7 +11646,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 /* Every setting, in one panel rolled down from the gear in the top bar, a
    section at a time, as the reports are (0100): the project's profile,
    environments and Python, the column lineage, Snowflake, the orchestration,
-   the updates, the theme, and help. The status bar's pills open their own section. A
+   the updates, the theme, and help. The venv and update pills open their section, the env pill its menu (0142). A
    section is drawn from what the page knows, and drawn again when that
    changes, but a form being filled stays as it was left, through another
    section and back, until the panel rolls up. settingsSections and

@@ -42,7 +42,7 @@ config's resolution per environment there. Only the swap refused.
   shows: the Catalog's locations stay as dbt parsed them, the SQL and the Built
   column are the compile's. The `.env` files keep their meaning: `.env.dev` stays the
   shared DEV environment. `manifestChoice(sandbox)` holds the words, so the
-  three cannot drift.
+  four places cannot drift.
 
 ## Accepted risk
 

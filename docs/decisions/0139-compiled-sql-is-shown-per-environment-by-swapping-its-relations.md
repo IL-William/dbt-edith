@@ -39,8 +39,9 @@ warehouse, and a project's `generate_*_name` that follows the target.
   a `generate_*_name` macro moved it and that is not evaluated. The bar counts
   them.
   *Amended by [0143](0143-a-sandbox-manifests-relations-are-swapped-where-the-file-places-them.md):
-  in a sandbox manifest a model built into the sandbox is not kept for having
-  moved; it is written where the file places it.*
+  in a sandbox manifest a model built into the sandbox is not kept for its
+  database or schema having moved (an alias move still is); it is written where
+  the file places it.*
 - **What may differ beyond the relations is named, not evaluated.** The server
   scans the model's SQL and every macro it reaches, transitively, for a key of
   `target` other than `type` and `threads`, `env_var()`, `run_query`,

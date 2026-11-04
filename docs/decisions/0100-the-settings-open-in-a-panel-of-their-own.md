@@ -72,6 +72,8 @@ as one of them.
   column lineage list run long, and a pill would land in the middle of them.
 - **The pills keeping their menu, with a link to the settings**: a setting
   found in two places, behind two different gestures.
+  *Amended by [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md):
+  the env pill keeps its menu again.*
 - **A dialog for the settings**: a box over the page with Escape and a focus
   of its own, which 0091 settles once for every panel.
 - **Edith's menu moving into the settings**: it opens under the pointer to
@@ -83,7 +85,9 @@ as one of them.
 On Jaffle Shop the top bar now breaks under about 860px, where it broke under
 about 1050px, and under about 770px with Reload manifest folded into the
 manifest's pill as arrows, in the same change; what is left of that is item 12
-of docs/state.md. Activating a
-venv from the status bar takes two clicks, the pill, then the button (picking
-an environment takes one since 0142). The column lineage on screen is no longer named in
+of docs/state.md. Picking an
+environment from the status bar takes two clicks, as does activating a venv:
+the pill, then the choice. The column lineage on screen is no longer named in
 the top bar, only in the settings' rail and the Columns tab's menu.
+*Amended by [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md):
+picking an environment takes one click.*

@@ -175,3 +175,9 @@ elsewhere.focus();
 shown.rows = ['a', 'c'];
 redrawIfChanged(block, paintRows);
 check('the focus elsewhere: left there', document.activeElement === elsewhere, true);
+
+print('\n--- the status bar\'s env pill (0142) ---');
+// The click is wired in the page's startup, which no harness runs: hold the line itself.
+var pillClick = app.split('\n').filter(function (l) { return l.indexOf("$('#status-env').addEventListener('click'") >= 0; });
+check('one handler on the env pill', pillClick.length, 1);
+check('it opens the environment menu, not the settings', [/openEnvMenu\(/.test(pillClick[0]), /openSettings\(/.test(pillClick[0])], [true, false]);
