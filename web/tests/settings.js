@@ -62,6 +62,18 @@ check('a name its DBT_TARGET contradicts says so', [picks[1].label, picks[1].tit
   ['QA ⚠', 'DBT_TARGET in .env.qa is prod, which does not match the name']);
 S.env = '';
 check('none in use: the manifest is', envChoices().map(function (c) { return c.current; }), [false, false, true]);
+check('the manifest\'s choice, without a sandbox', [picks[2].label, picks[2].sub, picks[2].tone],
+  ['manifest', 'as dbt parsed it', 'manifest']);
+S.meta = { sandbox: 'dev_db.dbt_someone' };
+var mine = envChoices();
+check('on a sandbox manifest it is the developer\'s own compile, with the sandbox', [mine[2].label, mine[2].sub, mine[2].tone, mine[2].file],
+  ['my compile', 'dev_db.dbt_someone, as dbt wrote it', 'manifest', '']);
+check('and says what it shows', mine[2].title,
+  'the Catalog\'s locations as dbt parsed them, the SQL and the Built column as this manifest\'s target wrote them, into dev_db.dbt_someone');
+check('the .env files keep their names', [mine[0].label, mine[0].sub], ['DEV', '.env.dev']);
+check('the pill\'s words come from the same place', [manifestChoice('').label, manifestChoice('dev_db.dbt_someone').now],
+  ['manifest', 'Catalog locations are shown as dbt parsed them, the SQL as your own compile wrote it, into dev_db.dbt_someone.']);
+S.meta = undefined;
 
 print('\n--- where a save of the job sources goes ---');
 eval(app.slice(app.indexOf('function jobsSaveRoute'), app.indexOf('// ----------------------------------------------------------------- panels --')));

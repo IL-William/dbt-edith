@@ -105,6 +105,35 @@ var sm = envSql('from RAW_QA.crm.s', [same], QA);
 check('is not a swap', sm.counts, { swapped: 0, kept: 0, same: 1 });
 check('and leaves no mark', sm.swaps, []);
 
+print('\n--- a sandbox manifest, where every model sits away from its config ---');
+var SB = 'dev_db.dbt_someone';
+// Parsed as raw.crm, built into the sandbox, as a developer target does.
+var boxed = rel('orders', 'dev_db.dbt_someone.orders', place('dev_db', 'dbt_someone', 'orders'), { '.env.qa': 'RAW_QA' }, { parsed: 'raw' });
+boxed.location.parsed = place('raw', 'crm', 'orders');
+boxed.location.envs[QA].place = place('RAW_QA', 'crm', 'orders');
+var sb = envSql('from dev_db.dbt_someone.orders', [boxed], QA, SB);
+check('a parent built into the sandbox is swapped to the file\'s relation', sb.text, 'from RAW_QA.crm.orders');
+check('and counted as swapped', sb.counts, { swapped: 1, kept: 0, same: 0 });
+var nb = envSql('from dev_db.dbt_someone.orders', [boxed], QA, '');
+check('with no sandbox it stays kept, for the same reason', [nb.text, nb.kept[0].reason],
+  ['from dev_db.dbt_someone.orders', 'dbt built it elsewhere than configured, through a macro that is not evaluated']);
+var other = rel('items', 'dev_db.dbt_other.items', place('dev_db', 'dbt_other', 'items'), { '.env.qa': 'RAW_QA' });
+other.location.parsed = place('raw', 'crm', 'items');
+check('a parent built in another schema of a sandbox manifest stays kept', envSql('from dev_db.dbt_other.items', [other], QA, SB).counts,
+  { swapped: 0, kept: 1, same: 0 });
+var ownBoxed = rel('orders', 'dev_db.dbt_someone.orders', place('dev_db', 'dbt_someone', 'orders'), { '.env.qa': 'RAW_QA' }, { own: true });
+ownBoxed.location.parsed = place('raw', 'crm', 'orders');
+ownBoxed.location.envs[QA].place = place('RAW_QA', 'crm', 'orders');
+check('the node\'s own relation built into the sandbox swaps its __dbt_tmp form', envSql('create table dev_db.dbt_someone.orders__dbt_tmp', [ownBoxed], QA, SB).text,
+  'create table RAW_QA.crm.orders__dbt_tmp');
+var aliased = rel('orders', 'dev_db.dbt_someone.orders_v2', place('dev_db', 'dbt_someone', 'orders_v2'), { '.env.qa': 'RAW_QA' });
+aliased.location.parsed = place('raw', 'crm', 'orders');
+var al = envSql('from dev_db.dbt_someone.orders_v2', [aliased], QA, SB);
+check('a model whose alias moved stays kept in a sandbox manifest, for the same reason', [al.text, al.kept[0].reason],
+  ['from dev_db.dbt_someone.orders_v2', 'dbt built it elsewhere than configured, through a macro that is not evaluated']);
+check('builtInSandbox compares lowercased', [builtInSandbox({ built: place('DEV_DB', 'DBT_SOMEONE', 'x') }, SB), builtInSandbox({ built: place('raw', 'crm', 'x') }, SB), builtInSandbox(boxed.location, '')],
+  [true, false, false]);
+
 print('\n--- a parent the SQL never names ---');
 check('is reported by name', envSql('select 1', [self, orders], QA).unseen, ['orders']);
 check('a relation with none is not looked for', envSql('select 1', [{ name: 'e', relation: '', own: false, location: {} }], QA).unseen, []);

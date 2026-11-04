@@ -135,10 +135,13 @@ closes ([snowflake.md](snowflake.md),
 The `env` pill in the status bar says which of the project's `.env` files the
 *resolved* column is evaluated against, so a model's location can be read for
 DEV, QA or UAT without running dbt. Built stays tied to the manifest's own
-target. The file is picked in the menu in the header of the resolved column, or
-in the Project section of the settings, which the pill opens; the pill takes a
-colour per environment family (DEV, CI, QA, STG, UAT, PROD) so the one in use
-shows at a glance.
+target. The file is picked in the pill's menu, the same menu in the header of
+the resolved column, or in the Project section of the settings, which the
+menu's Manage environments... opens. With no file picked the choice is
+`manifest`; on a manifest built into a developer sandbox it is named `my
+compile`, with the sandbox beside it, since it is the developer's own compile.
+The pill takes a colour per environment family (DEV, CI, QA, STG, UAT, PROD)
+so the one in use shows at a glance.
 
 - **Detection.** Every `.env` and `.env.*` file in the project root is offered,
   named after its suffix: `.env.uat` is UAT. A `DBT_TARGET` that disagrees with
@@ -224,14 +227,19 @@ ephemeral one, that one's parents, is replaced by the relation the Catalog's
 Location table resolves for the file, and a Run statement's own table, with its
 `__dbt_tmp` and `__dbt_backup` names, likewise. A swapped relation is tinted,
 and its tooltip gives the name it had in the file dbt wrote. With none picked,
-the tabs show the file as dbt wrote it.
+the tabs show the file as dbt wrote it (on a sandbox manifest, that choice is
+named `my compile`, with the sandbox).
 
 A line under the bar names the environment and counts what it did: `Shown for
 QA (.env.qa): 12 relations swapped, 1 kept as compiled`. A relation the file
 cannot place stays as dbt compiled it, in amber, and its tooltip says why: a
 variable the file does not define, a placeholder, a database or schema left to
 the profile, or a model dbt built elsewhere than its config says, which means a
-`generate_*_name` macro moved it and that is not evaluated.
+`generate_*_name` macro moved it and that is not evaluated. On a manifest built
+into a developer sandbox, where every model sits away from its config, that
+last case does not apply to a model built into the sandbox: it is written where
+the file places it, and only a model built outside the sandbox, or whose alias
+moved, is kept.
 
 Under it, **May differ beyond its relations** lists what in the model, or in a
 macro it reaches, however deep, reads the environment: a key of `target`, an

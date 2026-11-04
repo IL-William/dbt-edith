@@ -8447,7 +8447,7 @@ function paintArtifact(kind, keepScroll) {
   head.append(bar);
 
   const content = artifactContent(info);
-  const shown = envSql(content, info.relations || [], S.env);
+  const shown = envSql(content, info.relations || [], S.env, (S.meta && S.meta.sandbox) || '');
   if (S.env) head.append(artifactEnvBar(shown, info.env_reads));
 
   // Read while the editor is still attached: emptying the body detaches it, and
@@ -12587,22 +12587,23 @@ function paintEnvSelect() {
   if (!envsInUse()) { pill.classList.add('hidden'); return; }
   const visible = S.envs.files.filter((f) => !f.hidden);
   if (S.env && !visible.some((f) => f.file === S.env)) S.env = '';
-  fillEnvPill(pill, 'env', { menu: false });
+  fillEnvPill(pill, 'env');
   pill.classList.remove('hidden');
   repaintSettings();
 }
 
-/* A button showing the environment in use, coloured by envTone. The Catalog's
-   opens the menu, with a caret; the status bar's opens the settings (0100). */
-function fillEnvPill(el, prefix, { menu = true } = {}) {
-  const name = S.env ? envDisplayName(S.env) : 'manifest';
+/* A button showing the environment in use, coloured by envTone, with a caret:
+   the Catalog's and the status bar's both open the menu (0142). */
+function fillEnvPill(el, prefix) {
+  const own = manifestChoice((S.meta && S.meta.sandbox) || '');
+  const name = S.env ? envDisplayName(S.env) : own.label;
   el.textContent = '';
   el.dataset.tone = S.env ? envTone(name) : 'manifest';
   if (prefix) el.append(Object.assign(document.createElement('span'), { className: 'envpill-k', textContent: prefix }));
   el.append(document.createTextNode(name));
-  if (menu) el.append(Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
-  const now = S.env ? `Catalog locations are resolved with ${S.env}.` : 'Catalog locations are shown as dbt parsed them.';
-  el.title = `${now} ${menu ? 'Click to pick an environment.' : 'Click to pick one in the settings.'}`;
+  el.append(Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
+  const now = S.env ? `Catalog locations are resolved with ${S.env}.` : own.now;
+  el.title = `${now} Click to pick an environment.`;
 }
 
 function selectEnv(file) {
@@ -12633,6 +12634,7 @@ function closeEnvMenu({ refocus = false } = {}) {
 /* What an environment pick offers: the files shown, then the config as dbt
    parsed it. The menu and the settings' Project section list the same. */
 function envChoices() {
+  const own = manifestChoice((S.meta && S.meta.sandbox) || '');
   return S.envs.files.filter((e) => !e.hidden).map((f) => ({
     label: f.name + (f.target_mismatch ? ' ⚠' : ''),
     sub: f.file,
@@ -12641,9 +12643,26 @@ function envChoices() {
     title: f.target_mismatch ? `DBT_TARGET in ${f.file} is ${f.target}, which does not match the name` : '',
     file: f.file,
   })).concat([{
-    label: 'manifest', sub: 'as dbt parsed it', tone: 'manifest', current: !S.env,
-    title: 'the config with the env vars dbt had loaded when it parsed this manifest', file: '',
+    label: own.label, sub: own.sub, tone: 'manifest', current: !S.env, title: own.title, file: '',
   }]);
+}
+
+/* The choice of no file, which shows the manifest as its target built it. On a
+   sandbox manifest that is the developer's own compile, and the name says where
+   it is (0143). One place, so the menu, the settings' pick and the pill agree. */
+function manifestChoice(sandbox) {
+  if (!sandbox) {
+    return {
+      label: 'manifest', sub: 'as dbt parsed it',
+      title: 'the config with the env vars dbt had loaded when it parsed this manifest',
+      now: 'Catalog locations are shown as dbt parsed them.',
+    };
+  }
+  return {
+    label: 'my compile', sub: `${sandbox}, as dbt wrote it`,
+    title: `the Catalog's locations as dbt parsed them, the SQL and the Built column as this manifest's target wrote them, into ${sandbox}`,
+    now: `Catalog locations are shown as dbt parsed them, the SQL as your own compile wrote it, into ${sandbox}.`,
+  };
 }
 
 /* One row of it, coloured by envTone. */
@@ -12999,6 +13018,12 @@ function sameIdent(a, b) {
   return bare(a).toLowerCase() === bare(b).toLowerCase();
 }
 
+/* Whether dbt built the node into the developer sandbox (0010): its built
+   database.schema, lowercased as S.meta.sandbox is, is that one. */
+function builtInSandbox(loc, sandbox) {
+  return !!sandbox && !!loc && `${loc.built.database}.${loc.built.schema}`.toLowerCase() === sandbox;
+}
+
 /* Text, class and tooltip for one resolved cell. `file` is the chosen .env
    file, empty in manifest mode. */
 function resolvedCell(row, envName, file) {
@@ -13106,13 +13131,21 @@ function lineageRelation(n, env) {
 /* One relation the SQL can hold, for `env`: the text to write, or why it stays
    as compiled. Beyond what lineageRelation refuses, a relation dbt built
    elsewhere than its config says went through a generate_*_name macro, which
-   is not evaluated, so what the file resolves is not where dbt would put it. */
-function envArtifactRelation(rel, env) {
+   is not evaluated, so what the file resolves is not where dbt would put it.
+   In a sandbox manifest a move of the database or schema into it is the norm,
+   the developer target having put every model there, and what the file
+   resolves is where the config places it; the sandbox says nothing of an alias
+   that moved. When an override reads the target, the finding under the bar
+   still says the macro is not evaluated (0143). */
+function envArtifactRelation(rel, env, sandbox) {
   const r = lineageRelation(rel, env);
   if (r.reason) return { text: '', reason: r.reason };
   if (env && r.file !== env) return { text: '', reason: `not resolved against ${env}` };
-  const moved = locationRows(rel.location, env).some((row) => row.redirected);
-  if (moved) return { text: '', reason: 'dbt built it elsewhere than configured, through a macro that is not evaluated' };
+  const inSandbox = builtInSandbox(rel.location, sandbox);
+  const moved = locationRows(rel.location, env).some((row) => row.redirected && (row.key === 'alias' || !inSandbox));
+  if (moved) {
+    return { text: '', reason: 'dbt built it elsewhere than configured, through a macro that is not evaluated' };
+  }
   return { text: r.text, reason: '' };
 }
 
@@ -13141,14 +13174,14 @@ function artifactContent(info) {
    relation is also looked for with the suffixes a run's statement gives it.
    Positions in `swaps` and `kept` are in the returned text. `unseen` names the
    parents the SQL never mentions, a node's own relation never being one. */
-function envSql(content, relations, env) {
+function envSql(content, relations, env, sandbox = '') {
   const out = { text: content, swaps: [], kept: [], unseen: [], counts: { swapped: 0, kept: 0, same: 0 } };
   if (!env) return out;
   const word = /[A-Za-z0-9_$."]/, tail = /[A-Za-z0-9_$"]/;
   const cands = [];
   relations.forEach((rel, id) => {
     if (!rel.relation) return;
-    const to = envArtifactRelation(rel, env);
+    const to = envArtifactRelation(rel, env, sandbox);
     const forms = [{ from: rel.relation, to: to.text }];
     if (rel.own) {
       ['__dbt_tmp', '__dbt_backup'].forEach((suffix) => forms.push({
@@ -13252,8 +13285,8 @@ function buildsIds() {
    that cannot place them carries why and is shown, not asked: the package's
    schema comes from config before generate_schema_name runs, so a placement
    the table could not make would be a guess (0113). */
-function buildsTargets(execNode, invNode, envFiles) {
-  const envs = [{ env: '', name: 'manifest', target: '' }]
+function buildsTargets(execNode, invNode, envFiles, manifestName = 'manifest') {
+  const envs = [{ env: '', name: manifestName, target: '' }]
     .concat((envFiles || []).map((f) => ({ env: f.file, name: f.name || f.file, target: f.target || '' })));
   return envs.map(({ env, name, target }) => {
     const place = (n, table) => {
@@ -13787,8 +13820,7 @@ function catalogLocation(body, n) {
   // In a sandbox manifest every model is built away from its config, so a move
   // is expected there and only a model built outside the sandbox stands out.
   const sandbox = (S.meta && S.meta.sandbox) || '';
-  const builtAt = n.location ? `${n.location.built.database}.${n.location.built.schema}`.toLowerCase() : '';
-  const inSandbox = !!sandbox && builtAt === sandbox;
+  const inSandbox = builtInSandbox(n.location, sandbox);
   const title = h3('location');
   // Beside the heading rather than in the relation row, which an ephemeral
   // model lacks: copying what it reads is just what developing one needs
@@ -14753,7 +14785,7 @@ const buildsStaleDays = () => (S.features && S.features.builds_stale_days) || 7;
 const buildsOffered = () => !!(S.features && S.features.snowflake && S.reports && S.reports.builds);
 
 function buildsEnvName(env) {
-  return env ? envDisplayName(env) : 'manifest';
+  return env ? envDisplayName(env) : manifestChoice((S.meta && S.meta.sandbox) || '').label;
 }
 
 async function readBuilds() {
@@ -14766,7 +14798,7 @@ async function readBuilds() {
     const ids = buildsIds();
     const [exe, inv] = await Promise.all([nodeDetail({ id: ids.executions }), nodeDetail({ id: ids.invocations })]);
     const files = envsInUse() ? S.envs.files.filter((f) => !f.hidden) : [];
-    next.targets = buildsTargets(exe, inv, files);
+    next.targets = buildsTargets(exe, inv, files, buildsEnvName(''));
     for (const t of next.targets) if (t.reason) next.byEnv[t.env] = { error: t.reason, placed: false, rows: new Map() };
     repaintBuilds();
     const queries = buildsQueries(next.targets);
@@ -17947,6 +17979,8 @@ function applyMeta(meta) {
   // a feature or a collin poll brings the same one again.
   const moved = !S.meta || S.meta.manifest_mtime !== meta.manifest_mtime;
   S.meta = meta;
+  // A sandbox may have appeared or gone, and the pill names the manifest's choice by it.
+  if (S.envs) paintEnvSelect();
   // Another cache may hold indirect edges where this one had none.
   paintIndirectToggle();
   $('#project').textContent = meta.project || '(no manifest)';
@@ -18567,7 +18601,7 @@ async function boot() {
   paintVenv();
   $('#status-venv').addEventListener('click', () => openSettings('project'));
   document.title = `${info.meta.project || 'dbt-edith'} · dbt-edith`;
-  $('#status-env').addEventListener('click', () => openSettings('project'));
+  $('#status-env').addEventListener('click', (e) => openEnvMenu(e.currentTarget));
   loadEnvs();
   await loadDir($('#tree'), '', 0);
   refreshGit();

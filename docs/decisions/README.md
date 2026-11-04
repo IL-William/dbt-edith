@@ -145,6 +145,8 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0139](0139-compiled-sql-is-shown-per-environment-by-swapping-its-relations.md) | The Compiled and Run SQL is shown per environment by swapping its relations | changing what the Compiled or Run tab shows when an environment is picked, which text the page replaces in the SQL, what `/api/compiled` carries, or what the page says the SQL may differ in |
 | [0140](0140-the-top-bar-switches-between-spaces.md) | The top bar switches between spaces; a panel is a space | adding a space or a panel, changing what the top bar's tabs or the gear do, what Escape does in a space, what the Lineage space opens on, or how the top bar folds |
 | [0141](0141-a-column-collin-traced-in-part-says-so-in-from.md) | A column collin traced in part says so in `from` | changing what the compact `--column` line carries in `from`, what the `column lineage:` line counts, or how collin's `partial` list is read |
+| [0142](0142-the-status-bars-env-pill-opens-the-environment-menu.md) | The status bar's `env` pill opens the environment menu | changing what a click on the status bar's `env` pill does, what its menu offers, or where an environment is picked |
+| [0143](0143-a-sandbox-manifests-relations-are-swapped-where-the-file-places-them.md) | A sandbox manifest's relations are swapped where the file places them | changing when the Compiled or Run tab keeps a relation as compiled, what the sandbox means to the swap, or how a redirected location is judged |
 
 ## Keeping these honest
 
