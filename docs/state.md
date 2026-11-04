@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-02.
+belongs here. Last updated 2026-11-04.
 
 ## Shipped
 
@@ -1931,6 +1931,77 @@ Checked with `web/tests/reports.js`, `web/tests/joborder.js` and the other
 harnesses of the sections. Its limits are in the list left by these pull
 requests, below.
 
+The dbt job stays on Ubuntu 24.04 (CI only, no version). `ubuntu-latest` moved
+to 26.04, which ships Python 3.14, where dbt 1.11 cannot import `mashumaro` and
+the `dbt (1.11)` leg failed at import time on every pull request. Only that job
+is pinned, with a comment saying why in `check.yml`; the other jobs keep
+`ubuntu-latest`. The pin is lifted when dbt 1.11 supports Python 3.14.
+
+Rules and expressions from collin 0.11.0 (0138, 1.72.0). `WANTS` moves to
+0.11.0, which writes a `rules` list and an `expressions` list beside the edges,
+and dbt-edith prints them as text wherever an agent reads. `--column ...
+--output compact` ends with `steps` and `expression` after `tests`, a trailing
+empty field left off with its tab; a cast is folded unless `--casts`, `32+`
+stands for a chain collin counted to its cap, and `(cut)` follows a text collin
+cut. `--rules`, with `--column`, lists the predicates of every model on the
+walked path (WHERE, JOIN, QUALIFY, HAVING) with the columns each reads, and
+with `--describe` adds a "keeps the rows where" block to the card; without
+`--rules` a card reads no cache. A cache from before 0.11.0 prints nothing for
+these and says so on stderr. On the canvas a column box whose expression went
+through more than one step carries a count, and its hover card says the
+expression and the steps. MCP reuses the printers, and the two skills and
+`--help` say what `--rules`, `(cut)` and `32+` mean and that the SQL is to be
+read for the rest. Checked with `cargo test` and the harnesses of the canvas
+and the card. Its limits are in the list left by 1.72.0 and by these pull
+requests, below.
+
+The top bar unfolds slowly (1.72.1). The names of Custom selection, Reports and
+Settings open over .45s instead of .18s, as a grid track going from `0fr` to
+`1fr` with `overflow: hidden` on the grid itself, so the box is exactly as wide
+as the part of the name shown and the name keeps its full width for anything
+that measures it. Reduced motion shows the name at once. Checked with
+`web/tests/selpanel.js` and `web/tests/reports.js`.
+
+The Compiled and Run SQL per environment (0139, 1.73.0). The two tabs follow
+the environment picked in the status bar: each relation the SQL reads or builds
+is swapped, as text, for the one that `.env` file resolves, in one pass and
+longest name first, `__dbt_tmp` and `__dbt_backup` of a run included. A line
+under the freshness bar says how many were swapped, and a swapped relation
+says "was ..." on hover. One dbt could not place stays as compiled, in amber,
+with the reason, and is counted. A "May differ beyond its relations" list names
+the model or macro and the line where the SQL branches on the environment
+(`target.name`, `env_var()`, a call that asks the warehouse, a
+`generate_*_name` that follows the target). With no environment picked the
+tabs show the file as dbt wrote it. Checked with `cargo test`,
+`web/tests/compiledenv.js` and `scripts/compare_with_dbt.py`, which asserts
+that each non-ephemeral parent's relation appears verbatim in its child's
+compiled SQL. What it leaves out is Deferred item 30.
+
+Spaces in the top bar (0140, 1.74.0), amending 0091, 0092, 0100, 0101 and
+0137. Code, Lineage and Reports are tabs after the project's name, the one in
+front lit, and a click on it does nothing; none of the spaces has an `x` any
+more, and Escape goes back to Code, or to Reports for settings opened over
+them. The Custom selection is the Lineage space, with the dock's Lineage glyph,
+and opened on a model, seed or snapshot with an empty selector it draws
+`1+<model>+1`; a selection typed is never replaced. The settings open over the
+whole window like the others. The bar no longer wraps: it cuts the project's
+name down to 120px, then folds the gear's name, the counts, and the names of
+the tabs not lit. Checked with `web/tests/spaces.js`, `selpanel.js`,
+`reports.js` and `panels.js`, and the fold in `scripts/walk_depth.py`. What is
+left of the bar on a narrow window is Deferred item 10, and what the Lineage
+space has yet to take, item 16.
+
+A column click waits for collin (1.74.1). A first click on a column in
+Catalog > Columns while collin's cache was behind the manifest drew the model's
+lineage. It now clears the canvas and says which column it waits to draw, under
+a small lineage that draws itself around the column's name: a centre box with
+the name, and two dashed, nameless boxes on each side whose arms draw outwards
+(static with reduced motion). A column clicked during the run waits too, and
+the one clicked last is drawn when the run ends; if the run fails, the canvas
+goes back to the model's lineage with a toast saying why. The column still
+opens in the dock's Lineage tab. Checked with `web/tests/colwait.js`. Its
+limits are in the list left by these pull requests, below.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -3111,6 +3182,36 @@ Left by 1.72.0 (0138), each a known limit, unranked:
   reaches is seen with `--describe ... --rules` instead.
 - **The card block (0138):** `--describe ... --rules` merges the cache into a
   copy of the graph to read the rules, which is more than the rules need.
+
+Left by the pull requests of 2026-11-04 (#146 to #151, 1.72.0 to 1.74.1),
+each a known limit, unranked:
+
+- **What describe and the cache keep (#146):** `--describe` recomputes
+  `shared_names` for every card, and `ColLineage` keeps whole rules in memory.
+- **Warnings out of order (#146):** the stderr warnings of `--describe` and
+  `--rules` are printed before the cards, where the documentation says after
+  the last card.
+- **The skills are at their cap (#146):** the two skills are at 4089 and 4092
+  of 4096 bytes, so any new sentence needs a cut elsewhere.
+- **The unfold in one browser (#149):** the top bar's .45s unfold was measured
+  in Chrome only. Firefox and Safari follow the same grid rule.
+- **The bar at 650px (#147):** a window of 650px overflows the top bar by a few
+  pixels. Deferred item 10 stays.
+- **The spaces plan after its first change (#147, 0140):** the Lineage space is
+  to take every mode, and column lineage still opens in the dock's Lineage tab
+  (Deferred item 16); Jobs and the project list as spaces of their own are to
+  be discussed.
+- **The column wait (#151):** `paintCollin` ends the wait only on `failed`, so
+  an `idle` state after a restart in the middle of a run leaves the drawing up;
+  a run that ends with no column edges shows the model's lineage with no toast;
+  the waiting text in `#lineage-empty` has no `role="status"`;
+  `web/tests/colwait.js` fakes `regenerateCollin`, so the real success and poll
+  path is not run; the comments still say "ring" for the drawing (`web/app.js`
+  near line 4426, `web/tests/colwait.js` lines 2 and 57); the success path
+  leaves the drawing in the hidden host; the poll retries every 1.5s with no
+  end while the server keeps failing.
+- **collin for the README's shots:** the collin on `PATH` is 0.2.0 when they are
+  taken, so install a current one there before the next retake.
 
 Also unranked, set aside on 2026-10-29: picking the Snowflake role the builds
 read connects with. One connection, with the active target's role, reads every
