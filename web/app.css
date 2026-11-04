@@ -913,10 +913,17 @@ kbd {
    so that the two line up from one step to the next. */
 .rstepline { flex-wrap: nowrap; align-items: flex-start; }
 .rstepline .rcmd { flex: 1 1 0; }
-.rstepline .rsched { flex: 1 1 0; min-width: 0; }
+/* A pair's head: what the step should wait for takes the free width and wraps,
+   the file pinned right; in a row too narrow to leave the text 16em, the file
+   drops under it rather than squeeze it. */
+.rpairhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.rpairtext { flex: 1 1 16em; min-width: 0; }
 /* A fixed share of the line, so that the commands' bars end at the same place
    from one step to the next; more specific than the wrap rule for files below. */
-.rentries .rstepline .jobfile { flex: 0 0 32%; max-width: 32%; margin-left: auto; text-align: right; }
+.rentries .rstepline .jobfile { flex: 0 0 32%; max-width: 32%; text-align: right; }
+/* A pair's file stays on one line until its path takes more than half of the
+   row, and wraps only past that. */
+.rentries .rpairhead .jobfile { flex: 0 1 auto; max-width: 50%; margin-left: auto; text-align: right; }
 .rquote { font: 11px var(--mono); color: var(--fg); }
 /* The models of a pair, as the links of collin's report are. */
 .reportbody .jobs-model { color: var(--accent); text-decoration: none; }

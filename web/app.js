@@ -11511,23 +11511,27 @@ function jobOrderEdge(row) {
   return line;
 }
 
-/* One pair: the step, the steps it should wait for, the clocks of both
-   unless its fold says them once (`shared`), where the step is written, what
-   else the files say, and the models it reads from them, a line each model,
-   the first ten with a button for the rest (the JSON has them all). Inside
-   its job's fold (`inFold`) the step is its task alone. */
+/* One pair: the step, the steps it should wait for and where the step is
+   written, on one line, then the clocks of both unless its fold says them
+   once (`shared`), what else the files say, and the models it reads from them,
+   a line each model, the first ten with a button for the rest (the JSON has
+   them all). Inside its job's fold (`inFold`) the step is its task alone. */
 function jobOrderPair(p, { inFold = false, shared = false } = {}) {
   const li = jel('li', '');
-  const head = jel('div', '');
-  head.append(jel('span', 'rstep', inFold ? p.step.label : jobOrderSide(p.step)),
+  // The file is pinned right on the head's own line, not the clocks': inside
+  // a fold that draws no clocks, that line held only the file and read as a
+  // blank one with a path far off to the right.
+  const head = jel('div', 'rpairhead');
+  const said = jel('div', 'rpairtext');
+  said.append(jel('span', 'rstep', inFold ? p.step.label : jobOrderSide(p.step)),
     p.waits_for.length === 1 ? ' should wait for ' : ' should wait for one of ', jobOrderTargets(p).join(', '));
+  head.append(said, jobsFileButton(p.step.source, p.step.file, p.step.line));
   li.append(head);
-  // The clocks take the free width and the file is pinned right, as a step's
-  // command and file are in the coverage.
-  const line = jel('div', 'rline rstepline');
-  if (!shared) line.append(jel('span', 'rsched muted', jobOrderSchedules(p)));
-  line.append(jobsFileButton(p.step.source, p.step.file, p.step.line));
-  li.append(line);
+  if (!shared) {
+    const clocks = jel('div', 'rline');
+    clocks.append(jel('span', 'rsched muted', jobOrderSchedules(p)));
+    li.append(clocks);
+  }
   for (const note of jobOrderNotes(p)) li.append(jel('div', 'joblink', note));
   const rows = jobOrderEdgeRows(p.edges);
   const edges = jel('div', '');

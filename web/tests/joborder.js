@@ -189,27 +189,31 @@ check('a step is its job and itself', jobOrderSide(MARTS), 'DAG shop_marts › t
 check('a dbt Cloud job as the Jobs tab names it', jobOrderSide(side('nightly', 'step 2/3', '', { kind: 'dbt_cloud' })), 'Job nightly › step 2/3');
 var box = jobOrderPair(one);
 check('the step should wait for the one that builds what it reads, in its own words when bare',
-  text(box.children[0]), 'DAG shop_marts › task build should wait for DAG shop_stage › task stage');
-check('the step is the first thing a row says', box.children[0].children[0].className, 'rstep');
+  text(box.children[0].children[0]), 'DAG shop_marts › task build should wait for DAG shop_stage › task stage');
+check('the step is the first thing a row says', box.children[0].children[0].children[0].className, 'rstep');
 var two = jobOrderPair(pair('none', MARTS, [STAGE, side('shop_again', 'task again')], []));
-check('for one of several', text(two.children[0]), 'DAG shop_marts › task build should wait for one of DAG shop_stage › task stage, DAG shop_again › task again');
+check('for one of several', text(two.children[0].children[0]), 'DAG shop_marts › task build should wait for one of DAG shop_stage › task stage, DAG shop_again › task again');
 var same = jobOrderPair(pair('none', MARTS, [side('shop_marts', 'task stage')], []));
 check('a step it waits for in its own job is named by its task alone',
-  [jobOrderTargets(pair('none', MARTS, [side('shop_marts', 'task stage'), STAGE], [])), text(same.children[0])],
+  [jobOrderTargets(pair('none', MARTS, [side('shop_marts', 'task stage'), STAGE], [])), text(same.children[0].children[0])],
   [['task stage', 'DAG shop_stage › task stage'], 'DAG shop_marts › task build should wait for task stage']);
 check('two sources holding a job of one name are two jobs',
   jobOrderTargets(pair('none', MARTS, [side('shop_marts', 'task stage', '', { source: 'other' })], [])), ['DAG shop_marts › task stage']);
 var inFold = jobOrderPair(one, { inFold: true });
-check('inside its DAG\'s fold, the task alone', text(inFold.children[0]), 'task build should wait for DAG shop_stage › task stage');
+check('inside its DAG\'s fold, the task alone', text(inFold.children[0].children[0]), 'task build should wait for DAG shop_stage › task stage');
 check('both clocks, with their zones as the answer words them, each said whose',
   text(jobOrderPair(pair('clock', side('shop_marts', 'task build', 'scheduled 0 7 * * *'), [side('shop_stage', 'task stage', 'scheduled 0 6 * * * Europe/London')], [])).children[1].children[0]),
   'this step: scheduled 0 7 * * *  ·  waits for: scheduled 0 6 * * * Europe/London');
 check('with several to wait for, each under its job',
   jobOrderSchedules(pair('clock', MARTS, [side('a', 'task x', 'scheduled 0 5 * * *'), side('b', 'task y', 'manual')], [])),
   'this step: scheduled 0 6 * * *  ·  waits for: a: scheduled 0 5 * * *, b: manual');
-check('the clocks and the file on one line, the clocks taking the free width', [box.children[1].className, box.children[1].children[0].className], ['rline rstepline', 'rsched muted']);
+check('the step and the file on one line, the file pinned after what the step waits for',
+  [box.children[0].className, box.children[0].children.map(function (c) { return c.className; })], ['rpairhead', ['rpairtext', 'jobfile']]);
+check('the clocks on a line of their own, with no file in it', [box.children[1].className, box.children[1].children.map(function (c) { return c.className; })], ['rline', ['rsched muted']]);
 var shown = jobOrderPair(one, { inFold: true, shared: true });
-check('the clocks left out when the fold says them once', shown.children[1].children.map(function (c) { return c.className; }), ['jobfile']);
+check('no clocks line when the fold says them once, the file still in the head',
+  [shown.children.map(function (c) { return c.className; }), shown.children[0].children.map(function (c) { return c.className; })],
+  [['rpairhead', ''], ['rpairtext', 'jobfile']]);
 var where = all(box, cls('jobfile'))[0];
 copied = [];
 where.on.click();
@@ -225,9 +229,12 @@ check('and open as the group is', fold2[0].open, true);
 check('the clocks the pairs all share are said once, over them', [fold2[0].children[1].className, text(fold2[0].children[1])],
   ['rline', 'this step: scheduled 0 6 * * *  ·  waits for: scheduled 0 6 * * *']);
 var inner = all(fold2[0], function (e) { return e.tag === 'li'; });
-check('each pair there by its task, with no clocks of its own', inner.map(function (li) { return [text(li.children[0]), li.children[1].children.length]; }),
-  [['task build should wait for DAG shop_stage › task stage', 1], ['task report should wait for DAG shop_stage › task stage', 1]]);
-check('the bare pair keeps its whole step and its clocks', text(all(fold2[1], function (e) { return e.tag === 'li'; })[0].children[0]),
+check('each pair there by its task, with no clocks of its own', inner.map(function (li) { return [text(li.children[0].children[0]), all(li, cls('rsched')).length]; }),
+  [['task build should wait for DAG shop_stage › task stage', 0], ['task report should wait for DAG shop_stage › task stage', 0]]);
+check('and its file on the head line, the pair having nothing else under it but the models',
+  inner.map(function (li) { return [li.children[0].className, all(li.children[0], cls('jobfile')).length, li.children.length > 1 && li.children[1].className === 'rline']; }),
+  [['rpairhead', 1, false], ['rpairhead', 1, false]]);
+check('the bare pair keeps its whole step and its clocks', text(all(fold2[1], function (e) { return e.tag === 'li'; })[0].children[0].children[0]),
   'DAG shop_ops › task clean should wait for DAG shop_stage › task stage');
 var apart = jobOrderFolders([pair('clock', side('shop_marts', 'task build', 'scheduled 0 7 * * *'), [STAGE], []),
   pair('clock', side('shop_marts', 'task report', 'scheduled 0 8 * * *'), [STAGE], [])], false);
