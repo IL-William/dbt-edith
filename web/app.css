@@ -1,13 +1,14 @@
 :root {
-  --bg: #12161d;
-  --bg-2: #171c25;
-  --bg-3: #1d2430;
-  --line: #2a3340;
-  --fg: #d7dee8;
+  color-scheme: dark;   /* the browser draws its own controls and scrollbars dark */
+  --bg: #0f1318;
+  --bg-2: #13181f;
+  --bg-3: #1a2029;
+  --line: #232b36;
+  --fg: #d6dde7;
   --fg-dim: #8b97a8;
-  --accent: #4da3ff;
-  --accent-rgb: 77, 163, 255;   /* --accent as channels, for the translucent copies of it */
-  --accent-dim: #24486e;
+  --accent: #5aa9ff;
+  --accent-rgb: 90, 169, 255;   /* --accent as channels, for the translucent copies of it */
+  --accent-dim: #1d3757;
   --model: #4da3ff;
   --source: #e0a34b;
   --seed: #4ec78d;
@@ -20,26 +21,32 @@
   --bad: #e06c75;
   /* Every colour below was a literal in a rule, named by what it means: two
      meanings that share a value are two names, so a theme can part them. The
-     ones that equal --bg, --bg-2, --bg-3 or --line by value (--veil,
-     --head-bg, --more-bg, --more-line, --line-faint, --diff-hatch,
-     --diff-gap) stay apart from them on purpose: the Halloween block
-     re-points those four, and its look leaves these as they were. */
+     values are Night's, the default look. Nine names of this file's own,
+     --veil, --head-bg, --more-bg, --more-line, --line-faint, --diff-hatch,
+     --diff-gap, --label-bg and --label-fg, take the value of the name they
+     twin, and --fg-quiet equals --fg-2, yet none is folded into it: the
+     Halloween look re-points or holds that name, and a fold would paint these
+     with the Halloween value. They merge when the look becomes a theme.
+     --cur-line, --dots, --node-shadow, --edge-hot, --py and the --ansi-
+     colours are Night's too, and nothing reads them yet. */
   /* Surfaces */
-  --line-strong: #3a475a;   /* a menu's or a hovered button's edge */
-  --line-soft: #1f2733;     /* the rules between table rows */
-  --line-faint: #2a3340;
-  --hover: #26303e;
+  --line-strong: #334052;   /* a menu's or a hovered button's edge */
+  --line-soft: #1a2029;     /* the rules between table rows */
+  --line-faint: #232b36;
+  --hover: rgba(255, 255, 255, .03);
+  --btn-hover: #26303e;
   --icon-hover: #2b3644;
   --state-hover: #38455a;
-  --row-hover: #1a212c;
   --row-open: #1f2b3a;
-  --select: #2b3a4d;
-  --focus-bg: #1b2a3d;
+  --select: rgba(90, 169, 255, .13);
+  --focus-bg: #18222f;
+  --cur-line: rgba(255, 255, 255, .025);
+  --dots: rgba(255, 255, 255, .045);
   --hit-bg: #2e2716;
-  --veil: #12161d;          /* the page colour, as the translucent chips over the canvas */
-  --head-bg: #1d2430;
-  --band: #161b24;
-  --band-line: #1f2632;
+  --veil: #0f1318;          /* the page colour, as the translucent chips over the canvas */
+  --head-bg: #1a2029;
+  --band: #131920;
+  --band-line: #1c232d;
   --band-l1: #18263d;
   --band-l1-line: #2d4466;
   --band-l2: #142b2c;
@@ -49,9 +56,9 @@
   --head-l1-line: #3a5885;
   --head-l2-line: #36706b;
   --head-l3-line: #57487f;
-  --label-bg: #131922;
-  --more-bg: #1d2430;
-  --more-line: #2a3340;
+  --label-bg: #13181f;
+  --more-bg: #1a2029;
+  --more-line: #232b36;
   --placeholder: #55606f;
   --sel-line: #fff;
   --scroll-thumb: #2b3746;
@@ -59,7 +66,8 @@
   --term-bg: #0e1219;
   --term-thumb: #2f3b4c;
   /* Shadows and scrims */
-  --shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  --shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  --node-shadow: none;
   --shadow-sm: 0 6px 18px rgba(0, 0, 0, .45);
   --shadow-xs: 0 4px 12px rgba(0, 0, 0, .35);
   --shadow-modal: 0 18px 60px #0009;
@@ -70,15 +78,15 @@
   --scrim-modal: #000a;
   --scrim-tour: rgba(4, 6, 9, .74);
   /* Text */
-  --fg-2: #c2ccd9;
+  --fg-2: #b9c4d2;
   --fg-quiet: #b9c4d2;
   --fg-path: #aab6c6;       /* a file's name, a path's last part */
-  --fg-mute: #5d6b7d;
+  --fg-mute: #7a8696;
   --fg-faint: #4a5668;
   --tone-fg: #10151c;       /* on a filled tone, a warn mark */
   --on-accent: #0b0f15;
   --code-fg: #c9d4e3;
-  --label-fg: #c9d4e3;
+  --label-fg: #b9c4d2;
   --crumb-fg: #6f7d90;
   --crumb-sep: #5a677a;
   --keylink-line: #5a6779;
@@ -135,9 +143,10 @@
   --tool-collin: #e070d0;
   --tool-jobs: #a78bfa;
   --tool-snowflake: #29b5e8;
-  --tool-airflow: #3fc1c9;
+  --tool-airflow: #3dbac6;
   /* Edges */
-  --edge: #33445c;
+  --edge: #33425a;
+  --edge-hot: rgba(90, 169, 255, .8);
   --edge-test: #5d6a7d;
   /* Files */
   --f-sql: #fe6702;
@@ -147,6 +156,7 @@
   --f-csv: #56b98b;
   --f-other: #6d7a8c;
   --f-macro: #dcdcaa;
+  --py: #ffd43b;
   /* Diffs */
   --diff-add: #2f6b47;
   --diff-add-bg: #1c2c22;
@@ -155,21 +165,27 @@
   --diff-del-bg: #2d1f1f;
   --diff-del-fg: #d88;
   --diff-del-word: #6b3a3a;
-  --diff-hatch: #2a3340;
-  --diff-gap: #171c25;
+  --diff-hatch: #232b36;
+  --diff-gap: #13181f;
   /* Code */
-  --syn-kw: #c792ea;
-  --syn-str: #c3e88d;
+  --syn-kw: #c4a7f2;
+  --syn-str: #a5c98c;
   --syn-num: #f78c6c;
   --syn-comment: #5d6b7d;
   --syn-atom: #82aaff;
-  --syn-builtin: #ffcb6b;
-  --syn-jj: #ff9f6b;
-  --syn-fn: #82aaff;
+  --syn-fn: #e5c07b;
+  --syn-jj: #d19a66;
+  --syn-macro: #82aaff;
   --syn-var: #eeffff;
   --syn-param: #f07178;
   --syn-jatom: #c792ea;
-  --syn-p: #89ddff;
+  --syn-p: #8b97a8;
+  /* The terminal's ANSI colours */
+  --ansi-y: #e5c07b;
+  --ansi-c: #56b6c2;
+  --ansi-g: #98c379;
+  --ansi-r: #e06c75;
+  --ansi-b: #61afef;
   /* Test chips, the two named after their generic */
   --t-nn: #7fd6a6;
   --t-nn-line: #3e6b52;
@@ -197,7 +213,7 @@
   --r-cast: #c9b08a;
   --r-aggregate: #cf7a3f;
   --r-window: #8b46c9;
-  --r-transform: #d94f4f;
+  --r-transform: #e05a5a;
   --r-inferred: #5f6a78;
   --r-raw: #7fb069;
   --r-generated: #f5a7f9;
@@ -478,7 +494,7 @@ kbd {
 .envmenu button.updrun:focus:not(:focus-visible) { background: var(--accent-dim); }
 /* The second command of a choice, drawn as the menu's other buttons are. */
 .envmenu button.updrun.alt { background: var(--bg-3); border-color: var(--line); font-weight: 500; }
-.envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: var(--hover); border-color: var(--line-strong); }
+.envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: var(--btn-hover); border-color: var(--line-strong); }
 .envmenu button.updrun.alt:focus:not(:focus-visible) { background: var(--bg-3); }
 .updmenu .updready { padding: 4px 8px 2px; font: 600 12px var(--ui); color: var(--ok); }
 .updmenu .menunote.updstep { padding-top: 3px; padding-bottom: 6px; color: var(--fg); }
@@ -487,7 +503,7 @@ kbd {
   display: inline-block; flex: 0 0 auto; width: auto; padding: 4px 9px; white-space: nowrap;
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
 }
-.envmenu button.updcheck:hover, .envmenu button.updcheck:focus-visible { background: var(--hover); border-color: var(--line-strong); }
+.envmenu button.updcheck:hover, .envmenu button.updcheck:focus-visible { background: var(--btn-hover); border-color: var(--line-strong); }
 .envmenu button.updcheck:focus:not(:focus-visible) { background: var(--bg-3); }
 .envmenu button.updcheck[aria-disabled=true]:hover { background: var(--bg-3); border-color: var(--line); }
 .brand {
@@ -567,7 +583,7 @@ kbd {
   font: 11px var(--mono); color: var(--fg-dim);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
 }
-.freshbadge:hover { background: var(--hover); border-color: var(--line-strong); }
+.freshbadge:hover { background: var(--btn-hover); border-color: var(--line-strong); }
 .freshbadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: 0 0 auto; }
 .freshbadge[data-tone="ok"] .dot { background: var(--ok); }
 .freshbadge[data-tone="warn"] .dot { background: var(--warn); }
@@ -587,7 +603,7 @@ kbd {
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 0 10px 10px 0;
 }
 .freshbadge.hidden + .reloadbtn { border-radius: 10px; padding: 4px 7px; }
-.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: var(--hover); border-color: var(--line-strong); }
+.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: var(--btn-hover); border-color: var(--line-strong); }
 .reloadbtn:focus-visible, .freshbadge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .reloadbtn[aria-busy=true] { cursor: progress; }
 .reloadbtn[aria-busy=true] svg { animation: reload-turn .9s linear infinite; }
@@ -655,7 +671,7 @@ kbd {
   font: 12px var(--ui); color: var(--fg); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer;
 }
-.btn:hover { background: var(--hover); border-color: var(--line-strong); }
+.btn:hover { background: var(--btn-hover); border-color: var(--line-strong); }
 .btn.sm { padding: 2px 7px; font-size: 11px; }
 /* A glyph before the label, on one line (docs/state.md): the two toggles
    above the lineage, .eyebtn, and the actions after them, .icobtn, Fit,
@@ -1346,12 +1362,12 @@ kbd {
 .cm-s-default .cm-number { color: var(--syn-num); }
 .cm-s-default .cm-comment { color: var(--syn-comment); font-style: italic; }
 .cm-s-default .cm-variable-2, .cm-s-default .cm-atom { color: var(--syn-atom); }
-.cm-s-default .cm-builtin { color: var(--syn-builtin); }
+.cm-s-default .cm-builtin { color: var(--syn-fn); }
 /* Jinja keeps the orange that marks a template on its delimiters and keywords;
    what sits inside takes the colour of what it is (jinjaToken in app.js). */
 .cm-jinja-delim, .cm-jinja-keyword { color: var(--syn-jj); }
-.cm-jinja-dbt { color: var(--syn-builtin); }
-.cm-jinja-fn { color: var(--syn-fn); }
+.cm-jinja-dbt { color: var(--syn-fn); }
+.cm-jinja-fn { color: var(--syn-macro); }
 .cm-jinja-var { color: var(--syn-var); }
 .cm-jinja-param { color: var(--syn-param); font-style: italic; }
 .cm-jinja-string { color: var(--syn-str); }
@@ -1975,7 +1991,7 @@ kbd {
   position: sticky; top: 0; background: var(--bg-2);
 }
 .cols td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
-.cols tr:hover td { background: var(--row-hover); }
+.cols tr:hover td { background: var(--hover); }
 .cols tr.c-linked { cursor: pointer; }
 .cols tr.c-linked:hover td { background: var(--row-open); }
 /* The name is not part of the click target, so it gets a text cursor and keeps
@@ -2354,6 +2370,22 @@ body.halloween {
   --bg: #0f0b08; --bg-2: #16100c; --bg-3: #1f1610; --line: #3c2a1a;
   --fg: #efe3d3; --fg-dim: #ac9a84;
   --accent: #ff7a1a; --accent-rgb: 255, 122, 26; --accent-dim: #7a3a0e;
+}
+/* The Halloween look keeps the colours it was drawn in until it becomes a
+   theme: the rule above re-points only what it always did, and the default
+   look's new values (Night) would reach everything else, so each one that
+   changed in :root is held at its old value here. */
+body.halloween {
+  color-scheme: normal;
+  --line-soft: #1f2733; --line-strong: #3a475a; --line-faint: #2a3340;
+  --hover: #1a212c; --select: #2b3a4d; --focus-bg: #1b2a3d;
+  --band: #161b24; --band-line: #1f2632;
+  --shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  --fg-2: #c2ccd9; --fg-mute: #5d6b7d;
+  --tool-airflow: #3fc1c9; --edge: #33445c; --r-transform: #d94f4f;
+  --syn-kw: #c792ea; --syn-fn: #ffcb6b; --syn-jj: #ff9f6b; --syn-str: #c3e88d; --syn-p: #89ddff;
+  --veil: #12161d; --head-bg: #1d2430; --more-bg: #1d2430; --more-line: #2a3340;
+  --diff-hatch: #2a3340; --diff-gap: #171c25; --label-bg: #131922; --label-fg: #c9d4e3;
 }
 body.halloween ::-webkit-scrollbar-thumb { background: #4a3420; }
 body.halloween ::-webkit-scrollbar-thumb:hover { background: #6a4a2c; }

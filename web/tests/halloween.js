@@ -52,6 +52,12 @@ ok('every rule of the look hangs from body.halloween, or from its own hw- class'
   css.slice(css.indexOf('halloween look --')).split('\n').filter(function (l) {
     return /^[^\s@}\/*].*\{/.test(l) && !/^(body\.halloween|:where\(body\.halloween\)|\.hw-|\.hwg-|\.lookbtn|#look-btn|#hw-layer)/.test(l);
   }).length === 0);
+// A name misspelt in a body.halloween block would re-point nothing, and the look would quietly keep the default's colour.
+var rootBlock = css.slice(css.indexOf(':root {'), css.indexOf('\n}\n', css.indexOf(':root {')));
+var holds = css.match(/^body\.halloween \{[^}]*\}/gm) || [];
+var held = holds.join('\n').match(/--[a-z0-9-]+(?=:)/g) || [];
+ok('every colour the look re-points or holds is a name :root declares (' + held.length + ' of them, in ' + holds.length + ' blocks)',
+  holds.length === 2 && held.length > 30 && held.every(function (n) { return rootBlock.indexOf('\n  ' + n + ':') >= 0; }));
 ok('the pumpkin and the speaker are in the top bar, the speaker out of sight until the look is on',
   /id="look-btn"[^>]*aria-pressed="false"/.test(html) && /id="look-sound"[^>]*class="[^"]*hidden/.test(html));
 ok('the brand button is still one button with its name inside',
