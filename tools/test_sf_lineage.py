@@ -207,6 +207,7 @@ class ScriptTest(unittest.TestCase):
             return conn
 
         module.connect = connect
+        module.__version__ = "4.7.3"
         package = types.ModuleType("snowflake")
         package.connector = module
         return {"snowflake": package, "snowflake.connector": module}
@@ -370,6 +371,106 @@ class Serve(ScriptTest):
         self.assertEqual(code, 2)
         self.assertEqual(self.events(lines), ["profiles"], "ready must not follow a setup that cannot work")
         self.assertIn("snowflake-connector-python is not installed", err)
+
+
+class ConnectorVersion(ScriptTest):
+    """The script uses the connector only from the first release that fixes its advisories."""
+
+    def serve_with(self, version):
+        module = sys.modules["snowflake.connector"]
+        if version is None:
+            del module.__version__
+        else:
+            module.__version__ = version
+        return self.serve({"op": "quit"})
+
+    def test_older_releases_are_refused_before_ready(self):
+        # 3.18.1 fixes only the TLS advisory, 4.7.2 only that one too.
+        for old in ("3.18.1", "3.99.0", "4.7.2", "4.0.0", "2.9"):
+            with self.subTest(old):
+                code, lines, err = self.serve_with(old)
+                self.assertEqual(code, 2)
+                self.assertEqual(self.events(lines), ["profiles"], "ready must not follow a connector that is refused")
+                self.assertIn(f"snowflake-connector-python {old}", err)
+                self.assertIn("4.7.3 or later is required", err)
+                self.assertIn("GHSA-qqj6-54q6-cxv6", err)
+                self.assertEqual(self.connections, [])
+
+    def refusal(self, installed):
+        """The refusal's text, with `installed` the versions pip would report."""
+
+        def version(name):
+            if name in installed:
+                return installed[name]
+            raise ImportError(name)
+
+        with mock.patch("importlib.metadata.version", side_effect=version):
+            return self.serve_with("3.18.1")[2]
+
+    def test_the_upgrade_command_names_this_interpreter(self):
+        err = self.refusal({})
+        self.assertIn(f'"{sys.executable}" -m pip install --upgrade "snowflake-connector-python>=4.7.3"', err)
+        self.assertNotIn("dbt-snowflake", err)
+
+    def test_a_dbt_snowflake_that_already_allows_the_connector_is_left_alone(self):
+        for fine in ("1.10.6", "1.11.0", "1.12.2"):
+            with self.subTest(fine):
+                err = self.refusal({"dbt-snowflake": fine})
+                self.assertIn('--upgrade "snowflake-connector-python>=4.7.3"', err)
+                self.assertNotIn("dbt-snowflake", err)
+                self.assertNotIn("dbt-core", err)
+
+    def test_an_older_dbt_snowflake_is_upgraded_with_the_connector(self):
+        # Before 1.10.6 it pins the connector below 4.0.0, so the connector alone would be undone.
+        for old in ("1.9.4", "1.10.5", "1.8"):
+            with self.subTest(old):
+                err = self.refusal({"dbt-snowflake": old})
+                self.assertIn(
+                    f'"{sys.executable}" -m pip install --upgrade "dbt-snowflake>=1.10.6" "snowflake-connector-python>=4.7.3"', err
+                )
+                self.assertIn("also moves dbt-core to 1.10 or later", err)
+
+    def test_dump_refuses_before_its_threads_and_keeps_the_cache(self):
+        manifest = self.project / "manifest.json"
+        manifest.write_text(
+            json.dumps({"nodes": {"model.shop.a": {"resource_type": "model", "name": "a", "relation_name": "DB.S.A", "columns": {"id": {}}}}})
+        )
+        out = self.project / "lineage.json"
+        out.write_text('{"edges": ["kept"]}')
+        args = types.SimpleNamespace(
+            profile="shop", target=None, profiles_dir=None, manifest=str(manifest), select="", threads=3, out=str(out)
+        )
+        sys.modules["snowflake.connector"].__version__ = "3.18.1"
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as stopped:
+            sf.cmd_dump(args)
+        self.assertEqual(stopped.exception.code, 2)
+        self.assertEqual(err.getvalue().count("is too old"), 1)
+        self.assertEqual(out.read_text(), '{"edges": ["kept"]}', "a refused run must not overwrite the cache")
+        self.assertEqual(self.connections, [])
+
+    def test_the_fixed_release_and_later_are_used(self):
+        # 4.10 is later than 4.7 and 5.x than 4.x: numbers, not text.
+        for good in ("4.7.3", "4.7.5", "4.10.0", "5.2.0", "4.7.3.dev0", "4.8"):
+            with self.subTest(good):
+                code, lines, err = self.serve_with(good)
+                self.assertEqual(code, 0, err)
+                self.assertIn("ready", self.events(lines))
+
+    def test_a_version_that_cannot_be_read_is_refused(self):
+        for unreadable in (None, "unknown"):
+            with self.subTest(unreadable):
+                with mock.patch("importlib.metadata.version", side_effect=Exception("not installed")):
+                    code, lines, err = self.serve_with(unreadable)
+                self.assertEqual(code, 2)
+                self.assertEqual(self.events(lines), ["profiles"])
+                self.assertIn("cannot read the version of snowflake-connector-python", err)
+
+    def test_the_package_metadata_answers_when_the_module_has_no_version(self):
+        with mock.patch("importlib.metadata.version", return_value="4.7.3"):
+            code, lines, err = self.serve_with(None)
+        self.assertEqual(code, 0, err)
+        self.assertIn("ready", self.events(lines))
 
 
 class History(ScriptTest):

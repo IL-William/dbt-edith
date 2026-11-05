@@ -17,6 +17,10 @@ import os
 from datetime import datetime, timedelta, timezone
 
 
+# tools/sf_lineage.py refuses a connector older than the advisories' fixes.
+__version__ = "4.7.3"
+
+
 def connect(**kwargs):
     return Connection()
 

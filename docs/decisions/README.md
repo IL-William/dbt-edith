@@ -152,6 +152,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0146](0146-a-column-is-compared-with-another-project-by-its-source-columns.md) | A column is compared with another project's by its source columns | changing what `--against` prints, what makes two source columns the same, how the other project's column is searched for, or offering the comparison over MCP |
 | [0147](0147-the-compiled-and-run-tabs-offer-every-environment.md) | The Compiled and Run tabs offer every environment | changing what the top of the Compiled or Run tab offers when environments exist, how an environment is picked there, or what it says with no file picked |
 | [0148](0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) | A meaning has one shape, and no marker is a round dot | adding a marker for a kind, a state, an environment or a tool, or drawing anything small and round |
+| [0149](0149-libraries-and-the-connector-come-from-where-they-were-fixed.md) | The terminal loads libraries from System32, and the Snowflake script wants a fixed connector | loading a library by name on Windows, adding a dependency that does, or changing which `snowflake-connector-python` the Snowflake script accepts |
 
 ## Keeping these honest
 

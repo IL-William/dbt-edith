@@ -12,6 +12,7 @@ mod collin_run;
 mod command;
 mod compiled;
 mod describe;
+mod dll_search;
 mod env_reads;
 mod envs;
 mod files;
@@ -397,8 +398,15 @@ fn mcp_start(args: &Args) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>),
     Ok((root, args.manifest.as_ref().map(whole), args.catalog.as_ref().map(whole)))
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// Not `#[tokio::main]`, which would start the runtime's threads before the
+/// first line of `main` could run: the DLL search is narrowed first (0149),
+/// then the same runtime the macro builds is started.
+fn main() -> anyhow::Result<()> {
+    dll_search::system32_only();
+    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
+}
+
+async fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     // First of all, ahead of even `--mcp`: it is a file printed, and nothing
     // else is read, written or started (0114).

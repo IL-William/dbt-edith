@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.1.1 - 2026-11-05
+
+- Load libraries from Windows' System32 folder only, so a `conpty.dll` left in
+  a project or beside the `.exe` can no longer run when the terminal opens
+  (0149).
+- Refuse a `snowflake-connector-python` older than 4.7.3, the release that
+  fixes GHSA-5cc2-282f-jjq2 and GHSA-qqj6-54q6-cxv6, with a message saying how
+  to upgrade it (0149).
+
 ## 2.1.0 - 2026-11-05
 
 - Draw each meaning in its own shape instead of a round dot: a model's kind is
