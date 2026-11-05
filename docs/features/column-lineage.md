@@ -194,7 +194,7 @@ resolves to, exactly as the Location table shows it. The cache itself names dbt
 nodes rather than warehouse objects, so one file holds for every environment.
 
 The Python that runs is a virtual environment of the project that has
-`snowflake-connector-python` (dbt-snowflake brings it), else the one the status
+`snowflake-connector-python` 4.7.3 or later (dbt-snowflake brings it), else the one the status
 bar names, else `python` on the `PATH`.
 
 `GET_LINEAGE` needs Enterprise Edition and the `VIEW LINEAGE` privilege. When a

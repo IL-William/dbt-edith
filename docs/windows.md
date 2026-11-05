@@ -82,9 +82,10 @@ certutil -hashfile dbt-edith.exe SHA256
 
 The two hashes must match. A file that came through a share or a remote desktop
 can be a different one, and nothing else would say so. Then run it: no
-installer, no admin rights. It imports nothing but Windows system
-libraries, so there is no runtime to place beside it. The terminal uses ConPTY,
-which ships with Windows 10 and 11. Windows may warn about an unsigned
+installer, no admin rights. The terminal uses ConPTY,
+which ships with Windows 10 and 11, and once it has started the program loads
+libraries by name from System32 only, so a `conpty.dll` beside it is never run
+(0149). Windows may warn about an unsigned
 executable that arrived by copy, which is what an in-house build looks like
 to it. Its properties, under Details, name dbt-edith as the product, the
 version it was built at and Datadorelix in the copyright, and

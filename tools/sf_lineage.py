@@ -251,12 +251,73 @@ def target_roles(outputs: dict, connected: str):
     return found
 
 
+# The first release that fixes both of the connector's 2026 advisories in the
+# GitHub advisory database: GHSA-5cc2-282f-jjq2 (TLS hostname checks, fixed in
+# 3.18.1 and 4.7.1) and GHSA-qqj6-54q6-cxv6 (sensitive values in logs, fixed in
+# 4.7.3 only, every 3.x release being in its range). A connector below it is
+# refused rather than used, because it holds the user's credentials.
+MIN_CONNECTOR = (4, 7, 3)
+
+
+def connector_version(module) -> tuple | None:
+    """The (major, minor, patch) of the imported connector, or None if unreadable."""
+    text = getattr(module, "__version__", None)
+    if not isinstance(text, str):
+        try:
+            from importlib.metadata import version
+
+            text = version("snowflake-connector-python")
+        except Exception:
+            return None
+    return parse_version(text)
+
+
+def parse_version(text: str) -> tuple | None:
+    found = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+    return tuple(int(part or 0) for part in found.groups()) if found else None
+
+
+def upgrade_command(wanted: str) -> str:
+    """The pip command for this interpreter. dbt-snowflake before 1.10.6 pins the
+    connector below 4.0.0, so where it is installed at such a version, or at one
+    that cannot be read, it is upgraded with it."""
+    command = f'"{sys.executable}" -m pip install --upgrade "snowflake-connector-python>={wanted}"'
+    try:
+        from importlib.metadata import version
+
+        installed = parse_version(version("dbt-snowflake"))
+    except Exception:
+        return command
+    if installed is not None and installed >= (1, 10, 6):
+        return command
+    # 1.12.x asks for dbt-core 1.10 or later, so this moves dbt-core too.
+    return (
+        command.replace(" \"snowflake", ' "dbt-snowflake>=1.10.6" "snowflake', 1)
+        + " (this also moves dbt-core to 1.10 or later)"
+    )
+
+
+def check_connector_version(module):
+    """Exits with a sentence unless the connector is MIN_CONNECTOR or later."""
+    wanted = ".".join(str(part) for part in MIN_CONNECTOR)
+    have = connector_version(module)
+    if have is None:
+        die(f"cannot read the version of snowflake-connector-python; {wanted} or later is required")
+    if have < MIN_CONNECTOR:
+        die(
+            f"snowflake-connector-python {'.'.join(str(part) for part in have)} is too old: "
+            f"{wanted} or later is required (older releases carry GHSA-5cc2-282f-jjq2 and "
+            f"GHSA-qqj6-54q6-cxv6). Upgrade it in this interpreter: {upgrade_command(wanted)}"
+        )
+
+
 def connector():
     """The Snowflake connector module, or a readable exit."""
     try:
         import snowflake.connector
     except ImportError:
         die("snowflake-connector-python is not installed in this interpreter")
+    check_connector_version(snowflake.connector)
     return snowflake.connector
 
 
@@ -757,6 +818,9 @@ def cmd_dump(args):
         die("no model matched --select, or the matched models declare no columns in YAML")
 
     total_cols = sum(len(c) for _, _, c in targets)
+    # Once, here: a refusal inside a worker thread would only end that thread,
+    # and the run would go on to write an empty cache and exit 0.
+    connector()
     print(f"{len(targets)} model(s), {total_cols} column(s), {args.threads} thread(s)", file=sys.stderr)
 
     work = queue.Queue()

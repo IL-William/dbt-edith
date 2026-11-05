@@ -146,7 +146,7 @@ which Snowflake's error then names.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, or no `profiles.yml` it can read |
+| the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, one older than 4.7.3 (the script refuses it, naming the advisories and the upgrade command), or no `profiles.yml` it can read |
 | Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the Snowflake section of the settings, behind the gear in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |

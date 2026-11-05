@@ -2705,6 +2705,11 @@ of its own, and each panel updates the tour, its page under
     in the box, the palette, Search, the keys excerpt, the manifest card, the
     settings, shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and
     the design docs.
+39. **The C runtime of the Windows `.exe` (0149).** Link it statically
+    (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
+    only system libraries, checked with the import table of the built `.exe`.
+    Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
+    runs, so the search path 0149 sets does not cover it.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
