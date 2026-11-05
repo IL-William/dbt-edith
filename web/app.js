@@ -196,12 +196,83 @@ function keyHeaders() {
   return launchKey ? { authorization: 'Bearer ' + launchKey } : {};
 }
 
+/* The requests that wait on something slower than the server's own reading:
+   the manifest read again, collin, Snowflake, git over the network, GitHub's
+   releases. While one is out past WORK_DELAY, Edith's mark moves. Picked by
+   route rather than by time alone, so a search that is slow on a big project
+   or a poll nobody asked for never sets her going. */
+const WORK_ROUTES = ['/api/reload', '/api/collineage', '/api/collin/compare', '/api/snowflake/',
+  '/api/git/push', '/api/git/pull', '/api/git/fetch', '/api/update/check'];
+const WORK_DELAY = 400;
+const WORK_FADE = 300;
+
+function isWork(path) {
+  const p = String(path).split('?')[0];
+  return WORK_ROUTES.some((r) => (r.endsWith('/') ? p.startsWith(r) : p === r || p.startsWith(r + '/')));
+}
+
+/* Counted, since a reload and a column fetched meanwhile overlap: the mark
+   stops with the last of them. It starts only past the delay, so an answer
+   that comes at once never flickers it, and the packets fade before the loop
+   is taken away, none vanishing halfway along an arm. */
+let workOut = 0;
+let workTimer = 0;
+
+function markWorking(on) {
+  const brand = document.getElementById('brand');
+  if (!brand) return;
+  clearTimeout(workTimer);
+  if (on) {
+    brand.classList.add('working', 'flowing');
+  } else {
+    brand.classList.remove('flowing');
+    workTimer = setTimeout(() => brand.classList.remove('working'), WORK_FADE);
+  }
+}
+
+function workBegan() {
+  if (workOut++ > 0) return;
+  clearTimeout(workTimer);
+  workTimer = setTimeout(() => markWorking(true), WORK_DELAY);
+}
+
+function workEnded() {
+  if (--workOut > 0) return;
+  clearTimeout(workTimer);
+  const brand = document.getElementById('brand');
+  /* `working`, not `flowing`: a request begun during a fade has cleared its
+     timer, and removing the class here would cut the packets short. */
+  if (brand && brand.classList.contains('working')) markWorking(false);
+}
+
+/* A collin run started by a pick, or by a column clicked on a stale cache, is
+   not a request of its own: the page learns of it, and of its end, from
+   /api/meta, which is no work route. So the run is counted here, once from the
+   moment S.collin says it is running to the moment it says otherwise, and the
+   flag keeps it from being counted twice or left begun, which would keep the
+   mark moving for good. Called after every change of S.collin. */
+let collinWorks = false;
+
+function followCollinWork() {
+  const running = !!S.collin && S.collin.state === 'running';
+  if (running === collinWorks) return;
+  collinWorks = running;
+  if (running) workBegan();
+  else workEnded();
+}
+
 async function request(path, init = {}) {
-  for (let again = true; ; again = false) {
-    const r = await fetch(path, { ...init, headers: { ...init.headers, ...keyHeaders() } });
-    if (r.status === 401 && again && keyRefused()) continue;
-    if (r.ok) keyAccepted();
-    return r;
+  const work = isWork(path);
+  if (work) workBegan();
+  try {
+    for (let again = true; ; again = false) {
+      const r = await fetch(path, { ...init, headers: { ...init.headers, ...keyHeaders() } });
+      if (r.status === 401 && again && keyRefused()) continue;
+      if (r.ok) keyAccepted();
+      return r;
+    }
+  } finally {
+    if (work) workEnded();
   }
 }
 
@@ -5867,12 +5938,14 @@ async function regenerateCollin() {
   // Painted here rather than through paintCollin: this waits for the run, so
   // nothing needs to poll for its end.
   S.collin = Object.assign({}, S.collin, { state: 'running', error: '' });
+  followCollinWork();
   paintSourceButton();
   if (S.node) renderCatalog(S.node);
   try {
     const info = await api.send('/api/collineage/generate', 'POST', {});
     // Settled before applyInfo sees it, so the redraw below is the only one.
     S.collin = info.collin;
+    followCollinWork();
     applyInfo(info);
     await redrawLineage();
     return true;
@@ -5880,6 +5953,7 @@ async function regenerateCollin() {
     toast('collin: ' + e.message, 'err');
     // Forgotten first, so paintCollin does not say the failure a second time.
     S.collin = null;
+    followCollinWork();
     try { applyInfo(await api.get('/api/meta')); } catch { /* the toast already said it */ }
     giveUpColumnWait();
     return false;
@@ -5898,6 +5972,7 @@ function giveUpColumnWait() {
 /* Paints what collin's state shows in, and keeps asking while a run started by
    a pick goes on, so its edges appear once it is done. */
 function paintCollin(was) {
+  followCollinWork();
   paintSourceButton();
   paintReportsButton();
   const now = S.collin ? S.collin.state : '';
@@ -16692,9 +16767,12 @@ function foldTopbar() {
 
 function wireTopbar() {
   const bar = $('#topbar');
+  const brand = $('#brand');
   new ResizeObserver(foldTopbar).observe(bar);
   new MutationObserver((records) => {
-    if (records.some((r) => r.target !== bar)) foldTopbar();
+    /* The mark's `working` and `flowing` toggle often and change no size: a
+       layout pass for each would be spent for nothing. */
+    if (records.some((r) => r.target !== bar && !(r.target === brand && r.type === 'attributes'))) foldTopbar();
   }).observe(bar, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden'] });
 }
 

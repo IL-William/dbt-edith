@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.77.2 - 2026-11-05
+
+- Draw Edith's mark beside her name in the top bar, a square on her i, and set
+  it moving while she waits on something slower than a click: the manifest
+  read again, collin, Snowflake, git over the network, or the release check.
+
 ## 1.77.1 - 2026-11-05
 
 - Show Edith's mark in the browser tab, in the light or dark of the system,

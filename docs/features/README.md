@@ -40,6 +40,7 @@ pull request.
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
 | Give me a tour, at the top of that list | a walk through each part of the page, on a model of your project |
 | the GitHub mark in the top bar | raise an issue or a request on GitHub, your version already in it, or give dbt-edith a star |
+| the mark beside Edith, top left | moves while she waits on something slower than a click: the manifest read again, collin, Snowflake, git over the network, or the release check; still otherwise, and under reduced motion its arms turn to the accent instead. Edith herself opens the menu of [updates](updates.md) |
 | `Cmd/Ctrl + S` | save the current file |
 | `Cmd/Ctrl + Alt + S` | save every modified file |
 | `Cmd/Ctrl + Alt + X`, `Alt + W`, or middle-click a tab | close a tab |

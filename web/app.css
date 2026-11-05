@@ -291,12 +291,60 @@ kbd {
 .envmenu button.updcheck:focus:not(:focus-visible) { background: var(--bg-3); }
 .envmenu button.updcheck[aria-disabled=true]:hover { background: var(--bg-3); border-color: var(--line); }
 .brand {
-  position: relative; padding: 2px 4px; margin: -2px -4px; background: none; border: 0; border-radius: 4px;
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  padding: 2px 4px; margin: -2px -4px; background: none; border: 0; border-radius: 4px;
   font: 600 13px/1.45 var(--ui); letter-spacing: .3px; cursor: pointer;
 }
 .brand:hover { background: var(--bg-3); }
 .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.brand b { color: var(--accent); font-weight: 600; }
+/* The accent is the mark's source and the square on her i; the name itself is
+   in the text's colour, so the accent stays a sign rather than a fill. */
+.brand b { color: var(--fg); font-weight: 600; }
+/* A line of its own height, so the square's top is measured from the letter
+   and not from the leading the button's line adds above it. */
+.brand .wi { position: relative; display: inline-block; line-height: 1; }
+.brand .wi i {
+  position: absolute; left: 50%; top: -.02em; width: .19em; height: .19em; margin-left: -.095em;
+  border-radius: .04em; background: var(--accent);
+}
+/* Edith's mark, the cut of the tab's icon: thicker arms and filled boxes than
+   the large drawing, whose outlines blur at 16 px. While she waits on
+   something slower than a click (markWorking() in app.js) a packet runs along
+   each arm, a third of a loop apart, and the box it reaches lights up; it fades
+   when the work ends rather than stopping halfway along an arm. */
+.brandmk { display: block; flex: 0 0 auto; }
+.bm-from { fill: var(--accent); }
+.bm-to { fill: var(--fg-dim); }
+.bm-arm { fill: none; stroke: var(--fg-dim); stroke-width: 5; stroke-linecap: round; transition: opacity .3s; }
+.bm-pk {
+  fill: none; stroke: var(--accent); stroke-width: 6; stroke-linecap: round;
+  stroke-dasharray: .3 1; stroke-dashoffset: .3; opacity: 0; transition: opacity .3s;
+}
+.brand.working .bm-pk { animation: bm-pk 1.8s linear infinite; }
+/* Longhands, not the shorthand: it would reset the delay the .b1/.b2 rules set
+   below, lighting the boxes out of step with the packets. Under .working alone,
+   so a request that starts inside the fade does not restart the boxes' loop
+   when .flowing comes back while the packets carry on. */
+.brand.working .bm-to {
+  animation-name: bm-lit; animation-duration: 1.8s; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+/* !important because an animation's value otherwise wins over a normal
+   declaration: during the fade no packet runs, so no box may be lit. */
+.brand.working:not(.flowing) .bm-to { fill: var(--fg-dim) !important; }
+.brand.working .b1 { animation-delay: -.6s; }
+.brand.working .b2 { animation-delay: -1.2s; }
+.brand.flowing .bm-pk { opacity: 1; }
+.brand.flowing .bm-arm { opacity: .45; }
+@keyframes bm-pk { from { stroke-dashoffset: .3; } to { stroke-dashoffset: -1; } }
+@keyframes bm-lit { 0%, 66% { fill: var(--fg-dim); } 80% { fill: var(--accent); } 100% { fill: var(--fg-dim); } }
+/* Still, it says the same by colour: the arms in the accent until the work ends.
+   Unlike the column wait, this is never the only sign: what was asked for shows
+   its own. */
+@media (prefers-reduced-motion: reduce) {
+  .brand.working .bm-pk, .brand.working .bm-to { animation: none; }
+  .brand.flowing .bm-pk { opacity: 0; }
+  .brand.flowing .bm-arm { opacity: 1; stroke: var(--accent); }
+}
 /* A newer release is out: a dot on the name, the pill in the status bar saying
    which. In the pill's accent, not the warning colour: nothing is wrong with the
    one running. */
@@ -2114,8 +2162,9 @@ body.halloween .legend, body.halloween .graph-status, body.halloween .graph-cap 
 /* A ghost behind Edith's E: the name is painted over it (a positioned box after it in the markup), so the letter keeps its full colour inside a pale halo, lit while a newer release is out, and after
    dark (hw-night, from the browser's own clock). */
 .hw-ghost { display: none; }
+/* 23px is the mark and the gap after it, so she still sits behind the E. */
 body.halloween .hw-ghost {
-  display: block; position: absolute; left: 0; top: 2px; width: 16px; height: 18px; opacity: .5;
+  display: block; position: absolute; left: 23px; top: 2px; width: 16px; height: 18px; opacity: .5;
   pointer-events: none; transform: rotate(-8deg);
   transition: transform .6s ease-out .25s, opacity .6s ease-out .25s;
 }
