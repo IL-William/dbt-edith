@@ -181,6 +181,48 @@ check('a placing macro that reads the target through another says which, with no
     macro: { file: 'macros/g.sql', name: 'generate_schema_name', line: 1 } });
 check('the list is introduced once', reads.differ, 'May differ beyond its relations (6)');
 
+print('\n--- no file picked ---');
+check('a sandbox manifest says where the SQL was written', artifactOwnWords('dev_db.dbt_someone'),
+  'Shown as dbt wrote it, into dev_db.dbt_someone');
+check('a manifest with no sandbox says whose target it is', artifactOwnWords(''),
+  'Shown as dbt compiled it for the manifest\'s target');
+
+print('\n--- the row of buttons ---');
+// S is the page's state; only what the row's helpers read is here.
+var S = { envs: null, env: '' };
+function envList(files, referenced) {
+  return { referenced: referenced === undefined ? [{ var: 'DBT_DB', nodes: 3 }] : referenced,
+    files: files.map(function (f) { return { file: f[0], name: f[1], hidden: !!f[2], target_mismatch: false, target: '' }; }) };
+}
+var listed = [['.env.qa', 'QA'], ['.env.uat', 'UAT']];
+S.envs = envList(listed);
+check('a file to pick draws the row', envRowShown(), true);
+var keyed = envRowKey();
+S.envs = envList(listed);
+check('the same list again keeps the key', envRowKey(), keyed);
+S.envs = envList([['.env.qa', 'Quality'], ['.env.uat', 'UAT']]);
+check('a rename changes it', envRowKey() !== keyed, true);
+S.envs = envList([['.env.qa', 'QA', true], ['.env.uat', 'UAT']]);
+check('so does hiding a file', envRowKey() !== keyed, true);
+S.envs = envList([['.env.qa', 'QA', true], ['.env.uat', 'UAT', true]]);
+check('every file hidden draws no row', envRowShown(), false);
+S.envs = envList([]);
+check('and no file at all draws none', envRowShown(), false);
+S.envs = envList(listed, []);
+check('nor does a project no env var is read by', envRowShown(), false);
+S.envs = null;
+check('nor a list that failed to load', envRowShown(), false);
+
+print('\n--- a stored choice that the list no longer backs ---');
+S.env = '.env.qa';
+S.envs = envList(listed);
+check('is the choice while environments are in use', activeEnv(), '.env.qa');
+S.envs = null;
+check('falls back to the manifest when the list failed to load', activeEnv(), '');
+S.envs = envList(listed, []);
+check('and when no config reads an env var any more', activeEnv(), '');
+S.env = '';
+
 print('\n--- a file dbt wrote on Windows ---');
 var crlf = artifactContent({ content: 'select 1\r\nfrom x\r\n\r\nfrom raw.crm.orders o\r\n', truncated: false });
 check('breaks are one character each', crlf, 'select 1\nfrom x\n\nfrom raw.crm.orders o\n');

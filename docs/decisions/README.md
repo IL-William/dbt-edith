@@ -150,6 +150,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0144](0144-the-pictures-also-illustrate-the-feature-pages-and-are-retaken-by-name.md) | The pictures also illustrate the feature pages, and are retaken by name | adding a picture to a page under `docs/features/`, retaking one, or changing what `scripts/take_shots.py` takes or copies |
 | [0145](0145-a-column-collin-traced-in-part-is-marked-on-the-canvas.md) | A column collin traced in part is marked on the canvas | changing what a column box or its card says about a name collin gave up on, which names are marked, or how the card opens the SQL at them |
 | [0146](0146-a-column-is-compared-with-another-project-by-its-source-columns.md) | A column is compared with another project's by its source columns | changing what `--against` prints, what makes two source columns the same, how the other project's column is searched for, or offering the comparison over MCP |
+| [0147](0147-the-compiled-and-run-tabs-offer-every-environment.md) | The Compiled and Run tabs offer every environment | changing what the top of the Compiled or Run tab offers when environments exist, how an environment is picked there, or what it says with no file picked |
 
 ## Keeping these honest
 

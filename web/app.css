@@ -77,6 +77,19 @@ kbd {
 .envpill-k { font-weight: 400; opacity: .7; }
 .envpill-caret { font-size: 9px; opacity: .75; }
 .envpill.sm { font-size: 10px; line-height: 14px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; letter-spacing: 0; }
+/* The environments on the Compiled and Run tabs (0147): outlined when off,
+   filled like the pill when it is the one in use. */
+.env-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.envchip {
+  font: 600 10px/14px var(--ui); color: var(--fg); background: transparent;
+  border: 1px solid var(--tone); border-radius: 9px; padding: 0 7px; cursor: pointer;
+}
+.envchip.on { color: #10151c; background: var(--tone); }
+.envchip[data-tone=manifest] { border-color: #4a5870; }
+.envchip[data-tone=manifest].on { color: #fff; background: #4a5870; border-color: #6f7f93; }
+.envchip:hover { filter: brightness(1.15); }
+.envchip.on { cursor: default; filter: none; }
+.envchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .envmenu {
   position: fixed; z-index: 65; min-width: 230px; max-width: 380px; padding: 4px;
   background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;

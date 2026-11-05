@@ -35,6 +35,8 @@ hiding environments stays in one place, the settings.
   what the choice changes.
 - **A picker on the Compiled tab**: 0139 rejected it, two environments on
   screen and the Catalog saying another.
+  *Amended by [0147](0147-the-compiled-and-run-tabs-offer-every-environment.md): a row of buttons on the tab
+  sets the same choice the pill does, so the objection no longer applies.*
 
 ## Consequences
 
