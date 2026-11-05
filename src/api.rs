@@ -7440,6 +7440,33 @@ b"}"#,
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The browser fetches the tab's icon itself, without the key, and draws
+    /// an SVG only when it comes back as `image/svg+xml`: a link whose file is
+    /// renamed, or a type guessed wrong, leaves the blank page in the tab with
+    /// no error anywhere. So every icon `index.html` names is fetched here.
+    #[tokio::test]
+    async fn every_icon_the_page_names_is_served_as_its_type() {
+        let root = temp_project("icons");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let page = Assets::get("index.html").expect("the page is embedded");
+        let page = String::from_utf8_lossy(&page.data).into_owned();
+        let icons: Vec<&str> = page.split("<link ").skip(1).filter(|l| l.contains("rel=\"icon\"")).collect();
+        assert_eq!(icons.len(), 2, "{icons:?}");
+        for link in icons {
+            let attr = |name: &str| {
+                let value = link.split(&format!(" {name}=\"")).nth(1).and_then(|v| v.split('"').next());
+                value.unwrap_or_else(|| panic!("no {name} in <link {link}")).to_string()
+            };
+            let (href, kind) = (attr("href"), attr("type"));
+            let head = head_of(port, keyless(get(&format!("/{href}"), &[("Host", &host)]))).await.to_lowercase();
+            assert!(head.starts_with("http/1.1 200"), "{href}: {head}");
+            assert!(head.lines().any(|l| l == format!("content-type: {kind}")), "{href}: {head}");
+        }
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn a_diff_path_cannot_leave_the_project() {
         let root = temp_project("diff");
