@@ -2988,6 +2988,9 @@ function renderTabs() {
     const x = document.createElement('span');
     x.className = 'x';
     if (!f.dirty) x.textContent = '×';
+    // The pencil of unsaved edits is a drawing, so the words are here; the tab is
+    // built again whenever dirty changes, as the Open editors row is.
+    x.title = f.dirty ? 'Close, losing unsaved changes' : 'Close';
     x.addEventListener('click', (e) => { e.stopPropagation(); closeFile(path); });
     t.append(name, x);
     if (path === S.preview) t.classList.add('preview');
@@ -3032,7 +3035,12 @@ function renderOpenEditors() {
 
     const state = document.createElement('span');
     state.className = 'state';
-    const paint = (hover) => { state.textContent = f.dirty && !hover ? '\u25cf' : '\u00d7'; };
+    // Unsaved edits show the pencil, drawn by the stylesheet; the pointer on it shows the ×.
+    const paint = (hover) => {
+      const editing = f.dirty && !hover;
+      state.classList.toggle('editing', editing);
+      state.textContent = editing ? '' : '\u00d7';
+    };
     paint(false);
     state.title = f.dirty ? 'Close, losing unsaved changes' : 'Close';
     state.addEventListener('mouseenter', () => paint(true));
@@ -5829,7 +5837,7 @@ function fillSourceMenu(menu, done) {
     const item = document.createElement('button');
     item.type = 'button';
     // An action is not one of the choices, so it carries no checked state,
-    // and no dot: it is something to do with the tool above it, drawn indented
+    // and no glyph: it is something to do with the tool above it, drawn indented
     // under that tool rather than as another tool.
     item.setAttribute('role', action ? 'menuitem' : 'menuitemradio');
     if (!action) item.setAttribute('aria-checked', String(on));
@@ -6592,7 +6600,7 @@ function profileLink() {
 
 /* What is wrong with the profile, '' while there is one to open, or nowhere
    to look for one. A missing one is why dbt would fail, and where it should be
-   is the question the user would ask: the gear carries a dot for it, and the
+   is the question the user would ask: the gear carries a triangle for it, and the
    settings say where dbt looks (0049, 0100). A refused one has nothing to open
    either, and says why (0094). */
 function profileWarning(p) {
@@ -6657,7 +6665,7 @@ function followBuildsSwitch() {
   });
 }
 
-/* The gear: a dot while the profile is missing or refused (0100). It is lit
+/* The gear: a triangle while the profile is missing or refused (0100). It is lit
    by paintSpaces(), as a space. */
 function paintSettingsButton() {
   const b = $('#settings-btn');
@@ -8213,6 +8221,7 @@ h1 { margin: 1px 0 6px; font-size: 17px; font-weight: 600; overflow-wrap: anywhe
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
 .legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
+.legend i.kind { width: 3px; height: 11px; border-radius: 2px; vertical-align: -2px; }
 .tools { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--fg-dim); }
 button { display: none; padding: 2px 8px; font: 11px var(--ui); color: var(--fg); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
@@ -8651,7 +8660,7 @@ function paintArtifact(kind, keepScroll) {
 
 /* The environments, one button each, and under them the line naming the one the
    SQL is shown for and the places it may differ beyond its relations. A button
-   sets the one shared choice, so the status bar, the Catalog and the Builds dots
+   sets the one shared choice, so the status bar, the Catalog and the Builds marks
    follow (0147). A macro's finding opens the macro at that line, as Cmd+K opens
    one. */
 function artifactEnvBar(shown, envReads, env) {
@@ -8677,8 +8686,9 @@ function artifactEnvBar(shown, envReads, env) {
     : { head: artifactOwnWords((S.meta && S.meta.sandbox) || ''), findings: [] };
   const line = document.createElement('div');
   line.className = 'env-line';
-  line.append(Object.assign(document.createElement('span'), { className: 'envdot' }), words.head);
-  line.firstChild.dataset.tone = box.dataset.tone;
+  // No tag here: the picked button above carries the environment's colour and
+  // the words name it, so a tag would say it a second time.
+  line.append(words.head);
   box.append(line);
   if (words.findings.length) {
     // Folded by a click, open to start with: the list is what the person came
@@ -8812,7 +8822,7 @@ function gitPausedNote(key) {
 }
 
 /* What the badge before the manifest's reload shows, and what its hover card says.
-   The dot's colour answers one question only, the one that decides whether the
+   The mark's shape and colour answer one question only, the one that decides whether the
    lineage on screen can be trusted: does this manifest still match the files
    dbt would parse? Drift from the default branch is reported in its own
    segment rather than in the colour, because a feature branch behind main
@@ -9661,7 +9671,7 @@ function revealJobStep(body, id, want) {
   if (!maybe) line.classList.add('jobs-hit');
 }
 
-/* A model of the coverage, its kind's dot first: the name opens it with the
+/* A model of the coverage, its kind's bar first: the name opens it with the
    Jobs tab listing its jobs, and its folder follows, muted. */
 function coverageRow(r, path) {
   const li = jel('li', '');
@@ -10324,7 +10334,7 @@ function reportsSections(index, focus) {
   // jobs and is no entry of its own: the index is polled, and it would work
   // the order out on every poll (0126).
   const has = (key) => !!(index && (key === 'jobbuilds' ? index.builds && index.jobs : key === 'joborder' ? index.jobs : index[key]));
-  // The last run's dot says how it ended, from the counts the index carries;
+  // The last run's mark says how it ended, from the counts the index carries;
   // none while dbt is still writing the file and the index lists its time alone,
   // nor when the run did nothing a pass could be said of.
   const run = index && index.run;
@@ -10526,13 +10536,13 @@ function runEndCounts(st) {
 /* How a run ended, from those counts: bad on an error or a failed test, warn
    on a warning, a partial success or a status nobody here knows, ok when
    something ran and all of it passed (what it skipped does not spoil that),
-   and none, '', when nothing ran or all it did was skip: the dot then keeps
-   its tool's colour rather than claim a pass. */
+   and none, '', when nothing ran or all it did was skip: no mark is drawn then,
+   rather than claim a pass, and the section keeps its tool's colour. */
 function runEndTone(c) {
   return c.error || c.fail ? 'bad' : c.warn || c.partial || c.other ? 'warn' : c.ok ? 'ok' : '';
 }
 
-/* The words for a tone, on the dot and in the rail row's tooltip. */
+/* The words for a tone, on the mark and in the rail row's tooltip. */
 function runEndWords(tone) {
   return { bad: 'Ended with errors or failed tests', warn: 'Not everything passed', ok: 'All passed' }[tone] || '';
 }
@@ -10808,7 +10818,7 @@ async function openReports(section, { reread = true } = {}) {
 }
 
 /* The rail: the sections under who reads their files, each with what it
-   counts when it counts something (0137). The dot is the last run's alone,
+   counts when it counts something (0137). The mark is the last run's alone,
    saying how it ended; the tool is the group's. */
 function paintReportsNav() {
   const { sections, news } = reportsNow();
@@ -10830,7 +10840,7 @@ function paintReportsNav() {
       if (words) {
         const dot = jel('span', 'tooldot');
         dot.dataset.tool = sec.tool;
-        // Inside a button, the dot is not read: the row's title says the outcome.
+        // Inside a button, the mark is not read: the row's title says the outcome.
         dot.dataset.tone = sec.tone;
         dot.setAttribute('aria-hidden', 'true');
         dot.title = words;
@@ -10869,7 +10879,7 @@ function paintReportStale() {
 function reportHead({ title, tool, tone, about, again, extra = [] }) {
   const head = jel('div', 'diff-head');
   const row = jel('div', 'diff-title');
-  // The source, named in its colour. The dot stays only to say how the last
+  // The source, named in its colour. The mark stays only to say how the last
   // run ended: the colour is never all that says whose a section is.
   const chip = jel('span', 'srcchip', reportSourceLabel(tool));
   chip.dataset.tool = tool;
@@ -10970,7 +10980,10 @@ function reportTiles(tiles) {
   for (const t of tiles) {
     const tile = jel('div', 'reporttile');
     if (t.tone) tile.dataset.tone = t.tone;
-    tile.append(jel('div', 'rlabel', t.label), jel('div', 'rvalue', t.value), jel('div', 'rsub', t.sub || ''));
+    // A label that is a node (an environment's tag) is drawn as it is; its words stay in `label`.
+    const lab = jel('div', 'rlabel', t.head ? '' : t.label);
+    if (t.head) lab.append(t.head);
+    tile.append(lab, jel('div', 'rvalue', t.value), jel('div', 'rsub', t.sub || ''));
     box.append(tile);
   }
   return box;
@@ -11854,7 +11867,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 
 /* The sections, in the rail's order, from what `c` says the page knows: what
    each row says beside its name, the column lineage on screen, Snowflake on
-   or off, a newer release, and the profile's dot when it is missing. */
+   or off, a newer release, and the profile's triangle when it is missing. */
 function settingsSections(c) {
   return [
     { key: 'project', label: 'Project', warn: c.profile || '',
@@ -12363,11 +12376,12 @@ function hoverLeave() {
    another column are two facts rather than one contradiction. All in the
    box's payload, so it paints once. */
 function fillColumnCard(el, n, rows) {
-  // The dot is the role the card is about; a card opened only by an expression
-  // is neither generated nor kept by anything, and gets none.
+  // The square is the role the card is about, as the stop at menu draws one,
+  // not a kind's bar; a card opened only by an expression is neither generated
+  // nor kept by anything, and gets none.
   let tone = null;
   if (Array.isArray(n.generated) || rows) {
-    tone = Object.assign(document.createElement('span'), { className: 'dot' });
+    tone = Object.assign(document.createElement('span'), { className: 'rolesq' });
     tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
   }
   hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
@@ -12429,7 +12443,7 @@ function fillNodeCard(el, id, seed) {
       }));
     }
     // The last build in the environment the canvas shows (0117), a line a
-    // target: the dot has no title of its own, which would land over the card.
+    // target: the mark has no title of its own, which would land over the card.
     const spec = n.kind === 'model' && !n.disabled && n.materialized !== 'ephemeral' ? buildsSpec() : null;
     if (spec) {
       for (const line of spec.of(id).title.split('\n')) {
@@ -12787,6 +12801,13 @@ function envDisplayName(file) {
   return f ? f.name : file;
 }
 
+/* An environment by its name, in its colour (envTone): a tag, never a dot. */
+function envTag(name, tone) {
+  const t = Object.assign(document.createElement('span'), { className: 'envtag', textContent: name });
+  t.dataset.tone = tone;
+  return t;
+}
+
 async function loadEnvs() {
   // Re-reading the env list means the .env files were re-read too, so any
   // resolution cached against the old ones is stale.
@@ -12846,7 +12867,7 @@ function selectEnv(file) {
   S.env = file;
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
-  // The dots follow the environment, painted over the canvas as it stands (0117).
+  // The marks follow the environment, painted over the canvas as it stands (0117).
   paintLineageBuilds();
   // So does the SQL of the visible Compiled or Run tab, from the answer it holds
   // (0139), and the buttons on it (0147).
@@ -12915,12 +12936,10 @@ function envRow({ label, sub = '', tone = '', current = false, title = '' }, pic
   if (title) b.title = title;
   const check = Object.assign(document.createElement('span'), { className: 'check', textContent: current ? '✓' : '' });
   b.append(check);
-  if (tone) {
-    const d = Object.assign(document.createElement('span'), { className: 'envdot' });
-    d.dataset.tone = tone;
-    b.append(d);
-  }
-  b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
+  // The name is the tag: a dot before it said the colour twice.
+  const lbl = tone ? envTag(label, tone) : Object.assign(document.createElement('span'), { textContent: label });
+  lbl.classList.add('lbl');
+  b.append(lbl);
   if (sub) b.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
   b.addEventListener('click', pick);
   return b;
@@ -13521,7 +13540,7 @@ function envsInUse() { return !!(S.envs && S.envs.referenced.length); }
 
 /* The choice in effect: a stored one outlives the environments in use (the list
    failed to load, or no config reads an env var any more), and then nothing
-   could name the file, so the tab, the Catalog's location and the Builds dots
+   could name the file, so the tab, the Catalog's location and the Builds marks
    all fall back to the manifest's own. */
 function activeEnv() { return envsInUse() ? S.env : ''; }
 
@@ -13644,6 +13663,21 @@ function buildsEnvLabel(t) {
   return t.target ? `${t.name} · target ${t.target}` : t.name;
 }
 
+/* buildsEnvLabel laid out: the name as its tag, the target it is kept to after
+   it, with the " · " the label has so that copied text reads the same. */
+function buildsEnvHead(t) {
+  const tag = envTag(t.name, t.env ? envTone(t.name) : 'manifest');
+  return t.target ? [tag, jel('span', 'muted', ` · target ${t.target}`)] : [tag];
+}
+
+/* The same as one box, for a table's head or a tile's label, where the tag and
+   the target sit side by side whatever lays them out. */
+function buildsEnvHeading(t) {
+  const box = jel('span', 'envhead');
+  box.append(...buildsEnvHead(t));
+  return box;
+}
+
 /* What a run that did not end well is called. Skipped is not one: it built
    nothing that time, and the last success still decides. A partial success is
    one (dbt 1.9's microbatch): some of the batches failed, so the table is
@@ -13703,7 +13737,7 @@ function buildsNoRun(target) {
   return `no run ${target ? `under target ${target}` : 'recorded'} in the last ${buildsWindowDays()} days`;
 }
 
-/* The line a dot's hover card and a Catalog row open with: the last attempt,
+/* The line a mark's hover card and a Catalog row open with: the last attempt,
    and the last success when it was not that one. `kept` is the target the
    environment was kept to, if any. */
 function buildsSaid(v, envName, now, kept) {
@@ -15115,7 +15149,7 @@ async function readBuilds() {
 }
 
 /* Everything that shows the read, drawn again from memory: the Catalog's
-   section, the Reports section when it is the one on screen, and the dots. */
+   section, the Reports section when it is the one on screen, and the marks. */
 function repaintBuilds() {
   const box = $('#catalog .cat-builds');
   if (box) paintCatalogBuilds(box);
@@ -15218,9 +15252,7 @@ function paintCatalogBuilds(box) {
       const got = read.byEnv[t.env];
       const block = jel('div', 'buildenv');
       const name = jel('span', 'buildname');
-      const dot = jel('span', 'envdot');
-      dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
-      name.append(dot, jel('b', '', buildsEnvLabel(t)));
+      name.append(...buildsEnvHead(t));
       if (!got) {
         block.append(name, jel('span', 'muted', read.pending ? 'waiting for Snowflake…' : ''));
       } else if (got.error) {
@@ -15325,9 +15357,7 @@ async function buildsSection() {
   for (const t of read.targets) {
     const got = read.byEnv[t.env];
     const title = jel('h3', 'buildsenv', '');
-    const dot = jel('span', 'envdot');
-    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
-    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
+    title.append(...buildsEnvHead(t));
     if (!got) { groups.push({ head: [title, jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : '')], folds: [] }); continue; }
     if (got.error) { groups.push({ head: [title, buildsFailure(got)], folds: [] }); continue; }
     const head = [title];
@@ -15392,7 +15422,7 @@ function buildsGrid(read, models, own, days) {
       && (!needle || m.name.toLowerCase().includes(needle) || m.id.toLowerCase().includes(needle)));
     const head = jel('tr', '');
     head.append(jel('th', '', 'model'));
-    envs.forEach((t) => head.append(jel('th', '', buildsEnvLabel(t))));
+    envs.forEach((t) => { const th = jel('th', ''); th.append(buildsEnvHeading(t)); head.append(th); });
     const rows = shown.slice(0, 500).map((m) => {
       const tr = jel('tr', '');
       const link = jel('a', 'filelink', m.name);
@@ -15488,7 +15518,7 @@ function jobBuildsCell(res, clock) {
   if (c.error) bits.push(`${c.error} errored`);
   if (c.late) bits.push(`${c.late} late`);
   if (c.none) bits.push(`${c.none} not built`);
-  // The dot stays on the first line of the words, which may run over several.
+  // The mark stays on the first line of the words, which may run over several.
   const top = jel('span', 'jbtop');
   top.append(jel('span', 'jobdot'), jel('span', 'jbsay', bits.length ? bits.join(' · ') : c.total === 1 ? 'built' : `all ${c.total} built`));
   cell.append(top);
@@ -15525,20 +15555,21 @@ function jobBuildsPick(listable, kept, last) {
    there have every model built, with what ails the rest. A job whose models
    cannot be told apart across targets (`clash`) or that runs no model is
    judged by nothing, and `out` counts those left out. */
-function jobBuildsTile(label, results) {
+function jobBuildsTile(label, results, head) {
   const judged = results.filter((r) => !r.clash && r.counts.total);
   const by = (tone) => judged.filter((r) => r.tone === tone).length;
   const error = by('error'), late = by('late'), none = by('none');
   return { label, value: `${by('ok')} of ${judged.length} ${judged.length === 1 ? 'job' : 'jobs'}`,
     sub: [error && `${error} errored`, late && `${late} late`, none && `${none} not built`].filter(Boolean).join(' · '),
-    tone: error ? 'bad' : late ? 'warn' : '', out: results.length - judged.length };
+    tone: error ? 'bad' : late ? 'warn' : '', out: results.length - judged.length, head };
 }
 
 /* The tiles of every environment, and the line under them saying what ok
    means and how many jobs were left out, once when it is the same number
-   everywhere; else each tile says its own. `entries` are `{label, results}`. */
+   everywhere; else each tile says its own. `entries` are `{label, results, head}`,
+   `head` being the label laid out as nodes, when it is one. */
 function jobBuildsTiles(entries) {
-  const tiles = entries.map((e) => jobBuildsTile(e.label, e.results));
+  const tiles = entries.map((e) => jobBuildsTile(e.label, e.results, e.head));
   const outs = [...new Set(tiles.map((t) => t.out))];
   const same = outs.length === 1 ? outs[0] : 0;
   if (outs.length > 1) for (const t of tiles) if (t.out) t.sub = [t.sub, `${t.out} left out`].filter(Boolean).join(' · ');
@@ -15578,10 +15609,8 @@ function jobBuildsCutNote(labels) {
 /* The models of one environment worth a look: errored, late, not built. */
 function jobBuildsEnv(job, t, res, got, names, now) {
   const d = jel('div', 'jbenv');
-  const dot = jel('span', 'envdot');
-  dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
   const head = jel('div', 'jbenvhead');
-  head.append(dot, jel('b', '', buildsEnvLabel(t)));
+  head.append(...buildsEnvHead(t));
   d.append(head);
   const stepName = new Map((job.step_names || []).map((s) => [s.n, s.name]));
   let listed = 0;
@@ -15650,7 +15679,7 @@ async function jobBuildsSection() {
     if (!kept.byJob.has(job)) kept.byJob.set(job, jobBuildVerdicts(job, got, clocks.get(job), days, now, kept.worst));
     return kept.byJob.get(job);
   };
-  const figures = jobBuildsTiles(ready.map((t) => ({ label: buildsEnvLabel(t), results: cfg.jobs.map((j) => verdictsOf(j, t)) })));
+  const figures = jobBuildsTiles(ready.map((t) => ({ label: buildsEnvLabel(t), head: buildsEnvHeading(t), results: cfg.jobs.map((j) => verdictsOf(j, t)) })));
   body.append(reportTiles(figures.tiles));
   if (figures.note) body.append(jel('p', 'runnote', figures.note));
   body.append(intro);
@@ -15659,9 +15688,7 @@ async function jobBuildsSection() {
     const got = read.byEnv[t.env];
     if (got && !got.error) continue;
     const title = jel('h3', 'buildsenv', '');
-    const dot = jel('span', 'envdot');
-    dot.dataset.tone = t.env ? envTone(t.name) : 'manifest';
-    title.append(dot, document.createTextNode(buildsEnvLabel(t)));
+    title.append(...buildsEnvHead(t));
     body.append(title, got ? buildsFailure(got) : jel('p', 'runnote', read.pending ? 'Waiting for Snowflake…' : ''));
   }
   // What the environments' rows leave out, said once for those that share the words.
@@ -15683,8 +15710,9 @@ async function jobBuildsSection() {
   const head2 = jel('div', 'jbrow jbheads');
   head2.append(jel('span', '', 'job'), jel('span', '', 'kind'), jel('span', '', 'schedule'), jel('span', '', 'models'));
   ready.forEach((t) => {
-    const h = jel('span', 'jbenvh', buildsEnvLabel(t));
-    h.title = h.textContent;
+    const h = jel('span', 'jbenvh');
+    h.append(buildsEnvHeading(t));
+    h.title = buildsEnvLabel(t);
     head2.append(h);
   });
   // Every row is made once; the filter only hides them. The detail of a job,
@@ -17319,9 +17347,9 @@ function tourSteps(c) {
     + 'manifest on its own. The arrows at its end read the file again at once.';
   steps.push({ key: 'manifest', target: '#manifest-pill', title: 'manifest.json, and how fresh it is',
     text: c.manifest
-      ? `${read} So the page is as true as the last \`dbt parse\`. This says how old the manifest is, and its dot `
-        + 'whether a file dbt reads changed since: green, none has; amber, your own saved edits; red, a pull, a '
-        + `checkout or a merge. Hovering it says which files. ${parse}`
+      ? `${read} So the page is as true as the last \`dbt parse\`. This says how old the manifest is, and its mark `
+        + 'whether a file dbt reads changed since: a green check, none has; an amber triangle, your own saved edits; a red '
+        + `cross, a pull, a checkout or a merge. Hovering it says which files. ${parse}`
       : `${read} There is none yet, so this says no manifest. ${parse}` });
   if (m) {
     steps.push({ key: 'editor', target: '#editor-pane', title: `${m.name}, in the editor`,
@@ -18662,9 +18690,13 @@ function paintUpdate() {
   }
   // No tooltip on the name: the menu it opens under the pointer says all of
   // it, and a tooltip would land on the menu's first lines. A screen reader
-  // still hears what the dot shows.
+  // still hears what the mark shows.
   const brand = $('#brand');
+  // The glyph widens the name by a few pixels, and the fold observer skips the
+  // brand's own attribute changes, so the bar is folded again here when it flips.
+  const was = brand.classList.contains('newer');
   brand.classList.toggle('newer', !!o);
+  if (was !== !!o) foldTopbar();
   brand.setAttribute('aria-description', o ? o.title : `dbt-edith ${S.version || '?'}`);
   if (S.updateMenu && S.updateMenu.isConnected) {
     paintUpdateMenu(S.updateMenu);

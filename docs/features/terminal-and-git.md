@@ -49,7 +49,8 @@ fish and PowerShell do not say which venv they hold, and there the bar stays as
 dbt-edith started
 ([0069](../decisions/0069-the-status-bar-names-the-venv-the-terminal-reports.md)).
 
-The bar is green when the venv is active and amber when it is not. A click
+The pill is green with a check when the venv is active, and amber with a
+triangle when it is not; with none it is a dashed ring. A click
 opens the Project section of the settings, where Python says the same as the
 tooltip; while it is amber, each venv of the project has a button there that
 types the line that activates it in the terminal, `source .../activate` for

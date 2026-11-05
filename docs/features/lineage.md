@@ -32,25 +32,25 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ![The amber manifest pill in the top bar and its card, saying a saved edit is not in the manifest yet](../shots/manifest-pill.png)
 
-At the right of the top bar a pill gives the manifest's age and a dot, and
+At the right of the top bar a pill gives the manifest's age and a mark, and
 ends in circling arrows that read `manifest.json` again at once, for the rare
-time the poll has not. The dot answers one question: does the manifest still
+time the poll has not. The mark answers one question: does the manifest still
 match the files dbt would parse right now?
 
 | | |
 | --- | --- |
-| green | nothing dbt parses has changed since the manifest was written |
-| amber | files are newer, and all of them are yours, saved but not committed |
-| red | files are newer and already committed: a checkout, a pull or a merge moved them under this manifest |
-| grey | there is no `manifest.json` yet |
+| green check | nothing dbt parses has changed since the manifest was written |
+| amber triangle | files are newer, and all of them are yours, saved but not committed |
+| red cross | files are newer and already committed: a checkout, a pull or a merge moved them under this manifest |
+| grey dashed ring | there is no `manifest.json` yet |
 
 Hovering says which files, how many, what the last commit was, and what to do
 about it. Clicking runs `dbt parse` in the terminal, which is the command that
-turns the dot green again. dbt runs there, in your shell and your environment,
+turns the mark into a green check again. dbt runs there, in your shell and your environment,
 never from the server.
 
 Green does not mean recent. A manifest parsed three weeks ago on a branch
-nobody has touched for three weeks is correct, and the age beside the dot is
+nobody has touched for three weeks is correct, and the age beside the mark is
 there to say so. What makes a manifest wrong is a file moving under it, not
 time passing.
 
@@ -73,8 +73,9 @@ sources, seeds and snapshots keep theirs, and **any materialization the tool
 does not know is drawn in magenta** so a custom one stands out rather than
 blending in. Ephemeral models are dashed, like disabled ones: nothing of them
 exists in the warehouse. The legend in the corner lists only the
-materializations actually on screen. The same colours are used for the dots in
-the sidebar and the catalog, so a model looks the same everywhere.
+materializations actually on screen. A model's kind is the thin bar of its box,
+and the same bar, in the same colour, stands before its name in the sidebar, the
+palette, the Catalog and the cards, so a model looks the same everywhere.
 
 **Click an entry of the legend** to keep what it names lit and fade the rest:
 `incremental` leaves the incremental models and the edges between them. In
@@ -204,19 +205,20 @@ level is the same depth on every band, so a folder holding a single sub-folder
 still draws it, and each level costs columns
 ([0080](../decisions/0080-a-band-may-be-cut-by-its-sub-folders.md)).
 
-### Last built, as a dot
+### Last built, as a mark
 
 Once the Catalog's Last built (or Reports' Builds by environment) has been read,
-each model box carries a small dot in its top right corner for the environment
-the `env` pill names, the manifest's own build when none is picked: green when
-its last success is within the threshold, amber when it is older, red when its
-last attempt failed, and an empty ring when no run is recorded. Pausing on the
-dot says the environment, the status and how long ago, the target, and the last
-success. When the table holds runs of several targets, the dot takes the worst
-of them, error before stale before not built before ok, and says each. Picking another environment repaints the dots without drawing the graph
+each model box carries a small mark in its top right corner for the environment
+the `env` pill names, the manifest's own build when none is picked: a green
+check when its last success is within the threshold, an amber triangle when it
+is older, a red cross when its last attempt failed, and a dashed ring when no
+run is recorded. Pausing on the
+mark says the environment, the status and how long ago, the target, and the last
+success. When the table holds runs of several targets, the mark takes the worst
+of them, error before stale before not built before ok, and says each. Picking another environment repaints the marks without drawing the graph
 again; an environment that was not read, or whose read failed, paints none, and
 neither do ephemeral or disabled models, tests or the column mode. An export and
-a copied image never carry the dots: a live read of other environments is not
+a copied image never carry the marks: a live read of other environments is not
 kept, and a file is
 ([0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
 

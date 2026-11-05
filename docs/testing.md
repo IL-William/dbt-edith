@@ -59,7 +59,7 @@ $JSC web/tests/find.js        # find in a file: matches, steps, the count, the c
 $JSC web/tests/graphfind.js   # find on the lineage: what a box is found by, the order, a folded test
 $JSC web/tests/keys.js        # key names on each platform, and the shortcut list against wireKeys
 $JSC web/tests/reports.js     # the Reports panel: its sections, the news on its button, where it opens, its rail, the filter over its folds
-$JSC web/tests/builds.js      # the last build per environment: where the tables are, the verdicts, the dots, the Reports lists
+$JSC web/tests/builds.js      # the last build per environment: where the tables are, the verdicts, the marks, the Reports lists
 $JSC web/tests/joborder.js    # Job order in Reports: the groups, a pair's lines, the edges and the ten drawn, what the answer leaves out, and the pieces every section is drawn from
 $JSC web/tests/jobbuilds.js   # builds by job: a cron read in its source's zone, the last start across a clock change, a job's models late, built since, not built
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
@@ -67,10 +67,11 @@ $JSC web/tests/selpanel.js    # the Lineage space's panel: what the dock gets ba
 $JSC web/tests/spaces.js      # the top bar's tabs: the lit one, a click on it, Code from the settings opened over Reports, Escape
 $JSC web/tests/colwait.js     # a column asked for during a collin run: the canvas waits cleared, the last click is drawn, a failure gives the model back
 $JSC web/tests/working.js     # Edith's mark moving while she works: which requests count, its delay, its fade, two at once
-$JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
+$JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's mark
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header
 $JSC web/tests/halloween.js   # the Halloween look: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
+$JSC web/tests/shapes.js      # one shape per meaning: no marker round, every state its pictogram
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake

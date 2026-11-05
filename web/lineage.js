@@ -148,14 +148,15 @@ const Lineage = (() => {
   }
 
   /* A legend entry's swatch: a dashed line for `indirect` and each clause, as
-     their edges are drawn, a square of the colour for every other entry.
-     Shared with the exported page, whose legend has no stylesheet of the
-     canvas's. */
+     their edges are drawn, the bar of its box for a kind or a test (their
+     colour is a box variable, never a role's), a square of the colour for
+     every other entry. Shared with the exported page, whose legend has no
+     stylesheet of the canvas's. */
   function legendSwatch(label, colour) {
     const dashed = label === 'indirect' || Object.values(CLAUSE).includes(label);
     return dashed
       ? { cls: 'dash', style: `background:repeating-linear-gradient(90deg,${colour} 0 3px,transparent 3px 5px)` }
-      : { cls: '', style: `background:${colour}` };
+      : { cls: /^var\(--[kt]-/.test(colour) ? 'kind' : '', style: `background:${colour}` };
   }
 
   /* What produced each column, read off its incoming edges, so the badge sits on
@@ -2020,13 +2021,22 @@ const Lineage = (() => {
     return L;
   }
 
-  /* The last build of each model in the environment the page names, as a dot
+  /* A build's state in the shapes the page draws states with (app.css's
+     --m-ok, --m-warn, --m-bad, --m-none), on their 16 unit grid. */
+  const BUILD_MARK = {
+    ok: 'M3 8.75l3.25 3.25L13 4.5',
+    stale: 'M8 1.5L15 14H1z M7.1 6h1.8v4.2H7.1z M7.1 11.2h1.8v1.6H7.1z',
+    error: 'M4 4l8 8M12 4l-8 8',
+    none: 'M8 2.5a5.5 5.5 0 1 1 0 11a5.5 5.5 0 1 1 0-11',
+  };
+
+  /* The last build of each model in the environment the page names, as a mark
      on its box (0117): `spec.of(id)` gives a verdict and the words for a
      model, asked only for the boxes drawn. Painted over what is drawn, without
-     a layout, so choosing another environment costs a few circles; kept in
+     a layout, so choosing another environment costs a few paths; kept in
      the options, so a redraw keeps it. The words go in the box's aria-label
      and the hover card, not a <title>, whose native tooltip would land over
-     the card. Not in a file: snapshotOf takes the dots off, since an export
+     the card. Not in a file: snapshotOf takes the marks off, since an export
      must not carry a live read of other environments. */
   const labelBase = new WeakMap();
   function paintBuilds(spec) {
@@ -2035,7 +2045,7 @@ const Lineage = (() => {
     root.querySelectorAll('.bdot').forEach((x) => x.remove());
     data.nodes.forEach((n, i) => {
       const g = nodeEls[i];
-      // The label a box was drawn with, kept apart from what a dot adds to it.
+      // The label a box was drawn with, kept apart from what a mark adds to it.
       if (g && !labelBase.has(g)) labelBase.set(g, g.getAttribute('aria-label') || '');
       if (g && labelBase.get(g)) g.setAttribute('aria-label', labelBase.get(g));
     });
@@ -2047,7 +2057,8 @@ const Lineage = (() => {
       if (!g || !b || b.rider || n.kind !== 'model' || n.disabled || matLabel(n) === 'ephemeral') return;
       const got = spec.of(n.id);
       if (!got) return;
-      g.appendChild(el('circle', { class: `bdot ${got.verdict}`, cx: b.w - 11, cy: 11, r: 3.5 }));
+      // 10px, centred 11px in from the box's top right corner.
+      g.appendChild(el('path', { class: `bdot ${got.verdict}`, d: BUILD_MARK[got.verdict] || BUILD_MARK.none, transform: `translate(${b.w - 16} 6) scale(.625)` }));
       g.setAttribute('aria-label', `${labelBase.get(g)}, last build: ${got.title.split('\n').join('; ')}`);
     });
   }
@@ -2294,7 +2305,7 @@ const Lineage = (() => {
 
     paintArt();
     if (!opts.keepView) fit(); else apply();
-    // After the art, so a dot sits over it as well as over the box.
+    // After the art, so a mark sits over it as well as over the box.
     paintBuilds(opts.builds);
     select(selected);
     if (finding) refind();

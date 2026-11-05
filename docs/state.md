@@ -45,16 +45,17 @@ refusing an unsupported method by name and by a button that types the
 equivalent `dbt ls` into the terminal for you to compare. Measured on a
 109 MB manifest: one term with a `+` resolves 265 nodes in well under 10 ms.
 
-Manifest freshness: a dot in the top bar's manifest pill, which ends in its
-reload, says whether the lineage on screen still matches the files dbt would
-parse, and clicking it runs `dbt parse` in the terminal. Freshness is measured
-in file times rather than in commits (0025), because committing changes no file
-and pulling an old commit changes several. git is asked one question only, per
-file already known to be newer: is it dirty? That separates the user's own
-unsaved work (amber) from a checkout or a pull they have not re-parsed since
-(red). How far the branch trails the default one rides beside the dot in its
-own segment and never colours it. `api::watch_remote` fetches every ten minutes
-so that count means something, read only and deadlined like the rest of 0007.
+Manifest freshness: a mark (check, triangle, cross, dashed ring) in the top
+bar's manifest pill, which ends in its reload, says whether the lineage on
+screen still matches the files dbt would parse, and clicking it runs `dbt parse`
+in the terminal. Freshness is measured in file times rather than in commits
+(0025), because committing changes no file and pulling an old commit changes
+several. git is asked one question only, per file already known to be newer: is
+it dirty? That separates the user's own unsaved work (amber) from a checkout or
+a pull they have not re-parsed since (red). How far the branch trails the
+default one rides beside the mark in its own segment and never colours it.
+`api::watch_remote` fetches every ten minutes so that count means something,
+read only and deadlined like the rest of 0007.
 
 Compiled and Run tabs: the two files dbt leaves per node
 under `target/` get a tab each, where one tab used to probe `compiled/` then
@@ -956,8 +957,8 @@ settings down, a section at a time from a rail, as the reports: Project, with
 the profile, the environments and Python, Column lineage, Snowflake,
 Orchestration, Updates, and Help and tour. The rail names the column lineage on
 screen, says whether Snowflake is on and whether a newer release is out, and
-the gear and the Project row carry the amber dot the profile's button had when
-dbt would find no profile. The status bar's venv pill opens Project, the update
+the gear and the Project row carry the amber triangle the profile's button had
+when dbt would find no profile. The status bar's venv pill opens Project, the update
 pill Updates, and the `env` pill the environment menu, whose last row opens
 Project (0142, 1.75.1); a venv is activated from its button there, the click
 on the pill no longer typing the line. The environments' table and the job
@@ -2089,7 +2090,7 @@ Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
 are never edited, so find an item by its title.
 
 1. **Run status on the canvas.** The last run is read since 1.11.0, in
-   Reports (0065), and a dot per box shows the last build of one environment
+   Reports (0065), and a mark per box shows the last build of one environment
    since 1.52.0 (0117); what is left is the last run's status as the box
    stroke in the graph, which waits on seeing whether the section is used, and has to say when the
    run is for another target or older than the manifest, as the section does.
@@ -2504,7 +2505,7 @@ of its own, and each panel updates the tour, its page under
     `seed_executions`, `snapshot_executions` and `test_executions` beside
     `model_executions` (0117), with the same `node_id` and the same invocation.
     The read joins the models' table alone, so a seed or a snapshot box carries
-    no dot and a test's last result is not in the section. Each is one more
+    no mark and a test's last result is not in the section. Each is one more
     query per environment, and a test's status words (`pass`, `fail`) are
     already in the verdict.
 23. **The package's schema is the config before `generate_schema_name`.**
@@ -2978,7 +2979,7 @@ a known limit, unranked:
   harness slices `runSection` or `renderCoverage` (0013).
 - **"Read again" folds Slowest back to five rows**, while a redraw from the
   panel keeps the full list.
-- **A kind tile whose statuses include an unknown one is amber**, like the dot.
+- **A kind tile whose statuses include an unknown one is amber**, like the section's mark.
 - **A new status word goes in two places:** the index run entry carries error,
   fail, warn, partial, ok and other (`counts()` in `src/run_results.rs`), and
   the page head recomputes the same from `run.statuses` (`runEndCounts` in
@@ -3049,9 +3050,9 @@ each a known limit, unranked:
 - **A run with no invocation row** has no target after the join, so an
   environment kept to its target drops it and its note does not count it. The
   package uploads both tables at the end of the same run, so this is rare.
-- **The lineage dots are small,** 7 px across at zoom 1 and less when zoomed
-  out, and the hollow ring of a model never built is easy to miss. Whether they
-  should grow is open.
+- **The lineage build marks are small,** 10 px across at zoom 1 and less when
+  zoomed out, and the dashed ring of a model never built is easy to miss.
+  Whether they should grow is open.
 - **The hover card can cover the right end of the status bar,** as it already
   did before 1.52.0.
 - **The pictures of the builds** need a Jaffle Shop copy with dbt_artifacts

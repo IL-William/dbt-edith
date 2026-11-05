@@ -24,6 +24,15 @@ pull request.
 | [updates.md](updates.md) | how it learns a newer release is out, and what it offers |
 | [look.md](look.md) | the Halloween look, behind a pumpkin in the top bar: its box styles, silk edges, characters and sounds |
 
+## How things are marked
+
+One shape stands for one meaning, so a mark is read before its colour is. A thin
+bar is a model's kind, in the colour of its box. A check, a triangle, a cross, a
+dashed ring or a clock is a state: done well, worth a look, failed, not known,
+and under way. A tag in an environment's colour is that environment, the
+manifest's own only outlined. A tool is its glyph and its name. A pencil is a
+file with unsaved edits, and a letter in the Git tab is a file's git status.
+
 ## Every action
 
 | Action | |
@@ -50,7 +59,7 @@ pull request.
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar folds the counts, then the names of the tabs not lit, when it runs short |
-| the gear in the top bar | the settings, over the whole window, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber dot on it when dbt would find no profile |
+| the gear in the top bar | the settings, over the whole window, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber triangle on it when dbt would find no profile |
 | the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
 | the `env` pill in the status bar | the environment menu: a `.env` file, the manifest, or Manage environments... for the settings' Project section |
 | the venv or update pill in the status bar | its section of the settings: Project, or Updates |

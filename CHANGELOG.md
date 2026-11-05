@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.1.0 - 2026-11-05
+
+- Draw each meaning in its own shape instead of a round dot: a model's kind is
+  its box's bar, a state a check, triangle, cross, dashed ring or clock, an
+  environment a tag with its name, a tool its glyph, unsaved edits a pencil
+  (0148).
+
 ## 2.0.0 - 2026-11-05
 
 - Paint the default look in deeper colours: a darker background, a lighter

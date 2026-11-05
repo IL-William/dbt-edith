@@ -404,7 +404,7 @@ function rootColour(name) {
   return m ? m[1] : '';
 }
 function toolColour(tool) {
-  var m = css.match(new RegExp('\\[data-tool=' + tool + '\\] \\{ --tool: (#[0-9a-f]{6}|var\\(--[\\w-]+\\)); \\}'));
+  var m = css.match(new RegExp('\\[data-tool=' + tool + '\\] \\{ --tool: (#[0-9a-f]{6}|var\\(--[\\w-]+\\)); (?:--m-tool: var\\(--m-[\\w-]+\\); )?\\}'));
   var named = m && /^var\(--([\w-]+)\)$/.exec(m[1]);
   return !m ? '' : named ? rootColour(named[1]) : m[1];
 }

@@ -121,7 +121,7 @@ check('none says what the window is', buildsSaid(buildVerdict([], 7, now), 'PROD
 check('a stale one names its last success', buildsSaid(buildVerdict([run('success', '2026-10-10T03:00:00Z', '2026-10-10T03:01:00Z')], 7, now), 'UAT', now),
   'UAT: success 12d ago (target prod), last success 12d ago');
 
-print('\n--- the dots of one environment ---');
+print('\n--- the marks of one environment ---');
 var read = { readAt: now, byEnv: {
   '': { rows: buildsByNode([run('success', '2026-10-21T03:00:00Z', '2026-10-21T03:01:00Z')]) },
   '.env.prod': { error: 'Snowflake did not answer', rows: new Map() },
@@ -165,6 +165,21 @@ check('and an environment kept to it reads its verdict alone', buildsWorst(onlyD
 var tf = buildsTargets(both[0], both[1], [{ file: '.env.prod', name: 'PROD', target: 'prod' }, { file: '.env.uat', name: 'UAT' }]);
 check('a file that sets DBT_TARGET carries it, the manifest and the others none', tf.map(function (t) { return t.target; }), ['', 'prod', '']);
 check('named with the target it is kept to, when it has one', tf.map(buildsEnvLabel), ['manifest', 'PROD · target prod', 'UAT']);
+
+print('\n--- the same laid out: a tag, then the target ---');
+// Stand-ins for the DOM builders: a node is { tag, cls, text, tone, kids }.
+function jel(tag, cls, text) { return { tag: tag, cls: cls, text: text || '', kids: [], append: function () { for (var i = 0; i < arguments.length; i++) this.kids.push(arguments[i]); } }; }
+function envTone(name) { return 'tone:' + name; }
+function envTag(name, tone) { return { tag: 'tag', text: name, tone: tone }; }
+eval(src.slice(src.indexOf('function buildsEnvHead'), src.indexOf('/* What a run that did not end well is called.')));
+function words(nodes) { return nodes.map(function (n) { return n.text; }).join(''); }
+var heads = tf.map(buildsEnvHead);
+check('the manifest row is the outlined tag, whose tone is manifest because it has no env file', [heads[0].length, heads[0][0].tone, heads[0][0].text], [1, 'manifest', 'manifest']);
+check('an environment is its name in its own tone, then the target it is kept to', [heads[1][0].tone, heads[1][0].text, heads[1][1].cls, heads[1][1].text], ['tone:PROD', 'PROD', 'muted', ' · target prod']);
+check('one with no target is the tag alone', [heads[2].length, heads[2][0].tone], [1, 'tone:UAT']);
+check('every word of the label is still there, so copied text reads the same', heads.map(words), tf.map(buildsEnvLabel));
+var box = buildsEnvHeading(tf[1]);
+check('and as one box for a table head or a tile, the same two nodes', [box.cls, box.kids.length, words(box.kids)], ['envhead', 2, buildsEnvLabel(tf[1])]);
 
 print('\n--- the clock of a run ---');
 var crashed = run('error', '2026-10-22T02:00:00Z', '', { compiled: '2026-10-22T04:30:00Z' });
@@ -214,7 +229,7 @@ check('the tooltip lists each', buildsSaid(buildsWorst([prod, stale], 7, now), '
 check('one target says one line', buildsSaid(buildsWorst([prod], 7, now), 'PROD', now), 'PROD: success 1d ago (target prod)');
 check('none stays none', buildsWorst([], 7, now).verdict, 'none');
 var multi = buildsDots({ byEnv: { '': { rows: buildsByNode([prod, run('error', '2026-10-22T09:00:00Z', '', { target: 'dev' })]) } } }, '', 7, 'manifest', now);
-check('the dot of a model with a failing target is an error', multi.of('model.jaffle.orders').verdict, 'error');
+check('the mark of a model with a failing target is an error', multi.of('model.jaffle.orders').verdict, 'error');
 check('and its title says both', multi.of('model.jaffle.orders').title.split('\n').length, 2);
 var counted2 = buildsVerdicts({ rows: buildsByNode([mine('orders', 'success', '2026-10-21T03:00:00Z', '2026-10-21T03:01:00Z'),
   run('error', '2026-10-22T03:00:00Z', '', { node: 'model.jaffle.orders', target: 'dev' })]) }, models, 'jaffle', 7, now);

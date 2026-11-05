@@ -5,13 +5,13 @@ How dbt-edith learns a newer release is out, and what it offers to do about it.
 It asks GitHub, through git, which releases there are, every hour from midnight
 to 09:00 Paris time and then not until the next midnight, so the first start of
 your day knows what came out overnight, wherever you are. When one is newer, a
-pill after the version in the status bar says so and a dot marks Edith at the
-top left. Resting the pointer on Edith opens a menu, as a click does, and the
-pill opens the same in the Updates section of the settings: the version and
-build you run, every release since yours by the title of the pull request that
-released it, each linked to its notes, and, for a binary installed or built from
-a clone on that machine, the clone brought up to the release and the install
-typed into the terminal for you to run, or for a release's own Windows `.exe`
+pill after the version in the status bar says so and the Updates arrow, a down
+arrow onto a line, marks Edith at the top left. Resting the pointer on Edith
+opens a menu, as a click does, and the pill opens the same in the Updates
+section of the settings: the version and build you run, every release since
+yours by the title of the pull request that released it, each linked to its
+notes, and, for a binary installed or built from a clone on that machine, the
+clone brought up to the release and the install typed into the terminal for you to run, or for a release's own Windows `.exe`
 the download of the next one (below); restart dbt-edith once it finishes.
 Otherwise it says why it has no command. The menu also says when GitHub last
 answered, or what git said when it could not reach it, and when it asks next,

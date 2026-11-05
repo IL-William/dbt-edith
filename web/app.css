@@ -221,6 +221,20 @@
   --r-join-key: #948739;
   --r-dedup-key: #8677ce;
   --r-indirect: #8d99a8;
+  /* Shapes, one per meaning: the pictograms a state, a tool and a newer
+     release are drawn with, as masks over the colour that says which. */
+  --m-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.75l3.25 3.25L13 4.5'/%3E%3C/svg%3E");
+  --m-warn: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5L15 14H1z M7.1 6h1.8v4.2H7.1z M7.1 11.2h1.8v1.6H7.1z' fill='black' fill-rule='evenodd'/%3E%3C/svg%3E");
+  --m-bad: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M4 4l8 8M12 4l-8 8'/%3E%3C/svg%3E");
+  --m-none: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-dasharray='2.4 2.2'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3C/svg%3E");
+  --m-cancel: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='5.5'/%3E%3Cpath d='M4.2 11.8l7.6-7.6'/%3E%3C/svg%3E");
+  --m-cols: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 2.5v11M13 2.5v11M3 5.5h3.5l3 5H13'/%3E%3C/svg%3E");
+  /* jobsIcon()'s clock, snowflakeIcon()'s flake, the Updates row's arrow:
+     the app's own drawings, heavier for 9 to 12px. */
+  --m-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M8 4.2V8l2.6 1.6'/%3E%3C/svg%3E");
+  --m-snow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3Cpath transform='rotate(60 8 8)' d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3Cpath transform='rotate(120 8 8)' d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3C/svg%3E");
+  --m-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 2.5l2.5 2.5L6 12.5 2.5 13.5 3.5 10z M9.5 4l2.5 2.5'/%3E%3C/svg%3E");
+  --m-newer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5v8M4.75 7.25L8 10.5l3.25-3.25M2.5 13.5h11'/%3E%3C/svg%3E");
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --side-w: 270px;
@@ -308,30 +322,46 @@ kbd {
 .envmenu button.on .lbl { font-weight: 600; }
 .envmenu .check { width: 10px; color: var(--accent); }
 .envmenu .sub { margin-left: auto; padding-left: 14px; font: 10.5px var(--mono); color: var(--fg-dim); }
-/* Something to do with the tool above, not another tool: no check, no dot, and
-   its label starts under that tool's name (8px padding, 10px check, 8px dot,
+/* Something to do with the tool above, not another tool: no check, no glyph, and
+   its label starts under that tool's name (8px padding, 10px check, 12px glyph,
    two 8px gaps). */
-.envmenu button.subaction { padding: 2px 8px 5px 42px; font-size: 11.5px; }
+.envmenu button.subaction { padding: 2px 8px 5px 46px; font-size: 11.5px; }
 .envmenu button.subaction .lbl { color: var(--fg-dim); }
 .envmenu button.subaction[data-urgent=true] .lbl { color: var(--warn); }
 /* The stop at button, lit while it stops the walk, and its role swatches. */
 #stop-at.on { color: var(--accent); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .12); }
 #stop-at span:empty { display: none; }
-.stopmenu .rolesq { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.rolesq { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
 .stopmenu button.absent .lbl, .stopmenu button.absent .rolesq { opacity: .5; }
 .envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
-.envdot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: 0 0 auto; }
-.envdot[data-tone=manifest] { background: transparent; border: 1px solid var(--none); }
+/* An environment: its name in its colour, a tag, never a dot (the dot's
+   green was also a table's and "up to date"). Tinted, where the status
+   bar's pill is filled; the manifest only outlined, as there. */
+.envtag {
+  display: inline-flex; align-items: center; flex: 0 0 auto; height: 17px; padding: 0 5px;
+  border-radius: 4px; font: 600 10.5px/17px var(--ui); white-space: nowrap;
+  color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent);
+}
+.envtag[data-tone=manifest] { color: var(--fg); background: transparent; box-shadow: inset 0 0 0 1px var(--env-manifest); }
+/* A table's head or a tile's label: the tag and the target it is kept to. */
+.envhead { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 400; }
+/* In a column head the box takes the head's width, so the target is what is cut;
+   a tile or a table head wraps instead. */
+.jbenvh .envhead { display: flex; }
+/* The tag keeps its width until the head's edge, where it is cut with an ellipsis; the target after it shrinks first, with its own. */
+.jbenvh .envtag { display: block; flex: 0 0 auto; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.jbenvh .envhead .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Column lineage tools (0031). Their own attribute rather than data-tone, which
    is the environments' colour. Each hue is far from the accent and from the
    others, and the tool is always named beside it, never shown by colour alone.
    Jobs is the orchestrator's files, the reports' third source beside dbt, collin
-   and Snowflake (0137). */
-[data-tool] { --tool: var(--none); }
+   and Snowflake (0137). A tool with no glyph of its own shows the columns
+   glyph, in its colour; the empty tool, none, is the ring (below). */
+[data-tool] { --tool: var(--none); --m-tool: var(--m-cols); }
 [data-tool=fusion] { --tool: var(--tool-dbt); }
-[data-tool=collin] { --tool: var(--tool-collin); }
-[data-tool=snowflake] { --tool: var(--tool-snowflake); }
-[data-tool=jobs] { --tool: var(--tool-jobs); }
+[data-tool=collin] { --tool: var(--tool-collin); --m-tool: var(--m-cols); }
+[data-tool=snowflake] { --tool: var(--tool-snowflake); --m-tool: var(--m-snow); }
+[data-tool=jobs] { --tool: var(--tool-jobs); --m-tool: var(--m-clock); }
 /* dbt's own artifacts in the reports: the last run, and what follows it. */
 [data-tool=dbt] { --tool: var(--tool-dbt); }
 /* The source named at the head of a section, in its colour. */
@@ -339,12 +369,12 @@ kbd {
   flex: 0 0 auto; font: 10.5px/16px var(--ui); padding: 0 5px; border-radius: 3px;
   color: var(--tool); border: 1px solid color-mix(in srgb, var(--tool) 40%, transparent);
 }
-.tooldot { width: 8px; height: 8px; border-radius: 50%; background: var(--tool); flex: 0 0 auto; }
-/* How the last run ended, over the tool's colour: a section's own dot, in the
+.tooldot { width: 12px; height: 12px; flex: 0 0 auto; background: var(--tool); -webkit-mask: var(--m-tool) center / contain no-repeat; mask: var(--m-tool) center / contain no-repeat; }
+/* How the last run ended, over the tool's glyph: a section's own mark, in the
    reports, says it only when it has an outcome to say. */
-.tooldot[data-tone=ok] { background: var(--ok); }
-.tooldot[data-tone=warn] { background: var(--warn); }
-.tooldot[data-tone=bad] { background: var(--bad); }
+.tooldot[data-tone=ok] { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.tooldot[data-tone=warn] { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.tooldot[data-tone=bad] { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 .btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
 .cllpick .tname, .cllnow .tname { color: var(--tool); font-weight: 600; }
@@ -352,12 +382,12 @@ kbd {
 .cllpick .caret { font-size: 11px; line-height: 1; }
 .btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
 .cllpick[data-tool=""] .tname, .cllnow[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
-.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
+.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 .cllpick[data-tone=busy] .tstate, .cllnow[data-tone=busy] .tstate { color: var(--warn); }
 .cllpick[data-tone=failed] .tstate, .cllnow[data-tone=failed] .tstate { color: var(--bad); }
 .btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
 .envmenu [data-tool] .check { color: var(--tool); }
-.envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
+.envmenu [data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 .envmenu button[aria-disabled=true] { opacity: .45; cursor: default; }
 .envmenu button[aria-disabled=true]:hover { background: transparent; }
 .envmenu .menuhead {
@@ -408,7 +438,7 @@ kbd {
   font: 12px var(--ui); color: var(--fg);
 }
 .hc-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
-.hc-head .dot { width: 8px; height: 8px; flex: 0 0 auto; }
+.hc-head .dot { width: 3px; height: 14px; border-radius: 2px; flex: 0 0 auto; }
 .hc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc-head .offchip { margin-left: auto; }
 .hc-sub { margin-top: 2px; font: 10.5px var(--mono); color: var(--fg-dim); }
@@ -449,8 +479,8 @@ kbd {
 }
 .updpill:hover { border-color: var(--accent); }
 .updpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* The venv (0069): green with a full dot once one is active, amber with an
-   empty one when one was found but is not, since a dbt typed in the terminal
+/* The venv (0069): green with a check once one is active, amber with a
+   triangle when one was found but is not, since a dbt typed in the terminal
    then runs whatever python comes first on the PATH. Tinted rather than
    filled, so the environment's pill beside it stays the loudest thing here. */
 .venvpill {
@@ -461,12 +491,13 @@ kbd {
 .venvpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .venvpill:empty { display: none; }
 .venvpill::before {
-  content: ''; width: 7px; height: 7px; box-sizing: border-box;
-  border: 1.5px solid currentColor; border-radius: 50%;
+  content: ''; width: 10px; height: 10px; flex: 0 0 auto; background: currentColor;
+  -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat;
 }
 .venvpill[data-state=on] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.venvpill[data-state=on]::before { background: currentColor; }
+.venvpill[data-state=on]::before { -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
 .venvpill[data-state=off] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.venvpill[data-state=off]::before { -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
 /* The status bar's opens the project's settings (0100); the copy in them is
    only its state. */
 #status-venv { cursor: pointer; }
@@ -561,12 +592,14 @@ kbd {
   .brand.flowing .bm-pk { opacity: 0; }
   .brand.flowing .bm-arm { opacity: 1; stroke: var(--accent); }
 }
-/* A newer release is out: a dot on the name, the pill in the status bar saying
-   which. In the pill's accent, not the warning colour: nothing is wrong with the
-   one running. */
+/* A newer release is out: the Updates glyph beside the name, at the height of
+   its capitals and inside the button so the divider after it stays clear, the
+   pill in the status bar saying which. In the pill's accent, not the warning
+   colour: nothing is wrong with the one running. */
+.brand.newer { padding-right: 15px; }
 .brand.newer::after {
-  content: ''; position: absolute; top: 1px; right: -3px; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent);
+  content: ''; position: absolute; top: 6px; right: 4px; width: 9px; height: 9px;
+  background: var(--accent); -webkit-mask: var(--m-newer) center / contain no-repeat; mask: var(--m-newer) center / contain no-repeat;
 }
 .sep { width: 1px; height: 18px; background: var(--line); }
 .chips { display: flex; gap: 6px; }
@@ -574,7 +607,7 @@ kbd {
   font: 11px var(--mono); color: var(--fg-dim);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 7px;
 }
-/* Manifest freshness, beside the reload button. The dot carries the state and
+/* Manifest freshness, beside the reload button. The mark carries the state and
    the text carries the age, because a colour on its own cannot say "two hours".
    Drift from the default branch sits in its own dim segment: it is worth
    knowing, but it does not make the lineage on screen wrong. */
@@ -584,10 +617,10 @@ kbd {
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
 }
 .freshbadge:hover { background: var(--btn-hover); border-color: var(--line-strong); }
-.freshbadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: 0 0 auto; }
-.freshbadge[data-tone="ok"] .dot { background: var(--ok); }
-.freshbadge[data-tone="warn"] .dot { background: var(--warn); }
-.freshbadge[data-tone="bad"] .dot { background: var(--bad); }
+.freshbadge .dot { width: 11px; height: 11px; border-radius: 0; background: var(--fg-dim); flex: 0 0 auto; -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
+.freshbadge[data-tone="ok"] .dot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.freshbadge[data-tone="warn"] .dot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.freshbadge[data-tone="bad"] .dot { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 .freshbadge[data-tone="warn"] .lbl { color: var(--warn); }
 .freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
 .freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
@@ -660,12 +693,12 @@ kbd {
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
 }
 .versioninput:focus { border-color: var(--accent-dim); outline: none; }
-/* The same dot again at the head of the hover card, so the card is visibly
+/* The same mark again at the head of the hover card, so the card is visibly
    about the thing the pointer is on. */
-.hovercard .freshdot { border-radius: 50%; background: var(--fg-dim); }
-.hovercard .freshdot[data-tone="ok"] { background: var(--ok); }
-.hovercard .freshdot[data-tone="warn"] { background: var(--warn); }
-.hovercard .freshdot[data-tone="bad"] { background: var(--bad); }
+.hovercard .freshdot { width: 12px; height: 12px; border-radius: 0; background: var(--fg-dim); -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
+.hovercard .freshdot[data-tone="ok"] { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.hovercard .freshdot[data-tone="warn"] { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.hovercard .freshdot[data-tone="bad"] { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 
 .btn {
   font: 12px var(--ui); color: var(--fg); background: var(--bg-3);
@@ -786,7 +819,8 @@ kbd {
 .row.st-unsaved .nm { color: var(--ok); }
 .row.st-modified .nm, .row.st-untracked .nm { color: var(--warn); }
 .row.st-untracked .nm { opacity: .85; }
-.dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+/* A node's kind: the bar of its box. */
+.dot { width: 3px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
 
 /* --------------------------------------------------------- open editors -- */
 #open-editors { flex: 0 0 auto; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
@@ -826,6 +860,10 @@ kbd {
 }
 .oe-row:hover .state, .oe-row.dirty .state { visibility: visible; }
 .oe-row.dirty .state { color: var(--warn); }
+/* The same pencil where the row's × would be; the × again under the pointer. */
+.oe-row .state.editing::before {
+  content: ''; width: 11px; height: 11px; background: currentColor; -webkit-mask: var(--m-edit) center / contain no-repeat; mask: var(--m-edit) center / contain no-repeat;
+}
 .oe-row .state:hover { background: var(--state-hover); color: var(--fg); }
 .oe-row .nm { overflow: hidden; text-overflow: ellipsis; }
 .oe-row.dirty .nm { color: var(--warn); }
@@ -932,9 +970,17 @@ kbd {
 .ftab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
 .ftab .x { opacity: .4; font-size: 14px; line-height: 1; }
 .ftab .x:hover { opacity: 1; }
-.ftab.dirty .x::before { content: "●"; font-size: 10px; }
+/* A buffer with unsaved edits: the pencil of "being edited" in the close slot,
+   the × again under the pointer. */
+.ftab.dirty .x::before {
+  content: ''; display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
+  background: currentColor; -webkit-mask: var(--m-edit) center / contain no-repeat; mask: var(--m-edit) center / contain no-repeat;
+}
 .ftab.dirty .x { opacity: .9; }
-.ftab.dirty .x:hover::before { content: "×"; font-size: 14px; }
+.ftab.dirty .x:hover::before {
+  content: "×"; width: auto; height: auto; vertical-align: baseline; font-size: 14px;
+  background: none; -webkit-mask: none; mask: none;
+}
 .ftab.preview span:first-child { font-style: italic; }
 /* The file moved on disk under a tab that kept its own text (0067). */
 .ftab.disk-changed span:first-child { color: var(--warn); }
@@ -1111,9 +1157,9 @@ kbd {
 }
 .seticon .sficon { width: 14px; height: 14px; }
 .seticon .profileicon { width: 16px; height: 13px; }
-.seticon[data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
+.seticon[data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 .setglyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.setwarn { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: 0 0 auto; }
+.setwarn { margin-left: auto; width: 10px; height: 10px; flex: 0 0 auto; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
 .rnew[data-tone=bad] { color: var(--bad); border-color: var(--bad); }
 .rnew[data-tone=warn] { color: var(--warn); border-color: var(--warn); }
@@ -1242,8 +1288,10 @@ kbd {
 .CodeMirror-gutter.diff-mark { width: 14px; }
 /* A key of dbt_project.yml that dbt would warn applies to nothing (0103). */
 .CodeMirror-gutter.cfgwarn { width: 14px; }
+/* The "!" stays in the markup for readers that take text; the triangle is the mask. */
 .cfgwarn-mark {
-  width: 12px; height: 12px; margin: 3px auto 0; border-radius: 50%; background: var(--warn); color: var(--tone-fg);
+  width: 12px; height: 12px; margin: 3px auto 0; background: var(--warn); color: transparent;
+  -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat;
   font: 700 9px/12px var(--mono); text-align: center; cursor: pointer;
 }
 .cfgwarn-mark:hover { background: var(--fg); }
@@ -1493,11 +1541,11 @@ kbd {
 .nd .more { fill: var(--fg-dim); font-size: 9px; }
 /* The last build of a model in the environment picked (0117). Named apart from
    .nd, so the export harness does not ask for it: the snapshot takes it off. */
-.bdot { stroke: var(--bg-3); stroke-width: 1; }
-.bdot.ok { fill: var(--ok); }
-.bdot.stale { fill: var(--warn); }
-.bdot.error { fill: var(--bad); }
-.bdot.none { fill: none; stroke: var(--fg-dim); }
+.bdot { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.bdot.ok { stroke: var(--ok); }
+.bdot.stale { fill: var(--warn); fill-rule: evenodd; stroke: none; }
+.bdot.error { stroke: var(--bad); }
+.bdot.none { stroke: var(--fg-dim); stroke-width: 2; stroke-dasharray: 2.4 2.2; }
 /* What find on the canvas matched (0081): amber, as a match in the editor is,
    and the one the view was brought to thicker and filled. Under #graph, which
    outranks the focus and the selection while the bar is open, and keeps these
@@ -1552,6 +1600,8 @@ kbd {
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 /* The `indirect` entry, a dash as its edges are drawn (0097). */
 .legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
+/* A kind or a test, the bar of its box. */
+.legend i.kind { width: 3px; height: 11px; border-radius: 2px; vertical-align: -2px; }
 /* The entries take a click, the strip around them still does not: a pan
    started beside them has to reach the canvas. */
 .legend span { pointer-events: auto; cursor: pointer; border-radius: 3px; }
@@ -1883,7 +1933,7 @@ kbd {
 .catalog { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .cat-head { flex: 0 0 auto; padding: 12px 16px 0; border-bottom: 1px solid var(--line); }
 .cat-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
-.cat-title .dot { width: 9px; height: 9px; }
+.cat-title .dot { width: 3px; height: 15px; }
 .cat-title .btn { margin-left: auto; font-weight: 400; }
 .cat-title .cat-copy { margin-left: -3px; flex: 0 0 auto; }
 .crumb { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 10px; word-break: break-all; }
@@ -2049,12 +2099,12 @@ kbd {
 .histtable .h-sql { width: 100%; max-width: 0; }
 .histtable .h-head, .histtable .h-err { overflow: hidden; text-overflow: ellipsis; font: 11.5px var(--mono); }
 .histtable .h-err { color: var(--bad); }
-.histtable .h-state { width: 10px; padding-right: 6px; }
-.qdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); vertical-align: 1px; }
-[data-state=ok] .qdot { background: var(--ok); }
-[data-state=failed] .qdot { background: var(--bad); }
-[data-state=cancelled] .qdot { background: transparent; border: 1px solid var(--fg-dim); }
-[data-state=running] .qdot, [data-state=queued] .qdot { background: var(--warn); }
+.histtable .h-state { width: 12px; padding-right: 6px; }
+.qdot { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; background: var(--fg-dim); -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
+[data-state=ok] .qdot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+[data-state=failed] .qdot { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
+[data-state=cancelled] .qdot { -webkit-mask-image: var(--m-cancel); mask-image: var(--m-cancel); }
+[data-state=running] .qdot, [data-state=queued] .qdot { background: var(--warn); -webkit-mask-image: var(--m-clock); mask-image: var(--m-clock); }
 .histtable .h-detail td { background: var(--bg); white-space: normal; padding: 8px 10px; }
 .histtable .h-detail:hover td { background: var(--bg); }
 .h-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-bottom: 6px; }
@@ -2116,12 +2166,12 @@ kbd {
 .ghmenu a.menulink:hover .ghglyph, .ghmenu a.menulink:focus .ghglyph { color: var(--fg); }
 /* Under the labels, past the 14px glyph and its gap. */
 .ghmenu .menunote { padding-left: 30px; }
-/* The gear (0100), with the Reports button's look, and a dot while the
+/* The gear (0100), with the Reports button's look, and a triangle while the
    profile is missing: the button that said so is gone into the settings. */
 #settings-btn { position: relative; }
 #settings-btn[data-warn=true]::after {
   content: ''; position: absolute; top: 1px; right: 1px;
-  width: 6px; height: 6px; border-radius: 50%; background: var(--warn);
+  width: 9px; height: 9px; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat;
 }
 .profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* Above the palette and the modal: F1 can open it from either. */
@@ -2270,7 +2320,6 @@ kbd {
 .buildenv { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; }
 .buildenv:first-of-type { border-top: 0; }
 .buildname { display: inline-flex; align-items: center; gap: 6px; min-width: 84px; }
-.buildname .envdot { align-self: center; }
 .buildrun { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding-left: 90px; }
 .buildenv > .muted { flex: 1 1 60%; margin: 0; }
 .buildwarn { color: var(--warn); cursor: pointer; }
@@ -2329,12 +2378,12 @@ kbd {
 .jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 0 4px; border-radius: 4px; }
 .jbheads > .jbenvh { padding: 0 4px; }
 .jbtop { display: flex; align-items: flex-start; gap: 6px; flex: 1 1 100%; min-width: 0; }
-.jbtop .jobdot { margin-top: .4em; }
+.jbtop .jobdot { margin-top: .25em; }
 .jbsay { min-width: 0; }
-.jobdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--ok); }
-.jbcell[data-verdict=error] .jobdot { background: var(--bad); }
-.jbcell[data-verdict=late] .jobdot { background: var(--warn); }
-.jbcell[data-verdict=none] .jobdot { background: transparent; border: 1px solid var(--fg-dim); }
+.jobdot { width: 11px; height: 11px; flex: 0 0 auto; background: var(--ok); -webkit-mask: var(--m-ok) center / contain no-repeat; mask: var(--m-ok) center / contain no-repeat; }
+.jbcell[data-verdict=error] .jobdot { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
+.jbcell[data-verdict=late] .jobdot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.jbcell[data-verdict=none] .jobdot { background: var(--fg-dim); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 /* A cell with models to list is the click target of its environment: it reads
    as the tab of the box below once picked. */
 .jbcell.pick { cursor: pointer; }
