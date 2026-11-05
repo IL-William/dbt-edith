@@ -153,6 +153,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0147](0147-the-compiled-and-run-tabs-offer-every-environment.md) | The Compiled and Run tabs offer every environment | changing what the top of the Compiled or Run tab offers when environments exist, how an environment is picked there, or what it says with no file picked |
 | [0148](0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) | A meaning has one shape, and no marker is a round dot | adding a marker for a kind, a state, an environment or a tool, or drawing anything small and round |
 | [0149](0149-libraries-and-the-connector-come-from-where-they-were-fixed.md) | The terminal loads libraries from System32, and the Snowflake script wants a fixed connector | loading a library by name on Windows, adding a dependency that does, or changing which `snowflake-connector-python` the Snowflake script accepts |
+| [0150](0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md) | A theme is a set of variables on the page, and Halloween is one | adding or changing a theme, the theme button or its menu, what `look.json` holds, which theme an export is drawn in, or the Halloween theme |
 
 ## Keeping these honest
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="night">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,7 +15,7 @@
 </head>
 <body>
 
-<!-- The fills of the Halloween look's three box styles, used by app.css (0106). Out here and not in
+<!-- The fills of the Halloween theme's three box styles, used by app.css (0106). Out here and not in
      the canvas, so Lineage.snapshot() and an export never hold them; zero size, not display: none,
      which would stop the gradients from drawing. The first three gradients are the plain look of a big
      selection, one each: a pattern or a second rect per box made its pan several times slower. -->
@@ -56,8 +56,8 @@
   </defs>
 </svg>
 
-<!-- The Halloween look's characters: the ghosts, the pumpkin, the witch and the eyes, drawn once here and
-     laid with <use> by the top bar, the dock and the apparitions (0106). Apart from the box art's defs above,
+<!-- The Halloween theme's characters: the ghosts, the witch and the eyes, drawn once here and
+     laid with <use> by the brand, the dock and the apparitions (0106, 0150). Apart from the box art's defs above,
      and outside the canvas, so no snapshot or export holds them. The zombie is a sprite in app.css. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
@@ -66,13 +66,6 @@
     <linearGradient id="hw-g-ghost-warm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fffbe9"/><stop offset=".5" stop-color="#ffe8b8"/><stop offset="1" stop-color="#ffbf70"/></linearGradient>
     <radialGradient id="hw-g-ghost-core" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff6c8" stop-opacity=".95"/><stop offset="1" stop-color="#ffd37a" stop-opacity="0"/></radialGradient>
     <radialGradient id="hw-g-mouth" cx=".5" cy=".3" r=".8"><stop offset="0" stop-color="#4a3d6a"/><stop offset="1" stop-color="#1a1330"/></radialGradient>
-    <radialGradient id="hw-g-pump-on" cx=".5" cy=".65" r=".7"><stop offset="0" stop-color="#ffa73a"/><stop offset=".55" stop-color="#f27412"/><stop offset="1" stop-color="#c24208"/></radialGradient>
-    <radialGradient id="hw-g-pump-on-side" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#ff9a2a"/><stop offset="1" stop-color="#b8420a"/></radialGradient>
-    <radialGradient id="hw-g-pump-off" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#c9772c"/><stop offset=".6" stop-color="#9b5420"/><stop offset="1" stop-color="#6e3512"/></radialGradient>
-    <radialGradient id="hw-g-pump-off-side" cx=".5" cy=".6" r=".7"><stop offset="0" stop-color="#a65f25"/><stop offset="1" stop-color="#5c2d10"/></radialGradient>
-    <linearGradient id="hw-g-flame" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff3a6"/><stop offset="1" stop-color="#ffb52a"/></linearGradient>
-    <linearGradient id="hw-g-stem" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#4f7a2c"/><stop offset="1" stop-color="#7fae48"/></linearGradient>
-    <linearGradient id="hw-g-stem-off" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#3f5a2a"/><stop offset="1" stop-color="#587a3a"/></linearGradient>
     <linearGradient id="hw-g-hat" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#4a3774"/><stop offset=".6" stop-color="#2a1d45"/><stop offset="1" stop-color="#1c1330"/></linearGradient>
     <linearGradient id="hw-g-cape" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#3d2c63"/><stop offset="1" stop-color="#1c1330"/></linearGradient>
     <linearGradient id="hw-g-skin" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#b9e384"/><stop offset="1" stop-color="#7ead4c"/></linearGradient>
@@ -123,35 +116,6 @@
       <ellipse cx="50" cy="27" rx="4" ry="6.6" fill="#1c1530" transform="rotate(-5 50 27)"/><ellipse cx="50.8" cy="29.6" rx="1.4" ry="2.1" fill="#ffd9a0"/>
       <ellipse cx="42" cy="46" rx="4.6" ry="8" fill="url(#hw-g-mouth)"/>
       <ellipse cx="42" cy="50.6" rx="2.6" ry="3" fill="#6a4f9a" opacity=".5"/>
-    </g>
-  </symbol>
-  <!-- Pumpkin (24 box): three-lobed body, curled stem, triangle eyes, nose, toothy grin -->
-  <symbol id="hw-s-pump-on" viewBox="0 0 24 24" overflow="visible">
-    <ellipse cx="7.4" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-on-side)"/>
-    <ellipse cx="16.6" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-on-side)"/>
-    <ellipse cx="12" cy="14.3" rx="6" ry="7.9" fill="url(#hw-g-pump-on)"/>
-    <path d="M9.2 7.7C7.8 11 7.8 17.5 9.4 21.2M14.8 7.7C16.2 11 16.2 17.5 14.6 21.2" fill="none" stroke="#a63a06" stroke-width=".7" opacity=".6" stroke-linecap="round"/>
-    <path d="M10.6 7.6C10.2 4.9 11.4 3.2 13.8 2.3L14.9 4C13.9 4.5 13.4 5.4 13.7 7.7Z" fill="url(#hw-g-stem)"/>
-    <path d="M14.4 3.4C16 2.6 17.4 3.2 17.6 4.7" fill="none" stroke="#6d9a3c" stroke-width=".9" stroke-linecap="round"/>
-    <g fill="url(#hw-g-flame)" stroke="#8a2c04" stroke-width=".55" stroke-linejoin="round">
-      <path d="M5.9 12.5L8.5 8.6L10.8 12.2Z"/>
-      <path d="M13.2 12.2L15.5 8.6L18.1 12.5Z"/>
-      <path d="M12 13L10.7 15.2H13.3Z"/>
-      <path d="M5 15.6L7.3 17.1L8.5 15.7L10 18.3L11.3 16.6H12.7L14 18.3L15.5 15.7L16.7 17.1L19 15.6Q12 23.2 5 15.6Z"/>
-    </g>
-  </symbol>
-  <symbol id="hw-s-pump-off" viewBox="0 0 24 24" overflow="visible">
-    <ellipse cx="7.4" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-off-side)"/>
-    <ellipse cx="16.6" cy="14.3" rx="5.6" ry="7.1" fill="url(#hw-g-pump-off-side)"/>
-    <ellipse cx="12" cy="14.3" rx="6" ry="7.9" fill="url(#hw-g-pump-off)"/>
-    <path d="M9.2 7.7C7.8 11 7.8 17.5 9.4 21.2M14.8 7.7C16.2 11 16.2 17.5 14.6 21.2" fill="none" stroke="#3d1a08" stroke-width=".7" opacity=".6" stroke-linecap="round"/>
-    <path d="M10.6 7.6C10.2 4.9 11.4 3.2 13.8 2.3L14.9 4C13.9 4.5 13.4 5.4 13.7 7.7Z" fill="url(#hw-g-stem-off)"/>
-    <path d="M14.4 3.4C16 2.6 17.4 3.2 17.6 4.7" fill="none" stroke="#587a3a" stroke-width=".9" stroke-linecap="round"/>
-    <g fill="#24120a">
-      <path d="M5.9 12.5L8.5 8.6L10.8 12.2Z"/>
-      <path d="M13.2 12.2L15.5 8.6L18.1 12.5Z"/>
-      <path d="M12 13L10.7 15.2H13.3Z"/>
-      <path d="M5 15.6L7.3 17.1L8.5 15.7L10 18.3L11.3 16.6H12.7L14 18.3L15.5 15.7L16.7 17.1L19 15.6Q12 23.2 5 15.6Z"/>
     </g>
   </symbol>
   <!-- Witch on a broom, facing right (40x30 box) -->
@@ -255,17 +219,9 @@
   <div class="grow"></div>
   <button id="palette-btn" class="btn" title="Search models, macros and files (Ctrl/Cmd+K)">Search <kbd class="k-palette">⌘K</kbd></button>
   <button id="keys-btn" class="btn keysbtn" title="Keyboard shortcuts (? or F1)" aria-label="Keyboard shortcuts">?</button>
-  <!-- The Halloween look, off until pressed, and its sound, shown only while the look is on. Kept per machine (0106). -->
-  <button id="look-btn" class="btn keysbtn lookbtn" type="button" aria-pressed="false"
-          title="Halloween look" aria-label="Halloween look">
-    <svg class="pk-off" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#hw-s-pump-off"/></svg>
-    <svg class="pk-on" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><use href="#hw-s-pump-on"/></svg>
-  </button>
-  <button id="look-sound" class="btn keysbtn lookbtn hidden" type="button" aria-pressed="false"
-          title="Ghost sounds: off" aria-label="Ghost sounds">
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.4 6v4h2.6L8.6 13V3L5 6Z"/>
-         <path class="waves" d="M11 5.6a3.6 3.6 0 0 1 0 4.8M12.8 3.8a6 6 0 0 1 0 8.4"/><path class="mute" d="M11 6l3.6 4M14.6 6L11 10"/></svg>
+  <!-- The theme menu (0150), openThemeMenu(); kept per machine (0106). -->
+  <button id="theme-btn" class="btn keysbtn" type="button" title="Theme" aria-label="Theme" aria-haspopup="menu">
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor" stroke="none"/></svg>
   </button>
   <!-- GitHub's own mark, as its brand rules let a button that links to a project use it:
        the shape untouched, in the grey of the glyphs beside it. Its menu is openGithubMenu(). -->
@@ -402,7 +358,7 @@
            is bundled. The label sits in a span of its own so that foldDockTabs()
            can hide it and leave the glyph when the bar runs out of room. -->
       <div class="tabs">
-        <!-- The Halloween look's witch: out of the flow, so the fold measures only the tabs (0106). -->
+        <!-- The Halloween theme's witch: out of the flow, so the fold measures only the tabs (0106). -->
         <span id="hw-witch" class="hw-witch" aria-hidden="true"><svg viewBox="0 0 40 30"><use href="#hw-s-witch"/></svg></span>
         <button class="tab active" data-dock="lineage"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.25" y="5.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="1.75" width="4.5" height="4.5" rx="1"/><rect x="10.25" y="9.75" width="4.5" height="4.5" rx="1"/><path d="M5.75 8C8 8 8 4 10.25 4M5.75 8C8 8 8 12 10.25 12"/></svg><span>Lineage</span></button>
         <button class="tab" data-dock="terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>Terminal</span></button>
@@ -588,7 +544,7 @@
   </div>
 </div>
 
-<!-- Where the Halloween look's apparitions cross the window; takes no click (0106). -->
+<!-- Where the Halloween theme's apparitions cross the window; takes no click (0106). -->
 <div id="hw-layer" aria-hidden="true"></div>
 
 <script src="vendor/codemirror.js"></script>

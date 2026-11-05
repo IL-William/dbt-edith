@@ -256,7 +256,9 @@ as vectors, so the PDF zooms too. **Copy image** puts the same picture on the
 clipboard as a PNG to paste into a ticket's description, and saves the PNG when
 the browser refuses the clipboard. In a ticket, the PDF and the pasted image
 show in place; the HTML file is downloaded and opened, and it is the one that
-pans and lists names.
+pans and lists names. Both are drawn in the theme on screen, and in Night under
+Halloween, whose drawings never leave the page
+([0150](../decisions/0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md)).
 
 The file holds what the canvas shows and that header, nothing else: no absolute
 path and no value from a `.env` file

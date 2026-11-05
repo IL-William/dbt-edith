@@ -4,10 +4,10 @@ var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 
 // The constants hold var(--k-view) and its kin, which the page resolves; the
-// checks below do colour math on hex, so these two read :root in app.css and
+// checks below do colour math on hex, so these two read Night's block in app.css and
 // hand back what the page would paint.
 var rootBlock = (function () {
-  var text = read('web/app.css'), at = text.indexOf(':root {');
+  var text = read('web/app.css'), at = text.indexOf(':root, [data-theme="night"] {');
   return text.slice(at, text.indexOf('\n}', at));
 }());
 function resolveVar(value) {
@@ -114,7 +114,7 @@ check('the role is set as a custom property, not as stroke',
 var edgeRule = css.split('\n').filter(function (l) { return /^\s*\.edge\s*\{/.test(l); })[0] || '';
 check('.edge reads the custom property', /var\(--edge-col/.test(edgeRule), true);
 check('.edge.hi still sets stroke outright',
-      /\.edge\.hi\s*\{[^}]*stroke:\s*var\(--accent\)/.test(css), true);
+      /\.edge\.hi\s*\{[^}]*stroke:\s*var\(--edge-hot\)/.test(css), true);
 
 print('\n--- the role badge on a column box ---');
 // The badge says what produced the column it sits on, so it is read off the

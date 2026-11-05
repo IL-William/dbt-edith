@@ -1,7 +1,12 @@
 // Every colour of the page is a variable: a theme is only a set of variables,
 // so a literal in a rule or in the canvas's drawing is a colour no theme can
-// reach. app.css names its colours in :root and nowhere below it, and
-// lineage.js names variables (`var(--k-view)`), never a value.
+// reach. app.css names its colours in the blocks at its top (Night's, the rule
+// the other themes share, and one block each for Graphite, Light and
+// Halloween) and nowhere below them, and lineage.js names variables
+// (`var(--k-view)`), never a value. The one exemption is the Halloween theme's
+// section: the literals there are the art's drawing colours (stone, gold, wood,
+// the rings, the silk), like index.html's gradients. A box style is a picture,
+// not a set of colours a theme re-points (0106, 0150).
 // Run from the repository root: jsc web/tests/colourvars.js
 var css = read('web/app.css');
 var lin = read('web/lineage.js');
@@ -92,8 +97,8 @@ function declarations(text) {
   return (text.replace(/\/\*[\s\S]*?\*\//g, '').match(/\{[^{}]*\}/g) || []).join('\n');
 }
 
-// The rules of a stylesheet's tail, one by one, with the Halloween look's left
-// out: a selector that names `halloween`, `hw-` or `look`, and the steps of a
+// The rules of a stylesheet's tail, one by one, with the Halloween theme's left
+// out: a selector that names `halloween` or `hw-`, and the steps of a
 // `@keyframes hw-*`. Everything else is searched, so a rule appended after the
 // look's section is held to the same rule as the rest of the file.
 function outsideTheLook(text) {
@@ -111,32 +116,47 @@ function outsideTheLook(text) {
   }
   return found;
 }
-check('the look\'s rules are left out: its selectors and its keyframes', outsideTheLook(
-  'body.halloween .x { color: #abc; } .hw-art { fill: white; } @keyframes hw-glow { 0% { color: #fff; } }'), []);
+check('the theme\'s rules are left out: its selectors and its keyframes', outsideTheLook(
+  'html[data-theme="halloween"] .x { color: #abc; } .hw-art { fill: white; } @keyframes hw-glow { 0% { color: #fff; } }'), []);
 check('a rule appended after them is not', outsideTheLook(
-  'body.halloween .x { color: #abc; } .appended-later { color: #abcdef; } .lookbtn { color: #fff; } .branch-hw-note { fill: #123; } @keyframes pulse { 0% { color: white; } }'),
-  ['#abcdef', '#fff', '#123', 'white']);
+  'html[data-theme="halloween"] .x { color: #abc; } .appended-later { color: #abcdef; } .branch-hw-note { fill: #123; } @keyframes pulse { 0% { color: white; } }'),
+  ['#abcdef', '#123', 'white']);
 check('nor one inside a @media', outsideTheLook('@media (min-width: 1px) { .y { background: rgba(0, 0, 0, .5); } }').length, 1);
 
-print('\n--- app.css outside :root ---');
-// The Halloween look has its own colours until it becomes a theme: its rules,
-// from its header on, are left out, and nothing else is. Before the header
-// there is none of them, and after it a rule that is not one is checked too.
+print('\n--- app.css outside the theme blocks ---');
+// The variable blocks are the leading rules whose selectors are only :root or
+// [data-theme=...]: where they end is where the rules begin.
+function variableBlocksEnd(text) {
+  var at = 0, end = 0, blocks = 0;
+  for (;;) {
+    var rest = text.slice(at).replace(/^(?:\s|\/\*[\s\S]*?\*\/)*/, '');
+    at = text.length - rest.length;
+    var open = text.indexOf('{', at);
+    if (open < 0) break;
+    var prelude = text.slice(at, open).trim();
+    if (!/^(?::root|\[data-theme="[a-z]+"\])(?:\s*,\s*(?::root|\[data-theme="[a-z]+"\]))*$/.test(prelude)) break;
+    var close = text.indexOf('}', open);
+    end = close + 1; at = end; blocks++;
+  }
+  return { end: end, blocks: blocks };
+}
+var vb = variableBlocksEnd(css);
+check('the file opens with five variable blocks: Night, the derived rule, Graphite, Light, Halloween', vb.blocks, 5);
+// The Halloween theme's art has its own colours: its rules, from its header
+// on, are left out, and nothing else is. Before the header there is no Halloween
+// rule, and after it a rule that is not one is checked too.
 var mark = css.indexOf('halloween look --');
 check('the Halloween section has its header, which is where the exemption starts', mark > 0, true);
-var head = css.slice(0, mark);
-check('nothing before it is a Halloween rule', /halloween/.test(head.replace(/\/\*[\s\S]*?\*\//g, '')), false);
+var head = css.slice(vb.end, mark);
+check('nothing between the blocks and it is a Halloween rule', /halloween/.test(head.replace(/\/\*[\s\S]*?\*\//g, '')), false);
 var tail = outsideTheLook(css.slice(mark));
-check('and none of what follows it that is not the look has a literal: ' + tail.length, tail.slice(0, 8), []);
-var rootAt = head.indexOf(':root {'), rootEnd = head.indexOf('\n}', rootAt);
-check('the variables are the first block of the file', rootAt, 0);
-var below = head.slice(rootEnd + 2);
-var rules = declarations(below);
+check('and none of what follows it that is not the theme has a literal: ' + tail.length, tail.slice(0, 8), []);
+var rules = declarations(head);
 var left = literals(rules);
 check('no colour literal (hex, a colour function, a named colour) is left in a rule: ' + left.length, left.slice(0, 8), []);
 check('the translucent copies of the accent still read its channels', /rgba\(var\(--accent-rgb\), \.\d+\)/.test(rules), true);
-var rootDecl = head.slice(0, rootEnd);
-check('every colour of :root is there to be re-pointed', (rootDecl.match(/--[\w-]+:\s*(#|rgba?\()/g) || []).length > 150, true);
+var night = css.slice(0, css.indexOf('\n}', 0));
+check('every colour of Night is there to be re-pointed', (night.match(/--[\w-]+:\s*(#|rgba?\()/g) || []).length > 150, true);
 
 print('\n--- lineage.js ---');
 // Comments say what a colour is and may quote a value; the drawing may not.

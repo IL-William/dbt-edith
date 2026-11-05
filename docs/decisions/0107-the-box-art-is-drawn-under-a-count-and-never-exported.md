@@ -1,6 +1,6 @@
 # 0107. The box art is drawn under a count and never exported
 
-Date: 2026-10-20 · Status: accepted
+Date: 2026-10-20 · Status: accepted, amended by 0150
 
 **Trigger:** read before changing what the Halloween look draws on a lineage
 box, how many boxes it draws it on, `Lineage.setSkin`, or what

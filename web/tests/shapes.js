@@ -29,7 +29,7 @@ function rulesOf(text) {
   return found;
 }
 var rules = rulesOf(css);
-var rootEnd = css.indexOf('\n}', css.indexOf(':root {'));
+var rootEnd = css.indexOf('\n}', css.indexOf(':root, [data-theme="night"] {'));
 var root = css.slice(0, rootEnd);
 
 // The rules whose selector, split at its commas, holds `sel` exactly.
@@ -67,7 +67,7 @@ check('and each allowed one is still there to be round',
   Object.keys(ROUND).filter(function (sel) { return !round.some(function (r) { return r.sel === sel; }); }), []);
 check('the export page\'s own CSS has no round corner', /border-radius:\s*50%/.test(app), false);
 var circles = lin.split('\n').filter(function (l) { return /el\('circle'/.test(l); });
-check('lineage.js draws one circle, the +N badge, a number', circles.length === 1 && /--more-bg/.test(circles[0]), true);
+check('lineage.js draws one circle, the +N badge, a number', circles.length === 1 && /--bg-3/.test(circles[0]), true);
 
 print('\n--- the shapes are defined once ---');
 ['ok', 'warn', 'bad', 'none', 'cancel', 'clock', 'cols', 'snow', 'newer', 'edit'].forEach(function (name) {

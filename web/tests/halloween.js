@@ -1,6 +1,6 @@
-// The Halloween look (0106): after dark by the browser's clock, how long to wait
-// for the next apparition, which way the witch faces, and that nothing of the
-// look can reach an exported file. Chrome shows the rest.
+// The Halloween theme (0106, 0150): after dark by the browser's clock, how long
+// to wait for the next apparition, which way the witch faces, and that nothing
+// of it can reach an exported file. Chrome shows the rest.
 // Run from the repository root: jsc web/tests/halloween.js
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function isNightHour'), src.indexOf('function placeWitch')));
@@ -48,31 +48,32 @@ check('the look off: it stands', switchWalks(false, true, false), false);
 print('\n--- what the look touches ---');
 var themed = css.split('\n').filter(function (l) { return /halloween/.test(l); });
 ok('the theme\'s rules are in app.css', themed.length > 10);
-ok('every rule of the look hangs from body.halloween, or from its own hw- class',
-  css.slice(css.indexOf('halloween look --')).split('\n').filter(function (l) {
-    return /^[^\s@}\/*].*\{/.test(l) && !/^(body\.halloween|:where\(body\.halloween\)|\.hw-|\.hwg-|\.lookbtn|#look-btn|#hw-layer)/.test(l);
+var section = css.slice(css.indexOf('halloween look --'));
+ok('every rule of the theme hangs from html[data-theme="halloween"], or from its own hw- class',
+  section.split('\n').filter(function (l) {
+    return /^[^\s@}\/*].*\{/.test(l) && !/^(html\[data-theme="halloween"\]|:where\(html\[data-theme="halloween"\]\)|\.hw-|\.hwg-|#hw-layer)/.test(l);
   }).length === 0);
-// A name misspelt in a body.halloween block would re-point nothing, and the look would quietly keep the default's colour.
-var rootBlock = css.slice(css.indexOf(':root {'), css.indexOf('\n}\n', css.indexOf(':root {')));
-var holds = css.match(/^body\.halloween \{[^}]*\}/gm) || [];
-var held = holds.join('\n').match(/--[a-z0-9-]+(?=:)/g) || [];
-ok('every colour the look re-points or holds is a name :root declares (' + held.length + ' of them, in ' + holds.length + ' blocks)',
-  holds.length === 2 && held.length > 30 && held.every(function (n) { return rootBlock.indexOf('\n  ' + n + ':') >= 0; }));
-ok('the pumpkin and the speaker are in the top bar, the speaker out of sight until the look is on',
-  /id="look-btn"[^>]*aria-pressed="false"/.test(html) && /id="look-sound"[^>]*class="[^"]*hidden/.test(html));
+ok('nothing is left of body.halloween, in the stylesheet, the scripts or the page',
+  ['web/app.css', 'web/app.js', 'web/lineage.js', 'web/index.html', 'scripts/walk_export.py', 'scripts/walk_menu.py', 'scripts/take_shots.py', 'scripts/walk_tour.py']
+    .every(function (f) { return read(f).indexOf('body.halloween') < 0 && read(f).indexOf("classList.contains('halloween')") < 0; }));
+// A colour is Halloween's block at the top of app.css (a theme), never a variable a rule of this section declares.
+ok('no custom property is declared in the Halloween section: its colours are the theme\'s block, its literals the art\'s',
+  !/^\s*--[a-z0-9-]+:/m.test(section.replace(/@keyframes[\s\S]*?\n\}/g, '')));
+ok('the theme\'s button is in the top bar, and neither the pumpkin nor the speaker is',
+  /id="theme-btn"[^>]*aria-haspopup="menu"/.test(html) && !/look-btn|look-sound|hw-s-pump/.test(html));
 ok('the brand button is still one button with its name inside',
   /<button id="brand" class="brand" type="button" aria-haspopup="menu" aria-label="Edith">[\s\S]*<b>Ed<span class="wi">\u0131<i><\/i><\/span>th<\/b><\/button>/.test(html));
 ok('the witch is in the tab row, and takes no click', /id="hw-witch"/.test(html)
-  && /\.hw-witch svg \{[^}]*\}/.test(css) && /body\.halloween \.hw-witch \{[^}]*pointer-events: none/.test(css));
-ok('the apparitions\' layer takes no click', /body\.halloween #hw-layer \{[^}]*pointer-events: none/.test(css));
+  && /\.hw-witch svg \{[^}]*\}/.test(css) && /html\[data-theme="halloween"\] \.hw-witch \{[^}]*pointer-events: none/.test(css));
+ok('the apparitions\' layer takes no click', /html\[data-theme="halloween"\] #hw-layer \{[^}]*pointer-events: none/.test(css));
 var boxCss = css.slice(css.indexOf('/* Lineage boxes, in one of three styles'), css.indexOf('/* Spider silk'));
 ['tombstone', 'coffin', 'grimoire'].forEach(function (st) {
   var fill = { tombstone: 'hw-stone', coffin: 'hw-wood', grimoire: 'hw-leather' }[st];
-  ok(st + ': its own class of the body, a fill of one gradient that index.html defines',
-    boxCss.indexOf('body.halloween.hw-boxes-' + st + ' #graph .nd:not(.rider) rect.box { fill: url(#' + fill + ')') >= 0
+  ok(st + ': its own class of <html>, a fill of one gradient that index.html defines',
+    boxCss.indexOf('html[data-theme="halloween"].hw-boxes-' + st + ' #graph .nd:not(.rider) rect.box { fill: url(#' + fill + ')') >= 0
     && html.indexOf('<linearGradient id="' + fill + '"') >= 0);
   ok(st + ': a hover that moves the rect and the kindbar only, never the group that carries the box\'s place',
-    new RegExp('body\\.halloween\\.hw-boxes-' + st + ' \\.nd:not\\(\\.rider\\):hover rect\\.box,\\s*body\\.halloween\\.hw-boxes-' + st
+    new RegExp('html\\[data-theme="halloween"\\]\\.hw-boxes-' + st + ' \\.nd:not\\(\\.rider\\):hover rect\\.box,\\s*html\\[data-theme="halloween"\\]\\.hw-boxes-' + st
       + ' \\.nd:not\\(\\.rider\\):hover \\.kindbar \\{[^}]*animation').test(boxCss)
     && !/\.nd:hover \{[^}]*(transform|animation)/.test(boxCss));
 });
@@ -83,10 +84,10 @@ ok('the defs sit in the page, not in the canvas lineage.js draws', html.indexOf(
 print('\n--- the box style ---');
 check('each of the three is itself', [hwBoxes('tombstone'), hwBoxes('coffin'), hwBoxes('grimoire')], ['tombstone', 'coffin', 'grimoire']);
 check('anything else is the tombstone', [hwBoxes(undefined), hwBoxes(null), hwBoxes(''), hwBoxes('mummy'), hwBoxes(3)], ['tombstone', 'tombstone', 'tombstone', 'tombstone', 'tombstone']);
-ok('the body carries the class of the one picked', /hw-boxes-' \+ b, on && b === hwBoxes\(S\.look\.boxes\)/.test(src));
+ok('<html> carries the class of the one picked', /root\.classList\.toggle\('hw-boxes-' \+ b, on && b === hwBoxes\(S\.look\.boxes\)/.test(src));
 ok('and it is saved with the rest', /boxes: hwBoxes\(S\.look\.boxes\) \};/.test(src));
 ok('the Theme section offers the three, and a click draws no lineage again',
-  /\['tombstone', 'Tombstone'[\s\S]*\['coffin', 'Coffin'[\s\S]*\['grimoire', 'Grimoire'/.test(src) && /setLook\(\{ boxes: value \}\)/.test(src)
+  /\['tombstone', 'Headstone'\][\s\S]*\['coffin', 'Coffin'\][\s\S]*\['grimoire', 'Spellbook'\]/.test(src) && /setLook\(\{ boxes: value \}\)/.test(src)
   && !/function setLook[\s\S]*?\n\}\n/.exec(src)[0].match(/rerender|Lineage\./));
 
 print('\n--- the art (0107) ---');
@@ -119,12 +120,10 @@ ok('the art is laid after each render, and in the one place that keeps the rects
   /paintArt\(\);\s*if \(!opts\.keepView\) fit\(\); else apply\(\);/.test(lin) && /g\.hw-on \.nd:not\(\.rider\) rect\.box \{\s*fill: transparent; stroke: none; clip-path: none;/.test(css));
 ok('every ring is a stroke of the silhouette, and the art takes no click',
   /\.nd\.sel \.hw-shape \{ stroke: #a78bfa/.test(css) && /\.nd\.focus \.hw-shape/.test(css) && /\.nd\.hit:not\(\.hitcur\) \.hw-shape/.test(css) && /\.nd\.off \.hw-shape \{ stroke-dasharray/.test(css)
-  && /body\.halloween \.hw-art \{ pointer-events: none; \}/.test(css) && /'pointer-events': 'none'/.test(lin));
+  && /html\[data-theme="halloween"\] \.hw-art \{ pointer-events: none; \}/.test(css) && /'pointer-events': 'none'/.test(lin));
 ok('the kind colour comes in on the group, inline, never by a rule', /style: `color:\$\{nodeColor\(n\)\}`/.test(lin) && !/\.hw-art \{[^}]*color:/.test(css));
 ok('switching the look off takes the web off a selected box, which paintWeb() cannot find once the skin is null',
   /if \(!next && root\) root\.querySelectorAll\('\.hw-web'\)\.forEach\(\(w\) => w\.remove\(\)\);/.test(lin));
-ok('the audio unlock keeps listening through a key that is no gesture',
-  /navigator\.userActivation && !navigator\.userActivation\.isActive\) return;\s*document\.removeEventListener\('pointerdown', unlock, true\)/.test(src));
 ok('the hover card picks its anchor when it is placed',
   /getBoundingClientRect: \(\) => \(g\.querySelector\('\.hw-web'\)/.test(src));
 ok('the app asks for it from applyLook, and for none when the look is off', /Lineage\.setSkin\(on \? hwBoxes\(S\.look\.boxes\) : null\)/.test(src));
@@ -139,7 +138,7 @@ ok('the beads sit in a layer of their own between the edges and the boxes, so no
 ok('select() lights the beads of the edge it lights, and a legend pick fades them with it',
   /querySelectorAll\('\.hw-bead'\)\.forEach\(\(b\) => b\.classList\.toggle\('hi'/.test(lin) && /beadEls\.forEach\(\(b, i\) => b\.classList\.toggle\('kept'/.test(lin)
   && /\.hw-bead\.hi \{ stroke: #ffb36b/.test(css) && /g\.picking \.hw-bead:not\(\.kept\)/.test(css));
-ok('beads take no click and carry no dash meaning of their own', /body\.halloween \.hw-bead \{[^}]*pointer-events: none/.test(css) && !/\.hw-bead[^{]*\{[^}]*stroke-dasharray: [35]/.test(css));
+ok('beads take no click and carry no dash meaning of their own', /html\[data-theme="halloween"\] \.hw-bead \{[^}]*pointer-events: none/.test(css) && !/\.hw-bead[^{]*\{[^}]*stroke-dasharray: [35]/.test(css));
 ok('the web is a template in the page, cloned on the selected box, pointer-events none, still for the same box again',
   html.indexOf('id="hw-web-src"') >= 0 && /tpl\.cloneNode\(true\)/.test(lin) && /web\.setAttribute\('pointer-events', 'none'\)/.test(lin) && /webFor === id/.test(lin));
 ok('it draws by stroke-dashoffset and is static under reduced motion',
@@ -148,14 +147,14 @@ ok('it draws by stroke-dashoffset and is static under reduced motion',
 print('\n--- what the timers and the saves do ---');
 ok('the next apparition is set before the one due is drawn, which is guarded',
   /scheduleApparition\(kind\);\s*if \(document\.hidden\) return;\s*try \{ show\(\); \}/.test(src));
-ok('the timers run only while the look and its apparitions are both wanted',
+ok('the timers run only while the theme and its apparitions are both wanted',
   /const want = on && S\.look\.apparitions !== false;/.test(src));
-ok('a sound context is only made with the look and its sound on',
-  /function hwAudio\(\) \{\s*if \(!S\.look\.halloween \|\| !S\.look\.sound\) return null;/.test(src));
+ok('there is no sound left: no audio context, no oscillator, no speaker',
+  !/AudioContext|createOscillator|createBiquadFilter|hwSound|hwAudio|look-sound|S\.look\.sound|S\.hw\.audio/.test(src));
 ok('the saves go out one after the other', /S\.hw\.saving = S\.hw\.saving\.then\(/.test(src));
-ok('the Theme section draws the look, the apparitions and the sound as switches',
-  /\['halloween', 'Halloween look'[\s\S]*\['apparitions', 'Random apparitions'[\s\S]*\['sound', 'Sound'/.test(src)
-  && /case 'theme': return paintSetTheme\(box\);/.test(src));
+ok('the Theme section draws the cards, Follow the system and the apparitions',
+  /paintThemeCards\(box\)[\s\S]*paintThemeFollow\(box\)[\s\S]*paintThemeHalloween\(box\)/.test(src)
+  && /'look-apparitions', 'Random apparitions'/.test(src) && /switchRow\('theme-follow', 'Follow the system'/.test(src));
 ok('a redrawn switch walks from where it was, in the box on screen and not in the probe',
   /function walkSwitch\(toggle, key, now, real\) \{\s*if \(!real\) return;/.test(src));
 ok('and never touches aria-checked to do it', !/function walkSwitch[\s\S]*?\n\}\n/.exec(src)[0].match(/setAttribute/));

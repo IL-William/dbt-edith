@@ -1843,7 +1843,7 @@ const Lineage = (() => {
     return `${b.package ? `package ${b.name}` : `${b.key || '.'}/`}  ·  ${b.size} ${noun}${b.size === 1 ? '' : 's'} drawn`;
   }
 
-  /* The Halloween look's art (0107). Under a skin, a plain box (not a test
+  /* The Halloween theme's art (0107). Under a skin, a plain box (not a test
      hanging under a model, nor a chip) gets one group on top of its rect: a
      silhouette path and a trim path written here from the box's size, and a
      few parts laid on it with <use>, symbols of index.html whose kind colour
@@ -2327,7 +2327,7 @@ const Lineage = (() => {
     const g = el('g', { class: 'rolebadge' });
     g.appendChild(el('rect', {
       x: W - w - 4, y: -14, width: w, height: 14, rx: 3,
-      style: `fill:var(--label-bg);stroke:${colour}`,
+      style: `fill:var(--bg-2);stroke:${colour}`,
     }));
     const t = el('text', {
       class: 'rolelabel', x: W - w / 2 - 4, y: -4, 'text-anchor': 'middle',
@@ -2348,8 +2348,8 @@ const Lineage = (() => {
   function stepsBadge(label) {
     const w = pillWidth(label);
     const g = el('g', { class: 'rolebadge stepsbadge' });
-    g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:var(--label-bg);stroke:${EDGE_PLAIN}` }));
-    const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:var(--label-fg)' });
+    g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:var(--bg-2);stroke:${EDGE_PLAIN}` }));
+    const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:var(--fg-2)' });
     t.textContent = label;
     g.appendChild(t);
     return g;
@@ -2363,7 +2363,7 @@ const Lineage = (() => {
     const label = 'PARTIAL';
     const w = pillWidth(label);
     const g = el('g', { class: 'rolebadge partialbadge' });
-    g.appendChild(el('rect', { x, y: -14, width: w, height: 14, rx: 3, style: 'fill:var(--label-bg);stroke:var(--warn)' }));
+    g.appendChild(el('rect', { x, y: -14, width: w, height: 14, rx: 3, style: 'fill:var(--bg-2);stroke:var(--warn)' }));
     const t = el('text', { class: 'rolelabel', x: x + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:var(--warn)' });
     t.textContent = label;
     g.appendChild(t);
@@ -2420,7 +2420,7 @@ const Lineage = (() => {
 
   function badge(x, y, label, dir, node) {
     const g = el('g', { class: 'more-badge', style: 'cursor:pointer', 'data-dir': dir });
-    g.appendChild(el('circle', { cx: x, cy: y, r: 11, style: 'fill:var(--more-bg);stroke:var(--more-line)' }));
+    g.appendChild(el('circle', { cx: x, cy: y, r: 11, style: 'fill:var(--bg-3);stroke:var(--line)' }));
     const t = el('text', { class: 'more', x, y: y + 3, 'text-anchor': 'middle' });
     t.textContent = label;
     g.appendChild(t);
@@ -2639,17 +2639,17 @@ const Lineage = (() => {
 
      `css` and `tight` are for the image path. Inlined into a page, a <style>
      inside the SVG would style the whole page, so the page brings its own. */
-  /* Measured on the canvas as the usual look draws it: the Halloween look's
-     fonts must not reach the file, whose lines are pinned to what they
+  /* Measured on the canvas as the usual theme draws it: the Halloween
+     theme's fonts must not reach the file, whose lines are pinned to what they
      measure. The rules that change a line's font all name a box style, a class
-     of the body, so those come off for the length of the call, with no paint in
-     between, and go back. `halloween` and the rest stay, or the animations that
-     run under them, the web and the ghost's glow, would start again. */
+     of <html>, so those come off for the length of the call, with no paint in
+     between, and go back. `data-theme` and the rest stay, or the animations
+     that run under them, the web and the ghost's glow, would start again. */
   function snapshot(opts) {
-    const body = document.body;
-    const was = [...body.classList].filter((c) => c.startsWith('hw-boxes-'));
-    was.forEach((c) => body.classList.remove(c));
-    try { return snapshotOf(opts); } finally { was.forEach((c) => body.classList.add(c)); }
+    const page = document.documentElement;
+    const was = [...page.classList].filter((c) => c.startsWith('hw-boxes-'));
+    was.forEach((c) => page.classList.remove(c));
+    try { return snapshotOf(opts); } finally { was.forEach((c) => page.classList.add(c)); }
   }
 
   function snapshotOf({ css = '', scale = 1, tight = false } = {}) {

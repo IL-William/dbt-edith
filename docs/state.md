@@ -1049,7 +1049,8 @@ style past it (0107); the edges become silk with dewdrops and the selected box
 grows a web (0108). A ghost, a witch, the zombie switches and the apparitions
 come with it, their sounds made in the browser and muted by default. An export
 or a copied image is the same with the look on or off, which
-`scripts/walk_export.py` checks in Chrome for the three styles.
+`scripts/walk_export.py` checks in Chrome for the three styles. Since 2.2.0 it is
+a theme of its own, without the pumpkin or the sounds (0150).
 
 collin is given the project for a manifest lying in it (0109, 1.43.1).
 `--project` used to go to every run, and collin 0.10.0 reads a seed's header
@@ -2176,6 +2177,24 @@ tiles of Reports included. `web/tests/shapes.js` fails on a round marker, on a
 mask not set in both its prefixed and plain forms, and on a state the code
 produces that has no shape. Its limits are in Deferred item 37.
 
+Themes (0150, 2.2.0), amending 0106 and 0107. Four sets of variables chosen by
+`data-theme` on `<html>`: Night, Graphite, Light and Halloween, picked from the
+half-filled circle between `?` and GitHub, or in Settings > Theme, where Follow
+the system switches Light and Night with the system. Night is the full literal
+block; Graphite, Light and Halloween state the 83 names their design gives them
+and a rule they share derives about seventy more by `color-mix`; Light adds
+darker twins of the colours that mean something, held at 3:1 on the page and the
+sidebar's grey and 4.5:1 for code by `web/tests/themes.js`. Halloween is a theme
+like the others, its rules hung from `html[data-theme="halloween"]` at the
+weight they had under the body, and its sound, speaker and pumpkin are gone. The
+ten twin names kept apart for it are folded. An export and Copy image take the
+theme on screen, and Night under Halloween, from a probe element that carries
+it; the file's `:root` holds the theme's `color-scheme`. `look.json` holds `{
+theme, follow, apparitions, boxes }`, and a 2.1 file is read once and rewritten
+without `halloween` or `sound`. `scripts/take_shots.py --theme` takes the
+pictures in another theme, and `docs/shots` are Night's. The terminal keeps
+Night's colours (Deferred item 32); its other limits are in item 39.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2658,32 +2677,37 @@ of its own, and each panel updates the tour, its page under
     should cut each chunk at `>` first, so a `type` on a later tag is never
     taken for this one's.
 32. **The terminal's colours (#164, #165).** The xterm theme in `web/app.js` is
-    still literal hex. The terminal should take the theme's colours once it
-    reads them by `getComputedStyle`; it also keeps the old cursor colour and
+    still literal hex, Night's in every theme: Light shows a dark terminal until
+    it reads the theme's. The terminal should take the theme's colours once it
+    reads them by `getComputedStyle`, which wants all sixteen ANSI colours as
+    light twins (the design has five); it also keeps the old cursor colour and
     an opaque selection.
-33. **The Halloween look, until it is a theme (#164, #165).**
-    - It keeps literal colours: its section of `app.css` and its art in
+33. ~~**The Halloween look, until it is a theme (#164, #165).**~~ Settled in
+    2.2.0 (0150).
+    - ~~It keeps literal colours: its section of `app.css` and its art in
       `index.html`, which `colourvars.js` exempts. When it becomes a theme
       they go, and so does the second `body.halloween` block, the 2.0.0 hold of
-      27 variables.
-    - Names kept apart for its sake (`--veil`, `--head-bg`, `--more-bg`,
+      27 variables.~~ The hold went with the `body.halloween` blocks. What
+      stays literal is the art's own drawing colours, on purpose (0150).
+    - ~~Names kept apart for its sake (`--veil`, `--head-bg`, `--more-bg`,
       `--more-line`, `--line-faint`, `--diff-hatch`, `--diff-gap`, `--label-bg`,
       `--label-fg`, `--fg-quiet`) fold into `--bg`, `--bg-2`, `--bg-3`,
-      `--line` and `--fg-2` then.
+      `--line` and `--fg-2` then.~~ Folded.
 34. **Colour names the default look does not carry yet (#165).**
     - About 100 names its block does not define (scrims, chips, diff, code
       text, line numbers, placeholders, toasts) keep their pre-2.0 values until
-      the screen using each is redrawn.
-    - Declared and not read yet: `--edge-hot` (`.edge.hi` still reads
-      `--accent`), `--cur-line`, `--dots`, `--node-shadow`, `--py` and
-      `--ansi-*`.
+      the screen using each is redrawn; the other themes derive these names
+      from their own, so they follow when Night's change.
+    - Declared and not read yet: `--cur-line`, `--dots`, `--node-shadow`, `--py`
+      and `--ansi-*`.
 35. **Contrast and browser controls (#164, #165).**
     - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
       is 3.0:1, below AA.
-    - The exported page sets no `color-scheme`, so its node list can show a
-      light scrollbar.
-    - Checkboxes and radios take the browser's dark-scheme blue, not the accent
-      (no `accent-color`).
+    - ~~The exported page sets no `color-scheme`, so its node list can show a
+      light scrollbar.~~ Settled in 2.2.0 (0150): the file's `:root` holds its
+      theme's.
+    - ~~Checkboxes and radios take the browser's dark-scheme blue, not the
+      accent (no `accent-color`).~~ Settled in 2.2.0 (0150).
 36. **The environment choice (#163, 0147).**
     - The env var hover card (`web/app.js`, near line 351) and the Snowflake
       column lineage (near line 7476) read `S.env` directly instead of
@@ -2700,16 +2724,27 @@ of its own, and each panel updates the tour, its page under
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
-38. **The rest of the redesign, one pull request each.** Themes and their menu,
-    the export menu, the depth in dbt's syntax, the Lineage space, column roles
-    in the box, the palette, Search, the keys excerpt, the manifest card, the
-    settings, shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and
-    the design docs.
+38. **The rest of the redesign, one pull request each.** The export menu, the
+    depth in dbt's syntax, the Lineage space, column roles in the box, the
+    palette, Search, the keys excerpt, the manifest card, the settings,
+    shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and the
+    design docs.
 39. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
     Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
     runs, so the search path 0149 sets does not cover it.
+40. **The themes' limits (0150, 2.2.0).**
+    - The page is Night until `/api/look` answers, so a Light user sees one
+      flash on load. Serving `index.html` with the theme already set would end
+      it.
+    - Another open page keeps its theme until it is reloaded.
+    - The "new" tag beside Follow the system is static text.
+    - A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
+      Light; the selection wash (`--select`, as the boards use) comes with the
+      shell step.
+    - The theme has no keyboard shortcut, and the settings' one-column layout
+      is the settings step's.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -2988,7 +3023,8 @@ known limit, unranked:
 - **The Halloween look (0106 to 0108):**
   - `web/tests/halloween.js` is mostly source-text checks; behaviour is covered
     by `scripts/walk_export.py`, which needs a dbt venv;
-  - the audio unlock on a key or a click is tested through the source only;
+  - ~~the audio unlock on a key or a click is tested through the source only;~~
+    Gone with the sounds in 2.2.0 (0150);
   - the box art stops at 400 boxes, a number measured in headless Chrome only;
   - the clipped corners of a tombstone or a coffin take no click;
   - in find, a match that is also selected or focused shows the match ring
@@ -3626,9 +3662,9 @@ both that route and the cross-compile.
     first proposal (0080).
   - A source's copied name is `source.table`, as its title shows it, where
     `--select` wants `source:` in front and `source()` two arguments.
-- **The Halloween look's sounds (1.43.0).** The ghost's wail and the eyes'
+- ~~**The Halloween look's sounds (1.43.0).** The ghost's wail and the eyes'
   whisper, made in the browser, have never been listened to: the checks ran the
-  apparitions, not a speaker.
+  apparitions, not a speaker.~~ Removed in 2.2.0 (0150).
 - **The GitHub menu's issue from someone else's account.** Pull requests
   are for collaborators only and issues open to all. The settings read right
   through the API, but nobody has yet opened an issue from Raise an issue

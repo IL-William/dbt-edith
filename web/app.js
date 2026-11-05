@@ -21,8 +21,8 @@ const S = {
   shellName: '',              // /api/meta's name for the terminal's shell, bash or zsh, '' until it answers (0073)
   termPrompt: undefined,      // true at bash's prompt, false once Enter hands its line on, undefined unheard (0073)
   venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
-  look: { halloween: false, sound: false, apparitions: true, boxes: 'tombstone' },  // /api/look: the Halloween look, its sounds and its apparitions, kept per machine (0106)
-  hw: { ghostTimer: 0, eyesTimer: 0, flyTimer: 0, audio: null, witchX: undefined, running: false, saving: Promise.resolve(), sides: new Map() },  // what the look has running
+  look: { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' },  // /api/look: the theme, Follow the system, the Halloween theme's apparitions and box style, kept per machine (0106, 0150)
+  hw: { ghostTimer: 0, eyesTimer: 0, flyTimer: 0, witchX: undefined, running: false, saving: Promise.resolve(), sides: new Map() },  // what the look has running
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
@@ -6699,13 +6699,16 @@ const MENU_REST = 150;    // a pointer crossing the button on its way elsewhere 
 const MENU_GRACE = 300;   // time to cross the gap between the button and its menu
 
 /* Below the anchor when the menu fits there, above it otherwise, and inside
-   the window either way. Again when a menu drawn anew has grown. */
+   the window either way. Again when a menu drawn anew has grown. A menu that
+   says data-align=right sits under the right edge of its button, so it opens
+   inward from the top bar's end. */
 function placePopup(anchor, el) {
   const at = anchor.getBoundingClientRect();
   const box = el.getBoundingClientRect();
   const below = at.bottom + 4 + box.height <= window.innerHeight;
   el.style.top = `${below ? at.bottom + 4 : Math.max(4, at.top - 4 - box.height)}px`;
-  el.style.left = `${Math.min(Math.max(4, at.left), window.innerWidth - box.width - 4)}px`;
+  const x = el.dataset.align === 'right' ? at.right - box.width : at.left;
+  el.style.left = `${Math.min(Math.max(4, x), window.innerWidth - box.width - 4)}px`;
 }
 
 function openPopup(anchor, el, closed, hover = false) {
@@ -8124,25 +8127,32 @@ function escapeHtml(s) {
 /* The variables a file opened elsewhere needs, which has no app.css: the ones
    the copied canvas rules and the page around the picture name, and the ones
    lineage.js's style strings name (the node kinds, the tests, the column
-   roles, the label fills). Read from the root element, never the body: the
-   Halloween look's classes sit on the body, so an export keeps the usual
-   colours with it on (0106). */
+   roles, the label fills). Read from a probe that carries the theme on
+   screen, Night under Halloween, whose art never leaves the page (0106,
+   0150): the file is drawn in Light when Light is on, and in the usual
+   colours with the Halloween theme on. */
 function exportCanvasVars() {
   const names = [
     '--bg', '--bg-2', '--bg-3', '--line', '--fg', '--fg-dim', '--accent', '--warn', '--mono', '--ui',
     '--edge', '--edge-test', '--focus-bg', '--sel-line',
     '--band', '--band-line', '--band-l1', '--band-l1-line', '--band-l2', '--band-l2-line', '--band-l3', '--band-l3-line',
-    '--label-bg', '--label-fg', '--more-bg', '--more-line',
+    '--fg-2', '--edge-hot', 'color-scheme',
     '--k-view', '--k-table', '--k-incr', '--k-ephemeral', '--k-mview', '--k-seed', '--k-source', '--k-snapshot',
     '--k-exposure', '--k-other', '--k-custom',
     '--t-model', '--t-singular', '--t-column',
     '--r-passthrough', '--r-rename', '--r-cast', '--r-aggregate', '--r-window', '--r-transform', '--r-inferred',
     '--r-raw', '--r-generated', '--r-filter', '--r-join-key', '--r-dedup-key', '--r-indirect',
   ];
-  const style = getComputedStyle(document.documentElement);
-  const out = {};
-  names.forEach((name) => { out[name] = style.getPropertyValue(name).trim(); });
-  return out;
+  const probe = document.createElement('i');
+  probe.hidden = true;
+  probe.dataset.theme = exportTheme(document.documentElement.dataset.theme);
+  document.body.append(probe);
+  try {
+    const style = getComputedStyle(probe);
+    const out = {};
+    names.forEach((name) => { out[name] = style.getPropertyValue(name).trim(); });
+    return out;
+  } finally { probe.remove(); }
 }
 
 /* The canvas rules, copied from app.css line for line, with the variables they
@@ -8159,7 +8169,7 @@ function exportCanvasCss(vars = {}) {
     '.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; }',
     '.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
-    '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
+    '.edge.hi { stroke: var(--edge-hot); stroke-width: 2; }',
     '.edge.indirect.hi { stroke: var(--edge-col); }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
@@ -8502,7 +8512,7 @@ function renderPng(shot, scale) {
         canvas.width = Math.round(shot.frame.w * scale);
         canvas.height = Math.round(shot.frame.h * scale);
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+        ctx.fillStyle = exportCanvasVars()['--bg'];
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('the browser could not encode it'))), 'image/png');
@@ -11880,8 +11890,8 @@ function settingsSections(c) {
       title: 'Where the Airflow DAGs or dbt Cloud jobs that run each model are read from' },
     { key: 'updates', label: 'Updates', hint: c.update || '',
       title: 'Which build serves this page, a newer release, and how to install it' },
-    { key: 'theme', label: 'Theme', hint: c.look ? 'on' : '',
-      title: 'The Halloween look, the style of the lineage\'s boxes, and the apparitions and sounds that come with it. All apply once the look is on.' },
+    { key: 'theme', label: 'Theme', hint: c.theme || '',
+      title: 'The colours of the whole app, the canvas included. Each keeps the same meaning colours: materializations, tests, ok, warn and bad.' },
     { key: 'help', label: 'Help and tour',
       title: 'The tour, every shortcut, and dbt-edith on GitHub' },
   ];
@@ -11905,7 +11915,7 @@ function settingsNow() {
     cll: pick.tool ? pick.name : 'none',
     snowflake: !!(S.features && S.features.snowflake),
     update: o ? (o.installed ? 'restart' : 'newer') : '',
-    look: !!S.look.halloween,
+    theme: THEMES.find((t) => t.id === themeNow()).name,
   };
 }
 
@@ -11925,8 +11935,7 @@ function settingsIcon(sec) {
   if ('tool' in sec) wrap.dataset.tool = sec.tool;
   const draw = { project: profileIcon, snowflake: snowflakeIcon, jobs: jobsIcon }[sec.key];
   if (sec.key === 'theme') {
-    wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 4.4C5 2.8 1.4 4.8 1.4 8.8c0 3 2.4 5.2 6.6 5.2s6.6-2.2 6.6-5.2C14.6 4.8 11 2.8 8 4.4Z',
-      'M8 4.4c0-1.2.3-2 1.2-2.7', 'M5.2 11.4l1.1.9L8 11.4l1.7.9 1.1-.9']));
+    wrap.append(themeGlyph());
     return wrap;
   }
   if (draw) wrap.append(draw());
@@ -12018,7 +12027,9 @@ function drawSettingsSection(key, body, { add }) {
       freshenUpdate();
       break;
     case 'theme':
-      setBlock(body, '', 'theme', 'envmenu inpanel');
+      setBlock(body, '', 'themecards', 'tcards');
+      setBlock(body, '', 'themefollow', 'envmenu inpanel setcard');
+      setBlock(body, '', 'themehw', 'envmenu inpanel setcard setgroup');
       break;
     case 'help':
       drawSetHelp(body);
@@ -12037,7 +12048,9 @@ function paintSettingsBlock(box) {
       fillSourceMenu(box, () => {});
       return unmenu(box);
     case 'snowflake': return paintSetSnowflake(box);
-    case 'theme': return paintSetTheme(box);
+    case 'themecards': return paintThemeCards(box);
+    case 'themefollow': return paintThemeFollow(box);
+    case 'themehw': return paintThemeHalloween(box);
     case 'updates':
       paintUpdateMenu(box);
       return unmenu(box);
@@ -16411,6 +16424,7 @@ function initTerm() {
   S.term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontSize: 12.5, cursorBlink: true, scrollback: 5000,
+    // Night's dark colours in every theme: a light terminal wants all sixteen ANSI colours as light twins (0150, Deferred 32).
     theme: { background: '#0e1219', foreground: '#d7dee8', cursor: '#4da3ff', selectionBackground: '#2b3a4d' },
   });
   S.fit = new FitAddon.FitAddon();
@@ -16833,7 +16847,7 @@ function foldDockTabs() {
   row.classList.remove('folded');
   tools.classList.remove('hidden', 'iconic');
   const fit = () => {
-    // Without the strip the Halloween look adds over the tabs, whose room the witch has.
+    // Without the strip the Halloween theme adds over the tabs, whose room the witch has.
     const h = row.getBoundingClientRect().height - parseFloat(getComputedStyle(row).paddingTop);
     return row.scrollWidth <= row.clientWidth
       && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
@@ -16858,7 +16872,7 @@ function foldDockTabs() {
    name from unfolding, the counts go, and the tabs not lit keep their glyph
    alone, named by their tooltip and still read out. Measured, never set at a
    width, because the room moves with the name, the counts, the news on the
-   Reports tab and the look's buttons: it is measured with every tab's name
+   Reports tab and the theme's button: it is measured with every tab's name
    shown, whichever is lit, so a click on a tab never changes what folds
    (0140). The gear's name unfolds on hover and while the settings are open,
    so the first check holds back the room it will take, whatever point of its
@@ -16898,12 +16912,37 @@ function wireTopbar() {
   }).observe(bar, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden'] });
 }
 
-/* The Halloween look (0106): a class on the body that every rule of the theme
-   hangs from, so exportCanvasCss() and the snapshot never carry it. Kept per
-   machine by /api/look; a failed answer leaves the state as it is and says
-   nothing, the look being a nicety.
-   The pure parts run from isNightHour to placeWitch, which
-   web/tests/halloween.js slices. */
+/* The theme (0150, 0106): data-theme on <html>, which the variable blocks at
+   the top of app.css and every rule of the Halloween theme hang from, so
+   exportCanvasCss() and the snapshot, which carry none of it, can never pick
+   any up. Kept per machine by /api/look; a failed answer leaves the state as it
+   is and says nothing, the theme being a nicety.
+   The pure parts run from THEMES to placeWitch, which web/tests/themes.js and
+   web/tests/halloween.js slice. */
+
+const THEMES = [
+  { id: 'night', name: 'Night', about: 'Deep blue, the default' },
+  { id: 'graphite', name: 'Graphite', about: 'Neutral grey, no tint' },
+  { id: 'light', name: 'Light', about: 'For daylight and screenshots' },
+  { id: 'halloween', name: 'Halloween', about: 'Orange and black, a ghost and a witch' },
+];
+
+/* A theme as /api/look said it: one of the four, Night for anything else, as
+   for a server that does not say. */
+function themeId(v) { return THEMES.some((t) => t.id === v) ? v : 'night'; }
+
+/* The theme on screen: Follow the system shows Light while the system is
+   light and Night once it is dark, else the one picked. */
+function shownTheme(look, dark) { return look.follow ? (dark ? 'night' : 'light') : themeId(look.theme); }
+
+/* The theme an export is drawn in: the one on screen, Night under Halloween,
+   whose art never leaves the page (0106, 0150). */
+function exportTheme(shown) { return shown === 'halloween' ? 'night' : themeId(shown); }
+
+const DARK = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+function hwOn() { return document.documentElement.dataset.theme === 'halloween'; }
+/* The theme on screen, from the state and the system. */
+function themeNow() { return shownTheme(S.look, !DARK || DARK.matches); }
 
 /* After dark by the browser's own clock, the user's timezone: 20h to 6h59. */
 function isNightHour(h) { return h >= 20 || h < 7; }
@@ -16938,7 +16977,7 @@ function switchWalks(prev, now, themed) {
    `animate` is off for a resize or for the first place she is put. */
 function placeWitch(animate) {
   const w = $('#hw-witch');
-  if (!w || !S.look.halloween) return;
+  if (!w || !hwOn()) return;
   const row = $('#dock > .tabs');
   const tab = row.querySelector('.tab.active');
   if (!tab) return;
@@ -16962,31 +17001,24 @@ function placeWitch(animate) {
 }
 
 function paintNight() {
-  document.body.classList.toggle('hw-night', !!S.look.halloween && isNightHour(new Date().getHours()));
+  document.documentElement.classList.toggle('hw-night', hwOn() && isNightHour(new Date().getHours()));
 }
 
-/* The look as S.look says it: the body's class, the buttons, and the timers
-   of the apparitions, which only run while the look and its apparitions are
-   both on. The sound's context is suspended unless the look and its sound are
-   both on. */
+/* The theme as S.look says it: <html>'s attribute and the box style's class,
+   the button, and the timers of the apparitions, which only run while the
+   Halloween theme and its apparitions are both on. */
 function applyLook() {
-  const on = !!S.look.halloween;
-  const was = document.body.classList.contains('halloween');
-  document.body.classList.toggle('halloween', on);
-  // The box style's class only while the look is on, so that look off costs the page nothing.
-  for (const b of ['tombstone', 'coffin', 'grimoire']) document.body.classList.toggle('hw-boxes-' + b, on && b === hwBoxes(S.look.boxes));
+  const theme = themeNow();
+  const root = document.documentElement;
+  const was = root.dataset.theme === 'halloween';
+  root.dataset.theme = theme;
+  const on = theme === 'halloween';
+  // The box style's class only while the theme is on, so that any other costs the page nothing.
+  for (const b of ['tombstone', 'coffin', 'grimoire']) root.classList.toggle('hw-boxes-' + b, on && b === hwBoxes(S.look.boxes));
   paintNight();
   // The boxes' art, drawn by the lineage itself, which keeps it through its own redraws.
   Lineage.setSkin(on ? hwBoxes(S.look.boxes) : null);
-  const pumpkin = $('#look-btn');
-  pumpkin.setAttribute('aria-pressed', String(on));
-  pumpkin.title = on ? 'Halloween look: on. Click for the usual one' : 'Halloween look';
-  const speaker = $('#look-sound');
-  speaker.classList.toggle('hidden', !on);
-  speaker.setAttribute('aria-pressed', String(!!S.look.sound));
-  speaker.title = S.look.sound ? 'Ghost sounds: on' : 'Ghost sounds: off';
-  // Whatever its state: a resume still on its way would otherwise end running.
-  if (S.hw.audio && !(on && S.look.sound)) S.hw.audio.suspend().catch(() => {});
+  $('#theme-btn').title = 'Theme: ' + THEMES.find((t) => t.id === theme).name;
   if (on !== was) {
     S.hw.witchX = undefined;
     if (on) placeWitch(false);
@@ -17001,43 +17033,64 @@ function applyLook() {
 /* One chain, so two quick choices reach the server in the order they were
    made and the last one is what is kept. */
 function saveLook() {
-  const body = { halloween: !!S.look.halloween, sound: !!S.look.sound, apparitions: S.look.apparitions !== false, boxes: hwBoxes(S.look.boxes) };
+  const body = { theme: themeId(S.look.theme), follow: !!S.look.follow, apparitions: S.look.apparitions !== false, boxes: hwBoxes(S.look.boxes) };
   S.hw.saving = S.hw.saving.then(() => api.send('/api/look', 'POST', body)).then(() => {}, () => {});
 }
 
 function loadLook() {
   api.get('/api/look').then((r) => {
-    S.look = { halloween: !!(r && r.halloween), sound: !!(r && r.sound), apparitions: !r || r.apparitions !== false, boxes: hwBoxes(r && r.boxes) };
+    S.look = { theme: themeId(r && r.theme), follow: !!(r && r.follow), apparitions: !r || r.apparitions !== false, boxes: hwBoxes(r && r.boxes) };
     applyLook();
     repaintSettings();
   }).catch(() => {});
 }
 
-/* A choice made by a click, in the top bar or in the settings: kept, drawn,
-   and its sound started here, since a browser lets no sound start but from a
-   click. */
+/* A choice made by a click, in the top bar or in the settings: kept, drawn. */
 function setLook(patch) {
   Object.assign(S.look, patch);
-  if (S.look.sound) hwAudio();
   applyLook();
   saveLook();
   repaintSettings();
 }
 
+/* A theme picked, from the menu or a card: it is the one kept, and the system
+   no longer chooses. */
+function pickTheme(id) { setLook({ theme: id, follow: false }); }
+
 function wireLook() {
-  $('#look-btn').addEventListener('click', () => setLook({ halloween: !S.look.halloween }));
-  $('#look-sound').addEventListener('click', () => setLook({ sound: !S.look.sound }));
-  // A sound switched on in an earlier visit has had no click yet in this one.
-  // The first click or key of the visit: a browser lets a sound start from either.
-  const unlock = () => {
-    // Meta, Escape and the like are no gesture to a browser: stay listening for one that is.
-    if (navigator.userActivation && !navigator.userActivation.isActive) return;
-    document.removeEventListener('pointerdown', unlock, true);
-    document.removeEventListener('keydown', unlock, true);
-    if (S.look.sound) hwAudio();
-  };
-  document.addEventListener('pointerdown', unlock, true);
-  document.addEventListener('keydown', unlock, true);
+  $('#theme-btn').addEventListener('click', (e) => openThemeMenu(e.currentTarget));
+  // While Follow is on, the page tracks the system as it turns.
+  // An open theme menu would keep the tick of the theme that was on screen, so it closes.
+  if (DARK) DARK.addEventListener('change', () => { if (S.look.follow) { closePopup(); applyLook(); repaintSettings(); } });
+}
+
+/* The theme menu (0150), under its button and held inside the window from the
+   right: one row per theme, drawn in its own colours by a swatch that carries
+   its data-theme. */
+function openThemeMenu(anchor) {
+  if (closePopup(anchor)) return;
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  const shown = themeNow();
+  const menu = el('div', 'envmenu thememenu');
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Theme');
+  menu.dataset.align = 'right';
+  menu.append(el('div', 'menuhead', 'Theme'));
+  for (const t of THEMES) {
+    const item = el('button', t.id === shown ? 'on' : '');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitemradio');
+    item.setAttribute('aria-checked', String(t.id === shown));
+    item.dataset.key = 'theme-' + t.id;
+    const sw = el('span', 'tm-sw');
+    sw.dataset.theme = t.id;
+    sw.setAttribute('aria-hidden', 'true');
+    sw.append(el('i', 'v'), el('i', 't'), el('b'));
+    item.append(sw, el('span', 'lbl', t.name), strokeIcon('0 0 16 16', 'tm-check', ['M3.5 8.5l3 3 6-7']));
+    item.addEventListener('click', () => { closePopup(); anchor.focus(); pickTheme(t.id); });
+    menu.append(item);
+  }
+  openPopup(anchor, menu);
 }
 
 /* A switch that walks. A section is drawn again whenever what it shows
@@ -17051,7 +17104,7 @@ function walkSwitch(toggle, key, now, real) {
   if (!real) return;
   const prev = S.hw.sides.get(key);
   S.hw.sides.set(key, now);
-  if (!switchWalks(prev, now, S.look.halloween) || hwReduced()) return;
+  if (!switchWalks(prev, now, hwOn()) || hwReduced()) return;
   const there = 'translateX(15px) scaleX(-1)';
   const knob = toggle.firstChild;
   // A frame later: an animation on a node not yet in the page starts too early.
@@ -17066,131 +17119,111 @@ function walkSwitch(toggle, key, now, real) {
   });
 }
 
-/* The Theme section: the look, its apparitions and its sound, each a switch
-   row, drawn as Snowflake's is. They mirror the pumpkin and the speaker. */
-function paintSetTheme(box) {
-  const real = box.isConnected;
-  const rows = [
-    ['halloween', 'Halloween look', 'Orange and black, with a ghost, a witch, zombies and boxes of a style of their own.', !!S.look.halloween],
-    ['apparitions', 'Random apparitions', 'A ghost crossing the page and a pair of eyes in the dark, now and then.', S.look.apparitions !== false],
-    ['sound', 'Sound', 'A ghost\'s wail and the eyes\' whisper, made in the browser. Muted until you switch it on.', !!S.look.sound],
-  ].map(([key, label, about, on]) => {
-    const row = jel('div', 'setrow');
-    // The switch's track takes its colour from --tool, whatever the look: a section sets one.
-    row.dataset.tool = 'theme';
-    const toggle = jel('button', 'switch');
-    toggle.type = 'button';
-    toggle.dataset.key = 'look-' + key;
-    toggle.setAttribute('role', 'switch');
-    toggle.setAttribute('aria-checked', String(on));
-    toggle.setAttribute('aria-label', label);
-    toggle.append(jel('span', 'knob'));
-    walkSwitch(toggle, 'look-' + key, on, real);
-    const text = jel('div', 'setcol');
-    text.append(jel('span', 'setlbl', label), jel('p', 'setnote', about));
-    row.append(text, toggle);
-    row.addEventListener('click', () => setLook({ [key]: !on }));
-    return row;
-  });
+/* A switch row of the Theme section, drawn as Snowflake's is, the zombie of
+   the Halloween theme walking its knob. `real` tells the box in the page from
+   the probe redrawIfChanged compares with. */
+function switchRow(key, label, about, on, onClick, real) {
+  const row = jel('div', 'setrow');
+  // The switch's track takes its colour from --tool, whatever the theme: a section sets one.
+  row.dataset.tool = 'theme';
+  const toggle = jel('button', 'switch');
+  toggle.type = 'button';
+  toggle.dataset.key = key;
+  toggle.setAttribute('role', 'switch');
+  toggle.setAttribute('aria-checked', String(on));
+  toggle.setAttribute('aria-label', label);
+  toggle.append(jel('span', 'knob'));
+  walkSwitch(toggle, key, on, real);
+  const text = jel('div', 'setcol');
+  text.append(jel('span', 'setlbl', label), jel('p', 'setnote', about));
+  row.append(text, toggle);
+  row.addEventListener('click', onClick);
+  return row;
+}
+
+/* The half-filled circle of the Theme button and the rail. */
+function themeGlyph() {
+  const svg = strokeIcon('0 0 16 16', 'setglyph', ['M8 2.25a5.75 5.75 0 1 0 0 11.5a5.75 5.75 0 1 0 0-11.5z']);
+  const half = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  half.setAttribute('d', 'M8 2.25a5.75 5.75 0 0 1 0 11.5z');
+  half.setAttribute('fill', 'currentColor');
+  half.setAttribute('stroke', 'none');
+  svg.append(half);
+  return svg;
+}
+
+/* The Theme section's cards, one radio each. Each preview carries its own
+   data-theme, so it paints itself in that theme's variables. The arrows move
+   and pick together, as radios do. */
+function paintThemeCards(box) {
+  const shown = themeNow();
+  box.setAttribute('role', 'radiogroup');
+  box.setAttribute('aria-label', 'Theme');
+  box.replaceChildren(...THEMES.map((t) => {
+    const card = jel('button', 'tcard');
+    card.type = 'button';
+    card.setAttribute('role', 'radio');
+    card.setAttribute('aria-checked', String(t.id === shown));
+    card.dataset.key = 'theme-' + t.id;
+    card.tabIndex = t.id === shown ? 0 : -1;
+    const prev = jel('span', 'tprev');
+    prev.dataset.theme = t.id;
+    prev.setAttribute('aria-hidden', 'true');
+    prev.append(jel('i', 'tb'), jel('i', 'ts'), jel('i', 'tn v'), jel('i', 'tn t'), jel('i', 'te'));
+    card.append(prev, jel('span', 'tname', t.name), jel('span', 'tdesc', t.about));
+    card.addEventListener('click', () => pickTheme(t.id));
+    return card;
+  }));
+  // Assigned, not added: the box is drawn again and keeps its one listener.
+  box.onkeydown = (e) => {
+    const cards = [...box.querySelectorAll('.tcard')];
+    const at = cards.indexOf(document.activeElement);
+    const to = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: cards.length - 1 }[e.key];
+    if (at < 0 || to === undefined) return;
+    e.preventDefault();
+    const next = cards[(to + cards.length) % cards.length];
+    // Focused first: the redraw the pick causes puts the focus back by data-key.
+    next.focus();
+    pickTheme(THEMES[cards.indexOf(next)].id);
+  };
+}
+
+/* Follow the system, a switch of its own. */
+function paintThemeFollow(box) {
+  const row = switchRow('theme-follow', 'Follow the system', 'Light while the system is light, Night once it turns dark.', !!S.look.follow,
+    // Off, it keeps the theme on screen.
+    () => setLook(S.look.follow ? { follow: false, theme: themeNow() } : { follow: true }), box.isConnected);
+  row.querySelector('.setlbl').after(jel('span', 'newtag', 'new'));
+  box.replaceChildren(row);
+}
+
+/* What only the Halloween theme has: its apparitions and its box style.
+   Dimmed while another theme is on, its controls still usable. */
+function paintThemeHalloween(box) {
+  const on = themeNow() === 'halloween';
+  box.classList.toggle('dim', !on);
+  const head = jel('div', 'sghead', 'With Halloween');
+  if (!on) head.append(jel('span', 'sgnote', 'once the Halloween theme is on'));
+  const apparitions = switchRow('look-apparitions', 'Random apparitions', 'A ghost crossing the page and a pair of eyes in the dark, now and then.',
+    S.look.apparitions !== false, () => setLook({ apparitions: S.look.apparitions === false }), box.isConnected);
   // The lineage's boxes, one of three: a pure CSS switch, so the canvas is not drawn again.
-  const styles = [
-    ['tombstone', 'Tombstone', 'M3 14V7a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v7Z'],
-    ['coffin', 'Coffin', 'M5.5 1.5h5L13 5l-2 9.5H5L3 5Z'],
-    ['grimoire', 'Grimoire', 'M3 2.5h9.5v11H3ZM5.5 2.5v11'],
-  ];
+  const styles = [['tombstone', 'Headstone'], ['coffin', 'Coffin'], ['grimoire', 'Spellbook']];
   const pick = jel('div', 'setrow setpick');
   const text = jel('div', 'setcol');
-  text.append(jel('span', 'setlbl', 'Box style'), jel('p', 'setnote', 'How the lineage draws its boxes: a headstone, a coffin or a spellbook.'));
+  text.append(jel('span', 'setlbl', 'Box style'), jel('p', 'setnote', 'How the lineage draws its boxes.'));
   const seg = jel('span', 'seg');
   seg.setAttribute('role', 'group');
   seg.setAttribute('aria-label', 'Box style');
-  for (const [value, label, d] of styles) {
-    const b = jel('button', 'segbtn' + (hwBoxes(S.look.boxes) === value ? ' active' : ''));
+  for (const [value, label] of styles) {
+    const b = jel('button', 'segbtn' + (hwBoxes(S.look.boxes) === value ? ' active' : ''), label);
     b.type = 'button';
     b.dataset.key = 'look-boxes-' + value;
     b.setAttribute('aria-pressed', String(hwBoxes(S.look.boxes) === value));
-    b.append(strokeIcon('0 0 16 16', 'hwicon', [d]), jel('span', '', label));
     b.addEventListener('click', () => setLook({ boxes: value }));
     seg.append(b);
   }
   pick.append(text, seg);
-  rows.splice(1, 0, pick);
-  box.replaceChildren(...rows);
-  if (!S.look.halloween) box.append(jel('p', 'setnote', 'Apparitions and sound apply once the look is on.'));
-}
-
-function hwAudio() {
-  if (!S.look.halloween || !S.look.sound) return null;
-  if (!S.hw.audio) {
-    const C = window.AudioContext || window.webkitAudioContext;
-    if (!C) return null;
-    try { S.hw.audio = new C(); } catch { return null; }
-  }
-  if (S.hw.audio.state === 'suspended') {
-    S.hw.audio.resume().then(() => {
-      if (!S.look.halloween || !S.look.sound) S.hw.audio.suspend().catch(() => {});
-    }, () => {});
-  }
-  return S.hw.audio;
-}
-
-/* The context if a sound may play now: asked for, and running (a context that
-   no click has started stays silent rather than queueing sounds for later). */
-function hwAudioReady() {
-  const ctx = S.hw.audio;
-  return S.look.halloween && S.look.sound && ctx && ctx.state === 'running' ? ctx : null;
-}
-
-/* A ghost's "wooo": a sine gliding down under a slow vibrato, through a
-   lowpass, rising and fading over about three seconds. */
-function hwSoundGhost() {
-  const ctx = hwAudioReady();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const lfo = ctx.createOscillator();
-  const depth = ctx.createGain();
-  const low = ctx.createBiquadFilter();
-  const amp = ctx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(260, now);
-  osc.frequency.exponentialRampToValueAtTime(150, now + 2.8);
-  lfo.frequency.value = 5;
-  depth.gain.value = 9;
-  low.type = 'lowpass';
-  low.frequency.value = 700;
-  amp.gain.setValueAtTime(0.0001, now);
-  amp.gain.exponentialRampToValueAtTime(0.14, now + 0.8);
-  amp.gain.exponentialRampToValueAtTime(0.0001, now + 3);
-  lfo.connect(depth).connect(osc.frequency);
-  osc.connect(low).connect(amp).connect(ctx.destination);
-  osc.start(now); lfo.start(now);
-  osc.stop(now + 3.1); lfo.stop(now + 3.1);
-}
-
-/* The eyes' creak: filtered noise whose band slides up, with a breath of a
-   whisper behind it. */
-function hwSoundEyes() {
-  const ctx = hwAudioReady();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-  const len = Math.floor(ctx.sampleRate * 1.6);
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const band = ctx.createBiquadFilter();
-  const amp = ctx.createGain();
-  band.type = 'bandpass';
-  band.Q.value = 9;
-  band.frequency.setValueAtTime(260, now);
-  band.frequency.exponentialRampToValueAtTime(900, now + 1.4);
-  amp.gain.setValueAtTime(0.0001, now);
-  amp.gain.exponentialRampToValueAtTime(0.16, now + 0.5);
-  amp.gain.exponentialRampToValueAtTime(0.0001, now + 1.6);
-  src.connect(band).connect(amp).connect(ctx.destination);
-  src.start(now);
+  box.replaceChildren(head, apparitions, pick);
 }
 
 const HW_GHOST = '<svg viewBox="0 0 84 90"><use href="#hw-s-cross"/></svg>';
@@ -17208,7 +17241,6 @@ function showGhost() {
   g.innerHTML = HW_GHOST;
   g.addEventListener('animationend', (e) => { if (e.target === g) g.remove(); });
   layer.appendChild(g);
-  hwSoundGhost();
 }
 
 /* A pair of eyes in the dark, blinking twice. */
@@ -17223,7 +17255,6 @@ function showEyes() {
   e.innerHTML = '<svg class="open" viewBox="0 0 40 16"><use href="#hw-s-eyes"/></svg><svg class="shut" viewBox="0 0 40 16"><use href="#hw-s-eyes-shut"/></svg>';
   e.addEventListener('animationend', () => e.remove());
   layer.appendChild(e);
-  hwSoundEyes();
 }
 
 /* Each kind comes back at a random time of its own range, a turn skipped
@@ -17235,7 +17266,7 @@ function scheduleApparition(kind) {
     // The next one is set first, so a drawing that fails ends nothing.
     scheduleApparition(kind);
     if (document.hidden) return;
-    try { show(); } catch { /* a missing layer or audio, not worth a word */ }
+    try { show(); } catch { /* a missing layer, not worth a word */ }
   }, nextApparitionDelay(min, max, Math.random()));
 }
 

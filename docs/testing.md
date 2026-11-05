@@ -31,7 +31,7 @@ $JSC web/tests/explorer.js    # git and unsaved colouring, including folders
 $JSC web/tests/collineage.js  # composite column ids, node subtitles, and the column lineage menu
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks
 $JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
-$JSC web/tests/colourvars.js  # every colour a variable: no literal in app.css below :root (the Halloween look apart, until it becomes a theme) nor in lineage.js
+$JSC web/tests/colourvars.js  # every colour a variable: no literal in app.css below the theme blocks (the Halloween theme's art apart) nor in lineage.js
 $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations
@@ -49,7 +49,7 @@ $JSC web/tests/compiledenv.js # the Compiled and Run SQL for another environment
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, the columns its key names, and the tag of a key
-$JSC web/tests/export.js      # an exported graph: its header, its file, its safety, and none of the Halloween look
+$JSC web/tests/export.js      # an exported graph: its header, its file, its safety, the theme it is drawn in, and none of the Halloween art
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
@@ -70,7 +70,8 @@ $JSC web/tests/working.js     # Edith's mark moving while she works: which reque
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's mark
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header
-$JSC web/tests/halloween.js   # the Halloween look: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
+$JSC web/tests/halloween.js   # the Halloween theme: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
+$JSC web/tests/themes.js      # the four themes: their blocks, Light's contrast, Graphite's greys, the pick, the export's theme
 $JSC web/tests/shapes.js      # one shape per meaning: no marker round, every state its pictogram
 ```
 
@@ -149,15 +150,17 @@ on the canvas, what starts it again at 1, and what Back and Forward bring back:
 ```
 
 Edith's menu is driven by a real pointer, the same way: what opens it under
-the pointer, what closes it, and what a click on it holds open:
+the pointer, what closes it, and what a click on it holds open, and where the
+theme menu sits and what its keys do:
 
 ```
 /tmp/dbt/bin/python scripts/walk_menu.py
 ```
 
-An export of the lineage with the Halloween look on has to be the export of
-the same canvas with it off, for each of the three box styles, art and cut
-names included (0107):
+An export of the lineage with the Halloween theme on has to be the export of
+the same canvas with the usual look, for each of the three box styles, art and
+cut names included (0107), and its colours the theme on screen's, Night under
+Halloween and Light under Light (0150):
 
 ```
 /tmp/dbt/bin/python scripts/walk_export.py

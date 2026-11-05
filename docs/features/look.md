@@ -1,53 +1,88 @@
-# The Halloween look
+# Themes
 
-A look for the page, orange and black with drawings that move, for anyone who
-wants it. It is off until you switch it on, it changes nothing about what
-dbt-edith reads or shows, and it never reaches a file you export or a picture
-you copy (0106, 0107, 0108).
+The page has four sets of colours, Night, Graphite, Light and Halloween, picked
+from the top bar or the settings. A theme changes the colours of the whole
+page, the lineage canvas and the editor included, and nothing about what
+dbt-edith reads or shows. The colours that carry a meaning, the kinds of node,
+the tests, the environments, a warning, a success or a failure, keep theirs in
+every theme, in a darker twin where the page is light (0150, 0106, 0107, 0108).
 
-## Switching it on
+![The Theme section of the settings: four cards, Follow the system, and the apparitions and box style that belong to Halloween](../shots/themes.png)
 
-The pumpkin in the top bar, beside the shortcut list's `?`, switches the look
-on and off. Once it is on, a speaker button appears beside it: sounds are muted
-until you press it.
+## Picking one
 
-The settings have a Theme section with the same choices as three switches, the
-look itself, the random apparitions and the sound, and a fourth, the style of
-the lineage's boxes. The apparitions, the sound and the style apply once the
-look is on, and the speaker in the top bar and the sound switch are one
-choice. All four are kept on the machine, in `look.json` in
-dbt-edith's config directory, so they hold for every project and every start;
-where there is no config directory they last until the page is closed.
+The half-filled circle in the top bar, between the shortcut list's `?` and
+GitHub, opens a menu of the four, each with a small swatch painted in its own
+colours; the one on screen is checked. The arrows move over them, Enter picks,
+Escape closes the menu and gives the focus back to the button.
 
-## What it changes
+The settings have a Theme section with the same four as cards, each with a
+preview, and a switch, **Follow the system**: while it is on the page shows
+Light while the system is light and Night once it turns dark, and follows the
+system as it changes. Picking a theme, from the menu or a card, turns Follow
+off and keeps that pick; turning Follow off keeps the theme on screen. The
+arrows move over the cards and pick as they go.
 
-- **Colours**: the page turns near-black and the accent orange. The colours
-  that carry a meaning, the kinds of node, the environments, a warning, a
-  success or a failure, keep theirs, and the terminal is left as it is.
+What you pick is kept on the machine, in `look.json` in dbt-edith's config
+directory, so it holds for every project and every start; where there is no
+config directory it lasts until the page is closed. The page starts in Night and
+changes once the server has answered, and another open page keeps its theme
+until it is reloaded.
+
+## The four
+
+- **Night**: deep blue, the default.
+- **Graphite**: neutral grey with no tint, and colour only where it means
+  something.
+- **Light**: for daylight and screenshots. Each colour that means something is
+  darker than in Night, at least 3:1 on the page and on the sidebar's grey,
+  and the code colours at least 4.5:1 on the page.
+- **Halloween**: orange and black, with a ghost and a witch, below.
+
+The terminal keeps its dark colours in every theme for now: a light one wants
+sixteen colours of its own.
+
+## Export and Copy image
+
+Export above the graph and Copy image draw the lineage in the theme on screen,
+so a file sent to a colleague or a picture pasted in a ticket is as light as the
+page was. Under Halloween they take Night: the drawings below stay on the page,
+and a file with the browns and none of the art would be neither theme.
+
+## The Halloween theme
+
+Orange and black, with drawings that move, for anyone who wants it. It changes
+nothing about what dbt-edith reads or shows. The Theme section's **With
+Halloween** group, dimmed while another theme is on and still usable, holds the
+random apparitions and the box style.
+
+- **Colours**: the page turns near-black with brown lines and the accent
+  orange.
 - **A ghost on Edith's E**, top left. It glows when a newer release is out, and
   at night, between 20:00 and 07:00 by your own clock.
 - **A witch on her broom** flies over the dock's tabs to the one you open.
 - **Zombie switches**: each switch in the settings becomes a zombie that walks
   to the other side when you flip it, facing the way it goes.
-- **The lineage's boxes**, in the style the Theme section's Box style picks,
-  the tombstone unless you pick another. Picking one redraws nothing:
-  - **Tombstone**: a grey stone slab with an arched top, a chiselled edge, an
+- **The lineage's boxes**, in the style the Box style picks, the headstone
+  unless you pick another. Picking one redraws nothing:
+  - **Headstone**: a grey stone slab with an arched top, a chiselled edge, an
     engraved cross and a crack, the kind as moss along its base. Under the
     pointer the stone shudders, as if something pushed from underneath.
   - **Coffin**: dark wood with chamfered ends and a lid line, studded with
     pins, a gold cross at its head with the kind as its gem. Under the pointer
     it shakes and its lid lifts a little.
-  - **Grimoire**: purple leather in a double gold border, a banded spine at
+  - **Spellbook**: purple leather in a double gold border, a banded spine at
     the left with the kind as its gem, pages at the right. Under the pointer
     its cover lifts from the spine.
 
   The names are serif, and a long one ends in an ellipsis a little sooner than
-  without the look; its hover card has the whole name. A box that is the focus,
-  selected, a find match or drawn dashed (an ephemeral model) takes its ring on
-  the silhouette itself. The tests under a model keep their usual shape. Edges
-  become thin silk, the edges of the box you select turn orange, and a cobweb hangs in two
-  corners of the canvas. The dashes that say an edge is a test, a back edge or
-  indirect are kept, and those edges have no dewdrops.
+  in the other themes; its hover card has the whole name. A box that is the
+  focus, selected, a find match or drawn dashed (an ephemeral model) takes its
+  ring on the silhouette itself. The tests under a model keep their usual
+  shape. Edges become thin silk, the edges of the box you select turn orange,
+  and a cobweb hangs in two corners of the canvas. The dashes that say an edge
+  is a test, a back edge or indirect are kept, and those edges have no
+  dewdrops.
 
   Where the boxes have their drawings, the silk carries small dewdrops, lighter
   in the hue of a role and orange on the edges of the box you selected. When
@@ -64,17 +99,10 @@ where there is no config directory they last until the page is closed.
   canvas (0107).
 - **Apparitions**: now and then a ghost crosses the page, every few minutes at
   random, and a pair of eyes blinks somewhere on the page a little less often.
-  Neither takes a click, and none shows while the tab is hidden. The Theme
-  section's Random apparitions switch turns them off, and any on screen goes at
-  once. With the sound on, the ghost wails and the eyes whisper, sounds made in
-  the browser as it goes; nothing is played, nor a sound device opened, while
-  the look or its sound is off.
+  Neither takes a click, and none shows while the tab is hidden. The Random
+  apparitions switch turns them off, and any on screen goes at once. They make
+  no sound.
 
-With reduced motion asked of the system, no box moves under the pointer, no ghost crosses, the
-witch jumps rather than flies and the eyes fade without blinking.
-
-## What it never touches
-
-Export above the graph and Copy image draw the lineage as it is without the
-look: the theme is scoped to the live page, so a file sent to a colleague or a
-picture pasted in a ticket is the usual blue, in plain boxes.
+With reduced motion asked of the system, no box moves under the pointer, no
+ghost crosses, the witch jumps rather than flies and the eyes fade without
+blinking.

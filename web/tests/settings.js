@@ -29,9 +29,9 @@ check('the profile missing: a triangle on the project, saying why', row(some, 'p
 check('the column lineage on screen, in its tool\'s colour', [row(some, 'columns').hint, row(some, 'columns').tool],
   ['Collin', 'collin']);
 check('none on screen: its glyph is the uncoloured one', row(none, 'columns').tool, '');
-check('the theme: nothing said while the look is off, on once it is',
-  [row(none, 'theme').hint, row(settingsSections({ look: true }), 'theme').hint], ['', 'on']);
-check('and the section says what waits for the look, the box style too', /box|style/.test(row(none, 'theme').title) && /once the look is on/.test(row(none, 'theme').title), true);
+check('the theme: the name of the one on screen, nothing before it is known',
+  [row(none, 'theme').hint, row(settingsSections({ theme: 'Light' }), 'theme').hint], ['', 'Light']);
+check('and the section says it paints the canvas too', /the canvas included/.test(row(none, 'theme').title), true);
 check('Snowflake on, and a newer release', [row(some, 'snowflake').hint, row(some, 'updates').hint], ['on', 'newer']);
 
 print('\n--- the section it opens on ---');

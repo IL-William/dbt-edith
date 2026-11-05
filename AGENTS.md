@@ -40,7 +40,7 @@ Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
 `scripts/walk_depth.py` drives the lineage's depth boxes there the same way,
 `scripts/walk_menu.py` Edith's menu under a real pointer, and
-`scripts/walk_export.py` an export of the lineage with the Halloween look on.
+`scripts/walk_export.py` an export of the lineage with the Halloween theme on and in Light.
 [docs/testing.md](docs/testing.md) lists each part and how to run it alone.
 Updating a vendored library means replacing its files and changing its
 version and each file's SHA-256 in `scripts/audit_vendored.py`, and its
@@ -276,9 +276,9 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the update types, or what the menu offers once it has run | [0095](docs/decisions/0095-the-update-says-when-it-is-installed-and-brings-its-tags.md), [0111](docs/decisions/0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md), [0120](docs/decisions/0120-the-update-empties-the-clones-target-once-installed.md), [0129](docs/decisions/0129-the-update-brings-the-clone-up-to-the-tag-it-announced.md) |
 | change what a release carries, how the Windows `.exe` is built, or what the update types for a binary that came from a release | [0123](docs/decisions/0123-the-windows-exe-is-built-by-ci-and-the-update-downloads-it.md), [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md), [0111](docs/decisions/0111-the-update-ends-on-a-line-and-a-card-and-a-failed-build-is-a-failure.md) |
 | open a menu under the pointer, or change what closes or holds one | [0086](docs/decisions/0086-edith-s-menu-opens-under-the-pointer.md) |
-| change the Halloween look, its switch or its sounds | [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
-| change what the Halloween look draws on a lineage box, how many boxes, or what an export measures | [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md), [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
-| change the dewdrops on the edges under the Halloween look, or the web on the selected box | [0108](docs/decisions/0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md), [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) |
+| add or change a theme, its button or its menu, what `look.json` holds, which theme an export is drawn in, or the Halloween theme | [0150](docs/decisions/0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md), [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
+| change what the Halloween theme draws on a lineage box, how many boxes, or what an export measures | [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md), [0106](docs/decisions/0106-the-halloween-look-is-kept-per-machine-and-never-exported.md), [docs/features/look.md](docs/features/look.md) |
+| change the dewdrops on the edges under the Halloween theme, or the web on the selected box | [0108](docs/decisions/0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md), [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) |
 | add a step to the guided tour, or change when it is offered or what it touches | [0074](docs/decisions/0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md), [0078](docs/decisions/0078-the-tour-is-offered-once-there-is-a-model-to-show.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 | add a marker for a kind, a state, an environment or a tool | [0148](docs/decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) |
@@ -335,7 +335,7 @@ src/redact.rs         the profile's secrets, replaced before it is sent and put 
 src/git.rs            working tree status and the git commands the UI can run
 src/update.rs         whether a newer release is out, asked through git hourly through the Paris night or on demand, and the command that installs it, or downloads the release's `.exe`
 src/tour.rs           the guided tour's model, and whether it was offered on this machine
-src/look.rs           the Halloween look's choices (look, sound, apparitions, box style), kept per machine in look.json
+src/look.rs           the theme's choices (theme, follow the system, apparitions, box style), kept per machine in look.json
 src/settings.rs       per-project settings, kept outside the project
 src/venv.rs           which Python environment is in play
 src/files.rs          filesystem access, confined to the project root
