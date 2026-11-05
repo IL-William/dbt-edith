@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-04.
+belongs here. Last updated 2026-11-05.
 
 ## Shipped
 
@@ -2083,6 +2083,99 @@ across database and case, a copy chain matched step for step, the tie-breaks,
 refusals over MCP, and with an ignored benchmark on two layered caches of
 invented models. Its limits are in the list left by these pull requests, below.
 
+Edith's mark in the browser tab (1.77.1). The tab shows the mark, a source
+box fanning out to three after the lineage drawing, in a cut of its own for 16
+and 32 px, instead of the browser's blank page. `web/favicon.svg` follows the
+system's light or dark through `prefers-color-scheme`, since the tab strip is
+the browser's and not the page's; a browser that takes no SVG icon gets
+`web/favicon-32.png`, the same mark on a dark tile. Checked with
+`api::tests::every_icon_the_page_names_is_served_as_its_type`, which fetches
+every icon `index.html` names, without the key, as a browser does. Its limit is
+in Deferred item 31.
+
+Edith's mark in the top bar (1.77.2). The mark sits before her name, which
+takes the mark's square on its i; the button is still labelled Edith and opens
+the same menu. While a request that waits on something outside the server is out
+past 400 ms, a packet runs along each arm and lights the box it reaches, and the
+mark fades to rest over 300 ms once the last one answers. Which requests count
+is a list (`WORK_ROUTES`): the manifest read again, a column's lineage from
+collin and the comparison of two collin versions, anything read from Snowflake,
+git's push, pull and fetch, and the release check. Requests are counted, so two
+that overlap stop it with the last; a poll nobody asked for and a search that
+is slow on a big project never set it going, and a collin run started by a pick
+or a click is followed through its state (`followCollinWork`). Under reduced
+motion the arms turn to the accent instead of moving; with the Halloween look
+the ghost moves with the name to stay behind the E. Checked with
+`web/tests/working.js` and `web/tests/halloween.js`. The shot of every feature
+page is retaken, each showing the top bar.
+
+Every environment on the Compiled and Run tabs (0147, 1.78.0), amending 0139
+and 0142. The top of both tabs offers one button per environment, in the order
+of the menu and the settings, with the manifest's own choice (`manifest`, or
+`my compile`) last, drawn with a file picked and with none, and only when there
+is a file to pick. A click sets the one shared choice (`selectEnv`) the status
+bar's pill, the Catalog's resolved column, the Builds labels and the other tab
+follow; the button in use is filled in its colour and pressed. The line under
+the row says what is shown: with a file, the `Shown for QA (.env.qa)` line of
+0139 with its findings folded under it; with none, whose placement the SQL
+carries (`Shown as dbt wrote it, into <sandbox>`, or `Shown as dbt compiled it
+for the manifest's target`). Renaming or hiding an environment in the settings
+repaints the row of a tab that is open and only then, so a selection in the SQL
+is not dropped by a reload that changed nothing. A stored choice that outlives
+the environments in use falls back to the manifest's own for the tab, the
+Catalog and the Builds dots alike. Checked with `web/tests/compiledenv.js`. Its
+limits are in Deferred item 36.
+
+Every colour from a variable (no version). Each colour the page paints is a
+variable in `app.css`'s `:root`, named by what it means: one value that meant
+two things has two names (`--warn`, `--k-incr` and `--source` were one amber),
+and a name is shared only where its meaning and value both match. The lineage
+draws from the same variables (`MAT`, `KIND`, `CUSTOM`, `TEST`, `ROLE` and
+`EDGE_PLAIN` in `lineage.js` are `var(...)` strings in `style`, a presentation
+attribute taking no `var()`), so a theme is a set of variables and a switch
+repaints the page, the canvas and the export. The export reads the values when
+it is made (`exportCanvasVars`, `exportCanvasCss`), from `<html>` and not
+`<body>`, which keeps the Halloween look, whose classes sit on body, out of
+every export (0106). Nothing changed on screen: the pictures of
+`docs/shots` came out identical before and after. `web/tests/colourvars.js`
+fails on a literal colour in `app.css` outside `:root` (the Halloween section
+aside) or in `lineage.js`, and on a colour passed to the drawing as an
+attribute; `web/tests/colours.js` resolves `var()` through `:root`. Its limits
+are in Deferred items 32 to 35.
+
+The default look in deeper colours (2.0.0). The values of `:root` take the
+redesign's Night block: a darker blue-black page, lighter and softer lines and
+box borders, a lighter blue accent (`#5aa9ff`, the tab icon's), `ref`, `source`
+and dbt's other functions in a warmer yellow in the editor, with keywords,
+strings and Jinja in the redesign's tones and other macros staying blue. The
+page says it is dark (`color-scheme: dark`), so checkboxes, the radio, number
+inputs and the jobs drop-down are dark too, which ends the light option text on
+a light list on Windows. Two names were renamed first because they meant
+something else on the boards: `--hover` painted a button's hover and is now
+`--btn-hover`, and `--syn-fn` painted any other macro and is now `--syn-macro`.
+The Halloween look re-points nine variables only, so a second `body.halloween`
+rule holds the old values of the 27 others the change moves, until that look
+becomes a theme; `web/tests/halloween.js` checks that every name it holds
+exists in `:root`. The export takes the new colours with no change of its own.
+Its limits are in Deferred items 32 to 35.
+
+Each meaning in its own shape (0148, 2.1.0), amending 0049, 0079, 0100, 0117
+and 0137. Colour alone said several things at once: one green was a table, "up
+to date" and DEV, and a round dot was a model's kind, a state, an environment, a
+tool and a column's role. A kind is the bar on the left of a box, the same
+bar in the sidebar, the palette, the Catalog, the cards and the legend; a state
+is a pictogram in its colour, a check, a triangle, a cross, a dashed ring, a
+clock, or a slashed circle for a query that was cancelled; an environment is a
+tag with its name, the manifest's own only outlined; a tool is its glyph with
+its name; unsaved edits are a pencil. Git keeps its letters. The pictograms are
+CSS masks of small SVGs held in `:root` (`--m-ok`, `--m-warn`, `--m-bad`,
+`--m-none`, `--m-clock`, `--m-cancel`), so a theme re-points the colour and the
+shape stays; the canvas draws a build's state as a path (`BUILD_MARK`). The six
+places that drew an environment's dot now draw `envTag()`, the builds heads and
+tiles of Reports included. `web/tests/shapes.js` fails on a round marker, on a
+mask not set in both its prefixed and plain forms, and on a state the code
+produces that has no shape. Its limits are in Deferred item 37.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2558,6 +2651,60 @@ of its own, and each panel updates the tour, its page under
     - A file written for another target than the manifest's, a run under dev
       beside a manifest built for QA, names relations the page does not look
       for: they are counted as not found and the text is left as it is.
+
+31. **The tab icon's test reads past the tag (#161).** The test in `src/api.rs`
+    that fetches every icon `index.html` names reads each `type` from the start
+    of its `link` up to the next `link`, not up to the tag's closing `>`; it
+    should cut each chunk at `>` first, so a `type` on a later tag is never
+    taken for this one's.
+32. **The terminal's colours (#164, #165).** The xterm theme in `web/app.js` is
+    still literal hex. The terminal should take the theme's colours once it
+    reads them by `getComputedStyle`; it also keeps the old cursor colour and
+    an opaque selection.
+33. **The Halloween look, until it is a theme (#164, #165).**
+    - It keeps literal colours: its section of `app.css` and its art in
+      `index.html`, which `colourvars.js` exempts. When it becomes a theme
+      they go, and so does the second `body.halloween` block, the 2.0.0 hold of
+      27 variables.
+    - Names kept apart for its sake (`--veil`, `--head-bg`, `--more-bg`,
+      `--more-line`, `--line-faint`, `--diff-hatch`, `--diff-gap`, `--label-bg`,
+      `--label-fg`, `--fg-quiet`) fold into `--bg`, `--bg-2`, `--bg-3`,
+      `--line` and `--fg-2` then.
+34. **Colour names the default look does not carry yet (#165).**
+    - About 100 names its block does not define (scrims, chips, diff, code
+      text, line numbers, placeholders, toasts) keep their pre-2.0 values until
+      the screen using each is redrawn.
+    - Declared and not read yet: `--edge-hot` (`.edge.hi` still reads
+      `--accent`), `--cur-line`, `--dots`, `--node-shadow`, `--py` and
+      `--ansi-*`.
+35. **Contrast and browser controls (#164, #165).**
+    - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
+      is 3.0:1, below AA.
+    - The exported page sets no `color-scheme`, so its node list can show a
+      light scrollbar.
+    - Checkboxes and radios take the browser's dark-scheme blue, not the accent
+      (no `accent-color`).
+36. **The environment choice (#163, 0147).**
+    - The env var hover card (`web/app.js`, near line 351) and the Snowflake
+      column lineage (near line 7476) read `S.env` directly instead of
+      `activeEnv()`, so a stale choice can show there.
+    - The row of buttons is one wrapping line; a project with very many `.env`
+      files makes it tall.
+37. **Markers and shapes still to draw (#166, 0148).**
+    - Editor tabs carry no kind bar: a tab knows its file, not its node.
+    - A column's role is still an 8px square (the column card, the legend, the
+      stop at menu) until roles are drawn inside the column boxes.
+    - In Job coverage, `dot(r.kind)` draws nothing, an inline `.dot` in a block
+      `li`, and would be grey anyway, the row carrying no materialization
+      (`Row` in `src/jobs.rs`).
+    - The clock is both the Jobs tool's glyph and the "under way" state
+      (recorded in 0148); the Updates arrow beside Edith widens her button, so
+      the top bar re-folds on it.
+38. **The rest of the redesign, one pull request each.** Themes and their menu,
+    the export menu, the depth in dbt's syntax, the Lineage space, column roles
+    in the box, the palette, Search, the keys excerpt, the manifest card, the
+    settings, shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and
+    the design docs.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
