@@ -143,7 +143,9 @@ The `env` pill in the status bar says which of the project's `.env` files the
 DEV, QA or UAT without running dbt. Built stays tied to the manifest's own
 target. The file is picked in the pill's menu, the same menu in the header of
 the resolved column, or in the Project section of the settings, which the
-menu's Manage environments... opens. With no file picked the choice is
+menu's Manage environments... opens, or from the row of buttons at the top of
+the Compiled and Run tabs, which sets the same choice, so the status bar and the
+Catalog follow it. With no file picked the choice is
 `manifest`; on a manifest built into a developer sandbox it is named `my
 compile`, with the sandbox beside it, since it is the developer's own compile.
 The pill takes a colour per environment family (DEV, CI, QA, STG, UAT, PROD)
@@ -228,7 +230,7 @@ for the manifest too.
 
 ![The Compiled tab for customers shown for PROD, its three relations swapped and a note on what may differ](../shots/catalog-compiled.png)
 
-With an environment picked in the status bar, both tabs show the same SQL as it
+With an environment picked, both tabs show the same SQL as it
 would read under that `.env` file, to paste into Snowsight without compiling
 again. Each relation the SQL holds, the model's parents and, through an
 ephemeral one, that one's parents, is replaced by the relation the Catalog's
@@ -238,7 +240,13 @@ and its tooltip gives the name it had in the file dbt wrote. With none picked,
 the tabs show the file as dbt wrote it (on a sandbox manifest, that choice is
 named `my compile`, with the sandbox).
 
-A line under the bar names the environment and counts what it did: `Shown for
+A row of buttons at the top of both tabs offers every environment, and the
+manifest's own choice last, with or without one picked; a click sets the
+choice the status bar's pill shows and the Catalog follows. With none picked, a
+line under it says whose placement the SQL carries, such as `Shown as dbt
+compiled it for the manifest's target`.
+
+A line under the buttons names the environment and counts what it did: `Shown for
 QA (.env.qa): 12 relations swapped, 1 kept as compiled`. A relation the file
 cannot place stays as dbt compiled it, in amber, and its tooltip says why: a
 variable the file does not define, a placeholder, a database or schema left to

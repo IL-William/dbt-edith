@@ -1966,7 +1966,8 @@ that measures it. Reduced motion shows the name at once. Checked with
 `web/tests/selpanel.js` and `web/tests/reports.js`.
 
 The Compiled and Run SQL per environment (0139, 1.73.0). The two tabs follow
-the environment picked in the status bar: each relation the SQL reads or builds
+the environment picked in the status bar or on the tab's row of buttons (0147):
+each relation the SQL reads or builds
 is swapped, as text, for the one that `.env` file resolves, in one pass and
 longest name first, `__dbt_tmp` and `__dbt_backup` of a run included. A line
 under the freshness bar says how many were swapped, and a swapped relation

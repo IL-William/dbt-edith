@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 1.78.0 - 2026-11-05
+
+- Offer every environment as a button at the top of the Compiled and Run tabs
+  when a file can be picked, also with none picked, so one click shows the SQL
+  for QA, UAT or STG and moves the status bar and the Catalog with it (0147).
+
 ## 1.77.2 - 2026-11-05
 
 - Draw Edith's mark beside her name in the top bar, a square on her i, and set

@@ -65,6 +65,9 @@ warehouse, and a project's `generate_*_name` that follows the target.
   dbt (0002), and it would be a second dbt to keep right (0009).
 - **A picker of its own on the tab**: two environments on screen at once, and
   the Catalog saying another.
+  *Amended by [0147](0147-the-compiled-and-run-tabs-offer-every-environment.md): the tab offers the
+  environments as buttons that set the one shared choice, so there is still
+  only one environment on screen and the Catalog says the same.*
 - **Refusing the whole view** when any relation cannot be placed: most of the
   SQL is still right, and the amber marks say which part is not.
 - **A fixed banner** that the SQL may differ: it is always there, so it is read

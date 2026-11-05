@@ -35,6 +35,7 @@ const S = {
   artifactInfo: { compiled: null, run: null },  // the last answer of each, so another environment repaints without a request
   envs: null,                 // payload of /api/envs
   env: '',                    // this tab's chosen .env file, '' for the manifest as parsed
+  artifactRow: '',            // envRowKey() as the Compiled or Run row was last drawn
   node: null,                 // catalog: node currently displayed
   catTab: 'preview',          // catalog: preview | columns
   graphMode: 'model',         // lineage canvas: model | column | select
@@ -8541,8 +8542,9 @@ async function loadArtifact(kind, id) {
 }
 
 /* The Compiled or Run pane from the last answer, as it stands: the file as dbt
-   left it, or, with an environment picked in the status bar, the same SQL with
-   its relations swapped for that file's (0139). Repainted from here when the
+   left it, or, with an environment picked, the same SQL with its relations
+   swapped for that file's (0139). The environments are offered on the pane
+   itself whenever there are any (0147). Repainted from here when the
    environment changes, with no request. */
 function paintArtifact(kind, keepScroll) {
   const held = S.artifactInfo[kind];
@@ -8594,8 +8596,14 @@ function paintArtifact(kind, keepScroll) {
   head.append(bar);
 
   const content = artifactContent(info);
-  const shown = envSql(content, info.relations || [], S.env, (S.meta && S.meta.sandbox) || '');
-  if (S.env) head.append(artifactEnvBar(shown, info.env_reads));
+  const env = activeEnv();
+  const shown = envSql(content, info.relations || [], env, (S.meta && S.meta.sandbox) || '');
+  // Also with none picked: the row is how a person who has not found the status
+  // bar's pill learns the tab can switch (0147).
+  if (envRowShown()) head.append(artifactEnvBar(shown, info.env_reads, env));
+  // What the row was last drawn from, so a reload of the list repaints only for
+  // a change this row has not seen, and keeps the focus a click just restored.
+  S.artifactRow = envRowKey();
 
   // Read while the editor is still attached: emptying the body detaches it, and
   // a detached editor reports no scroll. setValue then scrolls to the top, which
@@ -8619,14 +8627,32 @@ function paintArtifact(kind, keepScroll) {
   return true;
 }
 
-/* The line under the bar naming the environment the SQL is shown for, and the
-   places it may differ beyond its relations. A macro's finding opens the macro
-   at that line, as Cmd+K opens one. */
-function artifactEnvBar(shown, envReads) {
-  const words = artifactEnvWords(shown, envDisplayName(S.env), S.env, envReads);
+/* The environments, one button each, and under them the line naming the one the
+   SQL is shown for and the places it may differ beyond its relations. A button
+   sets the one shared choice, so the status bar, the Catalog and the Builds dots
+   follow (0147). A macro's finding opens the macro at that line, as Cmd+K opens
+   one. */
+function artifactEnvBar(shown, envReads, env) {
   const box = document.createElement('div');
   box.className = 'env-bar';
-  box.dataset.tone = envTone(envDisplayName(S.env));
+  box.dataset.tone = env ? envTone(envDisplayName(env)) : 'manifest';
+  const chips = document.createElement('div');
+  chips.className = 'env-chips';
+  envChoices().forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'envchip' + (c.current ? ' on' : '');
+    b.dataset.tone = c.tone;
+    b.setAttribute('aria-pressed', String(c.current));
+    b.title = c.file ? (c.title || c.sub) : `${c.sub}: ${c.title}`;
+    b.textContent = c.label;
+    b.addEventListener('click', () => { if (!c.current) selectEnv(c.file); });
+    chips.append(b);
+  });
+  box.append(chips);
+  const words = env
+    ? artifactEnvWords(shown, envDisplayName(env), env, envReads)
+    : { head: artifactOwnWords((S.meta && S.meta.sandbox) || ''), findings: [] };
   const line = document.createElement('div');
   line.className = 'env-line';
   line.append(Object.assign(document.createElement('span'), { className: 'envdot' }), words.head);
@@ -12752,10 +12778,12 @@ async function loadEnvs() {
   }
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
+  // The row on a Compiled or Run tab lists the files shown, which the settings
+  // may have just renamed or hidden (0147). Only then: the settings' Project
+  // section reloads on every opening, and a repaint would drop the text selected
+  // in the SQL and a find's cursor for nothing.
+  if (envRowKey() !== S.artifactRow) repaintArtifacts();
 }
-
-/* True when switching environment can change something on screen. */
-const envsInUse = () => !!(S.envs && S.envs.referenced.length);
 
 function paintEnvSelect() {
   const pill = $('#status-env');
@@ -12782,14 +12810,27 @@ function fillEnvPill(el, prefix) {
   el.title = `${now} Click to pick an environment.`;
 }
 
+/* The visible Compiled or Run tab again from the answer it holds, with no request. */
+function repaintArtifacts() {
+  ['compiled', 'run'].forEach((kind) => { if (!$('#dock-' + kind).classList.contains('hidden')) paintArtifact(kind, true); });
+}
+
 function selectEnv(file) {
+  // A click on a chip of the Compiled or Run pane rebuilds the row it was made
+  // in, so the keyboard would lose its place without this (0147).
+  const held = document.activeElement && document.activeElement.closest
+    ? document.activeElement.closest('#compiled-head, #run-head') : null;
+  const heldIn = held && document.activeElement.classList.contains('envchip') ? held.id : '';
   S.env = file;
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
   // The dots follow the environment, painted over the canvas as it stands (0117).
   paintLineageBuilds();
-  // So does the SQL of the visible Compiled or Run tab, from the answer it holds (0139).
-  ['compiled', 'run'].forEach((kind) => { if (!$('#dock-' + kind).classList.contains('hidden')) paintArtifact(kind, true); });
+  // So does the SQL of the visible Compiled or Run tab, from the answer it holds
+  // (0139), and the buttons on it (0147).
+  repaintArtifacts();
+  const back = heldIn && $('#' + heldIn + ' .envchip.on');
+  if (back) back.focus();
   // Remembered as the starting point for the next tab; failure is harmless.
   api.send('/api/envs/select', 'POST', { file: file || null }).catch(() => {});
 }
@@ -13444,6 +13485,36 @@ function artifactEnvWords(result, envName, file, envReads) {
   };
 }
 
+/* The line under the buttons when no .env file is picked: nothing is swapped,
+   so it says whose placement the SQL carries. On a sandbox manifest that is the
+   developer's own compile, named as the menu names it (0143). */
+function artifactOwnWords(sandbox) {
+  return sandbox
+    ? `Shown as dbt wrote it, into ${sandbox}`
+    : 'Shown as dbt compiled it for the manifest\'s target';
+}
+
+/* True when switching environment can change something on screen. */
+function envsInUse() { return !!(S.envs && S.envs.referenced.length); }
+
+/* The choice in effect: a stored one outlives the environments in use (the list
+   failed to load, or no config reads an env var any more), and then nothing
+   could name the file, so the tab, the Catalog's location and the Builds dots
+   all fall back to the manifest's own. */
+function activeEnv() { return envsInUse() ? S.env : ''; }
+
+/* The row of buttons on the Compiled and Run tabs is drawn when there is a file
+   to pick: a project that reads env_var with a default and has no .env file, or
+   hides them all, has nothing to offer (0147). */
+function envRowShown() { return envsInUse() && S.envs.files.some((f) => !f.hidden); }
+
+/* What the row of buttons and the swap are drawn from, to tell a reload that
+   changed them from one that did not. */
+function envRowKey() {
+  return JSON.stringify([!!S.envs, envsInUse(), envRowShown(), activeEnv(),
+    S.envs ? S.envs.files.map((f) => [f.file, f.name, !!f.hidden, !!f.target_mismatch, f.target]) : []]);
+}
+
 /* The last build of each model per environment is read on a click from the
    tables of the dbt_artifacts package (0117). The pure part runs from here to
    catalogLocation, which web/tests/builds.js slices with the location code
@@ -13989,7 +14060,8 @@ function jobBuildVerdicts(job, got, clock, staleDays, now, worst) {
 function catalogLocation(body, n) {
   // A chosen file this node was not resolved against (none discovered at the
   // time, or the file was removed) quietly falls back to manifest mode.
-  const file = S.env && n.location && n.location.envs && n.location.envs[S.env] ? S.env : '';
+  const chosen = activeEnv();
+  const file = chosen && n.location && n.location.envs && n.location.envs[chosen] ? chosen : '';
   const envName = file ? envDisplayName(file) : '';
   const rows = locationRows(n.location, file);
   if (!rows.length) return;
@@ -15041,7 +15113,7 @@ function repaintBuilds() {
 /* What the canvas paints for the environment this tab picked, or nothing. */
 function buildsSpec() {
   if (!S.builds || !(S.features && S.features.snowflake)) return null;
-  return buildsDots(S.builds, S.env, buildsStaleDays(), buildsEnvName(S.env), Date.now());
+  return buildsDots(S.builds, activeEnv(), buildsStaleDays(), buildsEnvName(activeEnv()), Date.now());
 }
 
 function paintLineageBuilds() {
