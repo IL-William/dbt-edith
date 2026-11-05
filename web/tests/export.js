@@ -13,6 +13,12 @@ eval(src.slice(src.indexOf('function selectKindCounts'), src.indexOf('async func
 eval(src.slice(src.indexOf('function legendEntries'), src.indexOf('function paintLegend')));
 eval(src.slice(src.indexOf('function exportTitle'), src.indexOf('function exportLineage')));
 var css = read('web/app.css');
+// exportDocument asks the page for its variables: here the page is app.css's :root.
+var appVars = rootVars(css);
+var document = { documentElement: {} };
+var getComputedStyle = function () {
+  return { getPropertyValue: function (name) { return ' ' + (appVars[name.slice(2)] || '') + ' '; } };
+};
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -277,9 +283,9 @@ ok('the export heads its list Columns and models when a model box is drawn',
 ok('an indirect edge\'s clause is written along its own path', /id: `edge-\$\{i\}`/.test(lin)
   && /el\('textPath', \{ href: `#edge-\$\{i\}`, startOffset: '50%'/.test(lin) && /class: 'edgelabel'/.test(lin));
 ok('the only reference in it is to the file itself', !/href: [^#`]/.test(lin.slice(lin.indexOf("el('textPath'"), lin.indexOf("el('textPath'") + 120)));
-ok('and a lit indirect edge keeps its hue there too', exportCanvasCss().indexOf('.edge.hi {') < exportCanvasCss().indexOf('.edge.indirect.hi {'));
+ok('and a lit indirect edge keeps its hue there too', exportCanvasCss(exportCanvasVars()).indexOf('.edge.hi {') < exportCanvasCss(exportCanvasVars()).indexOf('.edge.indirect.hi {'));
 ok('the label is drawn on an edge that ends on a model\'s box only', /isRowKind\(kind\) && !L\.back\[i\] && isModelBox\(d\.nodes\[b\]\)/.test(lin));
-ok('and the file styles the label', exportCanvasCss().split('\n').some(function (l) { return /^\.edgelabel \{/.test(l); }));
+ok('and the file styles the label', exportCanvasCss(exportCanvasVars()).split('\n').some(function (l) { return /^\.edgelabel \{/.test(l); }));
 ok('and the file styles that dash', rowsDoc.indexOf('.legend i.dash {') > 0);
 // Quoted values are blanked first: the hostile text is still in them, escaped,
 // and `onerror=` inside a data-id is only text.
@@ -311,7 +317,8 @@ check('it names nothing from app.js', named, []);
 ok('nor its DOM helpers', !/\$\$?\(/.test(viewer));
 
 print('\n--- the canvas looks the same in the file ---');
-var copied = exportCanvasCss();
+var asked = exportCanvasVars();
+var copied = exportCanvasCss(asked);
 var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role|\.band)/.test(l); });
 ok('the canvas rules are where this test looks for them', rules.length >= 17);
 ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
@@ -328,11 +335,26 @@ function rootVars(text) {
   while ((m = re.exec(block))) out[m[1]] = m[2].trim();
   return out;
 }
-var appVars = rootVars(css), fileVars = rootVars(copied);
+var fileVars = rootVars(copied);
 var used = (copied + exportPageCss('landscape')).match(/var\(--[\w-]+\)/g) || [];
 var wrong = used.map(function (u) { return u.slice(6, -1); })
   .filter(function (v, n, a) { return a.indexOf(v) === n && fileVars[v] !== appVars[v]; });
 check('every variable used is defined, with the value app.css gives it', wrong, []);
+check('every name the export asks the page for is one app.css defines',
+  Object.keys(asked).filter(function (n) { return !appVars[n.slice(2)]; }), []);
+// lineage.js's constants and style strings name variables of their own, which
+// the copied rules never do: a file opened elsewhere has no app.css for them.
+var named = (lin.match(/var\(--[\w-]+\)/g) || []).map(function (u) { return u.slice(4, -1); })
+  .filter(function (v, n, a) { return a.indexOf(v) === n; });
+ok('lineage.js names the variables of its kinds, tests, roles, edges and pills', named.length >= 33);
+check('every variable lineage.js names is in the export\'s list', named.filter(function (v) { return !(v in asked); }), []);
+ok('and the file defines each of them, from the list it was given', named.every(function (v) { return fileVars[v.slice(2)] === appVars[v.slice(2)]; }));
+check('the :root line carries the values it is given, whatever theme they come from',
+  exportCanvasCss({ '--bg': '#ffffff', '--k-view': '#0055aa' }).split('\n')[0], ':root { --bg: #ffffff; --k-view: #0055aa; }');
+ok('they are read from the root element, never the body that carries the Halloween look',
+  /getComputedStyle\(document\.documentElement\)/.test(String(exportCanvasVars)) && !/document\.body/.test(String(exportCanvasVars)));
+ok('and the page and the image both pass them in',
+  /\$\{exportCanvasCss\(exportCanvasVars\(\)\)\}/.test(src) && /css: exportCanvasCss\(exportCanvasVars\(\)\), scale/.test(src));
 
 print('\n--- the Halloween look never reaches the picture (0107) ---');
 var linsrc = read('web/lineage.js');

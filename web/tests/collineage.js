@@ -397,9 +397,16 @@ check('chosen', featureNote({ snowflake: false, snowflake_set: true }, 'snowflak
 
 print('\n--- each tool has its own colour ---');
 var css = read('web/app.css');
-function toolColour(tool) {
-  var m = css.match(new RegExp('\\[data-tool=' + tool + '\\] \\{ --tool: (#[0-9a-f]{6}); \\}'));
+// A tool's colour is a variable of :root now, so it is read through it.
+function rootColour(name) {
+  var at = css.indexOf(':root {');
+  var m = css.slice(at, css.indexOf('\n}', at)).match(new RegExp('--' + name + ':\\s*(#[0-9a-f]{6});'));
   return m ? m[1] : '';
+}
+function toolColour(tool) {
+  var m = css.match(new RegExp('\\[data-tool=' + tool + '\\] \\{ --tool: (#[0-9a-f]{6}|var\\(--[\\w-]+\\)); \\}'));
+  var named = m && /^var\(--([\w-]+)\)$/.exec(m[1]);
+  return !m ? '' : named ? rootColour(named[1]) : m[1];
 }
 var accent = (css.match(/--accent: (#[0-9a-f]{6});/) || [])[1];
 var colours = lineageToolDefs().map(function (d) { return toolColour(d.tool); });
@@ -755,7 +762,7 @@ check('...after the steps pill when there is one, at the left',
       /if \(lost\) g\.appendChild\(partialBadge\(count \? 4 \+ pillWidth\(count\) \+ 4 : 4\)\)/.test(lin)
       && lin.indexOf('stepsBadge(count)') < lin.indexOf('partialBadge(count'), true);
 check('...in inline colours, so an export keeps them',
-      /function partialBadge[\s\S]{0,600}style: 'fill:#131922;stroke:#e0a34b'[\s\S]{0,300}style: 'fill:#e0a34b'/.test(lin), true);
+      /function partialBadge[\s\S]{0,600}style: 'fill:var\(--label-bg\);stroke:var\(--warn\)'[\s\S]{0,300}style: 'fill:var\(--warn\)'/.test(lin), true);
 check('the box\'s label says which names', /partly traced: \$\{partialList\(n\.partial\)\}/.test(lin), true);
 check('the card opens for a column with names alone',
       /\(n\.partial && n\.partial\.length\) \|\| rows\) hoverEnter/.test(app), true);

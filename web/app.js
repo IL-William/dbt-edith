@@ -8113,31 +8113,53 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => to[c]);
 }
 
+/* The variables a file opened elsewhere needs, which has no app.css: the ones
+   the copied canvas rules and the page around the picture name, and the ones
+   lineage.js's style strings name (the node kinds, the tests, the column
+   roles, the label fills). Read from the root element, never the body: the
+   Halloween look's classes sit on the body, so an export keeps the usual
+   colours with it on (0106). */
+function exportCanvasVars() {
+  const names = [
+    '--bg', '--bg-2', '--bg-3', '--line', '--fg', '--fg-dim', '--accent', '--warn', '--mono', '--ui',
+    '--edge', '--edge-test', '--focus-bg', '--sel-line',
+    '--band', '--band-line', '--band-l1', '--band-l1-line', '--band-l2', '--band-l2-line', '--band-l3', '--band-l3-line',
+    '--label-bg', '--label-fg', '--more-bg', '--more-line',
+    '--k-view', '--k-table', '--k-incr', '--k-ephemeral', '--k-mview', '--k-seed', '--k-source', '--k-snapshot',
+    '--k-exposure', '--k-other', '--k-custom',
+    '--t-model', '--t-singular', '--t-column',
+    '--r-passthrough', '--r-rename', '--r-cast', '--r-aggregate', '--r-window', '--r-transform', '--r-inferred',
+    '--r-raw', '--r-generated', '--r-filter', '--r-join-key', '--r-dedup-key', '--r-indirect',
+  ];
+  const style = getComputedStyle(document.documentElement);
+  const out = {};
+  names.forEach((name) => { out[name] = style.getPropertyValue(name).trim(); });
+  return out;
+}
+
 /* The canvas rules, copied from app.css line for line, with the variables they
-   and the page use. Copied rather than read from the live stylesheet at export
-   time, which would hand over whatever the exporting browser made of them,
-   rules it dropped included, to be opened in another browser. The export
-   harness holds every copied line to app.css, so an edit there fails the
-   check until it is made here too. */
-function exportCanvasCss() {
+   and the page use, whose values are the current theme's (`vars`, read by
+   exportCanvasVars at export time), so a theme reaches the file. The rules stay
+   copied rather than read from the live stylesheet, which would hand over
+   whatever the exporting browser made of them, rules it dropped included, to be
+   opened in another browser. The export harness holds every copied line to
+   app.css, so an edit there fails the check until it is made here too. */
+function exportCanvasCss(vars = {}) {
   return [
-    ':root { --bg: #12161d; --bg-2: #171c25; --bg-3: #1d2430; --line: #2a3340; --fg: #d7dee8; '
-      + '--fg-dim: #8b97a8; --accent: #4da3ff; --warn: #e0a34b; '
-      + '--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; '
-      + '--ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }',
+    ':root { ' + Object.keys(vars).filter((k) => vars[k]).map((k) => `${k}: ${vars[k]}; `).join('') + '}',
     '#graph text { font-family: var(--ui); user-select: none; }',
-    '.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }',
-    '.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }',
+    '.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; }',
+    '.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
     '.edge.hi { stroke: var(--accent); stroke-width: 2; }',
     '.edge.indirect.hi { stroke: var(--edge-col); }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
     '.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }',
-    '.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, #33445c); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }',
+    '.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }',
     '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
     '.nd:hover rect.box { stroke: var(--fg-dim); }',
-    '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }',
+    '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: var(--focus-bg); }',
     '.nd.off rect.box { stroke-dasharray: 3 3; }',
     '.nd.off .t1, .nd.off .t2 { opacity: .55; }',
     '.nd.ctx { opacity: .45; }',
@@ -8152,17 +8174,17 @@ function exportCanvasCss() {
     '.nd.group { cursor: pointer; }',
     '.nd .warnmark { fill: var(--warn); }',
     '.nd .warncount { font-size: 9px; }',
-    '.nd.sel rect.box { stroke: #fff; }',
+    '.nd.sel rect.box { stroke: var(--sel-line); }',
     '.nd .kindbar { stroke: none; rx: 3; }',
     '.nd .kindbar.seg { rx: 1.5; }',
     '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
     '.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }',
     '.nd .t2 .struck { opacity: .6; text-decoration: line-through; }',
     '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
-    '.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }',
-    '.band.l1 { fill: #18263d; stroke: #2d4466; }',
-    '.band.l2 { fill: #142b2c; stroke: #2a5553; }',
-    '.band.l3 { fill: #251e38; stroke: #43375f; }',
+    '.band { fill: var(--band); stroke: var(--band-line); stroke-width: 1; }',
+    '.band.l1 { fill: var(--band-l1); stroke: var(--band-l1-line); }',
+    '.band.l2 { fill: var(--band-l2); stroke: var(--band-l2-line); }',
+    '.band.l3 { fill: var(--band-l3); stroke: var(--band-l3-line); }',
     '.band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }',
     '.band-name.l1, .band-name.l2, .band-name.l3 { font-size: 12px; font-weight: 500; }',
     '.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }',
@@ -8378,7 +8400,7 @@ function exportDocument(o) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>${e(o.heading)} · lineage</title>
 <style>
-${exportCanvasCss()}
+${exportCanvasCss(exportCanvasVars())}
 ${exportPageCss(o.frame.h > o.frame.w ? 'portrait' : 'landscape')}
 </style>
 </head>
@@ -8491,7 +8513,7 @@ function copyLineageImage() {
   const first = Lineage.snapshot({ tight: true });
   if (!first) return toast('nothing drawn to copy', 'err');
   const scale = pngScale(first.frame.w, first.frame.h);
-  const shot = Lineage.snapshot({ css: exportCanvasCss(), scale, tight: true });
+  const shot = Lineage.snapshot({ css: exportCanvasCss(exportCanvasVars()), scale, tight: true });
   const png = renderPng(shot, scale);
   const name = exportFileName(shortTitle(exportTitle(shot.data), 60), localDay(new Date()))
     .replace(/\.html$/, '.png');
