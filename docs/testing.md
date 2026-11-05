@@ -31,6 +31,7 @@ $JSC web/tests/explorer.js    # git and unsaved colouring, including folders
 $JSC web/tests/collineage.js  # composite column ids, node subtitles, and the column lineage menu
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks
 $JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
+$JSC web/tests/colourvars.js  # every colour a variable: no literal in app.css below :root (the Halloween look apart, until it becomes a theme) nor in lineage.js
 $JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations

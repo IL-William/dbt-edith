@@ -20,22 +20,22 @@ const Lineage = (() => {
   /* Colour carries the materialization, which is what you actually reason about
      when reading a DAG: what exists in the warehouse, and what gets rebuilt. */
   const MAT = {
-    view: '#4da3ff',
-    table: '#4ec78d',
-    incremental: '#e0a34b',
-    ephemeral: '#6f7d90',
-    materialized_view: '#3fc7c7',
-    dynamic_table: '#3fc7c7',
+    view: 'var(--k-view)',
+    table: 'var(--k-table)',
+    incremental: 'var(--k-incr)',
+    ephemeral: 'var(--k-ephemeral)',
+    materialized_view: 'var(--k-mview)',
+    dynamic_table: 'var(--k-mview)',
   };
   const KIND = {
-    source: '#b98cf0', snapshot: '#ef7a9b',
-    test: '#7a879a', exposure: '#ef7a9b', other: '#7a879a',
+    source: 'var(--k-source)', snapshot: 'var(--k-snapshot)',
+    test: 'var(--k-other)', exposure: 'var(--k-exposure)', other: 'var(--k-other)',
     /* Lighter than the rest, because at their lightness no hue stands far
        enough from all of them: the green a seed had there drew it as a table. */
-    seed: '#c3e143',
+    seed: 'var(--k-seed)',
   };
   /* Anything else is a custom materialization, and deserves to be noticed. */
-  const CUSTOM = '#ff6ec7';
+  const CUSTOM = 'var(--k-custom)';
   /* A test hung under its model (0034): a one-line box, `indent` in from the
      model's left edge so the stem joining them shows, `top` below the model and
      `gap` apart. Past `fold` rows a model shows its first `fold` and a chip for
@@ -51,7 +51,7 @@ const Lineage = (() => {
      box colour: no light grey can, a cyan reading as one to a red-green
      colour-blind eye, and the grey already sat close to an ephemeral
      model's. A row on a stem under its model is what says test. */
-  const TEST = { model: '#eceff3', singular: '#b2bac6', column: '#7a879a' };
+  const TEST = { model: 'var(--t-model)', singular: 'var(--t-singular)', column: 'var(--t-column)' };
 
   /* Column mode colours the edge rather than the box. Where a column is stored
      is not what you are reading that graph for: what happened to it between two
@@ -64,20 +64,20 @@ const Lineage = (() => {
      care about: a passthrough is not news, a transform is. `inferred` is the
      dullest of all, being the one the producer did not read out of the SQL. */
   const ROLE = {
-    passthrough: '#c3ccd6',
-    rename: '#9fb0c4',
-    cast: '#c9b08a',
-    aggregate: '#cf7a3f',
-    window: '#8b46c9',
-    transform: '#d94f4f',
-    inferred: '#5f6a78',
+    passthrough: 'var(--r-passthrough)',
+    rename: 'var(--r-rename)',
+    cast: 'var(--r-cast)',
+    aggregate: 'var(--r-aggregate)',
+    window: 'var(--r-window)',
+    transform: 'var(--r-transform)',
+    inferred: 'var(--r-inferred)',
     /* Not edge kinds: the badges of a column where the project's lineage
        starts. `raw` is read from outside it, a source's, a seed's or a table
        no node owns; `generated` is set by its model's SQL from no column, a
        literal collin names (0096). A pink far from that green, since the two
        sit side by side wherever a model mixes both. */
-    raw: '#7fb069',
-    generated: '#f5a7f9',
+    raw: 'var(--r-raw)',
+    generated: 'var(--r-generated)',
     /* collin's indirect edges, `filter`, `join_key` and `dedup_key` (0097):
        the column on the left decided which rows exist, not what any value
        is. Drawn dashed and thin, so the eye reads a value edge first and
@@ -86,17 +86,17 @@ const Lineage = (() => {
        teal, an olive and a periwinkle, each at least ten on colours.js's
        scale from every other colour here, which is as far as this palette
        goes. */
-    filter: '#6aa0a8',
-    join_key: '#948739',
-    dedup_key: '#8677ce',
+    filter: 'var(--r-filter)',
+    join_key: 'var(--r-join-key)',
+    dedup_key: 'var(--r-dedup-key)',
     /* The legend's `indirect` entry, which lights all three: a neutral grey,
        being none of them. */
-    indirect: '#8d99a8',
+    indirect: 'var(--r-indirect)',
   };
   /* The plain edge colour, also used for a role this build does not know: a
      cache from another producer may use words that did not exist when this
      shipped, and a wrong hue would claim more than a neutral one. */
-  const EDGE_PLAIN = '#33445c';
+  const EDGE_PLAIN = 'var(--edge)';
   /* collin's indirect roles, `ROW_ROLES` on the server: they reach every
      column of a model and none in particular (collin's 0011). */
   const ROW_KINDS = new Set(['filter', 'join_key', 'dedup_key']);
@@ -2316,7 +2316,7 @@ const Lineage = (() => {
     const g = el('g', { class: 'rolebadge' });
     g.appendChild(el('rect', {
       x: W - w - 4, y: -14, width: w, height: 14, rx: 3,
-      style: `fill:#131922;stroke:${colour}`,
+      style: `fill:var(--label-bg);stroke:${colour}`,
     }));
     const t = el('text', {
       class: 'rolelabel', x: W - w / 2 - 4, y: -4, 'text-anchor': 'middle',
@@ -2337,8 +2337,8 @@ const Lineage = (() => {
   function stepsBadge(label) {
     const w = pillWidth(label);
     const g = el('g', { class: 'rolebadge stepsbadge' });
-    g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:#131922;stroke:${EDGE_PLAIN}` }));
-    const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:#c9d4e3' });
+    g.appendChild(el('rect', { x: 4, y: -14, width: w, height: 14, rx: 3, style: `fill:var(--label-bg);stroke:${EDGE_PLAIN}` }));
+    const t = el('text', { class: 'rolelabel', x: 4 + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:var(--label-fg)' });
     t.textContent = label;
     g.appendChild(t);
     return g;
@@ -2352,8 +2352,8 @@ const Lineage = (() => {
     const label = 'PARTIAL';
     const w = pillWidth(label);
     const g = el('g', { class: 'rolebadge partialbadge' });
-    g.appendChild(el('rect', { x, y: -14, width: w, height: 14, rx: 3, style: 'fill:#131922;stroke:#e0a34b' }));
-    const t = el('text', { class: 'rolelabel', x: x + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:#e0a34b' });
+    g.appendChild(el('rect', { x, y: -14, width: w, height: 14, rx: 3, style: 'fill:var(--label-bg);stroke:var(--warn)' }));
+    const t = el('text', { class: 'rolelabel', x: x + w / 2, y: -4, 'text-anchor': 'middle', style: 'fill:var(--warn)' });
     t.textContent = label;
     g.appendChild(t);
     return g;
@@ -2409,7 +2409,7 @@ const Lineage = (() => {
 
   function badge(x, y, label, dir, node) {
     const g = el('g', { class: 'more-badge', style: 'cursor:pointer', 'data-dir': dir });
-    g.appendChild(el('circle', { cx: x, cy: y, r: 11, fill: '#1d2430', stroke: '#2a3340' }));
+    g.appendChild(el('circle', { cx: x, cy: y, r: 11, style: 'fill:var(--more-bg);stroke:var(--more-line)' }));
     const t = el('text', { class: 'more', x, y: y + 3, 'text-anchor': 'middle' });
     t.textContent = label;
     g.appendChild(t);

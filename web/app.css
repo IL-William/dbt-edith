@@ -18,6 +18,193 @@
   --warn: #e0a34b;
   --ok: #4ec78d;
   --bad: #e06c75;
+  /* Every colour below was a literal in a rule, named by what it means: two
+     meanings that share a value are two names, so a theme can part them. The
+     ones that equal --bg, --bg-2, --bg-3 or --line by value (--veil,
+     --head-bg, --more-bg, --more-line, --line-faint, --diff-hatch,
+     --diff-gap) stay apart from them on purpose: the Halloween block
+     re-points those four, and its look leaves these as they were. */
+  /* Surfaces */
+  --line-strong: #3a475a;   /* a menu's or a hovered button's edge */
+  --line-soft: #1f2733;     /* the rules between table rows */
+  --line-faint: #2a3340;
+  --hover: #26303e;
+  --icon-hover: #2b3644;
+  --state-hover: #38455a;
+  --row-hover: #1a212c;
+  --row-open: #1f2b3a;
+  --select: #2b3a4d;
+  --focus-bg: #1b2a3d;
+  --hit-bg: #2e2716;
+  --veil: #12161d;          /* the page colour, as the translucent chips over the canvas */
+  --head-bg: #1d2430;
+  --band: #161b24;
+  --band-line: #1f2632;
+  --band-l1: #18263d;
+  --band-l1-line: #2d4466;
+  --band-l2: #142b2c;
+  --band-l2-line: #2a5553;
+  --band-l3: #251e38;
+  --band-l3-line: #43375f;
+  --head-l1-line: #3a5885;
+  --head-l2-line: #36706b;
+  --head-l3-line: #57487f;
+  --label-bg: #131922;
+  --more-bg: #1d2430;
+  --more-line: #2a3340;
+  --placeholder: #55606f;
+  --sel-line: #fff;
+  --scroll-thumb: #2b3746;
+  --scroll-thumb-hover: #3b4a5d;
+  --term-bg: #0e1219;
+  --term-thumb: #2f3b4c;
+  /* Shadows and scrims */
+  --shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  --shadow-sm: 0 6px 18px rgba(0, 0, 0, .45);
+  --shadow-xs: 0 4px 12px rgba(0, 0, 0, .35);
+  --shadow-modal: 0 18px 60px #0009;
+  --shadow-palette: 0 18px 60px #0008;
+  --shadow-tour: 0 18px 50px #000b;
+  --shadow-toast: 0 6px 20px #0006;
+  --scrim: #0009;
+  --scrim-modal: #000a;
+  --scrim-tour: rgba(4, 6, 9, .74);
+  /* Text */
+  --fg-2: #c2ccd9;
+  --fg-quiet: #b9c4d2;
+  --fg-path: #aab6c6;       /* a file's name, a path's last part */
+  --fg-mute: #5d6b7d;
+  --fg-faint: #4a5668;
+  --tone-fg: #10151c;       /* on a filled tone, a warn mark */
+  --on-accent: #0b0f15;
+  --code-fg: #c9d4e3;
+  --label-fg: #c9d4e3;
+  --crumb-fg: #6f7d90;
+  --crumb-sep: #5a677a;
+  --keylink-line: #5a6779;
+  --chip-fg: #b4bfcd;
+  --chip-line: #3a4756;
+  --pill-line: #4a5870;
+  --knob: #8b97a8;
+  --knob-on: #fff;
+  --find-cur-fg: #fff;
+  /* Accent */
+  --accent-hover: #2c5a8a;
+  /* States: warn, bad and the quiet kinds of both */
+  --none: #6f7f93;          /* no environment, no tool: the empty ring */
+  --err: #ef6b6b;
+  --err-bg: #5a1f24;
+  --err-fg: #ffd9dc;
+  --bad-bg: #2d1f1f;
+  --bad-wash: #241616;
+  --bad-line: #6b4a4a;
+  --bad-line-hi: #a05a5a;
+  --bad-fg: #e0a0a0;
+  --bad-fg-2: #e8a0a6;
+  --bad-soft: #e08b8b;
+  --ok-wash: #16211c;
+  --ok-tint: #183026;
+  --ok-line: #3e7a5c;
+  --warn-wash: #241d12;
+  --warn-line: #3a2f1c;
+  --warn-line-hi: #6b5a2a;
+  --dis-wash: #2b2415;
+  --dis-line: #7a6a3a;
+  --dis-fg: #b9a46a;
+  --seed-wash: #16281f;
+  --dir-wash: #211d2e;
+  --dir-line: #8a7fb0;
+  --dir-fg: #b9a9e0;
+  --link-line: #6f7f93;
+  --conflict-mid-bg: #22293a;
+  --conflict-mid-fg: #8fa8d8;
+  /* Environments: a lettered tag */
+  --env-dev: #4ec78d;
+  --env-ci: #4da3ff;
+  --env-qa: #b98cf0;
+  --env-stg: #3fc1c9;
+  --env-uat: #e8905a;
+  --env-prod: #e06c75;
+  --env-other: #c9b458;     /* an environment the page has no name for */
+  --env-manifest: #4a5870;  /* outlined; filled only as the Compiled tab's picked chip */
+  --env-manifest-on: #fff;  /* its name on that fill */
+  --env-manifest-on-line: #6f7f93;
+  --env-swap: #78a0dc;      /* a value swapped into a compiled file */
+  /* Tools: the coloured name, its glyph, a rule */
+  --tool-dbt: #ff694b;
+  --tool-collin: #e070d0;
+  --tool-jobs: #a78bfa;
+  --tool-snowflake: #29b5e8;
+  --tool-airflow: #3fc1c9;
+  /* Edges */
+  --edge: #33445c;
+  --edge-test: #5d6a7d;
+  /* Files */
+  --f-sql: #fe6702;
+  --f-yml: #e0a34b;
+  --f-md: #7fa8d8;
+  --f-json: #4ec78d;
+  --f-csv: #56b98b;
+  --f-other: #6d7a8c;
+  --f-macro: #dcdcaa;
+  /* Diffs */
+  --diff-add: #2f6b47;
+  --diff-add-bg: #1c2c22;
+  --diff-add-fg: #56b98b;
+  --diff-del: #6b4a4a;
+  --diff-del-bg: #2d1f1f;
+  --diff-del-fg: #d88;
+  --diff-del-word: #6b3a3a;
+  --diff-hatch: #2a3340;
+  --diff-gap: #171c25;
+  /* Code */
+  --syn-kw: #c792ea;
+  --syn-str: #c3e88d;
+  --syn-num: #f78c6c;
+  --syn-comment: #5d6b7d;
+  --syn-atom: #82aaff;
+  --syn-builtin: #ffcb6b;
+  --syn-jj: #ff9f6b;
+  --syn-fn: #82aaff;
+  --syn-var: #eeffff;
+  --syn-param: #f07178;
+  --syn-jatom: #c792ea;
+  --syn-p: #89ddff;
+  /* Test chips, the two named after their generic */
+  --t-nn: #7fd6a6;
+  --t-nn-line: #3e6b52;
+  --t-un: #7fb8d6;
+  --t-un-line: #3e5a6b;
+  /* Node kinds (lineage.js MAT, KIND, CUSTOM) */
+  --k-view: #4da3ff;
+  --k-table: #4ec78d;
+  --k-incr: #e0a34b;
+  --k-ephemeral: #6f7d90;
+  --k-mview: #3fc7c7;
+  --k-seed: #c3e143;
+  --k-source: #b98cf0;
+  --k-snapshot: #ef7a9b;
+  --k-exposure: #ef7a9b;
+  --k-other: #7a879a;
+  --k-custom: #ff6ec7;
+  /* Tests (TEST) */
+  --t-model: #eceff3;
+  --t-singular: #b2bac6;
+  --t-column: #7a879a;
+  /* Column roles (ROLE) */
+  --r-passthrough: #c3ccd6;
+  --r-rename: #9fb0c4;
+  --r-cast: #c9b08a;
+  --r-aggregate: #cf7a3f;
+  --r-window: #8b46c9;
+  --r-transform: #d94f4f;
+  --r-inferred: #5f6a78;
+  --r-raw: #7fb069;
+  --r-generated: #f5a7f9;
+  --r-filter: #6aa0a8;
+  --r-join-key: #948739;
+  --r-dedup-key: #8677ce;
+  --r-indirect: #8d99a8;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --side-w: 270px;
@@ -59,19 +246,19 @@ kbd {
 #topbar.nolabel #settings-btn .rlabel { display: none; }
 /* Environment colours. Filled, so the environment behind every resolved value
    stays visible from anywhere; manifest mode is only outlined. */
-[data-tone] { --tone: #c9b458; }
-[data-tone=dev] { --tone: #4ec78d; }
-[data-tone=ci] { --tone: #4da3ff; }
-[data-tone=qa] { --tone: #b98cf0; }
-[data-tone=stg] { --tone: #3fc1c9; }
-[data-tone=uat] { --tone: #e8905a; }
-[data-tone=prod] { --tone: #e06c75; }
+[data-tone] { --tone: var(--env-other); }
+[data-tone=dev] { --tone: var(--env-dev); }
+[data-tone=ci] { --tone: var(--env-ci); }
+[data-tone=qa] { --tone: var(--env-qa); }
+[data-tone=stg] { --tone: var(--env-stg); }
+[data-tone=uat] { --tone: var(--env-uat); }
+[data-tone=prod] { --tone: var(--env-prod); }
 .envpill {
   display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
-  font: 600 11px/16px var(--ui); color: #10151c; background: var(--tone);
+  font: 600 11px/16px var(--ui); color: var(--tone-fg); background: var(--tone);
   border: 1px solid var(--tone); border-radius: 9px; padding: 0 8px; cursor: pointer;
 }
-.envpill[data-tone=manifest] { background: transparent; color: var(--fg); border-color: #4a5870; }
+.envpill[data-tone=manifest] { background: transparent; color: var(--fg); border-color: var(--env-manifest); }
 .envpill:hover { filter: brightness(1.15); }
 .envpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .envpill-k { font-weight: 400; opacity: .7; }
@@ -84,16 +271,16 @@ kbd {
   font: 600 10px/14px var(--ui); color: var(--fg); background: transparent;
   border: 1px solid var(--tone); border-radius: 9px; padding: 0 7px; cursor: pointer;
 }
-.envchip.on { color: #10151c; background: var(--tone); }
-.envchip[data-tone=manifest] { border-color: #4a5870; }
-.envchip[data-tone=manifest].on { color: #fff; background: #4a5870; border-color: #6f7f93; }
+.envchip.on { color: var(--tone-fg); background: var(--tone); }
+.envchip[data-tone=manifest] { border-color: var(--env-manifest); }
+.envchip[data-tone=manifest].on { color: var(--env-manifest-on); background: var(--env-manifest); border-color: var(--env-manifest-on-line); }
 .envchip:hover { filter: brightness(1.15); }
 .envchip.on { cursor: default; filter: none; }
 .envchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .envmenu {
   position: fixed; z-index: 65; min-width: 230px; max-width: 380px; padding: 4px;
-  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
+  box-shadow: var(--shadow);
 }
 .envmenu button, .envmenu a.menulink {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px;
@@ -118,19 +305,19 @@ kbd {
 .stopmenu button.absent .lbl, .stopmenu button.absent .rolesq { opacity: .5; }
 .envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .envdot { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: 0 0 auto; }
-.envdot[data-tone=manifest] { background: transparent; border: 1px solid #6f7f93; }
+.envdot[data-tone=manifest] { background: transparent; border: 1px solid var(--none); }
 /* Column lineage tools (0031). Their own attribute rather than data-tone, which
    is the environments' colour. Each hue is far from the accent and from the
    others, and the tool is always named beside it, never shown by colour alone.
    Jobs is the orchestrator's files, the reports' third source beside dbt, collin
    and Snowflake (0137). */
-[data-tool] { --tool: #6f7f93; }
-[data-tool=fusion] { --tool: #ff694b; }
-[data-tool=collin] { --tool: #e070d0; }
-[data-tool=snowflake] { --tool: #29b5e8; }
-[data-tool=jobs] { --tool: #a78bfa; }
+[data-tool] { --tool: var(--none); }
+[data-tool=fusion] { --tool: var(--tool-dbt); }
+[data-tool=collin] { --tool: var(--tool-collin); }
+[data-tool=snowflake] { --tool: var(--tool-snowflake); }
+[data-tool=jobs] { --tool: var(--tool-jobs); }
 /* dbt's own artifacts in the reports: the last run, and what follows it. */
-[data-tool=dbt] { --tool: #ff694b; }
+[data-tool=dbt] { --tool: var(--tool-dbt); }
 /* The source named at the head of a section, in its colour. */
 .srcchip {
   flex: 0 0 auto; font: 10.5px/16px var(--ui); padding: 0 5px; border-radius: 3px;
@@ -149,12 +336,12 @@ kbd {
 .cllpick .caret { font-size: 11px; line-height: 1; }
 .btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
 .cllpick[data-tool=""] .tname, .cllnow[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
-.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
 .cllpick[data-tone=busy] .tstate, .cllnow[data-tone=busy] .tstate { color: var(--warn); }
 .cllpick[data-tone=failed] .tstate, .cllnow[data-tone=failed] .tstate { color: var(--bad); }
 .btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
 .envmenu [data-tool] .check { color: var(--tool); }
-.envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.envmenu [data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
 .envmenu button[aria-disabled=true] { opacity: .45; cursor: default; }
 .envmenu button[aria-disabled=true]:hover { background: transparent; }
 .envmenu .menuhead {
@@ -163,7 +350,7 @@ kbd {
 .envmenu .menunote { padding: 1px 8px 4px 26px; font-size: 11px; line-height: 1.4; color: var(--fg-dim); max-width: 340px; }
 /* Still being built, said in the one colour this app keeps for a warning. */
 .alpha {
-  flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: #10151c;
+  flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: var(--tone-fg);
   font: 600 9.5px/14px var(--ui); letter-spacing: .5px; text-transform: uppercase;
 }
 /* Snowflake's switch, in its section of the settings (0100). */
@@ -181,27 +368,27 @@ kbd {
 /* A switch rather than a check mark: on and off have to read at a glance. */
 .envmenu button.switch {
   position: relative; flex: 0 0 auto; width: 34px; height: 18px; padding: 0; margin-left: auto;
-  border: 1px solid #4a5870; border-radius: 9px; background: var(--bg); cursor: pointer;
+  border: 1px solid var(--pill-line); border-radius: 9px; background: var(--bg); cursor: pointer;
   transition: background .15s, border-color .15s;
 }
 .envmenu button.switch .knob {
   position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
-  background: #8b97a8; transition: transform .15s, background .15s;
+  background: var(--knob); transition: transform .15s, background .15s;
 }
 .envmenu button.switch[aria-checked=true] { background: var(--tool); border-color: var(--tool); }
-.envmenu button.switch[aria-checked=true] .knob { transform: translateX(16px); background: #fff; }
+.envmenu button.switch[aria-checked=true] .knob { transform: translateX(16px); background: var(--knob-on); }
 .envmenu button.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .alphawarn {
-  margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid rgba(224, 163, 75, .45); border-radius: 4px;
-  background: rgba(224, 163, 75, .08); color: var(--warn); font-size: 11px; line-height: 1.45;
+  margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 4px;
+  background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--warn); font-size: 11px; line-height: 1.45;
 }
 /* z-index 64: above the ambient chrome and the palette (50),
    below the env and crumb menus (65) and the modal (70). A card that opens by
    accident must never cover a surface that was opened on purpose. */
 .hovercard {
   position: fixed; z-index: 64; min-width: 220px; max-width: 380px; padding: 8px 10px;
-  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
+  box-shadow: var(--shadow);
   font: 12px var(--ui); color: var(--fg);
 }
 .hc-head { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
@@ -209,7 +396,7 @@ kbd {
 .hc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc-head .offchip { margin-left: auto; }
 .hc-sub { margin-top: 2px; font: 10.5px var(--mono); color: var(--fg-dim); }
-.hc-crumb { margin-top: 1px; font: 10.5px var(--mono); color: #6f7d90; word-break: break-all; }
+.hc-crumb { margin-top: 1px; font: 10.5px var(--mono); color: var(--crumb-fg); word-break: break-all; }
 /* A macro's callers: the one line of a card a click acts on, opening the
    list in Reports (0105). */
 .hc-link { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
@@ -261,9 +448,9 @@ kbd {
   content: ''; width: 7px; height: 7px; box-sizing: border-box;
   border: 1.5px solid currentColor; border-radius: 50%;
 }
-.venvpill[data-state=on] { color: var(--ok); border-color: rgba(78, 199, 141, .55); background: rgba(78, 199, 141, .12); }
+.venvpill[data-state=on] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .venvpill[data-state=on]::before { background: currentColor; }
-.venvpill[data-state=off] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
+.venvpill[data-state=off] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 /* The status bar's opens the project's settings (0100); the copy in them is
    only its state. */
 #status-venv { cursor: pointer; }
@@ -287,11 +474,11 @@ kbd {
   display: inline-block; width: auto; margin: 4px 8px 2px; padding: 5px 12px;
   background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 5px; font-weight: 600;
 }
-.envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: #2c5a8a; }
+.envmenu button.updrun:hover, .envmenu button.updrun:focus-visible { background: var(--accent-hover); }
 .envmenu button.updrun:focus:not(:focus-visible) { background: var(--accent-dim); }
 /* The second command of a choice, drawn as the menu's other buttons are. */
 .envmenu button.updrun.alt { background: var(--bg-3); border-color: var(--line); font-weight: 500; }
-.envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: #26303e; border-color: #3a475a; }
+.envmenu button.updrun.alt:hover, .envmenu button.updrun.alt:focus-visible { background: var(--hover); border-color: var(--line-strong); }
 .envmenu button.updrun.alt:focus:not(:focus-visible) { background: var(--bg-3); }
 .updmenu .updready { padding: 4px 8px 2px; font: 600 12px var(--ui); color: var(--ok); }
 .updmenu .menunote.updstep { padding-top: 3px; padding-bottom: 6px; color: var(--fg); }
@@ -300,7 +487,7 @@ kbd {
   display: inline-block; flex: 0 0 auto; width: auto; padding: 4px 9px; white-space: nowrap;
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
 }
-.envmenu button.updcheck:hover, .envmenu button.updcheck:focus-visible { background: #26303e; border-color: #3a475a; }
+.envmenu button.updcheck:hover, .envmenu button.updcheck:focus-visible { background: var(--hover); border-color: var(--line-strong); }
 .envmenu button.updcheck:focus:not(:focus-visible) { background: var(--bg-3); }
 .envmenu button.updcheck[aria-disabled=true]:hover { background: var(--bg-3); border-color: var(--line); }
 .brand {
@@ -380,7 +567,7 @@ kbd {
   font: 11px var(--mono); color: var(--fg-dim);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
 }
-.freshbadge:hover { background: #26303e; border-color: #3a475a; }
+.freshbadge:hover { background: var(--hover); border-color: var(--line-strong); }
 .freshbadge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fg-dim); flex: 0 0 auto; }
 .freshbadge[data-tone="ok"] .dot { background: var(--ok); }
 .freshbadge[data-tone="warn"] .dot { background: var(--warn); }
@@ -400,7 +587,7 @@ kbd {
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 0 10px 10px 0;
 }
 .freshbadge.hidden + .reloadbtn { border-radius: 10px; padding: 4px 7px; }
-.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: #26303e; border-color: #3a475a; }
+.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: var(--hover); border-color: var(--line-strong); }
 .reloadbtn:focus-visible, .freshbadge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .reloadbtn[aria-busy=true] { cursor: progress; }
 .reloadbtn[aria-busy=true] svg { animation: reload-turn .9s linear infinite; }
@@ -468,7 +655,7 @@ kbd {
   font: 12px var(--ui); color: var(--fg); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer;
 }
-.btn:hover { background: #26303e; border-color: #3a475a; }
+.btn:hover { background: var(--hover); border-color: var(--line-strong); }
 .btn.sm { padding: 2px 7px; font-size: 11px; }
 /* A glyph before the label, on one line (docs/state.md): the two toggles
    above the lineage, .eyebtn, and the actions after them, .icobtn, Fit,
@@ -483,8 +670,8 @@ kbd {
    An action keeps the label's own colour: it has no off to be muted by. */
 .eyebtn { color: var(--fg-dim); }
 .eyebtn:hover { color: var(--fg); }
-.eyebtn[aria-pressed=true] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .1); }
-.eyebtn[aria-pressed=true]:hover { background: rgba(224, 163, 75, .2); }
+.eyebtn[aria-pressed=true] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.eyebtn[aria-pressed=true]:hover { background: color-mix(in srgb, var(--warn) 20%, transparent); }
 /* The folder bands beside it take the accent instead: they rearrange the
    canvas rather than weigh it down, and the two can be on at once. */
 .eyebtn.folderbtn[aria-pressed=true] { color: var(--accent); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .12); }
@@ -496,7 +683,7 @@ kbd {
   display: none; position: absolute; top: calc(100% + 3px); left: 0; z-index: 20;
   align-items: center; gap: 6px; white-space: nowrap; padding: 4px 8px;
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, .35);
+  box-shadow: var(--shadow-xs);
 }
 #folder-levels-box.open { display: flex; }
 
@@ -568,18 +755,18 @@ kbd {
 .caret svg { transition: transform .12s ease; }
 .row.open > .caret svg { transform: rotate(90deg); }
 .ficon { width: 15px; height: 15px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
-.ficon.sql { color: #fe6702; }
-.ficon.yml { color: #e0a34b; }
-.ficon.md { color: #7fa8d8; }
-.ficon.json { color: #4ec78d; }
-.ficon.csv { color: #56b98b; }
-.ficon.other { color: #6d7a8c; }
-.ficon.macro { color: #dcdcaa; }
+.ficon.sql { color: var(--f-sql); }
+.ficon.yml { color: var(--f-yml); }
+.ficon.md { color: var(--f-md); }
+.ficon.json { color: var(--f-json); }
+.ficon.csv { color: var(--f-csv); }
+.ficon.other { color: var(--f-other); }
+.ficon.macro { color: var(--f-macro); }
 
 /* Explorer status colours: green for buffers not yet written to disk, amber for
    files that are saved but still absent from a commit. */
 .row .nm { color: var(--fg); }
-.row.file .nm { color: #aab6c6; }
+.row.file .nm { color: var(--fg-path); }
 .row.st-unsaved .nm { color: var(--ok); }
 .row.st-modified .nm, .row.st-untracked .nm { color: var(--warn); }
 .row.st-untracked .nm { opacity: .85; }
@@ -606,7 +793,7 @@ kbd {
   display: flex; align-items: center; justify-content: center; width: 20px; height: 18px;
   background: none; border: none; border-radius: 4px; color: var(--fg-dim); cursor: pointer; padding: 0;
 }
-.icon:hover { background: #2b3644; color: var(--fg); }
+.icon:hover { background: var(--icon-hover); color: var(--fg); }
 .icon:disabled { opacity: .25; cursor: default; background: none; }
 .icon.warn:hover { color: var(--warn); }
 .oe-list { overflow: auto; max-height: 34vh; padding: 2px 0 4px; }
@@ -623,7 +810,7 @@ kbd {
 }
 .oe-row:hover .state, .oe-row.dirty .state { visibility: visible; }
 .oe-row.dirty .state { color: var(--warn); }
-.oe-row .state:hover { background: #38455a; color: var(--fg); }
+.oe-row .state:hover { background: var(--state-hover); color: var(--fg); }
 .oe-row .nm { overflow: hidden; text-overflow: ellipsis; }
 .oe-row.dirty .nm { color: var(--warn); }
 .oe-row.preview .nm { font-style: italic; }
@@ -647,7 +834,7 @@ kbd {
 .branchbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon .cnt {
   position: absolute; margin: -12px 0 0 12px; font: 9px var(--mono);
-  background: var(--accent); color: #0b0f15; border-radius: 7px; padding: 0 3px;
+  background: var(--accent); color: var(--on-accent); border-radius: 7px; padding: 0 3px;
 }
 .icon { position: relative; }
 .git-body { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
@@ -665,8 +852,8 @@ kbd {
 .git-row .code { font: 10px var(--mono); width: 18px; flex: 0 0 auto; text-align: center; }
 .git-row .go { flex: 0 0 auto; visibility: hidden; }
 .git-row:hover .go { visibility: visible; }
-.st-M { color: var(--warn); } .st-A { color: var(--ok); } .st-D { color: #e06c75; }
-.st-U { color: #e06c75; font-weight: 600; } .st-R { color: var(--snapshot); } .st-Q { color: var(--fg-dim); }
+.st-M { color: var(--warn); } .st-A { color: var(--ok); } .st-D { color: var(--bad); }
+.st-U { color: var(--bad); font-weight: 600; } .st-R { color: var(--snapshot); } .st-Q { color: var(--fg-dim); }
 .git-commit { flex: 0 0 auto; padding: 6px; border-top: 1px solid var(--line); }
 #commit-msg {
   width: 100%; resize: vertical; background: var(--bg); color: var(--fg);
@@ -678,30 +865,30 @@ kbd {
 .git-empty { padding: 14px 10px; color: var(--fg-dim); font-size: 11.5px; text-align: center; }
 .conflict-banner {
   margin: 6px; padding: 7px 9px; border-radius: 5px; font-size: 11.5px;
-  background: #2d1f1f; border: 1px solid #6b4a4a; color: #e0a0a0;
+  background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-fg);
 }
 
 /* ----------------------------------------------------------------- modal -- */
-#modal { position: fixed; inset: 0; background: #000a; display: flex; align-items: center; justify-content: center; z-index: 70; }
+#modal { position: fixed; inset: 0; background: var(--scrim-modal); display: flex; align-items: center; justify-content: center; z-index: 70; }
 .modal-box {
   width: min(560px, 92vw); background: var(--bg-2); border: 1px solid var(--line);
-  border-radius: 8px; padding: 18px 20px; box-shadow: 0 18px 60px #0009;
+  border-radius: 8px; padding: 18px 20px; box-shadow: var(--shadow-modal);
 }
 .modal-box h2 { margin: 0 0 10px; font-size: 15px; }
-#modal-body { font-size: 12.5px; color: #c2ccd9; max-height: 46vh; overflow: auto; }
+#modal-body { font-size: 12.5px; color: var(--fg-2); max-height: 46vh; overflow: auto; }
 #modal-body ul { margin: 8px 0; padding-left: 18px; font-family: var(--mono); font-size: 11.5px; }
 #modal-body pre {
   background: var(--bg); border: 1px solid var(--line); border-radius: 5px;
   padding: 8px; font-size: 11px; white-space: pre-wrap; max-height: 30vh; overflow: auto;
 }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.btn.danger { border-color: #6b4a4a; color: #e0a0a0; }
-.btn.danger:hover { background: #2d1f1f; border-color: #a05a5a; }
+.btn.danger { border-color: var(--bad-line); color: var(--bad-fg); }
+.btn.danger:hover { background: var(--bad-bg); border-color: var(--bad-line-hi); }
 .btn.primary { background: var(--accent-dim); border-color: var(--accent); }
 
 /* Conflict markers left in a file by git. */
-.cm-conflict-head { background: #2d1f1f; color: #e0a0a0 !important; font-weight: 600; }
-.cm-conflict-mid { background: #22293a; color: #8fa8d8 !important; }
+.cm-conflict-head { background: var(--bad-bg); color: var(--bad-fg) !important; font-weight: 600; }
+.cm-conflict-mid { background: var(--conflict-mid-bg); color: var(--conflict-mid-fg) !important; }
 .conflict-bar { display: flex; gap: 6px; padding: 2px 0 2px 34px; font: 10.5px var(--ui); }
 .conflict-bar button {
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px;
@@ -759,18 +946,18 @@ kbd {
    reads as one control, and still there when its stack is empty. */
 .crumb.nav { padding: 0 3px; color: var(--fg-dim); font-size: 14px; }
 .crumb.nav:disabled { opacity: .3; cursor: default; background: none; }
-.crumb-sep { flex: 0 0 auto; color: #5a677a; font-size: 12px; }
+.crumb-sep { flex: 0 0 auto; color: var(--crumb-sep); font-size: 12px; }
 .sicon { font: 10px var(--mono); color: var(--fg-dim); letter-spacing: -.5px; }
 .sicon[data-kind=map] { color: var(--accent); }
 .sicon[data-kind=seq] { color: var(--source); }
-.sicon[data-kind=heading] { color: #7fa8d8; }
+.sicon[data-kind=heading] { color: var(--f-md); }
 /* z-index 65, alongside the env menu: both are opened on purpose, and each
    closes the other on the mousedown that opens it, so they never overlap. */
 .crumbmenu {
   position: fixed; z-index: 65; min-width: 200px; max-width: 420px;
   max-height: 46vh; overflow-y: auto; padding: 4px;
-  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
+  box-shadow: var(--shadow);
 }
 .crumbmenu button {
   display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 8px;
@@ -786,9 +973,9 @@ kbd {
 .crumb-gap { flex: 1 0 14px; }
 .crumb.cfg {
   width: 18px; padding: 0; margin-right: 3px; justify-content: center; border-radius: 50%;
-  color: var(--dbt-yaml); border: 1px solid rgba(155, 135, 245, .5); background: rgba(155, 135, 245, .1);
+  color: var(--dbt-yaml); border: 1px solid color-mix(in srgb, var(--dbt-yaml) 50%, transparent); background: color-mix(in srgb, var(--dbt-yaml) 10%, transparent);
 }
-.crumb.cfg:hover, .crumb.cfg.open { color: var(--dbt-yaml); border-color: var(--dbt-yaml); background: rgba(155, 135, 245, .2); }
+.crumb.cfg:hover, .crumb.cfg.open { color: var(--dbt-yaml); border-color: var(--dbt-yaml); background: color-mix(in srgb, var(--dbt-yaml) 20%, transparent); }
 .cfgicon { width: 13px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .crumbmenu.config { max-width: 560px; }
 .crumbmenu .note {
@@ -908,7 +1095,7 @@ kbd {
 }
 .seticon .sficon { width: 14px; height: 14px; }
 .seticon .profileicon { width: 16px; height: 13px; }
-.seticon[data-tool=""] .tooldot { background: transparent; border: 1px solid #6f7f93; }
+.seticon[data-tool=""] .tooldot { background: transparent; border: 1px solid var(--none); }
 .setglyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .setwarn { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: 0 0 auto; }
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
@@ -924,7 +1111,7 @@ kbd {
 /* dbt's own message under a node, its first lines as dbt wrote them. */
 .rmsg {
   margin: 2px 0 6px; padding: 4px 8px; max-width: 900px; max-height: 9em; overflow: auto;
-  font: 11px/1.45 var(--mono); color: #c2ccd9; background: var(--bg-3); border-radius: 3px;
+  font: 11px/1.45 var(--mono); color: var(--fg-2); background: var(--bg-3); border-radius: 3px;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* collin's report, a section of the reports: figures, then findings by who acts. */
@@ -942,7 +1129,7 @@ kbd {
 .reportgroup { margin-top: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
 .reportgroup[data-group=rerun] { border-left-color: var(--warn); }
 .reportgroup[data-group=project] { border-left-color: var(--accent); }
-.reportgroup[data-group=collin] { border-left-color: #e070d0; }
+.reportgroup[data-group=collin] { border-left-color: var(--tool-collin); }
 .reportgroup h3 { margin: 0; font-size: 13.5px; }
 .reportgroup > p { margin: 0 0 6px; font-size: 12px; }
 .reportfinding { border-top: 1px solid var(--line); padding: 3px 0; }
@@ -991,7 +1178,7 @@ kbd {
 .reportbody .jobs-model:hover, .reportbody .jobs-model:focus-visible { text-decoration: underline; }
 .rline .jobwhen { max-width: 100%; }
 .rcmd {
-  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: #c2ccd9; background: var(--bg-3);
+  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: var(--fg-2); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* Where a step is written wraps with the line: it is read, not cut at an ellipsis. */
@@ -1033,45 +1220,45 @@ kbd {
 }
 .diff-crumb { font: 10.5px var(--mono); color: var(--fg-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-crumb .sep { opacity: .5; margin: 0 4px; }
-.diff-crumb .leaf { color: #aab6c6; }
+.diff-crumb .leaf { color: var(--fg-path); }
 
 /* Per-line + and - next to the line numbers, as in a review UI. */
 .CodeMirror-gutter.diff-mark { width: 14px; }
 /* A key of dbt_project.yml that dbt would warn applies to nothing (0103). */
 .CodeMirror-gutter.cfgwarn { width: 14px; }
 .cfgwarn-mark {
-  width: 12px; height: 12px; margin: 3px auto 0; border-radius: 50%; background: var(--warn); color: #10151c;
+  width: 12px; height: 12px; margin: 3px auto 0; border-radius: 50%; background: var(--warn); color: var(--tone-fg);
   font: 700 9px/12px var(--mono); text-align: center; cursor: pointer;
 }
 .cfgwarn-mark:hover { background: var(--fg); }
-.cfgwarn-mark.stale { background: #6f7f93; }
+.cfgwarn-mark.stale { background: var(--none); }
 .cfgwarn-mark.stale:hover { background: var(--fg); }
 .diff-sign { font: 11px var(--mono); text-align: center; line-height: inherit; }
-.diff-sign.add { color: #56b98b; }
-.diff-sign.del { color: #d88; }
+.diff-sign.add { color: var(--diff-add-fg); }
+.diff-sign.del { color: var(--diff-del-fg); }
 
 /* Where one side has no matching lines at all. */
 .CodeMirror-merge-spacer {
   background-image: repeating-linear-gradient(135deg,
-    transparent, transparent 4px, #2a3340 4px, #2a3340 5px);
-  background-color: #171c25;
+    transparent, transparent 4px, var(--diff-hatch) 4px, var(--diff-hatch) 5px);
+  background-color: var(--diff-gap);
 }
 
 /* Word-level changes inside a line. The addon ships a faint underline image
    that vanishes on a dark background; a tint reads far better. */
 .CodeMirror-merge-r-inserted, .CodeMirror-merge-l-inserted {
-  background-image: none; background-color: #2f6b47; border-radius: 2px;
+  background-image: none; background-color: var(--diff-add); border-radius: 2px;
 }
 .CodeMirror-merge-r-deleted, .CodeMirror-merge-l-deleted {
-  background-image: none; background-color: #6b3a3a; border-radius: 2px;
+  background-image: none; background-color: var(--diff-del-word); border-radius: 2px;
 }
 
 /* Overview of where the changes are, clickable. */
 .diff-ruler { position: absolute; top: 0; right: 0; bottom: 0; width: 11px; z-index: 4; pointer-events: none; }
 .diff-ruler div { position: absolute; right: 1px; width: 8px; min-height: 2px; border-radius: 1px; cursor: pointer; pointer-events: auto; opacity: .75; }
 .diff-ruler div:hover { opacity: 1; }
-.diff-ruler .add { background: #2f6b47; }
-.diff-ruler .del { background: #6b4a4a; }
+.diff-ruler .add { background: var(--diff-add); }
+.diff-ruler .del { background: var(--diff-del); }
 .mergepane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
 /* A percentage height only resolves against a parent that has a definite one.
    The addon's panes are inline-blocks with auto height, so without this the
@@ -1082,14 +1269,14 @@ kbd {
 .mergepane .CodeMirror-merge-gap { height: 100%; box-sizing: border-box; }
 .mergepane .CodeMirror-merge .CodeMirror { height: 100%; }
 .CodeMirror-merge-gap { background: var(--bg-2); border-color: var(--line); }
-.CodeMirror-merge-r-chunk { background: #1c2c22; }
-.CodeMirror-merge-r-chunk-start { border-top: 1px solid #2f6b47; }
-.CodeMirror-merge-r-chunk-end { border-bottom: 1px solid #2f6b47; }
-.CodeMirror-merge-l-chunk { background: #2d1f1f; }
-.CodeMirror-merge-l-chunk-start { border-top: 1px solid #6b4a4a; }
-.CodeMirror-merge-l-chunk-end { border-bottom: 1px solid #6b4a4a; }
-.CodeMirror-merge-r-connect { fill: #1c2c22; stroke: #2f6b47; }
-.CodeMirror-merge-l-connect { fill: #2d1f1f; stroke: #6b4a4a; }
+.CodeMirror-merge-r-chunk { background: var(--diff-add-bg); }
+.CodeMirror-merge-r-chunk-start { border-top: 1px solid var(--diff-add); }
+.CodeMirror-merge-r-chunk-end { border-bottom: 1px solid var(--diff-add); }
+.CodeMirror-merge-l-chunk { background: var(--diff-del-bg); }
+.CodeMirror-merge-l-chunk-start { border-top: 1px solid var(--diff-del); }
+.CodeMirror-merge-l-chunk-end { border-bottom: 1px solid var(--diff-del); }
+.CodeMirror-merge-r-connect { fill: var(--diff-add-bg); stroke: var(--diff-add); }
+.CodeMirror-merge-l-connect { fill: var(--diff-del-bg); stroke: var(--diff-del); }
 .CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
 /* The editor's and the lineage's placeholder, named apart so a row elsewhere
    marked `empty` is not made a centred flex box. */
@@ -1119,13 +1306,13 @@ kbd {
   width: clamp(calc(var(--wait-w) * 1px), 50%, calc(var(--wait-w) * 2.5px));
   max-width: 100%; height: auto; max-height: max(20px, calc(100% - 4.5em));
 }
-.wait-arm .wait-base { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.wait-arm .wait-base { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .wait-arm .wait-grow { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 1; stroke-dashoffset: 1; }
-.wait-arm .wait-centre { fill: #1b2a3d; stroke: var(--accent); stroke-width: 2; }
+.wait-arm .wait-centre { fill: var(--focus-bg); stroke: var(--accent); stroke-width: 2; }
 .wait-arm .wait-halo { fill: none; stroke: var(--accent); stroke-width: 6; opacity: 0; }
 .wait-arm .wait-name { font: 8.5px var(--mono); fill: var(--fg); text-anchor: middle; }
 .wait-arm .wait-lit { opacity: .35; }
-.wait-arm .wait-box { fill: var(--bg-2); stroke: var(--edge-col, #33445c); stroke-width: 1.2; stroke-dasharray: 3 3; }
+.wait-arm .wait-box { fill: var(--bg-2); stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .wait-arm .wait-bar { fill: var(--line); }
 /* One loop: the centre pulses, the arms draw outwards, each box lights as its
    arm arrives and stays lit, then all of it fades. The downstream side runs
@@ -1146,32 +1333,32 @@ kbd {
   100% { stroke-dashoffset: 0; opacity: 0; }
 }
 @keyframes wait-lit { 0%, 36% { opacity: .35; } 48%, 82% { opacity: 1; } 100% { opacity: .35; } }
-@keyframes wait-box { 0%, 36% { stroke: var(--edge-col, #33445c); } 48%, 82% { stroke: var(--accent); } 100% { stroke: var(--edge-col, #33445c); } }
+@keyframes wait-box { 0%, 36% { stroke: var(--edge-col, var(--edge)); } 48%, 82% { stroke: var(--accent); } 100% { stroke: var(--edge-col, var(--edge)); } }
 @keyframes wait-bar { 0%, 36% { fill: var(--line); } 48%, 82% { fill: var(--accent-dim); } 100% { fill: var(--line); } }
 
-.CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: #c9d4e3; }
+.CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: var(--code-fg); }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
-.CodeMirror-linenumber { color: #4a5668; }
+.CodeMirror-linenumber { color: var(--fg-faint); }
 .CodeMirror-cursor { border-left: 1.5px solid var(--accent); }
-.CodeMirror-selected { background: #2b3a4d !important; }
-.cm-s-default .cm-keyword { color: #c792ea; }
-.cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: #c3e88d; }
-.cm-s-default .cm-number { color: #f78c6c; }
-.cm-s-default .cm-comment { color: #5d6b7d; font-style: italic; }
-.cm-s-default .cm-variable-2, .cm-s-default .cm-atom { color: #82aaff; }
-.cm-s-default .cm-builtin { color: #ffcb6b; }
+.CodeMirror-selected { background: var(--select) !important; }
+.cm-s-default .cm-keyword { color: var(--syn-kw); }
+.cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: var(--syn-str); }
+.cm-s-default .cm-number { color: var(--syn-num); }
+.cm-s-default .cm-comment { color: var(--syn-comment); font-style: italic; }
+.cm-s-default .cm-variable-2, .cm-s-default .cm-atom { color: var(--syn-atom); }
+.cm-s-default .cm-builtin { color: var(--syn-builtin); }
 /* Jinja keeps the orange that marks a template on its delimiters and keywords;
    what sits inside takes the colour of what it is (jinjaToken in app.js). */
-.cm-jinja-delim, .cm-jinja-keyword { color: #ff9f6b; }
-.cm-jinja-dbt { color: #ffcb6b; }
-.cm-jinja-fn { color: #82aaff; }
-.cm-jinja-var { color: #eeffff; }
-.cm-jinja-param { color: #f07178; font-style: italic; }
-.cm-jinja-string { color: #c3e88d; }
-.cm-jinja-number { color: #f78c6c; }
-.cm-jinja-atom { color: #c792ea; }
-.cm-jinja-punct { color: #89ddff; }
-.cm-jinja-comment { color: #5d6b7d; font-style: italic; }
+.cm-jinja-delim, .cm-jinja-keyword { color: var(--syn-jj); }
+.cm-jinja-dbt { color: var(--syn-builtin); }
+.cm-jinja-fn { color: var(--syn-fn); }
+.cm-jinja-var { color: var(--syn-var); }
+.cm-jinja-param { color: var(--syn-param); font-style: italic; }
+.cm-jinja-string { color: var(--syn-str); }
+.cm-jinja-number { color: var(--syn-num); }
+.cm-jinja-atom { color: var(--syn-jatom); }
+.cm-jinja-punct { color: var(--syn-p); }
+.cm-jinja-comment { color: var(--syn-comment); font-style: italic; }
 
 /* ------------------------------------------------------------------ find -- */
 /* Inside CodeMirror's wrapper, top right, above the text and below nothing:
@@ -1180,8 +1367,8 @@ kbd {
 .findbar {
   position: absolute; top: 4px; right: 16px; z-index: 12;
   display: flex; align-items: center; gap: 2px; padding: 3px 4px 3px 5px;
-  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .45); font: 11px var(--ui); color: var(--fg-dim);
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
+  box-shadow: var(--shadow-sm); font: 11px var(--ui); color: var(--fg-dim);
 }
 .findbar .find-q {
   width: 190px; margin-right: 2px; padding: 3px 6px; outline: none;
@@ -1196,14 +1383,14 @@ kbd {
   color: var(--fg-dim); font: 11px var(--mono);
 }
 .find-opt:hover { background: var(--bg-3); color: var(--fg); }
-.find-opt[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: #1b2a3d; }
+.find-opt[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--focus-bg); }
 .find-wholeWord { text-decoration: underline; text-underline-offset: 2px; }
 .find-count { min-width: 72px; padding: 0 4px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.find-count.none { color: #e08b8b; }
+.find-count.none { color: var(--bad-soft); }
 .findbar .icon { font-size: 13px; }
 .CodeMirror.find-open .CodeMirror-lines { padding-top: 36px; }
-.cm-findhit { background: rgba(224, 163, 75, .36); border-radius: 2px; }
-.cm-findcur { background: rgba(224, 163, 75, .55); outline: 1px solid var(--warn); border-radius: 2px; color: #fff !important; }
+.cm-findhit { background: color-mix(in srgb, var(--warn) 36%, transparent); border-radius: 2px; }
+.cm-findcur { background: color-mix(in srgb, var(--warn) 55%, transparent); outline: 1px solid var(--warn); border-radius: 2px; color: var(--find-cur-fg) !important; }
 
 /* ------------------------------------------------------------------ dock -- */
 #dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }
@@ -1236,11 +1423,11 @@ kbd {
 #graph text { font-family: var(--ui); user-select: none; }
 /* --edge-col is set per path in column mode, where the colour carries the role.
    `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
-.edge { fill: none; stroke: var(--edge-col, #33445c); stroke-width: 1.2; }
+.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; }
 /* A line into a test, the stem from its model included (0034): dotted, in the
    tests' grey, since it carries no data. Before `.edge.hi`, so a selected one
    still turns accent. */
-.edge.test { stroke: #5d6a7d; stroke-dasharray: 1 3; stroke-linecap: round; }
+.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }
 /* An indirect edge, a filter's, a join key's or a dedup key's (0097): the
    column decided which rows exist, not what a value is. Thin and in short
    dashes, neither the test's dots nor the back edge's long dashes; before
@@ -1259,10 +1446,10 @@ kbd {
 .edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }
 /* The clause an indirect edge comes from, QUALIFY, JOIN or WHERE / HAVING, along
    the edge (0118), in its role's hue. A label never takes the pointer. */
-.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, #33445c); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
 .nd:hover rect.box { stroke: var(--fg-dim); }
-.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: #1b2a3d; }
+.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: var(--focus-bg); }
 .nd.off rect.box { stroke-dasharray: 3 3; }
 .nd.off .t1, .nd.off .t2 { opacity: .55; }
 /* A model drawn only because a selected test belongs to it (0032): there so
@@ -1281,7 +1468,7 @@ kbd {
 .nd.group { cursor: pointer; }
 .nd .warnmark { fill: var(--warn); }
 .nd .warncount { font-size: 9px; }
-.nd.sel rect.box { stroke: #fff; }
+.nd.sel rect.box { stroke: var(--sel-line); }
 .nd .kindbar { stroke: none; rx: 3; }
 .nd .kindbar.seg { rx: 1.5; }
 .nd .t1 { fill: var(--fg); font-size: 11.5px; }
@@ -1301,17 +1488,17 @@ kbd {
    out of an exported file's rules (exportCanvasCss): snapshot() strips both
    classes, since a match says nothing to whoever reads the file. */
 #graph .nd.hit rect.box { stroke: var(--warn); stroke-width: 1.5; }
-#graph .nd.hitcur rect.box { stroke: var(--warn); stroke-width: 3; fill: #2e2716; }
+#graph .nd.hitcur rect.box { stroke: var(--warn); stroke-width: 3; fill: var(--hit-bg); }
 #graph .nd.ctx.hit { opacity: .85; }
 /* A folder band, when the canvas is drawn by folder: the columns one folder's
    nodes sit in, under the edges and the boxes (0029). Its name is written in
    an exported file only; the canvas pins it over the window instead. */
-.band { fill: #161b24; stroke: #1f2632; stroke-width: 1; }
+.band { fill: var(--band); stroke: var(--band-line); stroke-width: 1; }
 /* A sub-folder inside its band, a hue per level, all dark enough to leave the
    boxes the lightest thing there (0080). The export copies these. */
-.band.l1 { fill: #18263d; stroke: #2d4466; }
-.band.l2 { fill: #142b2c; stroke: #2a5553; }
-.band.l3 { fill: #251e38; stroke: #43375f; }
+.band.l1 { fill: var(--band-l1); stroke: var(--band-l1-line); }
+.band.l2 { fill: var(--band-l2); stroke: var(--band-l2-line); }
+.band.l3 { fill: var(--band-l3); stroke: var(--band-l3-line); }
 .band-name { fill: var(--fg-dim); font-size: 13px; font-weight: 600; }
 /* A sub-folder's, smaller. The canvas pins HTML names instead, so these only
    size the names an export writes, measured here first. */
@@ -1321,29 +1508,29 @@ kbd {
 .folder-heads { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
 .folder-head {
   position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font: 600 11px var(--ui); color: var(--fg); background: #1d2430e6;
+  font: 600 11px var(--ui); color: var(--fg); background: color-mix(in srgb, var(--head-bg) 90.196%, transparent);
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px;
 }
 /* A sub-folder's name, on the row below, edged in its band's hue. */
 .folder-head.l1, .folder-head.l2, .folder-head.l3 { font-weight: 500; color: var(--fg-dim); }
-.folder-head.l1 { background: #18263de6; border-color: #3a5885; }
-.folder-head.l2 { background: #142b2ce6; border-color: #36706b; }
-.folder-head.l3 { background: #251e38e6; border-color: #57487f; }
+.folder-head.l1 { background: color-mix(in srgb, var(--band-l1) 90.196%, transparent); border-color: var(--head-l1-line); }
+.folder-head.l2 { background: color-mix(in srgb, var(--band-l2) 90.196%, transparent); border-color: var(--head-l2-line); }
+.folder-head.l3 { background: color-mix(in srgb, var(--band-l3) 90.196%, transparent); border-color: var(--head-l3-line); }
 .graph-status {
   position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono);
-  color: var(--fg-dim); background: #12161dcc; padding: 2px 8px; border-radius: 4px;
+  color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 2px 8px; border-radius: 4px;
   pointer-events: none;
 }
 /* Over the status line, which it never covers: a click here is not a pan. */
 .graph-cap {
   position: absolute; right: 10px; bottom: 34px; display: flex; align-items: center; gap: 8px;
-  font: 10px var(--mono); color: var(--fg-dim); background: #12161dcc; padding: 3px 8px; border-radius: 4px;
+  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 3px 8px; border-radius: 4px;
 }
 .graph-cap .btn { flex: none; }
 
 .legend {
   position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px;
-  font: 10px var(--mono); color: var(--fg-dim); background: #12161dcc;
+  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent);
   padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -1368,8 +1555,8 @@ kbd {
    its text. Above the folder names, and never in the way of a drag. */
 .lineage-top > .lineage-note {
   align-self: center; max-width: 100%; box-sizing: border-box; pointer-events: none;
-  font: 11px var(--mono); color: var(--warn); background: #12161dee;
-  border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
+  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--veil) 93.333%, transparent);
+  border: 1px solid var(--warn-line); border-radius: 4px; padding: 3px 8px;
 }
 
 /* The selector bar floats over the canvas, the way the legend and the status
@@ -1390,21 +1577,21 @@ kbd {
 /* Selectors has no glyph: as tall as Copy names and dbt ls, which have one. */
 .select-row .btn { min-height: 21px; }
 #select-input {
-  flex: 1; min-width: 0; background: #12161dee; color: var(--fg);
+  flex: 1; min-width: 0; background: color-mix(in srgb, var(--veil) 93.333%, transparent); color: var(--fg);
   border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px;
   font: 11px var(--mono);
 }
 #select-input:focus { outline: none; border-color: var(--accent-dim); }
-#select-input::placeholder { color: #55606f; }
+#select-input::placeholder { color: var(--placeholder); }
 .sel-sum {
   font: 11px var(--mono); color: var(--fg-dim); white-space: nowrap;
-  background: #12161dcc; padding: 2px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 2px 6px; border-radius: 4px;
 }
 /* Amber, not red: a term that matched nothing is worth reading, and the rest
    of the expression was still drawn. */
 .sel-warn {
-  font: 11px var(--mono); color: var(--warn); background: #12161dee;
-  border: 1px solid #3a2f1c; border-radius: 4px; padding: 3px 8px;
+  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--veil) 93.333%, transparent);
+  border: 1px solid var(--warn-line); border-radius: 4px; padding: 3px 8px;
 }
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The capped canvas's note: the button that draws the rest, and what it costs,
@@ -1413,7 +1600,7 @@ kbd {
 .caprow .capnote { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .caprow .btn { flex: none; }
 .caprow .caphint { flex: none; }
-.sel-warn.bad { color: #e0a0a0; border-color: #6b4a4a; }
+.sel-warn.bad { color: var(--bad-fg); border-color: var(--bad-line); }
 /* The named selectors menu: the environment menu's rows, a filter on top, and
    a list that scrolls, since a project can name dozens of selectors. */
 .selmenu { width: 480px; max-width: calc(100vw - 8px); }
@@ -1444,7 +1631,7 @@ kbd {
 .fresh-bar {
   display: flex; align-items: center; flex-wrap: wrap; gap: 10px; row-gap: 3px;
   padding: 7px 12px; font-size: 12px;
-  border-left: 3px solid var(--ok); background: #16211c;
+  border-left: 3px solid var(--ok); background: var(--ok-wash);
 }
 /* Its own line, at full width: these paths run past a hundred characters and
    the segment that identifies the file is the last one. */
@@ -1456,8 +1643,8 @@ kbd {
 .artifact-path.link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
 .artifact-path.link:hover { color: var(--accent); }
 .artifact-path.outside { cursor: default; opacity: .75; }
-.fresh-bar.stale { border-left-color: var(--warn); background: #241d12; }
-.fresh-bar.missing { border-left-color: #a05a5a; background: #241616; }
+.fresh-bar.stale { border-left-color: var(--warn); background: var(--warn-wash); }
+.fresh-bar.missing { border-left-color: var(--bad-line-hi); background: var(--bad-wash); }
 .fresh-bar b { font-family: var(--mono); font-size: 11.5px; }
 .fresh-bar .why { color: var(--fg-dim); font-size: 11px; }
 .fresh-bar.stale .why { color: var(--warn); }
@@ -1467,7 +1654,7 @@ kbd {
   display: inline-block; font: 11.5px var(--mono); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 4px; padding: 2px 7px; color: var(--fg); margin: 6px 0;
 }
-.compiled-empty ul { font: 10.5px var(--mono); padding-left: 16px; color: #5d6b7d; }
+.compiled-empty ul { font: 10.5px var(--mono); padding-left: 16px; color: var(--fg-mute); }
 
 /* The SQL shown for another environment (0139): a swapped relation is tinted in
    the environment's colour, one kept as dbt compiled it is amber. */
@@ -1481,9 +1668,9 @@ kbd {
 .env-bar[data-tone=manifest] .env-differ > summary { color: var(--fg); }
 .env-reads { margin: 2px 0 0; padding-left: 18px; font: 11px var(--mono); color: var(--fg-dim); }
 .env-reads li { margin: 1px 0; }
-.env-bar[data-tone=manifest] { border-left-color: #4a5870; }
-.cm-env-swap { background: rgba(120, 160, 220, .16); border-bottom: 1px dotted var(--accent); }
-.cm-env-kept { background: rgba(224, 163, 75, .2); border-bottom: 1px solid var(--warn); }
+.env-bar[data-tone=manifest] { border-left-color: var(--env-manifest); }
+.cm-env-swap { background: color-mix(in srgb, var(--env-swap) 16%, transparent); border-bottom: 1px dotted var(--accent); }
+.cm-env-kept { background: color-mix(in srgb, var(--warn) 20%, transparent); border-bottom: 1px solid var(--warn); }
 
 /* ------------------------------------------------------------------ jobs -- */
 /* The Jobs tab (0063): a card per job, its steps that act on the node under
@@ -1493,8 +1680,8 @@ kbd {
 .jobs-bar { display: flex; align-items: center; gap: 14px; padding: 4px 16px 0; }
 .jobs-about { font: 11px var(--mono); color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jobcard { border: 1px solid var(--line); border-left: 3px solid var(--kind); border-radius: 4px; padding: 7px 10px 8px; margin: 0 0 10px; }
-.jobcard[data-kind=airflow] { --kind: #3fc1c9; }
-.jobcard[data-kind=dbt_cloud] { --kind: #ff694b; }
+.jobcard[data-kind=airflow] { --kind: var(--tool-airflow); }
+.jobcard[data-kind=dbt_cloud] { --kind: var(--tool-dbt); }
 .jobhead { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; row-gap: 2px; }
 .jobkind { font: 600 9.5px var(--ui); letter-spacing: .6px; text-transform: uppercase; color: var(--kind); }
 .jobname { font-size: 12.5px; }
@@ -1502,13 +1689,13 @@ kbd {
    grey and outlined when it does not. A Catalog chip names one of its steps
    in the same colours. */
 .jobwhen, .jobchip {
-  font: 11px/16px var(--mono); color: #b4bfcd;
-  border: 1px solid #4a5870; border-radius: 9px;
+  font: 11px/16px var(--mono); color: var(--chip-fg);
+  border: 1px solid var(--pill-line); border-radius: 9px;
 }
-.jobwhen[data-start=scheduled], .jobchip[data-start=scheduled] { color: var(--ok); background: #183026; border-color: #3e7a5c; }
+.jobwhen[data-start=scheduled], .jobchip[data-start=scheduled] { color: var(--ok); background: var(--ok-tint); border-color: var(--ok-line); }
 .jobwhen[data-start=manual], .jobchip[data-start=manual] { background: var(--bg-3); }
 /* May run on its own: neither the green of a clock nor the grey of nothing. */
-.jobwhen[data-start=unread], .jobchip[data-start=unread] { color: var(--warn); border-color: rgba(224, 163, 75, .55); background: rgba(224, 163, 75, .08); }
+.jobwhen[data-start=unread], .jobchip[data-start=unread] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .jobwhen { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0 8px; }
 .jobwhen b { font: 600 9.5px/16px var(--ui); letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }
 .jobchip { background: none; cursor: pointer; padding: 1px 8px; }
@@ -1525,7 +1712,7 @@ kbd {
 .jobstep { display: flex; align-items: center; gap: 8px; margin-top: 6px; min-width: 0; }
 .steplbl { flex: 0 0 auto; font-size: 11.5px; color: var(--fg); }
 .stepcmd {
-  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: #c2ccd9; background: var(--bg-3);
+  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: var(--fg-2); background: var(--bg-3);
   border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -1549,7 +1736,7 @@ kbd {
 .jobs-example { margin: 0; flex: 1 1 280px; }
 .jobs-example figcaption { font-size: 11px; color: var(--fg-dim); margin-bottom: 4px; }
 .jobs-example pre, pre.jobs-example-text {
-  margin: 0; padding: 8px 10px; font: 11px/1.5 var(--mono); color: #c2ccd9;
+  margin: 0; padding: 8px 10px; font: 11px/1.5 var(--mono); color: var(--fg-2);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; overflow: auto;
 }
 /* The sources form, in the settings' Orchestration section (0100). */
@@ -1613,7 +1800,7 @@ kbd {
 }
 .detail .link:hover, .cat-body .links .link:hover { border-color: var(--accent); color: var(--accent); }
 .offchip {
-  font: 10px var(--mono); color: var(--warn); border: 1px solid #6b5a2a;
+  font: 10px var(--mono); color: var(--warn); border: 1px solid var(--warn-line-hi);
   border-radius: 9px; padding: 1px 7px; margin-left: 8px;
 }
 .row.off .nm, .pres.off .p1 { color: var(--warn); opacity: .8; }
@@ -1627,19 +1814,19 @@ kbd {
 /* A macro call links the same way a ref() does, to its definition, so it
    looks the same; the card says which it is. */
 .cm-reflink, .cm-macrolink {
-  border-bottom: 1px dotted #6f7f93;
+  border-bottom: 1px dotted var(--link-line);
   cursor: pointer;
   border-radius: 2px;
 }
 .cm-reflink:hover, .cm-macrolink:hover {
   color: var(--accent) !important;
   border-bottom: 1px solid var(--accent);
-  background: #1b2a3d;
+  background: var(--focus-bg);
 }
-.cm-reflink.dis { border-bottom-color: #7a6a3a; color: #b9a46a !important; }
-.cm-reflink.dis:hover { color: var(--warn) !important; border-bottom-color: var(--warn); background: #2b2415; }
-.cm-reflink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
-.cm-reflink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
+.cm-reflink.dis { border-bottom-color: var(--dis-line); color: var(--dis-fg) !important; }
+.cm-reflink.dis:hover { color: var(--warn) !important; border-bottom-color: var(--warn); background: var(--dis-wash); }
+.cm-reflink.missing { border-bottom-style: dashed; border-bottom-color: var(--bad-line); cursor: help; }
+.cm-reflink.missing:hover { color: var(--bad-soft) !important; border-bottom-color: var(--bad-line-hi); background: var(--bad-bg); }
 
 /* A var() opens its line in dbt_project.yml; an env_var() has nothing to open,
    its value being read from a .env or the environment, so it keeps the help
@@ -1647,15 +1834,15 @@ kbd {
 .cm-varlink { border-bottom: 1px dotted var(--seed); cursor: pointer; border-radius: 2px; }
 .cm-varlink.env:not(.cm-reflink):not(.cm-macrolink) { cursor: help; }
 /* A ref() or a macro call written as a var's default lights as the link it is. */
-.cm-varlink:not(.cm-reflink):not(.cm-macrolink):hover { color: var(--seed) !important; border-bottom-style: solid; background: #16281f; }
+.cm-varlink:not(.cm-reflink):not(.cm-macrolink):hover { color: var(--seed) !important; border-bottom-style: solid; background: var(--seed-wash); }
 
 /* A folder key in dbt_project.yml: dotted like a var rather than like a ref,
    because the click lands in the tree and not on a node. Dashed when no folder
    matches, which the card explains (0036). */
-.cm-dirlink { border-bottom: 1px dotted #8a7fb0; cursor: pointer; border-radius: 2px; }
-.cm-dirlink:hover { color: #b9a9e0 !important; border-bottom-style: solid; background: #211d2e; }
-.cm-dirlink.missing { border-bottom-style: dashed; border-bottom-color: #6b4a4a; cursor: help; }
-.cm-dirlink.missing:hover { color: #e08b8b !important; border-bottom-color: #a05a5a; background: #2d1f1f; }
+.cm-dirlink { border-bottom: 1px dotted var(--dir-line); cursor: pointer; border-radius: 2px; }
+.cm-dirlink:hover { color: var(--dir-fg) !important; border-bottom-style: solid; background: var(--dir-wash); }
+.cm-dirlink.missing { border-bottom-style: dashed; border-bottom-color: var(--bad-line); cursor: help; }
+.cm-dirlink.missing:hover { color: var(--bad-soft) !important; border-bottom-color: var(--bad-line-hi); background: var(--bad-bg); }
 
 /* ---------------------------------------------------------------- search -- */
 .grep-status { padding: 0 10px 6px; font-size: 11px; }
@@ -1672,7 +1859,7 @@ kbd {
 .grep-hit { display: flex; gap: 8px; padding: 1px 10px 1px 18px; cursor: pointer; font: 11px var(--mono); }
 .grep-hit:hover { background: var(--bg-3); }
 .grep-hit .ln { color: var(--fg-dim); min-width: 32px; text-align: right; flex: 0 0 auto; }
-.grep-hit .tx { color: #b9c4d2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grep-hit .tx { color: var(--fg-quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grep-hit mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
 .grep-more { padding: 1px 10px 4px 18px; font: 10.5px var(--mono); color: var(--fg-dim); }
 
@@ -1702,7 +1889,7 @@ kbd {
 .cat-body .sechead { display: flex; align-items: center; gap: 12px; margin: 18px 0 8px; }
 .cat-body .cat-jobs > h3 { margin-top: 18px; }
 .cat-body .sechead h3 { margin: 0; }
-.cat-desc { margin: 0; color: #c2ccd9; max-width: 90ch; }
+.cat-desc { margin: 0; color: var(--fg-2); max-width: 90ch; }
 .stats { display: flex; flex-wrap: wrap; gap: 30px; }
 .stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 2px; }
 .stat .v { font-size: 15px; font-weight: 600; }
@@ -1717,7 +1904,7 @@ kbd {
 .stat .v s { color: var(--fg-dim); font-weight: 400; }
 .stat .under { margin-top: 1px; font-size: 11px; color: var(--fg-dim); }
 .stat .v.keys { font: 600 12.5px/1.5 var(--mono); }
-.stat .keylink { cursor: pointer; text-decoration: underline dotted #5a6779; text-underline-offset: 3px; }
+.stat .keylink { cursor: pointer; text-decoration: underline dotted var(--keylink-line); text-underline-offset: 3px; }
 .stat .keylink:hover, .stat .keylink:focus-visible { color: var(--accent); text-decoration-color: var(--accent); }
 .stat .keymore { font: 400 11.5px var(--ui); color: var(--accent); cursor: pointer; }
 .stat .keymore:hover { text-decoration: underline; }
@@ -1728,19 +1915,19 @@ kbd {
   color: var(--fg-dim); font-weight: 600; padding: 0 12px 5px 0; border-bottom: 1px solid var(--line);
   cursor: help;
 }
-.loc td { padding: 4px 12px 4px 0; border-bottom: 1px solid #1f2733; font-family: var(--mono); word-break: break-all; }
+.loc td { padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); word-break: break-all; }
 .loc td.k { font-family: var(--ui); color: var(--fg-dim); width: 70px; }
 .loc td.tpl { color: var(--source); }
 .loc td.moved { color: var(--warn); }
 .loc td.moved::after { content: '  \2192'; opacity: .7; }
 .loc-foot { display: flex; align-items: center; gap: 10px; margin-top: 7px; min-height: 22px; }
 .moved-note { font-size: 11px; color: var(--warn); }
-.loc td.moved.expected { color: #aab6c6; }
+.loc td.moved.expected { color: var(--fg-path); }
 .sandbox-note { font-size: 11px; color: var(--fg-dim); }
 
 /* Resolved cells that could not produce a usable name. Placeholder uses a dotted
    underline so it never reads as the amber "moved" arrow next to it. */
-.loc td.env-missing, span.env-missing { color: #e06c75; }
+.loc td.env-missing, span.env-missing { color: var(--bad); }
 .loc td.env-placeholder, span.env-placeholder {
   color: var(--warn); text-decoration: underline dotted; text-underline-offset: 3px;
 }
@@ -1787,34 +1974,34 @@ kbd {
   color: var(--fg-dim); font-weight: 600; padding: 0 10px 6px 0; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--bg-2);
 }
-.cols td { padding: 5px 10px 5px 0; border-bottom: 1px solid #1f2733; vertical-align: top; }
-.cols tr:hover td { background: #1a212c; }
+.cols td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.cols tr:hover td { background: var(--row-hover); }
 .cols tr.c-linked { cursor: pointer; }
-.cols tr.c-linked:hover td { background: #1f2b3a; }
+.cols tr.c-linked:hover td { background: var(--row-open); }
 /* The name is not part of the click target, so it gets a text cursor and keeps
    its colour on hover. The lineage cell is what lights up instead. */
 .cols tr.c-linked .c-name { cursor: text; user-select: text; }
 .cols tr.c-linked:hover .c-lin { color: var(--accent); }
 .cols tr.c-focus td { background: var(--accent-dim); }
 /* In the incremental orange, outlined like the canvas's role tags. */
-.cols .keytag { display: inline-block; margin-left: 7px; padding: 0 4px; font: 9.5px var(--mono); letter-spacing: .4px; color: #e0a34b; border: 1px solid #e0a34b; border-radius: 3px; vertical-align: 1px; user-select: none; }
+.cols .keytag { display: inline-block; margin-left: 7px; padding: 0 4px; font: 9.5px var(--mono); letter-spacing: .4px; color: var(--k-incr); border: 1px solid var(--k-incr); border-radius: 3px; vertical-align: 1px; user-select: none; }
 .cols .keytag.dashed { border-style: dashed; }
 .cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
 .cols .c-lin b { color: var(--accent); font-weight: 600; }
 /* What a generated column is set to, in the canvas badge's pink, clipped:
    a typed null recast reads whole, a long literal on hover (0096). */
-.cols .c-gen { display: inline-block; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: #f5a7f9; cursor: help; }
+.cols .c-gen { display: inline-block; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--r-generated); cursor: help; }
 /* The count of tests this table cannot show. Underlined rather than coloured:
    the toolbar's colours mean the column lineage tool and its state, nothing else. */
 .coltools .modeltests { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .coltools .modeltests:hover { color: var(--accent); }
 .coltools .colhint[data-tone="hint"] { color: var(--accent); }
 .coltools .colhint[data-tone="busy"] { color: var(--warn); }
-.coltools .colhint[data-tone="failed"] { color: #ef6b6b; }
+.coltools .colhint[data-tone="failed"] { color: var(--err); }
 .coltools .colhint[data-tone="alpha"] { color: var(--warn); }
 /* What collin's report says about the model shown, full width under the tools. */
 .colnote {
-  margin: 0 0 8px; padding: 5px 8px; border-left: 2px solid var(--warn); background: rgba(224, 163, 75, .08);
+  margin: 0 0 8px; padding: 5px 8px; border-left: 2px solid var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent);
   color: var(--warn); font-size: 12px; line-height: 1.45;
 }
 .cols .c-ask { color: var(--fg-dim); font-style: italic; }
@@ -1833,11 +2020,11 @@ kbd {
 .histsaid { margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .histbody { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px 16px; }
 .histnote { margin: 0 0 8px; padding: 5px 8px; font-size: 12px; line-height: 1.45; }
-.histnote.bad { border-left: 2px solid var(--bad); background: rgba(224, 108, 117, .08); color: #e8a0a6; }
+.histnote.bad { border-left: 2px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); color: var(--bad-fg-2); }
 .histtable { table-layout: auto; }
 .histtable td { white-space: nowrap; vertical-align: baseline; }
 .histtable .h-row { cursor: pointer; }
-.histtable .h-row.h-open td { background: #1f2b3a; }
+.histtable .h-row.h-open td { background: var(--row-open); }
 .histtable .h-when, .histtable .h-num { font-variant-numeric: tabular-nums; color: var(--fg-dim); }
 .histtable .h-num { text-align: right; }
 .histtable .h-mono { font: 11px var(--mono); }
@@ -1858,20 +2045,20 @@ kbd {
 .h-bar code { font: 11px var(--mono); color: var(--fg); user-select: all; }
 .h-text {
   margin: 0; max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word;
-  font: 11.5px/1.45 var(--mono); color: #c2ccd9; user-select: text;
+  font: 11.5px/1.45 var(--mono); color: var(--fg-2); user-select: text;
 }
 .histfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; }
 .envmenu.histmenu { min-width: 260px; }
 .cols .c-type { font-family: var(--mono); color: var(--source); white-space: nowrap; }
-.cols .c-desc { color: #b9c4d2; }
+.cols .c-desc { color: var(--fg-quiet); }
 .cols .c-undeclared .c-name { color: var(--fg-dim); font-style: italic; }
-.nul { color: #4a5668; }
+.nul { color: var(--fg-faint); }
 .testchip {
   display: inline-block; font: 10px var(--mono); background: var(--bg-3);
-  border: 1px solid #3a4756; border-radius: 9px; padding: 1px 7px; margin: 0 3px 3px 0; white-space: nowrap;
+  border: 1px solid var(--chip-line); border-radius: 9px; padding: 1px 7px; margin: 0 3px 3px 0; white-space: nowrap;
 }
-.testchip.nn { border-color: #3e6b52; color: #7fd6a6; }
-.testchip.un { border-color: #3e5a6b; color: #7fb8d6; }
+.testchip.nn { border-color: var(--t-nn-line); color: var(--t-nn); }
+.testchip.un { border-color: var(--t-un-line); color: var(--t-un); }
 /* The Tests cell is capped in testChips rather than here: a max-width on a cell
    of an auto-laid-out table is a suggestion, and a chip named
    expect_column_values_to_not_match_like_pattern overrules it. The overflow chip
@@ -1887,13 +2074,13 @@ kbd {
 .hc-test .t-name { display: block; color: var(--fg-dim); word-break: break-all; }
 
 /* -------------------------------------------------------------- terminal -- */
-#term { height: 100%; padding: 4px 2px 0 8px; background: #0e1219; }
+#term { height: 100%; padding: 4px 2px 0 8px; background: var(--term-bg); }
 .xterm-viewport::-webkit-scrollbar { width: 8px; }
-.xterm-viewport::-webkit-scrollbar-thumb { background: #2f3b4c; border-radius: 4px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: var(--term-thumb); border-radius: 4px; }
 
 /* --------------------------------------------------------------- palette -- */
-#palette { position: fixed; inset: 0; background: #0009; display: flex; justify-content: center; padding-top: 12vh; z-index: 50; }
-.palette-box { width: min(760px, 92vw); background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 18px 60px #0008; }
+#palette { position: fixed; inset: 0; background: var(--scrim); display: flex; justify-content: center; padding-top: 12vh; z-index: 50; }
+.palette-box { width: min(760px, 92vw); background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-palette); }
 #palette-input {
   width: 100%; padding: 12px 14px; background: transparent; border: none; border-bottom: 1px solid var(--line);
   color: var(--fg); font: 14px var(--ui); outline: none;
@@ -1923,13 +2110,13 @@ kbd {
 .profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
-  position: fixed; inset: 0; z-index: 72; background: #0009;
+  position: fixed; inset: 0; z-index: 72; background: var(--scrim);
   display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh;
 }
 .keys-box {
   width: min(960px, 94vw); max-height: 84vh; overflow: auto; outline: none;
   background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
-  padding: 14px 20px 12px; box-shadow: 0 18px 60px #0009;
+  padding: 14px 20px 12px; box-shadow: var(--shadow-modal);
 }
 .keys-head { display: flex; align-items: center; margin-bottom: 6px; }
 .keys-head h2 { margin: 0; font-size: 15px; }
@@ -1945,7 +2132,7 @@ kbd {
    that wraps reads as a row with no description. */
 .keys-box.pc .keys-k { flex-basis: 176px; }
 .keys-k kbd { color: var(--fg); white-space: nowrap; }
-.keys-what { color: #c2ccd9; }
+.keys-what { color: var(--fg-2); }
 .keys-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
 .keys-head .btn { margin-right: 10px; }
 
@@ -1954,21 +2141,21 @@ kbd {
    The ring dims the rest through its shadow; a step with nothing to point at
    dims the page itself and centres the card. */
 #tour { position: fixed; inset: 0; z-index: 71; }
-#tour.centre { background: rgba(4, 6, 9, .74); }
+#tour.centre { background: var(--scrim-tour); }
 .tour-ring {
   position: fixed; pointer-events: none; border: 2px solid var(--accent); border-radius: 6px;
-  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), .22), 0 0 0 9999px rgba(4, 6, 9, .74);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), .22), 0 0 0 9999px var(--scrim-tour);
   transition: left .2s ease, top .2s ease, width .2s ease, height .2s ease;
 }
 .tour-card {
   position: fixed; width: 380px; max-width: calc(100vw - 16px); padding: 10px 14px 12px; outline: none;
-  background: var(--bg-2); border: 1px solid #3a475a; border-radius: 8px; box-shadow: 0 18px 50px #000b;
+  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 8px; box-shadow: var(--shadow-tour);
 }
 #tour.centre .tour-card { left: 50%; top: 28%; transform: translateX(-50%); width: 440px; }
 .tour-head { display: flex; align-items: center; font-size: 11px; color: var(--fg-dim); }
 .tour-head .icon { font-size: 15px; line-height: 1; }
 .tour-card h2 { margin: 2px 0 6px; font-size: 14px; }
-.tour-text { margin: 0 0 12px; font-size: 12.5px; line-height: 1.55; color: #c2ccd9; }
+.tour-text { margin: 0 0 12px; font-size: 12.5px; line-height: 1.55; color: var(--fg-2); }
 .tour-text code, .tour-offer code { font: 11.5px var(--mono); color: var(--fg); background: var(--bg-3); border-radius: 3px; padding: 0 3px; }
 .tour-actions { display: flex; align-items: center; gap: 8px; }
 .tour-keys { font-size: 11px; color: var(--fg-dim); cursor: default; }
@@ -1978,20 +2165,20 @@ kbd {
 .tour-offer {
   position: fixed; z-index: 66; width: 300px; padding: 10px 12px; font-size: 12.5px;
   background: var(--bg-2); border: 1px solid var(--accent-dim); border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  box-shadow: var(--shadow);
 }
 .tour-offer::before {
   content: ''; position: absolute; top: -6px; left: calc(var(--arrow-x, 280px) - 6px);
   width: 10px; height: 10px; background: var(--bg-2); transform: rotate(45deg);
   border-left: 1px solid var(--accent-dim); border-top: 1px solid var(--accent-dim);
 }
-.tour-offer p { margin: 4px 0 10px; color: #c2ccd9; line-height: 1.5; }
+.tour-offer p { margin: 4px 0 10px; color: var(--fg-2); line-height: 1.5; }
 .tour-offer p.tour-later { margin: 8px 0 0; font-size: 11px; color: var(--fg-dim); }
 
 /* A tab without the launch key can do nothing, and must say so where it is
    seen first: above the top bar, for as long as the tab lives (0052). */
 .keyless {
-  background: #5a1f24; color: #ffd9dc; border-bottom: 1px solid #ef6b6b;
+  background: var(--err-bg); color: var(--err-fg); border-bottom: 1px solid var(--err);
   padding: 8px 14px; font-size: 12.5px; line-height: 1.45; flex: 0 0 auto;
 }
 
@@ -2002,9 +2189,9 @@ kbd {
 #toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); z-index: 80; pointer-events: none; display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .toast {
   background: var(--bg-3); border: 1px solid var(--line); border-left: 3px solid var(--accent);
-  padding: 7px 14px; border-radius: 5px; font-size: 12px; box-shadow: 0 6px 20px #0006;
+  padding: 7px 14px; border-radius: 5px; font-size: 12px; box-shadow: var(--shadow-toast);
 }
-.toast.err { border-left-color: #ef6b6b; }
+.toast.err { border-left-color: var(--err); }
 .toast.ok { border-left-color: var(--ok); }
 .toast.warn { border-left-color: var(--warn); }
 
@@ -2015,7 +2202,7 @@ kbd {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 80;
   width: min(420px, 92vw); background: var(--bg-2); color: var(--fg);
   border: 1px solid var(--line); border-left: 3px solid var(--accent);
-  border-radius: 8px; padding: 14px 16px; box-shadow: 0 18px 60px #0009;
+  border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow-modal);
 }
 .notice-head { display: flex; align-items: flex-start; gap: 10px; }
 .notice-title { flex: 1; font-size: 14px; font-weight: 600; line-height: 1.35; }
@@ -2028,8 +2215,8 @@ kbd {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2b3746; border-radius: 5px; border: 2px solid var(--bg-2); }
-::-webkit-scrollbar-thumb:hover { background: #3b4a5d; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; border: 2px solid var(--bg-2); }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
 /* The role tag above a column box. Its colours are inline, set per role. */
 .rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }
@@ -2041,13 +2228,13 @@ kbd {
    the table, which says how many there are. */
 .cols .c-flag {
   display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 7px; cursor: help;
-  font: 600 10px var(--mono); color: var(--warn); background: rgba(224, 163, 75, .14);
+  font: 600 10px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent);
 }
 
 /* Clone into my schema (0058), tinted with Snowflake's colour so it stands
    out from the Copy and Snowsight buttons in the table under it. */
-.btn.clonebtn { color: var(--tool); border-color: rgba(41, 181, 232, .55); background: rgba(41, 181, 232, .1); }
-.btn.clonebtn:hover { background: rgba(41, 181, 232, .2); }
+.btn.clonebtn { color: var(--tool); border-color: color-mix(in srgb, var(--tool-snowflake) 55%, transparent); background: color-mix(in srgb, var(--tool-snowflake) 10%, transparent); }
+.btn.clonebtn:hover { background: color-mix(in srgb, var(--tool-snowflake) 20%, transparent); }
 .clonepanel .clonehead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 12px; }
 .clonepanel .clonehead > .k { color: var(--fg-dim); width: 36px; flex: 0 0 auto; }
 .clonepanel .clonehead input[type=text] { width: 36ch; }
@@ -2075,8 +2262,8 @@ kbd {
 .buildwarn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .cat-builds > .buildwarn { display: block; width: fit-content; margin: 4px 0; font-size: 12px; }
 .bstate { font: 600 10.5px var(--mono); text-transform: uppercase; letter-spacing: .4px; padding: 0 6px; border-radius: 3px; border: 1px solid var(--line); }
-.bstate[data-status=ok] { color: var(--ok); border-color: rgba(78, 199, 141, .5); }
-.bstate[data-status=error] { color: var(--bad); border-color: rgba(224, 108, 117, .55); }
+.bstate[data-status=ok] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.bstate[data-status=error] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, transparent); }
 .binv { font: 11px var(--mono); color: var(--fg-dim); }
 .buildrun .icon { padding: 0 3px; }
 .buildrun .rmsg { flex: 1 1 100%; }
@@ -2086,7 +2273,7 @@ kbd {
 .buildspk { font-size: 12px; color: var(--fg-dim); }
 .buildstable { border-collapse: collapse; font-size: 12px; }
 .buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: calc(var(--findh) - 12px); background: var(--bg); }
-.buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid rgba(42, 51, 64, .5); }
+.buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid color-mix(in srgb, var(--line-faint) 50%, transparent); }
 .buildstable td.bname { font-family: var(--mono); font-size: 11.5px; }
 .buildstable td[data-verdict=ok] { color: var(--ok); }
 .buildstable td[data-verdict=stale] { color: var(--warn); }
@@ -2103,7 +2290,7 @@ kbd {
 .jbrow > * { min-width: 0; }
 .jbheads { font-size: 12px; font-weight: 600; color: var(--fg-dim); border-bottom: 1px solid var(--line); }
 .jbheads > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jobbuild { border-bottom: 1px solid rgba(42, 51, 64, .5); }
+.jobbuild { border-bottom: 1px solid color-mix(in srgb, var(--line-faint) 50%, transparent); }
 .jobbuild[hidden] { display: none; }
 .jobbuild > summary { cursor: pointer; list-style: none; }
 .jobbuild > summary::-webkit-details-marker { display: none; }

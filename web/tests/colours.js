@@ -3,6 +3,23 @@
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 
+// The constants hold var(--k-view) and its kin, which the page resolves; the
+// checks below do colour math on hex, so these two read :root in app.css and
+// hand back what the page would paint.
+var rootBlock = (function () {
+  var text = read('web/app.css'), at = text.indexOf(':root {');
+  return text.slice(at, text.indexOf('\n}', at));
+}());
+function resolveVar(value) {
+  var m = /^var\((--[\w-]+)\)$/.exec(value);
+  if (!m) return value;
+  var d = new RegExp('(?:^|\\s)' + m[1] + ':\\s*([^;]+);').exec(rootBlock);
+  return d ? resolveVar(d[1].trim()) : value;
+}
+var rawNodeColor = nodeColor, rawRoleColor = roleColor;
+nodeColor = function (n) { return resolveVar(rawNodeColor(n)); };
+roleColor = function (k) { return resolveVar(rawRoleColor(k)); };
+
 function check(label, got, want) {
   print((got === want ? 'PASS  ' : 'FAIL  ') + label + (got === want ? '' : '   expected ' + want + ', got ' + got));
 }
