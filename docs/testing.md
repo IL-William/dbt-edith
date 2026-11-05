@@ -65,6 +65,7 @@ $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert
 $JSC web/tests/selpanel.js    # the Lineage space's panel: what the dock gets back, its card, a line dropped, what an empty box opens on
 $JSC web/tests/spaces.js      # the top bar's tabs: the lit one, a click on it, Code from the settings opened over Reports, Escape
 $JSC web/tests/colwait.js     # a column asked for during a collin run: the canvas waits cleared, the last click is drawn, a failure gives the model back
+$JSC web/tests/working.js     # Edith's mark moving while she works: which requests count, its delay, its fade, two at once
 $JSC web/tests/settings.js    # the settings panel: its sections, what its rail says, where it opens, the gear's dot
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header

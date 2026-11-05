@@ -55,7 +55,7 @@ ok('every rule of the look hangs from body.halloween, or from its own hw- class'
 ok('the pumpkin and the speaker are in the top bar, the speaker out of sight until the look is on',
   /id="look-btn"[^>]*aria-pressed="false"/.test(html) && /id="look-sound"[^>]*class="[^"]*hidden/.test(html));
 ok('the brand button is still one button with its name inside',
-  /<button id="brand" class="brand" type="button" aria-haspopup="menu">[\s\S]*<b>Edith<\/b><\/button>/.test(html));
+  /<button id="brand" class="brand" type="button" aria-haspopup="menu" aria-label="Edith">[\s\S]*<b>Ed<span class="wi">\u0131<i><\/i><\/span>th<\/b><\/button>/.test(html));
 ok('the witch is in the tab row, and takes no click', /id="hw-witch"/.test(html)
   && /\.hw-witch svg \{[^}]*\}/.test(css) && /body\.halloween \.hw-witch \{[^}]*pointer-events: none/.test(css));
 ok('the apparitions\' layer takes no click', /body\.halloween #hw-layer \{[^}]*pointer-events: none/.test(css));

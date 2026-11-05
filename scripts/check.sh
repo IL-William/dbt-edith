@@ -214,8 +214,8 @@ else
   for t in web/tests/*.js; do
     # A harness that throws stops where it stands, prints no FAIL and exits
     # non-zero: without the exit code, the PASS lines before it would vouch
-    # for the whole file. A rejected promise does neither, so tabs.js, the one
-    # harness built on promises, prints its own FAIL.
+    # for the whole file. A rejected promise does neither, so tabs.js and
+    # working.js, the harnesses built on promises, print their own FAIL.
     out=$("$JSC" "$t" 2>&1)
     code=$?
     n=$(printf '%s\n' "$out" | grep -c '^PASS' || true)
