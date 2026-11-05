@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+<title>Edith</title>
+<!-- Edith's mark in its cut for 16 and 32 px: thicker arms and filled boxes than
+     the large mark, which turn to a grey smudge at that size. The tab strip
+     follows the system's light or dark, not the page's theme, so the colours do too. -->
+<style>
+  svg { --accent: #5aa9ff; --line: #8b97a8; }
+  @media (prefers-color-scheme: light) { svg { --accent: #1f6fd1; --line: #555b65; } }
+  .from { fill: var(--accent); }
+  .to { fill: var(--line); }
+  .arm { fill: none; stroke: var(--line); stroke-width: 5; stroke-linecap: round; }
+</style>
+<path class="arm" d="M21,32 C32,32 31,10 42,10"/>
+<path class="arm" d="M21,32 L42,32"/>
+<path class="arm" d="M21,32 C32,32 31,54 42,54"/>
+<rect class="to" x="42" y="4" width="20" height="12" rx="3.5"/>
+<rect class="to" x="42" y="26" width="20" height="12" rx="3.5"/>
+<rect class="to" x="42" y="48" width="20" height="12" rx="3.5"/>
+<rect class="from" x="1" y="21" width="21" height="22" rx="5"/>
+</svg>
