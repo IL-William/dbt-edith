@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""An exported lineage with the Halloween look on, driven in headless Chrome on Jaffle Shop.
+"""An exported lineage with the Halloween theme on, driven in headless Chrome on Jaffle Shop.
 
-The look draws art on the lineage's boxes and cuts their names to the room it
+The theme draws art on the lineage's boxes and cuts their names to the room it
 leaves (0107). Neither may reach a file or a picture pasted in a ticket, which
 `Lineage.snapshot()` draws, so this checks, for each of the three box styles:
 
@@ -10,9 +10,14 @@ leaves (0107). Neither may reach a file or a picture pasted in a ticket, which
   - what the snapshot writes is the same, character for character, as what it
     writes of the same canvas with the look off: no art, no `halloween`, no
     names cut short or squeezed to the look's fonts;
-  - the page keeps its look afterwards, the body's classes and the art;
-  - the look switched off with a box selected leaves no web, art or dewdrop on
-    the canvas, and on again grows one web.
+  - the page keeps its theme afterwards, <html>'s attribute and classes and
+    the art;
+  - the theme switched off with a box selected leaves no web, art or dewdrop on
+    the canvas, and on again grows one web;
+  - the file's colours are the theme on screen's, Night under Halloween (0150):
+    the export's :root line holds the same --bg under Halloween as under Night,
+    which is not the page's own, and under Light it holds Light's, its colour
+    scheme included, with the snapshot still the plain canvas's.
 
 Two models whose names the styles cut, and the plain look does not, are added
 to the copy of Jaffle Shop.
@@ -40,7 +45,8 @@ STYLES = ["tombstone", "coffin", "grimoire"]
 LONG = "int_payments_by_method"
 LONGER = "int_payments_by_method_ab"
 SNAPSHOT = "Lineage.snapshot({ css: 'x' }).svg"
-LOOK_ON = "document.body.classList.contains('halloween')"
+THEME = "document.documentElement.dataset.theme"
+LOOK_ON = f"{THEME} === 'halloween'"
 
 
 class Walk:
@@ -56,10 +62,28 @@ class Walk:
         self.page.until(expr, what, timeout=10)
         time.sleep(0.3)
 
+    def theme(self, name):
+        page = self.page
+        if page.js(THEME) != name:
+            page.js("document.querySelector('#theme-btn').click()")
+            page.until(f"!!document.querySelector('.thememenu [data-key=theme-{name}]')", "the theme menu")
+            page.js(f"document.querySelector('.thememenu [data-key=theme-{name}]').click()")
+        self.settle(f"{THEME} === '{name}'", f"the {name} theme")
+
     def look(self, on):
-        if self.page.js(LOOK_ON) != on:
-            self.page.js("document.querySelector('#look-btn').click()")
-        self.settle(f"{LOOK_ON} === {str(on).lower()}", "the look")
+        self.theme("halloween" if on else "night")
+
+    def exported(self):
+        """The :root line of the file the Export button saves: its --bg and its colour scheme."""
+        page = self.page
+        page.js("window.__saved = null; if (!window.__hooked) { window.__hooked = true; const o = URL.createObjectURL;"
+                " URL.createObjectURL = (b) => { window.__saved = b; return o.call(URL, b); }; }")
+        page.js("document.querySelector('#export-btn').click()")
+        page.until("!!window.__saved", "the export")
+        root = page.js("window.__saved.text().then((t) => (/:root \\{[^}]*\\}/.exec(t) || [''])[0])")
+        bg = root.split("--bg: ")[1].split(";")[0] if "--bg: " in root else ""
+        scheme = root.split("color-scheme: ")[1].split(";")[0] if "color-scheme: " in root else ""
+        return bg, scheme
 
     def style(self, name):
         page = self.page
@@ -71,7 +95,7 @@ class Walk:
         time.sleep(0.4)
         # A tab never toggles: Code is the way back.
         page.js("document.querySelector('#space-code').click()")
-        self.settle(f"document.body.classList.contains('hw-boxes-{name}')", f"the {name}")
+        self.settle(f"document.documentElement.classList.contains('hw-boxes-{name}')", f"the {name}")
 
     def run(self, url):
         page = self.page
@@ -107,9 +131,9 @@ class Walk:
             where = "" if first is None else f"first difference at {first}: {themed[first - 40:first + 60]!r} against {plain[first - 40:first + 60]!r}"
             self.check("the export is the plain canvas's, character for character", themed == plain, where)
             self.check("nothing of the look is in it", all(w not in themed for w in ("hw-art", "hw-on", "halloween", "hw-shape", "hw-bead", "hw-web")))
-            kept = page.js("document.body.classList.contains('halloween')"
-                           f" && document.body.classList.contains('hw-boxes-{name}') && document.querySelectorAll('.hw-art').length > 0")
-            self.check("the page keeps its look after it", kept)
+            kept = page.js(f"{LOOK_ON} && document.documentElement.classList.contains('hw-boxes-{name}')"
+                           " && document.querySelectorAll('.hw-art').length > 0")
+            self.check("the page keeps its theme after it", kept)
 
         print("--- the look off and on again, a box selected ---")
         self.look(False)
@@ -117,6 +141,21 @@ class Walk:
         self.check("with the look off, no web, art or dewdrop is left on the canvas", left == 0, f"{left} left")
         self.look(True)
         self.check("and on again, the selected box grows one web", page.js("document.querySelectorAll('#graph .nd.sel > .hw-web').length") == 1)
+
+        print("--- the colours of the file ---")
+        self.look(False)
+        night_bg, night_scheme = self.exported()
+        self.look(True)
+        halloween_bg, halloween_scheme = self.exported()
+        own = page.js("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()")
+        self.check("an export under Halloween holds Night's --bg", halloween_bg == night_bg and bool(night_bg), f"{halloween_bg!r} against {night_bg!r}")
+        self.check("which is not the page's own", halloween_bg != own, f"both {own!r}")
+        self.check("and Night's colour scheme", halloween_scheme == night_scheme == "dark", f"{halloween_scheme!r}, {night_scheme!r}")
+        self.theme("light")
+        light_bg, light_scheme = self.exported()
+        self.check("under Light it holds Light's --bg and says light", (light_bg, light_scheme) == ("#fbfbfa", "light"), f"{light_bg!r}, {light_scheme!r}")
+        self.check("and the snapshot is still the plain canvas's", page.js(SNAPSHOT) == plain)
+        self.theme("night")
         return self.failed
 
 
@@ -144,7 +183,7 @@ def main():
     if failed:
         print(f"{failed} check(s) failed")
         return 1
-    print("an exported lineage is the same with the look on")
+    print("an exported lineage is the same with the theme on")
     return 0
 
 

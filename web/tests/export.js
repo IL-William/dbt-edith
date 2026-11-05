@@ -12,12 +12,19 @@ var src = read('web/app.js');
 eval(src.slice(src.indexOf('function selectKindCounts'), src.indexOf('async function loadSidecar')));
 eval(src.slice(src.indexOf('function legendEntries'), src.indexOf('function paintLegend')));
 eval(src.slice(src.indexOf('function exportTitle'), src.indexOf('function exportLineage')));
+// exportTheme and the theme names it reads, which sit in the theme's own block of app.js.
+var window = {};
+eval(src.slice(src.indexOf('const THEMES'), src.indexOf('function isNightHour')));
 var css = read('web/app.css');
-// exportDocument asks the page for its variables: here the page is app.css's :root.
+// exportDocument asks the page for its variables: here the page is app.css's Night block, and the page wears
+// Halloween, so the probe the export reads them from is the one that must say Night.
 var appVars = rootVars(css);
-var document = { documentElement: {} };
-var getComputedStyle = function () {
-  return { getPropertyValue: function (name) { return ' ' + (appVars[name.slice(2)] || '') + ' '; } };
+var asks = [];
+var document = { documentElement: { dataset: { theme: 'halloween' } }, body: { append: function () {} },
+  createElement: function () { return { dataset: {}, remove: function () {} }; } };
+var getComputedStyle = function (el) {
+  asks.push(el.dataset.theme);
+  return { getPropertyValue: function (name) { return ' ' + (name === 'color-scheme' ? 'dark' : (appVars[name.slice(2)] || '')) + ' '; } };
 };
 
 function check(label, got, want) {
@@ -336,7 +343,7 @@ ok('and none of the Halloween look comes with them', copied.indexOf('halloween')
 check('every one of them is copied as it is',
   rules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
 function rootVars(text) {
-  var at = text.indexOf(':root {');
+  var at = text.indexOf(':root');
   var block = text.slice(at, text.indexOf('}', at));
   var out = {}, re = /--([\w-]+):\s*([^;]+);/g, m;
   while ((m = re.exec(block))) out[m[1]] = m[2].trim();
@@ -348,7 +355,8 @@ var wrong = used.map(function (u) { return u.slice(6, -1); })
   .filter(function (v, n, a) { return a.indexOf(v) === n && fileVars[v] !== appVars[v]; });
 check('every variable used is defined, with the value app.css gives it', wrong, []);
 check('every name the export asks the page for is one app.css defines',
-  Object.keys(asked).filter(function (n) { return !appVars[n.slice(2)]; }), []);
+  Object.keys(asked).filter(function (n) { return n !== 'color-scheme' && !appVars[n.slice(2)]; }), []);
+check('and it asks for the colour scheme of its theme, which the file\'s :root line holds', [asked['color-scheme'], /^:root \{[^}]*color-scheme: dark;/.test(copied)], ['dark', true]);
 // lineage.js's constants and style strings name variables of their own, which
 // the copied rules never do: a file opened elsewhere has no app.css for them.
 var named = (lin.match(/var\(--[\w-]+\)/g) || []).map(function (u) { return u.slice(4, -1); })
@@ -358,16 +366,28 @@ check('every variable lineage.js names is in the export\'s list', named.filter(f
 ok('and the file defines each of them, from the list it was given', named.every(function (v) { return fileVars[v.slice(2)] === appVars[v.slice(2)]; }));
 check('the :root line carries the values it is given, whatever theme they come from',
   exportCanvasCss({ '--bg': '#ffffff', '--k-view': '#0055aa' }).split('\n')[0], ':root { --bg: #ffffff; --k-view: #0055aa; }');
-ok('they are read from the root element, never the body that carries the Halloween look',
-  /getComputedStyle\(document\.documentElement\)/.test(String(exportCanvasVars)) && !/document\.body/.test(String(exportCanvasVars)));
+// The theme on screen, Night under Halloween (0150): read from a probe that carries it, never from the page itself.
+asks.length = 0;
+exportCanvasVars();
+check('under Halloween the export reads Night', asks, ['night']);
+document.documentElement.dataset.theme = 'light';
+exportCanvasVars();
+document.documentElement.dataset.theme = 'graphite';
+exportCanvasVars();
+check('under Light it reads Light, under Graphite Graphite', asks, ['night', 'light', 'graphite']);
+ok('from a probe it adds to the page and takes away again, never from the page itself',
+  /document\.createElement\('i'\)/.test(String(exportCanvasVars)) && /probe\.remove\(\)/.test(String(exportCanvasVars))
+  && !/getComputedStyle\(document\.documentElement\)/.test(String(exportCanvasVars)));
+document.documentElement.dataset.theme = 'halloween';
 ok('and the page and the image both pass them in',
   /\$\{exportCanvasCss\(exportCanvasVars\(\)\)\}/.test(src) && /css: exportCanvasCss\(exportCanvasVars\(\)\), scale/.test(src));
 
 print('\n--- the Halloween look never reaches the picture (0107) ---');
 var linsrc = read('web/lineage.js');
 var snap = linsrc.slice(linsrc.indexOf('function snapshot(opts)'), linsrc.indexOf('function snapshotOf'));
-ok('the lines are measured as the usual look draws them: the box styles\' classes off the body, and back, with no paint between, and `halloween` kept so no animation starts again',
-  /classList\.remove\(c\)\)/.test(snap) && /try \{ return snapshotOf\(opts\); \} finally \{ was\.forEach\(\(c\) => body\.classList\.add\(c\)\); \}/.test(snap)
+ok('the lines are measured as the usual look draws them: the box styles\' classes off <html>, and back, with no paint between, and `data-theme` kept so no animation starts again',
+  /classList\.remove\(c\)\)/.test(snap) && /try \{ return snapshotOf\(opts\); \} finally \{ was\.forEach\(\(c\) => page\.classList\.add\(c\)\); \}/.test(snap)
+  && /const page = document\.documentElement;/.test(snap)
   && /c\.startsWith\('hw-boxes-'\)/.test(snap) && !/'halloween'/.test(snap) && !/await|setTimeout|requestAnimationFrame/.test(snap));
 var body = linsrc.slice(linsrc.indexOf('function snapshotOf'), linsrc.indexOf('// clear() does not go through apply()'));
 ok('the clone drops the art, the dewdrops and the web, and the class, whose <use> would point at defs the file has not',

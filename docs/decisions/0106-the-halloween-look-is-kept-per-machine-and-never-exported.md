@@ -1,6 +1,6 @@
 # 0106. The Halloween look is kept per machine and never exported
 
-Date: 2026-10-20 · Status: accepted
+Date: 2026-10-20 · Status: accepted, amended by 0150
 
 **Trigger:** read before changing the Halloween look, its switch or its
 sounds, what `look.json` holds, or what an export or Copy image carries of the

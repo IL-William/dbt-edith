@@ -13,6 +13,20 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.2.0 - 2026-11-05
+
+- Pick a theme from the button between `?` and GitHub, or in Settings > Theme:
+  Night, Graphite in greys with colour only where it means something, Light for
+  daylight and screenshots, or Halloween, which replaces the pumpkin; Follow the
+  system switches Light and Night with it (0150).
+- Export and Copy image in the theme on screen, and in Night under Halloween
+  (0150).
+- Remove the Halloween sounds and their speaker (0150).
+- Paint Halloween's lines, hovers and code in the warmer browns of its theme.
+- Tint checkboxes and radios with the theme's accent.
+- Name the lineage's box styles Headstone, Coffin and Spellbook in Settings >
+  Theme.
+
 ## 2.1.1 - 2026-11-05
 
 - Load libraries from Windows' System32 folder only, so a `conpty.dll` left in

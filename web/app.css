@@ -1,4 +1,4 @@
-:root {
+:root, [data-theme="night"] {
   color-scheme: dark;   /* the browser draws its own controls and scrollbars dark */
   --bg: #0f1318;
   --bg-2: #13181f;
@@ -20,19 +20,17 @@
   --ok: #4ec78d;
   --bad: #e06c75;
   /* Every colour below was a literal in a rule, named by what it means: two
-     meanings that share a value are two names, so a theme can part them. The
-     values are Night's, the default look. Nine names of this file's own,
-     --veil, --head-bg, --more-bg, --more-line, --line-faint, --diff-hatch,
-     --diff-gap, --label-bg and --label-fg, take the value of the name they
-     twin, and --fg-quiet equals --fg-2, yet none is folded into it: the
-     Halloween look re-points or holds that name, and a fold would paint these
-     with the Halloween value. They merge when the look becomes a theme.
-     --cur-line, --dots, --node-shadow, --edge-hot, --py and the --ansi-
-     colours are Night's too, and nothing reads them yet. */
+     meanings that share a value are two names, so a theme can part them. This
+     block is Night, the default, in full. Graphite, Light and Halloween follow
+     it: each states the names its design gives it (surfaces, text, the accent,
+     the meaning colours), the rule after this block derives about seventy more
+     from those by color-mix, and a name none of them restates keeps Night's
+     value, as the terminal's does in all three.
+     --cur-line, --dots, --node-shadow, --py and the --ansi- colours are in
+     every block, and nothing reads them yet. */
   /* Surfaces */
   --line-strong: #334052;   /* a menu's or a hovered button's edge */
   --line-soft: #1a2029;     /* the rules between table rows */
-  --line-faint: #232b36;
   --hover: rgba(255, 255, 255, .03);
   --btn-hover: #26303e;
   --icon-hover: #2b3644;
@@ -43,8 +41,6 @@
   --cur-line: rgba(255, 255, 255, .025);
   --dots: rgba(255, 255, 255, .045);
   --hit-bg: #2e2716;
-  --veil: #0f1318;          /* the page colour, as the translucent chips over the canvas */
-  --head-bg: #1a2029;
   --band: #131920;
   --band-line: #1c232d;
   --band-l1: #18263d;
@@ -56,9 +52,6 @@
   --head-l1-line: #3a5885;
   --head-l2-line: #36706b;
   --head-l3-line: #57487f;
-  --label-bg: #13181f;
-  --more-bg: #1a2029;
-  --more-line: #232b36;
   --placeholder: #55606f;
   --sel-line: #fff;
   --scroll-thumb: #2b3746;
@@ -70,6 +63,7 @@
   --node-shadow: none;
   --shadow-sm: 0 6px 18px rgba(0, 0, 0, .45);
   --shadow-xs: 0 4px 12px rgba(0, 0, 0, .35);
+  --shadow-menu: 0 10px 28px rgba(0, 0, 0, .28);   /* the theme menu's, as its board draws it, in every theme */
   --shadow-modal: 0 18px 60px #0009;
   --shadow-palette: 0 18px 60px #0008;
   --shadow-tour: 0 18px 50px #000b;
@@ -79,14 +73,12 @@
   --scrim-tour: rgba(4, 6, 9, .74);
   /* Text */
   --fg-2: #b9c4d2;
-  --fg-quiet: #b9c4d2;
   --fg-path: #aab6c6;       /* a file's name, a path's last part */
   --fg-mute: #7a8696;
   --fg-faint: #4a5668;
   --tone-fg: #10151c;       /* on a filled tone, a warn mark */
   --on-accent: #0b0f15;
   --code-fg: #c9d4e3;
-  --label-fg: #b9c4d2;
   --crumb-fg: #6f7d90;
   --crumb-sep: #5a677a;
   --keylink-line: #5a6779;
@@ -146,7 +138,7 @@
   --tool-airflow: #3dbac6;
   /* Edges */
   --edge: #33425a;
-  --edge-hot: rgba(90, 169, 255, .8);
+  --edge-hot: #5aa9ff;   /* the accent's own value: a lit edge is what it was before the name was read */
   --edge-test: #5d6a7d;
   /* Files */
   --f-sql: #fe6702;
@@ -165,8 +157,6 @@
   --diff-del-bg: #2d1f1f;
   --diff-del-fg: #d88;
   --diff-del-word: #6b3a3a;
-  --diff-hatch: #232b36;
-  --diff-gap: #13181f;
   /* Code */
   --syn-kw: #c4a7f2;
   --syn-str: #a5c98c;
@@ -241,8 +231,416 @@
   --dock-h: 44%;
 }
 
+/* The names a theme does not state, derived from the ones it does, once for
+   the three themes that follow Night. A var() resolves on the element that
+   carries the attribute, so one rule serves each theme, its picker's preview
+   and an export's probe. The proportions were fitted against Night's own
+   values, so the relations Night draws carry over. */
+[data-theme="graphite"], [data-theme="light"], [data-theme="halloween"] {
+  /* The text colour into the page */
+  --btn-hover: color-mix(in srgb, var(--fg) 15%, var(--bg));
+  --icon-hover: color-mix(in srgb, var(--fg) 18%, var(--bg));
+  --state-hover: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --scroll-thumb: color-mix(in srgb, var(--fg) 18%, var(--bg));
+  --scroll-thumb-hover: color-mix(in srgb, var(--fg) 28%, var(--bg));
+  --chip-line: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --pill-line: color-mix(in srgb, var(--fg) 36%, var(--bg));
+  --env-manifest: color-mix(in srgb, var(--fg) 36%, var(--bg));
+  --crumb-sep: color-mix(in srgb, var(--fg) 42%, var(--bg));
+  --keylink-line: color-mix(in srgb, var(--fg) 42%, var(--bg));
+  --edge-test: color-mix(in srgb, var(--fg) 44%, var(--bg));
+  --none: color-mix(in srgb, var(--fg) 54%, var(--bg));
+  --link-line: color-mix(in srgb, var(--fg) 54%, var(--bg));
+  --env-manifest-on-line: color-mix(in srgb, var(--fg) 54%, var(--bg));
+  --fg-faint: color-mix(in srgb, var(--fg) 34%, var(--bg));
+  /* Names that are another one */
+  --fg-path: var(--fg-2);
+  --chip-fg: var(--fg-2);
+  --code-fg: var(--fg);
+  --syn-var: var(--fg);
+  --sel-line: var(--fg);
+  --find-cur-fg: var(--fg);
+  --env-manifest-on: var(--fg);
+  --crumb-fg: var(--fg-dim);
+  --knob: var(--fg-dim);
+  --placeholder: var(--fg-mute);
+  --syn-comment: var(--fg-mute);
+  --on-accent: var(--tone-fg);
+  --knob-on: var(--tone-fg);
+  --err: var(--bad);
+  --diff-add-fg: var(--ok);
+  /* Washes and lines of a meaning, over the page */
+  --bad-bg: color-mix(in srgb, var(--bad) 13%, var(--bg));
+  --bad-wash: color-mix(in srgb, var(--bad) 7%, var(--bg));
+  --bad-line: color-mix(in srgb, var(--bad) 48%, var(--bg));
+  --bad-line-hi: color-mix(in srgb, var(--bad) 71%, var(--bg));
+  --diff-del: color-mix(in srgb, var(--bad) 48%, var(--bg));
+  --diff-del-bg: color-mix(in srgb, var(--bad) 13%, var(--bg));
+  --diff-del-word: color-mix(in srgb, var(--bad) 43%, var(--bg));
+  --err-bg: color-mix(in srgb, var(--bad) 30%, var(--bg));
+  --ok-wash: color-mix(in srgb, var(--ok) 7%, var(--bg));
+  --ok-tint: color-mix(in srgb, var(--ok) 15%, var(--bg));
+  --ok-line: color-mix(in srgb, var(--ok) 59%, var(--bg));
+  --diff-add: color-mix(in srgb, var(--ok) 47%, var(--bg));
+  --diff-add-bg: color-mix(in srgb, var(--ok) 13%, var(--bg));
+  --seed-wash: color-mix(in srgb, var(--seed) 10%, var(--bg));
+  --warn-wash: color-mix(in srgb, var(--warn) 8%, var(--bg));
+  --warn-line: color-mix(in srgb, var(--warn) 20%, var(--bg));
+  --warn-line-hi: color-mix(in srgb, var(--warn) 45%, var(--bg));
+  --dis-wash: color-mix(in srgb, var(--warn) 12%, var(--bg));
+  --dis-line: color-mix(in srgb, var(--warn) 55%, var(--bg));
+  --hit-bg: color-mix(in srgb, var(--warn) 14%, var(--bg));
+  --accent-hover: color-mix(in srgb, var(--accent) 48%, var(--bg));
+  --row-open: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  --conflict-mid-bg: color-mix(in srgb, var(--accent) 15%, var(--bg));
+  --band-l1: color-mix(in srgb, var(--k-view) 15%, var(--bg));
+  --band-l1-line: color-mix(in srgb, var(--k-view) 34%, var(--bg));
+  --head-l1-line: color-mix(in srgb, var(--k-view) 48%, var(--bg));
+  --band-l2: color-mix(in srgb, var(--k-mview) 12%, var(--bg));
+  --band-l2-line: color-mix(in srgb, var(--k-mview) 36%, var(--bg));
+  --head-l2-line: color-mix(in srgb, var(--k-mview) 51%, var(--bg));
+  --band-l3: color-mix(in srgb, var(--k-source) 13%, var(--bg));
+  --band-l3-line: color-mix(in srgb, var(--k-source) 32%, var(--bg));
+  --head-l3-line: color-mix(in srgb, var(--k-source) 45%, var(--bg));
+  --dir-wash: color-mix(in srgb, var(--k-source) 10%, var(--bg));
+  --dir-line: color-mix(in srgb, var(--k-source) 74%, var(--bg));
+  --t-nn-line: color-mix(in srgb, var(--t-nn) 43%, var(--bg));
+  --t-un-line: color-mix(in srgb, var(--t-un) 43%, var(--bg));
+  /* Text of a meaning, over the text colour */
+  --bad-fg: color-mix(in srgb, var(--bad) 58%, var(--fg));
+  --bad-fg-2: color-mix(in srgb, var(--bad) 56%, var(--fg));
+  --bad-soft: color-mix(in srgb, var(--bad) 77%, var(--fg));
+  --diff-del-fg: color-mix(in srgb, var(--bad) 79%, var(--fg));
+  --err-fg: color-mix(in srgb, var(--bad) 8%, var(--fg));
+  --dis-fg: color-mix(in srgb, var(--warn) 81%, var(--fg));
+  --conflict-mid-fg: color-mix(in srgb, var(--accent) 60%, var(--fg));
+  --dir-fg: color-mix(in srgb, var(--k-source) 67%, var(--fg));
+}
+
+/* Graphite: the greys, and colour only where it means something */
+[data-theme="graphite"] {
+  color-scheme: dark;
+  /* Surfaces */
+  --bg: #121212;
+  --bg-2: #181818;
+  --bg-3: #202020;
+  --line: #2a2a2a;
+  --line-soft: #1f1f1f;
+  --line-strong: #3a3a3a;
+  --hover: rgba(255, 255, 255, .035);
+  --select: rgba(255, 255, 255, .08);
+  --cur-line: rgba(255, 255, 255, .03);
+  --focus-bg: #262626;
+  --dots: rgba(255, 255, 255, .04);
+  --band: #161616;
+  --band-line: #222222;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .5);
+  --node-shadow: none;
+  /* Text */
+  --fg: #e6e6e6;
+  --fg-2: #c4c4c4;
+  --fg-dim: #9e9e9e;
+  --fg-mute: #8c8c8c;
+  --tone-fg: #121212;
+  /* Accent */
+  --accent: #c8c8c8;
+  --accent-rgb: 200, 200, 200;
+  --accent-dim: #333333;
+  /* States: a pictogram */
+  --ok: #4ec78d;
+  --warn: #e0a34b;
+  --bad: #e06c75;
+  /* Environments: a lettered tag */
+  --env-dev: #4ec78d;
+  --env-qa: #b98cf0;
+  --env-prod: #e06c75;
+  /* Tools: the coloured name, its glyph, a rule */
+  --tool-dbt: #ff694b;
+  --tool-collin: #e070d0;
+  --tool-jobs: #a78bfa;
+  --tool-snowflake: #29b5e8;
+  --tool-airflow: #3dbac6;
+  /* Edges and the canvas */
+  --edge: #3a3a3a;
+  --edge-hot: #8a8a8a;
+  /* Files */
+  --dbt-yaml: #9b87f5;
+  --py: #ffd43b;
+  /* Code */
+  --syn-kw: #b9a8e8;
+  --syn-fn: #d8c38f;
+  --syn-jj: #c8a07c;
+  --syn-str: #9fc4a0;
+  --syn-p: #8c8c8c;
+  --source: #e0a34b;
+  /* Terminal */
+  --ansi-y: #e5c07b;
+  --ansi-c: #56b6c2;
+  --ansi-g: #98c379;
+  --ansi-r: #e06c75;
+  --ansi-b: #61afef;
+  /* Kept for the rules that still read them */
+  --model: #4da3ff;
+  --seed: #4ec78d;
+  --snapshot: #b98cf0;
+  --test: #7a879a;
+  --exposure: #ef7a9b;
+  --t-nn: #7fd6a6;
+  --t-un: #7fb8d6;
+  /* Node kinds (MAT, KIND, CUSTOM), from lineage.js */
+  --k-view: #4da3ff;
+  --k-table: #4ec78d;
+  --k-incr: #e0a34b;
+  --k-ephemeral: #6f7d90;
+  --k-mview: #3fc7c7;
+  --k-seed: #c3e143;
+  --k-source: #b98cf0;
+  --k-snapshot: #ef7a9b;
+  --k-exposure: #ef7a9b;
+  --k-other: #7a879a;
+  --k-custom: #ff6ec7;
+  /* Tests (TEST), from lineage.js */
+  --t-model: #eceff3;
+  --t-singular: #b2bac6;
+  --t-column: #7a879a;
+  /* Column roles (ROLE), from lineage.js */
+  --r-passthrough: #c3ccd6;
+  --r-rename: #9fb0c4;
+  --r-cast: #c9b08a;
+  --r-aggregate: #cf7a3f;
+  --r-window: #8b46c9;
+  --r-transform: #e05a5a;
+  --r-inferred: #5f6a78;
+  --r-raw: #7fb069;
+  --r-generated: #f5a7f9;
+  --r-filter: #6aa0a8;
+  --r-join-key: #948739;
+  --r-dedup-key: #8677ce;
+  --r-indirect: #8d99a8;
+}
+
+/* Light: for daylight and screenshots. Its meaning colours are darker twins, each at least 3:1 on the page and on the sidebar's --bg-2 */
+[data-theme="light"] {
+  color-scheme: light;
+  /* Surfaces */
+  --bg: #fbfbfa;
+  --bg-2: #f3f2ef;
+  --bg-3: #ffffff;
+  --line: #e2e0da;
+  --line-soft: #ebe9e4;
+  --line-strong: #cfcdc6;
+  --hover: rgba(0, 0, 0, .035);
+  --select: rgba(31, 111, 209, .12);
+  --cur-line: rgba(0, 0, 0, .025);
+  --focus-bg: #f3f8ff;
+  --dots: rgba(0, 0, 0, .07);
+  --band: #f4f3f0;
+  --band-line: #e8e6e0;
+  --shadow: 0 10px 28px rgba(20, 20, 10, .10), 0 1px 2px rgba(0, 0, 0, .05);
+  --node-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+  /* Text */
+  --fg: #1d2026;
+  --fg-2: #353a42;
+  --fg-dim: #555b65;
+  --fg-mute: #656b75;
+  --tone-fg: #ffffff;
+  /* Accent */
+  --accent: #1f6fd1;
+  --accent-rgb: 31, 111, 209;
+  --accent-dim: #d6e5f8;
+  /* States: a pictogram */
+  --ok: #1e8a57;
+  --warn: #b26b00;
+  --bad: #c23b47;
+  /* Environments: a lettered tag */
+  --env-dev: #1e8a57;
+  --env-qa: #7c4fd0;
+  --env-prod: #c23b47;
+  /* Tools: the coloured name, its glyph, a rule */
+  --tool-dbt: #b83a14;
+  --tool-collin: #b8329f;
+  --tool-jobs: #6d4fd6;
+  --tool-snowflake: #0a7299;
+  --tool-airflow: #0d7b85;
+  /* Edges and the canvas */
+  --edge: #c9c7c0;
+  --edge-hot: rgba(31, 111, 209, .6);
+  /* Files */
+  --dbt-yaml: #6d55d9;
+  --py: #9a7400;
+  /* Code */
+  --syn-kw: #7d4cc4;
+  --syn-fn: #985a00;
+  --syn-jj: #b0541c;
+  --syn-str: #2f7d3a;
+  --syn-p: #6b7078;
+  --source: #b26b00;
+  /* Terminal */
+  --ansi-y: #986801;
+  --ansi-c: #0e7f8a;
+  --ansi-g: #3d8a2a;
+  --ansi-r: #c23b47;
+  --ansi-b: #2363c9;
+  /* Kept for the rules that still read them */
+  --model: #1f74d6;
+  --seed: #1e9461;
+  --snapshot: #7c4fd0;
+  --test: #6b7585;
+  --exposure: #c43d6a;
+  --t-nn: #1e7f50;
+  --t-un: #1f67a3;
+  /* Node kinds (MAT, KIND, CUSTOM), from lineage.js */
+  --k-view: #1f74d6;
+  --k-table: #1e9461;
+  --k-incr: #b26b00;
+  --k-ephemeral: #6f7d90;
+  --k-mview: #2d9a9a;
+  --k-seed: #7a9600;
+  --k-source: #a870ec;
+  --k-snapshot: #eb5781;
+  --k-exposure: #eb5781;
+  --k-other: #7a879a;
+  --k-custom: #ff2dad;
+  /* Tests (TEST), from lineage.js */
+  --t-model: #3d4450;
+  --t-singular: #6b7380;
+  --t-column: #848c98;
+  /* Column roles (ROLE), from lineage.js */
+  --r-passthrough: #798da3;
+  --r-rename: #768eab;
+  --r-cast: #aa854f;
+  --r-aggregate: #a5561f;
+  --r-window: #8b46c9;
+  --r-transform: #c03a3a;
+  --r-inferred: #5f6a78;
+  --r-raw: #437a30;
+  --r-generated: #e836f1;
+  --r-filter: #5b949c;
+  --r-join-key: #948739;
+  --r-dedup-key: #8677ce;
+  --r-indirect: #808d9e;
+  /* Night's colour, same hue, darker: 3:1 on the page and the sidebar's --bg-2 for a mark, 4.5:1 on the page for code */
+  --env-ci: #308df0; --env-stg: #079ba3; --env-uat: #d17338; --env-other: #9f8b32; --env-swap: #638dcd;
+  --f-sql: #ec5e00; --f-yml: #b9802a; --f-md: #638fc1; --f-json: #249e6b; --f-csv: #3d9c72; --f-macro: #8f8e62;
+  --syn-num: #bb5637; --syn-atom: #4c71c1; --syn-macro: #4c71c1; --syn-param: #c44a54; --syn-jatom: #925eb2;
+  /* Shadows and scrims, warm and light */
+  --shadow-sm: 0 6px 18px rgba(20, 20, 10, .10);
+  --shadow-xs: 0 4px 12px rgba(20, 20, 10, .08);
+  --shadow-modal: 0 18px 60px rgba(20, 20, 10, .18);
+  --shadow-palette: 0 18px 60px rgba(20, 20, 10, .18);
+  --shadow-tour: 0 18px 50px rgba(20, 20, 10, .22);
+  --shadow-toast: 0 6px 20px rgba(20, 20, 10, .14);
+  --scrim: rgba(20, 20, 10, .28);
+  --scrim-modal: rgba(20, 20, 10, .32);
+  --scrim-tour: rgba(20, 20, 10, .5);
+}
+
+/* Halloween: the browns and the orange, with the art its rules draw */
+[data-theme="halloween"] {
+  color-scheme: dark;
+  /* Surfaces */
+  --bg: #0f0b08;
+  --bg-2: #16100c;
+  --bg-3: #1f1610;
+  --line: #3c2a1a;
+  --line-soft: #22180f;
+  --line-strong: #4a3420;
+  --hover: rgba(255, 200, 150, .04);
+  --select: rgba(255, 122, 26, .14);
+  --cur-line: rgba(255, 200, 150, .03);
+  --focus-bg: #26180c;
+  --dots: rgba(255, 200, 150, .05);
+  --band: #140e0a;
+  --band-line: #2a1d12;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .55);
+  --node-shadow: none;
+  /* Text */
+  --fg: #efe3d3;
+  --fg-2: #d4c5b1;
+  --fg-dim: #ac9a84;
+  --fg-mute: #9a8873;
+  --tone-fg: #0f0b08;
+  /* Accent */
+  --accent: #ff7a1a;
+  --accent-rgb: 255, 122, 26;
+  --accent-dim: #7a3a0e;
+  /* States: a pictogram */
+  --ok: #4ec78d;
+  --warn: #e0a34b;
+  --bad: #e06c75;
+  /* Environments: a lettered tag */
+  --env-dev: #4ec78d;
+  --env-qa: #b98cf0;
+  --env-prod: #e06c75;
+  /* Tools: the coloured name, its glyph, a rule */
+  --tool-dbt: #ff694b;
+  --tool-collin: #e070d0;
+  --tool-jobs: #a78bfa;
+  --tool-snowflake: #29b5e8;
+  --tool-airflow: #3dbac6;
+  /* Edges and the canvas */
+  --edge: #4a3420;
+  --edge-hot: rgba(255, 122, 26, .75);
+  /* Files */
+  --dbt-yaml: #9b87f5;
+  --py: #ffd43b;
+  /* Code */
+  --syn-kw: #d7a6e8;
+  --syn-fn: #f0c27a;
+  --syn-jj: #ff9a4d;
+  --syn-str: #b5cf8a;
+  --syn-p: #ac9a84;
+  --source: #e0a34b;
+  /* Terminal */
+  --ansi-y: #e5c07b;
+  --ansi-c: #56b6c2;
+  --ansi-g: #98c379;
+  --ansi-r: #e06c75;
+  --ansi-b: #61afef;
+  /* Kept for the rules that still read them */
+  --model: #4da3ff;
+  --seed: #4ec78d;
+  --snapshot: #b98cf0;
+  --test: #7a879a;
+  --exposure: #ef7a9b;
+  --t-nn: #7fd6a6;
+  --t-un: #7fb8d6;
+  /* Node kinds (MAT, KIND, CUSTOM), from lineage.js */
+  --k-view: #4da3ff;
+  --k-table: #4ec78d;
+  --k-incr: #e0a34b;
+  --k-ephemeral: #6f7d90;
+  --k-mview: #3fc7c7;
+  --k-seed: #c3e143;
+  --k-source: #b98cf0;
+  --k-snapshot: #ef7a9b;
+  --k-exposure: #ef7a9b;
+  --k-other: #7a879a;
+  --k-custom: #ff6ec7;
+  /* Tests (TEST), from lineage.js */
+  --t-model: #eceff3;
+  --t-singular: #b2bac6;
+  --t-column: #7a879a;
+  /* Column roles (ROLE), from lineage.js */
+  --r-passthrough: #c3ccd6;
+  --r-rename: #9fb0c4;
+  --r-cast: #c9b08a;
+  --r-aggregate: #cf7a3f;
+  --r-window: #8b46c9;
+  --r-transform: #e05a5a;
+  --r-inferred: #5f6a78;
+  --r-raw: #7fb069;
+  --r-generated: #f5a7f9;
+  --r-filter: #6aa0a8;
+  --r-join-key: #948739;
+  --r-dedup-key: #8677ce;
+  --r-indirect: #8d99a8;
+}
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+/* The browser's own controls (a checkbox, a range) take the theme's accent. */
+html { accent-color: var(--accent); }
 body {
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--fg);
@@ -409,7 +807,39 @@ kbd {
 .setcol .setnote { margin: 2px 0 0; }
 .setpick { cursor: default; }
 .setpick:hover { background: none; }
-.segbtn .hwicon { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; }
+/* The Theme section's cards (0150): each preview carries its own data-theme,
+   so it paints itself in that theme's variables, whichever is on screen. */
+.tcards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tcard {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 8px 10px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--bg-2); color: var(--fg); font: 12px var(--ui); text-align: left; cursor: pointer;
+}
+.tcard:hover { border-color: var(--line-strong); }
+.tcard[aria-checked=true] { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .25); }
+.tcard:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tprev { position: relative; display: block; height: 78px; margin-bottom: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); overflow: hidden; }
+.tprev i { position: absolute; display: block; }
+.tprev .tb { left: 0; right: 0; top: 0; height: 12px; background: var(--bg-2); border-bottom: 1px solid var(--line); }
+.tprev .ts { left: 0; top: 12px; bottom: 0; width: 26%; background: var(--bg-2); border-right: 1px solid var(--line); }
+.tprev .tn { width: 30%; height: 14px; border-radius: 3px; background: var(--bg-3); border: 1px solid var(--line); box-shadow: inset 3px 0 0 var(--k); }
+.tprev .tn.v { --k: var(--k-view); left: 34%; top: 26px; }
+.tprev .tn.t { --k: var(--k-table); left: 66%; top: 48px; border-color: var(--accent); }
+.tprev .te { left: 64%; top: 33px; width: 2px; height: 16px; background: var(--line-strong); }
+.tname { font-weight: 500; }
+.tdesc { font-size: 11.5px; color: var(--fg-dim); }
+@media (max-width: 1180px) { .tcards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.newtag {
+  margin-left: 8px; font: 600 9.5px/14px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), .45); border-radius: 4px; padding: 0 4px; vertical-align: 1px;
+}
+.setgroup.dim { opacity: .55; }
+/* A group of the Theme section in a card of its own, as the board draws it. */
+.envmenu.inpanel.setcard { max-width: none; padding: 4px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
+.sghead {
+  display: flex; align-items: baseline; gap: 10px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim);
+}
+.sgnote { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg-mute); }
 .sficon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: var(--tool); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 /* A switch rather than a check mark: on and off have to read at a glance. */
 .envmenu button.switch {
@@ -1304,8 +1734,8 @@ kbd {
 /* Where one side has no matching lines at all. */
 .CodeMirror-merge-spacer {
   background-image: repeating-linear-gradient(135deg,
-    transparent, transparent 4px, var(--diff-hatch) 4px, var(--diff-hatch) 5px);
-  background-color: var(--diff-gap);
+    transparent, transparent 4px, var(--line) 4px, var(--line) 5px);
+  background-color: var(--bg-2);
 }
 
 /* Word-level changes inside a line. The addon ships a faint underline image
@@ -1497,7 +1927,7 @@ kbd {
    dashes, neither the test's dots nor the back edge's long dashes; before
    `.edge.hi`, which keeps the dashes and takes the stroke. */
 .edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }
-.edge.hi { stroke: var(--accent); stroke-width: 2; }
+.edge.hi { stroke: var(--edge-hot); stroke-width: 2; }
 /* An indirect edge lit keeps its role's hue, which the legend says: the dash
    and the width are all `.edge.hi` changes of it (0118). */
 .edge.indirect.hi { stroke: var(--edge-col); }
@@ -1572,7 +2002,7 @@ kbd {
 .folder-heads { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
 .folder-head {
   position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  font: 600 11px var(--ui); color: var(--fg); background: color-mix(in srgb, var(--head-bg) 90.196%, transparent);
+  font: 600 11px var(--ui); color: var(--fg); background: color-mix(in srgb, var(--bg-3) 90.196%, transparent);
   border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px;
 }
 /* A sub-folder's name, on the row below, edged in its band's hue. */
@@ -1582,19 +2012,19 @@ kbd {
 .folder-head.l3 { background: color-mix(in srgb, var(--band-l3) 90.196%, transparent); border-color: var(--head-l3-line); }
 .graph-status {
   position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono);
-  color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 2px 8px; border-radius: 4px;
+  color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 2px 8px; border-radius: 4px;
   pointer-events: none;
 }
 /* Over the status line, which it never covers: a click here is not a pan. */
 .graph-cap {
   position: absolute; right: 10px; bottom: 34px; display: flex; align-items: center; gap: 8px;
-  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 3px 8px; border-radius: 4px;
+  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 3px 8px; border-radius: 4px;
 }
 .graph-cap .btn { flex: none; }
 
 .legend {
   position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px;
-  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--veil) 80%, transparent);
+  font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent);
   padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -1621,7 +2051,7 @@ kbd {
    its text. Above the folder names, and never in the way of a drag. */
 .lineage-top > .lineage-note {
   align-self: center; max-width: 100%; box-sizing: border-box; pointer-events: none;
-  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--veil) 93.333%, transparent);
+  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--bg) 93.333%, transparent);
   border: 1px solid var(--warn-line); border-radius: 4px; padding: 3px 8px;
 }
 
@@ -1643,7 +2073,7 @@ kbd {
 /* Selectors has no glyph: as tall as Copy names and dbt ls, which have one. */
 .select-row .btn { min-height: 21px; }
 #select-input {
-  flex: 1; min-width: 0; background: color-mix(in srgb, var(--veil) 93.333%, transparent); color: var(--fg);
+  flex: 1; min-width: 0; background: color-mix(in srgb, var(--bg) 93.333%, transparent); color: var(--fg);
   border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px;
   font: 11px var(--mono);
 }
@@ -1651,12 +2081,12 @@ kbd {
 #select-input::placeholder { color: var(--placeholder); }
 .sel-sum {
   font: 11px var(--mono); color: var(--fg-dim); white-space: nowrap;
-  background: color-mix(in srgb, var(--veil) 80%, transparent); padding: 2px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 2px 6px; border-radius: 4px;
 }
 /* Amber, not red: a term that matched nothing is worth reading, and the rest
    of the expression was still drawn. */
 .sel-warn {
-  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--veil) 93.333%, transparent);
+  font: 11px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--bg) 93.333%, transparent);
   border: 1px solid var(--warn-line); border-radius: 4px; padding: 3px 8px;
 }
 .sel-warn div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1925,7 +2355,7 @@ kbd {
 .grep-hit { display: flex; gap: 8px; padding: 1px 10px 1px 18px; cursor: pointer; font: 11px var(--mono); }
 .grep-hit:hover { background: var(--bg-3); }
 .grep-hit .ln { color: var(--fg-dim); min-width: 32px; text-align: right; flex: 0 0 auto; }
-.grep-hit .tx { color: var(--fg-quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grep-hit .tx { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grep-hit mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
 .grep-more { padding: 1px 10px 4px 18px; font: 10.5px var(--mono); color: var(--fg-dim); }
 
@@ -2116,7 +2546,7 @@ kbd {
 .histfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; }
 .envmenu.histmenu { min-width: 260px; }
 .cols .c-type { font-family: var(--mono); color: var(--source); white-space: nowrap; }
-.cols .c-desc { color: var(--fg-quiet); }
+.cols .c-desc { color: var(--fg-2); }
 .cols .c-undeclared .c-name { color: var(--fg-dim); font-style: italic; }
 .nul { color: var(--fg-faint); }
 .testchip {
@@ -2161,7 +2591,25 @@ kbd {
 /* ------------------------------------------------------------- shortcuts -- */
 .keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
 .keysbtn:hover { color: var(--fg); }
-#github-btn { display: inline-flex; align-items: center; justify-content: center; }
+#github-btn, #theme-btn { display: inline-flex; align-items: center; justify-content: center; }
+/* The theme menu (0150), under its button: one row a theme, a swatch painted
+   in that theme's own variables (it carries its data-theme). */
+.envmenu.thememenu { width: 214px; min-width: 0; background: var(--bg-3); border-radius: 8px; box-shadow: var(--shadow-menu); }
+.thememenu button { gap: 10px; height: 32px; padding: 0 8px; border-radius: 5px; font-size: 13px; }
+.thememenu button:hover, .thememenu button:focus { background: var(--hover); }
+.thememenu button.on .lbl { font-weight: 400; }
+.thememenu .menuhead { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.thememenu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tm-check { width: 14px; height: 14px; flex: 0 0 auto; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--accent); visibility: hidden; }
+.thememenu button[aria-checked=true] .tm-check { visibility: visible; }
+.tm-sw {
+  display: flex; align-items: center; gap: 3px; flex: 0 0 auto; width: 30px; height: 18px; padding: 0 4px;
+  border-radius: 4px; background: var(--bg); border: 1px solid var(--line-strong);
+}
+.tm-sw i { display: block; width: 3px; height: 10px; border-radius: 1px; flex: 0 0 auto; }
+.tm-sw i.v { background: var(--k-view); }
+.tm-sw i.t { background: var(--k-table); }
+.tm-sw b { display: block; flex: 1 1 0; height: 2px; border-radius: 1px; background: var(--fg-dim); }
 .ghmenu .ghglyph { display: inline-flex; color: var(--fg-dim); }
 .ghmenu a.menulink:hover .ghglyph, .ghmenu a.menulink:focus .ghglyph { color: var(--fg); }
 /* Under the labels, past the 14px glyph and its gap. */
@@ -2338,7 +2786,7 @@ kbd {
 .buildspk { font-size: 12px; color: var(--fg-dim); }
 .buildstable { border-collapse: collapse; font-size: 12px; }
 .buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: calc(var(--findh) - 12px); background: var(--bg); }
-.buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid color-mix(in srgb, var(--line-faint) 50%, transparent); }
+.buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
 .buildstable td.bname { font-family: var(--mono); font-size: 11.5px; }
 .buildstable td[data-verdict=ok] { color: var(--ok); }
 .buildstable td[data-verdict=stale] { color: var(--warn); }
@@ -2355,7 +2803,7 @@ kbd {
 .jbrow > * { min-width: 0; }
 .jbheads { font-size: 12px; font-weight: 600; color: var(--fg-dim); border-bottom: 1px solid var(--line); }
 .jbheads > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jobbuild { border-bottom: 1px solid color-mix(in srgb, var(--line-faint) 50%, transparent); }
+.jobbuild { border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
 .jobbuild[hidden] { display: none; }
 .jobbuild > summary { cursor: pointer; list-style: none; }
 .jobbuild > summary::-webkit-details-marker { display: none; }
@@ -2402,49 +2850,19 @@ kbd {
 .jbfine { margin: 2px 0 4px 16px; }
 
 /* ------------------------------------------------------ halloween look -- */
-/* Everything of the Halloween look lives under body.halloween (0106), so
-   exportCanvasCss() and the snapshot, which never carry that class, can never
-   pick any of it up. Colours that mean something, the node kinds, the
-   environment tones, warn, ok and bad, are left alone. */
-.lookbtn { display: inline-flex; align-items: center; justify-content: center; }
-.lookbtn .mute { display: none; }
-.lookbtn[aria-pressed=false] .waves { display: none; }
-.lookbtn[aria-pressed=false] .mute { display: inline; }
-body.halloween .lookbtn[aria-pressed=true] { color: var(--accent); }
-/* The pumpkin: dull while the look is off, carved and lit with an amber halo while it is on. */
-#look-btn .pk-on, #look-btn[aria-pressed=true] .pk-off { display: none; }
-#look-btn[aria-pressed=true] .pk-on { display: block; }
-body.halloween #look-btn[aria-pressed=true] { border-color: #a04e10; box-shadow: 0 0 9px 1px rgba(255, 122, 26, .42), inset 0 0 6px rgba(255, 160, 40, .22); }
-body.halloween {
-  --bg: #0f0b08; --bg-2: #16100c; --bg-3: #1f1610; --line: #3c2a1a;
-  --fg: #efe3d3; --fg-dim: #ac9a84;
-  --accent: #ff7a1a; --accent-rgb: 255, 122, 26; --accent-dim: #7a3a0e;
-}
-/* The Halloween look keeps the colours it was drawn in until it becomes a
-   theme: the rule above re-points only what it always did, and the default
-   look's new values (Night) would reach everything else, so each one that
-   changed in :root is held at its old value here. */
-body.halloween {
-  color-scheme: normal;
-  --line-soft: #1f2733; --line-strong: #3a475a; --line-faint: #2a3340;
-  --hover: #1a212c; --select: #2b3a4d; --focus-bg: #1b2a3d;
-  --band: #161b24; --band-line: #1f2632;
-  --shadow: 0 10px 28px rgba(0, 0, 0, .5);
-  --fg-2: #c2ccd9; --fg-mute: #5d6b7d;
-  --tool-airflow: #3fc1c9; --edge: #33445c; --r-transform: #d94f4f;
-  --syn-kw: #c792ea; --syn-fn: #ffcb6b; --syn-jj: #ff9f6b; --syn-str: #c3e88d; --syn-p: #89ddff;
-  --veil: #12161d; --head-bg: #1d2430; --more-bg: #1d2430; --more-line: #2a3340;
-  --diff-hatch: #2a3340; --diff-gap: #171c25; --label-bg: #131922; --label-fg: #c9d4e3;
-}
-body.halloween ::-webkit-scrollbar-thumb { background: #4a3420; }
-body.halloween ::-webkit-scrollbar-thumb:hover { background: #6a4a2c; }
-body.halloween .legend, body.halloween .graph-status, body.halloween .graph-cap { background: #0f0b08cc; }
+/* What the Halloween theme draws, as opposed to its colours, which are its
+   block at the top, hangs from html[data-theme="halloween"] (0106, 0150). Its
+   literal colours are the art's drawing colours (stone, gold, wood, the
+   rings, the silk), like index.html's gradients: a box style is a picture,
+   not a set of colours a theme re-points. exportCanvasCss() and the
+   snapshot never carry any of it. Colours that mean something, the node
+   kinds, the environment tones, warn, ok and bad, are left alone. */
 
 /* A ghost behind Edith's E: the name is painted over it (a positioned box after it in the markup), so the letter keeps its full colour inside a pale halo, lit while a newer release is out, and after
    dark (hw-night, from the browser's own clock). */
 .hw-ghost { display: none; }
 /* 23px is the mark and the gap after it, so she still sits behind the E. */
-body.halloween .hw-ghost {
+html[data-theme="halloween"] .hw-ghost {
   display: block; position: absolute; left: 23px; top: 2px; width: 16px; height: 18px; opacity: .5;
   pointer-events: none; transform: rotate(-8deg);
   transition: transform .6s ease-out .25s, opacity .6s ease-out .25s;
@@ -2453,23 +2871,23 @@ body.halloween .hw-ghost {
    Updates section's copy of that menu is not), the ghost floats off and shows
    the E, and drifts back a moment after the pointer and the menu are gone, the
    delay keeping it from flickering as the pointer crosses to the menu. */
-body.halloween .brand:hover .hw-ghost,
-body.halloween .brand:focus-visible .hw-ghost {
+html[data-theme="halloween"] .brand:hover .hw-ghost,
+html[data-theme="halloween"] .brand:focus-visible .hw-ghost {
   opacity: 0; transform: translate(5px, -7px) rotate(16deg); transition: transform .45s ease-out, opacity .45s ease-out;
 }
 /* In a rule of its own: a browser without :has() drops the whole rule it is in. */
-body.halloween:has(> .updmenu) .brand .hw-ghost {
+html[data-theme="halloween"]:has(> body > .updmenu) .brand .hw-ghost {
   opacity: 0; transform: translate(5px, -7px) rotate(16deg); transition: transform .45s ease-out, opacity .45s ease-out;
 }
 .hw-ghost svg { display: block; width: 100%; height: 100%; overflow: visible; }
 /* Two drawings of her: the pale one, and the one lit from inside that takes
    her place while the glow is on. */
 .hw-ghost .warm { display: none; }
-body.halloween .brand b { position: relative; }
-body.halloween .brand.newer .hw-ghost .calm,
-body.halloween.hw-night .hw-ghost .calm { display: none; }
-body.halloween .brand.newer .hw-ghost .warm,
-body.halloween.hw-night .hw-ghost .warm { display: block; animation: hw-glow 2.4s ease-in-out infinite; }
+html[data-theme="halloween"] .brand b { position: relative; }
+html[data-theme="halloween"] .brand.newer .hw-ghost .calm,
+html[data-theme="halloween"].hw-night .hw-ghost .calm { display: none; }
+html[data-theme="halloween"] .brand.newer .hw-ghost .warm,
+html[data-theme="halloween"].hw-night .hw-ghost .warm { display: block; animation: hw-glow 2.4s ease-in-out infinite; }
 @keyframes hw-glow {
   0%, 100% { filter: drop-shadow(0 0 1px rgba(255, 200, 120, .4)); }
   50% { filter: drop-shadow(0 0 5px rgba(255, 170, 60, .95)); }
@@ -2480,8 +2898,8 @@ body.halloween.hw-night .hw-ghost .warm { display: block; animation: hw-glow 2.4
    came from. */
 .hw-witch { display: none; }
 /* A strip over the tabs for her to fly in, so she covers none of the editor above. */
-body.halloween #dock > .tabs { position: relative; height: 44px; padding-top: 14px; }
-body.halloween .hw-witch {
+html[data-theme="halloween"] #dock > .tabs { position: relative; height: 44px; padding-top: 14px; }
+html[data-theme="halloween"] .hw-witch {
   display: block; position: absolute; left: 0; top: 0; width: 31px; height: 23px; z-index: 6;
   pointer-events: none; transition: transform .6s cubic-bezier(.4, .1, .3, 1);
 }
@@ -2497,15 +2915,15 @@ body.halloween .hw-witch {
 /* The switches' knobs become zombies, facing the side they walk to. One
    sprite sheet of three poses (stand and two strides, 20px apart, a pixel of
    margin round each); app.js steps the sheet while the knob walks. */
-body.halloween .envmenu button.switch .knob {
+html[data-theme="halloween"] .envmenu button.switch .knob {
   top: -2px; left: -1px; width: 19px; height: 20px; border-radius: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 60'%3E%3Cdefs%3E%3ClinearGradient id='gZSkin' x1='0' x2='0' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%23a6d77f'/%3E%3Cstop offset='1' stop-color='%236fa650'/%3E%3C/linearGradient%3E%3ClinearGradient id='gZShirt' x1='0' x2='0' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%23d4702f'/%3E%3Cstop offset='1' stop-color='%23a9481c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(1,1)'%3E%3Cpath d='M10 9.6L16.2 8.2' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M5.8 14.6L5.4 17.1M9.2 14.6L9.6 17.1' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 17.4h2.4M8.8 17.4h2.6' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.4 9.6H11.6L12 12.6L11.2 13.4 10.4 12.6 9.4 14.8 8.2 13 7 14.9 5.8 12.9 4.8 14 4.2 12.6Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.4 10.3L16.4 10.7' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(2 7.6 5)'%3E%3Crect x='3' y='1.4' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M2.8 3.6L3.6 1.4 5 2.6 6.2 .5 7.6 2.2 9 .4 10 2.2 11.8 1.2 12.3 3.4C10 2 5 2 2.8 3.6Z' fill='%232c2620'/%3E%3Ccircle cx='9.1' cy='5.2' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.7' cy='5.3' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.3' cy='5.7' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.4 4.2Q5.3 3.7 6.2 4.2' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.6 8H10.6' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.6 7.4V8.6M7.2 7.4V8.6M8.8 7.4V8.6' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.4 2.6l1 1.3M11.4 2.6l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(1,21)'%3E%3Cpath d='M10 9.4L16 6.8' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M6.2 14.4L3.6 16.6' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M9.4 14.4L11.8 16.9' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M2.4 17.1h2.3M11 17.6h2.7' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 9.3H11.8L12.2 12.4L11.4 13.2 10.6 12.4 9.6 14.6 8.4 12.8 7.2 14.7 6 12.7 5 13.8 4.4 12.4Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.6 10.1L16.4 9.6' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(5 7.8 5)'%3E%3Crect x='3.2' y='1.2' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M3 3.4L3.8 1.2 5.2 2.4 6.4 .3 7.8 2 9.2 .2 10.2 2 12 1 12.5 3.2C10.2 1.8 5.2 1.8 3 3.4Z' fill='%232c2620'/%3E%3Ccircle cx='9.3' cy='5' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.9' cy='5.1' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.5' cy='5.5' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.6 4Q5.5 3.5 6.4 4' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.8 7.8H10.8' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.8 7.2V8.4M7.4 7.2V8.4M9 7.2V8.4' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.6 2.4l1 1.3M11.6 2.4l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(1,41)'%3E%3Cpath d='M10 9.9L16.3 9.8' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M6 14.6L7.4 17.2' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M9.4 14.6L8.8 17.2' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M6.2 17.6h2.5M8 17.6h2.4' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 9.9H11.8L12.2 12.9L11.4 13.7 10.6 12.9 9.6 15 8.4 13.2 7.2 15.1 6 13.1 5 14.2 4.4 12.8Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.6 10.7L16.4 11.5' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(-1 7.8 5)'%3E%3Crect x='3.2' y='1.6' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M3 3.8L3.8 1.6 5.2 2.8 6.4 .7 7.8 2.4 9.2 .6 10.2 2.4 12 1.4 12.5 3.6C10.2 2.2 5.2 2.2 3 3.8Z' fill='%232c2620'/%3E%3Ccircle cx='9.3' cy='5.4' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.9' cy='5.5' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.5' cy='5.9' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.6 4.4Q5.5 3.9 6.4 4.4' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.8 8.2H10.8' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.8 7.6V8.8M7.4 7.6V8.8M9 7.6V8.8' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.6 2.8l1 1.3M11.6 2.8l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 0 0 / 19px 60px no-repeat;
 }
 /* A switch outside a tool's section (the Theme one) has no --tool to fill its track with. */
-body.halloween .envmenu button.switch[aria-checked=true] { background: var(--tool, #6f7f93); border-color: var(--tool, #6f7f93); }
-body.halloween .envmenu button.switch[aria-checked=true] .knob { transform: translateX(15px) scaleX(-1); background-color: transparent; }
+html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] { background: var(--tool, #6f7f93); border-color: var(--tool, #6f7f93); }
+html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob { transform: translateX(15px) scaleX(-1); background-color: transparent; }
 
 /* Lineage boxes, in one of three styles the Theme section picks, a class of
-   the body: hw-boxes-tombstone, hw-boxes-coffin, hw-boxes-grimoire. Each is
+   <html>: hw-boxes-tombstone, hw-boxes-coffin, hw-boxes-grimoire. Each is
    the box's rect and its kindbar, drawn by one gradient (#hw-stone, #hw-wood,
    #hw-leather: defs in index.html, outside the canvas, so neither an export
    nor Copy image carries them), a clip-path for the silhouette, and CSS
@@ -2517,31 +2935,31 @@ body.halloween .envmenu button.switch[aria-checked=true] .knob { transform: tran
    The model's box is 200 by 48 and a column's 180 by 40, which
    .nd[data-id*="::"] tells apart. A hover only moves the rect and the kindbar,
    never .nd, whose transform is the box's place. */
-body.halloween .nd:not(.rider):hover rect.box { stroke: none; }
-body.halloween.hw-boxes-tombstone #graph .nd:not(.rider) rect.box { fill: url(#hw-stone); stroke: #8d9298; stroke-width: 1.6; rx: 0; clip-path: inset(0 round 16px 16px 0 0); }
-body.halloween.hw-boxes-coffin #graph .nd:not(.rider) rect.box { fill: url(#hw-wood); stroke: none; rx: 0; clip-path: polygon(0 30%, 16% 0, 74% 10%, 100% 30%, 100% 70%, 74% 90%, 16% 100%, 0 70%); }
-body.halloween.hw-boxes-grimoire #graph .nd:not(.rider) rect.box { fill: url(#hw-leather); stroke: #d4af37; stroke-width: 1.4; rx: 3; }
-body.halloween.hw-boxes-tombstone #graph .nd:where(.focus, .sel, .hit, .hitcur, .off):not(.rider) rect.box { clip-path: none; rx: 16; stroke: #8d9298; stroke-width: 1.4; }
-body.halloween.hw-boxes-coffin #graph .nd:where(.focus, .sel, .hit, .hitcur, .off):not(.rider) rect.box { clip-path: none; rx: 8; stroke: #a97a4a; stroke-width: 1.4; }
+html[data-theme="halloween"] .nd:not(.rider):hover rect.box { stroke: none; }
+html[data-theme="halloween"].hw-boxes-tombstone #graph .nd:not(.rider) rect.box { fill: url(#hw-stone); stroke: #8d9298; stroke-width: 1.6; rx: 0; clip-path: inset(0 round 16px 16px 0 0); }
+html[data-theme="halloween"].hw-boxes-coffin #graph .nd:not(.rider) rect.box { fill: url(#hw-wood); stroke: none; rx: 0; clip-path: polygon(0 30%, 16% 0, 74% 10%, 100% 30%, 100% 70%, 74% 90%, 16% 100%, 0 70%); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph .nd:not(.rider) rect.box { fill: url(#hw-leather); stroke: #d4af37; stroke-width: 1.4; rx: 3; }
+html[data-theme="halloween"].hw-boxes-tombstone #graph .nd:where(.focus, .sel, .hit, .hitcur, .off):not(.rider) rect.box { clip-path: none; rx: 16; stroke: #8d9298; stroke-width: 1.4; }
+html[data-theme="halloween"].hw-boxes-coffin #graph .nd:where(.focus, .sel, .hit, .hitcur, .off):not(.rider) rect.box { clip-path: none; rx: 8; stroke: #a97a4a; stroke-width: 1.4; }
 /* The states, in colours that stand out from stone, wood and leather and from the dark canvas. */
-body.halloween #graph .nd.focus:not(.rider) rect.box { stroke: #ff6a2b; stroke-width: 2.5; }
-body.halloween #graph .nd.sel:not(.rider) rect.box { stroke: #a78bfa; stroke-width: 2.5; }
-body.halloween #graph .nd.hit:not(.hitcur):not(.rider) rect.box { stroke: #2dd4bf; stroke-width: 2; }
-body.halloween #graph .nd.hitcur:not(.rider) rect.box { stroke: #fbbf24; stroke-width: 3.5; }
-body.halloween .nd.off:not(.rider) .t1, body.halloween .nd.off:not(.rider) .t2 { opacity: 1; }
-body.halloween .nd.ctx:not(.rider) { opacity: .8; }
-body.halloween .nd.ctx:not(.rider):hover { opacity: .9; }
+html[data-theme="halloween"] #graph .nd.focus:not(.rider) rect.box { stroke: #ff6a2b; stroke-width: 2.5; }
+html[data-theme="halloween"] #graph .nd.sel:not(.rider) rect.box { stroke: #a78bfa; stroke-width: 2.5; }
+html[data-theme="halloween"] #graph .nd.hit:not(.hitcur):not(.rider) rect.box { stroke: #2dd4bf; stroke-width: 2; }
+html[data-theme="halloween"] #graph .nd.hitcur:not(.rider) rect.box { stroke: #fbbf24; stroke-width: 3.5; }
+html[data-theme="halloween"] .nd.off:not(.rider) .t1, html[data-theme="halloween"] .nd.off:not(.rider) .t2 { opacity: 1; }
+html[data-theme="halloween"] .nd.ctx:not(.rider) { opacity: .8; }
+html[data-theme="halloween"] .nd.ctx:not(.rider):hover { opacity: .9; }
 
 /* Tombstone: grey stone with an arched top, the kind as moss along the base. */
-body.halloween.hw-boxes-tombstone .nd:not(.rider) .t1 { fill: #e4e6e8; }
-body.halloween.hw-boxes-tombstone .nd:not(.rider) .t2 { fill: #d3d6d9; }
-body.halloween.hw-boxes-tombstone .nd:not(.rider) .t2 .struck { opacity: .9; }
-body.halloween.hw-boxes-tombstone .nd:not(.rider) .kindbar { x: 5px; y: 42px; width: 190px; height: 6px; rx: 1.5; }
-body.halloween.hw-boxes-tombstone .nd[data-id*="::"]:not(.rider) .kindbar { y: 37px; width: 170px; height: 3px; }
-body.halloween.hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 172px; }
-body.halloween.hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off)[data-id*="::"]:not(.rider) .kindbar { width: 152px; }
-body.halloween.hw-boxes-tombstone .nd:not(.rider):hover rect.box,
-body.halloween.hw-boxes-tombstone .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t1 { fill: #e4e6e8; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 { fill: #d3d6d9; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 .struck { opacity: .9; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .kindbar { x: 5px; y: 42px; width: 190px; height: 6px; rx: 1.5; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd[data-id*="::"]:not(.rider) .kindbar { y: 37px; width: 170px; height: 3px; }
+html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 172px; }
+html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off)[data-id*="::"]:not(.rider) .kindbar { width: 152px; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover rect.box,
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
 /* As if something pushed from underneath. */
 @keyframes hw-shudder {
   0%, 100% { transform: translateY(0) rotate(0); }
@@ -2551,13 +2969,13 @@ body.halloween.hw-boxes-tombstone .nd:not(.rider):hover .kindbar { transform-box
 }
 
 /* Coffin: dark wood, chamfered at both ends, a gold plate holding the kind. */
-body.halloween.hw-boxes-coffin .nd:not(.rider) .t1 { fill: #f3e2c4; font-size: 10.5px; transform: translateX(20px); }
-body.halloween.hw-boxes-coffin .nd:not(.rider) .t2 { fill: #dcc399; font-size: 9px; transform: translateX(20px); }
-body.halloween.hw-boxes-coffin .nd:not(.rider) .t2 .struck { opacity: .9; }
-body.halloween.hw-boxes-coffin .nd:not(.rider) .kindbar { x: 12px; y: 12px; width: 12px; height: 24px; rx: 2; stroke: #d4af37; stroke-width: 1.6; }
-body.halloween.hw-boxes-coffin .nd[data-id*="::"]:not(.rider) .kindbar { y: 10px; height: 20px; }
-body.halloween.hw-boxes-coffin .nd:not(.rider):hover rect.box,
-body.halloween.hw-boxes-coffin .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t1 { fill: #f3e2c4; font-size: 10.5px; transform: translateX(20px); }
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t2 { fill: #dcc399; font-size: 9px; transform: translateX(20px); }
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t2 .struck { opacity: .9; }
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .kindbar { x: 12px; y: 12px; width: 12px; height: 24px; rx: 2; stroke: #d4af37; stroke-width: 1.6; }
+html[data-theme="halloween"].hw-boxes-coffin .nd[data-id*="::"]:not(.rider) .kindbar { y: 10px; height: 20px; }
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider):hover rect.box,
+html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }
 /* A shake, the lid lifting a little. */
 @keyframes hw-shake {
   0%, 100% { transform: translate(0, 0) rotate(0); }
@@ -2568,12 +2986,12 @@ body.halloween.hw-boxes-coffin .nd:not(.rider):hover .kindbar { transform-box: f
 
 /* Grimoire: purple leather with a gold border, a banded spine at the left,
    the pages at the right, and the kind as the ribbon on the spine. */
-body.halloween.hw-boxes-grimoire .nd:not(.rider) .t1 { fill: #f1e3c0; font-size: 10.5px; transform: translateX(20px); }
-body.halloween.hw-boxes-grimoire .nd:not(.rider) .t2 { fill: #dcc895; font-size: 9px; transform: translateX(20px); }
-body.halloween.hw-boxes-grimoire .nd:not(.rider) .t2 .struck { opacity: .9; }
-body.halloween.hw-boxes-grimoire .nd:not(.rider) .kindbar { x: 8px; width: 7px; rx: 1.5; stroke: #d4af37; stroke-width: .9; }
-body.halloween.hw-boxes-grimoire .nd:not(.rider):hover rect.box,
-body.halloween.hw-boxes-grimoire .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t1 { fill: #f1e3c0; font-size: 10.5px; transform: translateX(20px); }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 { fill: #dcc895; font-size: 9px; transform: translateX(20px); }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 .struck { opacity: .9; }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .kindbar { x: 8px; width: 7px; rx: 1.5; stroke: #d4af37; stroke-width: .9; }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover rect.box,
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
 /* The cover lifting from its spine. */
 @keyframes hw-lift {
   0%, 100% { transform: translateY(0) rotate(0); }
@@ -2588,86 +3006,86 @@ body.halloween.hw-boxes-grimoire .nd:not(.rider):hover .kindbar { transform-box:
    silhouette, so it follows the shape. The plain look above is what a bigger
    selection gets: it has no art to carry a ring. The art takes no click; the
    names sit at one x per skin and mode, whatever the state. */
-body.halloween .hw-art { pointer-events: none; }
-body.halloween .hw-art + .kindbar { display: none; }
-body.halloween:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) rect.box {
+html[data-theme="halloween"] .hw-art { pointer-events: none; }
+html[data-theme="halloween"] .hw-art + .kindbar { display: none; }
+html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) rect.box {
   fill: transparent; stroke: none; clip-path: none; animation: none; rx: 0;
 }
-body.halloween.hw-boxes-tombstone .hw-shape { fill: url(#hw-a-stone); stroke: #8d9298; stroke-width: 1.6; }
-body.halloween.hw-boxes-tombstone .hw-trim { fill: none; stroke: #2c2f33; stroke-width: .9; opacity: .75; }
-body.halloween.hw-boxes-coffin .hw-shape { fill: url(#hw-a-wood); stroke: #1a0e06; stroke-width: 1.6; stroke-linejoin: round; }
-body.halloween.hw-boxes-coffin .hw-trim { fill: none; stroke: #8a5a38; stroke-width: 1; stroke-linejoin: round; }
-body.halloween.hw-boxes-grimoire .hw-shape { fill: url(#hw-a-leather); stroke: #150a1c; stroke-width: 1.4; }
-body.halloween.hw-boxes-grimoire .hw-trim { fill: none; stroke: #d4af37; stroke-width: .8; }
+html[data-theme="halloween"].hw-boxes-tombstone .hw-shape { fill: url(#hw-a-stone); stroke: #8d9298; stroke-width: 1.6; }
+html[data-theme="halloween"].hw-boxes-tombstone .hw-trim { fill: none; stroke: #2c2f33; stroke-width: .9; opacity: .75; }
+html[data-theme="halloween"].hw-boxes-coffin .hw-shape { fill: url(#hw-a-wood); stroke: #1a0e06; stroke-width: 1.6; stroke-linejoin: round; }
+html[data-theme="halloween"].hw-boxes-coffin .hw-trim { fill: none; stroke: #8a5a38; stroke-width: 1; stroke-linejoin: round; }
+html[data-theme="halloween"].hw-boxes-grimoire .hw-shape { fill: url(#hw-a-leather); stroke: #150a1c; stroke-width: 1.4; }
+html[data-theme="halloween"].hw-boxes-grimoire .hw-trim { fill: none; stroke: #d4af37; stroke-width: .8; }
 /* The states, on the silhouette. */
-body.halloween #graph .nd.off .hw-shape { stroke-dasharray: 3 3; }
-body.halloween #graph .nd.focus .hw-shape { stroke: #ff6a2b; stroke-width: 2.5; }
-body.halloween #graph .nd.sel .hw-shape { stroke: #a78bfa; stroke-width: 2.5; }
-body.halloween #graph .nd.hit:not(.hitcur) .hw-shape { stroke: #2dd4bf; stroke-width: 2; }
-body.halloween #graph .nd.hitcur .hw-shape { stroke: #fbbf24; stroke-width: 3.5; }
+html[data-theme="halloween"] #graph .nd.off .hw-shape { stroke-dasharray: 3 3; }
+html[data-theme="halloween"] #graph .nd.focus .hw-shape { stroke: #ff6a2b; stroke-width: 2.5; }
+html[data-theme="halloween"] #graph .nd.sel .hw-shape { stroke: #a78bfa; stroke-width: 2.5; }
+html[data-theme="halloween"] #graph .nd.hit:not(.hitcur) .hw-shape { stroke: #2dd4bf; stroke-width: 2; }
+html[data-theme="halloween"] #graph .nd.hitcur .hw-shape { stroke: #fbbf24; stroke-width: 3.5; }
 /* Engraved, serif: a dark edge round the light name, standing in for the mockup's shadow copy. */
-body.halloween:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) .t1 {
+html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) .t1 {
   font: 700 11px Georgia, "Palatino Linotype", serif; paint-order: stroke; stroke: rgba(0, 0, 0, .55); stroke-width: .7px; stroke-linejoin: round;
 }
-body.halloween:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) .t2 {
+html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) .t2 {
   font: 400 8.4px Georgia, "Palatino Linotype", serif; letter-spacing: .3px;
 }
-body.halloween.hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t1 { fill: #e4e6e8; transform: translateX(17px); }
-body.halloween.hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t2 { fill: #d3d6d9; transform: translateX(17px); }
-body.halloween.hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(12px, -3px); }
-body.halloween.hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(12px, -5px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t1 { fill: #e4e6e8; transform: translateX(17px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t2 { fill: #d3d6d9; transform: translateX(17px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(12px, -3px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(12px, -5px); }
 /* Off the lid line that runs above and below them. */
-body.halloween.hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t1 { fill: #f3e2c4; transform: translate(48px, 1px); }
-body.halloween.hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t2 { fill: #dcc399; transform: translate(48px, -2px); }
-body.halloween.hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(38px, -2px); }
-body.halloween.hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(38px, -6px); }
-body.halloween.hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t1 { fill: #f1e3b5; transform: translateX(46px); }
-body.halloween.hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t2 { fill: #d4af37; font-style: italic; transform: translateX(46px); }
-body.halloween.hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(36px, -3px); }
-body.halloween.hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(36px, -5px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t1 { fill: #f3e2c4; transform: translate(48px, 1px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t2 { fill: #dcc399; transform: translate(48px, -2px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(38px, -2px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(38px, -6px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t1 { fill: #f1e3b5; transform: translateX(46px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t2 { fill: #d4af37; font-style: italic; transform: translateX(46px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(36px, -3px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(36px, -5px); }
 /* The art moves with the pointer, never the group that carries the box's place. */
-body.halloween.hw-boxes-tombstone #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
-body.halloween.hw-boxes-coffin #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }
-body.halloween.hw-boxes-grimoire #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-tombstone #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-coffin #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }
+html[data-theme="halloween"].hw-boxes-grimoire #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
 
 /* Dewdrops on the silk, where the art is drawn (0108): a second path per edge,
    the same d, a dash that is a round cap and a gap. A role's hue is lightened,
    a lit edge's is orange, and a legend pick fades them with their edge. */
-body.halloween .hw-bead {
+html[data-theme="halloween"] .hw-bead {
   fill: none; stroke: #d6e6ff; stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: .01 10.2; stroke-dashoffset: -5;
   opacity: .95; pointer-events: none;
 }
-body.halloween .hw-bead[style*="--edge-col"] { stroke: color-mix(in srgb, var(--edge-col) 55%, #fff); }
-body.halloween .hw-bead.hi { stroke: #ffb36b; }
-body.halloween #graph g.picking .hw-bead:not(.kept) { opacity: .2; transition: opacity .12s; }
+html[data-theme="halloween"] .hw-bead[style*="--edge-col"] { stroke: color-mix(in srgb, var(--edge-col) 55%, #fff); }
+html[data-theme="halloween"] .hw-bead.hi { stroke: #ffb36b; }
+html[data-theme="halloween"] #graph g.picking .hw-bead:not(.kept) { opacity: .2; transition: opacity .12s; }
 
 /* The web grown on the selected box, from its top right corner out into the
    gap beside it, so the ring and the names stay clear: threads, then arcs,
    then a spider dropping on its own thread, about 700 ms, again for each new
    selection. .still is the same box selected again, left as it ended. */
-body.halloween .hw-web { pointer-events: none; }
-body.halloween .hw-web :is(.rad, .arc, .drop) { fill: none; stroke: #e9e6f2; stroke-opacity: .75; stroke-width: .75; }
-body.halloween .hw-web:not(.still) .rad { animation: hw-draw .3s ease-out both; }
-body.halloween .hw-web:not(.still) .arc { animation: hw-draw .22s ease-out both; }
-body.halloween .hw-web:not(.still) .arc.a0 { animation-delay: .28s; }
-body.halloween .hw-web:not(.still) .arc.a1 { animation-delay: .4s; }
-body.halloween .hw-web:not(.still) .arc.a2 { animation-delay: .52s; }
-body.halloween .hw-web:not(.still) .drop { animation: hw-draw .22s ease-in .5s both; }
-body.halloween .hw-web:not(.still) .spider { animation: hw-spider .22s ease-in .5s both; }
+html[data-theme="halloween"] .hw-web { pointer-events: none; }
+html[data-theme="halloween"] .hw-web :is(.rad, .arc, .drop) { fill: none; stroke: #e9e6f2; stroke-opacity: .75; stroke-width: .75; }
+html[data-theme="halloween"] .hw-web:not(.still) .rad { animation: hw-draw .3s ease-out both; }
+html[data-theme="halloween"] .hw-web:not(.still) .arc { animation: hw-draw .22s ease-out both; }
+html[data-theme="halloween"] .hw-web:not(.still) .arc.a0 { animation-delay: .28s; }
+html[data-theme="halloween"] .hw-web:not(.still) .arc.a1 { animation-delay: .4s; }
+html[data-theme="halloween"] .hw-web:not(.still) .arc.a2 { animation-delay: .52s; }
+html[data-theme="halloween"] .hw-web:not(.still) .drop { animation: hw-draw .22s ease-in .5s both; }
+html[data-theme="halloween"] .hw-web:not(.still) .spider { animation: hw-spider .22s ease-in .5s both; }
 @keyframes hw-draw { from { stroke-dasharray: 1; stroke-dashoffset: 1; } to { stroke-dasharray: 1; stroke-dashoffset: 0; } }
 @keyframes hw-spider { from { translate: 0 -9px; opacity: 0; } to { translate: 0 0; opacity: 1; } }
 
 /* Spider silk: thin and pale, a role keeping its hue and every dash its
    meaning (the test, indirect and back rules outrank this one). No filter:
    the canvas draws thousands of these and pans without throttling. */
-:where(body.halloween) .edge { stroke: var(--edge-col, rgba(205, 210, 220, .5)); stroke-width: .8; }
-body.halloween #graph {
+:where(html[data-theme="halloween"]) .edge { stroke: var(--edge-col, rgba(205, 210, 220, .5)); stroke-width: .8; }
+html[data-theme="halloween"] #graph {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none' stroke='%23d9d4c4' stroke-opacity='.32' stroke-width='.8'%3E%3Cpath d='M0 0H120M0 0L110 45M0 0L85 85M0 0L45 110M0 0V120'/%3E%3Cpath d='M30 0Q17 17 0 30M60 0Q34 34 0 60M90 0Q52 52 0 90'/%3E%3C/svg%3E") left top / 150px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none' stroke='%23d9d4c4' stroke-opacity='.32' stroke-width='.8'%3E%3Cg transform='matrix(-1 0 0 1 120 0)'%3E%3Cpath d='M0 0H120M0 0L110 45M0 0L85 85M0 0L45 110M0 0V120'/%3E%3Cpath d='M30 0Q17 17 0 30M60 0Q34 34 0 60M90 0Q52 52 0 90'/%3E%3C/g%3E%3C/svg%3E") right top / 150px no-repeat, var(--bg);
 }
 
 /* Apparitions cross the window above its content and under every dialog. */
 #hw-layer { display: none; }
-body.halloween #hw-layer { display: block; position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden; }
+html[data-theme="halloween"] #hw-layer { display: block; position: fixed; inset: 0; z-index: 45; pointer-events: none; overflow: hidden; }
 .hw-cross { position: absolute; left: 0; width: 68px; height: 73px; opacity: 0; animation: hw-cross 12s linear forwards; }
 .hw-cross.rtl { animation-direction: reverse; }
 .hw-cross svg { display: block; width: 100%; height: 100%; animation: hw-bob 2.2s ease-in-out infinite; }
@@ -2698,16 +3116,16 @@ body.halloween #hw-layer { display: block; position: fixed; inset: 0; z-index: 4
 @keyframes hw-eyes-fade { 0% { opacity: 0; } 15%, 80% { opacity: .9; } 100% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  body.halloween .hw-witch { transition: none; }
+  html[data-theme="halloween"] .hw-witch { transition: none; }
   .hw-witch.flying svg { animation: none; }
-  body.halloween .nd:not(.rider):hover rect.box, body.halloween .nd:not(.rider):hover .kindbar, body.halloween #graph .nd:not(.rider):hover .hw-art { animation: none !important; }
-  body.halloween .hw-web .rad, body.halloween .hw-web .arc, body.halloween .hw-web .drop, body.halloween .hw-web .spider { animation: none !important; }
-  body.halloween .brand.newer .hw-ghost .warm, body.halloween.hw-night .hw-ghost .warm { animation: none; filter: drop-shadow(0 0 3px rgba(255, 170, 60, .8)); }
+  html[data-theme="halloween"] .nd:not(.rider):hover rect.box, html[data-theme="halloween"] .nd:not(.rider):hover .kindbar, html[data-theme="halloween"] #graph .nd:not(.rider):hover .hw-art { animation: none !important; }
+  html[data-theme="halloween"] .hw-web .rad, html[data-theme="halloween"] .hw-web .arc, html[data-theme="halloween"] .hw-web .drop, html[data-theme="halloween"] .hw-web .spider { animation: none !important; }
+  html[data-theme="halloween"] .brand.newer .hw-ghost .warm, html[data-theme="halloween"].hw-night .hw-ghost .warm { animation: none; filter: drop-shadow(0 0 3px rgba(255, 170, 60, .8)); }
   .hw-eyes { animation-name: hw-eyes-fade; }
   .hw-eyes .open { animation: none; }
   .hw-eyes .shut { display: none; }
   /* A fade alone: the ghost stays where it is. */
-  body.halloween .brand:hover .hw-ghost,
-  body.halloween .brand:focus-visible .hw-ghost { transform: rotate(-8deg); }
-  body.halloween:has(> .updmenu) .brand .hw-ghost { transform: rotate(-8deg); }
+  html[data-theme="halloween"] .brand:hover .hw-ghost,
+  html[data-theme="halloween"] .brand:focus-visible .hw-ghost { transform: rotate(-8deg); }
+  html[data-theme="halloween"]:has(> body > .updmenu) .brand .hw-ghost { transform: rotate(-8deg); }
 }

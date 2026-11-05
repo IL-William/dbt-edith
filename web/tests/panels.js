@@ -185,6 +185,7 @@ var menuAnchor = fakeEl('menu-anchor');
 function fakeMenu() {
   var m = fakeEl('menu');
   m.style = {};
+  m.dataset = {};
   m.getBoundingClientRect = function () { return { top: 0, bottom: 20, left: 0, height: 20, width: 50 }; };
   m.querySelectorAll = function () { return []; };
   m.addEventListener = function () {};

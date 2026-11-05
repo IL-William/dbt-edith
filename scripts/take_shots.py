@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """The pictures of docs/shots/, taken in headless Chrome on Jaffle Shop.
 
-    take_shots.py [--scale N] [--out DIR] [NAME ...]
+    take_shots.py [--scale N] [--theme T] [--out DIR] [NAME ...]
 
 Every picture (NAMES below, one per feature) is taken on each run, in an order
 that lets the state chain: the clean ones first, then the ones that stage
 something. Only then are the NAMEs given, or all without any, copied over the
 ones in docs/shots/ or in DIR, so a run that stops halfway leaves the last set
 whole. --scale 2 takes the same 1440 by 900 CSS pixels at twice the device
-pixels, and wants --out. An unknown NAME fails before anything starts.
+pixels, and wants --out. --theme (night, graphite, light or halloween) takes
+them in another theme, which look.json in the configuration directory says
+before the server starts, the apparitions off; it wants --out too, the pictures
+of docs/shots being Night's. An unknown NAME fails before anything starts.
 
 Jaffle Shop is copied from tests/fixtures/ and built by dbt on duckdb, so the
 Catalog has its column types and the Run tab its SQL, then committed to a git
@@ -82,7 +85,7 @@ NAMES = [
     "search-palette", "search-files", "lineage-node", "selection-card",
     "reports-coverage", "reports-job-order",
     "catalog-location", "catalog-compiled", "terminal", "git",
-    "updates", "shortcuts",
+    "updates", "shortcuts", "themes",
     "snowflake-history", "reports-builds", "catalog-snowflake", "catalog-clone",
     "manifest-pill",
 ]
@@ -914,6 +917,15 @@ class Shots:
         self.page.key(*wt.ESCAPE)
         self.until("document.querySelector('#shortcuts').classList.contains('hidden')", "the list to close")
 
+        # The Theme section of the settings: the four cards and Follow the system.
+        self.click("#settings-btn")
+        self.until("document.querySelector('#settings').classList.contains('open')", "the settings")
+        self.js("[...document.querySelectorAll('#settings-nav button')].find((b) => b.textContent.startsWith('Theme')).click()")
+        self.until("!!document.querySelector('#settings-view .tcards .tcard')", "the theme cards")
+        self.rest()
+        self.take("themes")
+        self.code()
+
         # Snowflake, on a fake one: the project gets its Snowflake target and
         # the dbt_artifacts stub, and the features are switched on.
         stage_snowflake(self.work, self.project)
@@ -987,6 +999,8 @@ class Shots:
 def main():
     parser = argparse.ArgumentParser(description="The pictures of docs/shots/, taken in headless Chrome on Jaffle Shop.")
     parser.add_argument("--scale", type=int, default=1, help="device pixels per CSS pixel (default 1)")
+    parser.add_argument("--theme", choices=["night", "graphite", "light", "halloween"], default="night",
+                        help="the theme the pictures are taken in (default night, the only one docs/shots holds)")
     parser.add_argument("--out", type=Path, default=None, help="where the pictures are copied (default docs/shots)")
     parser.add_argument("names", nargs="*", metavar="NAME", help="copy only these: " + ", ".join(NAMES))
     args = parser.parse_args()
@@ -995,6 +1009,8 @@ def main():
         sys.exit(f"unknown picture {', '.join(unknown)}; they are: {', '.join(NAMES)}" if unknown else "--scale wants 1 or more")
     if args.scale > 1 and (args.out is None or args.out.resolve() == SHOTS.resolve() or SHOTS.resolve() in args.out.resolve().parents):
         sys.exit("--scale above 1 wants --out elsewhere than docs/shots: a picture at more than 1440 by 900 never goes there (0144)")
+    if args.theme != "night" and (args.out is None or args.out.resolve() == SHOTS.resolve() or SHOTS.resolve() in args.out.resolve().parents):
+        sys.exit("--theme other than night wants --out elsewhere than docs/shots: the pictures of docs/shots are Night's (0150)")
     args.out = args.out or SHOTS
 
     os.environ.setdefault("DBT_SEND_ANONYMOUS_USAGE_STATS", "False")
@@ -1033,6 +1049,10 @@ def main():
         cache = Path(os.environ.get("TAKE_SHOTS_CACHE", "/tmp/dbt-edith-shots-cache"))
         # Only the update picture wants it, and a run for other names skips the build.
         installed = temp_install(work, cache) if not args.names or "updates" in args.names else None
+        # The theme is kept per machine, so the server is told it as a person would have left it.
+        (work / "config").mkdir(exist_ok=True)
+        (work / "config" / "look.json").write_text(json.dumps(
+            {"theme": args.theme, "follow": False, "apparitions": False, "boxes": "tombstone"}) + "\n")
         edith = wt.Edith(binary, project, work)
         page = None
         shots = None

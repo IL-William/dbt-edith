@@ -17,7 +17,10 @@ real pointer, through the DevTools protocol, and checks what that menu does:
     it; Escape closes it;
   - a menu clicked open elsewhere, the GitHub one or a breadcrumb's, which
     keeps its own, is not swapped for or joined by Edith's when the pointer
-    rests on the name.
+    rests on the name;
+  - the theme menu (0150), in a window 1000 pixels wide, sits inside it, under
+    the right edge of its button; two arrows down and Enter pick Light, and
+    Escape gives the focus back to the button.
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
 DevTools client it borrows: it needs dbt to parse the copy, and Chrome, and
@@ -214,6 +217,37 @@ class Walk:
                    page.js("!!document.querySelector('.ghmenu') && !document.querySelector('.updmenu')"))
         page.key(*W.ESCAPE)
         page.until("!document.querySelector('.ghmenu')", "the GitHub menu closed")
+        self.move(away)
+
+        print("--- the theme menu ---")
+        page.call("Emulation.setDeviceMetricsOverride", width=1000, height=900, deviceScaleFactor=1, mobile=False)
+        time.sleep(0.5)
+        self.click(self.centre("#theme-btn"))
+        page.until("!!document.querySelector('.thememenu')", "the theme menu")
+        where = page.js("(() => { const m = document.querySelector('.thememenu').getBoundingClientRect();"
+                        " const b = document.querySelector('#theme-btn').getBoundingClientRect();"
+                        " return [m.left, m.right, b.right, innerWidth]; })()")
+        self.check("it sits inside the window", where[0] >= 0 and where[1] <= where[3], str(where))
+        self.check("under the right edge of its button", abs(where[1] - where[2]) <= 1.5, str(where))
+        self.check("focused on the theme on screen", page.js("document.activeElement.dataset.key") == "theme-night",
+                   page.js("document.activeElement.dataset.key"))
+        page.key("ArrowDown", "ArrowDown", 40)
+        page.key("ArrowDown", "ArrowDown", 40)
+        page.key("Enter", "Enter", 13, text="\r")
+        page.until("document.documentElement.dataset.theme === 'light'", "Light")
+        self.check("two arrows down and Enter pick Light, and the menu closes", not page.js("!!document.querySelector('.thememenu')"))
+        self.check("the focus is back on the button", page.js("document.activeElement.id") == "theme-btn")
+        self.click(self.centre("#theme-btn"))
+        page.until("!!document.querySelector('.thememenu')", "the theme menu again")
+        page.key(*W.ESCAPE)
+        page.until("!document.querySelector('.thememenu')", "the theme menu closed")
+        self.check("Escape returns the focus to the button", page.js("document.activeElement.id") == "theme-btn")
+        self.click(self.centre("#theme-btn"))
+        page.until("!!document.querySelector('.thememenu')", "the theme menu a third time")
+        page.js("document.querySelector('.thememenu [data-key=theme-night]').click()")
+        page.until("document.documentElement.dataset.theme === 'night'", "Night back")
+        page.call("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
+        time.sleep(0.5)
         self.move(away)
         crumb = ("[...document.querySelectorAll('#crumbs .crumb')]"
                  ".find((b) => b.textContent.includes('dbt_project.yml'))")

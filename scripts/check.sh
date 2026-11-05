@@ -187,18 +187,18 @@ else
 fi
 
 echo
-echo "== an export with the Halloween look on, in Chrome =="
+echo "== an export with the Halloween theme on, and in Light, in Chrome =="
 # What Lineage.snapshot() writes of a canvas drawn with each box style, against
-# the same canvas without the look (0107), driven the same way, and skipped the
-# same way.
+# the same canvas with the usual look (0107), and the colours of the file under
+# Halloween and under Light (0150), driven the same way, and skipped the same way.
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
-  skip "the export with the look on"
+  skip "the export with the Halloween theme on"
 else
   out=$("$py" scripts/walk_export.py 2>&1)
   case $? in
     0) echo "export ok ($(printf '%s\n' "$out" | grep -c '^PASS') checks)" ;;
-    2) printf '%s\n' "$out" | tail -1; skip "the export with the look on" ;;
+    2) printf '%s\n' "$out" | tail -1; skip "the export with the Halloween theme on" ;;
     *) printf '%s\n' "$out" | grep -v '^PASS' | tail -30; echo "EXPORT FAILED"; failed=$((failed + 1)) ;;
   esac
 fi
