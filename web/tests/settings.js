@@ -20,15 +20,15 @@ check('every one, in the rail\'s order, whatever the page knows', keys(settingsS
   ['project', 'columns', 'snowflake', 'jobs', 'updates', 'theme', 'help']);
 check('each says what it holds', settingsSections({}).every(function (s) { return s.label && s.title; }), true);
 var none = settingsSections({});
-check('nothing known: no dot, no hint but Snowflake off', [row(none, 'project').warn, row(none, 'columns').hint,
+check('nothing known: no mark, no hint but Snowflake off', [row(none, 'project').warn, row(none, 'columns').hint,
   row(none, 'snowflake').hint, row(none, 'updates').hint], ['', '', 'off', '']);
 var some = settingsSections({ profile: 'no profiles.yml at /home/u/.dbt/profiles.yml, where dbt looks for one',
   cllTool: 'collin', cll: 'Collin', snowflake: true, update: 'newer' });
-check('the profile missing: a dot on the project, saying why', row(some, 'project').warn,
+check('the profile missing: a triangle on the project, saying why', row(some, 'project').warn,
   'no profiles.yml at /home/u/.dbt/profiles.yml, where dbt looks for one');
 check('the column lineage on screen, in its tool\'s colour', [row(some, 'columns').hint, row(some, 'columns').tool],
   ['Collin', 'collin']);
-check('none on screen: its dot is the uncoloured one', row(none, 'columns').tool, '');
+check('none on screen: its glyph is the uncoloured one', row(none, 'columns').tool, '');
 check('the theme: nothing said while the look is off, on once it is',
   [row(none, 'theme').hint, row(settingsSections({ look: true }), 'theme').hint], ['', 'on']);
 check('and the section says what waits for the look, the box style too', /box|style/.test(row(none, 'theme').title) && /once the look is on/.test(row(none, 'theme').title), true);

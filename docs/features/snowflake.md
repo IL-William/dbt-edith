@@ -71,12 +71,14 @@ changes nothing here. It is alpha, like every Snowflake feature.
 Twenty queries show at first, and **Load 20 more** goes further back, until
 Snowflake has nothing older: it gives back your newest 10 000 queries of the
 week, so a role you rarely use may run out before the week does. Each row says
-when the query started on your clock, how it ended, how long it took, its role,
-warehouse and type, the first line of its SQL with dbt's leading comment left
-out, and the error under a failed one. Click a row for the statement itself, the
-first 10 000 characters of it, with buttons to copy it or its id. **Snowsight**
-opens the query's own page there, in a new tab, with its profile and every
-detail this tab does not have.
+when the query started on your clock, how it ended (a green check, a red cross,
+a grey circle with a slash when it was cancelled, an amber clock while it runs
+or waits, a dashed ring for a status this page does not know), how long it took,
+its role, warehouse and type, the first line of its SQL with dbt's leading
+comment left out, and the error under a failed one. Click a row for the
+statement itself, the first 10 000 characters of it, with buttons to copy it or
+its id. **Snowsight** opens the query's own page there, in a new tab, with its
+profile and every detail this tab does not have.
 
 The **Role** menu decides whose queries: by default the role of the target the
 script connected with, then the role of every other target in your profile that
@@ -97,7 +99,7 @@ With Snowflake's features on and the **dbt_artifacts** package in the project
 can say **when each model last ran in each environment** and how it ended. It
 reads the package's own tables, in the schema each `.env` file places the
 package in, the way the Location table places any model. Three places show it:
-the Catalog's **Last built** section, a dot on each lineage box for the
+the Catalog's **Last built** section, a mark on each lineage box for the
 environment picked in the selector, and the **Builds by environment** section
 of Reports. See [catalog.md](catalog.md), [lineage.md](lineage.md) and
 [jobs-and-reports.md](jobs-and-reports.md).
@@ -123,7 +125,7 @@ hold the runs of several targets. A file that sets `DBT_TARGET` stands for that
 target, the one dbt runs with when the file is loaded, so its environment keeps
 only that target's runs and is named with it ("DEV · target dev"). Without it,
 and for the manifest's own build, each target's run is shown by name, and a
-lineage dot takes the worst of them (error, then stale, then not built, then
+lineage mark takes the worst of them (error, then stale, then not built, then
 ok), the box's hover card listing each. The runs under other targets are not
 counted, but their names are shown beside the environment, so a file whose
 `DBT_TARGET` no run used says so instead of reading as never built. Every run

@@ -244,12 +244,12 @@ every `build`, `run`, `test`, `seed` or `snapshot`, and after `compile` too. It
 names the command and its selection, then counts what ran of each kind against
 what the manifest holds, and lists the errors and failed tests with dbt's
 message, the warnings, the skipped nodes and the slowest, five of which show
-at first, **Show all** giving the rest. The status dot of the section,
+at first, **Show all** giving the rest. The status mark of the section,
 in the list and in its head, says how the command ended, in words as well on
-hover: red on an error or a failed test, amber on a warning, a partial success
-or a status this tool does not know, green when something ran and all of it
-passed. A run that ran no node, or only skipped, keeps the tool's colour, as do
-the other sections. A model opens with its Run tab, the
+hover: a red cross on an error or a failed test, an amber triangle on a warning,
+a partial success or a status this tool does not know, a green check when
+something ran and all of it passed. A run that ran no node, or only skipped,
+shows no mark; the section keeps its tool's colour, as do the other sections. A model opens with its Run tab, the
 SQL dbt executed; a test opens at its line in its YAML, and a unit
 test at its YAML. A node the
 command did not reach is counted, never listed: not run says nothing about it.
@@ -384,7 +384,7 @@ manifest holds the dbt_artifacts package's `model_executions` and `invocations`
 models. Nothing is asked until you press **Read from Snowflake** in its head
 (**Refresh** after), which reads each environment's tables one after the other,
 drawing each as it lands. It carries no chip on the button: there is no file
-written to watch. Per environment, with its colour: tiles for the models in
+written to watch. Per environment, named by a tag in its colour: tiles for the models in
 **error** (the last attempt failed), **stale** (no success within the threshold,
 set in the Snowflake section of the settings), **not built** (no run in the last
 90 days) and fine, and a fold for each of the first three listing the models,
@@ -408,7 +408,8 @@ It answers whether last night's run built what it should have. One row per job,
 scheduled ones first as in the Jobs tab, with its kind, its schedule and the
 zone that schedule is read in (or Manual, CI, Not read), how many models it runs
 and how many seeds and snapshots it runs that no build is read for, then one
-column per environment read: a dot in the job's worst tone and short counts,
+column per environment read: a mark in the job's worst tone (a check, a
+triangle for late, a cross, a dashed ring) and short counts,
 **errored**, **late**, **not built**, and how many models were built **since
 the last start** (information, never an alarm: a run that began at the last
 start may still be going, and no file says how long a run takes). A cell that

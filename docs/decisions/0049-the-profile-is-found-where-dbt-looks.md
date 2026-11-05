@@ -1,6 +1,6 @@
 # 0049. The profile is found where dbt looks, whatever the warehouse
 
-Date: 2026-10-08 · Status: accepted, amended by 0094 and 0100 · Amends 0017 and 0031
+Date: 2026-10-08 · Status: accepted, amended by 0094, 0100 and 0148 · Amends 0017 and 0031
 
 **Trigger:** read before changing which `profiles.yml` dbt-edith opens, or
 what decides whether it can be opened.

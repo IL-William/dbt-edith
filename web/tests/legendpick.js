@@ -105,6 +105,9 @@ check('only the clauses on the canvas are listed',
     edges: [[0, 1]], edge_kinds: ['join_key'] })), ['raw', 'indirect', 'JOIN']);
 check('and every clause swatch is a dash, as its edges are', ['indirect', 'QUALIFY', 'JOIN', 'WHERE / HAVING', 'rename']
   .map(function (l) { return legendSwatch(l, '#123456').cls; }), ['dash', 'dash', 'dash', 'dash', '']);
+check('a kind or a test takes the bar of its box, a role stays a square',
+  [legendSwatch('table', 'var(--k-table)').cls, legendSwatch('singular', 'var(--t-singular)').cls, legendSwatch('rename', roleColor('rename')).cls],
+  ['kind', 'kind', '']);
 // A model's box on the canvas stands for columns and starts nothing: no raw
 // badge on it, with or without roots in the cache.
 var boxed = { mode: 'column', roots_known: true, nodes: [

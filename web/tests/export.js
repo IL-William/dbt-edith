@@ -287,6 +287,12 @@ ok('and a lit indirect edge keeps its hue there too', exportCanvasCss(exportCanv
 ok('the label is drawn on an edge that ends on a model\'s box only', /isRowKind\(kind\) && !L\.back\[i\] && isModelBox\(d\.nodes\[b\]\)/.test(lin));
 ok('and the file styles the label', exportCanvasCss(exportCanvasVars()).split('\n').some(function (l) { return /^\.edgelabel \{/.test(l); }));
 ok('and the file styles that dash', rowsDoc.indexOf('.legend i.dash {') > 0);
+// A kind is the bar of its box in the file as on screen.
+var kindDoc = exportDocument({ heading: 'x', noun: 'Models', svg: svgText, frame: { x: 0, y: 0, w: 1000, h: 560 },
+  legend: [['table', 'var(--k-table)']],
+  facts: { kicker: 'Model', lines: [], warnings: [], undrawn: [], command: '' }, nodes: [] });
+ok('an exported legend draws a kind as the bar of its box', kindDoc.indexOf('<i class="kind" style="background:var(--k-table)"></i>table') > 0);
+ok('and the file styles that bar', kindDoc.indexOf('.legend i.kind {') > 0);
 // Quoted values are blanked first: the hostile text is still in them, escaped,
 // and `onerror=` inside a data-id is only text.
 ok('no handler in any tag', !(hostile.match(/<[a-z][^>]*>/gi) || []).some(function (tag) {
@@ -319,7 +325,8 @@ ok('nor its DOM helpers', !/\$\$?\(/.test(viewer));
 print('\n--- the canvas looks the same in the file ---');
 var asked = exportCanvasVars();
 var copied = exportCanvasCss(asked);
-var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role|\.band)/.test(l); });
+var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role(?!sq)|\.band)/.test(l); });
+// .rolesq is a menu's and a card's square, not the canvas's: the file has no menu.
 ok('the canvas rules are where this test looks for them', rules.length >= 17);
 ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
   && rules.some(function (l) { return /^\.band-name \{/.test(l); }));

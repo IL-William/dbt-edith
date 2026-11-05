@@ -17,9 +17,11 @@ Columns, and the settings' rail names the tool on screen beside the section.
 | magenta | **Collin** | `target/column_lineage.collin.json`, parsed out of the compiled SQL by [collin](https://github.com/IL-William/dbt-collin), which dbt-edith runs for you (0023, 0042) |
 | cyan | **Snowflake** | `SNOWFLAKE.CORE.GET_LINEAGE`, fetched when you click a column |
 
-The button names the tool whose edges are on screen, in its colour, and how
-many there are; its tooltip names the file and who wrote it. A tool with
-nothing to offer is greyed, and its tooltip says which file it lacks. A tool
+The button names the tool whose edges are on screen, in its colour and beside
+its glyph (the columns glyph, or Snowflake's flake; a tool with no glyph of its
+own, Fusion, shows the columns glyph in its colour), and how many there are;
+its tooltip names the file and who wrote it. A tool with nothing to offer is
+greyed, and its tooltip says which file it lacks. A tool
 stands for its newest cache: any other file beside the manifest, an older one
 of a tool's or one written by something else, is listed under "other caches"
 and can still be picked. The choice is remembered per project.

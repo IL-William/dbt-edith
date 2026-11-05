@@ -130,7 +130,7 @@ run recorded in the last 90 days".
 
 Nothing is asked until you press **Read from Snowflake** in the section's head,
 which then says when it was read and offers **Refresh**. The same read feeds the
-dots on the lineage and the Reports section, and is dropped when the page
+marks on the lineage and the Reports section, and is dropped when the page
 closes ([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
 
@@ -149,7 +149,10 @@ Catalog follow it. With no file picked the choice is
 `manifest`; on a manifest built into a developer sandbox it is named `my
 compile`, with the sandbox beside it, since it is the developer's own compile.
 The pill takes a colour per environment family (DEV, CI, QA, STG, UAT, PROD)
-so the one in use shows at a glance.
+so the one in use shows at a glance. In the environment menu, the Catalog's
+Last built and the Reports' builds, an environment is a tag in the same colour,
+with the target it is kept to after it, and the manifest's own is only
+outlined.
 
 - **Detection.** Every `.env` and `.env.*` file in the project root is offered,
   named after its suffix: `.env.uat` is UAT. A `DBT_TARGET` that disagrees with
@@ -246,7 +249,8 @@ choice the status bar's pill shows and the Catalog follows. With none picked, a
 line under it says whose placement the SQL carries, such as `Shown as dbt
 compiled it for the manifest's target`.
 
-A line under the buttons names the environment and counts what it did: `Shown for
+The picked button is filled in its environment's colour. A line under the
+buttons names the environment, as plain words, and counts what it did: `Shown for
 QA (.env.qa): 12 relations swapped, 1 kept as compiled`. A relation the file
 cannot place stays as dbt compiled it, in amber, and its tooltip says why: a
 variable the file does not define, a placeholder, a database or schema left to

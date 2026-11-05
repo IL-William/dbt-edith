@@ -281,6 +281,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the dewdrops on the edges under the Halloween look, or the web on the selected box | [0108](docs/decisions/0108-the-silk-has-dewdrops-and-the-selected-box-grows-a-web.md), [0107](docs/decisions/0107-the-box-art-is-drawn-under-a-count-and-never-exported.md) |
 | add a step to the guided tour, or change when it is offered or what it touches | [0074](docs/decisions/0074-the-tour-is-offered-once-per-machine-and-runs-nothing.md), [0078](docs/decisions/0078-the-tour-is-offered-once-there-is-a-model-to-show.md) |
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
+| add a marker for a kind, a state, an environment or a tool | [0148](docs/decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) |
 
 Every decision, with what was rejected each time, is indexed in
 [docs/decisions/](docs/decisions/). [docs/features/](docs/features/) says what

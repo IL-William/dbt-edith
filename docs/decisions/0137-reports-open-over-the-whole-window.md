@@ -1,6 +1,6 @@
 # 0137. Reports open over the whole window, in one grammar
 
-Date: 2026-11-02 · Status: accepted, amended by 0140 · Amends 0064, 0091, 0101 and 0131
+Date: 2026-11-02 · Status: accepted, amended by 0140 and 0148 · Amends 0064, 0091, 0101 and 0131
 
 **Trigger:** read before changing what the Reports panel covers, how its rail
 is grouped or counts, how a section lays out its lists, or what its filter

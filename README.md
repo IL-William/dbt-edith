@@ -20,7 +20,7 @@ dbt-edith
 ## What it does
 
 - **[Lineage](docs/features/lineage.md)** of the model you are editing, drawn
-  from the manifest and following the editor, with a dot that says whether the
+  from the manifest and following the editor, with a mark that says whether the
   manifest still matches your files.
 - **[Lineage space](docs/features/selection.md)**: what any dbt selector or
   named selector matches, drawn on the canvas, and answered on the command line

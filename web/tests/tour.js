@@ -46,8 +46,8 @@ check('the manifest step, right after the welcome, rings the freshness badge and
   [step(all, 'manifest').target, /^Everything here is read from `manifest.json`/.test(step(all, 'manifest').text)], ['#manifest-pill', true]);
 check('  that the arrows at its end read it again',
   /The arrows at its end read the file again at once\.$/.test(step(all, 'manifest').text), true);
-check('  what its dot says, and that a click types dbt parse',
-  [/green, none has; amber, your own saved edits; red, a pull/.test(step(all, 'manifest').text),
+check('  what its mark says, and that a click types dbt parse',
+  [/a green check, none has; an amber triangle, your own saved edits; a red cross, a pull/.test(step(all, 'manifest').text),
     /A click types `dbt parse` in the terminal, leaving Enter to you/.test(step(all, 'manifest').text)], [true, true]);
 check('  and with no manifest, that there is none yet, and no colours to read',
   [/There is none yet, so this says no manifest\. A click types `dbt parse`/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text),
