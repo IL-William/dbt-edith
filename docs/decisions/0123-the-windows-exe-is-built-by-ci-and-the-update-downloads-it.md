@@ -1,6 +1,6 @@
 # 0123. The Windows .exe is built by CI and the update downloads it
 
-Date: 2026-10-27 · Status: accepted · Amends 0068, 0093, 0095 and 0111
+Date: 2026-10-27 · Status: accepted, amended by 0152 · Amends 0068, 0093, 0095 and 0111
 
 **Trigger:** read before changing what a release carries, how the Windows
 `.exe` is built, or what the update types for a binary that came from a release.
