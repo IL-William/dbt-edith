@@ -283,6 +283,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the license or the copyright line, or bundle code under another license | [0046](docs/decisions/0046-free-to-use-not-to-resell.md) |
 | add a marker for a kind, a state, an environment or a tool | [0148](docs/decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) |
 | load a library by name on Windows, or change which `snowflake-connector-python` the Snowflake script accepts | [0149](docs/decisions/0149-libraries-and-the-connector-come-from-where-they-were-fixed.md) |
+| add a file type to the tree, colour or reshape a file's icon, or show git's status on a row | [0151](docs/decisions/0151-a-files-icon-is-coloured-only-by-what-the-manifest-builds-it-as.md), [0148](docs/decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md) |
 
 Every decision, with what was rejected each time, is indexed in
 [docs/decisions/](docs/decisions/). [docs/features/](docs/features/) says what

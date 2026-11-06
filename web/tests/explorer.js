@@ -4,21 +4,31 @@
 var src = read('web/app.js');
 var code = src.slice(src.indexOf('function ancestorsOf'), src.indexOf('async function refreshGit'));
 
-var S = { open: new Map(), rows: new Map(), gitMod: new Set(), gitUnt: new Set(),
+var S = { open: new Map(), rows: new Map(), gitMod: new Set(), gitUnt: new Set(), gitAdded: new Set(),
           gitModDirs: new Set(), gitUntDirs: new Set(), gitPrefixes: [] };
 var branchEl = { textContent: '' };
 function $(sel) { return branchEl; }
+var document = { createElement: function () { return { className: '', textContent: '', title: '', attrs: {}, setAttribute: function (k, v) { this.attrs[k] = v; }, remove: function () { this.gone = true; } }; } };
 eval(code);
 
 function fakeEl() {
   var cls = {};
-  return { isConnected: true, title: '',
+  return { isConnected: true, title: '', append: function (x) { this.kids = (this.kids || []).concat(x); },
     classList: { toggle: function (c, on) { if (on) cls[c] = 1; else delete cls[c]; }, all: cls } };
 }
 function addRow(path, dir) { S.rows.set(path, { el: fakeEl(), dir: dir }); }
 function stateOf(path) {
   var c = S.rows.get(path).el.classList.all;
   return c['st-unsaved'] ? 'green' : c['st-modified'] ? 'amber' : c['st-untracked'] ? 'amber(untracked)' : '-';
+}
+// The mark at the end of a row: git's letter or the pencil, '' for none.
+function markOf(path) {
+  var g = S.rows.get(path).gs;
+  return g ? g.className + ':' + g.textContent + ':' + g.title + (g.attrs['aria-label'] === g.title ? '' : ' (no aria-label)') : '';
+}
+function mark(path, want) {
+  var got = markOf(path);
+  print((got === want ? 'PASS  ' : 'FAIL  ') + path.padEnd(28) + 'mark ' + JSON.stringify(got) + (got === want ? '' : '   expected ' + JSON.stringify(want)));
 }
 function check(path, want) {
   var got = stateOf(path);
@@ -27,12 +37,13 @@ function check(path, want) {
 
 // The exact payload /api/git returned on the test repository.
 var payload = { repo: true, branch: 'master',
-  modified: ['macros/m.sql', 'models/staging/a.sql', 'staged.sql'],
+  modified: ['macros/m.sql', 'models/staging/a.sql', 'staged.sql', 'added.sql'],
+  staged: [{ path: 'added.sql', code: 'A ' }, { path: 'staged.sql', code: 'M ' }],
   untracked: ['models/newfolder/', 'models/staging/c.sql'] };
 
 ['macros','models','models/staging','models/newfolder'].forEach(function(p){ addRow(p, true); });
 ['macros/m.sql','models/schema.yml','models/staging/a.sql','models/staging/b.sql',
- 'models/staging/c.sql','models/newfolder/d.sql','staged.sql'].forEach(function(p){ addRow(p, false); });
+ 'models/staging/c.sql','models/newfolder/d.sql','staged.sql','added.sql'].forEach(function(p){ addRow(p, false); });
 
 applyGit(payload);
 print('branch shown: ' + branchEl.textContent);
@@ -49,6 +60,15 @@ check('macros', 'amber');
 check('models/staging', 'amber');
 check('models', 'amber');
 
+print('\n--- git\'s status is a letter at the end of the row, never a colour on the name ---');
+mark('models/staging/a.sql', 'gs m:M:Modified');
+mark('added.sql', 'gs a:A:Added');
+mark('staged.sql', 'gs m:M:Modified');
+mark('models/staging/c.sql', 'gs u:U:Untracked');
+mark('models/staging/b.sql', '');
+mark('models/staging', 'gs m:M:Holds changed files');
+mark('models/newfolder', 'gs u:U:Holds new files');
+
 print('\n--- with an unsaved buffer on b.sql ---');
 S.open.set('models/staging/b.sql', { dirty: true });
 S.open.set('models/staging/a.sql', { dirty: false });
@@ -58,3 +78,13 @@ check('models/staging', 'green');
 check('models', 'green');
 check('models/staging/a.sql', 'amber');
 check('macros', 'amber');
+
+print('\n--- the unsaved pencil, and the letters back when it is saved ---');
+S.open.set('models/staging/b.sql', { dirty: true });
+paintTree();
+mark('models/staging/b.sql', 'gs w::Unsaved changes');
+mark('models/staging', 'gs w::Holds unsaved changes');
+S.open.set('models/staging/b.sql', { dirty: false });
+paintTree();
+mark('models/staging/b.sql', '');
+mark('models/staging', 'gs m:M:Holds changed files');

@@ -13,6 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.3.0 - 2026-11-06
+
+- Draw each file's icon as the design does: a cylinder for a model's SQL, a
+  dotted list for YAML, a rounded M for Markdown, Py, a terminal for shell, a
+  page for the rest. Only the file of a model, a seed or a snapshot is coloured,
+  as its box is on the canvas; the others are grey, but YAML, which keeps dbt's
+  violet, and Py its yellow. Git's status is a letter at the end of the row
+  (M, U, A, a pencil for unsaved edits) instead of a colour on the name, and the
+  clock, the Snowflake flake and the update arrow are drawn as the design draws
+  them, the arrow pointing up (0151).
+
 ## 2.2.0 - 2026-11-05
 
 - Pick a theme from the button between `?` and GitHub, or in Settings > Theme:

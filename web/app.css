@@ -26,7 +26,7 @@
      the meaning colours), the rule after this block derives about seventy more
      from those by color-mix, and a name none of them restates keeps Night's
      value, as the terminal's does in all three.
-     --cur-line, --dots, --node-shadow, --py and the --ansi- colours are in
+     --cur-line, --dots, --node-shadow and the --ansi- colours are in
      every block, and nothing reads them yet. */
   /* Surfaces */
   --line-strong: #334052;   /* a menu's or a hovered button's edge */
@@ -141,14 +141,12 @@
   --edge-hot: #5aa9ff;   /* the accent's own value: a lit edge is what it was before the name was read */
   --edge-test: #5d6a7d;
   /* Files */
-  --f-sql: #fe6702;
-  --f-yml: #e0a34b;
   --f-md: #7fa8d8;
-  --f-json: #4ec78d;
-  --f-csv: #56b98b;
-  --f-other: #6d7a8c;
   --f-macro: #dcdcaa;
   --py: #ffd43b;
+  /* Git's letter at the end of a tree row: modified, and new or untracked */
+  --git-m: #e0a34b;
+  --git-u: #4ec78d;
   /* Diffs */
   --diff-add: #2f6b47;
   --diff-add-bg: #1c2c22;
@@ -221,10 +219,10 @@
   --m-cols: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 2.5v11M13 2.5v11M3 5.5h3.5l3 5H13'/%3E%3C/svg%3E");
   /* jobsIcon()'s clock, snowflakeIcon()'s flake, the Updates row's arrow:
      the app's own drawings, heavier for 9 to 12px. */
-  --m-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='8' cy='8' r='6.2'/%3E%3Cpath d='M8 4.2V8l2.6 1.6'/%3E%3C/svg%3E");
-  --m-snow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3Cpath transform='rotate(60 8 8)' d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3Cpath transform='rotate(120 8 8)' d='M8 1.4v13.2M6.2 3.1 8 4.7l1.8-1.6M6.2 12.9 8 11.3l1.8 1.6'/%3E%3C/svg%3E");
+  --m-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 4.5V8l2.5 1.6'/%3E%3C/svg%3E");
+  --m-snow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M8 1.5v13M2.4 4.75l11.2 6.5M2.4 11.25l11.2-6.5'/%3E%3C/svg%3E");
   --m-edit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 2.5l2.5 2.5L6 12.5 2.5 13.5 3.5 10z M9.5 4l2.5 2.5'/%3E%3C/svg%3E");
-  --m-newer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2.5v8M4.75 7.25L8 10.5l3.25-3.25M2.5 13.5h11'/%3E%3C/svg%3E");
+  --m-newer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 13V3M3.5 7.5L8 3l4.5 4.5'/%3E%3C/svg%3E");
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --side-w: 270px;
@@ -468,6 +466,8 @@
   /* Files */
   --dbt-yaml: #6d55d9;
   --py: #9a7400;
+  --git-m: #6f4500;   /* 4.5:1 on the sidebar and on a selected row: the letter is 10.5px */
+  --git-u: #0b6039;
   /* Code */
   --syn-kw: #7d4cc4;
   --syn-fn: #985a00;
@@ -521,7 +521,7 @@
   --r-indirect: #808d9e;
   /* Night's colour, same hue, darker: 3:1 on the page and the sidebar's --bg-2 for a mark, 4.5:1 on the page for code */
   --env-ci: #308df0; --env-stg: #079ba3; --env-uat: #d17338; --env-other: #9f8b32; --env-swap: #638dcd;
-  --f-sql: #ec5e00; --f-yml: #b9802a; --f-md: #638fc1; --f-json: #249e6b; --f-csv: #3d9c72; --f-macro: #8f8e62;
+  --f-md: #638fc1; --f-macro: #8f8e62;
   --syn-num: #bb5637; --syn-atom: #4c71c1; --syn-macro: #4c71c1; --syn-param: #c44a54; --syn-jatom: #925eb2;
   /* Shadows and scrims, warm and light */
   --shadow-sm: 0 6px 18px rgba(20, 20, 10, .10);
@@ -1233,22 +1233,29 @@ kbd {
 }
 .caret svg { transition: transform .12s ease; }
 .row.open > .caret svg { transform: rotate(90deg); }
-.ficon { width: 15px; height: 15px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
-.ficon.sql { color: var(--f-sql); }
-.ficon.yml { color: var(--f-yml); }
-.ficon.md { color: var(--f-md); }
-.ficon.json { color: var(--f-json); }
-.ficon.csv { color: var(--f-csv); }
-.ficon.other { color: var(--f-other); }
+/* A file's icon: neutral, but for the file of a model, a seed or a snapshot,
+   which carries the colour its box has on the canvas (inline, from the
+   manifest). The few files the design names keep its colour: dbt's YAML, a
+   script's Py, and the dimmer pair of Markdown and shell. */
+.ficon { width: 15px; height: 15px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; color: var(--fg-mute); }
+.ficon.yml { color: var(--dbt-yaml); }
+.ficon.md, .ficon.sh { color: var(--fg-dim); }
+.ficon.py { color: var(--py); }
 .ficon.macro { color: var(--f-macro); }
 
-/* Explorer status colours: green for buffers not yet written to disk, amber for
-   files that are saved but still absent from a commit. */
+/* Git's status is a letter at the end of the row, never a colour on the name;
+   a folder holding changes carries its letter dimmed. An unsaved buffer is the
+   pencil it has in its tab. */
+.row .gs { margin-left: auto; width: 12px; flex: 0 0 auto; text-align: center; font: 600 10.5px var(--mono); }
+.gs.m { color: var(--git-m); }
+.gs.u, .gs.a { color: var(--git-u); }
+.gs.w { height: 11px; background: var(--git-m); -webkit-mask: var(--m-edit) center / 11px no-repeat; mask: var(--m-edit) center / 11px no-repeat; }
+/* A folder's letter, dimmed by mixing it into the sidebar, so it stays readable. */
+.row.folder .gs.m { color: color-mix(in srgb, var(--git-m) 85%, var(--bg-2)); }
+.row.folder .gs.u { color: color-mix(in srgb, var(--git-u) 85%, var(--bg-2)); }
+.row.folder .gs.w { background: color-mix(in srgb, var(--git-m) 85%, var(--bg-2)); }
 .row .nm { color: var(--fg); }
 .row.file .nm { color: var(--fg-path); }
-.row.st-unsaved .nm { color: var(--ok); }
-.row.st-modified .nm, .row.st-untracked .nm { color: var(--warn); }
-.row.st-untracked .nm { opacity: .85; }
 /* A node's kind: the bar of its box. */
 .dot { width: 3px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
 

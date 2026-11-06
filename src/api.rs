@@ -4201,7 +4201,17 @@ struct PathQuery {
 
 async fn dir(State(st): State<Arc<AppState>>, Query(q): Query<PathQuery>) -> Response {
     match files::list_dir(&st.root, &q.path) {
-        Ok(entries) => Json(entries).into_response(),
+        Ok(mut entries) => {
+            // A file the manifest defines a model, a seed or a snapshot in says
+            // so, for the tree to draw its icon by the materialization.
+            let graph = st.graph.read().await.clone();
+            for e in entries.iter_mut().filter(|e| !e.dir) {
+                let Some(n) = graph.node_built_in(&e.path) else { continue };
+                e.kind = Some(n.kind.as_str());
+                e.materialized = (n.kind == Kind::Model && !n.materialized.is_empty()).then(|| n.materialized.clone());
+            }
+            Json(entries).into_response()
+        }
         Err(e) => err(e),
     }
 }
@@ -5444,6 +5454,77 @@ mod tests {
         let kept = crate::tour::load(&root.join("config").join("tour.json")).unwrap();
         assert!(kept.offered > 0 && kept.version == env!("CARGO_PKG_VERSION"), "{kept:?}");
         assert!(status_of(port, keyless(raw("POST", "/api/tour/offer", &offer))).await.ends_with("401 Unauthorized"));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A tree listing says which of its files define a model, a seed or a
+    /// snapshot (a Python model too), and a model's materialization, for the
+    /// page to draw the icon. A properties file, which only declares them, a
+    /// disabled node's file, an installed package's node that is not where
+    /// `dbt deps` puts it (it must not colour the project's own file of that
+    /// name) and any other file say nothing.
+    #[tokio::test]
+    async fn a_listing_names_the_kind_and_materialization_of_a_nodes_file() {
+        let root = temp_project("dirkinds");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        for rel in [
+            "models/stg.sql", "models/mart.sql", "models/runs.sql", "models/py_model.py", "models/off.sql", "models/adhoc.sql",
+            "models/schema.yml", "models/notes.md", "seeds/raw.csv", "snapshots/snap.sql", "dbt_packages/artifacts/models/runs.sql",
+        ] {
+            std::fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
+            std::fs::write(root.join(rel), "").unwrap();
+        }
+        let node = |name: &str, kind: &str, package: &str, file: &str, config: serde_json::Value| {
+            serde_json::json!({ "name": name, "resource_type": kind, "package_name": package, "original_file_path": file,
+                "patch_path": "demo://models/schema.yml", "config": config })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "metadata": { "project_name": "demo" },
+            "nodes": {
+                "model.demo.stg": node("stg", "model", "demo", "models/stg.sql", serde_json::json!({ "materialized": "view" })),
+                "model.demo.mart": node("mart", "model", "demo", "models/mart.sql", serde_json::json!({ "materialized": "incremental" })),
+                "model.demo.py_model": node("py_model", "model", "demo", "models/py_model.py", serde_json::json!({ "materialized": "table" })),
+                "model.demo.runs": node("runs", "model", "demo", "models/runs.sql", serde_json::json!({ "materialized": "table" })),
+                // Installed, so found under dbt_packages; and never installed, whose name sorts first.
+                "model.artifacts.runs": node("runs", "model", "artifacts", "models/runs.sql", serde_json::json!({ "materialized": "view" })),
+                "model.gone.aaa": node("aaa", "model", "gone", "models/runs.sql", serde_json::json!({ "materialized": "ephemeral" })),
+                "seed.demo.raw": node("raw", "seed", "demo", "seeds/raw.csv", serde_json::json!({})),
+                "snapshot.demo.snap": node("snap", "snapshot", "demo", "snapshots/snap.sql", serde_json::json!({})),
+            },
+            "disabled": { "model.demo.off": [node("off", "model", "demo", "models/off.sql", serde_json::json!({ "enabled": false, "materialized": "table" }))] },
+            "parent_map": {},
+        }))
+        .unwrap();
+        let mut graph = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        graph.place_packages(&root);
+        *st.graph.write().await = Arc::new(graph);
+        let list = |dir: &'static str| {
+            let h = h.clone();
+            async move {
+                let listed = response_of(port, get(&format!("/api/dir?path={dir}"), &h)).await;
+                let rows: serde_json::Value = serde_json::from_str(past_head(&listed)).unwrap();
+                rows
+            }
+        };
+        let models = list("models").await;
+        let of = |rows: &serde_json::Value, name: &str| {
+            let r = rows.as_array().unwrap().iter().find(|r| r["name"] == name).unwrap_or_else(|| panic!("{name} in {rows}"));
+            (r.get("kind").map(|k| k.to_string()), r.get("materialized").map(|k| k.to_string()))
+        };
+        let some = |k: &str, m: Option<&str>| (Some(format!("\"{k}\"")), m.map(|m| format!("\"{m}\"")));
+        assert_eq!(of(&models, "stg.sql"), some("model", Some("view")));
+        assert_eq!(of(&models, "mart.sql"), some("model", Some("incremental")));
+        assert_eq!(of(&models, "py_model.py"), some("model", Some("table")), "a Python model");
+        assert_eq!(of(&models, "runs.sql"), some("model", Some("table")), "the project's own file, not the uninstalled package's node");
+        for quiet in ["off.sql", "adhoc.sql", "schema.yml", "notes.md"] {
+            assert_eq!(of(&models, quiet), (None, None), "{quiet}");
+        }
+        assert_eq!(of(&list("seeds").await, "raw.csv"), some("seed", None));
+        assert_eq!(of(&list("snapshots").await, "snap.sql"), some("snapshot", None));
+        assert_eq!(of(&list("dbt_packages/artifacts/models").await, "runs.sql"), some("model", Some("view")), "an installed package's file");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -81,13 +81,13 @@ function ratio(a, b) {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 check('the ratio is the WCAG one', [ratio('#000000', '#ffffff'), Math.round(ratio('#777777', '#ffffff') * 100) / 100], [21, 4.48]);
+function channels2(v) { return [1, 3, 5].map(function (i) { return parseInt(v.slice(i, i + 2), 16); }); }
 function lightValue(n) { return n in light.decl ? light.decl[n] : night.decl[n]; }
 var MARKS = /^--(k-[\w-]+|t-(model|singular|column)|r-[\w-]+|ok|warn|bad|env-[\w-]+|tool-[\w-]+|f-[\w-]+)$/;
 var marks = night.names.filter(function (n) { return MARKS.test(n) && /^#[0-9a-f]{6}$/i.test(night.decl[n]) && !(n in derived.decl); });
-ok('the meaning colours Light has to take are many: ' + marks.length, marks.length >= 50);
-// --f-other is the one mark colour no theme restates (a grey, Night's, fit for every page).
+ok('the meaning colours Light has to take are many: ' + marks.length, marks.length >= 40);
 check('every kind, test, role, state, environment and tool colour is declared by Light itself, not left at Night\'s',
-  marks.filter(function (n) { return !(n in light.decl) && n !== '--f-other'; }), []);
+  marks.filter(function (n) { return !(n in light.decl); }), []);
 // The floor is the page and the sidebar: --bg-2 is the darker of the two, so a mark that holds there holds on both.
 check('each is at least 3:1 on Light\'s sidebar (--bg-2), so on its page too', marks.filter(function (n) { return ratio(lightValue(n), light.decl['--bg-2']) < 3; })
   .map(function (n) { return n + ' ' + lightValue(n) + ' ' + ratio(lightValue(n), light.decl['--bg-2']).toFixed(2); }), []);
@@ -99,8 +99,31 @@ check('each is at least 4.5:1 on Light\'s page', syn.filter(function (n) { retur
 check('its text is readable on its page and on its cards', ['--fg', '--fg-2', '--fg-dim', '--fg-mute'].map(function (n) {
   return ratio(light.decl[n], light.decl['--bg']) >= 4.5 && ratio(light.decl[n], light.decl['--bg-3']) >= 4.5;
 }), [true, true, true, true]);
+// The two colours a file's icon takes beyond the kinds' (0151): dbt's YAML and Python's yellow.
+check('every theme declares --dbt-yaml and --py, Light with its own twins',
+  [night, graphite, light, halloween].map(function (b) { return ['--dbt-yaml', '--py'].filter(function (n) { return !(n in b.decl); }); }), [[], [], [], []]);
+check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-yaml', '--py'].filter(function (n) {
+  return ratio(light.decl[n], light.decl['--bg-2']) < 3;
+}), []);
+// Git's letters are 10.5px text at the end of a tree row (0151): the sidebar, a selected row, and a folder's dimmed one all hold 4.5:1.
+(function () {
+  var bg2 = channels2(light.decl['--bg-2']), onSel = channels2(light.decl['--accent-dim']);
+  function hex(c) { return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join(''); }
+  function mix(a, b, p) { return a.map(function (v, i) { return Math.round(v * p + b[i] * (1 - p)); }); }
+  var bad = [];
+  ['--git-m', '--git-u'].forEach(function (n) {
+    var c = channels2(light.decl[n]);
+    [['sidebar', bg2], ['selected row', onSel]].forEach(function (p) { if (ratio(hex(c), hex(p[1])) < 4.5) bad.push(n + ' on ' + p[0]); });
+    if (ratio(hex(mix(c, bg2, .85)), light.decl['--bg-2']) < 4.5) bad.push(n + ' dimmed on a folder');
+  });
+  check('Light\'s git letters are at least 4.5:1 on its sidebar, on a selected row and dimmed on a folder', bad, []);
+}());
+check('every theme but Light keeps Night\'s git letters, which are the warning and OK colours they have',
+  [graphite, halloween].map(function (b) { return ['--git-m', '--git-u'].filter(function (n) { return n in b.decl; }).length; })
+    .concat([night.decl['--git-m'] === night.decl['--warn'], night.decl['--git-u'] === night.decl['--ok'], graphite.decl['--warn'] === night.decl['--warn'], halloween.decl['--ok'] === night.decl['--ok']]),
+  [0, 0, true, true, true, true]);
 check('the terminal keeps Night\'s dark colours: no theme declares them', [light, graphite, halloween].map(function (b) {
-  return ['--term-bg', '--term-thumb', '--f-other'].filter(function (n) { return n in b.decl; }).length;
+  return ['--term-bg', '--term-thumb'].filter(function (n) { return n in b.decl; }).length;
 }), [0, 0, 0]);
 
 print('\n--- Graphite ---');
