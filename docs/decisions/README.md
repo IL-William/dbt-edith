@@ -155,6 +155,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0149](0149-libraries-and-the-connector-come-from-where-they-were-fixed.md) | The terminal loads libraries from System32, and the Snowflake script wants a fixed connector | loading a library by name on Windows, adding a dependency that does, or changing which `snowflake-connector-python` the Snowflake script accepts |
 | [0150](0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md) | A theme is a set of variables on the page, and Halloween is one | adding or changing a theme, the theme button or its menu, what `look.json` holds, which theme an export is drawn in, or the Halloween theme |
 | [0151](0151-a-files-icon-is-coloured-only-by-what-the-manifest-builds-it-as.md) | A file's icon is coloured only by what the manifest builds it as | adding a file type to the tree, colouring or reshaping a file's icon, or showing git's status on a row |
+| [0152](0152-a-release-is-checked-on-virustotal-before-it-is-published.md) | A release is checked on VirusTotal before it is published | changing what the release workflow does between the build and the publication, the `VIRUSTOTAL_API_KEY` secret, or the override that publishes a flagged release |
 
 ## Keeping these honest
 
