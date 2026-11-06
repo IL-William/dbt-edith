@@ -2746,6 +2746,17 @@ of its own, and each panel updates the tour, its page under
     - The theme has no keyboard shortcut, and the settings' one-column layout
       is the settings step's.
 
+41. **The file icons' limits (0151, 2.3.0).**
+    - The editor's tabs and Open editors draw no file icon, nor the kind's bar
+      (0148): a tab knows its file, not its node.
+    - A file deleted in the working tree is not in the tree, so no row shows
+      git's D.
+    - The search palette and a diff's title colour a model's file only once its
+      folder is known (the diff asks for it; the palette's file hits are the
+      files no node stands for, so they are grey).
+    - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
+      grey cylinder, as an ephemeral model's is a grey-blue one.
+
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
 

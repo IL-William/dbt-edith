@@ -5,20 +5,38 @@ with `Cmd/Ctrl + K`, and inside files with the Search tab.
 
 ## Explorer
 
-Folders carry the state of what is inside them:
+A row carries the state of what it is, and a folder of what is inside it, at
+the end of the row:
 
 | | |
 | --- | --- |
-| green | holds a file with unsaved changes in the editor |
-| amber | holds a file that is saved but not committed, or untracked |
+| a pencil | an unsaved buffer in the editor, or a folder holding one |
+| M | a file saved but not committed, or a folder holding one |
+| A | a file staged as new |
+| U | a file untracked, or a folder holding one |
 
-Files are coloured the same way, so a green folder can be followed down to the
-buffer that is still unwritten. Status comes from `git status --porcelain`, run
-server-side, cached for 1.5 s and polled every 5 s, so committing from the
-built-in terminal clears the colours on its own. A hidden tab stops asking,
-and catches up the moment it is shown again.
+A folder's letter is fainter, so it can be followed down to the file that
+carries it. The names keep their colour. Status comes from
+`git status --porcelain`, run server-side, cached for 1.5 s and polled every 5 s,
+so committing from the built-in terminal clears the letters on its own. A
+hidden tab stops asking, and catches up the moment it is shown again.
 
-File types get their own icon and colour; `.sql` files use a database glyph.
+A file's icon says what it is: a cylinder for SQL, a dotted list for YAML, a
+rounded M for Markdown, Py, a terminal for shell, braces for JSON, a table for
+CSV and a page for the rest. Its colour says only what the manifest builds it
+as: the file of a model, a seed or a snapshot takes the colour its box has on
+the lineage (a view blue, a table green, an incremental model amber, and so on,
+with the materialization in its tooltip), so a model changed to a table turns
+green on the next manifest. Every other file is grey, but YAML, which is dbt's
+violet, and Py, which is yellow. The colour comes from the manifest: with none,
+every `.sql` is a grey cylinder (YAML, Markdown and shell keep theirs, and a
+Python model looks like a script until the manifest names it), and a new model
+stays grey until the next `dbt parse`, `compile` or `run` writes the manifest,
+which the server reloads by itself and the tree recolours without reopening the
+folder. A changed materialization shows after the next parse, as the canvas
+does. Git's status is a letter at the end of the
+row, M for modified and U for untracked, and a folder holding changes carries
+the same letter, fainter.
 
 The header above the tree names the project and carries two buttons. The first
 collapses every folder, which is what following three `ref()` calls into a deep

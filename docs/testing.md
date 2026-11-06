@@ -73,6 +73,7 @@ $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per or
 $JSC web/tests/halloween.js   # the Halloween theme: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules
 $JSC web/tests/themes.js      # the four themes: their blocks, Light's contrast, Graphite's greys, the pick, the export's theme
 $JSC web/tests/shapes.js      # one shape per meaning: no marker round, every state its pictogram
+$JSC web/tests/fileicons.js   # a file's icon: its shape by extension, its colour by what the manifest builds it as, the tree's git letters
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake

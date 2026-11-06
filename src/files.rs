@@ -208,6 +208,13 @@ pub struct Entry {
     pub path: String,
     pub dir: bool,
     pub size: u64,
+    /// What the manifest makes of this file, when it defines a model, a seed or
+    /// a snapshot: its kind and, for a model, its materialization. The page
+    /// draws the file's icon by it. Filled by the route, which holds the graph.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub materialized: Option<String>,
 }
 
 pub fn list_dir(root: &Path, rel: &str) -> anyhow::Result<Vec<Entry>> {
@@ -226,6 +233,8 @@ pub fn list_dir(root: &Path, rel: &str) -> anyhow::Result<Vec<Entry>> {
             name,
             dir: meta.is_dir(),
             size: if meta.is_dir() { 0 } else { meta.len() },
+            kind: None,
+            materialized: None,
         });
     }
     out.sort_by(|a, b| b.dir.cmp(&a.dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));

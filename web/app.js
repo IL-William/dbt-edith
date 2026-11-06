@@ -26,7 +26,8 @@ const S = {
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
-  gitMod: new Set(), gitUnt: new Set(),
+  fileMarks: new Map(),       // path -> {kind, materialized} of a model's, seed's or snapshot's file, from /api/dir, for the file's icon (0151)
+  gitMod: new Set(), gitUnt: new Set(), gitAdded: new Set(),
   gitModDirs: new Set(), gitUntDirs: new Set(),
   gitPrefixes: [], gitKey: '',
   git: null,                  // full payload of /api/git
@@ -2530,7 +2531,15 @@ function mountDiff(key) {
 
     const title = document.createElement('div');
     title.className = 'diff-title';
-    title.append(fileIcon(f.path));
+    const icon = fileIcon(f.path, fileMark(f.path));
+    title.append(icon);
+    // A model's file in a folder the tree has not opened: its mark is asked once, by its folder.
+    if (!S.fileMarks.has(f.path)) {
+      loadMarks(f.path.slice(0, Math.max(0, f.path.lastIndexOf('/')))).then(() => {
+        const m = fileMark(f.path);
+        if (m && icon.isConnected) icon.replaceWith(fileIcon(f.path, m));
+      });
+    }
     const nm = document.createElement('b');
     nm.textContent = base(f.path);
     const state = document.createElement('span');
@@ -3691,9 +3700,11 @@ async function openCrumbMenu(anchor, spec) {
     let entries;
     try { entries = await api.get('/api/dir?path=' + encodeURIComponent(spec.dir)); }
     catch (e) { return toast(e.message, 'err'); }
+    rememberMarks(entries);
     rows = entries.map((entry) => ({
       label: entry.name,
       dir: entry.dir,
+      mark: markOf(entry),
       current: entry.path === spec.current,
       pick: () => {
         if (entry.dir) return openCrumbMenu(anchor, { kind: 'path', dir: entry.path, current: '' });
@@ -3735,7 +3746,7 @@ async function openCrumbMenu(anchor, spec) {
       ic.innerHTML = CHEVRON;
       b.appendChild(ic);
     } else {
-      b.appendChild(fileIcon(row.label));
+      b.appendChild(fileIcon(row.label, row.mark || null));
     }
     b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: row.label }));
     if (row.sets) b.append(Object.assign(document.createElement('span'), { className: 'sets', textContent: row.sets }));
@@ -3790,18 +3801,25 @@ async function openCrumbMenu(anchor, spec) {
 const CHEVRON = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" ' +
   'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
 
-/* A plain database glyph for .sql files. Drawn for this project: it is not
-   derived from any vendor logo. */
-const SQL_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><ellipse cx="8" cy="3.6" rx="5" ry="1.9"/><path d="M3 3.6v8.8c0 1.05 2.24 1.9 5 1.9s5-.85 5-1.9V3.6"/><path d="M3 8c0 1.05 2.24 1.9 5 1.9S13 9.05 13 8"/></svg>';
-
-const DOC = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" ' +
-  'stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.8H4.2a1 1 0 00-1 1v10.4a1 1 0 001 1h7.6a1 1 0 001-1V5.6z"/>' +
-  '<path d="M9 1.8v3.8h3.8"/></svg>';
-const BRACES = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" ' +
-  'stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 2.5C4.8 2.5 5 5 5 6.2S3.6 8 3.6 8 5 8.6 5 9.8 4.8 13.5 6.4 13.5"/>' +
-  '<path d="M9.6 2.5c1.6 0 1.4 2.5 1.4 3.7S12.4 8 12.4 8 11 8.6 11 9.8s.2 3.7-1.4 3.7"/></svg>';
-const TABLE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2" ' +
-  'stroke-linejoin="round"><rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.2"/><path d="M2.3 6.6h11.4M6.4 6.6v6.1"/></svg>';
+/* The file glyphs are the design's: 16 by 16, stroked like every icon of the
+   page. A model's .sql is a cylinder (a plain database drawn for this project,
+   not derived from any vendor logo), coloured by what its node is built as. */
+const FILE_SVG = (body) => '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+const SQL_ICON = FILE_SVG('<ellipse cx="8" cy="4" rx="4.75" ry="1.9"/>' +
+  '<path d="M3.25 4v8c0 1.05 2.1 1.9 4.75 1.9s4.75-.85 4.75-1.9V4M3.25 8c0 1.05 2.1 1.9 4.75 1.9s4.75-.85 4.75-1.9"/>');
+/* A dotted list: dbt's YAML. */
+const YML_ICON = FILE_SVG('<circle cx="2.75" cy="3.5" r="1" fill="currentColor" stroke="none"/>' +
+  '<circle cx="5.25" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="5.25" cy="12.5" r="1" fill="currentColor" stroke="none"/>' +
+  '<path d="M5.25 3.5h8.5M7.75 8h6M7.75 12.5h6"/>');
+const MD_ICON = FILE_SVG('<rect x="1.25" y="3.5" width="13.5" height="9" rx="1.75"/>' +
+  '<path d="M4 10.25v-4.5l2 2.5 2-2.5v4.5M11.5 5.75v4.5M10 8.75l1.5 1.5 1.5-1.5"/>');
+const PY_ICON = FILE_SVG('<path d="M3 13V3.5h3a2.5 2.5 0 0 1 0 5H3"/><path d="M9 6.5l2.5 4.5M14 6.5L10 13.5"/>');
+const SH_ICON = FILE_SVG('<rect x="1.25" y="2.75" width="13.5" height="10.5" rx="1.75"/><path d="M4 6l2.25 2L4 10M8 10.5h4"/>');
+const DOC = FILE_SVG('<path d="M4 1.75h5l3 3v9.5H4z"/><path d="M9 1.75v3h3"/>');
+const BRACES = FILE_SVG('<path d="M6.4 2.5C4.8 2.5 5 5 5 6.2S3.6 8 3.6 8 5 8.6 5 9.8 4.8 13.5 6.4 13.5"/>' +
+  '<path d="M9.6 2.5c1.6 0 1.4 2.5 1.4 3.7S12.4 8 12.4 8 11 8.6 11 9.8s.2 3.7-1.4 3.7"/>');
+const TABLE = FILE_SVG('<rect x="2.3" y="3.3" width="11.4" height="9.4" rx="1.2"/><path d="M2.3 6.6h11.4M6.4 6.6v6.1"/>');
 const MACRO_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" ' +
   'stroke-linecap="round"><path d="M11 2.6c-1.7-.5-2.9.2-3.2 2L6.4 11.4c-.3 1.8-1.5 2.5-3.2 2"/><path d="M5 6.5h5.5"/></svg>';
 
@@ -3814,15 +3832,50 @@ function macroIcon() {
   return span;
 }
 
-function fileIcon(name) {
+/* What the manifest makes of a file, by its path: {kind, materialized} for the
+   file of a model, a seed or a snapshot, as /api/dir says it with each listing.
+   A file the manifest does not define has none. */
+const fileMark = (path) => S.fileMarks.get(path) || null;
+const markOf = (entry) => (entry.kind ? { kind: entry.kind, materialized: entry.materialized || '' } : null);
+
+/* Every file of a listing is remembered by its path, whether or not a row draws
+   it: the tree, the breadcrumb's menu and a diff's title all read them. */
+function rememberMarks(entries) {
+  for (const e of entries) {
+    if (e.dir) continue;
+    const m = markOf(e);
+    if (m) S.fileMarks.set(e.path, m); else S.fileMarks.delete(e.path);
+  }
+}
+
+async function loadMarks(dir) {
+  try { rememberMarks(await api.get('/api/dir?path=' + encodeURIComponent(dir))); } catch { /* a folder that is gone */ }
+}
+
+/* A file's icon. Its shape says what the file is (a cylinder for SQL, a dotted
+   list for YAML, a rounded M for Markdown, Py, a terminal, braces, a table, a
+   page for the rest); its colour says only what the manifest builds it as, so
+   it is neutral for every file but the one of a model, a seed or a snapshot,
+   which takes the colour its box has on the canvas (0151). */
+function fileIcon(name, mark) {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
   const span = document.createElement('span');
-  if (ext === 'sql') { span.className = 'ficon sql'; span.innerHTML = SQL_ICON; }
-  else if (ext === 'yml' || ext === 'yaml') { span.className = 'ficon yml'; span.innerHTML = DOC; }
-  else if (ext === 'md') { span.className = 'ficon md'; span.innerHTML = DOC; }
-  else if (ext === 'json') { span.className = 'ficon json'; span.innerHTML = BRACES; }
-  else if (ext === 'csv') { span.className = 'ficon csv'; span.innerHTML = TABLE; }
-  else { span.className = 'ficon other'; span.innerHTML = DOC; }
+  const [kind, svg] = ext === 'sql' ? ['sql', SQL_ICON]
+    : ext === 'yml' || ext === 'yaml' ? ['yml', YML_ICON]
+    : ext === 'md' ? ['md', MD_ICON]
+    : ext === 'py' ? ['py', PY_ICON]
+    : ext === 'sh' ? ['sh', SH_ICON]
+    : ext === 'json' ? ['json', BRACES]
+    : ext === 'csv' ? ['csv', TABLE]
+    : ['other', DOC];
+  span.className = 'ficon ' + kind;
+  span.innerHTML = svg;
+  // A Python model is a model: its Py glyph takes its box's colour too.
+  if (mark && (kind === 'sql' || kind === 'csv' || kind === 'py')) {
+    span.classList.add('node');
+    span.style.color = Lineage.nodeColor(mark);
+    span.title = Lineage.matLabel(mark);
+  }
   return span;
 }
 
@@ -3831,6 +3884,7 @@ async function loadDir(container, path, depth) {
   let entries;
   try { entries = await api.get('/api/dir?path=' + encodeURIComponent(path)); }
   catch (e) { return toast(e.message, 'err'); }
+  rememberMarks(entries);
   for (const entry of entries) {
     const row = document.createElement('div');
     row.className = 'row ' + (entry.dir ? 'folder' : 'file');
@@ -3843,7 +3897,9 @@ async function loadDir(container, path, depth) {
     nm.className = 'nm';
     nm.textContent = entry.name;
     row.append(caret);
-    if (!entry.dir) row.append(fileIcon(entry.name));
+    if (!entry.dir) {
+      row.append(fileIcon(entry.name, markOf(entry)));
+    }
     row.append(nm);
     container.appendChild(row);
     S.rows.set(entry.path, { el: row, dir: entry.dir });
@@ -3875,6 +3931,31 @@ async function loadDir(container, path, depth) {
   paintTree();
 }
 
+/* A new manifest can change what a file is built as, or give a file a node it
+   had none of: each folder the tree has opened is listed again and the icons
+   whose mark moved are drawn again. Nothing is asked before a tree exists. */
+async function refreshFileMarks() {
+  const dirs = [''];
+  for (const [path, row] of S.rows) if (row.dir && row.el.loading) dirs.push(path);
+  // What was known of a file that no folder listed again is no longer known.
+  const was = new Map(S.fileMarks);
+  S.fileMarks.clear();
+  for (const dir of dirs) {
+    let entries;
+    try { entries = await api.get('/api/dir?path=' + encodeURIComponent(dir)); } catch { continue; }
+    rememberMarks(entries);
+    for (const e of entries) {
+      if (e.dir) continue;
+      const row = S.rows.get(e.path);
+      if (!row || !row.el.isConnected) continue;
+      const now = fileMark(e.path);
+      if (JSON.stringify(now) === JSON.stringify(was.get(e.path) || null)) continue;
+      const old = row.el.querySelector('.ficon');
+      if (old) old.replaceWith(fileIcon(e.name, now));
+    }
+  }
+}
+
 // ------------------------------------------------------------ git status --
 function ancestorsOf(paths) {
   const out = new Set();
@@ -3890,6 +3971,7 @@ function applyGit(info) {
   // git collapses an untracked directory into a single entry ending in "/".
   S.gitPrefixes = [...info.modified, ...info.untracked].filter((p) => p.endsWith('/'));
   S.gitMod = files(info.modified);
+  S.gitAdded = new Set((info.staged || []).filter((c) => c.code[0] === 'A').map((c) => c.path));
   S.gitUnt = files(info.untracked);
   S.gitModDirs = ancestorsOf(info.modified);
   S.gitUntDirs = ancestorsOf(info.untracked);
@@ -3914,6 +3996,20 @@ function paintTree() {
       if (dirtyFiles.has(path)) state = 'unsaved';
       else if (S.gitMod.has(path)) state = 'modified';
       else if (S.gitUnt.has(path) || underGitPrefix(path)) state = 'untracked';
+    }
+    // git's letter, or the pencil of an unsaved buffer, at the end of the row (0151)
+    const mark = state === 'unsaved' ? ['w', '', row.dir ? 'Holds unsaved changes' : 'Unsaved changes']
+      : state === 'modified' ? (!row.dir && S.gitAdded.has(path) ? ['a', 'A', 'Added'] : ['m', 'M', row.dir ? 'Holds changed files' : 'Modified'])
+      : state === 'untracked' ? ['u', 'U', row.dir ? 'Holds new files' : 'Untracked']
+      : null;
+    if (!mark) {
+      if (row.gs) { row.gs.remove(); row.gs = null; }
+    } else {
+      if (!row.gs) { row.gs = document.createElement('span'); row.el.append(row.gs); }
+      row.gs.className = 'gs ' + mark[0];
+      row.gs.textContent = mark[1];
+      row.gs.title = mark[2];
+      row.gs.setAttribute('aria-label', mark[2]);
     }
     row.el.classList.toggle('st-unsaved', state === 'unsaved');
     row.el.classList.toggle('st-modified', state === 'modified');
@@ -16619,7 +16715,7 @@ function showPalette(hits, q) {
     const p2 = document.createElement('span');
     p2.className = 'p2';
     p2.textContent = h.sub;
-    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path), p1);
+    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path, fileMark(h.path)), p1);
     // Who calls a macro, the row's count, the card and the report saying more.
     if (h.kind === 'macro' && h.macro.used) r.append(jel('span', 'puse', macroUseText(h.macro.used).short));
     r.append(p2);
@@ -18313,6 +18409,7 @@ function applyMeta(meta) {
   // a feature or a collin poll brings the same one again.
   const moved = !S.meta || S.meta.manifest_mtime !== meta.manifest_mtime;
   S.meta = meta;
+  if (moved && S.rows.size) refreshFileMarks();
   // A sandbox may have appeared or gone, and the pill names the manifest's choice by it.
   if (S.envs) paintEnvSelect();
   // Another cache may hold indirect edges where this one had none.

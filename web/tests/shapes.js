@@ -185,3 +185,14 @@ print('\n--- the Halloween look leaves the markers alone ---');
 check('no selector of the look names a marker class', rules.filter(function (r) {
   return /halloween|(^|[^\w-])[.#]?hw-/.test(r.sel) && /(\.|#)(envtag|freshbadge|qdot|jobdot|tooldot|bdot|setwarn|cfgwarn-mark|venvpill|rolesq)\b/.test(r.sel);
 }).map(function (r) { return r.sel; }), []);
+
+// The clock, the flake and the update arrow are the design's own drawings
+// (edith-redesign.css, section 2): the clock's hands, the flake's three plain
+// lines, an arrow that points up.
+function maskPath(name) {
+  var m = new RegExp('--m-' + name + ': url\\("data:image/svg\\+xml,([^"]*)"\\)').exec(css);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+check('the clock is a circle of radius 6 and hands from M8 4.5', [/r='6'/.test(maskPath('clock')), /M8 4\.5V8l2\.5 1\.6/.test(maskPath('clock'))], [true, true]);
+check('the flake is three plain lines', (maskPath('snow').match(/M[\d.]+ ?[\d.]+/g) || []).length + ':' + /M8 1\.5v13M2\.4 4\.75l11\.2 6\.5M2\.4 11\.25l11\.2-6\.5/.test(maskPath('snow')), '3:true');
+check('the update arrow points up', /M8 13V3M3\.5 7\.5L8 3l4\.5 4\.5/.test(maskPath('newer')), true);

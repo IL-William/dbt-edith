@@ -2284,6 +2284,28 @@ impl Graph {
         first(false).or_else(|| first(true))
     }
 
+    /// The model, seed or snapshot a file of the tree is the file of, for the
+    /// icon: not a properties file, which only declares nodes, not a disabled
+    /// node, and not an installed package's node that was never found where
+    /// `dbt deps` puts it, whose `file` is a path inside its package that the
+    /// project's own file of that name must not take.
+    pub fn node_built_in(&self, file: &str) -> Option<&Node> {
+        let root = self.macros.root();
+        self.by_file
+            .get(file)?
+            .iter()
+            .map(|&i| &self.nodes[i as usize])
+            .filter(|n| matches!(n.kind, Kind::Model | Kind::Seed | Kind::Snapshot) && !n.disabled)
+            .filter(|n| {
+                if n.place.is_empty() {
+                    n.file == file && (n.package.is_empty() || root.is_empty() || n.package == root)
+                } else {
+                    n.place == file
+                }
+            })
+            .min_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)))
+    }
+
     /// Breadth-first upstream/downstream expansion around a focus node.
     ///
     /// `depth` is the signed shortest distance from the focus, which is what
