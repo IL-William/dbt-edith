@@ -2004,12 +2004,52 @@ kbd {
 #graph-mode .segbtn:hover:not(:disabled):not(.active) { background: none; color: var(--fg); }
 #graph-mode .segbtn.active { background: var(--bg-3); box-shadow: 0 0 0 1px var(--line); color: var(--fg); }
 .colchip {
-  display: flex; align-items: center; gap: 6px; font: 11px var(--mono);
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 4px 1px 9px;
+  display: flex; align-items: center; gap: 6px; height: 22px; margin: 0 2px; padding: 0 2px 0 9px; border-radius: 11px;
+  font: 11.5px var(--mono); color: var(--fg);
+  background: rgba(var(--accent-rgb), .12); border: 1px solid rgba(var(--accent-rgb), .35);
 }
-.colchip b { color: var(--accent); font-weight: 600; }
-.colchip .x { cursor: pointer; opacity: .5; padding: 0 3px; font-size: 13px; line-height: 1; }
-.colchip .x:hover { opacity: 1; }
+.colchip b { font-weight: 400; }
+.colchip .x {
+  display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 9px; cursor: pointer;
+  background: none; color: var(--fg-dim); font: 13px/1 var(--ui);
+}
+.colchip .x:hover { background: rgba(var(--accent-rgb), .2); color: var(--fg); }
+.colchip .x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The depth in dbt's words, 1+customers+0 (0158): each number opens the levels
+   that exist and what each one adds. A name past 24 characters is cut in the
+   middle by the script; in a narrow dock it is the first thing to fold, giving
+   way to the bar of its kind before the tabs' labels do (foldDockTabs). */
+.dsel {
+  display: flex; align-items: center; gap: 2px; height: 26px; padding: 0 2px 0 3px; border-radius: 6px;
+  background: var(--bg); font: 12px var(--mono); color: var(--fg);
+}
+.dsel .fn { padding: 0 2px; color: var(--fg-2); white-space: nowrap; }
+.dsel .fn:empty { display: none; }
+/* A kind is a bar and no marker is round (0148): the box's own .dot, in the
+   colour the script sets as --kind. */
+.dsel .dot { display: none; margin: 0 4px; background: var(--kind, var(--fg-mute)); }
+#lineage-tools.noname .dsel .fn { display: none; }
+#lineage-tools.noname .dsel .dot.on { display: block; }
+.lvlbtn {
+  display: flex; align-items: center; gap: 2px; height: 20px; padding: 0 3px 0 5px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg-2); font: inherit; color: var(--fg);
+}
+.lvlbtn b { font-weight: 600; }
+.lvlbtn .op { color: var(--accent); }
+.lvlbtn svg, .cpy svg, .lvrow svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.lvlbtn svg { width: 10px; height: 10px; color: var(--fg-dim); }
+.lvlbtn:hover, .lvlbtn[aria-expanded=true] { border-color: var(--line-strong); background: var(--bg-3); }
+.lvlbtn:focus-visible, .cpy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Focusable and not pointer-dead, so its title can say why there is nothing to open. */
+.lvlbtn[aria-disabled=true], .lvlbtn:disabled { opacity: .45; cursor: default; }
+.lvlbtn[aria-disabled=true]:hover { border-color: var(--line); background: var(--bg-2); }
+.cpy {
+  display: grid; place-items: center; width: 20px; height: 20px; padding: 0; cursor: pointer;
+  border: 0; border-radius: 4px; background: none; color: var(--fg-dim);
+}
+.cpy svg { width: 13px; height: 13px; }
+.cpy:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); }
+.cpy:disabled { opacity: .45; cursor: default; }
 
 /* --------------------------------------------------------------- lineage -- */
 #graph { width: 100%; height: 100%; display: block; background: var(--bg); cursor: grab; }
@@ -2776,6 +2816,28 @@ kbd {
   border-radius: 4px; border: 1px solid var(--line-strong); font: 10.5px/14px var(--mono); color: var(--fg-dim);
 }
 .xm-foot { padding: 4px 8px 6px; font: 11px var(--mono); color: var(--fg-mute); overflow-wrap: anywhere; }
+/* The levels menu of the depth control (0158): one row a level that exists, the
+   selector it writes, what it adds, and a check on the one drawn. It grows with
+   a long name, up to a bound, and cuts what is left with an ellipsis. */
+.envmenu.depthmenu {
+  width: max-content; min-width: 300px; max-width: min(460px, calc(100vw - 8px)); padding: 4px;
+  background: var(--bg-3); border-radius: 8px; box-shadow: var(--shadow-menu);
+}
+.depthmenu:focus { outline: none; }
+.depthmenu .menuhead { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.depthmenu button.lvrow {
+  display: grid; grid-template-columns: minmax(110px, max-content) minmax(0, 1fr) 14px; align-items: center; gap: 8px;
+  width: 100%; height: 30px; padding: 0 8px; border-radius: 5px; text-align: left;
+}
+.depthmenu button.lvrow:hover, .depthmenu button.lvrow:focus { background: var(--hover); }
+.depthmenu button.lvrow:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lvrow .s, .lvrow .a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lvrow .s { font: 12px var(--mono); }
+.lvrow .a { font-size: 11.5px; color: var(--fg-dim); }
+.lvrow svg { width: 14px; height: 14px; visibility: hidden; color: var(--accent); }
+.lvrow[aria-checked=true] svg { visibility: visible; }
+.lvwait { padding: 0 8px; line-height: 30px; font-size: 11.5px; color: var(--fg-mute); }
+.lvfoot { margin-top: 4px; padding: 6px 8px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--fg-mute); overflow-wrap: anywhere; }
 .tm-check { width: 14px; height: 14px; flex: 0 0 auto; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--accent); visibility: hidden; }
 .thememenu button[aria-checked=true] .tm-check { visibility: visible; }
 .tm-sw {

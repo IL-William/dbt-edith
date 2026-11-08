@@ -567,7 +567,7 @@ group('the page asks for it', function () {
   ok('an export measures a name in the class it writes it in, sized alike on the page',
     /const cls = b\.level \? `band-name l\$\{b\.level\}` : 'band-name';\s*const t = el\('text', \{ class: cls,[\s\S]{0,200}measure\(cls, b\.name\)/.test(lin)
     && /^\.band-name\.l1, \.band-name\.l2, \.band-name\.l3 \{ font-size: 12px; font-weight: 500; \}$/m.test(css));
-  ok('which redraws on a change, like the depth boxes', /for \(const el of \[\$\('#up'\), \$\('#down'\), \$\('#folder-levels'\)\]\) \{\s*el\.addEventListener\('change', rerender\);/.test(app));
+  ok('which redraws on a change, like the depth', /for \(const el of \[\$\('#up'\), \$\('#down'\), \$\('#folder-levels'\)\]\) \{\s*el\.addEventListener\('change', rerender\);/.test(app));
   ok('and is handed to the canvas', /levels: folderLevels\(\),/.test(app) && /layout\(d, opts\.folders, opts\.levels\)/.test(lin));
   ok('each level of sub-folder has its hue, on the canvas and in an exported file',
     [1, 2, 3].every(function (l) { return css.indexOf('.band.l' + l + ' {') >= 0 && app.indexOf("'.band.l" + l + ' {') >= 0; }));

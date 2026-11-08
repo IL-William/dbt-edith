@@ -82,6 +82,9 @@ var Lineage = {
   render: function (sub) { log.push('drawn ' + sub.column); return null; },
 };
 function paintMode() {}
+// The depth control's own, which the wait neither reads nor sets.
+function askDepth() {}
+function landDepth() {}
 function paintColCap() {}
 function paintLegend() {}
 function paintTestsCount() {}

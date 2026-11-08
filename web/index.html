@@ -385,14 +385,29 @@
         <div id="lineage-tools" class="tools">
           <span id="graph-mode" class="seg">
             <button class="segbtn active" data-mode="model"
-                    title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
+                    title="One model and its neighbours, as far up and down as the numbers either side of its name say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
             <button class="segbtn" data-mode="select" aria-controls="select-panel" aria-expanded="false"
                     title="Opens the Lineage space: any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Selection</button>
           </span>
-          <span id="col-chip" class="colchip hidden"></span>
-          <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
-          <label title="Levels of children drawn. Back to 1 when the model changes other than from the canvas">down <input id="down" type="number" min="0" max="20" value="1"></label>
+          <!-- The depth as dbt writes it, 1+customers+0 (0158): each number opens the
+               levels that exist. #up and #down stay as the inputs holding it, which
+               the rest of the page reads and writes; this paints from them and
+               writes them, one change a pick. In column mode the chip stands where
+               the name does. -->
+          <span id="depth-sel" class="dsel" role="group" aria-label="Depth, as a dbt selector"
+                title="How far the lineage goes, as a dbt selector">
+            <button id="up-btn" class="lvlbtn" type="button" aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Levels upstream"><b>1</b><span class="op">+</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+            <span id="col-chip" class="colchip hidden"></span>
+            <span id="depth-name" class="fn"></span>
+            <span id="depth-bar" class="dot" role="img"></span>
+            <button id="down-btn" class="lvlbtn" type="button" aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Levels downstream"><span class="op">+</span><b>1</b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+            <button id="depth-copy" class="cpy hidden" type="button" aria-label="Copy the selector" title="Copy the selector"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.5"/><path d="M10.75 5.25V3.75a1.5 1.5 0 0 0-1.5-1.5h-5.5a1.5 1.5 0 0 0-1.5 1.5v5.5a1.5 1.5 0 0 0 1.5 1.5h1.5"/></svg></button>
+            <input id="up" type="number" min="0" max="20" value="1" hidden>
+            <input id="down" type="number" min="0" max="20" value="1" hidden>
+          </span>
           <!-- An arrow into a bar: the walk going down and stopping. The label
                names what it stops at, and is empty while it stops at nothing,
                the bar being full in column mode. -->

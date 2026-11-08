@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""The lineage's up and down boxes, driven in headless Chrome on Jaffle Shop.
+"""The lineage's depth control, driven in headless Chrome on Jaffle Shop.
 
-The depth is how far a walk on the canvas has looked around one model. This
-checks the one rule focusNode keeps about it, against the requests the page
-makes for the lineage:
+The depth is how far a walk on the canvas has looked around one model, written
+as dbt writes a selector, `1+ customers +0`, in two hidden number boxes
+(#up, #down) that a button and a menu of levels on each side of the name set
+(0158). This checks the one rule focusNode keeps about it, against the
+requests the page makes for the lineage, and the control itself:
 
   - the boxes start at 1 and 1;
   - a box double-clicked on the canvas keeps the depth, and a +N badge
@@ -16,7 +18,16 @@ makes for the lineage:
     whether the canvas moves or stays on the same model;
   - the same model drawn again, from the Lineage space and back, keeps it;
   - the top bar, just above the width where its tabs fold, still fits and folds
-    the same with the settings open and back on Code.
+    the same with the settings open and back on Code;
+  - the control is driven by the keyboard alone: Enter on a number opens its
+    menu on the level drawn, an arrow and Enter draw another (one request),
+    Escape gives the focus back to the button, and Enter on the copy button
+    writes the selector as shown;
+  - a model with no children shows +0 and a disabled button while #down still
+    holds 1, and says why; a model with children lists its levels;
+  - a 40-character model name is cut in the middle in the control, whole in
+    its title, and its menu's rows fit (a model added to this walk's own copy
+    of Jaffle Shop, never to the fixture).
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
 DevTools client it borrows: it needs dbt to parse the copy, and Chrome, and
@@ -69,6 +80,16 @@ class Walk:
             self.page.until(f"({LINEAGE}).endsWith(' {up}/{down}')", f"the lineage at {up}/{down}")
         except AssertionError as e:
             raise AssertionError(f"{e}: {self.page.js(LINEAGE)}, boxes {self.page.js(DEPTH)}") from None
+
+    def press(self, key):
+        """A real key on whatever has the focus."""
+        keys = {"Enter": ("Enter", "Enter", 13, "\r"), "Escape": ("Escape", "Escape", 27, None),
+                "ArrowDown": ("ArrowDown", "ArrowDown", 40, None)}
+        self.page.key(*keys[key])
+        time.sleep(0.15)
+
+    def menu_rows(self):
+        return self.page.js("[...document.querySelectorAll('.depthmenu .lvrow')].map((r) => r.querySelector('.s').textContent)")
 
     def palette(self, name):
         page = self.page
@@ -155,6 +176,150 @@ class Walk:
         page.js("document.querySelector('#project').textContent = 'jaffle_shop'")
         page.call("Emulation.clearDeviceMetricsOverride")
 
+    def control(self):
+        """The depth control, by the keyboard, on a model with no children, one
+        with children and a name past 24 characters."""
+        page = self.page
+        q = "document.querySelector"
+        long = "customer_orders_by_payment_methods_daily"
+        cut = long[:12] + "\u2026" + long[-11:]
+        # The clipboard is stubbed: a headless page may refuse the real one, and
+        # what matters here is the text the button writes.
+        page.js("window.__copied = ''; navigator.clipboard.writeText = (t) => { window.__copied = t; return Promise.resolve(); }")
+
+        print("--- the control: a model with no children ---")
+        self.palette("customers")
+        self.drawn("customers at 1 and 1", "customers", "1/1")
+        page.until(f"{q}('#up-btn b').textContent === '1' && {q}('#down-btn b').textContent === '0'", "the numbers shown")
+        self.check("customers shows 1+ and +0 while #down still holds 1",
+                   page.js(f"{q}('#up-btn b').textContent + '/' + {q}('#down-btn b').textContent + '/' + {q}('#down').value") == "1/0/1")
+        self.check("the name sits between the buttons", page.js(f"{q}('#depth-name').textContent") == "customers")
+        self.check("the empty side is aria-disabled, named none, and says why", page.js(
+            f"(b => b.getAttribute('aria-disabled') + '|' + b.getAttribute('aria-label') + '|' + b.title)({q}('#down-btn'))")
+            == "true|Levels downstream: none|customers has no children")
+        self.check("the inputs are hidden, not gone", page.js(f"{q}('#up').hidden && {q}('#down').hidden"))
+        page.js(f"{q}('#down-btn').click()")
+        time.sleep(0.2)
+        self.check("a click on the empty side opens nothing", page.js(f"!{q}('.depthmenu')"))
+
+        print("--- the control: by the keyboard ---")
+        page.js(f"{q}('#up-btn').focus()")
+        self.press("Enter")
+        page.until(f"!!{q}('.depthmenu')", "the up menu")
+        self.check("Enter opens the menu", page.js(f"{q}('#up-btn').getAttribute('aria-expanded')") == "true")
+        rows = self.menu_rows()
+        self.check("it lists the focus alone, then the levels", rows[:3] == ["customers", "1+customers", "2+customers"], str(rows))
+        self.check("the level drawn has the focus", page.js(
+            f"document.activeElement.classList.contains('lvrow') && document.activeElement.getAttribute('aria-checked') === 'true'"
+            f" && document.activeElement.querySelector('.s').textContent === '1+customers'"))
+        self.check("its footer says nothing is downstream", page.js(f"{q}('.depthmenu .lvfoot').textContent") == "Nothing downstream: customers has no children.")
+        self.check("each row says what it adds", page.js(
+            "[...document.querySelectorAll('.depthmenu .lvrow .a')].map((a) => a.textContent)[0]") == "alone")
+        self.press("Escape")
+        self.check("Escape closes it and gives the button the focus", page.js(
+            f"!{q}('.depthmenu') && document.activeElement === {q}('#up-btn') && {q}('#up-btn').getAttribute('aria-expanded') === 'false'"))
+        self.press("Enter")
+        page.until(f"!!{q}('.depthmenu')", "the up menu again")
+        self.press("ArrowDown")
+        self.check("an arrow moves to the next level", page.js("document.activeElement.querySelector('.s').textContent") == "2+customers")
+        self.press("Enter")
+        self.drawn("2+customers by the keyboard draws 2 and 1", "customers", "2/1")
+        self.check("one pick, one request", page.js(
+            "performance.getEntriesByType('resource').filter((e) => e.name.includes('/api/lineage?id=model.jaffle_shop.customers&up=2&down=1')).length") == 1)
+        self.check("and the menu is gone", page.js(f"!{q}('.depthmenu')"))
+        page.js(f"{q}('#up-btn').focus()")
+        self.press("Enter")
+        page.until(f"!!{q}('.depthmenu')", "the up menu on 2")
+        self.press("Enter")
+        time.sleep(0.4)
+        self.check("the row already drawn only closes the menu", page.js(f"!{q}('.depthmenu') && {q}('#up').value") == "2")
+        self.check("the copy button writes the selector as shown", page.js(f"{q}('#depth-copy').getAttribute('aria-label')") == "Copy the selector 2+customers")
+        page.js(f"{q}('#depth-copy').focus()")
+        self.press("Enter")
+        page.until("window.__copied !== ''", "the copy")
+        self.check("Enter on copy writes it, a zero side dropped", page.js("window.__copied") == "2+customers")
+        self.check("and the toast says so", page.js("[...document.querySelectorAll('#toast .toast')].some((t) => t.textContent === 'Copied 2+customers')"))
+        self.depth(1, 1)
+
+        print("--- the control: a model with children ---")
+        self.palette("orders")
+        self.drawn("orders at 1 and 1", "orders", "1/1")
+        self.depth(2, 1)
+        page.until(f"{q}('#down-btn b').textContent === '1' && {q}('#up-btn b').textContent === '2'", "orders shown at 2 and 1")
+        page.js(f"{q}('#depth-copy').focus()")
+        page.js("window.__copied = ''")
+        self.press("Enter")
+        page.until("window.__copied !== ''", "the copy on orders")
+        self.check("both sides in dbt's syntax", page.js("window.__copied") == "2+orders+1")
+        self.check("the copy button's title stays the board's", page.js(f"{q}('#depth-copy').title") == "Copy the selector")
+        page.js(f"{q}('#down-btn').click()")
+        page.until(f"!!{q}('.depthmenu')", "the down menu")
+        rows = self.menu_rows()
+        self.check("the down menu lists orders+n", rows[:2] == ["orders", "orders+1"], str(rows))
+        self.check("its head names the side and the model", page.js(f"{q}('.depthmenu .menuhead').textContent") == "Downstream of orders")
+        self.check("and it stays in the window", page.js(
+            f"(r => r.left >= 0 && r.right <= innerWidth)({q}('.depthmenu').getBoundingClientRect())"))
+        self.check("a level that exists is never empty", all(a for a in page.js(
+            "[...document.querySelectorAll('.depthmenu .lvrow .a')].map((a) => a.textContent)")))
+        self.press("Escape")
+
+        print("--- the control: a long name ---")
+        self.palette(long)
+        self.drawn(f"{long} at 1 and 1", long, "1/1")
+        self.check("the name is cut in the middle, 24 characters", page.js(f"{q}('#depth-name').textContent") == cut and len(cut) == 24,
+                   page.js(f"{q}('#depth-name').textContent"))
+        self.check("its title keeps it whole", page.js(f"{q}('#depth-name').title") == long)
+        self.check("it has no children: +0 with #down at 1", page.js(f"{q}('#down-btn b').textContent + '/' + {q}('#down').value") == "0/1")
+        page.js(f"{q}('#up-btn').click()")
+        page.until(f"!!{q}('.depthmenu')", "the long name's menu")
+        self.check("the menu's head is cut and whole in its title", page.js(
+            f"(h => h.textContent === 'Upstream of {cut}' && h.title === 'Upstream of {long}')({q}('.depthmenu .menuhead'))"))
+        self.check("its rows fit", page.js(
+            "[...document.querySelectorAll('.depthmenu .lvrow .s, .depthmenu .lvrow .a, .depthmenu .menuhead')]"
+            ".every((e) => e.scrollWidth <= e.clientWidth)"),
+            str(page.js("[...document.querySelectorAll('.depthmenu .lvrow .s, .depthmenu .lvrow .a')].map((e) => [e.textContent, e.scrollWidth, e.clientWidth])")))
+        self.check("a row is named whole for a screen reader", page.js(
+            f"document.querySelectorAll('.depthmenu .lvrow')[1].getAttribute('aria-label').startsWith('1+{long}, ')"))
+        self.press("Escape")
+        page.js(f"{q}('#depth-copy').focus()")
+        page.js("window.__copied = ''")
+        self.press("Enter")
+        page.until("window.__copied !== ''", "the long name's copy")
+        self.check("the copy keeps the name whole", page.js("window.__copied") == f"1+{long}")
+
+        print("--- the control: a narrow dock ---")
+        # What folded at each width, measured: the name first, then the tabs'
+        # labels, then Export's.
+        state = (f"[{q}('#lineage-tools').classList.contains('noname'), {q}('#dock > .tabs').classList.contains('folded'),"
+                 f" {q}('#lineage-tools').classList.contains('iconic')].map(Number).join('')")
+        seen = {}
+        for width in range(1400, 520, -20):
+            page.call("Emulation.setDeviceMetricsOverride", width=width, height=800, deviceScaleFactor=1, mobile=False)
+            time.sleep(0.25)
+            seen.setdefault(page.js(state), width)
+        self.check("the name folds with the tabs still labelled, at a width only it had to give up",
+                   "100" in seen, str(seen))
+        self.check("the tabs never fold before the name does", not any(k[0] == "0" and k[1] == "1" for k in seen), str(seen))
+        self.check("Export folds last", not any(k[2] == "1" and k[1] == "0" for k in seen), str(seen))
+        if "100" in seen:
+            page.call("Emulation.setDeviceMetricsOverride", width=seen["100"], height=800, deviceScaleFactor=1, mobile=False)
+            time.sleep(0.4)
+            self.check("there the name gives way to the bar of its kind", page.js(
+                f"getComputedStyle({q}('#depth-name')).display === 'none' && getComputedStyle({q}('#depth-bar')).display === 'block'"
+                f" && {q}('#depth-bar').getAttribute('aria-label') === '{long}'"))
+            self.check("a bar and not a dot: 3 by 12", page.js(
+                f"(r => Math.round(r.width) + 'x' + Math.round(r.height))({q}('#depth-bar').getBoundingClientRect())") == "3x12")
+            self.check("the tabs keep their labels", page.js(
+                f"[...document.querySelectorAll('#dock > .tabs .tab:not(.hidden) > span')].every((e) => e.getBoundingClientRect().width > 2)"))
+            self.check("the control fits the row", page.js(
+                f"(r => r.height <= {q}('#dock > .tabs').getBoundingClientRect().height)({q}('#depth-sel').getBoundingClientRect())"))
+        # Wide enough for everything, the name is back and the tabs are labelled.
+        page.call("Emulation.setDeviceMetricsOverride", width=2200, height=800, deviceScaleFactor=1, mobile=False)
+        time.sleep(0.4)
+        self.check("wide enough, the name is back", page.js(f"getComputedStyle({q}('#depth-name')).display !== 'none'"))
+        page.call("Emulation.clearDeviceMetricsOverride")
+        time.sleep(0.3)
+
     def run(self, url):
         page = self.page
         page.call("Page.navigate", url=url)
@@ -231,6 +396,8 @@ class Walk:
         page.until("document.querySelector('#select-bar').classList.contains('hidden')", "Models")
         self.drawn("the Lineage space and back on orders, still 2 and 3", "orders", "2/3")
 
+        self.control()
+
         print("--- the top bar's fold ---")
         self.fold()
 
@@ -246,6 +413,9 @@ def main():
         work = Path(tmp)
         project = work / "jaffle_shop"
         shutil.copytree(W.JAFFLE, project)
+        # A model with no children and a name of 40 characters, in this copy only.
+        (project / "models" / "customer_orders_by_payment_methods_daily.sql").write_text(
+            "select * from {{ ref('orders') }}\n")
         W.parse(project)
         (work / "home").mkdir()
         edith = W.Edith(binary, project, work)
@@ -260,7 +430,7 @@ def main():
     if failed:
         print(f"{failed} check(s) failed")
         return 1
-    print("the depth boxes behave")
+    print("the depth control behaves")
     return 0
 
 

@@ -146,7 +146,7 @@ ok('the column walk sends the roles it stops at',
   /\/api\/collineage\?[\s\S]{0,200}&cut=\$\{encodeURIComponent\(\[\.\.\.S\.colCut\]/.test(src));
 ok('the legend only highlights: no cut in it',
   !/colCut/.test(src.slice(src.indexOf('function paintLegend'), src.indexOf('function paintStopAt'))));
-ok('stop at sits beside the depth boxes, shown in column mode only',
+ok('stop at sits beside the depth, shown in column mode only',
   /id="down"[^\n]*\n[\s\S]{0,300}<button id="stop-at"/.test(read('web/index.html'))
   && /\$\('#stop-at'\)[\s\S]{0,60}toggle\('hidden', S\.graphMode !== 'column'\)/.test(src));
 ok('a role ticked redraws, and the menu stays open for the next',

@@ -2279,6 +2279,19 @@ takes two gestures. A poll that changes the answer redraws the card in place
 with the focus kept. Checked with `web/tests/freshness.js`. Its limits are in
 Deferred item 44.
 
+The depth in dbt's words (0158, 2.9.0). The lineage's up and down boxes became
+dbt's selector around the focus's name, `1+ customers +0`: each number opens a
+menu of the levels that exist, each saying what it adds, counted on the server
+for the page's two lineage routes only (a walk per side in model mode, the
+draw's own walk in column mode), the current one ticked; a side with nothing
+shows 0 and says so while the box behind it keeps the depth. A copy button
+writes the selector, a zero side dropped and `source:` before a source's name;
+a name past 24 characters is cut in the middle; in a narrow dock the name is the
+first thing to fold, to the bar of its kind. The same control sits around the
+column chip, without the copy. The boxes stay, hidden, as what holds the depth,
+so 1.18.4's rules are unchanged. Checked with `web/tests/depth.js` and
+`scripts/walk_depth.py`. Its limits are in Deferred item 46.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2803,8 +2816,8 @@ of its own, and each panel updates the tour, its page under
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
-37. **The rest of the redesign, one pull request each.** The depth in dbt's
-    syntax, the Lineage space, column roles in the box,
+37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
+    syntax~~ (2.9.0, 0158), the Lineage space, column roles in the box,
     the settings, shortcuts, Jobs, the terminal, Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
@@ -2862,6 +2875,22 @@ of its own, and each panel updates the tour, its page under
       performance and none of correctness, to be fixed or allowed one by one
       before they run in CI.
     - Fuzzing the hand-written parsers with `cargo-fuzz`.
+46. **The depth control's limits (0158, 2.9.0).**
+    - Metrics, semantic models, saved queries and functions are not loaded,
+      though dbt's graph holds them as parents and children, so `dbt ls` can
+      count more than a menu row says.
+    - dbt's name method also matches a bare name against a package or a
+      model's first folder, so the copied `1+customers` selects the models
+      under `models/customers/` too, as the Export menu's `dbt ls` line does.
+    - The copy writes `source:` before a source's name; the Export menu's `dbt ls`
+      line writes nothing for a source. The two are left as they are.
+    - Every page lineage request walks the graph once more on the server, and a
+      column's three times, to count the levels; the answers are otherwise those
+      of main.
+    - A column walk that goes on past a level with nothing new (a stop taken
+      back) lists that level as `+ nothing new`.
+    - In a window narrower than the three folds can save, the tools row still
+      breaks, now with the control in it.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -4107,7 +4136,7 @@ Dependabot opens weekly lockfile bumps. A pull request touching `src/`, `web/` o
 says, Dependabot's own branches excepted. CodeMirror is at 5.65.21, which does
 not fix CVE-2025-6493 (SECURITY.md). The browser harnesses are not
 in CI: they need `jsc`, which ships with macOS (0013). Nor are the Chrome
-walks `scripts/check.sh` runs, the tour, the depth boxes and Edith's menu.
+walks `scripts/check.sh` runs, the tour, the depth control and Edith's menu.
 
 Several checks depend on timing, and can fail on a loaded machine, then pass
 when run again alone:
