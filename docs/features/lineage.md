@@ -157,13 +157,21 @@ selected row, the same as By folder, because tests can outnumber the models
 several times over: hundreds of boxes slow the canvas and bury what it was
 drawn for. Its tooltip says so and, while they are drawn, how many there are.
 
-A test hangs under the model whose YAML declares it, as a one-line box joined
+A test hangs under the model whose YAML declares it, as a one-line slip joined
 to it by a stem. A singular test, which has no YAML, hangs under the last built
 of the models it reads. An edge from another model the test reads comes in from
 the left, loops out on the right when that model sits in the same column, and
-comes back dashed when it is built later. Every line into a test, the stem
-included, is dotted and grey, where the lines between models are solid: it links
-a check to what it checks rather than data to where it goes.
+comes back dashed when it is built later. The model's own stem, down its left
+side with a tick into each row, is a thin dashed line; a line from another model
+into a test is dotted and grey, where the lines between models are solid: either
+links a check to what it checks rather than data to where it goes.
+
+A model's box is 220 by 48 with its kind as a 3px bar set in from the left, the
+name at 13px and the second line in mono at 11px; the lineage's focus has an
+accent border on a tinted fill, and the box you click has a soft ring round it
+too, which an export leaves out. A faint grid of dots lies behind the canvas. A
+`+N` badge is a small pill, and a test is a 22px slip: the generic in the usual
+type and its column after it in mono, dimmer.
 
 A row says what the test checks rather than the name dbt generated for it. A
 test alone on a column reads `unique · order_id`. Two or more tests of one
@@ -179,7 +187,8 @@ three.
 Each kind of test has a grey and a shape, lighter in the order the rows go, and
 the legend names them: a generic on the whole model a near-white bar doubled by
 a thin one, a singular test a light grey bar in three pieces and a dashed
-outline, a generic on a column the grey bar every test had. A test at
+outline, a generic on a column the grey bar every test had, each bar 3px wide
+and 10 tall. A test at
 `severity: warn` carries an amber triangle, and a group's row counts how many
 of its tests do. The hover card on a test says which generic it is and on which
 column, the package it was named through when dbt recorded one, and the
@@ -220,8 +229,9 @@ before it ends: a way of reading the graph, not a better layout of it
 ([0029](../decisions/0029-the-canvas-may-be-drawn-by-folder.md)). An exported
 file and a copied image keep the bands, with each name written at the top.
 
-While the toggle is on, pausing on it opens a **levels** box under it, which
-stays open while you type in it and closes a moment after you leave. It cuts
+While the toggle is on, a **levels** control sits beside it, a minus, the number
+and a plus, which a click or the keyboard steps from 1 to 4, in the dock and in
+the Lineage space alike, so nothing opens over the canvas. It cuts
 each band by its sub-folders: at 2, a `marts` holding `core` and `finance`
 draws each of them as a rectangle inside its band, in the hue of its level, with
 their names on a second row; 3 and 4 go one and two levels further. Sub-folders
@@ -259,9 +269,11 @@ menu of the three ways out.
 ![The Export menu open over the lineage: what the canvas shows and how many nodes and edges, three rows with their format and use, and the name of the file](../shots/lineage-export.png)
 
 Its head says what the canvas shows and how much, folded tests included,
-`4 nodes · 3 edges` (a test is a node), or `8 columns` on a column canvas, the
-model boxes not counted. It can differ from the line under the canvas, which
-also counts what a selection keeps for context or a cap leaves out. Its rows,
+`4 nodes · 3 edges · 11 tests` (a test is no node and its stem no edge), or
+`8 columns` on a column canvas, the model boxes not counted. It can differ from
+the line under the canvas, which also counts what a selection keeps for context
+or a cap leaves out, and says how many of the tests are folded under a chip
+(`11 tests · 3 folded`). Its rows,
 each with a format tag and a sentence, are **Copy as image** (PNG), which puts
 the picture on the clipboard to paste into a ticket or a chat; **Save as image**
 (.png), the same picture as a file; and **Save as HTML page** (.html). Its foot

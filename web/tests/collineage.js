@@ -779,7 +779,7 @@ check('the status line counts the columns partly traced',
 check('and says nothing when there are none',
       canvasStatus({ mode: 'column', focus_column: 'status', nodes: [cols[0]], edges: [] }, null), 'status · 1 columns · 0 edges');
 check('a model canvas never counts them',
-      canvasStatus({ mode: 'model', nodes: [{ partial: ['x'] }], edges: [] }, null), '1 nodes · 0 edges');
+      canvasStatus({ mode: 'model', nodes: [{ partial: ['x'] }], edges: [] }, null), '1 node · 0 edges');
 
 var seen = null;
 var findPrefs = { query: '', caseSensitive: true, wholeWord: false, regex: false };

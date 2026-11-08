@@ -11,6 +11,12 @@ The **Lineage** tab in the top bar, or the Selection button above the
 graph, opens a space over the whole window, the sidebar included, and draws
 there whatever a dbt selector matches, at the window's width and height, so you
 can draw the set you actually work on. Inside it the mode is called Selection.
+It has one bar: the selector on the left (Selectors, the box, how many of each
+kind it matched, Copy names and dbt ls) and the canvas's tools on the right
+(Tests, By folder with its levels, Fit and Export). On a narrower window the box
+shrinks first, then the count goes, then the buttons keep their glyph alone, and
+the bar stays on one line
+([0160](../decisions/0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md)).
 The tab is lit while the space is in front and does nothing when clicked then:
 **Code**, the tab before it, is the way back. With the selector box empty and a
 model, a seed or a snapshot in front, the box opens on `1+<name>+1`, that node
@@ -28,7 +34,14 @@ box opens its card from the Catalog beside the canvas, and the canvas moves
 along only if the card would cover that box: that card comes half a second
 later, so that a double-click still finds the box, and if you pan or zoom
 meanwhile the canvas stays where you left it. Drag the card's left edge to make
-it wider or narrower, for the rest of the session. The card's × or Escape
+it wider or narrower, for the rest of the session. The card is laid out for its
+narrow column: Context is three to a row (Materialization, Columns, Tests,
+Upstream, Downstream), and Location is a list, a value written once where it is
+the same as written, resolved and built, and a line for each stage where they
+differ, `built` after `written` for a model that lands elsewhere; a database,
+schema or alias set nowhere shows the value built, dimmed `(default)`. The
+environment the location is resolved in is picked from the pill beside its
+heading, and the relation follows the same rule, a Copy on each line. The card's × or Escape
 closes it, and so does a selection drawn without that box. A double-click opens its
 file, and the space rolls up, the dock's lineage moving onto that model.
 Escape with no card open, the Code tab or a file opened from the search rolls

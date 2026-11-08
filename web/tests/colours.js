@@ -73,7 +73,7 @@ if (offenders.length) offenders.forEach(function (o) { print('        ' + o.trim
 check('the colour is set as an inline style', /kindbar[^)]*style:\s*`fill:/.test(lin), true);
 check('so is every bar of a hanging test, the shape of its kind included',
       /const bar = \(attrs\) => g\.appendChild\(el\('rect', Object\.assign\(\{ class: 'kindbar'[^}]*style: `fill:/.test(lin), true);
-check('a test on the whole model has a second, thin bar', /bar\(\{ x: 8, width: 2 \}\)/.test(lin), true);
+check('a test on the whole model has a second, thin bar', /bar\(\{ x: SLIP_BAR\.x \+ SLIP_BAR\.w \+ 1, width: 2 \}\)/.test(lin), true);
 check('and a singular test a bar in three pieces', /\[0, 1, 2\]\.forEach\(\(i\) => bar\(\{ class: 'kindbar seg'/.test(lin), true);
 check('and a singular test is dashed', /^\.nd\.rider\.singular rect\.box \{[^}]*stroke-dasharray/m.test(css), true);
 

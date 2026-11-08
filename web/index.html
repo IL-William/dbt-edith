@@ -421,12 +421,20 @@
           <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
           <button id="with-tests" class="btn sm eyebtn" type="button" aria-pressed="false"
                   aria-label="Data tests on the canvas"></button>
-          <!-- A toggle like the eye beside it, so the two read as one family. -->
+          <!-- A toggle like the eye beside it, and its levels as one control with it:
+               the minus, the number and the plus sit beside the toggle while it is
+               pressed, so nothing opens over the bar (0160). #folder-levels stays
+               as the input holding the number, which folderLevels() reads. -->
           <span id="folder-tool" class="foldertool">
           <button id="by-folder" class="btn sm eyebtn folderbtn" type="button" aria-pressed="false"
                   title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5V12.5H14.5V5.5H7.5L6 3.5H1.5Z"/><path d="M5.5 7.5V12.5M10 7.5V12.5"/></svg><span>By folder</span></button>
-          <!-- Opened under the toggle, over the canvas, by wireFolderLevels(). -->
-          <label id="folder-levels-box" title="How many levels of folders to draw: 1 gives a band to each folder where the models drawn stop sharing a path, 2 cuts each band again by its sub-folders, and so on, as deep as a path goes">levels <input id="folder-levels" type="number" min="1" max="4" value="1"></label>
+          <span id="folder-steps" class="levels" role="group" aria-label="Folder levels" hidden
+                title="How many levels of folders to draw: 1 gives a band to each folder where the models drawn stop sharing a path, 2 cuts each band again by its sub-folders, and so on, as deep as a path goes">
+            <button id="levels-less" type="button" aria-label="One level less"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8"/></svg></button>
+            <b id="levels-n" aria-live="polite">1</b>
+            <button id="levels-more" type="button" aria-label="One level more"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4v8"/></svg></button>
+            <input id="folder-levels" type="number" min="1" max="4" value="1" hidden>
+          </span>
           </span>
           <span id="tools-sep" class="vsep" aria-hidden="true"></span>
           <!-- Four corners closing on the graph, alone; a file coming down into a
@@ -443,25 +451,12 @@
       </div>
       <div id="dock-lineage" class="dock-pane">
         <!-- What floats over the top of the canvas, one under the other: the
-             selector bar in the Lineage space, or the note on a canvas that
+             selector's warnings in the Lineage space (its bar is the space's
+             head), or the note on a canvas that
              is not of the file in front in model mode, then the find bar,
              which app.js adds on Cmd+F. -->
         <div id="lineage-top" class="lineage-top">
           <div id="select-bar" class="select-bar hidden">
-            <div class="select-row">
-              <button class="btn sm" id="select-named" aria-haspopup="menu"
-                      title="Pick one of the project's named selectors, as the manifest recorded selectors.yml">Selectors ▾</button>
-              <input id="select-input" spellcheck="false" autocomplete="off"
-                     placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
-                     aria-label="dbt node selection expression, or --selector and a name">
-              <span id="select-sum" class="sel-sum"></span>
-              <!-- A list, against the tray of the Export menu above the canvas;
-                   dbt ls takes the Terminal tab's glyph, where it types. -->
-              <button class="btn sm icobtn" id="select-copy" type="button"
-                      title="Copy the matching names, one per line, the way dbt ls --output name prints them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4H13.5M6 8H13.5M6 12H13.5M2.4 4H2.9M2.4 8H2.9M2.4 12H2.9"/></svg><span>Copy names</span></button>
-              <button class="btn sm icobtn" id="select-ls" type="button"
-                      title="Type the dbt ls that should print the same list into the terminal, without running it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>dbt ls</span></button>
-            </div>
             <div id="select-warn" class="sel-warn hidden"></div>
           </div>
           <div id="lineage-note" class="lineage-note hidden" role="status"></div>
@@ -513,16 +508,32 @@
 
   <!-- The Lineage space, over the whole window, the sidebar too (0092, 0101, 0140).
        It holds nothing of its own: selectPanelDown() brings the dock's canvas up
-       into it, the selector bar over it and the canvas's tools, and the
+       into it, the canvas's tools beside the selector in its head, and the
        Catalog into the card, which a box clicked opens. It has no ×: the top bar
        goes back to Code, and so does Escape. Inside it the mode is still
-       "Selection", with the frame glyph it had as a button. -->
+       "Selection". -->
   <section id="select-panel" class="panel selpanel" tabindex="-1" aria-label="Lineage" aria-hidden="true">
-    <div class="selpanel-head">
-      <svg class="selpanel-glyph" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.75 5V2.75a1 1 0 0 1 1-1H5M11 1.75h2.25a1 1 0 0 1 1 1V5M14.25 11v2.25a1 1 0 0 1-1 1H11M5 14.25H2.75a1 1 0 0 1-1-1V11"/>
-           <rect x="4.75" y="4.75" width="3" height="3" rx=".5"/><rect x="8.25" y="8.25" width="3" height="3" rx=".5"/><path d="M7.75 6.25h2v2"/></svg>
-      <span class="selpanel-title">Selection</span>
+    <!-- The one bar: the selection on the left, the canvas's tools on the right
+         (selectPanelDown() moves them into #selpanel-tools). The top bar's
+         Lineage tab says where you are, so the head carries no title (0160). -->
+    <div id="selpanel-head" class="selpanel-head">
+      <div class="select-row">
+        <button class="btn sm" id="select-named" aria-haspopup="menu"
+                title="Pick one of the project's named selectors, as the manifest recorded selectors.yml"><span>Selectors</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
+        <label class="selinput">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 5V2.75a1 1 0 0 1 1-1H5M11 1.75h2.25a1 1 0 0 1 1 1V5M14.25 11v2.25a1 1 0 0 1-1 1H11M5 14.25H2.75a1 1 0 0 1-1-1V11"/><rect x="4.75" y="4.75" width="3" height="3" rx=".5"/><rect x="8.25" y="8.25" width="3" height="3" rx=".5"/><path d="M7.75 6.25h2v2"/></svg>
+          <input id="select-input" spellcheck="false" autocomplete="off"
+                 placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
+                 aria-label="dbt node selection expression, or --selector and a name">
+        </label>
+        <span id="select-sum" class="sel-sum"></span>
+        <!-- A list, against the tray of the Export menu; dbt ls takes the
+             Terminal tab's glyph, where it types. -->
+        <button class="btn sm icobtn" id="select-copy" type="button"
+                title="Copy the matching names, one per line, the way dbt ls --output name prints them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4H13.5M6 8H13.5M6 12H13.5M2.4 4H2.9M2.4 8H2.9M2.4 12H2.9"/></svg><span>Copy names</span></button>
+        <button class="btn sm icobtn" id="select-ls" type="button"
+                title="Type the dbt ls that should print the same list into the terminal, without running it"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4l4 4-4 4M8.5 12.25h5"/></svg><span>dbt ls</span></button>
+      </div>
       <div class="grow"></div>
       <span id="selpanel-tools" class="tools"></span>
     </div>

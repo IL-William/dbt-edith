@@ -66,7 +66,8 @@ check('and each allowed one is still there to be round',
   Object.keys(ROUND).filter(function (sel) { return !round.some(function (r) { return r.sel === sel; }); }), []);
 check('the export page\'s own CSS has no round corner', /border-radius:\s*50%/.test(app), false);
 var circles = lin.split('\n').filter(function (l) { return /el\('circle'/.test(l); });
-check('lineage.js draws one circle, the +N badge, a number', circles.length === 1 && /--bg-3/.test(circles[0]), true);
+check('lineage.js draws no circle: the +N badge is a pill, a rect rounded to its height', circles.length === 0
+  && /class: 'pill'[^\n]*rx: p\.h \/ 2/.test(lin), true);
 
 print('\n--- the shapes are defined once ---');
 ['ok', 'warn', 'bad', 'none', 'cancel', 'clock', 'cols', 'snow', 'newer', 'edit'].forEach(function (name) {

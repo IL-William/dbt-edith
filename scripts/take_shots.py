@@ -675,19 +675,6 @@ class Shots:
         self.selection("+customers +orders")
         self.click("#by-folder")
         self.click("#with-tests")
-        # By folder opens its levels box, which closes a moment after the
-        # pointer leaves the button, as it does for a hand on the mouse.
-        x, y = self.centre("#by-folder")
-        self.mouse("mouseMoved", x, y)
-        self.rest()
-        # The pointer's leaving is heard on a move: moved again until it is.
-        for i in range(60):
-            if not self.js("document.querySelector('#folder-levels-box').classList.contains('open')"):
-                break
-            self.mouse("mouseMoved", 1 + i % 5, HEIGHT - 1 - i % 3)
-            time.sleep(0.4)
-        else:
-            raise AssertionError("timed out waiting for the levels box to close")
         self.click("#fit-btn")
         self.take("lineage")
         # The export menu over the same canvas, shut again for what follows.

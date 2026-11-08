@@ -169,6 +169,15 @@ check('a column canvas counts columns, and not the model boxes',
   exportCount({ mode: 'column', nodes: [{ id: 'model.x.a::c1' }, { id: 'model.x.b::c2' }, { id: 'model.x' }], edges: new Array(2) }), '2 columns');
 check('one column is singular', exportCount({ mode: 'column', nodes: [{ id: 'model.x.a::c1' }], edges: [] }), '1 column');
 check('nothing drawn', [exportCount(null), exportCount({ mode: 'model', nodes: [], edges: [] })], ['nothing drawn', 'nothing drawn']);
+// A test is a slip on its model's stem: counted apart, and its stem is no edge of the graph (0160).
+var withTests = { mode: 'model', nodes: [{ kind: 'model' }, { kind: 'model' }, { kind: 'test' }, { kind: 'test' }, { kind: 'test' }], edges: [[0, 1], [0, 2], [1, 3], [1, 4]] };
+check('tests are counted apart, the stems being no edges', exportCount(withTests), '2 nodes \u00b7 1 edge \u00b7 3 tests');
+check('a selection counts them the same', exportCount(Object.assign({}, withTests, { mode: 'select' })), '2 nodes \u00b7 1 edge \u00b7 3 tests');
+check('one test is singular, and a model alone with it has no edge to say', exportCount({ mode: 'model', nodes: [{ kind: 'model' }, { kind: 'test' }], edges: [[0, 1]] }), '1 node \u00b7 1 test');
+check('the head says how many tests are folded, as the line under the canvas does', exportCount(withTests, 2), '2 nodes \u00b7 1 edge \u00b7 3 tests \u00b7 2 folded');
+check('and says nothing of a fold with no tests', exportCount({ mode: 'model', nodes: [{ kind: 'model' }], edges: [] }, 2), '1 node');
+check('a canvas of tests alone keeps counting them as its nodes', exportCount({ mode: 'model', nodes: [{ kind: 'test' }, { kind: 'test' }], edges: [] }), '2 nodes');
+check('the same wording as the line under the canvas, folded tests counted in', canvasStatus(withTests, null), '2 nodes \u00b7 1 edge \u00b7 3 tests');
 
 print('\n--- the rows of the Export menu ---');
 var EXPORT_ROWS = eval(src.slice(src.indexOf('function exportTitle'), src.indexOf('function exportLineage')) + ';EXPORT_ROWS');
@@ -382,6 +391,21 @@ ok('the last builds\' dots are the page\'s own: the snapshot takes them off, and
 ok('and none of the Halloween look comes with them', copied.indexOf('halloween') < 0 && exportPageCss('landscape').indexOf('halloween') < 0);
 check('every one of them is copied as it is',
   rules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
+// The mono runs outrank `#graph text`, so they are written under #graph too, and a file needs them as the page does.
+// A write callback is given the element to write into: the probe it measures, then the line itself.
+// One that ignores it writes into the box and leaves the probe empty, so a clipped line is exported whole.
+ok('every write callback given to spell uses the element it is handed', /\(x\) => writeRow\(x,/.test(lin) && /\(x\) => writeSub\(x, parts, 0, el\)/.test(lin)
+  && !/spell\([^\n]*\(\) =>/.test(lin) && /if \(write\) write\(t\)/.test(lin) && /if \(write\) write\(probe\)/.test(lin));
+// A long second line is measured through the probe, and so gets its length pinned.
+var longSub = { lead: 'incremental', struck: '', rest: 'analytics_marts  \u00b7  12 tests' }, probe = { kids: [], textContent: '', appendChild: function (k) { this.kids.push(k); } };
+var made = function (n) { return { name: n, attrs: {}, textContent: '', setAttribute: function (k, v) { this.attrs[k] = v; } }; };
+writeSub(probe, longSub, 0, made);
+ok('written whole into the element it is handed, not left empty', probe.textContent === 'incremental  \u00b7  analytics_marts  \u00b7  12 tests' || probe.textContent.length > 20);
+var fontRules = css.split('\n').filter(function (l) { return /^#graph \.nd/.test(l) && !/\.hit/.test(l); });
+ok('the canvas\'s font rules are there to be copied', fontRules.length >= 4);
+check('and are copied as they are', fontRules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
+ok('the glow of a box clicked is not: a file has no click, and snapshot() takes the ring off', copied.indexOf('.glow') < 0 && /querySelectorAll\('\.glow'\)\.forEach\(\(x\) => x\.remove\(\)\)/.test(lin));
+ok('nor the dot grid: the page around the picture draws none', exportPageCss('landscape').indexOf('radial-gradient') < 0);
 function rootVars(text) {
   var at = text.indexOf(':root');
   var block = text.slice(at, text.indexOf('}', at));
@@ -401,7 +425,7 @@ check('and it asks for the colour scheme of its theme, which the file\'s :root l
 // the copied rules never do: a file opened elsewhere has no app.css for them.
 var named = (lin.match(/var\(--[\w-]+\)/g) || []).map(function (u) { return u.slice(4, -1); })
   .filter(function (v, n, a) { return a.indexOf(v) === n; });
-ok('lineage.js names the variables of its kinds, tests, roles, edges and pills', named.length >= 33);
+ok('lineage.js names the variables of its kinds, tests, roles, edges and pills', named.length >= 31);
 check('every variable lineage.js names is in the export\'s list', named.filter(function (v) { return !(v in asked); }), []);
 ok('and the file defines each of them, from the list it was given', named.every(function (v) { return fileVars[v.slice(2)] === appVars[v.slice(2)]; }));
 check('the :root line carries the values it is given, whatever theme they come from',

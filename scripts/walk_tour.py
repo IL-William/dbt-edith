@@ -290,7 +290,7 @@ STEPS = [
      "!document.querySelector('#dock-lineage').classList.contains('hidden')"
      f" && [...document.querySelectorAll('#graph text')].some((t) => t.textContent === '{MODEL}')"
      " && document.querySelector('#graph-mode .active').dataset.mode === 'model'"),
-    ("Lineage, as a selection", "#select-bar",
+    ("Lineage, as a selection", "#selpanel-head",
      f"document.querySelector('#select-input').value === '+{MODEL}+'"
      " && document.querySelector('#graph-mode .active').dataset.mode === 'select'"
      " && document.querySelector('#select-sum').textContent !== ''"

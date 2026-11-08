@@ -229,7 +229,8 @@ selection mode, with the export and the image; column mode only by the harness,
 the project's column cache holding two edges.
 
 Sub-folder bands (0080): the levels box, opened under the by folder toggle by
-the pointer or the keyboard and closed a moment after they leave, cuts each
+the pointer or the keyboard and closed a moment after they leave (a stepper
+beside the toggle since 0160), cuts each
 band by its sub-folders, up to four levels down, each one a run of columns
 inside its folder's, drawn as a rectangle within it in a hue per level, its name
 on a row of its own. Asked for a layer split into sub-folders, which a
@@ -358,7 +359,7 @@ under its model with the other models it reads coming in from the left. The
 staircase graph in `layout.js` hung its sinks under their models once they
 did, so its sinks are models now. Every line into a test is dotted and grey,
 dash and dot when turned, `.edge.test` sitting before `.edge.hi` so a selected
-one still turns accent.
+one still turns accent; since 0160 the model's own stem is dashed.
 
 Tests folded past five (0035): a hanging test costs 26 px, and
 the most tested node of that project carries 134, about 3 500 px of pile. Under
@@ -2629,13 +2630,15 @@ are never edited, so find an item by its title.
     comes without the steps that lead to the bug. Templates under
     `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
     what showed.
-13. **The levels box, over what is under it.** By folder's levels box (0080)
+13. ~~**The levels box, over what is under it.** By folder's levels box (0080)
     opens while the pointer rests on the toggle, so a touch screen cannot
-    reach it at all.
-    - **What it covers while open:** the count beside the Custom selection
-      field, and the left of the lineage's find bar (0081).
-    - **Possible answers:** open it on a click too, or place it where it
-      covers no tool.
+    reach it at all.~~ Gone in 2.11.0 (0160): the levels are a minus, a number
+    and a plus beside the toggle, in the dock and in the Lineage space, so
+    nothing opens over the bar and a touch reaches them.
+    - ~~**What it covers while open:** the count beside the Custom selection
+      field, and the left of the lineage's find bar (0081).~~
+    - ~~**Possible answers:** open it on a click too, or place it where it
+      covers no tool.~~
 14. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
@@ -2817,7 +2820,7 @@ of its own, and each panel updates the tour, its page under
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
-    syntax~~ (2.9.0, 0158), the Lineage space, column roles in the box,
+    syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), column roles in the box,
     the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), the terminal, Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
@@ -2901,6 +2904,33 @@ of its own, and each panel updates the tour, its page under
     - The Catalog's chips and the Reports lists keep the older wording (the
       cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
       changed.
+48. **The Lineage space's limits (0160, 2.11.0).**
+    - Light has no node shadow: the design draws one near enough invisible, and
+      a filter per box costs too much on a canvas of thousands. The ring round
+      the box clicked is a rect, not a filter, for the same reason.
+    - The dock's Catalog keeps its row of stats and its table of three
+      columns; only the space's card is laid out narrow. The card's head (the
+      name with `table · main` beside it), its tabs and its chips are the
+      Catalog step's.
+    - A column's box keeps the look it had, with its 180 by 40, its fonts and
+      its role tag: it carries `.col`, and the column step restyles it. Edges
+      are 1.5px on every canvas.
+    - The design hides the levels at 640px and below; they stay, since nothing
+      else sets them now.
+    - With By folder pressed the dock's tools row is about 50px wider, so its
+      folds come about 50px sooner and it breaks a little earlier, at about
+      1100px with the folds spent (item 46's last limit).
+    - The legend keeps its alphabetical order and its bar for a kind, where the
+      design lists the kinds, then the tests, and draws a kind as a square.
+    - The legend and the line under the canvas overlap on a narrow canvas, with
+      the card open at the bar's narrowest.
+    - A member row of an opened group (a column alone, or a name told from its
+      siblings) is one run of text, not two.
+    - Under Halloween the tests under a model have the same slip look as in
+      the other themes; only the three box styles are drawn there.
+    - The model's dashed stem is drawn in `--line-strong`, as the design asks,
+      which stands about 1.5:1 on Light's canvas and 1.8:1 on Night's, where
+      the dotted grey it replaced stood near 3:1.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

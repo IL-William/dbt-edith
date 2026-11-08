@@ -26,8 +26,8 @@
      the meaning colours), the rule after this block derives about seventy more
      from those by color-mix, and a name none of them restates keeps Night's
      value, as the terminal's does in all three.
-     --cur-line, --dots, --node-shadow and the --ansi- colours are in
-     every block, and nothing reads them yet. */
+     --cur-line, --node-shadow and the --ansi- colours are in every block, and
+     nothing reads them yet (--dots is the canvas's grid, 0160). */
   /* Surfaces */
   --line-strong: #334052;   /* a menu's or a hovered button's edge */
   --line-soft: #1a2029;     /* the rules between table rows */
@@ -53,7 +53,6 @@
   --head-l2-line: #36706b;
   --head-l3-line: #57487f;
   --placeholder: #55606f;
-  --sel-line: #fff;
   --scroll-thumb: #2b3746;
   --scroll-thumb-hover: #3b4a5d;
   --term-bg: #0e1219;
@@ -258,7 +257,6 @@
   --chip-fg: var(--fg-2);
   --code-fg: var(--fg);
   --syn-var: var(--fg);
-  --sel-line: var(--fg);
   --find-cur-fg: var(--fg);
   --env-manifest-on: var(--fg);
   --crumb-fg: var(--fg-dim);
@@ -1207,16 +1205,24 @@ kbd {
 .tools .eyebtn[aria-pressed=true], .tools .icobtn[aria-expanded=true] { border-color: transparent; background: var(--select); color: var(--fg); }
 .tools .icobtn.only { padding: 2px 4px; }
 .icobtn svg.chev { width: 12px; height: 12px; }
-/* The levels box, under the toggle and over the canvas, so opening it moves
-   no button and folds no dock tab; wireFolderLevels() says when (0080). */
-.foldertool { position: relative; display: inline-flex; }
-#folder-levels-box {
-  display: none; position: absolute; top: calc(100% + 3px); left: 0; z-index: 20;
-  align-items: center; gap: 6px; white-space: nowrap; padding: 4px 8px;
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
-  box-shadow: var(--shadow-xs);
+/* By folder and its levels are one control (0160): the minus, the number and
+   the plus follow the toggle while it is pressed, behind a rule, so nothing
+   opens over the bar or the canvas. The hidden input holds the number. */
+.foldertool { display: inline-flex; align-items: center; }
+.foldertool .levels[hidden] { display: none; }
+.levels {
+  display: inline-flex; align-items: center; gap: 2px; align-self: stretch; padding: 0 3px 0 5px; margin-left: 2px;
+  border-left: 1px solid var(--line); font: 11px var(--mono); color: var(--fg-dim);
 }
-#folder-levels-box.open { display: flex; }
+.levels b { min-width: 12px; text-align: center; color: var(--fg); font-weight: 500; }
+.levels button {
+  width: 18px; height: 18px; padding: 0; display: grid; place-items: center; align-self: center; border: 0; border-radius: 4px;
+  background: none; color: var(--fg-dim); cursor: pointer;
+}
+.levels button svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.levels button:hover:not([aria-disabled=true]) { background: var(--bg-3); color: var(--fg); }
+.levels button[aria-disabled=true] { opacity: .35; cursor: default; }
+.levels button:focus-visible { outline: 1px solid var(--accent); outline-offset: 0; }
 
 /* Relative, for the Selection's panel, which covers the sidebar as
    well as the editor and the dock (0101). */
@@ -1614,12 +1620,27 @@ kbd {
    head across the top, the dock's canvas under it, and the Catalog of the box
    clicked beside the canvas once one is, as wide as a card is read. */
 .selpanel { flex-direction: column; container: selmain / inline-size; }
+/* One bar, 44px: the selection on the left, the canvas's tools on the right
+   (0160). Its buttons are 28px and 12px, borderless where they act and edged
+   only where they open a menu, as the design draws them; the dock's 30px row
+   keeps the sizes it has. */
 .selpanel-head {
-  flex: none; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 12px;
+  flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px;
   background: var(--bg-2); border-bottom: 1px solid var(--line);
 }
-.selpanel-title { font: 12px var(--ui); color: var(--fg); white-space: nowrap; }
-.selpanel-glyph { flex: 0 0 auto; margin-right: -4px; color: var(--fg-dim); }
+.selpanel-head .btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 6px;
+  border: 1px solid transparent; background: none; color: var(--fg-dim); font-size: 12px; white-space: nowrap;
+}
+.selpanel-head .btn:hover { background: var(--bg-3); border-color: transparent; color: var(--fg); }
+.selpanel-head .btn[aria-pressed=true], .selpanel-head .btn[aria-expanded=true] { background: var(--select); color: var(--fg); }
+.selpanel-head .btn.only { width: 28px; padding: 0; justify-content: center; }
+.selpanel-head .btn svg.chev { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.selpanel-head #select-named { border-color: var(--line); color: var(--fg); }
+.selpanel-head #select-named:hover { background: none; border-color: var(--line-strong); }
+.selpanel-head .foldertool { border-radius: 6px; }
+.selpanel-head .levels { height: 28px; }
+.selpanel-head #selpanel-tools { gap: 4px; padding-right: 0; }
 .selpanel-body { flex: 1; min-height: 0; display: flex; }
 .selpanel-canvas { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* As wide as its edge was last dragged to, which selCardWidth() holds
@@ -1634,23 +1655,27 @@ kbd {
 /* Its × in the corner, the Catalog's head keeping clear of it. */
 .selpanel-cardx { position: absolute; top: 6px; right: 6px; z-index: 1; }
 .selpanel-card .cat-head { padding-right: 34px; }
-/* Narrower, the selector row takes a second line rather than crush its box,
-   and the head's tools keep their glyph alone, named by their tooltip and
-   still read out, as the dock's do when its row runs out. */
-.selpanel .select-row { flex-wrap: wrap; }
 /* The card is narrower than the dock's Catalog: a table of names keeps each
    on one line and scrolls sideways, rather than break them letter by letter
    down a column a few characters wide. */
-.selpanel-card .loc { display: block; overflow-x: auto; }
-.selpanel-card .loc td { word-break: normal; white-space: nowrap; }
-.selpanel #select-input { flex: 1 1 160px; }
-@container selmain (max-width: 680px) {
-  .selpanel-title { display: none; }
+/* Narrower, the box shrinks first, down to 160px, and then the sum gives way;
+   narrower still, Copy names, dbt ls and the tools keep their glyph alone,
+   named by their tooltip and still read out, as the dock's do when its row
+   runs out. The widths are what the bar measures at 1440, 1000 and 800px: one
+   line, nothing cut (0160). */
+@container selmain (max-width: 1120px) {
+  .selpanel-head .sel-sum { display: none; }
 }
-@container selmain (max-width: 560px) {
-  #selpanel-tools .icobtn > span, #selpanel-tools .eyebtn > span {
+@container selmain (max-width: 880px) {
+  .selpanel-head .icobtn > span, .selpanel-head .eyebtn > span {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
   }
+}
+@container selmain (max-width: 640px) {
+  .selpanel-head .selinput { min-width: 96px; }
+}
+@container selmain (max-width: 560px) {
+  .selpanel-head .selinput { min-width: 64px; }
 }
 .reports-view .diff-head { padding: 6px 12px 5px; }
 /* The settings (0100): a section at a time, its blocks one under the other at
@@ -2052,22 +2077,32 @@ kbd {
 .cpy:disabled { opacity: .45; cursor: default; }
 
 /* --------------------------------------------------------------- lineage -- */
-#graph { width: 100%; height: 100%; display: block; background: var(--bg); cursor: grab; }
+/* The dot grid is the canvas's own and does not pan: one dot every 22px behind
+   the boxes, as the design draws it. An exported file has none (0160). */
+#graph {
+  width: 100%; height: 100%; display: block; background-color: var(--bg); cursor: grab;
+  background-image: radial-gradient(var(--dots) 1px, transparent 1px); background-size: 22px 22px;
+}
 #graph.panning { cursor: grabbing; }
 #graph text { font-family: var(--ui); user-select: none; }
 /* --edge-col is set per path in column mode, where the colour carries the role.
    `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
-.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; }
-/* A line into a test, the stem from its model included (0034): dotted, in the
-   tests' grey, since it carries no data. Before `.edge.hi`, so a selected one
-   still turns accent. */
+.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.5; }
+/* A line into a test (0034): dotted, in the tests' grey, since it carries no
+   data. Before `.edge.hi`, so a selected one still turns accent. */
 .edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }
+/* Its model's stem, down its left side and a tick into each row: a thin dashed
+   line (0160). Only the host's own, and a group's; a line from another parent
+   into a test keeps the dots. */
+.edge.test.stem { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }
 /* An indirect edge, a filter's, a join key's or a dedup key's (0097): the
    column decided which rows exist, not what a value is. Thin and in short
    dashes, neither the test's dots nor the back edge's long dashes; before
    `.edge.hi`, which keeps the dashes and takes the stroke. */
 .edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }
 .edge.hi { stroke: var(--edge-hot); stroke-width: 2; }
+/* Lit, the stem takes the lit stroke and keeps its dashes and its thin line. */
+.edge.test.stem.hi { stroke: var(--edge-hot); stroke-width: 1.5; }
 /* An indirect edge lit keeps its role's hue, which the legend says: the dash
    and the width are all `.edge.hi` changes of it (0118). */
 .edge.indirect.hi { stroke: var(--edge-col); }
@@ -2081,9 +2116,16 @@ kbd {
 /* The clause an indirect edge comes from, QUALIFY, JOIN or WHERE / HAVING, along
    the edge (0118), in its role's hue. A label never takes the pointer. */
 .edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
-.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }
-.nd:hover rect.box { stroke: var(--fg-dim); }
-.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: var(--focus-bg); }
+/* A model's box (0160): 220 by 48, radius 7, a 3px kind bar inset in it, the
+   name at 13px and the second line at 11px in mono. A column's box, `.col`,
+   keeps the look it had until its own step. */
+.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 7; }
+.nd.col rect.box { rx: 5; }
+.nd:hover rect.box { stroke: var(--line-strong); }
+/* The box the lineage is on, and the one clicked: an accent border on the
+   focus fill. The clicked one also has a glow, the rect Lineage lays behind
+   it (select()); the focus alone has none, so the two stay apart. */
+.nd.focus rect.box, .nd.sel rect.box { stroke: rgba(var(--accent-rgb), .9); stroke-width: 1; fill: var(--focus-bg); }
 .nd.off rect.box { stroke-dasharray: 3 3; }
 .nd.off .t1, .nd.off .t2 { opacity: .55; }
 /* A model drawn only because a selected test belongs to it (0032): there so
@@ -2091,8 +2133,11 @@ kbd {
 .nd.ctx { opacity: .45; }
 .nd.ctx:hover { opacity: .85; }
 /* A test hanging under its model (0034): a slip of the same box, one line. */
-.nd.rider rect.box { fill: var(--bg-2); rx: 4; }
-.nd.rider .t1 { font-size: 10.5px; }
+.nd.rider rect.box { fill: var(--bg-2); rx: 5; }
+.nd.rider .t1 { font-size: 11.5px; font-weight: 400; }
+/* The generic in the UI font and its column after it in mono, dimmer. */
+.nd .rc { fill: var(--fg-dim); font-size: 11px; }
+#graph .nd .rc { font-family: var(--mono); }
 /* The chip for the tests folded under a model (0035): an outline, not a box. */
 .nd.fold { cursor: pointer; }
 .nd.fold rect.box { fill: transparent; stroke-dasharray: 3 3; }
@@ -2102,13 +2147,25 @@ kbd {
 .nd.group { cursor: pointer; }
 .nd .warnmark { fill: var(--warn); }
 .nd .warncount { font-size: 9px; }
-.nd.sel rect.box { stroke: var(--sel-line); }
-.nd .kindbar { stroke: none; rx: 3; }
-.nd .kindbar.seg { rx: 1.5; }
-.nd .t1 { fill: var(--fg); font-size: 11.5px; }
-.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }
+.nd .kindbar { stroke: none; rx: 2; }
+.nd .kindbar.seg { rx: 1; }
+.nd.col .kindbar { rx: 3; }
+.nd .t1 { fill: var(--fg); font-size: 13px; font-weight: 500; }
+.nd .t2 { fill: var(--fg-dim); font-size: 11px; }
+#graph .nd .t2 { font-family: var(--mono); }
+.nd.col .t1 { font-size: 11.5px; font-weight: 400; }
+.nd.col .t2 { font-size: 9.5px; }
+#graph .nd.col .t2 { font-family: var(--ui); }
 .nd .t2 .struck { opacity: .6; text-decoration: line-through; }
-.nd .more { fill: var(--fg-dim); font-size: 9px; }
+/* The +N pill, 24 by 18: a rect and its number, the tint of a quiet control. */
+.nd .more-badge .pill { fill: var(--bg-2); stroke: var(--line); }
+.nd .more-badge:hover .pill { stroke: var(--line-strong); }
+.nd .more { fill: var(--fg-dim); font-size: 10px; }
+#graph .nd .more { font-family: var(--mono); }
+.nd .more-badge:hover .more { fill: var(--fg); }
+/* The clicked box's glow, a ring of the accent just outside its border. It is
+   not part of a file: snapshot() takes it off (0160). */
+.glow { fill: none; stroke: rgba(var(--accent-rgb), .16); stroke-width: 3; }
 /* The last build of a model in the environment picked (0117). Named apart from
    .nd, so the export harness does not ask for it: the snapshot takes it off. */
 .bdot { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -2171,7 +2228,7 @@ kbd {
 /* The `indirect` entry, a dash as its edges are drawn (0097). */
 .legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
 /* A kind or a test, the bar of its box. */
-.legend i.kind { width: 3px; height: 11px; border-radius: 2px; vertical-align: -2px; }
+.legend i.kind { width: 3px; height: 10px; border-radius: 2px; vertical-align: -1px; }
 /* The entries take a click, the strip around them still does not: a pan
    started beside them has to reach the canvas. */
 .legend span { pointer-events: auto; cursor: pointer; border-radius: 3px; }
@@ -2195,13 +2252,13 @@ kbd {
   border: 1px solid var(--warn-line); border-radius: 4px; padding: 3px 8px;
 }
 
-/* The selector bar floats over the canvas, the way the legend and the status
-   bubble do. The dock is short, and a row that pushed the graph down would
-   cost more room than it is worth. The find bar floats under it, at the
-   right, and the folder names under both (headTop). In model mode, where
-   there is no selector bar, the find bar comes under the note on a canvas
-   that is not of the file in front instead. Between the bars a press
-   reaches the canvas, so a pan can start there. */
+/* What the selector says back, its warnings and the capped canvas's note,
+   floats over the canvas, the way the legend and the status bubble do: the
+   selector itself is the Lineage space's bar (0160). The find bar floats
+   under it, at the right, and the folder names under both (headTop). In
+   model mode, where there is no selector, the find bar comes under the note
+   on a canvas that is not of the file in front instead. Between the bars a
+   press reaches the canvas, so a pan can start there. */
 .lineage-top {
   position: absolute; top: 6px; left: 10px; right: 10px; z-index: 2;
   display: flex; flex-direction: column; gap: 4px; pointer-events: none;
@@ -2209,20 +2266,27 @@ kbd {
 .lineage-top > * { pointer-events: auto; }
 .select-bar { display: flex; flex-direction: column; gap: 4px; }
 .lineage-top .findbar { position: static; align-self: flex-end; }
-.select-row { display: flex; align-items: center; gap: 6px; }
-/* Selectors has no glyph: as tall as Copy names and dbt ls, which have one. */
-.select-row .btn { min-height: 21px; }
+/* In the space's bar its children are the bar's own items, so the box asks for
+   its 380px from the bar and not from a row that sizes to its content. */
+.select-row { display: contents; }
+/* The box with the lineage glyph before it: as wide as 380px asks, up to 620,
+   and the first to give room, down to 160 (0160), less in a narrow bar. */
+.selinput {
+  flex: 1 10000 380px; min-width: 160px; max-width: 620px; display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 10px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--fg-mute);
+}
+.selinput:focus-within { border-color: rgba(var(--accent-rgb), .6); }
+.selinput svg { flex: 0 0 auto; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 #select-input {
-  flex: 1; min-width: 0; background: color-mix(in srgb, var(--bg) 93.333%, transparent); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px;
-  font: 11px var(--mono);
+  flex: 1 1 0; min-width: 0; background: transparent; color: var(--fg);
+  border: 0; padding: 0; font: 12.5px var(--mono); outline: none;
 }
-#select-input:focus { outline: none; border-color: var(--accent-dim); }
 #select-input::placeholder { color: var(--placeholder); }
-.sel-sum {
-  font: 11px var(--mono); color: var(--fg-dim); white-space: nowrap;
-  background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 2px 6px; border-radius: 4px;
-}
+.sel-sum { font: 11.5px var(--mono); color: var(--fg-dim); white-space: nowrap; }
+/* A broad selection's sum is long: it gives way to the buttons and ends in an
+   ellipsis, its whole in the title, and goes entirely below 1120px. */
+.selpanel-head .sel-sum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* Amber, not red: a term that matched nothing is worth reading, and the rest
    of the expression was still drawn. */
 .sel-warn {
@@ -2657,6 +2721,32 @@ kbd {
 .relcell { display: flex; align-items: center; gap: 8px; }
 .relcell span { flex: 1; min-width: 0; }
 .relcell .btn { flex: 0 0 auto; font-family: var(--ui); }
+/* The card's location (0160): a key, its lines, the relation, in a list that
+   wraps wherever it has to rather than clip a name. A key set one way at every
+   stage is written once; a line is labelled only where the stages differ. */
+.loc2 { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 12px; }
+.loc2 dt { color: var(--fg-dim); padding-top: 1px; }
+.loc2 dd { margin: 0; min-width: 0; font: 11.5px var(--mono); overflow-wrap: anywhere; }
+.loc2 .lv { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px; }
+.loc2 .lv + .lv { margin-top: 2px; }
+.loc2 .lk { font: 11px var(--ui); color: var(--fg-mute); }
+.loc2 .tpl { color: var(--source); }
+.loc2 .dim { color: var(--fg-mute); }
+.loc2 .moved { color: var(--warn); }
+.loc2 .moved::after { content: '  \2192'; opacity: .7; }
+.loc2 .moved.expected { color: var(--fg-path); }
+.loc2 .env-unevaluated { color: var(--fg-dim); font-style: italic; }
+.loc2 .relcell { flex-wrap: wrap; }
+.loc2 .relcell span:not(.sficon) { flex: 1 1 100%; }
+/* Over the card's stats: three to a row, where the dock lets them run on. */
+.selpanel-card .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; }
+/* A cell is about 73px at the card's narrowest: a key or a strategy wraps in it. */
+.selpanel-card .stat { min-width: 0; }
+.selpanel-card .stat .v { overflow-wrap: anywhere; }
+/* The environment the location was resolved with, where it cannot be changed: a mark, not a button. */
+span.envpill { cursor: default; }
+span.envpill:hover { filter: none; }
+.selpanel-card .cat-body .sechead { flex-wrap: wrap; row-gap: 6px; }
 .btn.sfopen { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .btn.sfopen .sficon { width: 12px; height: 12px; }
 .sfmenu a.menulink .lbl { font-family: var(--mono); font-size: 11.5px; }
@@ -2854,8 +2944,10 @@ kbd {
 /* The export menu (0153): one row an output, its use, its format, and the file
    name it saves. */
 .envmenu.exportmenu { width: 350px; min-width: 0; max-width: none; background: var(--bg-3); border-radius: 8px; box-shadow: var(--shadow-menu); }
-.exportmenu .menuhead { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; }
-.exportmenu .menuhead .n { margin-left: auto; font: 10.5px var(--mono); letter-spacing: 0; text-transform: none; font-weight: 400; }
+/* A count too long for the head's line, tests and folded ones said, drops whole
+   to a line of its own at the right rather than break in the middle. */
+.exportmenu .menuhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.exportmenu .menuhead .n { margin-left: auto; white-space: nowrap; font: 10.5px var(--mono); letter-spacing: 0; text-transform: none; font-weight: 400; }
 .exportmenu button.xm-item {
   display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 0 10px; align-items: start;
   padding: 7px 8px; border-radius: 6px; line-height: 1.45;
@@ -3225,10 +3317,15 @@ html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob { t
    (a ring is a stroke, and the clip would cut it at the corners) and
    becomes a rounded rect: the silhouette only gives way to say something
    about the box. The tests under a model, and the chips, keep their shape.
-   The model's box is 200 by 48 and a column's 180 by 40, which
+   The model's box is 220 by 48 and a column's 180 by 40, which
    .nd[data-id*="::"] tells apart. A hover only moves the rect and the kindbar,
-   never .nd, whose transform is the box's place. */
+   never .nd, whose transform is the box's place. The plain look's box text
+   starts at 19 in a model's box, where it started at 12, and the kind bar is
+   inset: so each skin sets the geometry it needs, never the attributes', and
+   moves the names back to the x it always had (0160). */
 html[data-theme="halloween"] .nd:not(.rider):hover rect.box { stroke: none; }
+/* Its states have colours of their own, so the glow of the clicked box is not drawn. */
+html[data-theme="halloween"] .glow { display: none; }
 html[data-theme="halloween"].hw-boxes-tombstone #graph .nd:not(.rider) rect.box { fill: url(#hw-stone); stroke: #8d9298; stroke-width: 1.6; rx: 0; clip-path: inset(0 round 16px 16px 0 0); }
 html[data-theme="halloween"].hw-boxes-coffin #graph .nd:not(.rider) rect.box { fill: url(#hw-wood); stroke: none; rx: 0; clip-path: polygon(0 30%, 16% 0, 74% 10%, 100% 30%, 100% 70%, 74% 90%, 16% 100%, 0 70%); }
 html[data-theme="halloween"].hw-boxes-grimoire #graph .nd:not(.rider) rect.box { fill: url(#hw-leather); stroke: #d4af37; stroke-width: 1.4; rx: 3; }
@@ -3244,12 +3341,12 @@ html[data-theme="halloween"] .nd.ctx:not(.rider) { opacity: .8; }
 html[data-theme="halloween"] .nd.ctx:not(.rider):hover { opacity: .9; }
 
 /* Tombstone: grey stone with an arched top, the kind as moss along the base. */
-html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t1 { fill: #e4e6e8; }
-html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 { fill: #d3d6d9; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t1 { fill: #e4e6e8; font-size: 11.5px; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 { fill: #d3d6d9; font-size: 9.5px; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 .struck { opacity: .9; }
-html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .kindbar { x: 5px; y: 42px; width: 190px; height: 6px; rx: 1.5; }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .kindbar { x: 5px; y: 42px; width: 210px; height: 6px; rx: 1.5; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd[data-id*="::"]:not(.rider) .kindbar { y: 37px; width: 170px; height: 3px; }
-html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 172px; }
+html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 192px; }
 html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off)[data-id*="::"]:not(.rider) .kindbar { width: 152px; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover rect.box,
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
@@ -3283,6 +3380,7 @@ html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t1 { fill: #f1e3
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 { fill: #dcc895; font-size: 9px; transform: translateX(20px); }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 .struck { opacity: .9; }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .kindbar { x: 8px; width: 7px; rx: 1.5; stroke: #d4af37; stroke-width: .9; }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):not(.col) .kindbar { y: 0; height: 48px; }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover rect.box,
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
 /* The cover lifting from its spine. */
@@ -3291,6 +3389,13 @@ html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover .kindbar { 
   35% { transform: translateY(-2px) rotate(-1.2deg); }
   70% { transform: translateY(-1px) rotate(-.5deg); }
 }
+
+/* The plain look's names keep the sizes, the font and the x they had when a
+   model's box text started at 12 (0160): 7px back from where the box's own
+   look starts them, and these skins' own translate on top. */
+html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph .nd:not(.rider):not(.col) :is(.t1, .t2) { font-weight: 400; font-family: var(--ui); }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):not(.col) :is(.t1, .t2) { transform: translateX(-7px); }
+html[data-theme="halloween"]:is(.hw-boxes-coffin, .hw-boxes-grimoire) .nd:not(.rider):not(.col) :is(.t1, .t2) { transform: translateX(13px); }
 
 /* The art (0107): under ART_MAX plain boxes the lineage lays a group on each,
    a silhouette path, a trim path and a few parts (see Lineage.setSkin), and
@@ -3323,17 +3428,17 @@ html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes
 html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph g.hw-on .nd:not(.rider) .t2 {
   font: 400 8.4px Georgia, "Palatino Linotype", serif; letter-spacing: .3px;
 }
-html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t1 { fill: #e4e6e8; transform: translateX(17px); }
-html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t2 { fill: #d3d6d9; transform: translateX(17px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t1 { fill: #e4e6e8; transform: translateX(10px); }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t2 { fill: #d3d6d9; transform: translateX(10px); }
 html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(12px, -3px); }
 html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(12px, -5px); }
 /* Off the lid line that runs above and below them. */
-html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t1 { fill: #f3e2c4; transform: translate(48px, 1px); }
-html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t2 { fill: #dcc399; transform: translate(48px, -2px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t1 { fill: #f3e2c4; transform: translate(41px, 1px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t2 { fill: #dcc399; transform: translate(41px, -2px); }
 html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(38px, -2px); }
 html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(38px, -6px); }
-html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t1 { fill: #f1e3b5; transform: translateX(46px); }
-html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t2 { fill: #d4af37; font-style: italic; transform: translateX(46px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t1 { fill: #f1e3b5; transform: translateX(39px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t2 { fill: #d4af37; font-style: italic; transform: translateX(39px); }
 html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(36px, -3px); }
 html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(36px, -5px); }
 /* The art moves with the pointer, never the group that carries the box's place. */

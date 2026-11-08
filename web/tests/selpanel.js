@@ -217,8 +217,9 @@ step(function () {
   S.graphMode = 'model';
   log = [];
   closePanel();
-  check('up: nothing drawn over it, and the card stays on the box', [log, S.node.id, text(catalog)],
-    [[], 'model.jaffle_shop.customers', 'customers']);
+  // Laid out for the dock again from the node it holds: the card's narrow layout must not stay behind (0160).
+  check('up: nothing drawn over it, and the Catalog drawn again on the box for the dock', [log, S.node.id, text(catalog)],
+    [[], 'model.jaffle_shop.customers', 'model.jaffle_shop.customers']);
 });
 
 step(function () {
