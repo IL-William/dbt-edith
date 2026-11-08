@@ -1,6 +1,6 @@
 # 0080. A band may be cut by its sub-folders, a level at a time
 
-Date: 2026-10-14 · Status: accepted · Amends 0029
+Date: 2026-10-14 · Status: accepted, amended by 0160 (the levels are a stepper beside the toggle, no box opens) · Amends 0029
 
 **Trigger:** read before changing how deep the folder bands go, the order of
 the sub-folders inside a band, or how one is drawn inside another.

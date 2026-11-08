@@ -704,6 +704,8 @@ group('a model\'s tests hang grouped by their generic', function () {
     [oh.x + 18 + 12, 200 - 18 - 12, true, 26, 26]);
   var stemA = O.d.edges.findIndex(function (e) { return e[0] === O.host && e[1] === O.d.at.not_null_orders_a; });
   check('and its host reaches it by a stem, as a test alone', points(O.L.paths[stemA]).pop(), [na.x, na.y + 11]);
+  ok('which the layout names a stem, for the dashes (0160), and no other edge is one',
+    O.L.stems.has(stemA) && [...O.L.stems].every(function (i) { return O.d.edges[i][0] === O.host; }));
   ok('nothing overlaps, and the frame holds it all', spread(O.L) && holds(O.L));
 
   var P = orders(null, 'not_null_orders_c');

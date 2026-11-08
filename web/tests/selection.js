@@ -55,6 +55,16 @@ check('tests the box keeps off the canvas are named',
   selectStatus({ matched: 7, nodes: new Array(2), edges: new Array(1), truncated: false, hidden_tests: 5 }),
   '2 nodes · 1 edge · 5 tests hidden');
 
+// The tests of an uncapped canvas are counted apart, as the export's head does (0160).
+var picked = { matched: 5, nodes: [{ kind: 'model' }, { kind: 'model' }, { kind: 'test' }, { kind: 'test' }, { kind: 'test' }], edges: [[0, 1], [0, 2], [1, 3], [1, 4]], truncated: false };
+check('tests apart: the nodes, the edges between them, the tests', selectStatus(picked), '2 nodes · 1 edge · 3 tests');
+check('and how many of them are folded under a chip', selectStatus(picked, 2), '2 nodes · 1 edge · 3 tests · 2 folded');
+check('a capped canvas counts as it did, folded tests said as they were',
+  selectStatus(Object.assign({}, picked, { truncated: true, matched: 50 }), 2), '5 of 50 drawn · 4 edges · 2 tests folded');
+check('context is counted apart from the tests',
+  selectStatus(Object.assign({}, picked, { nodes: picked.nodes.concat([{ kind: 'model', context: true }]), edges: picked.edges.concat([[5, 2]]) })), '2 nodes · 1 edge · 3 tests · 1 for context');
+check('a selector of tests alone keeps them as the nodes', selectStatus({ matched: 2, nodes: [{ kind: 'test' }, { kind: 'test' }], edges: [], truncated: false }), '2 nodes · 0 edges');
+
 print('\n--- a named selector ---');
 check('its command carries nothing else', selectorCommand('nightly'), 'dbt ls --selector "nightly" --output name');
 // Refused rather than cleaned: a name with the character dropped would be

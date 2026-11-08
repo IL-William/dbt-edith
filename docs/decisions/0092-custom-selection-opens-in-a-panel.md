@@ -1,6 +1,6 @@
 # 0092. Custom selection opens in a panel
 
-Date: 2026-10-16 · Status: accepted, amended by 0101 and 0140
+Date: 2026-10-16 · Status: accepted, amended by 0101, 0140 and 0160 (one bar, no title row)
 
 **Trigger:** read before changing where a selection is drawn, what a click or
 a double-click on a box does there, or what goes back to the dock when its

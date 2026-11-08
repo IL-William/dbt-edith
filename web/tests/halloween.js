@@ -78,6 +78,22 @@ var boxCss = css.slice(css.indexOf('/* Lineage boxes, in one of three styles'), 
     && !/\.nd:hover \{[^}]*(transform|animation)/.test(boxCss));
 });
 ok('no filter on a box, and nothing but fills, strokes and clips', !/filter:/.test(boxCss));
+// The model's box is 220 wide now (0160): the silhouettes follow it, and each skin keeps the x its names had.
+ok('the tombstone\'s moss runs the model\'s width, 210 and 192 when ringed, and a column\'s 170 and 152',
+  /hw-boxes-tombstone \.nd:not\(\.rider\) \.kindbar \{ x: 5px; y: 42px; width: 210px;/.test(boxCss)
+  && /:where\(\.nd\.focus[^)]*\):not\(\.rider\) \.kindbar \{ x: 14px; width: 192px; \}/.test(boxCss)
+  && /\[data-id\*="::"\]:not\(\.rider\) \.kindbar \{ y: 37px; width: 170px;/.test(boxCss)
+  && /\[data-id\*="::"\]:not\(\.rider\) \.kindbar \{ width: 152px; \}/.test(boxCss));
+ok('a skin sets every number of the kind bar\'s geometry it needs: the box\'s own are inset now',
+  /hw-boxes-coffin \.nd:not\(\.rider\) \.kindbar \{ x: 12px; y: 12px; width: 12px; height: 24px;/.test(boxCss)
+  && /hw-boxes-grimoire \.nd:not\(\.rider\):not\(\.col\) \.kindbar \{ y: 0; height: 48px; \}/.test(boxCss));
+ok('the names keep the x they had when a model\'s text started at 12: 7px back from the box\'s own 19',
+  /hw-boxes-tombstone \.nd:not\(\.rider\):not\(\.col\) :is\(\.t1, \.t2\) \{ transform: translateX\(-7px\); \}/.test(boxCss)
+  && /:is\(\.hw-boxes-coffin, \.hw-boxes-grimoire\) \.nd:not\(\.rider\):not\(\.col\) :is\(\.t1, \.t2\) \{ transform: translateX\(13px\); \}/.test(boxCss)
+  && /hw-boxes-tombstone #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translateX\(10px\)/.test(css)
+  && /hw-boxes-coffin #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translate\(41px, 1px\)/.test(css)
+  && /hw-boxes-grimoire #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translateX\(39px\)/.test(css));
+ok('the model\'s text starts at 19 in the canvas, so 12 + 7 in a skin\'s old terms', /x: columnMode \? 12 : PAD_L, y: 20/.test(lin) && /PAD_L = 19/.test(lin));
 ok('reduced motion stops the hover', /prefers-reduced-motion: reduce\) \{[\s\S]*hover rect\.box[^}]*animation: none/.test(css));
 ok('the defs sit in the page, not in the canvas lineage.js draws', html.indexOf('id="hw-stone"') < html.indexOf('<header id="topbar">') && lin.indexOf('hw-stone') < 0);
 
@@ -94,8 +110,8 @@ print('\n--- the art (0107) ---');
 check('art is wanted under a skin and a count', [artWanted(3, 'coffin', ART_MAX), artWanted(ART_MAX, 'tombstone', ART_MAX)], [true, true]);
 check('not past the count, without a skin, or with nothing drawn', [artWanted(ART_MAX + 1, 'coffin', ART_MAX), artWanted(5, null, ART_MAX), artWanted(0, 'coffin', ART_MAX)], [false, false, false]);
 check('the count is the model lineage\'s cap, where the pan and the drawing were measured', ART_MAX, 400);
-check('a name has less room under a skin than the usual 27 and 24, a column less than a model',
-  ['tombstone', 'coffin', 'grimoire'].map(function (k) { var m = artBudget(k, false), c = artBudget(k, true); return m.name < 27 && c.name < 24 && c.name <= m.name && c.sub <= m.sub; }),
+check('a name has less room under a skin than the usual 25 and 24, a column less than a model',
+  ['tombstone', 'coffin', 'grimoire'].map(function (k) { var m = artBudget(k, false), c = artBudget(k, true); return m.name < 25 && c.name < 24 && c.name <= m.name && c.sub <= m.sub; }),
   [true, true, true]);
 check('an unknown skin takes the tombstone\'s room', artBudget('mummy', false), artBudget('tombstone', false));
 ['tombstone', 'coffin', 'grimoire'].forEach(function (k) {

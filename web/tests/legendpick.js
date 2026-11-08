@@ -169,7 +169,7 @@ check('two of them', canvasStatus({ mode: 'column', focus_column: 'status', node
 check('a column canvas cut at the cap says where',
   canvasStatus({ mode: 'column', focus_column: 'status', nodes: new Array(1000).fill({ id: 'a::x' }), edges: [], truncated: true }, null),
   'status · 1000 columns · 0 edges · truncated at 1000');
-check('a model canvas says only that it was cut', canvasStatus({ mode: 'model', nodes: [{}], edges: [], truncated: true }, null), '1 nodes · 0 edges · truncated');
+check('a model canvas says only that it was cut', canvasStatus({ mode: 'model', nodes: [{}], edges: [], truncated: true }, null), '1 node · 0 edges · truncated');
 ok('ticks in a row draw only the last answer',
   /const ask = \+\+S\.colDraw;[\s\S]{0,400}if \(ask !== S\.colDraw\) return;/.test(src));
 ok('leaving column mode drops a column answer still on its way',

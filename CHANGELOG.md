@@ -13,6 +13,22 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.11.0 - 2026-11-09
+
+- Give the Lineage space one bar: the selector on the left and the canvas's tools
+  on the right, with no title row above it (0160).
+- Put By folder's levels beside the toggle as a minus, a number and a plus, where
+  a box opened over the bar on hover; it works in the dock and by touch.
+- Draw a model's box as the design does: 220 by 48 with a kind bar inset in it, a
+  ring round the box clicked, a dot grid behind the canvas and a pill for the
+  `+N` badge, in the Halloween styles too.
+- Draw a model's tests as slips, the generic and its column in two runs, on a
+  dashed stem, and keep a line from another parent into a test dotted.
+- Lay out the space's card for its width: Context in three columns and Location
+  as a list that writes a value once where written, resolved and built agree.
+- Count a canvas's tests apart, `7 nodes · 6 edges · 11 tests`, under the canvas
+  and in the Export menu, and say how many are folded.
+
 ## 2.10.0 - 2026-11-08
 
 - Draw the Jobs tab as a card per job, its tool's colour down its side, with

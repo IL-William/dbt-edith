@@ -5101,7 +5101,12 @@ function selectPanelUp() {
   S.selectAsk++;
   for (const p of back.places.slice().reverse()) p.parent.insertBefore(p.el, p.next);
   $('#dock-lineage').classList.toggle('hidden', S.dock !== 'lineage');
-  if (S.graphMode !== 'select') return;
+  if (S.graphMode !== 'select') {
+    // The Catalog comes back holding the card's narrow layout; a column drawn
+    // from the card never redraws it, so it is laid out for the dock again (0160).
+    if (S.node) renderCatalog(S.node);
+    return;
+  }
   S.cardAsk++;
   S.node = back.node;
   $('#catalog').replaceChildren(...back.card);
@@ -5297,7 +5302,8 @@ async function runSelection() {
       emptyHint(selectEmptyText(sub));
     }
     $('#select-sum').textContent = selectSummary(sub);
-    $('#select-sum').title = sub.description || '';
+    // The whole sum is in the title: the bar may cut it short.
+    $('#select-sum').title = [selectSummary(sub), sub.description].filter(Boolean).join('\n');
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
   } catch (e) {
     if (ask !== S.selectAsk) return;
@@ -5495,26 +5501,31 @@ function selectCounts(sub) {
 
 /* The canvas half of the answer, which is not the same number: what was drawn,
    against what matched, so a capped picture says so instead of looking whole. */
-function selectStatus(sub) {
+function selectStatus(sub, folded = 0) {
   if (!sub.matched) return '';
   const { context, drawn, hidden, drawable } = selectCounts(sub);
+  const tally = sub.truncated ? null : testTally(sub, (n) => n && n.context);
+  const parts = tally && tally.tests ? tally : null;
   // Of what could be drawn, as the note under the box and its button count:
-  // the hidden tests are said apart, at the end of the line.
-  const head = sub.truncated ? `${drawn} of ${drawable} drawn` : `${drawn} node${drawn === 1 ? '' : 's'}`;
-  const edges = `${sub.edges.length} edge${sub.edges.length === 1 ? '' : 's'}`;
+  // the hidden tests are said apart, at the end of the line. A capped canvas
+  // counts every box as it did (0087); an uncapped one counts its tests apart.
+  const head = sub.truncated ? `${drawn} of ${drawable} drawn` : `${parts ? parts.nodes : drawn} node${(parts ? parts.nodes : drawn) === 1 ? '' : 's'}`;
+  const nEdges = parts ? parts.edges : sub.edges.length;
+  const edges = `${nEdges} edge${nEdges === 1 ? '' : 's'}`;
   const tests = hidden && `${hidden} test${hidden === 1 ? '' : 's'} hidden`;
   // Context alone on the canvas, a selector of tests with the tests box off,
   // leads with what is there: `0 nodes` above a canvas of boxes reads as a bug.
   if (!drawn && context && !sub.truncated) return [`${context} for context`, edges, tests].filter(Boolean).join(' · ');
   const tail = [context && `${context} for context`, tests].filter(Boolean).map((s) => ` · ${s}`).join('');
-  return `${head} · ${edges}${tail}`;
+  return `${head} · ${edges}${parts ? testsStatus(parts.tests, folded) : foldedStatus(folded)}${tail}`;
 }
 
 /* The line under the canvas, whichever mode drew it. One function rather than
    a string at each caller, so an exported graph repeats the screen's words.
    `drawn` is what Lineage.render() said the folder bands added, if any. */
 function canvasStatus(sub, drawn) {
-  if (sub.mode === 'select') return selectStatus(sub) + foldersStatus(drawn);
+  const folded = (drawn && drawn.folded) || 0;
+  if (sub.mode === 'select') return selectStatus(sub, folded) + foldersStatus(drawn);
   // A stopped column's +N reads as the depth's limit otherwise (0083).
   const stopped = (sub.stopped_at || []).length ? ` · stopped downstream at ${sub.stopped_at.join(', ')}` : '';
   // collin's indirect edges, left out unless the indirect button is on (0097).
@@ -5522,14 +5533,19 @@ function canvasStatus(sub, drawn) {
   // A column canvas is cut at a number of boxes the line names, the one a
   // click on its button lifts (0118); a model's, at the depth.
   const cut = sub.truncated ? (sub.mode === 'column' ? ` · truncated at ${sub.nodes.length}` : ' · truncated') : '';
-  const tail = `${sub.edges.length} edges${stopped}${indirect}${cut}`;
+  // A model canvas counts its tests apart; a column canvas has none.
+  const tally = sub.mode === 'column' ? { tests: 0, edges: sub.edges.length } : testTally(sub);
+  // A column canvas's line keeps its words until its own step; a model's are plural only where they should be.
+  const edges = sub.mode === 'column' || tally.edges !== 1 ? `${tally.edges} edges` : '1 edge';
+  const tail = `${edges}${tally.tests ? testsStatus(tally.tests, folded) : foldedStatus(folded)}${stopped}${indirect}${cut}`;
   // The indirect edges' boxes stand for a model each, which no column is.
   const models = sub.mode === 'column' ? sub.nodes.filter((n) => n.id && !String(n.id).includes('::')).length : 0;
   // The columns collin traced only in part (0145), counted among those drawn.
   const partly = sub.mode === 'column' ? sub.nodes.filter((n) => n.partial && n.partial.length).length : 0;
+  const modelNodes = tally.tests ? tally.nodes : sub.nodes.length;
   return (sub.mode === 'column'
     ? `${sub.focus_column} · ${sub.nodes.length - models} columns${partly ? ` · ${partly} partly traced` : ''}${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
-    : `${sub.nodes.length} nodes · ${tail}`) + foldersStatus(drawn);
+    : `${modelNodes} node${modelNodes === 1 ? '' : 's'} · ${tail}`) + foldersStatus(drawn);
 }
 
 /* How many folders the canvas is drawn in, and the sub-folders inside them
@@ -5538,13 +5554,44 @@ function canvasStatus(sub, drawn) {
    a dashed edge in model mode would look like a loop dbt does not allow. */
 function foldersStatus(drawn) {
   if (!drawn) return '';
-  const n = drawn.folders, sub = drawn.sub || 0, back = drawn.against, folded = drawn.folded || 0;
-  // Folded tests are in the answer and off the canvas, under a chip that says
-  // how many (0035): the line counts them too, so nothing reads as missing.
-  return (n ? ` · ${n} folder${n === 1 ? '' : 's'}`
+  const n = drawn.folders, sub = drawn.sub || 0, back = drawn.against;
+  return n ? ` · ${n} folder${n === 1 ? '' : 's'}`
     + (sub ? ` · ${sub} sub-folder${sub === 1 ? '' : 's'}` : '')
-    + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '') : '')
-    + (folded ? ` · ${folded} test${folded === 1 ? '' : 's'} folded` : '');
+    + (back ? ` · ${back} edge${back === 1 ? '' : 's'} against their order` : '') : '';
+}
+
+/* A model or selection canvas counted with its tests apart (0160): a test is a
+   slip on its model's stem, not a box of the graph, and the stem not an edge
+   of it. `edges` are those between boxes that are no test. Split only where a
+   box that is no test is drawn (a selector of tests alone keeps them as the
+   nodes it is made of) and, as every count here, with the tests folded under
+   a chip still in, since they are in the answer (0035). `skip` is a node not
+   to count, a selection's context. */
+function testTally(sub, skip = () => false) {
+  const nodes = (sub && sub.nodes) || [], edges = (sub && sub.edges) || [];
+  // By index: a node list may be sparse, and filter() would pass over its holes.
+  const test = [];
+  let tests = 0, skipped = 0;
+  for (let i = 0; i < nodes.length; i++) {
+    test[i] = !!nodes[i] && nodes[i].kind === 'test';
+    if (test[i]) tests++;
+    else if (skip(nodes[i])) skipped++;
+  }
+  const boxes = nodes.length - tests - skipped;
+  if (!tests || !boxes) return { nodes: nodes.length - skipped, edges: edges.length, tests: 0 };
+  return { nodes: boxes, edges: edges.filter((e) => e && !test[e[0]] && !test[e[1]]).length, tests };
+}
+
+/* The tests of a canvas said apart, and how many of them are folded under a
+   chip, so `11 tests · 3 folded` tells what the number holds. A fold with no
+   tests clause to stand in (a capped selection's, which counts as it did) is
+   said as it always was. */
+function testsStatus(tests, folded) {
+  return ` · ${tests} test${tests === 1 ? '' : 's'}${folded ? ` · ${folded} folded` : ''}`;
+}
+
+function foldedStatus(folded) {
+  return folded ? ` · ${folded} test${folded === 1 ? '' : 's'} folded` : '';
 }
 
 /* Four at most: a selector with twenty bad terms has one mistake in it, not
@@ -7276,41 +7323,56 @@ function foldersOn() {
   return $('#by-folder').getAttribute('aria-pressed') === 'true';
 }
 
-/* The levels box, held to what it offers: a typed 9 or a cleared box draws
-   as its nearest bound rather than as nothing. */
+/* The levels, held to what is drawn: a 9 written into the input or a cleared
+   one draws as its nearest bound rather than as nothing. */
 function folderLevels() {
   const v = Math.round(+$('#folder-levels').value);
   return Number.isFinite(v) ? Math.min(4, Math.max(1, v)) : 1;
 }
 
-/* Whether the levels box stays open: only beside a pressed toggle, since
-   without the bands it sets nothing, and only while the pointer is on the
-   toggle or the box, or the keyboard is in them. */
-function levelsHeld(pressed, over, typing) {
-  return pressed && (over || typing);
+/* The levels one step further, held to what is drawn: 1 to 4, whatever the box
+   held (0080). */
+function stepLevels(v, dir) {
+  const n = Math.round(+v);
+  return Math.min(4, Math.max(1, (Number.isFinite(n) ? n : 1) + dir));
 }
 
-/* The levels box opens under the by folder toggle when the pointer reaches
-   either, and when the keyboard reaches the toggle, a pointer being not
-   everyone's way in. Left, it stays `linger` ms, time to reach it from the
-   toggle and read it, then closes, unless it is being typed in: then it
-   closes as long after the typing ends. A click on the toggle focuses it
-   too, and that focus keeps nothing open, only the keyboard's (0080). */
-function wireFolderLevels(linger = 2500) {
-  const tool = $('#folder-tool'), toggle = $('#by-folder'), input = $('#folder-levels'), box = $('#folder-levels-box');
-  let over = false, timer = null;
-  const typing = () => document.activeElement === input || toggle.matches(':focus-visible');
-  const open = () => { clearTimeout(timer); box.classList.toggle('open', foldersOn()); };
-  const close = () => { if (!levelsHeld(foldersOn(), over, typing())) box.classList.remove('open'); };
-  const later = () => { clearTimeout(timer); timer = setTimeout(close, linger); };
-  tool.addEventListener('mouseenter', () => { over = true; open(); });
-  tool.addEventListener('mouseleave', () => { over = false; later(); });
-  tool.addEventListener('focusin', () => { if (typing()) open(); });
-  tool.addEventListener('focusout', later);
-  // A 9 typed draws 4: the box says so rather than keep the 9.
-  input.addEventListener('change', () => { input.value = String(folderLevels()); });
+/* What the stepper beside By folder shows: only while the toggle is pressed,
+   since without the bands the levels set nothing (0080), the number, and which
+   of the two buttons still has somewhere to go. */
+function levelsView(pressed, v) {
+  return { shown: !!pressed, n: v, less: v > 1, more: v < 4 };
+}
+
+function paintLevels() {
+  const v = levelsView(foldersOn(), folderLevels());
+  $('#folder-steps').hidden = !v.shown;
+  $('#levels-n').textContent = String(v.n);
+  // aria-disabled, not disabled: a disabled button drops the keyboard's focus to the body.
+  $('#levels-less').setAttribute('aria-disabled', String(!v.less));
+  $('#levels-more').setAttribute('aria-disabled', String(!v.more));
+}
+
+/* By folder and its levels are one control: a minus, the number and a plus
+   sit beside the toggle in the bar, so nothing opens over the canvas on a
+   hover (0160, replacing the box of 0080). A click writes the hidden input
+   that holds the number and fires the one change the canvas redraws on, as the
+   depth does. */
+function wireFolderLevels() {
+  const input = $('#folder-levels');
+  const step = (dir) => {
+    const v = stepLevels(input.value, dir);
+    if (v === folderLevels()) return;
+    input.value = String(v);
+    input.dispatchEvent(new Event('change'));
+  };
+  $('#levels-less').addEventListener('click', () => step(-1));
+  $('#levels-more').addEventListener('click', () => step(1));
+  // A number written some other way reads back as what is drawn.
+  input.addEventListener('change', () => { input.value = String(folderLevels()); paintLevels(); });
   // After the toggle's own listener, so this reads the state it turned to.
-  toggle.addEventListener('click', () => (foldersOn() ? open() : box.classList.remove('open')));
+  $('#by-folder').addEventListener('click', paintLevels);
+  paintLevels();
 }
 
 function paintTestsToggle(on) {
@@ -8803,16 +8865,19 @@ function exportName(sub, day, ext = '.html') {
 
 /* What the head of the Export menu says the canvas holds, folded tests
    included (0035): its nodes and edges, or the columns alone on a column
-   canvas, whose model boxes are not columns. Tests count as nodes. It is not always the line under the canvas,
-   which also counts what a selection keeps for context or a cap leaves out. */
-function exportCount(sub) {
+   canvas, whose model boxes are not columns. Tests are counted apart, as the
+   line under the canvas counts them (0160). It is not always the line under
+   the canvas, which also counts what a selection keeps for context or a cap
+   leaves out. */
+function exportCount(sub, folded = 0) {
   if (!sub || !sub.nodes || !sub.nodes.length) return 'nothing drawn';
   const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
   if (sub.mode === 'column') {
     return n(sub.nodes.length - sub.nodes.filter((b) => b.id && !String(b.id).includes('::')).length, 'column');
   }
-  const edges = (sub.edges || []).length;
-  return edges ? `${n(sub.nodes.length, 'node')} · ${n(edges, 'edge')}` : n(sub.nodes.length, 'node');
+  const t = testTally(sub);
+  return [n(t.nodes, 'node'), t.edges && n(t.edges, 'edge'), t.tests && n(t.tests, 'test'), t.tests && folded && `${folded} folded`]
+    .filter(Boolean).join(' · ');
 }
 
 /* The menu's three rows: the key a walk finds them by, the board's words, and
@@ -8842,7 +8907,7 @@ function escapeHtml(s) {
 function exportCanvasVars() {
   const names = [
     '--bg', '--bg-2', '--bg-3', '--line', '--fg', '--fg-dim', '--accent', '--warn', '--mono', '--ui',
-    '--edge', '--edge-test', '--focus-bg', '--sel-line',
+    '--edge', '--edge-test', '--focus-bg', '--line-strong', '--accent-rgb',
     '--band', '--band-line', '--band-l1', '--band-l1-line', '--band-l2', '--band-l2-line', '--band-l3', '--band-l3-line',
     '--fg-2', '--edge-hot', 'color-scheme',
     '--k-view', '--k-table', '--k-incr', '--k-ephemeral', '--k-mview', '--k-seed', '--k-source', '--k-snapshot',
@@ -8874,24 +8939,29 @@ function exportCanvasCss(vars = {}) {
   return [
     ':root { ' + Object.keys(vars).filter((k) => vars[k]).map((k) => `${k}: ${vars[k]}; `).join('') + '}',
     '#graph text { font-family: var(--ui); user-select: none; }',
-    '.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.2; }',
+    '.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.5; }',
     '.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }',
+    '.edge.test.stem { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
     '.edge.hi { stroke: var(--edge-hot); stroke-width: 2; }',
+    '.edge.test.stem.hi { stroke: var(--edge-hot); stroke-width: 1.5; }',
     '.edge.indirect.hi { stroke: var(--edge-col); }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
     '.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }',
     '.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }',
-    '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 5; }',
-    '.nd:hover rect.box { stroke: var(--fg-dim); }',
-    '.nd.focus rect.box { stroke: var(--accent); stroke-width: 2; fill: var(--focus-bg); }',
+    '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 7; }',
+    '.nd.col rect.box { rx: 5; }',
+    '.nd:hover rect.box { stroke: var(--line-strong); }',
+    '.nd.focus rect.box, .nd.sel rect.box { stroke: rgba(var(--accent-rgb), .9); stroke-width: 1; fill: var(--focus-bg); }',
     '.nd.off rect.box { stroke-dasharray: 3 3; }',
     '.nd.off .t1, .nd.off .t2 { opacity: .55; }',
     '.nd.ctx { opacity: .45; }',
     '.nd.ctx:hover { opacity: .85; }',
-    '.nd.rider rect.box { fill: var(--bg-2); rx: 4; }',
-    '.nd.rider .t1 { font-size: 10.5px; }',
+    '.nd.rider rect.box { fill: var(--bg-2); rx: 5; }',
+    '.nd.rider .t1 { font-size: 11.5px; font-weight: 400; }',
+    '.nd .rc { fill: var(--fg-dim); font-size: 11px; }',
+    '#graph .nd .rc { font-family: var(--mono); }',
     '.nd.fold { cursor: pointer; }',
     '.nd.fold rect.box { fill: transparent; stroke-dasharray: 3 3; }',
     '.nd.fold .t1 { fill: var(--fg-dim); }',
@@ -8900,13 +8970,21 @@ function exportCanvasCss(vars = {}) {
     '.nd.group { cursor: pointer; }',
     '.nd .warnmark { fill: var(--warn); }',
     '.nd .warncount { font-size: 9px; }',
-    '.nd.sel rect.box { stroke: var(--sel-line); }',
-    '.nd .kindbar { stroke: none; rx: 3; }',
-    '.nd .kindbar.seg { rx: 1.5; }',
-    '.nd .t1 { fill: var(--fg); font-size: 11.5px; }',
-    '.nd .t2 { fill: var(--fg-dim); font-size: 9.5px; }',
+    '.nd .kindbar { stroke: none; rx: 2; }',
+    '.nd .kindbar.seg { rx: 1; }',
+    '.nd.col .kindbar { rx: 3; }',
+    '.nd .t1 { fill: var(--fg); font-size: 13px; font-weight: 500; }',
+    '.nd .t2 { fill: var(--fg-dim); font-size: 11px; }',
+    '#graph .nd .t2 { font-family: var(--mono); }',
+    '.nd.col .t1 { font-size: 11.5px; font-weight: 400; }',
+    '.nd.col .t2 { font-size: 9.5px; }',
+    '#graph .nd.col .t2 { font-family: var(--ui); }',
     '.nd .t2 .struck { opacity: .6; text-decoration: line-through; }',
-    '.nd .more { fill: var(--fg-dim); font-size: 9px; }',
+    '.nd .more-badge .pill { fill: var(--bg-2); stroke: var(--line); }',
+    '.nd .more-badge:hover .pill { stroke: var(--line-strong); }',
+    '.nd .more { fill: var(--fg-dim); font-size: 10px; }',
+    '#graph .nd .more { font-family: var(--mono); }',
+    '.nd .more-badge:hover .more { fill: var(--fg); }',
     '.band { fill: var(--band); stroke: var(--band-line); stroke-width: 1; }',
     '.band.l1 { fill: var(--band-l1); stroke: var(--band-l1-line); }',
     '.band.l2 { fill: var(--band-l2); stroke: var(--band-l2-line); }',
@@ -8939,7 +9017,7 @@ h1 { margin: 1px 0 6px; font-size: 17px; font-weight: 600; overflow-wrap: anywhe
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
 .legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
-.legend i.kind { width: 3px; height: 11px; border-radius: 2px; vertical-align: -2px; }
+.legend i.kind { width: 3px; height: 10px; border-radius: 2px; vertical-align: -1px; }
 .tools { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--fg-dim); }
 button { display: none; padding: 2px 8px; font: 11px var(--ui); color: var(--fg); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 button:hover { border-color: var(--accent); }
@@ -9287,7 +9365,7 @@ function openExportMenu(anchor) {
   menu.setAttribute('aria-label', 'Export');
   menu.dataset.align = 'right';
   const head = el('div', 'menuhead', 'What the canvas shows');
-  head.append(el('span', 'n', exportCount(sub)));
+  head.append(el('span', 'n', exportCount(sub, Lineage.folded())));
   menu.append(head);
   const act = { 'export-copy': copyLineageImage, 'export-png': saveLineageImage, 'export-html': exportLineage };
   for (const r of EXPORT_ROWS) {
@@ -9848,7 +9926,8 @@ function renderCatalog(n) {
 
   const body = document.createElement('div');
   body.className = 'cat-body';
-  (shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n);
+  // In the Lineage space's card the Catalog is laid out for a narrow column (0160).
+  (shown === 'columns' ? catalogColumns : test ? catalogTestPreview : catalogPreview)(body, n, !!host.closest('#selpanel-card'));
   host.append(head, body);
   const filter = typing && $('#col-filter');
   if (filter) {
@@ -14426,6 +14505,48 @@ function resolvedCell(row, envName, file) {
   }
 }
 
+/* The lines one location key takes in the narrow card (0160): a value written
+   once where the stages agree, a line per run of equal stages where they do
+   not, so nothing is cut at 280px as a three-column table was. The stages are
+   as written, resolved and built, in that order. A stage with nothing in it
+   says nothing (not written in this file, not set anywhere), and when
+   neither the file nor the config sets the key the target decides, so the
+   built value stands alone, dimmed `(default)`. Two stages share a line only
+   when their text and their class agree, so a mark such as `env-unevaluated`
+   is never lost to a neighbour. A run is labelled by its last stage; a lone
+   line has no label. Each title names the stages it stands for.
+   `inSandbox`: a move is expected there and only a model built outside the
+   sandbox stands out. */
+function locationLines(row, envName, file, inSandbox) {
+  const rc = resolvedCell(row, envName, file);
+  const resolved = rc.cls === 'nul' ? null : rc;
+  const moved = row.redirected ? (inSandbox ? 'moved expected' : 'moved') : '';
+  const built = row.built
+    ? { label: 'built', text: row.built, cls: moved,
+      title: row.redirected ? `dbt parsed ${row.parsed}, built in ${row.built}` : 'where the target that produced this manifest built it' }
+    : null;
+  if (!row.written && !resolved) {
+    return built ? [{ label: '', value: built.text, dim: ' (default)', cls: moved, title: 'not set in the config: the target decides, and built it here' }]
+      : [{ label: '', value: 'default', dim: '', cls: 'nul', title: 'not set here, inherited from the target' }];
+  }
+  const stages = [
+    row.written && { label: 'written', text: row.written, cls: row.templated ? 'tpl' : '', title: 'the config as it appears in YAML, SQL or dbt_project.yml' },
+    resolved && { label: 'resolved', text: resolved.text, cls: resolved.cls, title: resolved.title },
+    built,
+  ].filter(Boolean);
+  const runs = [];
+  for (const st of stages) {
+    const last = runs[runs.length - 1];
+    if (last && last.text === st.text && last.cls === st.cls) { last.names.push(st.label); last.title = st.title; } else runs.push({ text: st.text, cls: st.cls, title: st.title, names: [st.label] });
+  }
+  const say = (names) => (names.length < 2 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+  return runs.map((r) => ({
+    label: runs.length > 1 ? r.names[r.names.length - 1] : '',
+    value: r.text, dim: '', cls: r.cls,
+    title: r.names.length > 1 ? `${say(r.names)}: ${r.title}` : r.title,
+  }));
+}
+
 /* A relation name split into its parts, each remembering whether it was
    quoted. Inside quotes, "" stands for one literal quote. */
 function splitRelation(text) {
@@ -14460,7 +14581,8 @@ function resolvedRelation(rows, builtRelation, file) {
     if (r.status === 'unevaluated') return { text: '', reason: `${key} contains Jinja that dbt-edith does not evaluate` };
     if (r.resolved) names.push(r.resolved);
     else if (key === 'alias' && r.built) names.push(r.built);
-    else return { text: '', reason: `${key} is not set in the config, so it comes from the target profile, which dbt-edith does not read` };
+    // `unset` says it in a flag, so the card need not read this sentence.
+    else return { text: '', reason: `${key} is not set in the config, so it comes from the target profile, which dbt-edith does not read`, unset: true };
   }
   const parts = builtRelation ? splitRelation(builtRelation) : [];
   const bare = (s) => (s.length > 1 && s[0] === '"' && s[s.length - 1] === '"' ? s.slice(1, -1) : s);
@@ -15219,7 +15341,7 @@ function jobBuildVerdicts(job, got, clock, staleDays, now, worst) {
   return { items, counts, tone, basis: judged ? 'clock' : 'threshold', last: judged ? judged.last : null, before: judged ? judged.before : null, at: now, clash: '' };
 }
 
-function catalogLocation(body, n) {
+function catalogLocation(body, n, inCard = false) {
   // A chosen file this node was not resolved against (none discovered at the
   // time, or the file was removed) quietly falls back to manifest mode.
   const chosen = activeEnv();
@@ -15232,6 +15354,9 @@ function catalogLocation(body, n) {
   const sandbox = (S.meta && S.meta.sandbox) || '';
   const inSandbox = builtInSandbox(n.location, sandbox);
   const title = h3('location');
+  // In the space's card the environment is picked beside the heading, as the
+  // design draws it, where the table keeps it in its resolved column (0160).
+  const pill = envsInUse() && file === S.env;
   // Beside the heading rather than in the relation row, which an ephemeral
   // model lacks: copying what it reads is just what developing one needs
   // (0058). Under the table, it sat a whole table lower. A sibling of the
@@ -15248,9 +15373,20 @@ function catalogLocation(body, n) {
     const row = document.createElement('div');
     row.className = 'sechead';
     row.append(title, b);
+    if (inCard) title.after(locationPill(pill));
+    body.appendChild(row);
+  } else if (inCard) {
+    const row = document.createElement('div');
+    row.className = 'sechead';
+    row.append(title, locationPill(pill));
     body.appendChild(row);
   } else {
     body.appendChild(title);
+  }
+  if (inCard) {
+    body.appendChild(locationList(rows, n, { file, envName, inSandbox, pill }));
+    locationFoot(body, rows, { file, envName, inSandbox });
+    return;
   }
 
   const table = document.createElement('table');
@@ -15259,7 +15395,6 @@ function catalogLocation(body, n) {
   // The environment switch sits in the header of the column it changes. It
   // shows only when this node follows the choice, so its label never differs
   // from the values underneath.
-  const pill = envsInUse() && file === S.env;
   for (const [label, tip] of [
     ['', ''],
     ['as written', 'the config as it appears in YAML, SQL or dbt_project.yml'],
@@ -15328,7 +15463,13 @@ function catalogLocation(body, n) {
     table.appendChild(tr);
   }
   body.appendChild(table);
+  locationFoot(body, rows, { file, envName, inSandbox });
+}
 
+/* The notes under the location: what the environment does not give, that this
+   is a sandbox, or that the node was built outside its configured place. */
+function locationFoot(body, rows, { file, envName, inSandbox }) {
+  const sandbox = (S.meta && S.meta.sandbox) || '';
   const foot = document.createElement('div');
   foot.className = 'loc-foot';
   const unresolved = rows.filter((r) => r.status === 'missing' || r.status === 'placeholder');
@@ -15354,6 +15495,77 @@ function catalogLocation(body, n) {
   if (foot.children.length) body.appendChild(foot);
 }
 
+/* The environment the location is resolved in, beside the heading of the
+   space's card: a button that opens the menu where this node follows the
+   choice, a plain mark of the one it was resolved with where it does not. */
+function locationPill(pill) {
+  const b = document.createElement(pill ? 'button' : 'span');
+  b.className = 'envpill sm';
+  if (pill) {
+    b.type = 'button';
+    b.setAttribute('aria-haspopup', 'menu');
+    fillEnvPill(b, 'env');
+    b.addEventListener('click', () => openEnvMenu(b));
+    return b;
+  }
+  // Named as the rest of the page names this manifest: on a sandbox one,
+  // "my compile" (0143).
+  const own = manifestChoice((S.meta && S.meta.sandbox) || '');
+  b.dataset.tone = 'manifest';
+  b.append(Object.assign(document.createElement('span'), { className: 'envpill-k', textContent: 'env' }), document.createTextNode(own.label));
+  b.title = own.now;
+  return b;
+}
+
+/* The location as a definition list, for a card too narrow for a table of
+   three columns (0160): a key, then its lines (locationLines), then the
+   relation. The relation is one line where the resolved and built names
+   agree, a line of each where they do not, each with its Copy and, with
+   Snowflake's features on, its Snowsight menu. */
+function locationList(rows, n, { file, envName, inSandbox, pill }) {
+  const dl = document.createElement('dl');
+  dl.className = 'loc2';
+  const line = (l) => {
+    const v = document.createElement('span');
+    v.textContent = l.value;
+    if (l.cls) v.className = l.cls;
+    v.title = l.title;
+    if (l.dim) v.append(jel('span', 'dim', l.dim));
+    if (!l.label) return v;
+    const wrap = document.createElement('div');
+    wrap.className = 'lv';
+    wrap.append(jel('span', 'lk', l.label), v);
+    return wrap;
+  };
+  for (const r of rows) {
+    dl.append(jel('dt', '', r.key));
+    const dd = document.createElement('dd');
+    dd.append(...locationLines(r, envName, file, inSandbox).map(line));
+    dl.append(dd);
+  }
+  // Ephemeral models have no relation, in any environment.
+  if (n.relation) {
+    const rel = resolvedRelation(rows, n.relation, file);
+    const where = file ? `resolved with ${file}, before the generate_*_name macros` : 'as dbt parsed it, before the generate_*_name macros';
+    const dd = document.createElement('dd');
+    // A key set nowhere is the target's to decide, as the key rows say with (default): no resolved line to show.
+    if (rel.text === n.relation || rel.unset) {
+      dd.append(relationBody(n.relation, '', rel.unset
+        ? 'where this manifest\'s target built it: the config leaves the rest to the target'
+        : 'where this manifest\'s target built it, the same as resolved', n.materialized));
+    } else {
+      for (const [label, text, reason, what] of [['resolved', rel.text, rel.reason, where], ['built', n.relation, '', 'where this manifest\'s target built it']]) {
+        const wrap = document.createElement('div');
+        wrap.className = 'lv';
+        wrap.append(jel('span', 'lk', label), relationBody(text, reason, what, n.materialized));
+        dd.append(wrap);
+      }
+    }
+    dl.append(jel('dt', '', 'relation'), dd);
+  }
+  return dl;
+}
+
 /* A full relation name with its own Copy button, and with Snowflake's
    features on its Snowsight menu, or why there is none. */
 function relationCell(text, reason, what, materialized) {
@@ -15363,6 +15575,16 @@ function relationCell(text, reason, what, materialized) {
     td.textContent = 'not available';
     td.title = reason;
     return td;
+  }
+  td.appendChild(relationBody(text, reason, what, materialized));
+  return td;
+}
+
+/* What a relation row holds, in a cell or in the card's list: the name and its
+   buttons, or why there is none. */
+function relationBody(text, reason, what, materialized) {
+  if (!text) {
+    return Object.assign(document.createElement('span'), { className: 'nul', textContent: 'not available', title: reason });
   }
   const wrap = document.createElement('div');
   wrap.className = 'relcell';
@@ -15387,8 +15609,7 @@ function relationCell(text, reason, what, materialized) {
     open.addEventListener('click', () => openSnowsightMenu(open, text, materialized));
     wrap.append(open);
   }
-  td.appendChild(wrap);
-  return td;
+  return wrap;
 }
 
 /* Where one relation opens in Snowsight. The account comes from the script's
@@ -15918,7 +16139,7 @@ function linkLike(node, onClick) {
   });
 }
 
-function catalogPreview(body, n) {
+function catalogPreview(body, n, inCard = false) {
   const desc = document.createElement('p');
   desc.className = 'cat-desc';
   if (n.description) desc.textContent = n.description;
@@ -15933,26 +16154,29 @@ function catalogPreview(body, n) {
   // A disabled model is never run, so nothing is said of how.
   const incremental = n.kind === 'model' && n.materialized === 'incremental' && !n.disabled;
   const keyed = incremental || (n.kind === 'snapshot' && !n.disabled);
+  // Each of Upstream and Downstream sets the box it names and leaves the other:
+  // the Catalog shows another node than the canvas's only when a box was
+  // clicked on it.
+  const columns = stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null);
+  const up = stat(inCard ? 'Upstream' : 'Upstream models', `${n.parents.length}`, () => lineageOneUp(n));
+  const down = stat(inCard ? 'Downstream' : 'Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); });
+  const tests = stat('Tests', String(n.tests.length), n.tests.length ? () => {
+    const h = [...body.querySelectorAll('h3')].find((e) => e.textContent.startsWith('tests on'));
+    if (h) h.scrollIntoView({ block: 'start' });
+  } : null);
   stats.append(
-    stat('Mat. type', n.materialized || n.kind),
+    stat(inCard ? 'Materialization' : 'Mat. type', n.materialized || n.kind),
     ...(incremental ? [strategyStat(n)] : []),
     ...(keyed ? [keyStat(n)] : []),
-    stat('Columns', String(n.columns.length), n.columns.length ? () => showCatalogTab(n, 'columns') : null),
-    // Each sets the box it names and leaves the other: the Catalog shows
-    // another node than the canvas's only when a box was clicked on it.
-    stat('Upstream models', `${n.parents.length}`, () => lineageOneUp(n)),
-    stat('Downstream models', `${n.children.length}`, () => { $('#down').value = 1; focusNode(n.id, { keepDepth: true }); showDock('lineage'); }),
-    stat('Tests', String(n.tests.length), n.tests.length ? () => {
-      const h = [...body.querySelectorAll('h3')].find((e) => e.textContent.startsWith('tests on'));
-      if (h) h.scrollIntoView({ block: 'start' });
-    } : null),
+    // The card reads Columns, Tests, Upstream, Downstream, as the design lists them (0160).
+    ...(inCard ? [columns, tests, up, down] : [columns, up, down, tests]),
   );
   const totals = document.createElement('div');
   totals.className = 'muted';
   totals.style.cssText = 'font-size:11px;margin-top:8px';
   totals.textContent = `${n.upstream_total} models upstream in total, ${n.downstream_total} downstream (whole graph).`;
   body.append(stats, totals);
-  catalogLocation(body, n);
+  catalogLocation(body, n, inCard);
   catalogJobs(body, n);
   catalogBuilds(body, n);
 
@@ -18836,7 +19060,7 @@ function tourSteps(c) {
         + 'nothing here runs dbt. Click a box to read its file, double-click to centre the lineage on it, and a `+N` '
         + 'badge pulls in one more level. Opening a model\'s file moves the lineage onto it. '
         + `${key('Mod+F')} over the canvas finds a box by its name and brings it to the middle.` });
-    steps.push({ key: 'select', target: '#select-bar', title: 'Lineage, as a selection',
+    steps.push({ key: 'select', target: '#selpanel-head', title: 'Lineage, as a selection',
       text: 'Any set of nodes, written the way dbt reads a selection: names, `tag:`, `path:`, `+` and `@`, or a named '
         + `selector from \`selectors.yml\`. This one, \`+${m.name}+\`, is everything it is built from and everything `
         + 'built from it. It opens over the whole window, from the Lineage tab in the top bar or the lineage\'s bar, '
@@ -20350,7 +20574,8 @@ async function boot() {
     },
     // Where the folder names can sit, and the middle a found box is brought
     // to: below the bars floating over the top of the canvas, the selector's
-    // in that mode and find's while it is open. Not below the note alone,
+    // warnings in that mode (the selector itself is the space's bar) and
+    // find's while it is open. Not below the note alone,
     // which the names have always run under.
     headTop: () => {
       const top = $('#lineage-top');

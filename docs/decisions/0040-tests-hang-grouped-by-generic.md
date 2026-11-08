@@ -1,6 +1,6 @@
 # 0040. A model's tests hang grouped by their generic
 
-Date: 2026-10-05 · Status: accepted · Amends 0034 and 0035
+Date: 2026-10-05 · Status: accepted, amended by 0160 (each level's shape drawn in the slip's 3 by 10 bar) · Amends 0034 and 0035
 
 **Trigger:** read before changing how the tests under a model are grouped,
 labelled or coloured, or what a payload says about a test.

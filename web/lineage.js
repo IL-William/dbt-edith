@@ -16,7 +16,10 @@ const Lineage = (() => {
   // date spine read across the graph becomes a band of hundreds of lines.
   const BUNDLE = 4;
   // Re-assigned per mode in render(): column boxes are smaller than model boxes.
-  let W = 200, H = 48;
+  // 220 for a model's, the one width the dock and the Lineage space share, the
+  // canvas moving between them without a redraw (0160).
+  const MODEL_W = 220;
+  let W = MODEL_W, H = 48;
   /* Colour carries the materialization, which is what you actually reason about
      when reading a DAG: what exists in the warehouse, and what gets rebuilt. */
   const MAT = {
@@ -254,7 +257,8 @@ const Lineage = (() => {
   }
 
   /* The area an exported picture shows: the layout's box plus room for what is
-     drawn outside the boxes, a +N badge reaching 27 beside one and a role tag
+     drawn outside the boxes, a +N badge reaching 28 or more beside one (4px off
+     the box and as wide as its number) and a role tag
      14 above one. A page gets at least a screenful at natural size, because it
      scales its picture to fit the window: one box alone would arrive six times
      too big, which the canvas avoids by capping its own zoom at 1.1. An image
@@ -740,7 +744,8 @@ const Lineage = (() => {
     }
     if (r.level === 'column') {
       const tail = ` · ${n.column}`;
-      return { text: n.test_name + tail, keep: tail.length };
+      // `col`: drawn in two runs, the generic and its column (writeRow).
+      return { text: n.test_name + tail, keep: tail.length, col: true };
     }
     return { text: String(r.level === 'model' ? n.test_name : n.name), keep: 0 };
   }
@@ -827,7 +832,7 @@ const Lineage = (() => {
       const x = A.x + ride.indent / 2;
       return `M${x},${A.y + A.h} L${x},${mid(B)} L${B.x},${mid(B)}`;
     };
-    const chips = [], groups = [], heads = new Map();
+    const chips = [], groups = [], heads = new Map(), stems = new Set();
     hosts.stacks.forEach((list, h) => {
       const hb = L.boxes[h], name = d.nodes[cut.keep[h]].name;
       const slot = (i) => ({ x: hb.x + ride.indent, y: hb.y + hb.h + ride.top + i * (ride.h + ride.gap), w: hb.w - ride.indent, h: ride.h });
@@ -846,7 +851,7 @@ const Lineage = (() => {
         }
         if (r.type === 'member') { b.x += ride.sub; b.w -= ride.sub; }
         boxes[r.v] = Object.assign(b, {
-          rider: true, test: r.level, member: r.type === 'member', warn: !!d.nodes[r.v].warn, label: say.text, keep: say.keep,
+          rider: true, test: r.level, member: r.type === 'member', warn: !!d.nodes[r.v].warn, label: say.text, keep: say.keep, col: !!say.col,
         });
       });
       const chip = hosts.chips.get(h);
@@ -900,6 +905,7 @@ const Lineage = (() => {
       if (!A || !B) { paths[i] = null; return; }
       if (cut.rider[v] && cut.keep[hosts.host[v]] === a) {
         paths[i] = r ? null : stem(A, B);
+        if (!r) stems.add(i);
         return;
       }
       if (r && shared.get(r).get(a) !== v) { paths[i] = null; return; }
@@ -917,6 +923,8 @@ const Lineage = (() => {
       }
     });
     const out = { boxes, paths, back, bbox: n ? { x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3] } : null };
+    // Which edges are a host's own stem, drawn dashed; another parent's edge into a test stays dotted.
+    if (stems.size) out.stems = stems;
     if (L.bands) { out.bands = L.bands; out.against = L.against; }
     if (chips.length) { out.chips = chips; out.folded = hosts.hidden.size; }
     if (groups.length) out.groups = groups;
@@ -1402,6 +1410,18 @@ const Lineage = (() => {
     return n;
   };
   const clip = (s, max) => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+
+  /* The characters a box's two lines have room for, a model's then a column's.
+     A model's name is 13px at weight 500 (7.4px a character, measured on a
+     Mac's system font with identifiers) and its second line 11px mono (6.6px),
+     in the 220 wide box less the 19px the kind bar and its gap take and 12px
+     on the right. A column's box keeps the sizes it had until its own step. */
+  const NAME_PX = 7.4, SUB_PX = 6.6, PAD_L = 19, PAD_R = 12;
+
+  function boxRoom(columnMode) {
+    return columnMode ? { name: 24, sub: 30 }
+      : { name: Math.floor((MODEL_W - PAD_L - PAD_R) / NAME_PX), sub: Math.floor((MODEL_W - PAD_L - PAD_R + 2) / SUB_PX) };
+  }
 
   /* Second line of a node box. Column mode ships a ready-made `sub`; model mode
      builds one from the materialization, schema and test count.
@@ -1944,8 +1964,8 @@ const Lineage = (() => {
       const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
       if (!n) return;
       // The names are cut again, to the room the art leaves them, or the usual one.
-      if (t1) t1.textContent = clip(n.name, room ? room.name : columnMode ? 24 : 27);
-      if (t2) writeSub(t2, subtitleParts(n), room ? room.sub : columnMode ? 30 : 34, el);
+      if (t1) t1.textContent = clip(n.name, room ? room.name : boxRoom(columnMode).name);
+      if (t2) writeSub(t2, subtitleParts(n), room ? room.sub : boxRoom(columnMode).sub, el);
       if (!on) return;
       const box = nd.querySelector('rect.box');
       const w = +box.getAttribute('width'), h = +box.getAttribute('height'), geo = artGeometry(skin, w, h);
@@ -2071,7 +2091,7 @@ const Lineage = (() => {
     data = d;
     lastOpts = opts;
     const columnMode = d.mode === 'column';
-    W = columnMode ? 180 : 200;
+    W = columnMode ? 180 : MODEL_W;
     H = columnMode ? 40 : 48;
     // Selection mode sends no focus, and this is why it does not need to: an
     // absent index reads as undefined here and marks no box, rather than
@@ -2122,7 +2142,7 @@ const Lineage = (() => {
       const path = el('path', {
         // A line into a test links a check to what it checks, not data to
         // where it goes, so it is drawn apart: see `.edge.test`.
-        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : '')
+        class: (L.back[i] ? 'edge back' : 'edge') + (d.nodes[b].kind === 'test' ? ' test' : '') + (L.stems && L.stems.has(i) ? ' stem' : '')
           + (isRowKind(d.edge_kinds && d.edge_kinds[i]) ? ' indirect' : ''),
         'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i], id: `edge-${i}`,
       });
@@ -2158,14 +2178,14 @@ const Lineage = (() => {
     // A group's row hangs from its host like a test does, so selecting the
     // host lights its stem too.
     groups.forEach((c) => {
-      edgeLayer.appendChild(el('path', { class: 'edge test', 'data-a': d.nodes[c.host].id, d: c.stem }));
+      edgeLayer.appendChild(el('path', { class: 'edge test stem', 'data-a': d.nodes[c.host].id, d: c.stem }));
     });
 
     d.nodes.forEach((n, i) => {
       const b = place[i];
       if (!b) return;                         // a folded test, or one in a closed group
       const g = el('g', {
-        class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '')
+        class: 'nd' + (columnMode ? ' col' : '') + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '')
           + (b.rider ? ` rider ${b.test}` + (b.member ? ' member' : '') + (b.warn ? ' warn' : '') : ''),
         transform: `translate(${b.x},${b.y})`,
       });
@@ -2174,7 +2194,12 @@ const Lineage = (() => {
       // Inline style, not a fill attribute: a CSS rule such as `.nd rect` would
       // outrank the attribute and repaint this bar in the box colour. A
       // hanging test's bar has the shape of its kind, which riderBars draws.
-      if (!b.rider) g.appendChild(el('rect', { class: 'kindbar', width: 6, height: b.h, style: `fill:${nodeColor(n)}` }));
+      // A model's is a 3px bar inset 7 from the left and 10 from top and bottom;
+      // a column's keeps its 6px flush bar until its own step.
+      if (!b.rider) {
+        g.appendChild(el('rect', Object.assign({ class: 'kindbar', style: `fill:${nodeColor(n)}` },
+          columnMode ? { width: 6, height: b.h } : { x: 7, y: 10, width: 3, height: b.h - 20 })));
+      }
       // Ephemeral models are inlined into their children, nothing exists in the
       // warehouse, so they are drawn like the disabled ones: dashed.
       if (matLabel(n) === 'ephemeral') g.classList.add('off');
@@ -2185,19 +2210,19 @@ const Lineage = (() => {
       if (b.rider) {
         const x = riderBars(g, b.test, b.h, TEST[b.test]);
         const t1 = el('text', { class: 't1', x, y: b.h / 2 + 4 });
-        t1.textContent = rowClip(b.label, b.keep, riderMax(b.w, x, b.warn ? warnRoom(0) : 0));
+        writeRow(t1, rowClip(b.label, b.keep, riderMax(b.w, x, b.warn ? warnRoom(0) : 0)), b.col, el);
         t1.dataset.full = b.label;
         g.appendChild(t1);
         if (b.warn) g.appendChild(warnMark(b.w, b.h, 0));
       } else {
-        const t1 = el('text', { class: 't1', x: 12, y: 20 });
-        t1.textContent = clip(n.name, columnMode ? 24 : 27);
+        const t1 = el('text', { class: 't1', x: columnMode ? 12 : PAD_L, y: 20 });
+        t1.textContent = clip(n.name, boxRoom(columnMode).name);
         g.appendChild(t1);
       }
 
       if (!b.rider) {
-        const t2 = el('text', { class: 't2', x: 12, y: 35 });
-        writeSub(t2, subtitleParts(n), columnMode ? 30 : 34, el);
+        const t2 = el('text', { class: 't2', x: columnMode ? 12 : PAD_L, y: 35 });
+        writeSub(t2, subtitleParts(n), boxRoom(columnMode).sub, el);
         g.appendChild(t2);
       }
 
@@ -2209,9 +2234,17 @@ const Lineage = (() => {
       if (lost) g.appendChild(partialBadge(count ? 4 + pillWidth(count) + 4 : 4));
 
       // A hanging test's other inputs are counted on its right: its left is
-      // where the stem from its model runs.
-      if (n.hidden_up) g.appendChild(badge(b.rider ? b.w + 16 : -16, b.h / 2, `+${n.hidden_up}`, 'up', n));
-      if (n.hidden_down) g.appendChild(badge(b.w + 16, b.h / 2, `+${n.hidden_down}`, 'down', n));
+      // where the stem from its model runs. Each pill keeps 4px off the box
+      // however wide its number makes it.
+      const off = (label) => pillSize(label).w / 2 + 4;
+      if (n.hidden_up) {
+        const label = `+${n.hidden_up}`;
+        g.appendChild(badge(b.rider ? b.w + off(label) : -off(label), b.h / 2, label, 'up', n));
+      }
+      if (n.hidden_down) {
+        const label = `+${n.hidden_down}`;
+        g.appendChild(badge(b.w + off(label), b.h / 2, label, 'down', n));
+      }
 
       // An aria-label rather than a <title>: the native tooltip a <title> draws
       // would arrive a second after the hover card and sit on top of it. The
@@ -2296,7 +2329,7 @@ const Lineage = (() => {
       const g = el('g', { class: 'nd rider fold', transform: `translate(${c.x},${c.y})`, role: 'button', tabindex: '0' });
       g.setAttribute('aria-label', c.open ? `Fold the tests of ${d.nodes[c.host].name}` : `Show ${c.count} more tests of ${d.nodes[c.host].name}`);
       g.appendChild(el('rect', { class: 'box', width: c.w, height: c.h }));
-      const t = el('text', { class: 't1', x: 12, y: c.h / 2 + 4 });
+      const t = el('text', { class: 't1', x: 10, y: c.h / 2 + 4 });
       t.textContent = foldLabel(c);
       g.appendChild(t);
       turn(g, c.id);
@@ -2372,29 +2405,59 @@ const Lineage = (() => {
 
   /* The node travels with the direction: model mode only needs to know which
      way to deepen, selection mode has to name the box in the expression. */
-  /* A test row's bar, in the shape of its kind as well as its grey, since
-     three greys alone are hard to tell apart at a glance: whole for a generic
-     on a column, doubled by a thin one for a generic on the whole model, and
-     in three pieces for a singular test, as its outline is dashed. Returns
-     where the text starts. */
+  /* A test row's bar, 3 by 10 and inset 6 from the row's left edge, in the
+     shape of its kind as well as its grey, since three greys alone are hard to
+     tell apart at a glance: whole for a generic on a column, doubled by a thin
+     one for a generic on the whole model, and in three pieces for a singular
+     test, as its outline is dashed (0040, 0148). Returns where the text starts. */
+  const SLIP_BAR = { x: 6, w: 3, h: 10 };
+
   function riderBars(g, level, h, colour) {
-    const bar = (attrs) => g.appendChild(el('rect', Object.assign({ class: 'kindbar', width: 6, height: h, style: `fill:${colour}` }, attrs)));
+    const top = (h - SLIP_BAR.h) / 2;
+    const bar = (attrs) => g.appendChild(el('rect', Object.assign({ class: 'kindbar', x: SLIP_BAR.x, y: top, width: SLIP_BAR.w, height: SLIP_BAR.h, style: `fill:${colour}` }, attrs)));
     if (level === 'singular') {
-      const piece = (h - 4) / 3;
-      [0, 1, 2].forEach((i) => bar({ class: 'kindbar seg', y: i * (piece + 2), height: piece }));
-      return 12;
+      [0, 1, 2].forEach((i) => bar({ class: 'kindbar seg', y: top + i * 4, height: 2 }));
+      return 15;
     }
     bar({});
-    if (level !== 'model') return 12;
-    bar({ x: 8, width: 2 });
-    return 14;
+    if (level !== 'model') return 15;
+    bar({ x: SLIP_BAR.x + SLIP_BAR.w + 1, width: 2 });
+    return 18;
+  }
+
+  /* A row's text, the generic in the UI font and the column after it in mono,
+     dimmer, as two tspans with no dot between them: what rowClip left of
+     "name · column". A row with no column to show, a singular test's, a
+     member's or a group's, is one run. `make` creates the tspans, as writeSub's
+     does. The gap is the tspan's dx. */
+  function rowParts(text, col) {
+    const s = String(text);
+    if (!col) return { name: s, col: '' };
+    const at = s.indexOf(' \u00b7');
+    if (at < 0) return { name: s, col: '' };
+    return { name: s.slice(0, at), col: s.slice(at + 2).trim() };
+  }
+
+  function writeRow(t, text, col, make) {
+    const p = rowParts(text, col);
+    t.textContent = '';
+    if (!p.col) { t.textContent = p.name; return; }
+    const a = make('tspan'), c = make('tspan');
+    a.setAttribute('class', 'rn');
+    a.textContent = p.name;
+    c.setAttribute('class', 'rc');
+    c.setAttribute('dx', '6');
+    c.textContent = p.col;
+    t.appendChild(a);
+    t.appendChild(c);
   }
 
   /* Characters a row has room for, after the text's start and a warn mark.
-     An identifier at 10.5 px measured 5.1 to 5.4 px a character in Chrome on
-     a Mac; 5.6 leaves a little for a wider system font. */
+     The generic at 11.5px in the UI font and the column at 11px in mono
+     average 6.3 to 6.6px a character on a Mac; 6.5 leaves a little for a
+     wider system font. */
   function riderMax(w, x, reserve) {
-    return Math.floor((w - x - 8 - reserve) / 5.6);
+    return Math.floor((w - x - 8 - reserve) / 6.5);
   }
 
   // The room a warn mark takes at a row's right end: the triangle, and the
@@ -2418,18 +2481,47 @@ const Lineage = (() => {
     return g;
   }
 
+  /* The +N pill: 24 by 18 and fully round, wider where the number is, centred
+     on the point the circle it replaced was. */
+  function pillSize(label) {
+    return { w: Math.max(24, label.length * 6 + 8), h: 18 };
+  }
+
   function badge(x, y, label, dir, node) {
     const g = el('g', { class: 'more-badge', style: 'cursor:pointer', 'data-dir': dir });
-    g.appendChild(el('circle', { cx: x, cy: y, r: 11, style: 'fill:var(--bg-3);stroke:var(--line)' }));
-    const t = el('text', { class: 'more', x, y: y + 3, 'text-anchor': 'middle' });
+    const p = pillSize(label);
+    g.appendChild(el('rect', { class: 'pill', x: x - p.w / 2, y: y - p.h / 2, width: p.w, height: p.h, rx: p.h / 2 }));
+    const t = el('text', { class: 'more', x, y: y + 3.5, 'text-anchor': 'middle' });
     t.textContent = label;
     g.appendChild(t);
     g.addEventListener('click', (e) => { e.stopPropagation(); handlers.onExpand && handlers.onExpand(dir, node); });
     return g;
   }
 
+  /* The clicked box's glow, a ring 3px wide just outside its border at 16% of
+     the accent: a stroke on a rect of its own, behind the box, because a CSS
+     filter or a drop shadow per box is what a canvas of thousands cannot
+     afford. Its colour is the stylesheet's, and the Halloween look hides it,
+     its states having colours of their own (0160). */
+  function glowOf(nd) {
+    const box = nd.querySelector('rect.box');
+    const w = +box.getAttribute('width'), h = +box.getAttribute('height');
+    const r = nd.classList.contains('rider') || nd.classList.contains('col') ? 7 : 9;
+    return el('rect', { class: 'glow', x: -2, y: -2, width: w + 4, height: h + 4, rx: r, 'pointer-events': 'none' });
+  }
+
+  // One glow, on the box clicked. Before the box, so the art paintArt() lays
+  // right after the box keeps its place beside the kind bar.
+  function paintGlow(id) {
+    root.querySelectorAll('.glow').forEach((x) => x.remove());
+    if (!id) return;
+    const nd = [...root.querySelectorAll('.nd')].find((g) => g.dataset.id === id);
+    if (nd) nd.insertBefore(glowOf(nd), nd.querySelector('rect.box'));
+  }
+
   function select(id) {
     selected = id;
+    paintGlow(id);
     root.querySelectorAll('.nd').forEach((g) => g.classList.toggle('sel', g.dataset.id === id));
     root.querySelectorAll('.edge').forEach((p) => {
       const hit = p.dataset.a === id || p.dataset.b === id;
@@ -2656,9 +2748,11 @@ const Lineage = (() => {
     if (!data || !bbox || !data.nodes.length) return null;
     const frame = tight ? frameOf(bbox, 0, 0) : frameOf(bbox);
     const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
+    const at = new Map(data.nodes.map((n, i) => [String(n.id), i]));
     const g = root.cloneNode(true);
     g.removeAttribute('transform');
     g.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
+    g.querySelectorAll('.glow').forEach((x) => x.remove());
     g.querySelectorAll('.hi').forEach((x) => x.classList.remove('hi'));
     // Nor what find is painting, which says nothing to a reader of the file.
     g.querySelectorAll('.hit, .hitcur').forEach((x) => x.classList.remove('hit', 'hitcur'));
@@ -2676,8 +2770,8 @@ const Lineage = (() => {
       g.querySelectorAll('.nd:not(.rider)').forEach((nd) => {
         const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
         if (!n) return;
-        if (t1) t1.textContent = clip(n.name, colMode ? 24 : 27);
-        if (t2) writeSub(t2, subtitleParts(n), colMode ? 30 : 34, el);
+        if (t1) t1.textContent = clip(n.name, boxRoom(colMode).name);
+        if (t2) writeSub(t2, subtitleParts(n), boxRoom(colMode).sub, el);
       });
     }
     g.querySelectorAll('.kept').forEach((x) => x.classList.remove('kept'));
@@ -2688,7 +2782,7 @@ const Lineage = (() => {
     // test's line is smaller than a model's, so it is measured in one.
     const host = root.querySelector('.nd'), rider = root.querySelector('.nd.rider') || host;
     const probes = {};
-    const measure = (cls, text, size, small) => {
+    const measure = (cls, text, size, small, write) => {
       const key = small ? `${cls} rider` : cls;
       if (!probes[key]) {
         probes[key] = el('text', { class: cls, visibility: 'hidden' });
@@ -2696,7 +2790,7 @@ const Lineage = (() => {
       }
       const probe = probes[key];
       probe.style.fontSize = size ? `${size}px` : '';
-      probe.textContent = text;
+      if (write) write(probe); else probe.textContent = text;
       return { wide: probe.getComputedTextLength(), size: parseFloat(getComputedStyle(probe).fontSize) };
     };
     // Shrunk to fit, down to a floor that keeps the glyphs' shape: the file is
@@ -2706,21 +2800,24 @@ const Lineage = (() => {
     // spills out of its box. Past the floor the pin squeezes it.
     // A row's line starts further in past a second bar, and stops short of a
     // warn mark, so its room is its own.
-    const spell = (t, full, write) => {
-      if (!t || !full || t.textContent === full) return;
+    // `write(target)` puts the line in its runs; `same` is what the text reads
+    // as when it is already whole, where that is not `full` (a row's two runs
+    // have no dot between them).
+    const spell = (t, full, write, same = full) => {
+      if (!t || !full || t.textContent === same) return;
       const cls = t.getAttribute('class'), nd = t.parentNode, small = nd.classList.contains('rider');
       const mark = nd.querySelector('.warnmark'), count = mark && mark.querySelector('.warncount');
       const room = (+nd.querySelector('rect.box').getAttribute('width') || W) - 8 - (+t.getAttribute('x') || 12)
         - (mark ? warnRoom(count ? count.textContent : 0) : 0);
-      const natural = measure(cls, full, 0, small);
-      if (write) write(); else t.textContent = full;
+      const natural = measure(cls, full, 0, small, write);
+      if (write) write(t); else t.textContent = full;
       if (!natural.wide) return;
       const shrink = Math.min(1, Math.max(0.6, room / natural.wide));
       let wide = natural.wide;
       if (shrink < 1) {
         const size = +(natural.size * shrink).toFixed(2);
         t.style.fontSize = `${size}px`;
-        wide = measure(cls, full, size, small).wide;
+        wide = measure(cls, full, size, small, write).wide;
       }
       t.setAttribute('textLength', Math.min(room, wide).toFixed(1));
       t.setAttribute('lengthAdjust', 'spacingAndGlyphs');
@@ -2754,11 +2851,15 @@ const Lineage = (() => {
       title.textContent = [n.name, subtitle(n), n.file, n.warn && 'severity warn', n.context && 'context, not selected'].filter(Boolean).join('\n');
       nd.insertBefore(title, nd.firstChild);
       const t1 = nd.querySelector('.t1');
-      spell(t1, t1 && t1.dataset.full ? t1.dataset.full : n.name);
+      // A lone column test's row keeps its two runs; the label, dot and all, is the whole line.
+      const rowBox = t1 && t1.dataset.full ? place[at.get(nd.dataset.id)] : null;
+      const twoRuns = rowBox && rowBox.col;
+      spell(t1, t1 && t1.dataset.full ? t1.dataset.full : n.name,
+        twoRuns ? (x) => writeRow(x, rowBox.label, true, el) : undefined, twoRuns ? rowBox.label.replace(' · ', '') : undefined);
       if (t1) t1.removeAttribute('data-full');
       // Written in its parts, so the picture keeps the strike.
       const t2 = nd.querySelector('.t2'), parts = subtitleParts(n);
-      spell(t2, subLine(parts), () => writeSub(t2, parts, 0, el));
+      spell(t2, subLine(parts), (x) => writeSub(x, parts, 0, el));
       nd.querySelectorAll('.more-badge').forEach((b) => {
         const up = b.dataset.dir === 'up';
         b.removeAttribute('style');
@@ -2822,5 +2923,7 @@ const Lineage = (() => {
     // The payload the canvas holds, for the export menu, without serialising it. The condition is
     // snapshotOf's, so the menu says "nothing drawn" exactly when an export would.
     shown: () => (data && bbox && data.nodes.length ? data : null),
+    // How many tests the layout folded under a chip, which the export's head says beside the tests.
+    folded: () => (drawn && drawn.folded) || 0,
   };
 })();

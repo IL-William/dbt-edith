@@ -64,6 +64,8 @@ $JSC web/tests/joborder.js    # Job order in Reports: the groups, a pair's lines
 $JSC web/tests/jobbuilds.js   # builds by job: a cron read in its source's zone, the last start across a clock change, a job's models late, built since, not built
 $JSC web/tests/panels.js      # every panel: one down at a time, what goes inert, where the focus goes back
 $JSC web/tests/selpanel.js    # the Lineage space's panel: what the dock gets back, its card, a line dropped, what an empty box opens on
+$JSC web/tests/slips.js       # a model's tests as slips: the two runs of a row, the bar's three shapes in 3 by 10, the room a box and a row have, the +N pill, the ring
+$JSC web/tests/locationlines.js # the card's Location as a list: one value where the stages agree, a line per run where they differ
 $JSC web/tests/spaces.js      # the top bar's tabs: the lit one, a click on it, Code from the settings opened over Reports, Escape
 $JSC web/tests/colwait.js     # a column asked for during a collin run: the canvas waits cleared, the last click is drawn, a failure gives the model back
 $JSC web/tests/working.js     # Edith's mark moving while she works: which requests count, its delay, its fade, two at once

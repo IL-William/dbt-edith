@@ -316,6 +316,13 @@ group('the line under the canvas', function () {
   check('nothing matched, nothing said', canvasStatus({ mode: 'select', matched: 0, nodes: [], edges: [] }, null), '');
   check('tests folded under their models are counted, folders or not', canvasStatus(sub, { folders: 0, against: 0, folded: 7 }),
     '12 nodes · 15 edges · 7 tests folded');
+  // Tests are counted apart, and what the number holds is said when some are folded (0160).
+  var tested = { mode: 'model', nodes: [{ kind: 'model' }, { kind: 'model' }, { kind: 'test' }, { kind: 'test' }], edges: [[0, 1], [0, 2], [1, 3]] };
+  check('tests are counted apart from the nodes, and the stems from the edges', canvasStatus(tested, null), '2 nodes · 1 edge · 2 tests');
+  check('with some folded, the line says so beside them, before the folders', canvasStatus(tested, { folders: 3, against: 0, folded: 1 }),
+    '2 nodes · 1 edge · 2 tests · 1 folded · 3 folders');
+  check('and in a sentence of its own with no tests to stand in for', canvasStatus({ mode: 'model', nodes: [{ kind: 'model' }], edges: [] }, { folders: 0, against: 0, folded: 2 }),
+    '1 node · 0 edges · 2 tests folded');
 });
 
 group('sub-folders, a level or more below the bands (0080)', function () {
@@ -463,107 +470,73 @@ group('sub-folders, a level or more below the bands (0080)', function () {
     [2, 4, 1, 1, 1, 3]);
 });
 
-group('the levels box opens on the pointer and closes a moment after (0080)', function () {
-  // Just enough of a page: elements that keep listeners and classes, a focus,
-  // and timers that run when the test says how much time has passed.
-  var pressed = false, now = 0, timers = [], seq = 0;
+group('the levels are a stepper beside the toggle (0160)', function () {
+  // Just enough of a page: elements that keep listeners, and an input whose
+  // dispatchEvent runs the listeners of the type, as the browser would.
+  var pressed = false, fired = 0;
   function node() {
-    var e = { on: {}, cls: {}, visible: false };
+    var e = { on: {}, hidden: false, attrs: {}, textContent: '', value: '1' };
+    e.setAttribute = function (k, v) { e.attrs[k] = v; };
     e.addEventListener = function (t, f) { (e.on[t] = e.on[t] || []).push(f); };
-    e.fire = function (t) { (e.on[t] || []).forEach(function (f) { f({}); }); };
-    e.matches = function (sel) { return sel === ':focus-visible' && e.visible && document.activeElement === e; };
-    e.classList = {
-      toggle: function (c, on) { e.cls[c] = on === undefined ? !e.cls[c] : !!on; },
-      remove: function (c) { e.cls[c] = false; },
-    };
+    e.fire = function (t) { (e.on[t] || []).forEach(function (f) { f({ type: t }); }); };
+    e.dispatchEvent = function (ev) { e.fire(ev.type); };
     return e;
   }
-  var page = { '#folder-tool': node(), '#by-folder': node(), '#folder-levels': node(), '#folder-levels-box': node() };
-  var $ = function (q) { return page[q]; }, document = { activeElement: null };
+  function Event(type) { this.type = type; }
+  var page = { '#by-folder': node(), '#folder-levels': node(), '#folder-steps': node(), '#levels-n': node(), '#levels-less': node(), '#levels-more': node() };
+  var $ = function (q) { return page[q]; };
   var foldersOn = function () { return pressed; };
-  var setTimeout = function (f, ms) { timers.push({ f: f, at: now + ms, id: ++seq }); return seq; };
-  var clearTimeout = function (id) { timers = timers.filter(function (t) { return t.id !== id; }); };
-  function wait(ms) {
-    now += ms;
-    timers.filter(function (t) { return t.at <= now; }).forEach(function (t) { clearTimeout(t.id); t.f(); });
-  }
   eval(app.slice(app.indexOf('function folderLevels'), app.indexOf('function paintTestsToggle')));
-  var tool = page['#folder-tool'], toggle = page['#by-folder'], input = page['#folder-levels'], box = page['#folder-levels-box'];
-  var open = function () { return !!box.cls.open; };
-  function focus(e, keyboard) {
-    var from = document.activeElement;
-    if (from) from.fire('focusout');
-    if (from && from !== tool) tool.fire('focusout');
-    if (e) e.visible = !!keyboard;
-    document.activeElement = e;
-    if (e) tool.fire('focusin');
-  }
-  wireFolderLevels(2500);
+  var input = page['#folder-levels'], less = page['#levels-less'], more = page['#levels-more'], n = page['#levels-n'], steps = page['#folder-steps'];
+  input.on.change = [function () { fired++; }];
+  wireFolderLevels();
 
-  tool.fire('mouseenter');
-  check('with the toggle off, the pointer opens nothing: there are no bands to cut', open(), false);
-  tool.fire('mouseleave');
+  check('a step is held to 1 and 4', [stepLevels(1, -1), stepLevels(4, 1), stepLevels(2, 1), stepLevels(3, -1), stepLevels('x', 1), stepLevels('', -1)], [1, 4, 3, 2, 2, 1]);
+  check('the stepper shows only while the toggle is pressed, the number, and where there is room to go',
+    [levelsView(false, 2), levelsView(true, 1), levelsView(true, 4)],
+    [{ shown: false, n: 2, less: true, more: true }, { shown: true, n: 1, less: false, more: true }, { shown: true, n: 4, less: true, more: false }]);
+  check('at first it is hidden, on 1, with nothing less to go to', [steps.hidden, n.textContent, less.attrs['aria-disabled'], more.attrs['aria-disabled']], [true, '1', 'true', 'false']);
 
-  pressed = true;
-  tool.fire('mouseenter');
-  check('with it on, the pointer on the toggle opens it', open(), true);
-  wait(10000);
-  check('and it stays while the pointer does', open(), true);
-  tool.fire('mouseleave'); wait(2400);
-  check('left, it stays a moment, time to reach it', open(), true);
-  wait(100);
-  check('then closes', open(), false);
-
-  tool.fire('mouseenter'); tool.fire('mouseleave'); wait(2000); tool.fire('mouseenter'); wait(1000);
-  check('back on it before then, it stays', open(), true);
-  tool.fire('mouseleave'); wait(2500);
-  check('and closes a moment after the second leave, not the first', open(), false);
-
-  tool.fire('mouseenter'); focus(input); tool.fire('mouseleave'); wait(60000);
-  check('clicked into, it stays open with the pointer gone', open(), true);
-  focus(null); wait(2400);
-  check('out of the box, it stays a moment', open(), true);
-  wait(100);
-  check('then closes', open(), false);
-
-  tool.fire('mouseenter'); focus(toggle, false); tool.fire('mouseleave'); wait(2500);
-  check('the focus a click leaves on the toggle keeps nothing open', open(), false);
-
-  focus(null); focus(toggle, true);
-  check('the keyboard on the toggle opens it', open(), true);
-  wait(60000);
-  check('and keeps it open', open(), true);
-  focus(input, true); wait(60000);
-  check('on into the box too', open(), true);
-  focus(null); wait(2500);
-  check('and it closes a moment after the keyboard leaves', open(), false);
-
-  tool.fire('mouseenter');
-  pressed = false; toggle.fire('click');
-  check('turning the bands off closes it at once', open(), false);
-  pressed = true; toggle.fire('click');
-  check('turning them on under the pointer opens it', open(), true);
-  check('held: on, and the pointer or the keyboard in it', [levelsHeld(true, true, false), levelsHeld(true, false, true),
-    levelsHeld(true, false, false), levelsHeld(false, true, true)], [true, true, false, false]);
+  pressed = true; page['#by-folder'].fire('click');
+  check('pressing the toggle shows it', steps.hidden, false);
+  more.fire('click');
+  check('plus writes the number and fires one change', [input.value, n.textContent, fired, less.attrs['aria-disabled']], ['2', '2', 1, 'false']);
+  more.fire('click'); more.fire('click');
+  check('up to 4, where plus has nowhere to go', [input.value, n.textContent, more.attrs['aria-disabled']], ['4', '4', 'true']);
+  more.fire('click');
+  check('a plus past it changes nothing and fires nothing', [input.value, fired], ['4', 3]);
+  ok('the bound is aria-disabled, never disabled: the keyboard keeps the button', !/levels-(less|more)'\)\.disabled/.test(app));
+  less.fire('click');
+  check('minus steps back', [input.value, n.textContent, fired, more.attrs['aria-disabled']], ['3', '3', 4, 'false']);
+  input.value = '1'; input.fire('change');
+  less.fire('click');
+  check('and not below 1', [input.value, fired], ['1', 5]);
   input.value = '9'; input.fire('change');
-  check('a 9 typed reads 4 once changed, the most it draws', input.value, '4');
+  check('a 9 written into the input reads 4, the most it draws', [input.value, n.textContent], ['4', '4']);
   input.value = ''; input.fire('change');
-  check('and an emptied box 1', input.value, '1');
+  check('and an emptied input 1', [input.value, n.textContent], ['1', '1']);
+  pressed = false; page['#by-folder'].fire('click');
+  check('turning the bands off hides it again', steps.hidden, true);
 });
 
 group('the page asks for it', function () {
   var html = read('web/index.html');
-  ok('a toggle beside the Tests toggle, off at first', /id="with-tests"[\s\S]{0,500}id="by-folder"[^>]*type="button" aria-pressed="false"/.test(html));
+  ok('a toggle beside the Tests toggle, off at first', /id="with-tests"[\s\S]{0,900}id="by-folder"[^>]*type="button"\s+aria-pressed="false"/.test(html));
   ok('which turns over and redraws the canvas on a click, like the eye',
     /\$\('#by-folder'\)\.addEventListener\('click', \(\) => \{ \$\('#by-folder'\)\.setAttribute\('aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\)/.test(app));
   ok('and is read from its pressed state', /function foldersOn\(\) \{\s*return \$\('#by-folder'\)\.getAttribute\('aria-pressed'\) === 'true';/.test(app));
   ok('which is what the canvas is handed', /folders: foldersOn\(\) \?/.test(app));
-  ok('a levels box right after it, from 1 to 4, at 1 first',
-    /<span>By folder<\/span><\/button>\n\s*<!--[^\n]*-->\n\s*<label id="folder-levels-box"[^>]*>levels <input id="folder-levels" type="number" min="1" max="4" value="1"><\/label>/.test(html));
   var css = read('web/app.css');
-  ok('in a pop-over under the toggle, shut until opened', /#folder-levels-box \{\s*display: none; position: absolute; top: calc\(100% \+ 3px\)/.test(css)
-    && /#folder-levels-box\.open \{ display: flex; \}/.test(css) && /<span id="folder-tool" class="foldertool">\s*<button id="by-folder"/.test(html));
+  ok('a group of minus, number and plus right after it, from 1 to 4, at 1 first, hidden until the toggle is pressed',
+    /<span>By folder<\/span><\/button>\s*<span id="folder-steps" class="levels" role="group" aria-label="Folder levels" hidden/.test(html)
+    && /<button id="levels-less" type="button" aria-label="One level less">[\s\S]*?<b id="levels-n"[^>]*>1<\/b>\s*<button id="levels-more" type="button" aria-label="One level more">/.test(html)
+    && /<input id="folder-levels" type="number" min="1" max="4" value="1" hidden>/.test(html));
+  ok('behind a rule of its own, nothing opening over the bar or the canvas',
+    /\.levels \{[^}]*border-left: 1px solid var\(--line\)/.test(css) && !/folder-levels-box/.test(css + html + app)
+    && !/levelsHeld|mouseenter/.test(app.slice(app.indexOf('function stepLevels'), app.indexOf('function paintTestsToggle'))));
+  ok('both in the one tool that moves with the toggle', /<span id="folder-tool" class="foldertool">\s*<button id="by-folder"[\s\S]*?id="folder-steps"/.test(html));
   ok('wired once the toggle has its own listener', /aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\);\s*wireFolderLevels\(\);/.test(app));
+  ok('Tab reaches the toggle, then minus and plus, which are buttons', /<button id="levels-less" type="button"/.test(html) && /<button id="levels-more" type="button"/.test(html));
   ok('an export measures a name in the class it writes it in, sized alike on the page',
     /const cls = b\.level \? `band-name l\$\{b\.level\}` : 'band-name';\s*const t = el\('text', \{ class: cls,[\s\S]{0,200}measure\(cls, b\.name\)/.test(lin)
     && /^\.band-name\.l1, \.band-name\.l2, \.band-name\.l3 \{ font-size: 12px; font-weight: 500; \}$/m.test(css));
