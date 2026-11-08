@@ -743,7 +743,7 @@ class Shots:
         self.click("#palette-btn")
         self.until("!document.querySelector('#palette').classList.contains('hidden')", "the palette")
         self.js("(i => { i.value = 's'; i.dispatchEvent(new Event('input', { bubbles: true })); })(document.querySelector('#palette-input'))")
-        self.until("document.querySelectorAll('#palette-results .pres').length > 8", "the palette's answer")
+        self.until("document.querySelectorAll('#palette-results .pal-row').length > 8", "the palette's answer")
         time.sleep(0.5)
         self.rest()
         self.take("search-palette")

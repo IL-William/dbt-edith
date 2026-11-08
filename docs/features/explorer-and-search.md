@@ -74,7 +74,7 @@ rather than holding one
 
 ## Search
 
-![The Cmd/Ctrl + K palette on the letter s, listing models, seeds, a macro and files](../shots/search-palette.png)
+![The Cmd/Ctrl + K palette on the letter s, its answers in groups of five rows with a +N more row, and the keys in its foot](../shots/search-palette.png)
 
 `Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
 macros it lists, and a flat index of every file in the project. That last half
@@ -89,6 +89,17 @@ model. A generic test or a materialization is a macro too, under the name dbt
 gives it: `test_<name>`, `materialization_<name>_<adapter>`. Each row
 says how many nodes reach the macro, `used by 12`, or `no reference found`,
 which its card and the Macros section of Reports explain (0105).
+
+The answer is grouped, under headers that stay in view: the nodes, titled by
+what they are ("Models and seeds", "Sources"), then the macros, then the files,
+and, from three letters, "Inside the files", one row that opens the Search tab
+on what you typed. A group shows five rows and a `+N more` row, which shows the
+rest where it is. The letters typed are marked in each name, or in the path when
+that is what matched, and the box is as tall as its rows. The foot names the
+keys (arrows move, Enter opens, Esc closes) and counts the results. Each group
+is cut at 40: a cut group's count ends in a plus (`40+`), and once all its rows
+show it ends on a line asking for more letters, so a count is never a guess
+([0154](../decisions/0154-the-palette-groups-its-answers-five-rows-a-group.md)).
 
 The index is a directory walk, redone every 20 seconds, so a new file or a
 branch switch shows up without any invalidation logic. `target`, `logs`, `.git`

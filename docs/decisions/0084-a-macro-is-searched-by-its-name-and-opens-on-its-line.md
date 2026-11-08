@@ -1,6 +1,6 @@
 # 0084. A macro is searched by its name, and opens on its line
 
-Date: 2026-10-14 · Status: accepted · Amends 0028
+Date: 2026-10-14 · Status: accepted, amended by 0154 · Amends 0028
 
 **Trigger:** read before changing what `Cmd/Ctrl + K` lists, how it ranks a
 macro, or where opening one lands.
