@@ -574,6 +574,22 @@ pub struct ColLineage {
     row_kinds: Vec<u8>,
 }
 
+/// What a column walk found (`ColLineage::walk`), before anything is drawn.
+struct ColWalked {
+    depth: HashMap<ColRef, i32>,
+    stopped: HashSet<ColRef>,
+    walked: HashMap<ColRef, i32>,
+    /// The models boxed, by the step each was first reached at: the walk's own
+    /// figure, which the layout's `depth` for a box is not (it is pushed past
+    /// the deepest column that reaches the box).
+    boxes: HashMap<u32, i32>,
+    box_edges: HashMap<(ColRef, u32), u8>,
+    truncated: bool,
+    /// The step the cap ended each side's walk on, upstream then downstream.
+    cut_up: Option<i32>,
+    cut_down: Option<i32>,
+}
+
 impl ColLineage {
     /// Whether the cache holds any indirect edge, which is what puts the
     /// canvas's indirect button in view.
@@ -591,6 +607,131 @@ impl ColLineage {
     /// for, or the value edges alone.
     fn crossed(&self, e: &ColEdge, indirect: bool) -> bool {
         indirect || !self.is_indirect(e)
+    }
+
+    /// The interned kinds the roles named in `cut` stand for.
+    fn cut_kinds(&self, cut: &[&str]) -> Vec<u8> {
+        (0..self.kinds.len().min(256)).filter(|&k| cut.contains(&self.kinds[k].as_str())).map(|k| k as u8).collect()
+    }
+
+    /// The level loop of `column_lineage`, with no payload: which columns the
+    /// walk reaches, at which step, and which models it boxes. The levels the
+    /// page's depth menu lists are counted from the same walk (below), so what
+    /// a menu row says it adds is what the canvas draws, the cap, a cut and the
+    /// indirect edges included.
+    fn walk(&self, focus: ColRef, up: u32, down: u32, max_nodes: usize, cut: &[u8], row_edges: RowEdges) -> ColWalked {
+        let to_models = row_edges == RowEdges::ToModels;
+        let indirect = row_edges != RowEdges::Hidden;
+        // An edge the walk may cross: an indirect one only when asked for.
+        let shown = |e: &ColEdge| self.crossed(e, indirect);
+        // One it follows to the column it reaches downstream: not an indirect
+        // one when a model's box stands for them.
+        let follows = |e: &ColEdge| shown(e) && !(to_models && self.is_indirect(e));
+        let rank = |kind: u8| row_rank(self.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
+        let mut depth: HashMap<ColRef, i32> = HashMap::new();
+        // Reached downstream only through a cut edge: drawn, not walked from.
+        let mut stopped: HashSet<ColRef> = HashSet::new();
+        // The level each column below the focus was walked from: a stop's own
+        // depth stays its distance, but the walk on from it counts from here.
+        let mut walked: HashMap<ColRef, i32> = HashMap::new();
+        // `ToModels`: the models boxed, with the step each was first reached
+        // at, and the edge from each column to a box, with its strongest role.
+        let mut boxes: HashMap<u32, i32> = HashMap::new();
+        let mut box_edges: HashMap<(ColRef, u32), u8> = HashMap::new();
+        let mut truncated = false;
+        // The step each side's walk ended on because the cap had turned a
+        // column away (on the downstream side too when the upstream one had).
+        let mut cut_at = [None, None];
+        depth.insert(focus, 0);
+        walked.insert(focus, 0);
+
+        // Level by level, so a cap drops the farthest columns first, stops
+        // included. Downstream a level's walk does not follow a cut edge;
+        // then each cut edge leaving the level above brings the column it
+        // reaches as a stop. A walk reaching a stop later, within the depth,
+        // walks on from it: it is not only past the cut. Without a cut this
+        // is the walk it always was.
+        for (limit, upstream) in [(up, true), (down, false)] {
+            let mut frontier = vec![focus];
+            for step in 1..=limit as i32 {
+                let mut next = Vec::new();
+                for &cur in &frontier {
+                    let neighbours: Vec<ColRef> = if upstream {
+                        self.incoming(cur).filter(|e| shown(e)).map(|e| e.from).collect()
+                    } else {
+                        self.outgoing(cur).iter().filter(|e| follows(e) && !cut.contains(&e.kind)).map(|e| e.to).collect()
+                    };
+                    for nb in neighbours {
+                        // A stop reached around the cut takes no room, so the
+                        // cap cannot keep it a stop. Its depth stays the
+                        // shorter one, through the cut.
+                        if stopped.remove(&nb) {
+                            walked.insert(nb, step);
+                            next.push(nb);
+                            continue;
+                        }
+                        // Drawn already: the cap turned nothing away, even
+                        // when it is full.
+                        if depth.contains_key(&nb) {
+                            continue;
+                        }
+                        // On to the next neighbour rather than out: a stop among
+                        // them is still taken back. Nothing more is added, so
+                        // without a cut the answer is the one it always was.
+                        if depth.len() + boxes.len() >= max_nodes {
+                            truncated = true;
+                            continue;
+                        }
+                        depth.insert(nb, if upstream { -step } else { step });
+                        if !upstream {
+                            walked.insert(nb, step);
+                        }
+                        next.push(nb);
+                    }
+                }
+                if !upstream && !cut.is_empty() && !truncated {
+                    'stop: for &cur in &frontier {
+                        for e in self.outgoing(cur).iter().filter(|e| follows(e) && cut.contains(&e.kind)) {
+                            if depth.contains_key(&e.to) {
+                                continue;
+                            }
+                            if depth.len() + boxes.len() >= max_nodes {
+                                truncated = true;
+                                break 'stop;
+                            }
+                            depth.insert(e.to, step);
+                            stopped.insert(e.to);
+                        }
+                    }
+                }
+                // The models this level's columns keep the rows of, after the
+                // columns, so a cap drops a box before a column. Only the
+                // focus and the columns walked from, never an upstream member
+                // or a stop, which nothing is walked from.
+                if to_models && !upstream {
+                    for &cur in &frontier {
+                        for (model, kind) in row_models(self, cur, &rank) {
+                            if !boxes.contains_key(&model) {
+                                if depth.len() + boxes.len() >= max_nodes {
+                                    truncated = true;
+                                    continue;
+                                }
+                                boxes.insert(model, step);
+                            }
+                            box_edges.insert((cur, model), kind);
+                        }
+                    }
+                }
+                if truncated {
+                    cut_at[!upstream as usize] = Some(step);
+                }
+                if next.is_empty() || truncated {
+                    break;
+                }
+                frontier = next;
+            }
+        }
+        ColWalked { depth, stopped, walked, boxes, box_edges, truncated, cut_up: cut_at[0], cut_down: cut_at[1] }
     }
 
     /// What the SQL sets `r` to, when it is a root: empty when collin could
@@ -1755,117 +1896,17 @@ impl Graph {
                 roots_known: false,
                 indirect_hidden: false,
                 most: 0,
+                levels: None,
             };
         };
         let to_models = row_edges == RowEdges::ToModels;
         let indirect = row_edges != RowEdges::Hidden;
-        let cut: Vec<u8> = (0..cll.kinds.len().min(256))
-            .filter(|&k| cut.contains(&cll.kinds[k].as_str()))
-            .map(|k| k as u8)
-            .collect();
+        let cut = cll.cut_kinds(cut);
         // An edge the walk may cross: an indirect one only when asked for.
         let shown = |e: &ColEdge| cll.crossed(e, indirect);
-        // One it follows to the column it reaches downstream: not an indirect
-        // one when a model's box stands for them.
-        let follows = |e: &ColEdge| shown(e) && !(to_models && cll.is_indirect(e));
         let rank = |kind: u8| row_rank(cll.kinds.get(kind as usize).map(String::as_str).unwrap_or(""));
-        let mut depth: HashMap<ColRef, i32> = HashMap::new();
-        // Reached downstream only through a cut edge: drawn, not walked from.
-        let mut stopped: HashSet<ColRef> = HashSet::new();
-        // The level each column below the focus was walked from: a stop's own
-        // depth stays its distance, but the walk on from it counts from here.
-        let mut walked: HashMap<ColRef, i32> = HashMap::new();
-        // `ToModels`: the models boxed, with the step each was first reached
-        // at, and the edge from each column to a box, with its strongest role.
-        let mut boxes: HashMap<u32, i32> = HashMap::new();
-        let mut box_edges: HashMap<(ColRef, u32), u8> = HashMap::new();
-        let mut truncated = false;
-        depth.insert(focus, 0);
-        walked.insert(focus, 0);
-
-        // Level by level, so a cap drops the farthest columns first, stops
-        // included. Downstream a level's walk does not follow a cut edge;
-        // then each cut edge leaving the level above brings the column it
-        // reaches as a stop. A walk reaching a stop later, within the depth,
-        // walks on from it: it is not only past the cut. Without a cut this
-        // is the walk it always was.
-        for (limit, upstream) in [(up, true), (down, false)] {
-            let mut frontier = vec![focus];
-            for step in 1..=limit as i32 {
-                let mut next = Vec::new();
-                for &cur in &frontier {
-                    let neighbours: Vec<ColRef> = if upstream {
-                        cll.incoming(cur).filter(|e| shown(e)).map(|e| e.from).collect()
-                    } else {
-                        cll.outgoing(cur).iter().filter(|e| follows(e) && !cut.contains(&e.kind)).map(|e| e.to).collect()
-                    };
-                    for nb in neighbours {
-                        // A stop reached around the cut takes no room, so the
-                        // cap cannot keep it a stop. Its depth stays the
-                        // shorter one, through the cut.
-                        if stopped.remove(&nb) {
-                            walked.insert(nb, step);
-                            next.push(nb);
-                            continue;
-                        }
-                        // Drawn already: the cap turned nothing away, even
-                        // when it is full.
-                        if depth.contains_key(&nb) {
-                            continue;
-                        }
-                        // On to the next neighbour rather than out: a stop among
-                        // them is still taken back. Nothing more is added, so
-                        // without a cut the answer is the one it always was.
-                        if depth.len() + boxes.len() >= max_nodes {
-                            truncated = true;
-                            continue;
-                        }
-                        depth.insert(nb, if upstream { -step } else { step });
-                        if !upstream {
-                            walked.insert(nb, step);
-                        }
-                        next.push(nb);
-                    }
-                }
-                if !upstream && !cut.is_empty() && !truncated {
-                    'stop: for &cur in &frontier {
-                        for e in cll.outgoing(cur).iter().filter(|e| follows(e) && cut.contains(&e.kind)) {
-                            if depth.contains_key(&e.to) {
-                                continue;
-                            }
-                            if depth.len() + boxes.len() >= max_nodes {
-                                truncated = true;
-                                break 'stop;
-                            }
-                            depth.insert(e.to, step);
-                            stopped.insert(e.to);
-                        }
-                    }
-                }
-                // The models this level's columns keep the rows of, after the
-                // columns, so a cap drops a box before a column. Only the
-                // focus and the columns walked from, never an upstream member
-                // or a stop, which nothing is walked from.
-                if to_models && !upstream {
-                    for &cur in &frontier {
-                        for (model, kind) in row_models(cll, cur, &rank) {
-                            if !boxes.contains_key(&model) {
-                                if depth.len() + boxes.len() >= max_nodes {
-                                    truncated = true;
-                                    continue;
-                                }
-                                boxes.insert(model, step);
-                            }
-                            box_edges.insert((cur, model), kind);
-                        }
-                    }
-                }
-                if next.is_empty() || truncated {
-                    break;
-                }
-                frontier = next;
-            }
-        }
+        let ColWalked { depth, stopped, walked, boxes, box_edges, truncated, .. } =
+            cll.walk(focus, up, down, max_nodes, &cut, row_edges);
 
         let mut members: Vec<ColRef> = depth.keys().copied().collect();
         members.sort_unstable();
@@ -2019,6 +2060,7 @@ impl Graph {
             indirect_hidden: row_edges == RowEdges::Hidden && cll.has_indirect(),
             focus_column: focus_node.columns.get(focus.col as usize).map(|c| c.name.as_str()).unwrap_or(""),
             most: 0,
+            levels: None,
             nodes,
             edges,
         }
@@ -2408,6 +2450,7 @@ impl Graph {
             roots_known: false,
             indirect_hidden: false,
             most: 0,
+            levels: None,
             nodes: members
                 .iter()
                 .map(|&i| {
@@ -2453,6 +2496,100 @@ impl Graph {
                 .collect(),
             edges,
         }
+    }
+
+    /// What each level around `focus` adds, however far the graph goes: the
+    /// plain walk `lineage()` makes, without its cap and without a payload. A
+    /// level is the nodes at that shortest distance, which `lineage(up = N)`
+    /// draws up to and dbt's `N+model` selects (tests are leaves there and are
+    /// left out here as they are from the canvas).
+    pub fn levels(&self, focus: u32) -> Levels {
+        let side = |upstream: bool| {
+            let mut seen: HashSet<u32> = HashSet::from([focus]);
+            let mut frontier = vec![focus];
+            let mut tallies: Vec<Tally> = Vec::new();
+            // One level past the last listed, to know whether it goes on.
+            for _ in 0..=MAX_LEVELS {
+                let mut next = Vec::new();
+                let mut tally = Tally::default();
+                for &cur in &frontier {
+                    let node = &self.nodes[cur as usize];
+                    for &nb in if upstream { &node.parents } else { &node.children } {
+                        let n = &self.nodes[nb as usize];
+                        if !n.kind.is_graph_node() || !seen.insert(nb) {
+                            continue;
+                        }
+                        next.push(nb);
+                        if n.kind == Kind::Model {
+                            let m = n.materialized.to_lowercase();
+                            tally.add(if m.is_empty() { "unknown" } else { &m }, (nb, 0));
+                        } else {
+                            tally.add(n.kind.as_str(), (nb, 0));
+                        }
+                    }
+                }
+                if next.is_empty() {
+                    break;
+                }
+                tallies.push(tally);
+                frontier = next;
+            }
+            fold_levels(tallies, None, |(node, _)| self.nodes[node as usize].name.clone())
+        };
+        let (up, up_more) = side(true);
+        let (down, down_more) = side(false);
+        Levels { up, down, up_more, down_more, ..Levels::default() }
+    }
+
+    /// What each level around a column adds, from the walk the canvas makes
+    /// (`column_lineage`), each side walked one level past the last listed. A
+    /// column counts at its distance, a stop included, and a model's box at the
+    /// step the walk first boxed it. Upstream is walked alone. Downstream runs
+    /// after the request's own upstream walk (`up`), because the canvas shares
+    /// one map and one cap between the two: a column already reached upstream
+    /// is not counted again (a loop in the cache), and an upstream side that
+    /// fills the cap leaves the downstream one cut at its first step.
+    pub fn column_levels(&self, focus: ColRef, up: u32, max_nodes: usize, cut: &[&str], row_edges: RowEdges) -> Option<Levels> {
+        let cll = self.cll.as_ref()?;
+        let cut = cll.cut_kinds(cut);
+        let deep = MAX_LEVELS as u32 + 1;
+        // Named only for a level that adds one node (`fold_levels`); a model's
+        // box has no column.
+        let name_of = |(node, col): (u32, u32)| {
+            let owner = &self.nodes[node as usize];
+            match owner.columns.get(col as usize) {
+                Some(column) if col != BOX => format!("{}.{}", owner.name, column.name),
+                _ => owner.name.clone(),
+            }
+        };
+        let tally = |walked: &ColWalked, upstream: bool| {
+            let mut tallies: Vec<Tally> = (0..=MAX_LEVELS).map(|_| Tally::default()).collect();
+            // Sorted, so the name a one-column level carries does not depend on
+            // how the map was laid out (0055).
+            let mut members: Vec<(ColRef, i32)> = walked.depth.iter().map(|(&c, &d)| (c, d)).collect();
+            members.sort_unstable();
+            for (c, d) in members {
+                let level = if upstream { -d } else { d };
+                if level >= 1 {
+                    tallies[level as usize - 1].add("column", (c.node, c.col));
+                }
+            }
+            if !upstream {
+                let mut boxed: Vec<(u32, i32)> = walked.boxes.iter().map(|(&m, &step)| (m, step)).collect();
+                boxed.sort_unstable();
+                for (m, step) in boxed {
+                    if let Some(t) = tallies.get_mut(step as usize - 1) {
+                        t.add("model", (m, BOX));
+                    }
+                }
+            }
+            tallies
+        };
+        let above = cll.walk(focus, deep, 0, max_nodes, &cut, row_edges);
+        let below = cll.walk(focus, up.min(MAX_LEVELS as u32), deep, max_nodes, &cut, row_edges);
+        let (up, up_more) = fold_levels(tally(&above, true), above.cut_up, name_of);
+        let (down, down_more) = fold_levels(tally(&below, false), below.cut_down, name_of);
+        Some(Levels { up, down, up_more, down_more, up_cut: above.cut_up.is_some(), down_cut: below.cut_down.is_some() })
     }
 
     pub(crate) fn by_name_then_id(&self, a: u32, b: u32) -> std::cmp::Ordering {
@@ -2723,6 +2860,7 @@ impl Graph {
             roots_known: false,
             indirect_hidden: false,
             most: 0,
+            levels: None,
             nodes: members
                 .iter()
                 .enumerate()
@@ -2813,6 +2951,98 @@ pub struct Lineage<'a> {
     /// when zero, so every other answer is as it was.
     #[serde(skip_serializing_if = "is_zero")]
     pub most: usize,
+    /// From the page's two lineage routes only: what each level the depth
+    /// menu offers adds, counted past the nodes drawn (0158). Not sent
+    /// otherwise, so every other answer is as it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub levels: Option<Levels>,
+}
+
+/// The levels that exist on each side of a focus, for the depth menu: level
+/// `i + 1` is `up[i]` or `down[i]`. At most `MAX_LEVELS` are listed, and a
+/// `_more` says the walk goes on past them; a `_cut` says why, when it is a
+/// column walk's cap rather than the graph's depth, so the menu does not blame
+/// the cap for a graph that is only deep.
+#[derive(serde::Serialize, Debug, PartialEq, Default)]
+pub struct Levels {
+    pub up: Vec<Level>,
+    pub down: Vec<Level>,
+    pub up_more: bool,
+    pub down_more: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub up_cut: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub down_cut: bool,
+}
+
+/// What one level adds: its nodes counted by label, the most first, and the
+/// node's name when it adds only one.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Level {
+    pub kinds: Vec<(String, usize)>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// A column walk only: the cap turned columns away at this level, so the
+    /// count is "or more".
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cut: bool,
+}
+
+/// The depth the page's control offers at most: the inputs' and the routes' own
+/// ceiling.
+pub const MAX_LEVELS: usize = 20;
+
+/// One level's nodes, tallied by label as they are met.
+#[derive(Default)]
+struct Tally {
+    kinds: Vec<(String, usize)>,
+    /// The first node met, as (slot, column slot), named only if it is alone.
+    first: (u32, u32),
+    total: usize,
+}
+
+/// The column slot of a model's box in a `Tally`, which has no column.
+const BOX: u32 = u32::MAX;
+
+impl Tally {
+    fn add(&mut self, label: &str, node: (u32, u32)) {
+        self.total += 1;
+        if self.total == 1 {
+            self.first = node;
+        }
+        match self.kinds.iter_mut().find(|(l, _)| l == label) {
+            Some((_, n)) => *n += 1,
+            None => self.kinds.push((label.to_string(), 1)),
+        }
+    }
+}
+
+/// The tallies of one side, level by level (one past `MAX_LEVELS` is walked to
+/// know whether the graph goes on), as the levels the page reads. `cut_at` is
+/// the level a column walk's cap ended on, if it did.
+fn fold_levels(mut tallies: Vec<Tally>, cut_at: Option<i32>, name: impl Fn((u32, u32)) -> String) -> (Vec<Level>, bool) {
+    while tallies.last().is_some_and(|t| t.total == 0) {
+        tallies.pop();
+    }
+    let mut more = cut_at.is_some();
+    if tallies.len() > MAX_LEVELS {
+        tallies.truncate(MAX_LEVELS);
+        more = true;
+    }
+    let listed = tallies.len();
+    let levels = tallies
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut t)| {
+            t.kinds.sort_by(|(la, na), (lb, nb)| nb.cmp(na).then_with(|| la.cmp(lb)));
+            Level {
+                kinds: t.kinds,
+                name: if t.total == 1 { name(t.first) } else { String::new() },
+                cut: cut_at == Some(i as i32 + 1) && i + 1 == listed,
+            }
+        })
+        .collect();
+    (levels, more)
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -5334,5 +5564,281 @@ mod tests {
                 assert_eq!(merged(&old), merged(&new), "case {case}, round {round}");
             }
         }
+    }
+
+    /// A Jaffle Shop: three seeds, a view over each, and two tables, with a
+    /// test on `customers`.
+    fn jaffle() -> Graph {
+        let node = |kind: &str, name: &str, mat: &str| {
+            serde_json::json!({ "name": name, "resource_type": kind, "package_name": "shop",
+                                "fqn": ["shop", name], "config": { "materialized": mat } })
+        };
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": {
+                "seed.shop.raw_customers": node("seed", "raw_customers", "seed"),
+                "seed.shop.raw_orders": node("seed", "raw_orders", "seed"),
+                "seed.shop.raw_payments": node("seed", "raw_payments", "seed"),
+                "model.shop.stg_customers": node("model", "stg_customers", "view"),
+                "model.shop.stg_orders": node("model", "stg_orders", "view"),
+                "model.shop.stg_payments": node("model", "stg_payments", "View"),
+                "model.shop.orders": node("model", "orders", "table"),
+                "model.shop.customers": node("model", "customers", "table"),
+                "test.shop.unique_customers_id": serde_json::json!({ "name": "unique_customers_id", "resource_type": "test",
+                    "package_name": "shop", "fqn": ["shop", "unique_customers_id"], "attached_node": "model.shop.customers" }),
+            },
+            "parent_map": {
+                "model.shop.stg_customers": ["seed.shop.raw_customers"],
+                "model.shop.stg_orders": ["seed.shop.raw_orders"],
+                "model.shop.stg_payments": ["seed.shop.raw_payments"],
+                "model.shop.orders": ["model.shop.stg_orders", "model.shop.stg_payments"],
+                "model.shop.customers": ["model.shop.stg_customers", "model.shop.stg_orders", "model.shop.orders"],
+                "test.shop.unique_customers_id": ["model.shop.customers"],
+            },
+        }))
+        .unwrap();
+        Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+    }
+
+    fn kinds(level: &Level) -> Vec<(&str, usize)> {
+        level.kinds.iter().map(|(l, n)| (l.as_str(), *n)).collect()
+    }
+
+    /// Each side lists what a level adds, by shortest distance, the most
+    /// common label first, a lone node by name, and a test not at all.
+    #[test]
+    fn levels_say_what_each_level_adds() {
+        let g = jaffle();
+        let l = g.levels(g.index["model.shop.customers"]);
+        assert_eq!(l.up.len(), 3);
+        assert_eq!(kinds(&l.up[0]), [("view", 2), ("table", 1)]);
+        assert_eq!(l.up[0].name, "", "three nodes name none");
+        assert_eq!(kinds(&l.up[1]), [("seed", 2), ("view", 1)], "stg_payments is two steps up through orders, a label's count first, then its name");
+        assert_eq!((kinds(&l.up[2]), l.up[2].name.as_str()), (vec![("seed", 1)], "raw_payments"));
+        assert!(l.down.is_empty() && !l.up_more && !l.down_more, "the test hangs under customers and is no level");
+        // The other way, from a seed: dbt's `raw_orders+` reaches the same nodes.
+        let d = g.levels(g.index["seed.shop.raw_orders"]);
+        assert_eq!(d.up.len(), 0);
+        assert_eq!(d.down.len(), 2);
+        assert_eq!((kinds(&d.down[0]), d.down[0].name.as_str()), (vec![("view", 1)], "stg_orders"));
+        assert_eq!((kinds(&d.down[1]), d.down[1].name.as_str()), (vec![("table", 2)], ""));
+        // What `lineage(N)` draws is what the first N levels add.
+        let focus = g.index["model.shop.customers"];
+        for n in 0..=3u32 {
+            let drawn = g.lineage(focus, n, 0, false, 100).nodes.len() - 1;
+            let listed: usize = l.up.iter().take(n as usize).flat_map(|x| x.kinds.iter().map(|(_, c)| *c)).sum();
+            assert_eq!(drawn, listed, "{n} levels up");
+        }
+    }
+
+    #[test]
+    fn a_lone_node_has_no_level_on_either_side() {
+        let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": {
+            "model.shop.alone": { "name": "alone", "resource_type": "model", "package_name": "shop" },
+        } }))
+        .unwrap();
+        let g = Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0);
+        assert_eq!(g.levels(0), Levels::default());
+        let sub = serde_json::to_string(&g.lineage(0, 1, 1, false, 100)).unwrap();
+        assert!(!sub.contains("levels"), "the walk itself sends none: {sub}");
+    }
+
+    /// Twenty levels are listed and a twenty-first only says the graph goes on.
+    #[test]
+    fn levels_stop_at_twenty_and_say_when_the_graph_goes_on() {
+        let chain_of = |len: usize| {
+            let mut nodes = serde_json::Map::new();
+            let mut parents = serde_json::Map::new();
+            for i in 0..len {
+                let name = format!("m{i:02}");
+                nodes.insert(
+                    format!("model.shop.{name}"),
+                    serde_json::json!({ "name": name, "resource_type": "model", "package_name": "shop", "config": { "materialized": "view" } }),
+                );
+                if i > 0 {
+                    parents.insert(format!("model.shop.{name}"), serde_json::json!([format!("model.shop.m{:02}", i - 1)]));
+                }
+            }
+            let raw: RawManifest = serde_json::from_value(serde_json::json!({ "nodes": nodes, "parent_map": parents })).unwrap();
+            Graph::build(raw, std::path::Path::new("manifest.json"), 0, 0)
+        };
+        let g = chain_of(22);
+        let l = g.levels(g.index["model.shop.m00"]);
+        assert_eq!((l.down.len(), l.down_more), (20, true));
+        assert!(!l.down_cut, "a deep graph is not a cap: the menu says it goes on");
+        assert_eq!(l.down[19].name, "m20");
+        assert_eq!((l.up.len(), l.up_more), (0, false));
+        let tail = g.levels(g.index["model.shop.m21"]);
+        assert_eq!((tail.up.len(), tail.up_more), (20, true));
+        let exact = chain_of(21);
+        let l = exact.levels(exact.index["model.shop.m00"]);
+        assert_eq!((l.down.len(), l.down_more), (20, false), "the twentieth level is the last: nothing goes on");
+    }
+
+    fn column_levels(g: &Graph, focus: ColRef, up: u32, max: usize, cut: &[&str], row_edges: RowEdges) -> Levels {
+        g.column_levels(focus, up, max, cut, row_edges).unwrap()
+    }
+
+    /// The column walk's own levels: a column at its distance, upstream and
+    /// downstream, a lone column naming itself.
+    #[test]
+    fn column_levels_follow_the_walk() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("raw_orders", "status", "stg_orders", "status", "rename"),
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("stg_orders", "status", "orders", "state", "rename"),
+                link("orders", "status", "customers", "status", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 1, 100, &[], RowEdges::Hidden);
+        assert_eq!((l.up.len(), l.up[0].name.as_str()), (1, "raw_orders.status"));
+        assert_eq!(l.down.len(), 2);
+        assert_eq!((kinds(&l.down[0]), l.down[0].name.as_str()), (vec![("column", 2)], ""));
+        assert_eq!(l.down[1].name, "customers.status");
+        assert!(!l.up_more && !l.down_more);
+        // What the canvas draws at N levels is what the first N levels add.
+        for n in 0..=2u32 {
+            let drawn = g.column_lineage(focus, 0, n, 100, &[], RowEdges::Hidden).nodes.len() - 1;
+            let listed: usize = l.down.iter().take(n as usize).map(|x| x.kinds.iter().map(|(_, c)| c).sum::<usize>()).sum();
+            assert_eq!(drawn, listed, "{n} levels down");
+        }
+        let alone = col(&g, "customers", "status");
+        let l = column_levels(&g, alone, 20, 100, &[], RowEdges::Hidden);
+        assert!(l.down.is_empty());
+        assert_eq!(l.up.len(), 3);
+        assert!(g.column_levels(focus, 1, 100, &[], RowEdges::Hidden).is_some());
+        assert!(shop(0).column_levels(focus, 1, 100, &[], RowEdges::Hidden).is_none(), "no cache, no column levels");
+    }
+
+    /// A cut role is drawn as a stop and nothing past it is, so the level it
+    /// ends is the last.
+    #[test]
+    fn a_cut_role_ends_the_levels_where_the_walk_stops() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "aggregate"),
+                link("orders", "status", "customers", "status", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 0, 100, &["aggregate"], RowEdges::Hidden);
+        assert_eq!(l.down.len(), 1, "orders.status is a stop: customers.status is past the cut");
+        assert_eq!(l.down[0].name, "orders.status");
+        let whole = column_levels(&g, focus, 0, 100, &[], RowEdges::Hidden);
+        assert_eq!(whole.down.len(), 2);
+    }
+
+    /// A model's box counts at the step it is first reached at, with the
+    /// columns of that level, and the walk goes on without it.
+    #[test]
+    fn a_box_counts_at_its_first_level() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("orders", "status", "customers", "status", "rename"),
+                link("stg_orders", "status", "customers", "customer_id", "filter"),
+                link("orders", "status", "customers", "email", "filter"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 0, 100, &[], RowEdges::ToModels);
+        assert_eq!(kinds(&l.down[0]), [("column", 1), ("model", 1)], "orders.status and the box of customers");
+        assert_eq!((kinds(&l.down[1]), l.down[1].name.as_str()), (vec![("column", 1)], "customers.status"));
+        assert_eq!(l.down.len(), 2);
+        let hidden = column_levels(&g, focus, 0, 100, &[], RowEdges::Hidden);
+        assert_eq!(kinds(&hidden.down[0]), [("column", 1)], "no box with the indirect edges hidden");
+    }
+
+    /// A cap that turns columns away ends the list on the level it cut, which
+    /// says "or more"; the canvas draws just as many.
+    #[test]
+    fn a_capped_walk_ends_on_the_level_it_cut() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "a", "rename"),
+                link("stg_orders", "status", "orders", "b", "rename"),
+                link("stg_orders", "status", "orders", "c", "rename"),
+                link("orders", "a", "customers", "a", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 0, 3, &[], RowEdges::Hidden);
+        assert_eq!(l.down.len(), 1);
+        assert_eq!(kinds(&l.down[0]), [("column", 2)]);
+        assert!(l.down[0].cut && l.down_more && l.down_cut);
+        assert_eq!(g.column_lineage(focus, 0, 20, 3, &[], RowEdges::Hidden).nodes.len() - 1, 2, "the canvas draws these two");
+        let roomy = column_levels(&g, focus, 0, 100, &[], RowEdges::Hidden);
+        assert!(!roomy.down[0].cut && !roomy.down_more && !roomy.down_cut && roomy.down.len() == 2);
+    }
+
+    /// A stop reached again around the cut is walked on from the step it was
+    /// taken back at, so the box it feeds counts there, and the level between
+    /// adds nothing.
+    #[test]
+    fn a_box_fed_by_a_stop_taken_back_counts_at_the_step_it_is_walked_from() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "aggregate"),
+                link("stg_orders", "status", "raw_orders", "x", "rename"),
+                link("raw_orders", "x", "orders", "status", "rename"),
+                link("orders", "status", "customers", "email", "filter"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 0, 100, &["aggregate"], RowEdges::ToModels);
+        assert_eq!(l.down.len(), 3, "{:?}", l.down);
+        assert_eq!(kinds(&l.down[0]), [("column", 2)], "raw_orders.x, and the stop at its first distance");
+        assert!(l.down[1].kinds.is_empty(), "taken back at step 2: nothing new");
+        assert_eq!((kinds(&l.down[2]), l.down[2].name.as_str()), (vec![("model", 1)], "customers"));
+    }
+
+    /// A cache can loop (0027): a column met upstream is neither counted nor
+    /// walked past downstream, as the canvas draws it.
+    #[test]
+    fn a_loop_is_counted_once_upstream() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("stg_orders", "status", "orders", "status", "rename"),
+                link("orders", "status", "stg_orders", "status", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 1, 100, &[], RowEdges::Hidden);
+        assert_eq!((l.up.len(), l.up[0].name.as_str()), (1, "orders.status"));
+        assert!(l.down.is_empty() && !l.down_more, "{:?}", l.down);
+        assert_eq!(g.column_lineage(focus, 1, 3, 100, &[], RowEdges::Hidden).nodes.len(), 2);
+    }
+
+    /// A side the cap emptied is not a side with nothing: the upstream walk
+    /// fills the room first, so the downstream one is cut at its first step.
+    #[test]
+    fn a_side_the_cap_emptied_says_the_cap_cut_it() {
+        let mut g = shop(0);
+        g.merge_col_lineage(
+            cache(vec![
+                link("raw_orders", "status", "stg_orders", "status", "rename"),
+                link("stg_orders", "status", "orders", "status", "rename"),
+            ]),
+            1,
+        );
+        let focus = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, focus, 1, 2, &[], RowEdges::Hidden);
+        assert_eq!(l.up.len(), 1);
+        assert!(l.down.is_empty() && l.down_more && l.down_cut, "cut, not childless: {l:?}");
+        let roomy = column_levels(&g, focus, 1, 100, &[], RowEdges::Hidden);
+        assert!(roomy.down.len() == 1 && !roomy.down_more);
     }
 }

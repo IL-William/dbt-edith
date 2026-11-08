@@ -21,7 +21,7 @@ cannot see:
   - it runs nothing: the terminal never starts, and no setting is written,
     the configuration directory holding the offer's file and nothing else;
   - ended part way from a page in use, it puts the tab, the canvas, the dock,
-    the selection box and the depth boxes back as they were, and a model's
+    the selection box and the depth back as they were, and a model's
     lineage at the depth it was drawn at, the tour's own drawn at 1 and 1;
   - it starts from the shortcut list too.
 

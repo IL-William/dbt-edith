@@ -2236,7 +2236,9 @@ async fn lineage(State(st): State<Arc<AppState>>, Query(q): Query<LineageQuery>)
     let Some(&idx) = graph.index.get(&q.id) else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
     };
-    let sub = graph.lineage(idx, q.up.min(20), q.down.min(20), q.tests == 1, q.max.unwrap_or(400).min(3000));
+    let mut sub = graph.lineage(idx, q.up.min(20), q.down.min(20), q.tests == 1, q.max.unwrap_or(400).min(3000));
+    // The depth menu lists the levels past the nodes drawn (0158).
+    sub.levels = Some(graph.levels(idx));
     Json(sub).into_response()
 }
 
@@ -3280,15 +3282,13 @@ async fn col_lineage(State(st): State<Arc<AppState>>, Query(q): Query<ColLineage
     let Some(col) = graph.col_slot(idx, &q.column) else {
         return (StatusCode::NOT_FOUND, "unknown column").into_response();
     };
-    let mut sub = graph.column_lineage(
-        ColRef { node: idx, col },
-        q.up.min(20),
-        q.down.min(20),
-        q.max.unwrap_or(COL_DRAWN).min(COL_MOST),
-        &q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>(),
-        if q.indirect == 1 { RowEdges::ToModels } else { RowEdges::Hidden },
-    );
+    let focus = ColRef { node: idx, col };
+    let (max, cut) = (q.max.unwrap_or(COL_DRAWN).min(COL_MOST), q.cut.split(',').filter(|r| !r.is_empty()).collect::<Vec<_>>());
+    let row_edges = if q.indirect == 1 { RowEdges::ToModels } else { RowEdges::Hidden };
+    let mut sub = graph.column_lineage(focus, q.up.min(20), q.down.min(20), max, &cut, row_edges);
     sub.most = COL_MOST;
+    // The depth menu lists the levels past the columns drawn (0158).
+    sub.levels = graph.column_levels(focus, q.up.min(20), max, &cut, row_edges);
     graph.name_rows_by(&mut sub);
     Json(sub).into_response()
 }
@@ -5126,6 +5126,55 @@ mod tests {
         // A column only indirect edges reach counts none, and still opens.
         let node = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
         assert!(node.contains(r#""name":"y","data_type":"","description":"","undeclared":false,"up":0,"down":0,"indirect":true"#), "{node}");
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The depth menu's levels come with the page's two lineage routes and
+    /// with no other answer: past what is drawn, and the column ones from the
+    /// request's own cap, cut and indirect switch (0158).
+    #[tokio::test]
+    async fn the_lineage_routes_carry_the_levels_that_exist() {
+        let root = temp_project("levels");
+        let (port, st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let model = |name: &str, mat: &str| {
+            serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo",
+                                "config": { "materialized": mat }, "columns": { "x": { "name": "x" } } })
+        };
+        let raw_manifest: crate::manifest::RawManifest = serde_json::from_value(serde_json::json!({
+            "nodes": { "model.demo.a": model("a", "view"), "model.demo.b": model("b", "view"), "model.demo.c": model("c", "table") },
+            "parent_map": { "model.demo.b": ["model.demo.a"], "model.demo.c": ["model.demo.b"] },
+        }))
+        .unwrap();
+        let mut g = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
+        let link = |from: &str, to: &str| crate::collin::RawColEdge {
+            from: format!("model.demo.{from}"),
+            from_col: "x".into(),
+            to: format!("model.demo.{to}"),
+            to_col: "x".into(),
+            kind: "rename".into(),
+        };
+        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges: vec![link("a", "b"), link("b", "c")], ..Default::default() }, 1);
+        *st.graph.write().await = Arc::new(g);
+
+        // One level drawn, both listed: the menu offers what the canvas did not draw.
+        let model_answer = response_of(port, get("/api/lineage?id=model.demo.a&up=1&down=1", &h)).await;
+        let body = model_answer.split("\r\n\r\n").nth(1).unwrap_or(&model_answer);
+        let json: serde_json::Value = serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {model_answer}"));
+        assert_eq!(json["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(json["levels"]["down"].as_array().unwrap().len(), 2, "{json}");
+        assert_eq!(json["levels"]["down"][1]["name"], "c");
+        assert_eq!(json["levels"]["up"].as_array().unwrap().len(), 0);
+        assert_eq!(json["levels"]["down"][0]["kinds"], serde_json::json!([["view", 1]]));
+
+        let column = response_of(port, get("/api/collineage?id=model.demo.a&column=x&up=0&down=1", &h)).await;
+        let body = column.split("\r\n\r\n").nth(1).unwrap_or(&column);
+        let json: serde_json::Value = serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {column}"));
+        assert_eq!(json["nodes"].as_array().unwrap().len(), 2);
+        assert_eq!(json["levels"]["down"].as_array().unwrap().len(), 2, "{json}");
+        assert_eq!(json["levels"]["down"][1]["name"], "c.x");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

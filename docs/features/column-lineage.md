@@ -181,10 +181,10 @@ restarts it. When Snowflake refuses the connection, the message points at that
 file rather than leaving you with an error code.
 
 A click asks for that column's upstream and downstream lineage, as deep as the
-`up` and `down` boxes say and at most five levels, which is `GET_LINEAGE`'s
+numbers either side of the column's name say and at most five levels, which is `GET_LINEAGE`'s
 limit. What comes back is added to the Snowflake cache on screen, or to
 `target/column_lineage.snowflake.json` when there is none, and drawn with
-columns as nodes, so it is still there after a restart. Changing `up` or `down`
+columns as nodes, so it is still there after a restart. Changing the depth
 redraws what has been fetched; clicking a column asks Snowflake again.
 
 **Which objects are asked about follows the environment pill** in the status
@@ -328,6 +328,15 @@ stop. The Lineage cell's counts, and its one level on hover, leave the indirect
 edges out and say so; a column only they reach or leave reads `indirect only`
 there, and still opens from its row, onto its box, with its card when they
 reach it.
+
+**The depth is the same control, around the column.** The column's chip stands
+where a model's name does, between the two numbers, and each number opens a menu
+of the levels the canvas would draw: `amount`, `1+amount`, `amount+1`, with what
+each adds (`+ raw_payments.amount`, `+ 6 columns`, `+ 1 column, 1 model` where an
+indirect edge draws a model's box). They are counted from the same walk as the
+canvas, with the roles stopped at, the indirect button and the cap in force, so
+a level the cap cut short reads `or more` and the menu ends on `Cut at the
+canvas's cap`. No dbt selector says a column's depth, so there is no copy button.
 
 **The column canvas draws 1000 boxes**, a box for a column or a model. A
 canvas cut there says so in its status line, and a **Draw up to 3000** button

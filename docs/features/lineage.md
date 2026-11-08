@@ -16,7 +16,24 @@ which dbt-edith reloads on its own within seconds. A macro file says nothing:
 it has no node however fresh the manifest, and the lineage stays on the model
 you were reading.
 
-The up and down boxes start at 1 and keep what you set while you walk the
+The depth is written the way dbt writes a selector, `1+ customers +0`, in the
+dock's toolbar: a number each side of the focus's name, each one a button that
+opens a menu of the levels that exist. A row gives the selector it draws
+(`customers`, `1+customers`, `2+customers`) and what it adds (`alone`,
+`+ 3 views`, `+ 2 views, 1 table`, `+ stg_customers` for a level of one node,
+`· all` on the last level of the graph), the one drawn checked; the menu ends on
+a line saying when the graph goes on past 20 levels, or when one side has
+nothing (`Nothing downstream: customers has no children.`). A side with no level
+shows 0 and its button says why when focused or hovered, though the depth behind
+it still carries to the next model. The copy button writes the selector as it
+shows, a zero side dropped (`Copied 2+customers+1`), with `source:` before a
+source's name. A name past 24 characters is cut in the middle, whole in its
+tooltip and in the copy; in a narrow dock it is the first thing to fold, giving
+way to the bar of its kind before the tabs lose their labels. The menus open with Enter or Space, move
+with the arrows and close on Escape. A Selection draws what its expression says,
+so the depth is dimmed there.
+
+The depth starts at 1 and 1 and keeps what you set while you walk the
 canvas, double-clicking a box or pulling in a level with a `+N` badge. A model
 reached any other way, from `Cmd/Ctrl + K`, a tab, a link in the editor or the
 Catalog, brings both back to 1. Going back to a link you followed from another
@@ -73,7 +90,7 @@ read only, and the card says when the refs were last refreshed.
 
 ## Reading the graph
 
-![The dock's lineage of orders, two levels up and one down, with the depth boxes above it and the orders box selected](../shots/lineage-node.png)
+![The dock's lineage of orders, two levels up and one down, with the depth above it and the orders box selected](../shots/lineage-node.png)
 
 Node colour is the materialization, not the resource type, because that is what
 you reason about when reading a DAG: what exists in the warehouse and what gets
@@ -98,7 +115,7 @@ leave the edges of one role. Click it again to see
 everything. The pick stays while you move around the graph, as
 long as the legend still lists it, and an exported graph is drawn without it.
 
-In column mode, **stop at** beside the depth boxes lists the roles the column
+In column mode, **stop at** beside the depth lists the roles the column
 lineage holds, except the three indirect ones, each with how many of its edges
 the canvas draws. A line under them counts the edges drawn with no role, and,
 with the indirect button on, another the indirect edges, which no stop applies
@@ -130,11 +147,11 @@ its edges short. An edge that skips columns runs level through a lane between
 the boxes of each column it crosses rather than behind them, and a model read
 across many columns shares one lane among its readers. In column mode, where the
 lineage can loop, the one edge of each loop drawn against its direction is
-dashed. The columns are an order, not a distance: the up and down boxes, the +N
+dashed. The columns are an order, not a distance: the depth's numbers, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **Tests** toggle beside the depth boxes draws the data tests on the canvas
+The **Tests** toggle beside the depth draws the data tests on the canvas
 too. It is off to start with, and pressed it takes the neutral wash of a
 selected row, the same as By folder, because tests can outnumber the models
 several times over: hundreds of boxes slow the canvas and bury what it was
@@ -256,9 +273,10 @@ no image, saved <name> instead`. Enter or Space on the button opens the menu on
 its first row, the arrows step through the rows, Enter picks one and Escape
 closes the menu and gives the button its focus back. Copy names, under a list
 glyph, is in the bar of the [Lineage space](selection.md) and copies the names,
-never the picture. On a narrow window the dock's tabs show their glyphs alone
-first; on a narrower one still, when the row runs out of room even then, Export
-keeps its glyph and chevron alone too, named by its tooltip.
+never the picture. On a narrow window the depth control's name gives way to the bar of its kind
+first, then the dock's tabs show their glyphs alone; on a narrower one still,
+when the row runs out of room even then, Export keeps its glyph and chevron
+alone too, named by its tooltip.
 
 **Save as HTML page** saves what the canvas shows as one HTML file named after it,
 `lineage-<what it shows>-<date>.html`, for a ticket or a message.

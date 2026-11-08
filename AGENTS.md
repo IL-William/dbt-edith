@@ -11,7 +11,7 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the MCP server, the tour, the depth boxes and Edith's menu in Chrome, browser tests, syntax
+./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the MCP server, the tour, the depth control and Edith's menu in Chrome, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
@@ -38,7 +38,7 @@ runs it (0110).
 The guided tour is walked step by step in headless Chrome on the same Jaffle
 Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
-`scripts/walk_depth.py` drives the lineage's depth boxes there the same way,
+`scripts/walk_depth.py` drives the lineage's depth control there the same way,
 `scripts/walk_menu.py` Edith's menu under a real pointer, and
 `scripts/walk_export.py` an export of the lineage with the Halloween theme on and in Light, and the Export menu.
 [docs/testing.md](docs/testing.md) lists each part and how to run it alone.
@@ -224,6 +224,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the freshness badge claims, what its card's button runs, or compare the manifest with a commit | [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md), [0157](docs/decisions/0157-the-manifests-card-holds-the-parse.md) |
 | export the graph, change what an exported file carries, or its menu | [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md), [0153](docs/decisions/0153-the-lineage-exports-from-one-menu-that-names-each-output.md) |
 | move a box on the lineage canvas, or read `n.depth` | [0027](docs/decisions/0027-the-canvas-lays-out-from-the-edges.md) |
+| change the depth control, what its menus list or what its copy writes | [0158](docs/decisions/0158-the-depth-is-written-as-dbt-writes-a-selector.md) |
 | change where the canvas draws a test, or what `attached` means | [0034](docs/decisions/0034-a-test-hangs-under-its-model.md) |
 | change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md), [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |
 | change how many nodes a selection draws, or where a capped one starts | [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |

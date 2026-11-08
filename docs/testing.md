@@ -143,8 +143,14 @@ dbt to parse the copy, and Chrome; it skips itself without either:
 /tmp/dbt/bin/python scripts/walk_tour.py --shots /tmp/t   # and a picture of each
 ```
 
-The lineage's up and down boxes are driven the same way: what keeps the depth
-on the canvas, what starts it again at 1, and what Back and Forward bring back:
+The lineage's depth control is driven the same way: what keeps the depth on the
+canvas, what starts it again at 1, what Back and Forward bring back, and the
+control itself by the keyboard on a copy of Jaffle Shop that has a model of 40
+characters with no children: Enter opens a menu on the level drawn, an arrow and
+Enter draw another with one request, Escape gives the focus back, Enter on the
+copy button writes the selector as shown, a model with no children shows `+0`
+while the hidden box holds 1, the long name is cut in the middle with its menu's
+rows fitting, and the name gives way to the bar of its kind in a narrow dock:
 
 ```
 /tmp/dbt/bin/python scripts/walk_depth.py

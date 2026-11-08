@@ -13,6 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.9.0 - 2026-11-08
+
+- Write the lineage's depth as dbt writes a selector, `1+ customers +0`: each
+  number opens a menu of the levels that exist and what each adds, the same
+  around a column, and a copy button writes the selector, `source:` before a
+  source's name (0158).
+- Say when a side of the lineage has nothing: the number shows 0 and its button
+  says the model has no parents or children, while the depth behind it carries on.
+- Cut a long model name in the middle in the depth control, whole in its tooltip,
+  and give way to the bar of its kind in a narrow dock.
+
 ## 2.8.0 - 2026-11-08
 
 - Open the manifest pill's card on hover or click: the files by group with

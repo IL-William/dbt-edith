@@ -44,6 +44,8 @@ const S = {
   colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
   colIndirect: false,         // collin's indirect edges walked and drawn: off on load, kept across refocuses (0097)
   colSub: null,               // last /api/collineage payload, which the stop at menu counts
+  depthLevels: null,          // {key, levels, kind, name} of the answer drawn: what the depth menus list (0158)
+  depthKey: '',               // the ask the depth control waits on: an answer under another key is not its own
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
@@ -4832,6 +4834,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
   S.colFocus = null;
   S.colDraw++;                                // a column answer still on its way is not drawn over this
   leaveColumnWait();
+  askDepth('m|' + id);
   paintMode();
   const up = +$('#up').value, down = +$('#down').value;
   const tests = testsOn() ? 1 : 0;
@@ -4847,6 +4850,7 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
+    landDepth('m|' + id, sub);
     paintLegend(sub);
     paintTestsCount(sub);
     renderCatalog(detail);
@@ -4892,6 +4896,13 @@ async function focusColumn(id, column) {
   // of this one, so a menu opened before the answer counts none.
   if (!S.colFocus || S.colFocus.id !== id || S.colFocus.column !== column) S.colSub = null;
   S.colFocus = { id, column };
+  // The levels the depth menus list are this canvas's own: the roles stopped at,
+  // the indirect button and the cap a click lifted change them (0158).
+  // Not the depth downstream: the levels do not depend on it, so a pick there keeps them.
+  const upNow = +$('#up').value;
+  const askedKey = colAskKey(id, column, upNow, +$('#down').value, S.colCut, S.colIndirect);
+  const depthKey = ['c', id, column, upNow, [...S.colCut].sort().join(','), S.colIndirect ? 1 : 0, colRaiseFor(S.colRaise, askedKey)].join('|');
+  askDepth(depthKey);
   paintMode();
   // The cache on disk is the one the run is replacing, and drawing it would
   // show a column that is about to change, or the model's own canvas under a
@@ -4936,6 +4947,7 @@ async function focusColumn(id, column) {
     $('#lineage-empty').classList.add('hidden');
     const drawn = Lineage.render(sub, canvasOptions());
     $('#lineage-status').textContent = canvasStatus(sub, drawn);
+    landDepth(depthKey, sub);
     paintColCap(colCapOffer(sub, raise), (max) => {
       S.colRaise = { key, max };
       focusColumn(id, column);
@@ -4954,6 +4966,9 @@ async function focusColumn(id, column) {
     S.colFocus = null;
     S.colSub = null;
     closeStopAt();
+    // The column's levels are not the model's: an answer under the same key
+    // would otherwise leave them in the model's menus.
+    askDepth('');
     paintMode();
     if (fromWait) focusNode(id);
   }
@@ -5504,7 +5519,7 @@ function canvasStatus(sub, drawn) {
   // collin's indirect edges, left out unless the indirect button is on (0097).
   const indirect = sub.indirect_hidden ? ' · indirect edges hidden' : '';
   // A column canvas is cut at a number of boxes the line names, the one a
-  // click on its button lifts (0118); a model's, at the depth boxes.
+  // click on its button lifts (0118); a model's, at the depth.
   const cut = sub.truncated ? (sub.mode === 'column' ? ` · truncated at ${sub.nodes.length}` : ' · truncated') : '';
   const tail = `${sub.edges.length} edges${stopped}${indirect}${cut}`;
   // The indirect edges' boxes stand for a model each, which no column is.
@@ -7991,7 +8006,7 @@ function paintLegend(sub) {
 
 /* Where the column walk stops downstream (0083): an edge of a role ticked
    here is drawn with the column it reaches, and nothing past that column.
-   Beside the depth boxes rather than in the legend, being a depth of a kind:
+   Beside the depth rather than in the legend, being a depth of a kind:
    it changes what the server walks, where a legend click only repaints. */
 function paintStopAt() {
   paintIndirectToggle();
@@ -8178,6 +8193,267 @@ function openStopAt(anchor) {
   if (first) first.focus();
 }
 
+/* ---- the depth, in dbt's words (0158) ---------------------------------------
+   `1+ customers +0`: each number opens a menu of the levels that exist, each
+   saying what it adds, around the focus name (the column chip in column mode).
+   #up and #down stay the inputs holding the depth, hidden: the rest of the page
+   reads and writes them, and a pick writes one and fires one change. The pure
+   parts run from cutMiddle to shownDepth, which web/tests/depth.js slices. */
+
+/* A name past 24 characters is cut in the middle, 12 and 11 around the
+   ellipsis, so its start and its end both stay (the board's own). */
+function cutMiddle(name) {
+  return name.length <= 24 ? name : name.slice(0, 12) + '…' + name.slice(-11);
+}
+
+/* What the copy button writes: dbt's own selector, with a side that is zero
+   dropped. dbt's fqn method searches no source, so a source is named by the
+   source: method; a model's version, orders.v2, is the name dbt reads (0104). */
+function depthSelector(kind, name, up, down) {
+  const sel = kind === 'source' ? `source:${name}` : name;
+  return `${up ? up + '+' : ''}${sel}${down ? '+' + down : ''}`;
+}
+
+/* A label the server counted by, with the noun it takes: the known kinds and
+   materializations in words, any other as a custom materialization is, a model
+   of that kind. */
+function depthWords(label, n) {
+  const known = {
+    view: ['view', 'views'], table: ['table', 'tables'], seed: ['seed', 'seeds'], source: ['source', 'sources'],
+    snapshot: ['snapshot', 'snapshots'], exposure: ['exposure', 'exposures'], analysis: ['analysis', 'analyses'],
+    column: ['column', 'columns'], model: ['model', 'models'],
+    incremental: ['incremental model', 'incremental models'], ephemeral: ['ephemeral model', 'ephemeral models'],
+    materialized_view: ['materialized view', 'materialized views'], other: ['other node', 'other nodes'],
+  };
+  const words = Object.prototype.hasOwnProperty.call(known, label) ? known[label] : [`${label} model`, `${label} models`];
+  return words[n === 1 ? 0 : 1];
+}
+
+/* What one level adds, in a menu row: its nodes by label, a lone one by name,
+   "or more" where the cap cut a column walk short, and "all" on the last level
+   when the graph ends there. */
+function levelAdds(level, last, more) {
+  const kinds = (level && level.kinds) || [];
+  let text;
+  if (level && level.name) text = '+ ' + cutMiddle(level.name);
+  else if (!kinds.length) text = '+ nothing new';
+  else text = '+ ' + kinds.map(([label, n]) => `${n} ${depthWords(label, n)}`).join(', ');
+  const cut = !!(level && level.cut);
+  if (cut) text += ' or more';
+  return last && !more && !cut ? text + ' · all' : text;
+}
+
+/* A menu's rows: the focus alone, then a row for each level that exists, the
+   one drawn checked. A depth the graph does not reach, as 1 on a model with no
+   children, checks the last row there is. `levels` is the answer's, both sides;
+   nothing when the side has no level. `full` is the row whole, for its title. */
+function depthRows(side, name, levels, current) {
+  const list = (levels && levels[side]) || [];
+  if (!list.length) return [];
+  const more = !!levels[side + '_more'];
+  const at = Math.min(+current || 0, list.length);
+  const write = (n, shown) => {
+    const bare = shown ? cutMiddle(name) : name;
+    if (!n) return bare;
+    return side === 'up' ? `${n}+${bare}` : `${bare}+${n}`;
+  };
+  const rows = [{ n: 0, sel: write(0, true), full: write(0, false), adds: 'alone', cur: at === 0 }];
+  list.forEach((level, i) => {
+    rows.push({ n: i + 1, sel: write(i + 1, true), full: write(i + 1, false),
+      adds: levelAdds(level, i === list.length - 1, more), cur: at === i + 1 });
+  });
+  return rows;
+}
+
+/* The number a button shows: the depth the box holds, held to the levels that
+   exist. The box keeps its value, so the depth still carries to the next model;
+   unknown levels leave it as it is. `list` is one side's levels. */
+function shownDepth(value, list) {
+  const n = Math.max(0, Math.floor(+value) || 0);
+  return list ? Math.min(n, list.length) : n;
+}
+
+/* What a lineage answer is for the depth control: its levels, kept under the
+   ask that made them, so a menu opened before the answer waits for it and one
+   opened after never lists another focus's levels. */
+function askDepth(key) {
+  if (S.depthLevels && S.depthLevels.key !== key) S.depthLevels = null;
+  S.depthKey = key;
+}
+
+function landDepth(key, sub) {
+  if (key !== S.depthKey) return;
+  const f = sub.mode === 'model' && sub.nodes[sub.focus];
+  S.depthLevels = { key, levels: sub.levels || null,
+    kind: f ? f.kind : '', colour: f ? Lineage.nodeColor(f) : '' };
+  paintDepth();
+}
+
+/* The kind of the focus for the copy: the answer's, and before it lands the
+   unique_id's own prefix, so a source is never copied without `source:`. */
+function depthKind() {
+  if (S.graphMode === 'column') return '';
+  if (/^source\./.test(S.focus || '')) return 'source';
+  return S.depthLevels ? S.depthLevels.kind : '';
+}
+
+/* The name the control is about, and what it calls a side with nothing on it. */
+function depthName() {
+  if (S.graphMode === 'column' && S.colFocus) return S.colFocus.column;
+  return S.focus ? nameOfId(S.focus, S.node) : '';
+}
+
+function paintDepth() {
+  const col = S.graphMode === 'column' && !!S.colFocus;
+  const selecting = S.graphMode === 'select';
+  const name = depthName();
+  const has = !!name;
+  const held = S.depthLevels;
+  const levels = !selecting && held ? held.levels : null;
+  const input = { up: $('#up'), down: $('#down') };
+  const group = $('#depth-sel');
+  group.title = col
+    ? 'How far the column lineage goes. No dbt selector says this, so there is nothing to copy.'
+    : 'How far the lineage goes, as a dbt selector';
+  const shown = {};
+  for (const side of ['up', 'down']) {
+    const list = levels ? levels[side] : null;
+    shown[side] = shownDepth(input[side].value, list);
+    const b = $(`#${side}-btn`);
+    b.querySelector('b').textContent = String(shown[side]);
+    // Empty only when the graph has nothing there: a side the cap emptied is cut, not childless.
+    const empty = has && !!list && !list.length && !levels[`${side}_more`];
+    const word = side === 'up' ? 'upstream' : 'downstream';
+    b.disabled = selecting;
+    b.setAttribute('aria-disabled', String(!selecting && (!has || empty)));
+    b.setAttribute('aria-label', `Levels ${word}${empty ? ': none' : ''}`);
+    if (empty) b.title = `${name} has no ${side === 'up' ? 'parents' : 'children'}`;
+    else if (!has && !selecting) b.title = 'Select a model to see its lineage.';
+    else b.removeAttribute('title');
+  }
+  const fn = $('#depth-name');
+  fn.textContent = col ? '' : cutMiddle(name);
+  fn.title = col || !has ? '' : name;
+  const bar = $('#depth-bar');
+  bar.classList.toggle('on', !col && has);
+  bar.setAttribute('aria-label', name);
+  bar.title = name;
+  // The previous focus's colour is not this one's: none until the answer says.
+  if (held && held.colour && !col) bar.style.setProperty('--kind', held.colour);
+  else bar.style.removeProperty('--kind');
+  const copy = $('#depth-copy');
+  copy.classList.toggle('hidden', col || !has);
+  copy.disabled = selecting;
+  if (!col && has) {
+    copy.setAttribute('aria-label', `Copy the selector ${depthSelector(depthKind(), name, shown.up, shown.down)}`);
+  }
+  if (depthMenu) fillDepthMenu();
+}
+
+/* The copy button: the selector as shown, in dbt's syntax. The clipboard being
+   refused is said, as every other copy does. */
+async function copyDepth() {
+  const held = S.depthLevels;
+  const sel = depthSelector(depthKind(), depthName(),
+    shownDepth($('#up').value, held && held.levels ? held.levels.up : null),
+    shownDepth($('#down').value, held && held.levels ? held.levels.down : null));
+  try {
+    await navigator.clipboard.writeText(sel);
+    toast('Copied ' + sel, 'ok');
+  } catch { toast('clipboard unavailable', 'err'); }
+}
+
+let depthMenu = null;      // {side, el, anchor} while a levels menu is open
+
+function closeDepthMenu() {
+  if (depthMenu && popup && popup.anchor === depthMenu.anchor) closePopup();
+}
+
+/* The menu's content from the levels held now: a wait while there are none, the
+   rows once they land (this is also what refills it in place, keeping the focus
+   on its row), and its footers. */
+function fillDepthMenu() {
+  const { side, el, anchor } = depthMenu;
+  const name = depthName();
+  const word = side === 'up' ? 'Upstream' : 'Downstream';
+  const held = S.depthLevels;
+  const levels = held ? held.levels : null;
+  const was = [...el.querySelectorAll('button')].indexOf(document.activeElement);
+  const had = document.activeElement === el || was >= 0;
+  const make = (tag, className, text = '') => Object.assign(document.createElement(tag), { className, textContent: text });
+  el.textContent = '';
+  el.setAttribute('aria-label', `${word} of ${name}`);
+  const head = make('div', 'menuhead', `${word} of ${cutMiddle(name)}`);
+  head.title = `${word} of ${name}`;
+  el.append(head);
+  if (!levels) {
+    el.append(make('div', 'lvwait', 'Counting the levels…'));
+  } else {
+    const input = $(side === 'up' ? '#up' : '#down');
+    for (const r of depthRows(side, name, levels, input.value)) {
+      const b = make('button', 'lvrow' + (r.cur ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('aria-checked', String(r.cur));
+      b.setAttribute('aria-label', `${r.full}, ${r.adds}`);
+      b.title = `${r.full}  ${r.adds}`;
+      b.append(make('span', 's', r.sel), make('span', 'a', r.adds),
+        strokeIcon('0 0 16 16', 'ck', ['M3.5 8.5l3 3 6-7']));
+      b.addEventListener('click', () => pickDepth(side, r.n, r.cur));
+      el.append(b);
+    }
+    const other = side === 'up' ? 'down' : 'up';
+    const notes = [];
+    if (!levels[other].length && !levels[`${other}_more`]) {
+      notes.push(side === 'up' ? `Nothing downstream: ${name} has no children.` : `Nothing upstream: ${name} has no parents.`);
+    }
+    // The cap, only when it is what stopped the walk: a column graph can also
+    // just go deeper than the menu lists.
+    if (levels[side + '_cut']) notes.push('Cut at the canvas\'s cap');
+    else if (levels[side + '_more']) notes.push('Goes on past 20 levels');
+    if (notes.length) {
+      const foot = make('div', 'lvfoot');
+      foot.append(...notes.map((t) => make('div', '', t)));
+      el.append(foot);
+    }
+  }
+  if (had) {
+    const rows = [...el.querySelectorAll('button')];
+    (rows[was] || el.querySelector('button.on') || rows[0] || el).focus();
+  }
+  if (el.isConnected) placePopup(anchor, el);
+}
+
+/* A pick writes the box and fires one change, which redraws; the row already
+   drawn only closes the menu. */
+function pickDepth(side, n, current) {
+  const anchor = depthMenu.anchor;
+  closePopup();
+  anchor.focus();
+  if (current) return;
+  const input = $(side === 'up' ? '#up' : '#down');
+  input.value = String(n);
+  input.dispatchEvent(new Event('change'));
+}
+
+function openDepthMenu(anchor, side) {
+  if (anchor.disabled || anchor.getAttribute('aria-disabled') === 'true') return;
+  if (closePopup(anchor)) return;
+  const el = document.createElement('div');
+  el.className = 'envmenu depthmenu';
+  el.setAttribute('role', 'menu');
+  el.tabIndex = -1;
+  // The up menu opens from the button's left, the down one inward from its right.
+  if (side === 'down') el.dataset.align = 'right';
+  depthMenu = { side, el, anchor };
+  fillDepthMenu();
+  anchor.setAttribute('aria-expanded', 'true');
+  openPopup(anchor, el, () => {
+    anchor.setAttribute('aria-expanded', 'false');
+    if (depthMenu && depthMenu.el === el) depthMenu = null;
+  });
+}
+
 function paintMode() {
   noteLineage('');
   const selecting = S.graphMode === 'select';
@@ -8196,9 +8472,12 @@ function paintMode() {
   // A model or a column drawn, from a double-click on a box or a column in
   // the Catalog beside the canvas, is the dock's again.
   if (!selecting && panelOpen('select')) closePanel();
-  // The depth boxes have nothing to say about a selection: the + in the
-  // expression carries it, and two places to set one would contradict.
+  // The depth has nothing to say about a selection: the + in the expression
+  // carries it, and two places to set one would contradict. A menu of the
+  // depth is for the focus it was opened on, so a new ask closes it.
   $('#up').disabled = $('#down').disabled = selecting;
+  closeDepthMenu();
+  paintDepth();
   paintStopAt();
   // A column canvas's offer, and the cap a click lifted, are for that canvas
   // alone, as a selection's is (0118).
@@ -8212,11 +8491,14 @@ function paintMode() {
     chip.textContent = '';
     const b = document.createElement('b');
     b.textContent = S.colFocus.column;
-    const x = document.createElement('span');
+    const x = document.createElement('button');
+    x.type = 'button';
     x.className = 'x';
     x.textContent = '×';
     x.title = 'back to model lineage';
+    x.setAttribute('aria-label', 'Leave column mode');
     x.addEventListener('click', () => { if (S.focus) focusNode(S.focus); });
+    chip.title = `${nameOfId(S.colFocus.id, S.node)}.${S.colFocus.column}`;
     chip.append(b, x);
   }
 }
@@ -8282,6 +8564,9 @@ function relinkTools() {
   for (const el of [$('#up'), $('#down'), $('#folder-levels')]) {
     el.addEventListener('change', rerender);
   }
+  $('#up-btn').addEventListener('click', (e) => openDepthMenu(e.currentTarget, 'up'));
+  $('#down-btn').addEventListener('click', (e) => openDepthMenu(e.currentTarget, 'down'));
+  $('#depth-copy').addEventListener('click', copyDepth);
   $('#with-tests').addEventListener('click', () => { paintTestsToggle(!testsOn()); rerender(); });
   $('#indirect-btn').addEventListener('click', () => {
     S.colIndirect = !S.colIndirect;
@@ -17689,41 +17974,50 @@ function showDock(which, { look = true, id = '' } = {}) {
 }
 
 /* The dock's tabs share their row with the lineage's tools, and the glyphs
-   made each tab wider. Once the row cannot hold every label on one line, the
-   tabs keep their glyph alone, named by their tooltip, rather than the tools
-   breaking onto a second line the 30px row cannot show. If that is still not
-   enough, Export keeps its glyph and chevron alone too (Fit has no label),
-   the action that matters least to what is drawn. It is measured, never set
-   at a width, because the room moves with the sidebar, Query history and the
-   column chip. It is measured with the tools shown, and the open tab
-   folds with the others, so that a click on a tab never moves the tabs under
-   the pointer: wireTabs() calls it when the row or the tools change, and
-   never on a tab change. The tools' own class is the one change of theirs it
-   does not hear, which is why the second fold is set there. Only the tools
-   are asked whether they broke, since a tab cannot, and a tab taller than the
-   row, under a large minimum font, would keep the labels folded at any width.
-   Past both folds, the tools still break: docs/state.md has the rest. */
+   made each tab wider. Once the row cannot hold everything on one line, things
+   fold one at a time, cheapest first, each step measured and then kept only if
+   the row still broke without it, rather than the tools breaking onto a second
+   line the 30px row cannot show: first the depth control's name gives way to
+   the bar of its kind (`noname`; it repeats the editor's tab and the focus box,
+   and stays whole in the bar's tooltip, the menus and the copy), then the
+   tabs keep their glyph alone, named by their tooltip, and last Export keeps
+   its glyph and chevron alone too (`iconic`; Fit has no label), the action
+   that matters least to what is drawn. It is measured, never set at a width,
+   because the room moves with the sidebar, Query history and the column chip.
+   It is measured with the tools shown, and the open tab folds with the others,
+   so that a click on a tab never moves the tabs under the pointer: wireTabs()
+   calls it when the row or the tools change, and never on a tab change. The
+   tools' own class is the one change of theirs it does not hear, which is why
+   the other folds are set there. Only the tools are asked whether they broke,
+   since a tab cannot, and a tab taller than the row, under a large minimum
+   font, would keep the labels folded at any width. Past every fold, the tools
+   still break: docs/state.md has the rest. */
 function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
   const was = row.classList.contains('folded');
   row.classList.remove('folded');
-  tools.classList.remove('hidden', 'iconic');
+  tools.classList.remove('hidden', 'noname', 'iconic');
   const fit = () => {
     // Without the strip the Halloween theme adds over the tabs, whose room the witch has.
     const h = row.getBoundingClientRect().height - parseFloat(getComputedStyle(row).paddingTop);
     return row.scrollWidth <= row.clientWidth
       && $$('#lineage-tools > *').every((e) => e.getBoundingClientRect().height <= h);
   };
-  const fits = fit();
-  row.classList.toggle('folded', !fits);
-  if (!fits) tools.classList.toggle('iconic', !fit());
+  if (!fit()) {
+    tools.classList.add('noname');
+    if (!fit()) {
+      row.classList.add('folded');
+      if (!fit()) tools.classList.add('iconic');
+    }
+  }
+  const folded = row.classList.contains('folded');
   tools.classList.toggle('hidden', away);
-  if (was === !fits) return;
+  if (was === folded) return;
   $$('#dock > .tabs .tab').forEach((t) => {
     const { name, about } = t.dataset;
-    if (!fits) t.title = about ? `${name}: ${about}` : name;
+    if (folded) t.title = about ? `${name}: ${about}` : name;
     else if (about) t.title = about;
     else t.removeAttribute('title');
   });
@@ -18258,7 +18552,7 @@ function tourSteps(c) {
         + 'as the file writes them; a key a deeper folder replaces is struck. Picking a line opens `dbt_project.yml` there. '
         + 'A `config()` in the model, or in its properties YAML, still wins over them.' });
     steps.push({ key: 'lineage', target: '#dock-lineage', title: 'Lineage',
-      text: `\`${m.name}\` and its neighbours, as many levels up and down as the two boxes say, read from \`manifest.json\`: `
+      text: `\`${m.name}\` and its neighbours, as many levels up and down as the numbers either side of its name say, read from \`manifest.json\`: `
         + 'nothing here runs dbt. Click a box to read its file, double-click to centre the lineage on it, and a `+N` '
         + 'badge pulls in one more level. Opening a model\'s file moves the lineage onto it. '
         + `${key('Mod+F')} over the canvas finds a box by its name and brings it to the middle.` });
