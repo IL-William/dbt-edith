@@ -160,6 +160,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0154](0154-the-palette-groups-its-answers-five-rows-a-group.md) | The palette groups its answers, five rows a group | changing what `Cmd/Ctrl + K` shows of an answer, how many rows a group keeps, how a cut answer is counted, or what its last row hands over to |
 | [0155](0155-the-search-tab-groups-its-lines-by-file-and-keeps-the-match-in-sight.md) | The Search tab groups its lines by file and keeps the match in sight | changing how the Search tab lays out its answer, what a click on a file header or a line does, how a long line is cut, or how many lines a file shows |
 | [0156](0156-the-keys-reaching-a-file-are-shown-as-written-and-struck-where-dbt-replaces-them.md) | The keys reaching a file are shown as written and struck where dbt replaces them | showing where a node's config comes from, striking a key of `dbt_project.yml`, or changing the dialog under the breadcrumb's violet button |
+| [0157](0157-the-manifests-card-holds-the-parse.md) | The manifest's card holds the parse | changing what the manifest pill's click does, or what its card's button runs |
 
 ## Keeping these honest
 

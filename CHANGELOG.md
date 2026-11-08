@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.8.0 - 2026-11-08
+
+- Open the manifest pill's card on hover or click: the files by group with
+  git's letter, where the branch sits, and a Run dbt parse button (0157).
+- Draw the manifest pill as one outline, its age and drift inside.
+
 ## 2.7.0 - 2026-11-08
 
 - Show the lines of `dbt_project.yml` that configure a file, as it writes them,

@@ -1,5 +1,5 @@
 // The warning Edith's menu gives when the terminal's shell reads the current
-// folder, and the freshness badge typing instead of running while it does
+// folder, and the manifest card's button typing instead of running while it does
 // (0130). Pure functions, sliced from web/app.js up to sendToTerminal.
 // Run from the repository root: jsc web/tests/pathwarn.js
 var src = read('web/app.js');

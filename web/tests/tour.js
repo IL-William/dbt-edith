@@ -46,11 +46,11 @@ check('the manifest step, right after the welcome, rings the freshness badge and
   [step(all, 'manifest').target, /^Everything here is read from `manifest.json`/.test(step(all, 'manifest').text)], ['#manifest-pill', true]);
 check('  that the arrows at its end read it again',
   /The arrows at its end read the file again at once\.$/.test(step(all, 'manifest').text), true);
-check('  what its mark says, and that a click types dbt parse',
+check('  what its mark says, and that its card holds the button that runs dbt parse',
   [/a green check, none has; an amber triangle, your own saved edits; a red cross, a pull/.test(step(all, 'manifest').text),
-    /A click types `dbt parse` in the terminal, leaving Enter to you/.test(step(all, 'manifest').text)], [true, true]);
+    /Hovering or clicking it opens its card, which says which files and where the branch sits and, once a file has moved, holds a button that runs `dbt parse` in the terminal/.test(step(all, 'manifest').text)], [true, true]);
 check('  and with no manifest, that there is none yet, and no colours to read',
-  [/There is none yet, so this says no manifest\. A click types `dbt parse`/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text),
+  [/There is none yet, so this says no manifest\. Hovering or clicking it opens its card, with a button that runs `dbt parse` in the terminal; the page/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text),
     /green/.test(step(tourSteps(ctx({ model: null, manifest: false })), 'manifest').text)], [true, false]);
 check('the selection drawn is the one the step names', step(all, 'select').text.indexOf('`+stg_orders+`') >= 0, true);
 check('the dbt_project.yml button rings its menu too, which the step opens',

@@ -1,6 +1,6 @@
 # 0025. Manifest freshness is measured in file times, not in commits
 
-Date: 2026-09-21 · Status: accepted
+Date: 2026-09-21 · Status: accepted, amended by 0157
 
 **Trigger:** read before changing what the freshness badge claims, or before
 comparing the manifest against a commit.

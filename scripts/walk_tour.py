@@ -281,7 +281,7 @@ ESCAPE = ("Escape", "Escape", 27)
 STEPS = [
     ("A tour of dbt-edith", None, None),
     ("manifest.json, and how fresh it is", "#manifest-pill",
-     "document.querySelector('#fresh-badge .lbl')?.textContent.startsWith('manifest ')"),
+     "document.querySelector('#fresh-badge .lbl')?.textContent === 'manifest'"),
     (f"{MODEL}, in the editor", "#editor-pane",
      f"document.querySelector('#tabbar .ftab.active')?.textContent.includes('{MODEL}.sql')"),
     ("Where dbt_project.yml configures it", ["#crumbs .cfg", ".crumbmenu.config"],

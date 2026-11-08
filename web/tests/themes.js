@@ -118,6 +118,11 @@ check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-
   });
   check('Light\'s git letters are at least 4.5:1 on its sidebar, on a selected row and dimmed on a folder', bad, []);
 }());
+// The warning colour as text (the pill's "manifest" and its age, the card's amber line): Light darkens it, the others keep Night's.
+check('every theme but Light has Night\'s warning text, and Light\'s is at least 4.5:1 on its sidebar and on a card',
+  [night.decl['--warn-text'] === night.decl['--warn'], '--warn-text' in graphite.decl, '--warn-text' in halloween.decl,
+    ratio(light.decl['--warn-text'], light.decl['--bg-2']) >= 4.5, ratio(light.decl['--warn-text'], light.decl['--bg-3']) >= 4.5],
+  [true, false, false, true, true]);
 check('every theme but Light keeps Night\'s git letters, which are the warning and OK colours they have',
   [graphite, halloween].map(function (b) { return ['--git-m', '--git-u'].filter(function (n) { return n in b.decl; }).length; })
     .concat([night.decl['--git-m'] === night.decl['--warn'], night.decl['--git-u'] === night.decl['--ok'], graphite.decl['--warn'] === night.decl['--warn'], halloween.decl['--ok'] === night.decl['--ok']]),

@@ -1,6 +1,6 @@
 # 0130. A shell that reads the current folder is warned of, not typed around
 
-Date: 2026-10-30 · Status: accepted · Builds on 0071, 0094
+Date: 2026-10-30 · Status: accepted, amended by 0157 · Builds on 0071, 0094
 
 **Trigger:** read before changing what the page types into the terminal, which
 button presses Enter there, or what the startup banner and Edith's menu say
@@ -50,8 +50,9 @@ Git Bash is missing. dash, sh and ksh keep an empty entry as bash does, which
   banner. Edith's menu shows one sentence naming the reason and the risk, and,
   for the two PATH reasons, a second saying the check reads the PATH dbt-edith
   hands the shell, which its startup files may still change.
-- **The freshness badge types `dbt parse` and leaves Enter to the user while
-  that holds**, its hover card saying so. It is the one button that pressed
+- **The manifest card's Run dbt parse button (the freshness badge's click
+  before 0157) types `dbt parse` and leaves Enter to the user while that
+  holds**, the hint beside it saying so. It is the one button that pressed
   Enter (0071), because `dbt parse` reaches no warehouse; a program run in its
   place is another matter, and the person sees the line before it runs.
 - **Nothing else changes.** The commands are typed as they were.

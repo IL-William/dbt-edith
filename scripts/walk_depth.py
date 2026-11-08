@@ -95,7 +95,7 @@ class Walk:
         # Fits, classes, the manifest badge (whose age repaints and so refolds
         # the bar), the name's room, and what the gear's name still needs.
         state = """(b => [b.scrollWidth <= b.clientWidth, b.className,
-          document.querySelector('#fresh-badge .lbl').textContent,
+          document.querySelector('#fresh-badge').textContent,
           document.querySelector('#project').clientWidth,
           document.querySelector('#project').scrollWidth > document.querySelector('#project').clientWidth,
           b.querySelector('.grow').offsetWidth - (b.querySelector('#settings-btn .rlabel').scrollWidth + 6)])(document.querySelector('#topbar'))"""
