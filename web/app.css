@@ -1437,7 +1437,7 @@ kbd {
 }
 .crumb:hover, .crumb.open { background: var(--bg-3); color: var(--fg); }
 /* The Catalog's own .crumb, further down, gives a margin that lifted every
-   segment 3.5px and cut the top off a hover, or off the round config button. */
+   segment 3.5px and cut the top off a hover, or off the config pill. */
 .crumbs .crumb { margin: 0; }
 .crumb:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 /* The two chevrons before the path: a hair wider than a crumb so the pair
@@ -1466,25 +1466,58 @@ kbd {
 .crumbmenu button.on { background: var(--accent-dim); }
 .crumbmenu button.on .lbl { font-weight: 600; }
 .crumbmenu .caret { width: 11px; height: 11px; }
-/* The keys of dbt_project.yml reaching a file (0038): pushed to the end of the
-   bar, past a gap that keeps it apart from the path when the bar overflows. */
+/* The keys of dbt_project.yml reaching a file (0038, 0156): pushed to the end
+   of the bar, past a gap that keeps it apart from the path when the bar
+   overflows. A violet pill, its YAML icon and its name. */
 .crumb-gap { flex: 1 0 14px; }
 .crumb.cfg {
-  width: 18px; padding: 0; margin-right: 3px; justify-content: center; border-radius: 50%;
-  color: var(--dbt-yaml); border: 1px solid color-mix(in srgb, var(--dbt-yaml) 50%, transparent); background: color-mix(in srgb, var(--dbt-yaml) 10%, transparent);
+  gap: 6px; padding: 0 7px; margin-right: 3px; border-radius: 5px;
+  color: var(--dbt-yaml); background: color-mix(in srgb, var(--dbt-yaml) 9%, transparent); font: 11px var(--mono);
 }
-.crumb.cfg:hover, .crumb.cfg.open { color: var(--dbt-yaml); border-color: var(--dbt-yaml); background: color-mix(in srgb, var(--dbt-yaml) 20%, transparent); }
-.cfgicon { width: 13px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.crumbmenu.config { max-width: 560px; }
-.crumbmenu .note {
-  max-width: 340px; padding: 4px 8px 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line);
-  color: var(--fg-dim); font: 11px var(--ui); white-space: normal;
+.crumb.cfg:hover, .crumb.cfg.open { color: var(--dbt-yaml); background: color-mix(in srgb, var(--dbt-yaml) 20%, transparent); }
+.crumb.cfg svg { width: 12px; height: 12px; }
+/* The excerpt opens as a dialog, the design's .keys, over the editor. Its
+   buttons are lines of code, so everything .crumbmenu button gives a row of a
+   menu is given back here. */
+.crumbmenu.config {
+  width: 460px; max-width: none; padding: 6px; background: var(--bg-3); border-radius: 9px;
+  font: 13px/1.45 var(--ui); color: var(--fg);
 }
-.crumbmenu.config .lbl { flex: none; }
-.crumbmenu .sets {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis;
-  margin-left: 6px; color: var(--fg-dim); font: 11px var(--mono);
+.k-head { display: flex; align-items: center; gap: 8px; padding: 5px 6px 8px 8px; font-size: 12px; color: var(--fg-dim); }
+.k-head b { font-weight: 600; color: var(--fg); }
+.crumbmenu.config .k-open {
+  display: flex; align-items: center; gap: 5px; width: auto; height: 22px; margin-left: auto; padding: 0 7px;
+  border-radius: 5px; font-size: 11.5px; color: var(--fg-dim);
 }
+.crumbmenu.config .k-open:hover, .crumbmenu.config .k-open:focus { background: var(--hover); color: var(--fg); }
+.k-ico { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.k-note { padding: 6px 8px; font-size: 12px; color: var(--fg-dim); }
+.k-foot { padding: 8px 8px 4px; font-size: 11.5px; color: var(--fg-mute); }
+.yx { padding: 4px 0; border-radius: 6px; background: var(--bg-2); border: 1px solid var(--line); }
+.crumbmenu.config .yl {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; gap: 0;
+  width: 100%; padding: 1px 8px 1px 0; border-radius: 0; font: 12px/20px var(--mono); white-space: normal;
+}
+.crumbmenu.config .yl:hover, .crumbmenu.config .yl:focus { background: var(--hover); }
+/* After hover and focus, which the line the dialog opens on has at once. */
+.crumbmenu.config .yl.cur { background: color-mix(in srgb, var(--dbt-yaml) 8%, transparent); }
+.crumbmenu.config .yl:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.yn { padding-right: 10px; text-align: right; color: var(--fg-mute); font-size: 11px; }
+/* Indented by its YAML depth, 14px a level, with a guide for each. */
+.yc {
+  min-width: 0; overflow-wrap: anywhere; padding-left: calc(var(--d, 0) * 14px);
+  background-image: repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 14px);
+  background-repeat: no-repeat; background-position: 3px 0; background-size: calc(var(--d, 0) * 14px) 100%;
+}
+.yk { color: var(--dbt-yaml); }
+.yp { color: var(--fg-mute); }
+.yv.tpl { color: var(--source); }
+.yl.over .yv { color: var(--fg-mute); text-decoration: line-through; }
+.ynote, .ytag { margin-left: 10px; font: 11px var(--ui); white-space: nowrap; }
+.ynote { color: var(--fg-mute); }
+.ytag { padding: 1px 6px; border-radius: 8px; color: var(--dbt-yaml); background: color-mix(in srgb, var(--dbt-yaml) 14%, transparent); }
+/* Lines of the file left out between two shown. */
+.ygap { height: 14px; padding-left: 30px; font: 12px/14px var(--mono); color: var(--fg-mute); }
 
 #editor-host { flex: 1; min-height: 0; }
 #diff-host { flex: 1; min-height: 0; position: relative; }

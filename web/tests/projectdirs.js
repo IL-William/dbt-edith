@@ -233,7 +233,9 @@ var SETS = [
   '      +enabled: true',
   '',
 ].join('\n');
-check('the configs of one level, as written', projectPathKeys(SETS)[1].sets, [
+// Without where each sits, which the excerpt reads and the next check pins.
+function named(sets) { return sets.map(function (s) { return { name: s.name, value: s.value }; }); }
+check('the configs of one level, as written', named(projectPathKeys(SETS)[1].sets), [
   { name: '+materialized', value: 'table' },
   { name: 'schema', value: 'core' },
   { name: '+tags', value: '["a", \'b\']' },
@@ -242,6 +244,10 @@ check('the configs of one level, as written', projectPathKeys(SETS)[1].sets, [
   { name: '+pre-hook', value: '' },
   { name: '+sql_header', value: '' },
 ]);
+check('and the line each starts on',
+  projectPathKeys(SETS)[1].sets.map(function (s) { return [s.name, s.line]; }).slice(3), [
+    ['+post-hook', 5], ['+docs', 6], ['+pre-hook', 8], ['+sql_header', 10],
+  ]);
 check('a config dbt has not been heard to name, by its shape',
   projectPathKeys('models:\n  shop:\n    +materialized: view\n    my_flag: true\n')[1].sets.map(function (s) { return s.name; }),
   ['+materialized', 'my_flag']);
@@ -291,25 +297,203 @@ var NESTED = [
   '',
 ].join('\n');
 var CRLF = NESTED.replace(/\n/g, '\r\n');
-// The menu itself, rows and all, as configMenu builds it once the file is read.
-// A row's pick opens dbt_project.yml at its key, which is where it is caught.
-var picked = null;
-function openProjectAt(line, ch) { picked = [line, ch]; }
-function menuRows(text, file) {
-  return configMenuFor(text, file, ROOTS).rows.map(function (r) {
-    picked = null;
-    r.pick();
-    return [r.label, r.depth, r.sets, picked];
+// The excerpt of dbt_project.yml that reaches a file, as configMenu builds it
+// once the file is read: one line of plain data per line shown. Each reads
+// `line: text`, with ~ for a struck one and the note after it, | for the
+// tagged one and ... for a gap before it.
+function shown(text, file, roots) {
+  var menu = configMenuFor(text, file, roots || ROOTS);
+  return menu.lines.map(function (l) {
+    return (l.gapBefore ? '... ' : '') + (l.line + 1) + ': ' + '  '.repeat(l.depth) + l.key + l.punct + l.value
+      + (l.over ? ' ~' + (l.noted ? ' replaced on ' + l.over : '') : '') + (l.here ? ' | ' + menu.tag : '');
   });
 }
-check('the menu of a model, as the open tab reads it', menuRows(NESTED, 'models/marts/finance/orders.sql'), [
-  ['models', 0, '+materialized: view · +post-hook', [1, 0]],
-  ['shop', 1, '+persist_docs', [6, 2]],
-  ['marts', 2, '+schema: marts', [9, 4]],
-  ['finance', 3, '+materialized: table', [11, 6]],
+// Jaffle Shop as the screenshots write it.
+var JAFFLE = [
+  "name: 'jaffle_shop'",
+  'models:',
+  '  jaffle_shop:',
+  '    +materialized: table',
+  "    +database: \"{{ env_var('JAFFLE_DB', 'jaffle_shop') }}\"",
+  '    +schema: main',
+  '    staging:',
+  "      +tags: ['staging']",
+  '      +materialized: view',
+  '      +docs:',
+  "        node_color: 'silver'",
+  '    +docs:',
+  "      node_color: 'gold'",
+  '',
+].join('\n');
+check('a model one folder down: every line in order, the replaced ones struck, the folder tagged',
+  shown(JAFFLE, 'models/staging/stg_payments.sql'), [
+    '2: models:',
+    '3:   jaffle_shop:',
+    '4:     +materialized: table ~ replaced on 9',
+    '5:     +database: "{{ env_var(\'JAFFLE_DB\', \'jaffle_shop\') }}"',
+    '6:     +schema: main',
+    '7:     staging: | stg_payments.sql is here',
+    "8:       +tags: ['staging']",
+    '9:       +materialized: view',
+    '10:       +docs:',
+    "11:         node_color: 'silver'",
+    '12:     +docs:',
+    "13:       node_color: 'gold' ~ replaced on 11",
+  ]);
+check('a model at the project\'s own level: a gap where the staging block was left out, nothing struck',
+  shown(JAFFLE, 'models/customers.sql'), [
+    '2: models:',
+    '3:   jaffle_shop: | customers.sql is here',
+    '4:     +materialized: table',
+    '5:     +database: "{{ env_var(\'JAFFLE_DB\', \'jaffle_shop\') }}"',
+    '6:     +schema: main',
+    '... 12:     +docs:',
+    "13:       node_color: 'gold'",
+  ]);
+check('the template is marked, the quotes kept and a trailing comment dropped',
+  configMenuFor("name: s\nmodels:\n  s:\n    +schema: \"x_{{ y }}\" # why\n    +alias: 'a#b' # c\n", 'models/m.sql', ROOTS)
+    .lines.map(function (l) { return [l.value, l.tpl]; }).slice(2), [['"x_{{ y }}"', true], ["'a#b'", false]]);
+check('the guides follow the YAML depth, and the cursor of a line is its first character',
+  configMenuFor(JAFFLE, 'models/customers.sql', ROOTS).lines.slice(0, 4).map(function (l) { return [l.depth, l.col]; }),
+  [[0, 0], [1, 2], [2, 4], [2, 4]]);
+
+var MERGED = [
+  'name: s',
+  'models:',
+  '  +tags: [a]',
+  '  +pre_hook: "select 1"',
+  '  +meta:',
+  '    owner: x',
+  '    team: y',
+  '  s:',
+  '    +tags: [b]',
+  '    +pre-hook: "select 2"',
+  '    +meta:',
+  '      owner: z',
+  '    marts:',
+  '      +docs: {node_color: gold}',
+  '      +meta:',
+  '        team: q',
+  '',
+].join('\n');
+check('tags and hooks add up, pre_hook and pre-hook being one; meta is replaced key by key',
+  shown(MERGED, 'models/marts/m.sql'), [
+    '2: models:',
+    '3:   +tags: [a]',
+    '4:   +pre_hook: "select 1"',
+    '5:   +meta:',
+    '6:     owner: x ~ replaced on 12',
+    '7:     team: y ~ replaced on 16',
+    '8:   s:',
+    '9:     +tags: [b]',
+    '10:     +pre-hook: "select 2"',
+    '11:     +meta:',
+    '12:       owner: z',
+    '13:     marts: | m.sql is here',
+    '14:       +docs: {node_color: gold}',
+    '15:       +meta:',
+    '16:         team: q',
+  ]);
+
+print('\n--- what dbt replaces, key by key ---');
+function over(text, file) {
+  return configMenuFor(text, file, ROOTS).lines.filter(function (l) { return l.over; })
+    .map(function (l) { return (l.line + 1) + '>' + l.over; });
+}
+check('a clobbered config is struck whole, its value lines too',
+  over('name: s\nmodels:\n  s:\n    +post_hook:\n      - select 1\n      - select 2\n    +persist_docs:\n      relation: true\n    m:\n      +persist_docs:\n        relation: false\n', 'models/m/x.sql'),
+  ['7>10', '8>10']);
+check('and a key line holding a value, once', over('name: s\nmodels:\n  +schema: a\n  s:\n    +schema: b\n', 'models/x.sql'), ['3>5']);
+check('tags and hooks are never struck', over(MERGED, 'models/marts/m.sql').some(function (o) { return /^(3|4|9|10)>/.test(o); }), false);
+check('meta, key by key; the key line itself stays', over(MERGED, 'models/marts/m.sql'), ['6>12', '7>16']);
+check('a flow style value is never half struck', over('name: s\nmodels:\n  s:\n    +docs: {node_color: gold}\n    m:\n      +docs:\n        node_color: red\n', 'models/m/x.sql'), []);
+check('nor is a block one against a flow style one',
+  over('name: s\nmodels:\n  s:\n    +docs:\n      node_color: gold\n    m:\n      +docs: {node_color: red}\n', 'models/m/x.sql'), []);
+// The flow value nearest the file may hold the key, so no shallower line is named instead.
+check('and no shallower level is struck in its place',
+  over('name: s\nmodels:\n  +docs:\n    node_color: gold\n  s:\n    +docs:\n      node_color: red\n    m:\n      +docs: {node_color: blue}\n', 'models/m/x.sql'), []);
+var GRANTS = [
+  'name: s', 'models:', '  s:', '    +grants:', '      select: [a]', '      +insert: [b]', '      update: [c]',
+  '    m:', '      +grants:', '        select: [d]', '        +insert: [e]', '        +update: [f]', '',
+].join('\n');
+check('grants: a key written without its plus replaces, with it extends',
+  over(GRANTS, 'models/m/x.sql'), ['5>10']);
+check('two settings of one config at a level are left alone',
+  over('name: s\nmodels:\n  +schema: a\n  +schema: b\n  s:\n    +schema: c\n', 'models/x.sql'), []);
+check('a config the file sets once, only above, is not struck', over(JAFFLE, 'models/customers.sql'), []);
+check('a list value is shown whole, items at one level in, and struck whole',
+  over('name: s\nmodels:\n  s:\n    +cluster_by:\n      - a\n      - b\n    m:\n      +cluster_by: [c]\n', 'models/m/x.sql'),
+  ['4>8', '5>8', '6>8']);
+check('its items read as values', configMenuFor('name: s\nmodels:\n  s:\n    +cluster_by:\n      - a\n', 'models/x.sql', ROOTS)
+  .lines.slice(2).map(function (l) { return [l.key, l.value, l.depth]; }), [['+cluster_by', '', 2], ['', '- a', 3]]);
+// Blank and comment-only lines are never shown, struck or not, outside a block value.
+check('a # inside a | block is value, shown and struck with it',
+  over('name: s\nmodels:\n  s:\n    +sql_header: |\n      set x = 1;\n      # a note\n\n      set y = 2;\n    m:\n      +sql_header: select 1\n', 'models/m/x.sql'),
+  ['4>10', '5>10', '6>10', '8>10']);
+check('the block text sits one level in from its key',
+  configMenuFor('name: s\nmodels:\n  s:\n    +sql_header: |\n      set x = 1;\n', 'models/x.sql', ROOTS).lines.map(function (l) { return l.depth; }),
+  [0, 1, 2, 3]);
+
+check('latest_version_pointer goes key by key, snapshot_meta_column_names is replaced whole',
+  over('name: s\nmodels:\n  +latest_version_pointer:\n    a: 1\n    b: 2\n  +snapshot_meta_column_names:\n    x: 1\n    y: 2\n  s:\n    +latest_version_pointer:\n      a: 3\n    +snapshot_meta_column_names:\n      x: 3\n', 'models/s/x.sql'),
+  ['4>11', '6>12', '7>12', '8>12']);
+check('a block\'s # line is a line of the value, shown as written',
+  configMenuFor('name: s\nmodels:\n  s:\n    +h: |\n      # kept\n      select 1\n    +b: 2\n', 'models/x.sql', ROOTS)
+    .lines.map(function (l) { return [l.line + 1, l.value]; }).slice(2), [[4, '|'], [5, '# kept'], [6, 'select 1'], [7, '2']]);
+check('when both blocks are written dbt reads data_tests alone',
+  reaching('name: s\ntests:\n  s:\n    +severity: warn\ndata_tests:\n  s:\n    +severity: error\n', 'tests/singular/a.sql'),
+  ['data_tests', 'data_tests: s']);
+check('and tests alone when that is all there is',
+  reaching('name: s\ntests:\n  s:\n    +severity: warn\n', 'tests/singular/a.sql'), ['tests', 'tests: s']);
+
+print('\n--- when there is nothing to show ---');
+function reason(text, file, roots) { var m = configMenuFor(text, file, roots || ROOTS); return [m.note, m.lines.length]; }
+check('too large', reason('x'.repeat(2 * 1024 * 1024 + 1), 'models/a.sql'), ['dbt_project.yml is too large to scan.', 0]);
+check('not a resource', reason(JAFFLE, 'macros/a.sql'),
+  ['Not a model, seed, snapshot, analysis or test under the paths dbt_project.yml sets.', 0]);
+check('no key reaches it', reason('name: s\nseeds:\n  +tags: [a]\n', 'models/a.sql'), ['No key of dbt_project.yml reaches this file.', 0]);
+check('the dialog is named after the file', configMenuFor(JAFFLE, 'models/staging/stg_payments.sql', ROOTS).title,
+  'Where dbt_project.yml configures stg_payments.sql');
+
+print('\n--- what the footer says wins ---');
+check('a file of the project: its config() and properties YAML',
+  [configMenuFor(JAFFLE, 'models/customers.sql', ROOTS).pkg, configFooter(false)],
+  [false, 'A config() in the file, or in its properties YAML, wins over these lines.']);
+check('a file of a package: these lines, applied last',
+  [configMenuFor(JAFFLE, 'dbt_packages/utils/models/a.sql', ROOTS).pkg, /root project's lines/.test(configFooter(true)), /win over/.test(configFooter(true))],
+  [true, true, true]);
+check('the old claim is not made for a package', /config\(\) in the file/.test(configFooter(true)), false);
+check('a package path needs a file under the package\'s folder',
+  ['dbt_packages/utils', 'dbt_packages/utils/', 'models/dbt_packages/a/b.sql', 'dbt_modules/utils/models/a.sql'].map(inPackage),
+  [false, false, false, true]);
+
+print('\n--- where the dialog sits ---');
+var PANE = { left: 100, right: 700 };
+check('under its button, right edges level', configDialogAt({ right: 690, bottom: 40 }, PANE, { width: 460, height: 200 }, { height: 800 }),
+  { left: 230, top: 44 });
+check('held to the pane\'s right edge when the button sits past it', configDialogAt({ right: 760, bottom: 40 }, PANE, { width: 460, height: 200 }, { height: 800 }),
+  { left: 232, top: 44 });
+check('and to its left edge', configDialogAt({ right: 150, bottom: 40 }, PANE, { width: 460, height: 200 }, { height: 800 }),
+  { left: 108, top: 44 });
+check('and up from the window\'s bottom', configDialogAt({ right: 690, bottom: 700 }, PANE, { width: 460, height: 200 }, { height: 800 }).top, 592);
+
+print('\n--- the same, in a file saved with CRLF endings ---');
+check('the excerpt of a model, as the open tab reads it', shown(NESTED, 'models/marts/finance/orders.sql'), [
+  '2: models:',
+  '3:   +materialized: view ~ replaced on 13',
+  '4:   +post-hook:',
+  '5:     - >',
+  '6:       grant select on {{ this }} to role reporter',
+  '7:   shop:',
+  '8:     +persist_docs:',
+  '9:       relation: true',
+  '10:     marts:',
+  '11:       +schema: marts',
+  '12:       finance: | orders.sql is here',
+  '13:         +materialized: table',
 ]);
-check('the same read from the disk, each level opening on its own line', menuRows(CRLF, 'models/marts/finance/orders.sql'),
-  menuRows(NESTED, 'models/marts/finance/orders.sql'));
+check('the same read from the disk, each line opening on its own line', configMenuFor(CRLF, 'models/marts/finance/orders.sql', ROOTS).lines,
+  configMenuFor(NESTED, 'models/marts/finance/orders.sql', ROOTS).lines);
 check('a lone \\r ends a line too, as CodeMirror reads it', editorText('a:\r  b: 1\r\n'), 'a:\n  b: 1\n');
 
 print('\n--- the keys dbt would warn of (0103) ---');

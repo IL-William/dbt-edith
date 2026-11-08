@@ -58,7 +58,6 @@ print('--- nothing is a round marker ---');
 var ROUND = {
   '.envmenu button.switch .knob': 'where it sits on its track is the state',
   '.keysbtn': 'a round button around a glyph',
-  '.crumb.cfg': 'a round button around a glyph',
 };
 var round = rules.filter(function (r) { return /border-radius:\s*(50%|100%|\d{3,}px)/.test(r.body); });
 check('every round rule of app.css is a control on the allowlist, each with its reason',

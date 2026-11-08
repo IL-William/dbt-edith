@@ -285,7 +285,7 @@ STEPS = [
     (f"{MODEL}, in the editor", "#editor-pane",
      f"document.querySelector('#tabbar .ftab.active')?.textContent.includes('{MODEL}.sql')"),
     ("Where dbt_project.yml configures it", ["#crumbs .cfg", ".crumbmenu.config"],
-     "[...document.querySelectorAll('.crumbmenu.config button .lbl')].some((l) => l.textContent === 'staging')"),
+     "[...document.querySelectorAll('.crumbmenu.config .yk')].some((k) => k.textContent === 'staging')"),
     ("Lineage", "#dock-lineage",
      "!document.querySelector('#dock-lineage').classList.contains('hidden')"
      f" && [...document.querySelectorAll('#graph text')].some((t) => t.textContent === '{MODEL}')"

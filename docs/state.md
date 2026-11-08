@@ -447,8 +447,9 @@ its 3 825 models have a key on their own folder, 3 185 are configured from the
 folder above, 276 from two to four folders up, and every one sits under three
 to eleven nested keys. The fqn is read off the path, and matched the
 manifest's for all 3 341 models, 8 seeds and 609 singular tests it holds. The
-menu says where, never what wins, since `dbt_project.yml` comes last of dbt's
-three places for a config.
+dialog shows the lines as the file writes them and strikes the ones a deeper
+level of the same file replaces, by dbt's merge rules (0156); a `config()` or
+the properties YAML still comes after every level, which its footer says.
 
 Driven in headless Chrome on that project: a model three folders below its
 deepest key lists five levels and opens `dbt_project.yml` on the fifth; a
@@ -705,12 +706,11 @@ Snowflake's features off and still shows once they are on, and
 `DBT_PROFILES_DIR` pointed at an empty directory greys it.
 
 The config button: the `dbt_project.yml` segment at the end
-of a model's breadcrumb (0038) became a round button in the same violet, a file
-with an arrow coming into it, its name in the tooltip. Drawing it showed the
-Catalog's `.crumb` rule giving every breadcrumb segment a margin that lifted it
-3.5px and cut the top off a hover; the bar now scopes that away. Driven in
-headless Chrome on a model of the 18 825 node project: the button sits whole in
-the bar and opens the menu of keys.
+of a model's breadcrumb (0038) is a violet pill with the YAML file's icon and its
+name, and opens a dialog of the lines of that file reaching the model (0156).
+Drawing the first, round, version showed the Catalog's `.crumb` rule giving
+every breadcrumb segment a margin that lifted it 3.5px and cut the top off a
+hover; the bar still scopes that away.
 
 Query history (0048): with Snowflake's features on, a dock
 tab lists the queries the connected Snowflake user ran in the last seven days,
@@ -2747,7 +2747,7 @@ of its own, and each panel updates the tour, its page under
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
 38. **The rest of the redesign, one pull request each.** The depth in dbt's
-    syntax, the Lineage space, column roles in the box, the keys excerpt,
+    syntax, the Lineage space, column roles in the box,
     the manifest card, the settings, shortcuts, Jobs, the terminal, Compiled,
     Git, Catalog, Reports and the design docs.
 39. **The C runtime of the Windows `.exe` (0149).** Link it statically

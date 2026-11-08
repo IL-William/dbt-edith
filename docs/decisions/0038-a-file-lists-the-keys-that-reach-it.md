@@ -1,6 +1,6 @@
 # 0038. A file lists the keys of `dbt_project.yml` that reach it, by its fqn
 
-Date: 2026-10-05 · Status: accepted, amended by 0039
+Date: 2026-10-05 · Status: accepted, amended by 0039 and 0156
 
 **Trigger:** read before showing anything about where a node's config comes
 from, or before deriving an fqn from a path.
