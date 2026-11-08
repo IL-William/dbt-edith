@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.5.0 - 2026-11-08
+
+- Group the Cmd/Ctrl + K palette's answers and size it to them: models and
+  seeds (titled by what the group holds), macros, files, then a row to search
+  the letters inside every file, five rows each and a `+N more` row that shows
+  the rest where it is. The letters typed are marked in each name, or in the
+  path when the path is what matched; the foot names the keys and counts the
+  results; a group the server cut says `40+` rather than a number it does not
+  know (0154).
+
 ## 2.4.0 - 2026-11-08
 
 - Export what the lineage shows from one Export menu that says what each output

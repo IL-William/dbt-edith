@@ -2534,12 +2534,9 @@ function mountDiff(key) {
     const icon = fileIcon(f.path, fileMark(f.path));
     title.append(icon);
     // A model's file in a folder the tree has not opened: its mark is asked once, by its folder.
-    if (!S.fileMarks.has(f.path)) {
-      loadMarks(f.path.slice(0, Math.max(0, f.path.lastIndexOf('/')))).then(() => {
-        const m = fileMark(f.path);
-        if (m && icon.isConnected) icon.replaceWith(fileIcon(f.path, m));
-      });
-    }
+    askMarks([f.path]).then((gained) => {
+      if (gained && icon.isConnected) icon.replaceWith(fileIcon(f.path, fileMark(f.path)));
+    });
     const nm = document.createElement('b');
     nm.textContent = base(f.path);
     const state = document.createElement('span');
@@ -3852,6 +3849,28 @@ async function loadMarks(dir) {
   try { rememberMarks(await api.get('/api/dir?path=' + encodeURIComponent(dir))); } catch { /* a folder that is gone */ }
 }
 
+/* The folders asked of /api/dir for their marks alone, by folder, so each is
+   asked once however many callers want it; forgotten with the marks. */
+const marksAsked = new Map();
+
+/* For a list of paths drawn outside the tree (the palette's file rows, a diff's
+   title): asks each folder that could hold a model's, seed's or snapshot's file
+   once, since S.fileMarks only knows the folders something has listed and a
+   path with no mark cannot be told from one never asked about. Resolves true
+   when one of the paths gained a mark, which is when its icon is to be drawn
+   again. */
+async function askMarks(paths) {
+  const want = paths.filter((p) => /\.(sql|py|csv)$/i.test(p) && !S.fileMarks.has(p));
+  const folders = new Set(want.map((p) => p.slice(0, Math.max(0, p.lastIndexOf('/')))));
+  const asking = [];
+  for (const dir of folders) {
+    if (!marksAsked.has(dir)) marksAsked.set(dir, loadMarks(dir));
+    asking.push(marksAsked.get(dir));
+  }
+  await Promise.all(asking);
+  return want.some((p) => S.fileMarks.has(p));
+}
+
 /* A file's icon. Its shape says what the file is (a cylinder for SQL, a dotted
    list for YAML, a rounded M for Markdown, Py, a terminal, braces, a table, a
    page for the rest); its colour says only what the manifest builds it as, so
@@ -3940,6 +3959,7 @@ async function refreshFileMarks() {
   // What was known of a file that no folder listed again is no longer known.
   const was = new Map(S.fileMarks);
   S.fileMarks.clear();
+  marksAsked.clear();
   for (const dir of dirs) {
     let entries;
     try { entries = await api.get('/api/dir?path=' + encodeURIComponent(dir)); } catch { continue; }
@@ -16698,6 +16718,8 @@ function connectTerm() {
 
 // ---------------------------------------------------------------- palette --
 let palIndex = 0, palHits = [];
+/* The answer on screen, and which of its groups showed all their rows. */
+let palAnswer = null, palGroupsOpen = new Set();
 /* Bumped each time the box opens or closes, so an Enter still waiting for its
    answer acts only in the box it was pressed in. */
 let palOpened = 0;
@@ -16755,17 +16777,88 @@ function mergeHits(nodes, macros, paths) {
   ];
 }
 
+/* Five rows a group and a server that answers 40 at most (0154): each request
+   asks for one more than it shows, so a group that came back with 41 is known
+   to hold more than the box can say. */
+const PALETTE_ROWS = 5, PALETTE_CAP = 40;
+
+/* What the node group holds, said in its title: "Models and seeds", "Sources".
+   The order is the one the canvas's legend uses. */
+function nodeGroupTitle(kinds) {
+  const names = ['model', 'source', 'seed', 'snapshot', 'exposure'].filter((k) => kinds.includes(k)).map((k) => k + 's');
+  if (!names.length) return 'Nodes';
+  const text = names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+/* The palette's rows by group, in the order the box draws them. A group shows
+   its first five and a row that shows the rest; `opened` holds the groups
+   whose rest was asked for. The rows are the hits themselves, plus `more`,
+   `grep` (the one that hands the letters to the Search tab) and `note` (a line
+   that cannot be picked). `count` is said as the header says it: "40+" for a
+   group the server cut, never a number it does not know. */
+function paletteGroups(hits, q, capped, opened) {
+  const word = q.trim();
+  const groups = [];
+  const add = (key, title, list, cut) => {
+    if (!list.length) return;
+    let rows = list;
+    const all = opened.has(key) || list.length <= PALETTE_ROWS;
+    if (!all) {
+      const rest = list.length - PALETTE_ROWS;
+      rows = list.slice(0, PALETTE_ROWS).concat({
+        kind: 'more', group: key, label: `${cut ? rest + '+' : '+' + rest} more ${title.toLowerCase()}`,
+      });
+    } else if (cut) {
+      // Said for any count: a file hit already shown as a node is dropped, so
+      // the rows left can be fewer than the 40 the server was asked for.
+      rows = list.concat({ kind: 'note', label: `The search stops at ${PALETTE_CAP} a group: type more letters for the rest.` });
+    }
+    groups.push({ key, title, count: list.length + (cut ? '+' : ''), rows });
+  };
+  const nodes = hits.filter((h) => h.kind === 'node');
+  add('nodes', nodeGroupTitle(nodes.map((h) => h.node.kind)), nodes, !!capped.nodes);
+  if (word) add('macros', 'Macros', hits.filter((h) => h.kind === 'macro'), !!capped.macros);
+  add('files', 'Files', hits.filter((h) => h.kind === 'file'), !!capped.files);
+  // The Search tab's own minimum, so the hand-over never lands on its refusal.
+  if (word.length >= 3) groups.push({ key: 'grep', title: 'Inside the files', count: '', rows: [{ kind: 'grep', q: word }] });
+  return groups;
+}
+
+/* The foot's count: the hits of the three groups, not the rows that open
+   something else. A cut group makes it a floor, "41+ results". */
+function paletteCount(hits, capped) {
+  const n = hits.length;
+  const more = !!(capped.nodes || capped.macros || capped.files);
+  return `${n}${more ? '+' : ''} ${n === 1 && !more ? 'result' : 'results'}`;
+}
+
+/* Where the letters typed are marked: in the name, or, for a hit the server
+   found by its path alone, in the path. Each is [before, match, after]. */
+function paletteMarks(name, path, q) {
+  const word = q.trim();
+  const inName = splitMatch(name, word);
+  if (inName[1] || !path) return { name: inName, path: [path || '', '', ''] };
+  return { name: inName, path: splitMatch(path, word) };
+}
+
 /* One box for everything: dbt nodes from the manifest, the macros by name, and
    every file in the project. A generic test definition or a dotfile is not a
    node, and used to be unfindable. Macros wait for a query: the empty box lists
-   nodes and files, as before. */
+   nodes and files, as before. Each request asks for one more than the box
+   keeps, which is how it knows a group was cut. */
 async function fetchPalette(q) {
+  const ask = PALETTE_CAP + 1;
   const [nodes, macros, paths] = await Promise.all([
-    api.get(`/api/search?q=${encodeURIComponent(q)}&kind=model,source,seed,snapshot,exposure&limit=40`).catch(() => []),
-    q.trim() ? api.get(`/api/macros/search?q=${encodeURIComponent(q)}&limit=40`).catch(() => []) : [],
-    api.get(`/api/files?q=${encodeURIComponent(q)}&limit=40`).catch(() => []),
+    api.get(`/api/search?q=${encodeURIComponent(q)}&kind=model,source,seed,snapshot,exposure&limit=${ask}`).catch(() => []),
+    q.trim() ? api.get(`/api/macros/search?q=${encodeURIComponent(q)}&limit=${ask}`).catch(() => []) : [],
+    api.get(`/api/files?q=${encodeURIComponent(q)}&limit=${ask}`).catch(() => []),
   ]);
-  return mergeHits(nodes, macros, paths);
+  const capped = { nodes: nodes.length > PALETTE_CAP, macros: macros.length > PALETTE_CAP, files: paths.length > PALETTE_CAP };
+  return {
+    hits: mergeHits(nodes.slice(0, PALETTE_CAP), macros.slice(0, PALETTE_CAP), paths.slice(0, PALETTE_CAP)),
+    capped,
+  };
 }
 
 const palAnswers = lastAsked(fetchPalette, showPalette);
@@ -16780,54 +16873,168 @@ async function enterPalette() {
   if (opened === palOpened) choosePalette();
 }
 
-function showPalette(hits, q) {
-  palHits = hits;
-  palIndex = 0;
-  palMoved = false;
+const GREP_GLYPH = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h8M2 7h5M2 10.5h4"/>' +
+  '<circle cx="11" cy="10" r="2.75"/><path d="M13 12l1.75 1.75"/></svg>';
+
+/* Text with the letters typed in a mark, built from text nodes: a name or a
+   path is data, never markup. */
+function markedText(host, [before, match, after]) {
+  host.append(before);
+  if (match) host.append(jel('mark', '', match));
+  host.append(after);
+}
+
+/* One pickable row. A more row has an empty icon box, so its words line up
+   with the rows above it. */
+function paletteRow(h, i, q) {
+  const row = jel('div', `pal-row t-${h.kind}` + (h.kind === 'node' && h.node.disabled ? ' off' : ''));
+  row.id = 'pal-row-' + i;
+  row.setAttribute('role', 'option');
+  const icon = jel('span', 'pal-ic');
+  const name = jel('span', 'pal-nm');
+  const use = jel('span', 'pal-use');
+  const path = jel('span', 'pal-path');
+  if (h.kind === 'grep') {
+    icon.innerHTML = GREP_GLYPH;
+    name.textContent = `Search “${h.q}” in every file`;
+    path.textContent = 'Search tab';
+  } else if (h.kind === 'more') {
+    name.textContent = h.label;
+  } else {
+    const where = h.kind === 'node' ? h.node.file : h.kind === 'file' ? h.path.slice(0, Math.max(0, h.path.lastIndexOf('/'))) : h.macro.file;
+    const marks = paletteMarks(h.label, where, q);
+    icon.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path, fileMark(h.path)));
+    markedText(name, marks.name);
+    markedText(path, marks.path);
+    if (h.kind === 'node') use.textContent = Lineage.matLabel(h.node);
+    // Who calls a macro, the row's count, the card and the report saying more.
+    if (h.kind === 'macro' && h.macro.used) use.textContent = macroUseText(h.macro.used).short;
+  }
+  row.append(icon, name, use, path);
+  row.addEventListener('click', () => choosePalette(i));
+  // Not mouseenter: a list scrolling under a still pointer must not take the
+  // selection away from the arrows.
+  row.addEventListener('mousemove', () => { if (palIndex !== i) selectPalette(i, false); });
+  return row;
+}
+
+/* The answer on screen, from `palAnswer` and the groups asked for so far. */
+function drawPalette() {
+  const { answer, q } = palAnswer;
+  const groups = paletteGroups(answer.hits, q, answer.capped, palGroupsOpen);
+  palHits = groups.flatMap((g) => g.rows).filter((r) => r.kind !== 'note');
+  palIndex = Math.min(palIndex, Math.max(0, palHits.length - 1));
+  $('#palette-count').textContent = paletteCount(answer.hits, answer.capped);
 
   const box = $('#palette-results');
+  const kept = box.scrollTop;
   box.textContent = '';
-  if (!palHits.length) {
-    box.append(Object.assign(document.createElement('div'), {
-      className: 'git-empty',
-      textContent: q.trim() ? `Nothing matches "${q.trim()}".` : 'Type to search models, sources, macros and every file in the project.',
-    }));
+  if (!groups.length) {
+    box.append(jel('div', 'pal-empty', q.trim() ? `Nothing matches “${q.trim()}”.`
+      : 'Type to search models, sources, macros and every file in the project.'));
+    $('#palette-input').removeAttribute('aria-activedescendant');
     return;
   }
-  palHits.forEach((h, i) => {
-    const r = document.createElement('div');
-    r.className = 'pres' + (i === 0 ? ' on' : '') + (h.kind === 'node' && h.node.disabled ? ' off' : '');
-    const p1 = document.createElement('span');
-    p1.className = 'p1';
-    p1.textContent = h.label;
-    const p2 = document.createElement('span');
-    p2.className = 'p2';
-    p2.textContent = h.sub;
-    r.append(h.kind === 'node' ? dot(h.node) : h.kind === 'macro' ? macroIcon() : fileIcon(h.path, fileMark(h.path)), p1);
-    // Who calls a macro, the row's count, the card and the report saying more.
-    if (h.kind === 'macro' && h.macro.used) r.append(jel('span', 'puse', macroUseText(h.macro.used).short));
-    r.append(p2);
-    r.addEventListener('click', () => choosePalette(i));
-    box.appendChild(r);
+  let i = 0;
+  for (const g of groups) {
+    const head = jel('div', 'pal-head', g.title);
+    head.setAttribute('role', 'presentation');
+    if (g.count) head.append(jel('span', 'n', g.count));
+    box.append(head);
+    for (const r of g.rows) {
+      if (r.kind === 'note') { box.append(jel('div', 'pal-note', r.label)); continue; }
+      box.append(paletteRow(r, i, q));
+      i++;
+    }
+  }
+  box.scrollTop = kept;
+  markPalette();
+  paletteFileMarks();
+}
+
+/* A file row is drawn before its folder's marks are known when no folder of it
+   was listed: ask, and draw the icons that gained one in place, so the
+   selection and the scroll stay. Dropped if another answer or a new box came. */
+function paletteFileMarks() {
+  const mine = palAnswer, opened = palOpened;
+  askMarks(palHits.filter((h) => h.kind === 'file').map((h) => h.path)).then((gained) => {
+    if (!gained || palAnswer !== mine || opened !== palOpened) return;
+    const rows = $$('#palette-results .pal-row');
+    palHits.forEach((h, i) => {
+      const mark = h.kind === 'file' && fileMark(h.path);
+      if (mark && rows[i]) rows[i].querySelector('.pal-ic').replaceChildren(fileIcon(h.path, mark));
+    });
   });
 }
 
+/* The selected row lit and announced. */
+function markPalette() {
+  const rows = $$('#palette-results .pal-row');
+  rows.forEach((r, i) => {
+    r.classList.toggle('on', i === palIndex);
+    r.setAttribute('aria-selected', String(i === palIndex));
+  });
+  if (rows[palIndex]) $('#palette-input').setAttribute('aria-activedescendant', rows[palIndex].id);
+}
+
+function showPalette(answer, q) {
+  palAnswer = { answer, q };
+  // A group opened belongs to the answer it was opened in: a new key asks again.
+  palGroupsOpen = new Set();
+  palIndex = 0;
+  palMoved = false;
+  // Row 0 is what Enter opens: it must be in view. Only an expand keeps the scroll.
+  $('#palette-results').scrollTop = 0;
+  drawPalette();
+}
+
 function movePalette(delta) {
-  const rows = $$('#palette-results .pres');
+  const rows = $$('#palette-results .pal-row');
   if (!rows.length) return;
+  // Only the arrows say the row was picked from what is shown: a pointer
+  // moving over rows of an answer about to be replaced says nothing.
   palMoved = true;
-  rows[palIndex].classList.remove('on');
-  palIndex = (palIndex + delta + rows.length) % rows.length;
-  rows[palIndex].classList.add('on');
-  rows[palIndex].scrollIntoView({ block: 'nearest' });
+  selectPalette((palIndex + delta + rows.length) % rows.length);
+}
+
+/* `scroll` is off for the pointer, which selects what it is already over. */
+function selectPalette(i, scroll = true) {
+  const rows = $$('#palette-results .pal-row');
+  if (!rows[i]) return;
+  if (rows[palIndex]) {
+    rows[palIndex].classList.remove('on');
+    rows[palIndex].setAttribute('aria-selected', 'false');
+  }
+  palIndex = i;
+  rows[i].classList.add('on');
+  rows[i].setAttribute('aria-selected', 'true');
+  $('#palette-input').setAttribute('aria-activedescendant', rows[i].id);
+  if (scroll) rows[i].scrollIntoView({ block: 'nearest' });
 }
 
 function choosePalette(i) {
   const h = palHits[i ?? palIndex];
   if (!h) return;
+  if (h.kind === 'more') {
+    // Shows the rest where it is: the box stays open, the focus in the input,
+    // and the selection stays on the same index.
+    palGroupsOpen.add(h.group);
+    // A click selects its row, as a pointer that moved would have.
+    if (i !== undefined) palIndex = i;
+    drawPalette();
+    $('#palette-input').focus();
+    $$('#palette-results .pal-row')[palIndex]?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   closePalette();
   // A node without a file opens nothing, so activate() would not close it.
   closePanel();
+  if (h.kind === 'grep') {
+    showSide('search');
+    $('#grep-input').value = h.q;
+    runGrep();
+    return;
+  }
   // It records its own place to come back to.
   if (h.kind === 'macro') { openMacro(h.macro); return; }
   pushJump();
@@ -16845,9 +17052,12 @@ function choosePalette(i) {
    finds the lines; the match inside one is found here, because the browser knows
    the query and a byte offset from Rust would not survive into a UTF-16 string. */
 function splitMatch(text, query) {
-  const at = text.toLowerCase().indexOf(query.toLowerCase());
-  if (!query || at < 0) return [text, '', ''];
-  return [text.slice(0, at), text.slice(at, at + query.length), text.slice(at + query.length)];
+  if (!query) return [text, '', ''];
+  // Matched on the text itself: lowercasing it first can change its length ("İ"
+  // lowercases to two characters), which would slide the cut.
+  const m = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').exec(text);
+  if (!m) return [text, '', ''];
+  return [text.slice(0, m.index), m[0], text.slice(m.index + m[0].length)];
 }
 
 /* What the status line says about a result. Pure, so the wording is checkable. */

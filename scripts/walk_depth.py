@@ -74,7 +74,7 @@ class Walk:
         page = self.page
         page.js("document.querySelector('#palette-btn').click()")
         page.js(f"(i => {{ i.value = '{name}'; i.dispatchEvent(new Event('input')); }})(document.querySelector('#palette-input'))")
-        row = f"[...document.querySelectorAll('#palette-results .pres')].find((r) => r.querySelector('.p1').textContent === '{name}')"
+        row = f"[...document.querySelectorAll('#palette-results .pal-row')].find((r) => r.querySelector('.pal-nm').textContent === '{name}')"
         page.until(f"!!{row}", f"{name} in the palette")
         page.js(f"{row}.click()")
 

@@ -157,6 +157,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0151](0151-a-files-icon-is-coloured-only-by-what-the-manifest-builds-it-as.md) | A file's icon is coloured only by what the manifest builds it as | adding a file type to the tree, colouring or reshaping a file's icon, or showing git's status on a row |
 | [0152](0152-a-release-is-checked-on-virustotal-before-it-is-published.md) | A release is checked on VirusTotal before it is published | changing what the release workflow does between the build and the publication, the `VIRUSTOTAL_API_KEY` secret, or the override that publishes a flagged release |
 | [0153](0153-the-lineage-exports-from-one-menu-that-names-each-output.md) | The lineage exports from one menu that names each output | changing an output, a word, the head or the file name of the Export menu, or the look of the toggles above the lineage |
+| [0154](0154-the-palette-groups-its-answers-five-rows-a-group.md) | The palette groups its answers, five rows a group | changing what `Cmd/Ctrl + K` shows of an answer, how many rows a group keeps, how a cut answer is counted, or what its last row hands over to |
 
 ## Keeping these honest
 

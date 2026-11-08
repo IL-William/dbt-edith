@@ -522,9 +522,15 @@
 </footer>
 
 <div id="palette" class="hidden">
-  <div class="palette-box">
-    <input id="palette-input" placeholder="Search models, sources, macros and every file in the project…" spellcheck="false" autocomplete="off">
-    <div id="palette-results"></div>
+  <div class="pal-box" role="dialog" aria-label="Search">
+    <label class="pal-in">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="M10.5 10.5l3.5 3.5"/></svg>
+      <input id="palette-input" placeholder="Models, sources, macros and every file…" spellcheck="false" autocomplete="off"
+        role="combobox" aria-expanded="true" aria-controls="palette-results" aria-label="Search">
+      <kbd>Esc</kbd>
+    </label>
+    <div id="palette-results" class="pal-list" role="listbox" aria-label="Results"></div>
+    <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>Esc</kbd> close</span><div class="grow"></div><span id="palette-count" class="n"></span></div>
   </div>
 </div>
 

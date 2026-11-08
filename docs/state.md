@@ -197,7 +197,10 @@ YAML, and packages under a custom `packages-install-path`.
 `Cmd/Ctrl + K` finds a macro by its name, a package's as `package.name`, and
 opens it on its definition, a generic test's and a materialization's included
 (0084). Only the macros placed in the project are listed, ranked by how the
-name matches before whose it is.
+name matches before whose it is. Its answer is grouped since 2.5.0 (0154):
+nodes titled by their kinds, macros, files, and "Inside the files" from three
+letters, five rows a group and a `+N more` row, the server asked for 41 to say
+a cut as `40+`, a foot with the keys and the count.
 
 Folder bands: the by folder toggle beside tests gives each
 folder its own run of columns (0029), at the first level where the drawn models
@@ -2742,10 +2745,9 @@ of its own, and each panel updates the tour, its page under
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
 38. **The rest of the redesign, one pull request each.** The depth in dbt's
-    syntax, the Lineage space, column roles in the box, the
-    palette, Search, the keys excerpt, the manifest card, the settings,
-    shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and the
-    design docs.
+    syntax, the Lineage space, column roles in the box, Search, the keys
+    excerpt, the manifest card, the settings, shortcuts, Jobs, the terminal,
+    Compiled, Git, Catalog, Reports and the design docs.
 39. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
@@ -2768,9 +2770,10 @@ of its own, and each panel updates the tour, its page under
       (0148): a tab knows its file, not its node.
     - A file deleted in the working tree is not in the tree, so no row shows
       git's D.
-    - The search palette and a diff's title colour a model's file only once its
-      folder is known (the diff asks for it; the palette's file hits are the
-      files no node stands for, so they are grey).
+    - ~~The search palette and a diff's title colour a model's file only once
+      its folder is known (the diff asks for it; the palette's file hits are
+      the files no node stands for, so they are grey).~~ Gone in 2.5.0 (0154):
+      the palette asks for each file's folder too.
     - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
       grey cylinder, as an ephemeral model's is a grey-blue one.
 42. **The Export menu's limits (0153, 2.4.0).**
