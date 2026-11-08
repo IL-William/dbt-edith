@@ -237,12 +237,14 @@
          <path d="M12.8 6.3 14.5 6.5 14.5 9.5 12.8 9.7 12.6 10.2 13.7 11.6 11.6 13.7 10.2 12.6 9.7 12.8 9.5 14.5 6.5 14.5 6.3 12.8 5.8 12.6 4.4 13.7 2.3 11.6 3.4 10.2 3.2 9.7 1.5 9.5 1.5 6.5 3.2 6.3 3.4 5.8 2.3 4.4 4.4 2.3 5.8 3.4 6.3 3.2 6.5 1.5 9.5 1.5 9.7 3.2 10.2 3.4 11.6 2.3 13.7 4.4 12.6 5.8Z"/></svg>
     <span class="rlabel"><span>Settings</span></span>
   </button>
-  <!-- The manifest's age and whether it still matches the files (0025), then
-       the reload that reads it again, in one pill so the arrows say what they
-       reload. The same circling arrows as the git panel's fetch. -->
+  <!-- One pill: the mark, the manifest's age and the drift from the default
+       branch (0025), then the reload that reads the file again, last so its
+       arrows say what they reload. The badge opens the card with the files and
+       the parse button (0157). The same circling arrows as the git panel's
+       fetch. -->
   <span id="manifest-pill" class="manifestpill">
-    <button id="fresh-badge" class="freshbadge hidden" type="button">
-      <span class="dot"></span><span class="lbl"></span><span class="drift"></span>
+    <button id="fresh-badge" class="freshbadge hidden" type="button" aria-haspopup="dialog" aria-expanded="false">
+      <span class="dot"></span><span class="lbl"></span><span class="age"></span><span class="drift"></span>
     </button>
     <button id="reload-btn" class="reloadbtn" type="button" aria-label="Reload manifest"
             title="Reload manifest.json now (the page also does it on its own when dbt rewrites it)">

@@ -69,7 +69,7 @@ file with unsaved edits, and a letter in the Git tab is a file's git status.
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | the first line of a macro's card, `used by 9 models` | every node reaching the macro, in the Reports panel |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
-| the manifest's pill, right of the top bar | how stale the lineage is and one click to re-parse; its arrows read `manifest.json` again |
+| the manifest's pill, right of the top bar | how stale the lineage is; its card lists the files and holds Run dbt parse; its arrows read `manifest.json` again |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |

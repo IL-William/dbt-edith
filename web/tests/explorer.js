@@ -69,6 +69,17 @@ mark('models/staging/b.sql', '');
 mark('models/staging', 'gs m:M:Holds changed files');
 mark('models/newfolder', 'gs u:U:Holds new files');
 
+print('\n--- the manifest card asks for a file\'s letter alone (0157) ---');
+function letter(path, want) {
+  var got = JSON.stringify(gitFileMark(path));
+  print((got === JSON.stringify(want) ? 'PASS  ' : 'FAIL  ') + path.padEnd(28) + 'letter ' + got + (got === JSON.stringify(want) ? '' : '   expected ' + JSON.stringify(want)));
+}
+letter('models/staging/a.sql', ['m', 'M', 'Modified']);
+letter('added.sql', ['a', 'A', 'Added']);
+letter('models/staging/c.sql', ['u', 'U', 'Untracked']);
+letter('models/newfolder/d.sql', ['u', 'U', 'Untracked']);
+letter('models/staging/b.sql', null);
+
 print('\n--- with an unsaved buffer on b.sql ---');
 S.open.set('models/staging/b.sql', { dirty: true });
 S.open.set('models/staging/a.sql', { dirty: false });

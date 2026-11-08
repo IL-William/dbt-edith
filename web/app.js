@@ -74,6 +74,7 @@ const S = {
   installSince: 0,            // when the update was typed into the terminal, asked every few seconds after (0095)
   notice: null,               // the centred card showing, if any: { card, timer, off } (0111)
   updateMenu: null,           // Edith's menu, drawn again while open when an answer comes in
+  freshCard: null,            // the manifest pill's card, drawn again while open when a poll changes the answer (0157)
   build: '',                  // the build stamp, under the version in Edith's menu
   cllSources: [],             // column-lineage caches /api/meta offers, newest first
   cllActive: '',              // file name of the one the graph holds, '' for none
@@ -4213,6 +4214,15 @@ function applyGit(info) {
 
 const underGitPrefix = (path) => S.gitPrefixes.some((pre) => (path + '/').startsWith(pre));
 
+/* git's letter for a file, as the tree and the manifest's card draw it, or null
+   for one git has no change in. An unsaved buffer is not git's, so it is not
+   here. */
+function gitFileMark(path) {
+  if (S.gitMod.has(path)) return S.gitAdded.has(path) ? ['a', 'A', 'Added'] : ['m', 'M', 'Modified'];
+  if (S.gitUnt.has(path) || underGitPrefix(path)) return ['u', 'U', 'Untracked'];
+  return null;
+}
+
 function paintTree() {
   const dirtyFiles = new Set([...S.open].filter(([, f]) => f.dirty).map(([p]) => p));
   const dirtyDirs = ancestorsOf(dirtyFiles);
@@ -4230,9 +4240,8 @@ function paintTree() {
     }
     // git's letter, or the pencil of an unsaved buffer, at the end of the row (0151)
     const mark = state === 'unsaved' ? ['w', '', row.dir ? 'Holds unsaved changes' : 'Unsaved changes']
-      : state === 'modified' ? (!row.dir && S.gitAdded.has(path) ? ['a', 'A', 'Added'] : ['m', 'M', row.dir ? 'Holds changed files' : 'Modified'])
-      : state === 'untracked' ? ['u', 'U', row.dir ? 'Holds new files' : 'Untracked']
-      : null;
+      : row.dir ? (state === 'modified' ? ['m', 'M', 'Holds changed files'] : state === 'untracked' ? ['u', 'U', 'Holds new files'] : null)
+      : gitFileMark(path);
     if (!mark) {
       if (row.gs) { row.gs.remove(); row.gs = null; }
     } else {
@@ -4306,12 +4315,55 @@ function paintFreshness(f) {
   const el = $('#fresh-badge');
   const b = freshnessBadge(f, !freshnessRuns(S.pathReadsCwd));
   el.classList.remove('hidden');
+  // On the pill as well as the badge: the pill's outline takes the tone, and
+  // the tour and the pictures read the badge's.
   el.dataset.tone = b.tone;
+  $('#manifest-pill').dataset.tone = b.tone;
   el.querySelector('.lbl').textContent = b.label;
+  el.querySelector('.age').textContent = b.age;
   el.querySelector('.drift').textContent = b.drift;
-  // No `title`: the hover card says all of this, and a native tooltip on top
-  // of it would arrive a second later and say it again.
+  // No `title`: the card says all of this, and a native tooltip on top of it
+  // would arrive a second later and say it again.
   el.setAttribute('aria-label', b.head + '. ' + b.desc);
+  // An open card follows the answer, its focus kept on the same button.
+  const card = S.freshCard;
+  if (card && card.isConnected) {
+    card.dataset.tone = b.tone;
+    redrawFreshCard(card, f);
+    markFreshCard(card, f);
+    if (popup && popup.el === card) placePopup($('#manifest-pill'), card);
+  }
+}
+
+/* The card's file icons take the colour the manifest builds each file as, which
+   S.fileMarks only knows for the folders something has listed: the rest are
+   asked once each, by their folder, and the card is drawn again when one
+   answered (0151). */
+function markFreshCard(card, f) {
+  askMarks([...(f.committed || []), ...(f.edited || [])]).then((gained) => {
+    if (gained && S.freshCard === card && card.isConnected) redrawFreshCard(card, S.fresh);
+  });
+}
+
+/* The card drawn again, but not for its two ages ("written ..., 12s ago" and
+   "last fetched 5s ago"), which move at every poll in the first minute: a
+   redraw for those would replace every button under the pointer and drop a
+   click half made. They are rewritten in place, and everything else goes
+   through redrawIfChanged. */
+function redrawFreshCard(card, f) {
+  const ageless = (box) => {
+    const copy = box.cloneNode(true);
+    copy.querySelectorAll('[data-age]').forEach((e) => { e.textContent = ''; });
+    return copy.outerHTML;
+  };
+  const probe = card.cloneNode(false);
+  fillFreshCard(probe, f);
+  if (ageless(probe) === ageless(card)) {
+    const fresh = [...probe.querySelectorAll('[data-age]')];
+    [...card.querySelectorAll('[data-age]')].forEach((e, i) => { e.textContent = fresh[i].textContent; });
+    return;
+  }
+  redrawIfChanged(card, (box) => fillFreshCard(box, f));
 }
 
 function markTreeSelection(path) {
@@ -7055,7 +7107,14 @@ function openPopup(anchor, el, closed, hover = false) {
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
       return closePopup();
     }
-    if (e.key === 'Tab') return closePopup();
+    if (e.key === 'Tab') {
+      // A dialog's focus goes back to its button, so Tab goes on from there
+      // and not from a card that is gone.
+      const inside = el.getAttribute('role') === 'dialog' && el.contains(document.activeElement);
+      closePopup();
+      if (inside) anchor.focus();
+      return;
+    }
     const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
     if (e.key !== 'Escape' && !step) return;
     // Handled here only: the editor and the global shortcuts never see it.
@@ -7078,7 +7137,7 @@ function openPopup(anchor, el, closed, hover = false) {
     el, anchor, closed, hover, grace: null,
     focus: () => {
       const first = live();
-      (first.find((b) => b.classList.contains('on')) || first[0] || el).focus();
+      (first.find((b) => b.classList.contains('on') || 'first' in b.dataset) || first[0] || el).focus();
     },
     off: () => {
       clearTimeout(me.grace);
@@ -9169,6 +9228,13 @@ function humanAge(secs) {
   return Math.floor(secs / 86400) + 'd';
 }
 
+/* The manifest card's "written ..., 2 min ago": the age spelled the way the card's
+   board does, with a space before its unit and a moment for the first seconds.
+   humanAge keeps the compact form the pill and the other screens use. */
+function cardAge(secs) {
+  return secs < 10 ? 'a moment ago' : humanAge(secs).replace(/^(\d+)(s|min|d)$/, '$1 $2') + ' ago';
+}
+
 /* Every word the Compiled or Run tab puts on screen for one file. The bar
    answers, of a single file, the question the manifest badge answers of the
    whole project: is what you are reading still what the source says?
@@ -9246,7 +9312,7 @@ function gitPausedNote(key) {
     + '), so dbt-edith runs no git in it. git in the terminal is unaffected.';
 }
 
-/* What the badge before the manifest's reload shows, and what its hover card says.
+/* What the pill before the manifest's reload shows, and what its card says.
    The mark's shape and colour answer one question only, the one that decides whether the
    lineage on screen can be trusted: does this manifest still match the files
    dbt would parse? Drift from the default branch is reported in its own
@@ -9255,14 +9321,17 @@ function gitPausedNote(key) {
 
    The card carries the words. "manifest 3d" and "main +10" are a reminder of
    something you already understand, not an explanation, so every number the
-   badge shows is spelled out in a sentence here. `typed` says the click only
-   types dbt parse, Enter left to the user (0130). Pure, so every state is
-   testable without a DOM. */
+   pill shows is spelled out in a sentence here. `typed` says the card's button
+   only types dbt parse, Enter left to the user (0130, 0157). `branch` is a list
+   of lines, each a list of parts: text, or `{ code }` for a sha or a ref, which
+   the card sets as a code element's text. Pure, so every state is testable
+   without a DOM. */
 function freshnessBadge(f, typed) {
   const n = (k) => f[k + '_n'] || 0;
   const plural = (k, one, many) => n(k) + ' ' + (n(k) === 1 ? one : many);
   const tone = { fresh: 'ok', edited: 'warn', stale: 'bad', missing: 'none' }[f.state] || 'none';
-  const label = f.state === 'missing' ? 'no manifest' : 'manifest ' + humanAge(f.age_secs || 0);
+  const label = f.state === 'missing' ? 'no manifest' : 'manifest';
+  const age = f.state === 'missing' ? '' : humanAge(f.age_secs || 0);
 
   const head = {
     fresh: 'The lineage matches your files',
@@ -9272,14 +9341,14 @@ function freshnessBadge(f, typed) {
   }[f.state] || 'Unknown state';
 
   const desc = {
-    fresh: 'Nothing dbt parses has changed since this manifest was written, so the graph is showing what your project actually says.',
+    fresh: 'Nothing dbt parses has changed since this manifest was written, so the graph shows what your project says.',
     edited: 'You have saved changes dbt has not parsed. The graph still shows the project as it was before them.',
     stale: 'Files changed and were committed after this manifest was written. The graph may be showing models that no longer look like this.',
     missing: 'There is nothing to draw a lineage from until dbt writes one.',
   }[f.state] || '';
 
   const when = f.state === 'missing' ? ''
-    : 'written ' + new Date((f.manifest_at || 0) * 1000).toLocaleString() + ', ' + humanAge(f.age_secs || 0) + ' ago';
+    : 'written ' + new Date((f.manifest_at || 0) * 1000).toLocaleString() + ', ' + cardAge(f.age_secs || 0);
 
   // Split so the card can lead with the file name and dim the folder: these
   // paths run to eighty characters and the last segment is the one that reads.
@@ -9287,43 +9356,48 @@ function freshnessBadge(f, typed) {
     const cut = p.lastIndexOf('/');
     return { full: p, name: cut < 0 ? p : p.slice(cut + 1), dir: cut < 0 ? '' : p.slice(0, cut).split('/').pop() };
   };
-  const group = (key, heading) => {
+  const group = (key, heading, extra) => {
     if (!n(key)) return null;
     const shown = (f[key] || []).map(split);
-    return { head: heading, paths: shown, more: n(key) - shown.length };
+    return Object.assign({ key, head: heading, paths: shown, more: n(key) - shown.length }, extra);
   };
   const groups = [
-    group('committed', plural('committed', 'file', 'files') + ' changed since, already committed'),
+    group('committed', plural('committed', 'file', 'files') + ' changed since, already committed',
+      { note: 'A checkout, a pull or a merge brought them in.' }),
     group('gone', plural('gone', 'file', 'files') + ' the manifest names no longer exist'),
     group('edited', plural('edited', 'file', 'files') + ' saved since, not committed'),
   ].filter(Boolean);
 
   const d = f.drift || {};
   const h = f.head || {};
-  const facts = [];
-  if (f.git_paused) facts.push(gitPausedNote(f.git_paused));
-  if (n('committed')) facts.push('A checkout, a pull or a merge brought them in.');
-  if (h.sha) facts.push('This branch sits at ' + h.sha + (h.subject ? ', "' + h.subject + '"' : '') + '.');
+  const branch = [];
+  if (h.sha) branch.push({ parts: ['Sits at ', { code: h.sha }, h.subject ? ', \u201c' + h.subject + '\u201d.' : '.'] });
   let drift = '';
   if (d.base && d.behind) {
     drift = d.base.replace(/^origin\//, '') + ' +' + d.behind;
-    facts.push(d.base + ' has ' + d.behind + ' commit' + (d.behind === 1 ? '' : 's')
-      + ' this branch does not have, so the lineage is your branch and not production.');
+    branch.push({ parts: [{ code: d.base }, ' has ' + d.behind + ' commit' + (d.behind === 1 ? '' : 's')
+      + ' this branch does not have: the lineage is your branch, not production.'] });
   } else if (d.base) {
-    facts.push('This branch has everything ' + d.base + ' has.');
+    branch.push({ parts: ['This branch has everything ', { code: d.base }, ' has.'] });
   }
   if (d.base) {
     // A count of commits is only as current as the refs it was counted from,
     // so the card says when they were last refreshed rather than implying now.
-    facts.push(d.fetched_at
+    branch.push({ dim: true, age: !!d.fetched_at, parts: [d.fetched_at
       ? 'Remote refs last fetched ' + humanAge(Math.max(0, Math.floor(Date.now() / 1000) - d.fetched_at)) + ' ago.'
-      : 'Remote refs have never been fetched in this clone, so that comparison means little.');
+      : 'Remote refs have never been fetched in this clone, so that comparison means little.'] });
   }
 
-  const advice = f.advice || '';
-  return { tone, label, drift, head, when, desc, groups, facts, advice,
-    hint: typed ? 'Click to type dbt parse in the terminal; Enter is left to you.'
-      : advice ? 'Click to run it in the terminal.' : 'Click to run dbt parse in the terminal.' };
+  // A manifest that matches has nothing to parse; one that does not gets the
+  // button. The server's advice replaces the plain sentence when it has one
+  // (the branch is behind: pulling comes first), as a line and not a button.
+  const action = f.state === 'fresh' ? null : {
+    label: 'Run dbt parse',
+    hint: typed ? 'typed in the terminal below; Enter is left to you' : 'in the terminal below',
+  };
+  const done = f.state === 'fresh' ? f.advice || 'Nothing to do: the graph is up to date.' : '';
+  return { tone, label, age, drift, head, when, desc, groups, paused: f.git_paused ? gitPausedNote(f.git_paused) : '',
+    branch, action, done, doneOk: f.state === 'fresh' && !f.advice };
 }
 
 /* What the canvas says when the file in front has no node, or '' when it was
@@ -9367,18 +9441,18 @@ function pathWarning(why, entry) {
   return lines;
 }
 
-/* Whether the freshness badge presses Enter for the user: not while the shell
+/* Whether the manifest card's button presses Enter for the user: not while the shell
    could run a program from the project's root in place of dbt, so the line is
-   seen before it runs (0130, 0071). */
+   seen before it runs (0130, 0071, 0157). */
 function freshnessRuns(why) {
   return !why;
 }
 
 /* Types a command into the integrated terminal. It stops at the prompt by
    default, because running it is the user's decision and dbt is theirs to
-   launch (0002). `run` is for the freshness badge alone: its dbt parse reaches
+   launch (0002). `run` is for the manifest card's button alone (0157): its dbt parse reaches
    no warehouse, and a command that can is never run for the user (0071), nor
-   the badge's while the shell reads the current folder (0130).
+   that button's while the shell reads the current folder (0130).
    `typed`, when given, is called once the command is in the terminal in place
    of the toast, for the update, whose card says what to do next (0111). */
 function sendToTerminal(cmd, run, typed) {
@@ -13166,41 +13240,87 @@ function fillMacroCard(el, t) {
   for (const n of use.notes) el.append(Object.assign(document.createElement('div'), { className: 'hc-note muted', textContent: n }));
 }
 
-/* The freshness card. Built from `freshnessBadge`, which decides every word:
-   this only lays them out, using the same vocabulary as the node and var
-   cards so the three read as one thing. */
+/* The manifest pill's card (0157), drawn into the popup `openFreshCard` makes.
+   Built from `freshnessBadge`, which decides every word: this only lays them
+   out. Every control has a data-key, so a poll that changes the answer redraws
+   it under the focus (redrawIfChanged). */
 function fillFreshCard(el, f) {
   const b = freshnessBadge(f, !freshnessRuns(S.pathReadsCwd));
-  const add = (cls, text, parent) => {
-    const d = Object.assign(document.createElement('div'), { className: cls, textContent: text });
-    (parent || el).appendChild(d);
-    return d;
-  };
+  const make = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  el.replaceChildren();
 
-  const head = add('hc-head', '');
-  const dot = document.createElement('span');
-  dot.className = 'dot freshdot';
-  dot.dataset.tone = b.tone;
-  head.appendChild(dot);
-  head.appendChild(Object.assign(document.createElement('span'), { className: 'hc-name', textContent: b.head }));
-  if (b.when) add('hc-sub', b.when);
-  if (b.desc) add('hc-desc', b.desc);
+  const head = make('div', 'mc-head');
+  head.append(make('span', 'dot'), b.head);
+  el.append(head);
+  if (b.when) {
+    const when = make('div', 'mc-when', b.when);
+    when.dataset.age = '';
+    el.append(when);
+  }
+  el.append(make('p', 'mc-desc', b.desc));
+  if (b.paused) el.append(make('p', 'mc-note warn', b.paused));
 
   for (const g of b.groups) {
-    const box = add('hc-cols', '');
-    add('hc-more', g.head, box);
+    el.append(make('div', 'mc-sec', g.head));
     for (const p of g.paths) {
-      const row = add('hc-col', '', box);
+      // A file the manifest names that no longer exists has nothing to open.
+      const row = make(g.key === 'gone' ? 'div' : 'button', 'mc-file' + (g.key === 'gone' ? ' gone' : ''));
       row.title = p.full;
-      row.appendChild(Object.assign(document.createElement('span'), { className: 'c-name', textContent: p.name }));
-      if (p.dir) row.appendChild(Object.assign(document.createElement('span'), { className: 'c-type', textContent: p.dir }));
+      row.append(fileIcon(p.name, fileMark(p.full)), make('span', 'nm', p.name));
+      // git's letter is only meaningful for a file edited and not committed.
+      const letter = g.key === 'edited' ? gitFileMark(p.full) : null;
+      if (letter) {
+        const gs = make('span', 'gs ' + letter[0], letter[1]);
+        gs.title = letter[2];
+        gs.setAttribute('aria-label', letter[2]);
+        row.append(gs);
+      }
+      if (p.dir) row.append(make('span', 'dir', p.dir));
+      if (g.key !== 'gone') {
+        row.type = 'button';
+        row.dataset.key = 'file:' + p.full;
+        row.addEventListener('click', () => { closePopup(); openFile(p.full, { preview: true }); });
+      }
+      el.append(row);
     }
-    if (g.more > 0) add('hc-more', 'and ' + g.more + ' more', box);
+    if (g.more > 0) el.append(make('div', 'mc-more', 'and ' + g.more + ' more'));
+    if (g.note) el.append(make('p', 'mc-note', g.note));
   }
 
-  if (b.facts.length) add('hc-counts', b.facts.join('\n')).style.whiteSpace = 'pre-line';
-  if (b.advice) add('hc-note ' + (b.tone === 'ok' ? 'muted' : 'warn'), b.advice);
-  add('hc-note muted', b.hint);
+  if (b.branch.length) {
+    el.append(make('div', 'mc-sec', 'This branch'));
+    const list = make('ul', 'mc-facts');
+    for (const line of b.branch) {
+      const li = make('li', line.dim ? 'dim' : '');
+      if (line.age) li.dataset.age = '';
+      for (const part of line.parts) li.append(part.code === undefined ? part : make('code', '', part.code));
+      list.append(li);
+    }
+    el.append(list);
+  }
+
+  const act = make('div', 'mc-act');
+  if (b.action) {
+    const run = make('button', 'btn mc-run');
+    run.type = 'button';
+    run.dataset.key = 'parse';
+    // The button is what the card is for: the focus a click gives it goes here
+    // and not to the first file, so Enter twice opens no file (openPopup).
+    run.dataset.first = '';
+    run.append(strokeIcon('0 0 16 16', 'mc-ico', ['M2.5 4l4 4-4 4M8.5 12.25h5']), b.action.label);
+    // The 0071 exception, moved here from the badge by 0157: dbt parse reaches
+    // no warehouse, so Enter is pressed for the user unless the shell reads the
+    // current folder (0130).
+    run.addEventListener('click', () => { closePopup(); sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd)); });
+    act.append(run, make('span', 'hint', b.action.hint));
+  } else if (b.doneOk) {
+    const ok = make('span', 'mc-ok');
+    ok.append(strokeIcon('0 0 16 16', 'mc-ico', ['M3.5 8.5l3 3 6-7']), b.done);
+    act.append(ok);
+  } else if (b.done) {
+    act.append(make('span', 'hint', b.done));
+  }
+  if (act.children.length) el.append(act);
 }
 
 // ------------------------------------------------------------ environments --
@@ -18118,14 +18238,17 @@ function tourSteps(c) {
   // Right after the welcome: every step after it is only as true as this file.
   const read = 'Everything here is read from `manifest.json`, which only dbt writes: the lineage, the Catalog, every '
     + 'selection, what each job runs.';
-  const parse = 'A click types `dbt parse` in the terminal, leaving Enter to you, and the page reads the new '
-    + 'manifest on its own. The arrows at its end read the file again at once.';
+  const after = '; the page reads the new manifest on its own. The arrows at its end read the file again at once.';
+  const parse = 'Hovering or clicking it opens its card, which says which files and where the branch sits and, '
+    + 'once a file has moved, holds a button that runs `dbt parse` in the terminal' + after;
+  // With no manifest the card lists no files and no branch drift to speak of.
+  const parseNone = 'Hovering or clicking it opens its card, with a button that runs `dbt parse` in the terminal' + after;
   steps.push({ key: 'manifest', target: '#manifest-pill', title: 'manifest.json, and how fresh it is',
     text: c.manifest
       ? `${read} So the page is as true as the last \`dbt parse\`. This says how old the manifest is, and its mark `
         + 'whether a file dbt reads changed since: a green check, none has; an amber triangle, your own saved edits; a red '
-        + `cross, a pull, a checkout or a merge. Hovering it says which files. ${parse}`
-      : `${read} There is none yet, so this says no manifest. ${parse}` });
+        + `cross, a pull, a checkout or a merge. ${parse}`
+      : `${read} There is none yet, so this says no manifest. ${parseNone}` });
   if (m) {
     steps.push({ key: 'editor', target: '#editor-pane', title: `${m.name}, in the editor`,
       text: 'Every `ref()`, `source()` and macro call is a link to the file behind it, and hovering one says what it is. '
@@ -19018,10 +19141,11 @@ function wireKeys() {
     } catch (e) { toast('reload failed: ' + e.message, 'err'); }
     finally { btn.removeAttribute('aria-busy'); }
   });
-  // The badge says the manifest is behind; the command that fixes that is the
-  // one thing the user would type next. dbt still runs in their terminal, under
-  // their environment, never from the server (0002).
-  $('#fresh-badge').addEventListener('click', () => sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd)));
+  // The badge opens the pill's card, whose button is the one that types
+  // dbt parse in the user's terminal: dbt still runs there, under their
+  // environment, never from the server (0002, 0157).
+  $('#fresh-badge').addEventListener('click', (e) => openFreshCard(e.currentTarget));
+  openOnHover($('#fresh-badge'), (hover) => openFreshCard($('#fresh-badge'), hover));
   $$('#spaces .sp').forEach((b) => b.addEventListener('click', () => goSpace(b.dataset.space)));
   $('#selpanel-card-close').title = `Close the card (${keyLabel('Escape', IS_MAC)})`;
   $('#selpanel-card-close').addEventListener('click', () => closeSelCard());
@@ -19038,14 +19162,6 @@ function wireKeys() {
       escapePanel();
     });
   }
-  // Keyed on the state, so a card being read is not rebuilt under the pointer
-  // by a poll that changed nothing.
-  $('#fresh-badge').addEventListener('mouseenter', (e) => {
-    if (!S.fresh) return;
-    const at = e.currentTarget;
-    hoverEnter('fresh:' + S.freshKey, () => at.getBoundingClientRect(), (el) => fillFreshCard(el, S.fresh));
-  });
-  $('#fresh-badge').addEventListener('mouseleave', hoverLeave);
 }
 
 // ------------------------------------------------------------------ boot --
@@ -19319,6 +19435,29 @@ function openUpdateMenu(anchor, hover = false) {
   paintUpdateMenu(menu);
   openPopup(anchor, menu, null, hover);
   freshenUpdate();
+}
+
+/* The manifest pill's card, from its badge: what the pill counts, laid out,
+   and the button that parses. It opens under the pointer after a rest, a click
+   holds it (0086, 0157). Placed against the whole pill, so its right edge meets
+   the pill's rather than the badge's. */
+function openFreshCard(anchor, hover = false) {
+  if (closePopup(anchor)) return;
+  if (!S.fresh) return;
+  const card = document.createElement('div');
+  card.className = 'mcard';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', 'The manifest');
+  card.dataset.align = 'right';
+  // A fresh manifest's card has no button to take the focus a click gives it.
+  card.tabIndex = -1;
+  card.dataset.tone = freshnessBadge(S.fresh).tone;
+  S.freshCard = card;
+  fillFreshCard(card, S.fresh);
+  markFreshCard(card, S.fresh);
+  openPopup(anchor, card, () => { S.freshCard = null; anchor.setAttribute('aria-expanded', 'false'); }, hover);
+  anchor.setAttribute('aria-expanded', 'true');
+  placePopup($('#manifest-pill'), card);
 }
 
 /* An update installed by hand since the last answer says so on opening the

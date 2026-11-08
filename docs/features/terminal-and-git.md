@@ -25,7 +25,7 @@ Bash drop it before the first prompt, and PowerShell drops it too, so nothing is
 said there. cmd.exe looks in the current folder first whatever the `PATH` holds.
 When the shell does, the startup banner says so on a `warning` line, naming the
 relative entry as written, Edith's menu says the same in a sentence, and the
-freshness badge types `dbt parse` and leaves Enter to you instead of pressing
+manifest card's button types `dbt parse` and leaves Enter to you instead of pressing
 it, so you see the line before it runs. For the `PATH` reasons the check reads
 the `PATH` dbt-edith hands the shell, which the shell's startup files may still
 change

@@ -77,7 +77,7 @@ print('\n--- the shapes are defined once ---');
 
 print('\n--- every marker is drawn with a shape ---');
 [
-  '.freshbadge .dot', '.hovercard .freshdot', '.tooldot', '.qdot', '.jobdot', '.setwarn',
+  '.freshbadge .dot', '.mc-head .dot', '.tooldot', '.qdot', '.jobdot', '.setwarn',
   '#settings-btn[data-warn=true]::after', '.cfgwarn-mark', '.brand.newer::after', '.venvpill::before',
   '.ftab.dirty .x::before', '.oe-row .state.editing::before',
 ].forEach(function (sel) {
@@ -108,7 +108,7 @@ var SHAPE = { ok: 'ok', warn: 'warn', bad: 'bad' };
 freshTones.forEach(function (t) {
   check('the badge and its card: ' + t, [
     t in SHAPE ? maskedAs('.freshbadge[data-tone="' + t + '"] .dot', SHAPE[t]) : maskedAs('.freshbadge .dot', 'none'),
-    t in SHAPE ? maskedAs('.hovercard .freshdot[data-tone="' + t + '"]', SHAPE[t]) : maskedAs('.hovercard .freshdot', 'none'),
+    t in SHAPE ? maskedAs('.mcard[data-tone="' + t + '"] .mc-head .dot', SHAPE[t]) : maskedAs('.mc-head .dot', 'none'),
   ], [true, true]);
 });
 // A query: the ring is the base, the others have their own.

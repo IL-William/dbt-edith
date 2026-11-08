@@ -147,6 +147,8 @@
   /* Git's letter at the end of a tree row: modified, and new or untracked */
   --git-m: #e0a34b;
   --git-u: #4ec78d;
+  /* The warning colour as text: the pill's "manifest" and age, the card's amber line */
+  --warn-text: #e0a34b;
   /* Diffs */
   --diff-add: #2f6b47;
   --diff-add-bg: #1c2c22;
@@ -468,6 +470,7 @@
   --py: #9a7400;
   --git-m: #6f4500;   /* 4.5:1 on the sidebar and on a selected row: the letter is 10.5px */
   --git-u: #0b6039;
+  --warn-text: #9a5a00;   /* 4.5:1 on the sidebar, where the pill sits, and on a card */
   /* Code */
   --syn-kw: #7d4cc4;
   --syn-fn: #985a00;
@@ -1037,41 +1040,97 @@ kbd {
   font: 11px var(--mono); color: var(--fg-dim);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 7px;
 }
-/* Manifest freshness, beside the reload button. The mark carries the state and
-   the text carries the age, because a colour on its own cannot say "two hours".
-   Drift from the default branch sits in its own dim segment: it is worth
-   knowing, but it does not make the lineage on screen wrong. */
+/* The manifest's pill (0157): one outline holding the mark, the age, the drift
+   and the reload. The mark carries the state and the text carries the age,
+   because a colour on its own cannot say "two hours". Drift from the default
+   branch sits apart in a dim segment: it is worth knowing, but it does not make
+   the lineage on screen wrong. The outline takes the tone when it is not ok, so
+   the pill reads as a warning from across the bar. */
+.manifestpill {
+  display: inline-flex; align-items: center; flex: 0 0 auto; height: 24px; gap: 4px; padding: 0 3px 0 9px;
+  border: 1px solid var(--line); border-radius: 12px; font: 11.5px var(--mono); color: var(--fg-dim);
+}
+/* Alone before the first freshness answer shows the badge: even padding, so the
+   arrows are not pushed to one side of an empty pill. */
+.manifestpill:has(> .freshbadge.hidden) { padding: 0 3px; }
+.manifestpill[data-tone="warn"] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.manifestpill[data-tone="bad"] { border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.manifestpill[data-tone="warn"] .lbl, .manifestpill[data-tone="warn"] .age { color: var(--warn-text); }
+.manifestpill[data-tone="bad"] .lbl, .manifestpill[data-tone="bad"] .age { color: var(--bad); }
 .freshbadge {
-  display: flex; align-items: center; gap: 6px; cursor: pointer;
-  font: 11px var(--mono); color: var(--fg-dim);
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px;
+  display: flex; align-items: center; gap: 6px; height: 100%; padding: 0; cursor: pointer;
+  font: inherit; color: inherit; background: none; border: 0;
 }
-.freshbadge:hover { background: var(--btn-hover); border-color: var(--line-strong); }
-.freshbadge .dot { width: 11px; height: 11px; border-radius: 0; background: var(--fg-dim); flex: 0 0 auto; -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
-.freshbadge[data-tone="ok"] .dot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
-.freshbadge[data-tone="warn"] .dot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
-.freshbadge[data-tone="bad"] .dot { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
-.freshbadge[data-tone="warn"] .lbl { color: var(--warn); }
-.freshbadge[data-tone="bad"] .lbl { color: var(--bad); }
+.freshbadge:hover, .freshbadge[aria-expanded=true] { color: var(--fg); }
+.freshbadge .age { color: var(--fg-mute); }
+.freshbadge .drift { color: var(--fg-dim); }
+/* The same mark again at the head of the card, so the card is visibly about
+   the thing the pointer is on. */
+.freshbadge .dot, .mc-head .dot { width: 11px; height: 11px; border-radius: 0; background: var(--fg-dim); flex: 0 0 auto; -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
+.freshbadge[data-tone="ok"] .dot, .mcard[data-tone="ok"] .mc-head .dot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.freshbadge[data-tone="warn"] .dot, .mcard[data-tone="warn"] .mc-head .dot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.freshbadge[data-tone="bad"] .dot, .mcard[data-tone="bad"] .mc-head .dot { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 .freshbadge .drift:not(:empty)::before { content: "\00b7"; margin-right: 6px; }
-.freshbadge .drift:empty { display: none; }
-/* The reload, the pill's last segment: a glyph behind a divider, so it reads
-   as acting on the manifest the badge describes. Alone, rounded all round,
-   until the first freshness answer shows the badge. Its arrows turn while the
-   server reads the file, which takes seconds on a large project. */
-.manifestpill { display: inline-flex; align-items: stretch; flex: 0 0 auto; }
-.manifestpill .freshbadge { border-radius: 10px 0 0 10px; border-right: 0; }
+.freshbadge .drift:empty, .freshbadge .age:empty { display: none; }
+/* The reload, the pill's last segment, a glyph that acts on the manifest the
+   badge describes. Its arrows turn while the server reads the file, which takes
+   seconds on a large project. */
 .reloadbtn {
-  display: inline-flex; align-items: center; padding: 0 8px 0 7px; color: var(--fg-dim); cursor: pointer;
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 0 10px 10px 0;
+  width: 20px; height: 18px; display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 0; border-radius: 9px; background: transparent; color: var(--fg-mute);
 }
-.freshbadge.hidden + .reloadbtn { border-radius: 10px; padding: 4px 7px; }
-.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: var(--btn-hover); border-color: var(--line-strong); }
+.reloadbtn:hover, .reloadbtn:focus-visible { color: var(--fg); background: var(--bg-3); }
 .reloadbtn:focus-visible, .freshbadge:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .reloadbtn[aria-busy=true] { cursor: progress; }
 .reloadbtn[aria-busy=true] svg { animation: reload-turn .9s linear infinite; }
 @keyframes reload-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .reloadbtn[aria-busy=true] svg { animation: none; opacity: .5; } }
+/* The card the badge opens (0157): what the pill counts, laid out, and the
+   button that parses. A popup like the menus, so it takes their layer. */
+.mcard {
+  position: fixed; z-index: 65; width: 380px; max-width: calc(100vw - 32px); padding: 12px 14px 14px;
+  background: var(--bg-3); border: 1px solid var(--line-strong); border-radius: 9px; box-shadow: var(--shadow);
+  font: 13px/1.45 var(--ui); color: var(--fg);
+  /* The parse button is the last thing in it: reachable on a short window too.
+     46px = the bar's 38, the 4 under the pill and 4 to the window's edge, so a tall
+     card still opens under the pill and not over the bar. */
+  max-height: calc(100vh - 46px); overflow-y: auto;
+}
+.mcard:focus { outline: none; }
+.mc-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+/* The card's mark is a size up from the pill's, as the board draws it. */
+.mc-head .dot { width: 12px; height: 12px; }
+/* 20px = the mark's 12 and the head's 8px gap, so the line sits under the heading's text. */
+.mc-when { margin: 2px 0 0 20px; font: 11px var(--mono); color: var(--fg-mute); }
+.mc-desc { margin: 8px 0 0; color: var(--fg-2); font-size: 12.5px; }
+.mc-note { margin: 6px 0 0; font-size: 12px; color: var(--fg-2); }
+.mc-note.warn { color: var(--warn-text); }
+.mc-sec { margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim); }
+.mc-file {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 6px;
+  border: 0; border-radius: 5px; background: transparent; font: 12px var(--mono); color: var(--fg); text-align: left; cursor: pointer;
+}
+.mc-file:hover, .mc-file:focus-visible { background: var(--hover); }
+.mc-file:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mc-file .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-file .gs { font: 600 10.5px var(--mono); }
+.mc-file .dir { margin-left: auto; color: var(--fg-mute); font-size: 11px; }
+.mc-file .dir, .mc-file .gs { flex: 0 0 auto; white-space: nowrap; }
+.mc-file.gone { cursor: default; }
+.mc-file.gone:hover { background: transparent; }
+.mc-file.gone .nm { text-decoration: line-through; color: var(--fg-dim); }
+.mc-more { padding-left: 6px; font-size: 11px; color: var(--fg-mute); }
+.mc-facts { margin: 0; padding: 0 0 0 16px; display: grid; gap: 4px; font-size: 12px; color: var(--fg-2); }
+.mc-facts code { font: 11.5px var(--mono); color: var(--fg); }
+.mc-facts .dim { color: var(--fg-mute); list-style: none; margin-left: -16px; padding-left: 16px; }
+.mc-act { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mc-act .hint { font-size: 11.5px; color: var(--fg-mute); }
+.mc-ok { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ok); }
+.mc-ico { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* Its own colours rather than the global .btn.primary, which the dialogs share. */
+.btn.mc-run { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.mc-run:hover, .btn.mc-run:focus-visible { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
+.btn.mc-run:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The spaces (0140): Code, Lineage and Reports side by side, the one in front lit
    and marked aria-current. Reports carries what is new in them on its tab: each
    section's news in its own colour, collin's as collin's, so it reads as the
@@ -1123,12 +1182,6 @@ kbd {
   border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
 }
 .versioninput:focus { border-color: var(--accent-dim); outline: none; }
-/* The same mark again at the head of the hover card, so the card is visibly
-   about the thing the pointer is on. */
-.hovercard .freshdot { width: 12px; height: 12px; border-radius: 0; background: var(--fg-dim); -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat; }
-.hovercard .freshdot[data-tone="ok"] { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
-.hovercard .freshdot[data-tone="warn"] { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
-.hovercard .freshdot[data-tone="bad"] { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 
 .btn {
   font: 12px var(--ui); color: var(--fg); background: var(--bg-3);

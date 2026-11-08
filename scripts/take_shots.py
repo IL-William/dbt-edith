@@ -995,7 +995,7 @@ class Shots:
         else:
             raise AssertionError("timed out waiting for the amber pill")
         self.hover("#fresh-badge")
-        self.until("!!document.querySelector('.hovercard')", "the pill's card")
+        self.until("!!document.querySelector('.mcard')", "the pill's card")
         self.take("manifest-pill")
 
         if page.errors:

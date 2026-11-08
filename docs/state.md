@@ -49,8 +49,8 @@ equivalent `dbt ls` into the terminal for you to compare. Measured on a
 
 Manifest freshness: a mark (check, triangle, cross, dashed ring) in the top
 bar's manifest pill, which ends in its reload, says whether the lineage on
-screen still matches the files dbt would parse, and clicking it runs `dbt parse`
-in the terminal. Freshness is measured in file times rather than in commits
+screen still matches the files dbt would parse, and its card's button runs
+`dbt parse` in the terminal. Freshness is measured in file times rather than in commits
 (0025), because committing changes no file and pulling an old commit changes
 several. git is asked one question only, per file already known to be newer: is
 it dirty? That separates the user's own unsaved work (amber) from a checkout or
@@ -902,8 +902,8 @@ the page types runs in the project folder, where a `git`, `dbt` or `cargo`
 committed there would run in place of the one meant if the terminal's shell
 reads the current folder. The startup banner and Edith's menu now say so when
 the `PATH` handed to the shell holds a relative entry (named as written) or an
-empty one that survives, or when the shell is cmd.exe, and the freshness badge
-then types `dbt parse` without pressing Enter. A macOS login shell
+empty one that survives, or when the shell is cmd.exe, and the manifest card's
+button then types `dbt parse` without pressing Enter. A macOS login shell
 (`path_helper`) and Git Bash (msys2) drop an empty entry before the first
 prompt, so it warns on Linux and on a macOS shell that is not a login one;
 PowerShell warns only for an entry starting with a dot. The check reads the
@@ -1507,7 +1507,7 @@ lands, so a `dbt parse` after opening brings the offer (0078). Fourteen steps
 on a project with a model, each ringing one part of the page, the rest dimmed,
 with what it is for: the freshness badge, right after the welcome, saying that
 everything is read from `manifest.json` and as true as the last `dbt parse`,
-what its age and its dot's colours mean, and that a click types `dbt parse`;
+what its age and its dot's colours mean, and that its card's button runs `dbt parse`;
 the model's file, the `dbt_project.yml` button with its menu open, the
 lineage, a Custom selection of `+model+`, Export, Copy image and Copy names,
 the Catalog, the column lineage menu, the Jobs tab, the Reports button, the
@@ -2363,9 +2363,10 @@ are never edited, so find an item by its title.
       adds that a shell may have changed it since.
     - **What a click does: it types the command, and Enter is the user's
       (0071).** Picking an entry types the command into the terminal without
-      running it, so "Never run dbt" and 0002 hold as written. The freshness
-      badge stays the only button that presses Enter, because `dbt parse`
-      reaches no warehouse, while `build --select +name+` writes to one.
+      running it, so "Never run dbt" and 0002 hold as written. The manifest
+      card's Run dbt parse button (the freshness badge's click before 0157)
+      stays the only button that presses Enter, because `dbt parse` reaches no
+      warehouse, while `build --select +name+` writes to one.
     - **`sendToTerminal` changes for every caller.** Run again, Recompile,
       dbt ls, the selector command, the update offer and collin's install
       line have the same two problems as this menu, so the fix goes there,
@@ -2748,7 +2749,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 38. **The rest of the redesign, one pull request each.** The depth in dbt's
     syntax, the Lineage space, column roles in the box,
-    the manifest card, the settings, shortcuts, Jobs, the terminal, Compiled,
+    the settings, shortcuts, Jobs, the terminal, Compiled,
     Git, Catalog, Reports and the design docs.
 39. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports

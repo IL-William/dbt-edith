@@ -32,10 +32,11 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ![The amber manifest pill in the top bar and its card, saying a saved edit is not in the manifest yet](../shots/manifest-pill.png)
 
-At the right of the top bar a pill gives the manifest's age and a mark, and
-ends in circling arrows that read `manifest.json` again at once, for the rare
-time the poll has not. The mark answers one question: does the manifest still
-match the files dbt would parse right now?
+At the right of the top bar one outlined pill holds a mark, the word
+`manifest`, its age and the drift from the default branch, and ends in circling
+arrows that read `manifest.json` again at once, for the rare time the poll has
+not. The outline turns amber or red with the mark. The mark answers one
+question: does the manifest still match the files dbt would parse right now?
 
 | | |
 | --- | --- |
@@ -44,10 +45,18 @@ match the files dbt would parse right now?
 | red cross | files are newer and already committed: a checkout, a pull or a merge moved them under this manifest |
 | grey dashed ring | there is no `manifest.json` yet |
 
-Hovering says which files, how many, what the last commit was, and what to do
-about it. Clicking runs `dbt parse` in the terminal, which is the command that
-turns the mark into a green check again. dbt runs there, in your shell and your environment,
-never from the server.
+Hovering or clicking the badge opens its card (a click holds it open, the focus
+on its button; Escape or Tab closes it): when the manifest was written, the
+files by group (a click opens one; git's letter shows
+beside each file saved and not committed, and only that group has one), This
+branch (where it sits, how far the default branch is ahead, when the refs were
+last fetched), and **Run dbt parse**, which turns the mark
+into a green check again. It runs in the terminal below, with Enter pressed for
+you since `dbt parse` reaches no warehouse, except while the shell reads the
+current folder, when it is only typed and Enter is left to you (0130). dbt runs
+there, in your shell and your environment, never from the server. In a fresh
+manifest the card has no button: it says there is nothing to do, or, when the
+branch is behind the default one, to pull it and parse again.
 
 Green does not mean recent. A manifest parsed three weeks ago on a branch
 nobody has touched for three weeks is correct, and the age beside the mark is
