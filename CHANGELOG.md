@@ -13,6 +13,21 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.10.0 - 2026-11-08
+
+- Draw the Jobs tab as a card per job, its tool's colour down its side, with
+  the schedule said in words beside the cron and its zone (`Every day at 05:00`,
+  `Weekdays at 06:30`, `After the job Nightly build`), a clock for the jobs that
+  run on their own in place of the green pill, CI and merge as tags, and each
+  step's command, a `dbt ls` button and one line saying why it reaches the model
+  (0159).
+- Head the Jobs tab with the jobs that run the model, how many steps could not
+  be resolved and where the jobs were read from, with how long ago the files
+  were compared, and say apart in amber the sources that could not be read.
+- Move Sources… and Coverage in Reports of the Jobs tab to the dock's tab row.
+- Fold *Not resolved, and could run it* under a chevron and show each reason in
+  a warning box.
+
 ## 2.9.0 - 2026-11-08
 
 - Write the lineage's depth as dbt writes a selector, `1+ customers +0`: each

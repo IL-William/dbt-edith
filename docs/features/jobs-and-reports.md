@@ -5,7 +5,7 @@ the whole project.
 
 ## Jobs
 
-![The Jobs tab for customers: an Airflow DAG and a dbt Cloud job that run it, and a CI job it cannot resolve](../shots/jobs.png)
+![The Jobs tab for customers: a card for an Airflow DAG and one for a dbt Cloud job that run it, and a CI job it cannot resolve](../shots/jobs.png)
 
 The **Jobs** tab, beside Catalog, says which of your orchestrator's jobs run
 the node in focus: an Airflow DAG and the task in it, or a dbt Cloud job and the
@@ -15,30 +15,56 @@ as a selection is, never by running dbt. Only a step that runs, builds, tests
 or checks the node is listed: a `dbt compile` selects every model and runs
 none, so its job would sit under each of them.
 
+The tab opens on a line naming the node (*Jobs that run customers*), how many
+jobs run it and how many steps could not be resolved, and, at the right, where
+the jobs were read from and how long ago the files were compared with the disk.
+A source that could not be read (no such path) or was cut at its bound is not
+named there: it is said apart in amber, *dbt cloud not read (nothing at this
+path)*, and with none read only that part is shown.
+**Sources…** and **Coverage in Reports** sit in the dock's tab row, where the
+lineage's tools sit while it is open. Each job is a card with its tool's colour
+down its side:
+
 ```
-AIRFLOW  DAG shop_daily   (SCHEDULED 0 5 * * *)          orchestration · sales/shop_daily.yml:2
+AIRFLOW  shop_daily  (clock) Every day at 05:00  0 5 * * * Europe/London      sales/shop_daily.yml:2
   task marts    dbt run -s +tag:daily --exclude tag:wip    [dbt ls]
-                via +tag:daily · after stage · awaited by shop_reports › wait_daily
-DBT CLOUD  Job Daily build [[daily]]   (SCHEDULED 0 */2 * * *)   cloud · jobs.yml:14
-  step 3/3      dbt build --select +orders                 [dbt ls]
-                via +orders
+                selects [orders] through +tag:daily · runs after the task stage
+DBT CLOUD  Daily build  daily  (clock) Every day at 02:00  0 2 * * * UTC      jobs.yml:14
+  environment 3 · target prod
+  step 3 of 3   dbt build --select +orders                 [dbt ls]
+                selects [orders] through +orders
 ```
 
-The jobs that run on their own come first, with a green **Scheduled** pill
-that gives the schedule, and the ones nothing starts come last, with a grey
-**Manual** one. Next after the scheduled ones come the jobs that may run on
-their own, on something no file read says, with an amber **Not read** pill
-that says what: a schedule in `{{ }}` or `{% %}` or written as a mapping, an
-asset written as a mapping or one no file read updates, an empty list of
-assets, a dbt Cloud job started by one no file defines. A CI or merge job,
-which something starts but no clock, sits before the manual ones, its pill
-saying what starts it.
+A card's head gives the tool, the job's name, its identifier for a dbt Cloud
+job, a `CI` or `Merge` tag when the job runs on a pull request or a merge, and
+how it starts. A clock marks a job that runs on its own, and its start is said
+in words where the cron reads as one short sentence (`Every day at 05:00`,
+`Weekdays at 06:30`, `Mondays, Wednesdays and Fridays at 06:00`, `Every 2 hours`,
+`The 1st of each month at 05:00`), with the cron itself beside it and the zone it is read in
+after it: the Airflow source's, UTC where it names none, and UTC for a dbt Cloud
+job. A cron that is no
+short sentence (a range of hours, a month, both day fields) shows only itself.
+A job another job or an asset starts reads `After the job Nightly build` or `On
+the asset marts_ready`, and one nothing starts reads `Manual`. Hover the start
+for what it means. A line under the head gives the environment and target of a
+dbt Cloud job, what it waits for or starts, and `on each pull request` or `on
+each merge`.
 
-**via** names the terms of the selection that reached the node, so a staging
-model listed under a marts task says why. **dbt ls** types into the terminal the
+The jobs that run on their own come first and the ones nothing starts come last.
+After the scheduled ones come the jobs that may run on their own, on something no
+file read says, worded in amber: a schedule in `{{ }}` or `{% %}` or written as a
+mapping, an asset written as a mapping or one no file read updates, an empty list
+of assets, a dbt Cloud job started by one no file defines. A CI or merge job,
+which something starts but no clock, sits before the manual ones.
+
+The line under a step's command says why the step is listed: it *selects* the
+node *by name*, or *through* the term that reached it (`+tag:daily`), so a
+staging model listed under a marts task says why, then what the task runs after
+or before, what awaits it and the assets it updates. **dbt ls** types into the terminal the
 `dbt ls` that should list what the step acts on, without running it, which is
 how you check this tool against dbt. A step that cannot be read or resolved is
-never guessed at: it is listed apart, under *Not resolved*, with the reason. A
+never guessed at: it is listed apart, folded under *Not resolved, and could run
+it* with its count, and the reason sits in a warning box under the command. A
 `state:modified+` compares with another run's artifacts, a `$MODELS` or a
 `{{ var }}` is only known when the job runs, and a flag this tool does not know
 might take a value or not.
@@ -71,7 +97,8 @@ folds and scroll.
 
 Point dbt-edith at the jobs in the Orchestration section of the settings,
 behind the gear in the top bar, which **Sources…** and **Add a source**, in
-the tab and in the Job coverage section of Reports, open too: one or more
+the dock's tab row beside the Jobs tab and in the Job coverage section of
+Reports, open too: one or more
 folders or files, absolute or relative to the project, each an Airflow or a
 dbt Cloud source. **Browse…**
 beside a path, open already on a source being added, lists one folder at a
