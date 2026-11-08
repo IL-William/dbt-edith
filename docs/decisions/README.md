@@ -162,6 +162,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0156](0156-the-keys-reaching-a-file-are-shown-as-written-and-struck-where-dbt-replaces-them.md) | The keys reaching a file are shown as written and struck where dbt replaces them | showing where a node's config comes from, striking a key of `dbt_project.yml`, or changing the dialog under the breadcrumb's violet button |
 | [0157](0157-the-manifests-card-holds-the-parse.md) | The manifest's card holds the parse | changing what the manifest pill's click does, or what its card's button runs |
 | [0158](0158-the-depth-is-written-as-dbt-writes-a-selector.md) | The depth is written as dbt writes a selector | changing the depth control, what its menus list or what its copy writes |
+| [0159](0159-a-jobs-start-is-said-in-words-and-a-clock-marks-the-ones-that-run-alone.md) | A job's start is said in words, and a clock marks the ones that run alone | changing how the Jobs tab words a job's schedule, what marks a job as running on its own, or what its header says |
 
 ## Keeping these honest
 

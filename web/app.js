@@ -92,6 +92,7 @@ const S = {
   historyAsk: 0,              // bumped per history request, so only the latest answer is drawn
   jobsRun: 0,                 // bumped per Jobs request, so only the latest answer is drawn
   jobsKeys: null,             // the Airflow keys and the shape the server proposes (0063)
+  jobsLooked: 0,              // when the last Jobs request that looked at the job files was answered, in ms
   sfSession: null,            // { org, account, user, role } of the script's connection, once asked
   cloneFrom: null,            // where this tab last copied from: a .env file, '' for built, null before any
   cloneMode: 'clone',         // clone | ctas, as last chosen in this tab
@@ -9978,7 +9979,7 @@ function jobsJobLabel(job) {
    names none. */
 function jobsStepLabel(job, step) {
   if (job.kind === 'airflow') return 'task ' + (step.name || step.n);
-  return `step ${step.n}/${job.steps}` + (step.implicit ? ', from run_generate_sources' : '');
+  return `step ${step.n} of ${job.steps}` + (step.implicit ? ', from run_generate_sources' : '');
 }
 
 /* A step on a Catalog chip: its job and itself, without the DAG and the
@@ -9994,29 +9995,186 @@ function jobsChips(groups) {
   return jobsByStart(groups).flatMap((g) => g.steps.map((step) => ({ job: g.job, step, text: jobsChipText(g.job, step) })));
 }
 
-/* The lines that tie a job to others. */
-function jobsJobLinks(job) {
-  const rows = [];
-  if (job.waits_for && job.waits_for.length) rows.push('waits for ' + job.waits_for.join(', '));
-  if (job.triggers && job.triggers.length) rows.push('starts ' + job.triggers.join(', ') + ' when it ends');
-  const where = [job.env ? 'environment ' + job.env : '', job.target ? 'target ' + job.target : ''].filter(Boolean);
-  if (where.length) rows.push(where.join(', '));
-  return rows;
+/* Said once where a reason for a job's start is longer than a pill. */
+const JOBS_UNREAD_WHY = 'May start on its own, on what no file read says: a templated schedule, a schedule or an asset written as a mapping, '
+  + 'an empty list of assets, an asset no file read updates, a job no file read defines. Counted neither as scheduled nor as unscheduled';
+
+/* `a`, `a and b`, `a, b and c`. */
+function jobsAnd(items) {
+  return items.length < 2 ? items.join('') : items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
 }
 
-/* The lines that tie a step to others, and what in its selection reached the
-   node: `+tag:daily` says why a staging model is in a marts task. */
-function jobsLinkRows(step) {
-  const rows = [];
-  const some = (a) => a && a.length;
-  if (some(step.via)) rows.push('via ' + step.via.join(', '));
-  if (some(step.upstream)) rows.push('after ' + step.upstream.join(', '));
-  if (some(step.downstream)) rows.push('before ' + step.downstream.join(', '));
-  if (some(step.waited_by)) rows.push('awaited by ' + step.waited_by.join(', '));
-  if (some(step.outlets)) {
-    rows.push('updates ' + step.outlets.join(', ') + (some(step.feeds) ? ', which starts ' + step.feeds.join(', ') : ''));
+/* The sources a read came from, for the tab's header, each named once: two
+   sources may share a label. */
+function jobsSourcesText(names) {
+  return jobsAnd([...new Set(names || [])]);
+}
+
+function jobsOrdinal(n) {
+  const rest = n % 100;
+  return n + (rest >= 11 && rest <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+}
+
+/* The days a cron's weekday field names, or '' for a field that is not a few
+   plain days: a step, which no day list would say. */
+function jobsDaysWords(dow) {
+  if (dow === '*') return 'Every day';
+  if (!/^[a-z0-9,-]+$/i.test(dow)) return '';
+  const fields = cronFields('0 0 * * ' + dow);
+  if (!fields) return '';
+  const days = fields.dow;
+  if (days.size === 7) return 'Every day';
+  if (days.size === 5 && [1, 2, 3, 4, 5].every((d) => days.has(d))) return 'Weekdays';
+  if (days.size === 2 && days.has(0) && days.has(6)) return 'Weekends';
+  const names = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  return jobsAnd([1, 2, 3, 4, 5, 6, 0].filter((d) => days.has(d)).map((d) => names[d]));
+}
+
+/* A cron as one short sentence, or '' when it does not read as one: a
+   sentence longer than the cron would say less than the cron does, and a
+   guess is worse than the cron. Only what cronFields accepts is worded, then
+   only the plain shapes: a time or a few times a day, on every day, a few
+   weekdays or one day of the month; every hour; every N hours or minutes where
+   N divides the day or the hour, since a step of 5 hours is not every five hours.
+   Times are 24 hour. */
+function jobsCronWords(cron) {
+  const text = String(cron || '').trim();
+  const presets = { '@hourly': 'Every hour', '@daily': 'Every day at 00:00', '@midnight': 'Every day at 00:00', '@weekly': 'Sundays at 00:00',
+    '@monthly': 'The 1st of each month at 00:00', '@yearly': 'Every 1 January at 00:00', '@annually': 'Every 1 January at 00:00' };
+  if (presets[text.toLowerCase()]) return presets[text.toLowerCase()];
+  if (!cronFields(text)) return '';
+  const f = text.split(/\s+/);
+  if (f.length !== 5 || f[3] !== '*') return '';
+  const [minute, hour] = f;
+  const dom = f[2] === '?' ? '*' : f[2];
+  const dow = f[4] === '?' ? '*' : f[4];
+  const two = (n) => String(Number(n)).padStart(2, '0');
+  const number = (x) => /^\d+$/.test(x);
+  const step = /^\*\/(\d+)$/;
+  if (number(minute) && /^\d+(,\d+)*$/.test(hour)) {
+    const hours = [...new Set(hour.split(',').map(Number))].sort((a, b) => a - b);
+    if (hours.length > 4) return '';
+    const times = jobsAnd(hours.map((h) => two(h) + ':' + two(minute)));
+    if (dom === '*') {
+      const days = jobsDaysWords(dow);
+      return days ? `${days} at ${times}` : '';
+    }
+    // The 29th to the 31st are skipped by the months without them: no sentence says "each month" then.
+    return number(dom) && Number(dom) <= 28 && dow === '*' ? `The ${jobsOrdinal(Number(dom))} of each month at ${times}` : '';
   }
-  return rows;
+  if (dom !== '*' || dow !== '*') return '';
+  const past = number(minute) && Number(minute) ? ` at :${two(minute)}` : '';
+  if (number(minute) && hour === '*') return 'Every hour' + past;
+  const hours = step.exec(hour);
+  if (number(minute) && hours && Number(hours[1]) >= 2 && Number(hours[1]) <= 12 && 24 % Number(hours[1]) === 0) {
+    return `Every ${hours[1]} hours` + past;
+  }
+  if (hour !== '*') return '';
+  if (minute === '*') return 'Every minute';
+  const minutes = step.exec(minute);
+  if (minutes && Number(minutes[1]) >= 1 && 60 % Number(minutes[1]) === 0) {
+    return Number(minutes[1]) === 1 ? 'Every minute' : `Every ${minutes[1]} minutes`;
+  }
+  return '';
+}
+
+/* How a job starts, for its card: what starts it in words, the cron and its
+   zone beside them (always, as the builds judge it: UTC where the source names none, 0119,
+   and only after a string that is a cron), and the tooltip saying what the clock's presence means.
+   CI and a merge are tags of the card, not words here (0159). */
+function jobsSchedule(job) {
+  const start = jobsStart(job);
+  const pieces = [];
+  const clock = job.cron ? jobsCronWords(job.cron) : '';
+  if (clock) pieces.push(clock);
+  if (job.after) pieces.push(job.after_unread ? `After the job ${job.after}, which no file read defines` : `After the job ${job.after}`);
+  if (job.assets && job.assets.length) {
+    const unread = job.assets_unread || [];
+    pieces.push((job.assets.length === 1 ? 'On the asset ' : 'On the assets ') + job.assets.join(', ') + (!unread.length ? ''
+      : job.assets.length === 1 ? ', which no file read updates' : `; no file read updates ${unread.join(', ')}`));
+  }
+  if (job.note) pieces.push(job.note.charAt(0).toUpperCase() + job.note.slice(1));
+  if (!jobsStartedBy(job).length) pieces.push('Manual');
+  const title = start === 'scheduled' ? 'Runs on its own'
+    : start === 'unread' ? JOBS_UNREAD_WHY
+    : start === 'other' ? 'Started by something, never by a clock'
+    : 'Nothing starts it: run by hand';
+  return { start, words: pieces.join(' · '), cron: job.cron ? job.cron + (cronFields(job.cron) ? ` ${job.kind === 'airflow' ? (job.timezone || 'UTC') : 'UTC'}` : '') : '', title };
+}
+
+/* The tags of a card's head for what starts a job but no clock, each saying so
+   in its tooltip, since the card draws no schedule for it. */
+function jobsTags(job) {
+  const tags = [];
+  if (job.ci) tags.push({ text: 'CI', title: 'Started on each pull request, never by a clock' });
+  if (job.merge) tags.push({ text: 'Merge', title: 'Started on each merge, never by a clock' });
+  return tags;
+}
+
+/* What the header says of where the jobs came from: the sources read, and
+   apart the ones that were not, with the reason the server gave. Either part is
+   '' when it has nothing to say. */
+function jobsReadLine(view) {
+  const some = (a) => a && a.length;
+  const gone = some(view.not_read_names)
+    ? `${jobsSourcesText(view.not_read_names)} not read` + (view.not_read && view.not_read.reason ? ` (${view.not_read.reason})` : '') : '';
+  return { read: some(view.sources) ? 'read from ' + jobsSourcesText(view.sources) : '', unread: gone };
+}
+
+/* The line under a card's head: where the job runs and what ties it to
+   others. */
+function jobsMeta(job) {
+  const parts = [];
+  if (job.env) parts.push('environment ' + job.env);
+  if (job.target) parts.push('target ' + job.target);
+  if (job.waits_for && job.waits_for.length) parts.push('waits for ' + job.waits_for.join(', '));
+  if (job.triggers && job.triggers.length) parts.push('starts ' + job.triggers.join(', ') + ' when it ends');
+  if (job.ci) parts.push('on each pull request');
+  if (job.merge) parts.push('on each merge');
+  return parts.join(' · ');
+}
+
+/* Why a step is listed under the node and what it sits beside, as segments
+   of parts: `{ text }`, `{ code }`, or `{ chip: true }` for the node. What in
+   its selection reached the node is said by name for the node's own name,
+   `+tag:daily` says why a staging model is in a marts task. */
+function jobsWhy(step, name) {
+  const some = (a) => a && a.length;
+  const codes = (list) => list.flatMap((t, i) => (i ? [{ text: ', ' }, { code: t }] : [{ code: t }]));
+  const many = (list, one, more) => [{ text: list.length === 1 ? one : more }, ...codes(list)];
+  const segments = [];
+  if (some(step.via)) {
+    const through = step.via.filter((t) => t !== name);
+    if (step.via.length === 1 && step.via[0] === 'no --select: everything') {
+      segments.push([{ text: 'selects everything (no --select)' }]);
+    } else {
+      const byName = through.length < step.via.length;
+      const parts = [{ text: 'selects ' }, { chip: true }];
+      if (byName) parts.push({ text: through.length ? ' by name and through ' : ' by name' });
+      else parts.push({ text: ' through ' });
+      segments.push(parts.concat(codes(through)));
+    }
+  }
+  if (some(step.upstream)) segments.push(many(step.upstream, 'runs after the task ', 'runs after the tasks '));
+  if (some(step.downstream)) segments.push(many(step.downstream, 'runs before the task ', 'runs before the tasks '));
+  if (some(step.waited_by)) segments.push([{ text: 'awaited by ' }, ...codes(step.waited_by)]);
+  if (some(step.outlets)) {
+    const parts = [{ text: 'updates ' }, ...codes(step.outlets)];
+    if (some(step.feeds)) parts.push({ text: ', which starts ' }, ...codes(step.feeds));
+    segments.push(parts);
+  }
+  return segments;
+}
+
+/* The header's counts: the jobs that run the node, then the steps not
+   resolved, the figure the Catalog's chip shows. Nothing when there is neither. */
+function jobsHeadCounts(view) {
+  const jobs = (view.groups || []).length;
+  const steps = jobsMaybeCount(view.maybe);
+  const parts = [];
+  if (jobs) parts.push(jobs === 1 ? '1 runs it' : `${jobs} run it`);
+  if (steps) parts.push(`${steps} not resolved`);
+  return parts.join(' · ');
 }
 
 /* Coverage rows by folder, in the order the server sorted them. A folder is
@@ -10281,9 +10439,10 @@ async function loadJobs({ look = false } = {}) {
   paintJobsHead();
   const id = jobsNode();
   const ask = (url) => {
-    const asked = look ? url + (url.includes('?') ? '&' : '?') + 'look=true' : url;
+    const looks = look;
+    const asked = looks ? url + (url.includes('?') ? '&' : '?') + 'look=true' : url;
     look = false;
-    return api.get(asked);
+    return looks ? jobsLookGet(asked) : api.get(asked);
   };
   // The proposed shape is the server's, so the example cannot drift from it.
   // With no node, whether any source is set decides what the tab offers.
@@ -10303,17 +10462,16 @@ async function loadJobs({ look = false } = {}) {
   let view;
   try { view = await ask('/api/jobs/node?id=' + encodeURIComponent(id)); }
   catch (e) { if (run === S.jobsRun) toast('jobs: ' + e.message, 'err'); return; }
-  if (run === S.jobsRun) renderJobs(body, view, id, reveal);
+  if (run !== S.jobsRun) return;
+  paintJobsHead(view);
+  renderJobs(body, view, id, reveal);
 }
 
 const jel = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
 
 /* How a job starts, as a pill that says scheduled, not read or manual in a
-   word, so they can be told apart at a glance down a list of cards. */
+   word, so they can be told apart at a glance down the Reports' lists. */
 const JOBS_WORD = { scheduled: 'Scheduled', unread: 'Not read', manual: 'Manual' };
-const JOBS_UNREAD_WHY = 'May start on its own, on what no file read says: a templated schedule, a schedule or an asset written as a mapping, '
-  + 'an empty list of assets, an asset no file read updates, a job no file read defines. Counted neither as scheduled nor as unscheduled';
-
 function jobsWhen(job) {
   const start = jobsStart(job);
   const pill = jel('span', 'jobwhen');
@@ -10324,24 +10482,73 @@ function jobsWhen(job) {
   return pill;
 }
 
-/* The head of the tab: the node it is about, the coverage of every model,
-   which lives in Reports (0064), and the sources. */
-function paintJobsHead() {
-  const head = $('#jobs-head');
-  const bar = jel('div', 'jobs-bar');
-  const about = jel('span', 'jobs-about', nameOfId(jobsNode(), S.node));
-  bar.append(about, jel('div', 'grow'));
+/* The head of the tab: one line naming the node, how many jobs run it and
+   where they were read from, how long ago. The coverage of every model lives
+   in Reports (0064) and the sources form beside it, in the dock's tab row
+   (0159). The counts and the sources come with the answer, so the line is
+   drawn with the name alone first. */
+function paintJobsHead(view = null) {
+  const id = jobsNode();
+  const line = jel('div', 'jobs-headline');
+  if (id) {
+    // One item for the flex gap, which would otherwise fall between the words and the name.
+    const about = jel('span', 'jobs-title', 'Jobs that run ');
+    about.append(jel('b', 'jobs-about', nameOfId(id, S.node)));
+    line.append(about);
+    const counts = view ? jobsHeadCounts(view) : '';
+    if (counts) line.append(jel('span', 'dim', counts));
+    line.append(jel('span', 'grow'));
+    const said = view ? jobsReadLine(view) : { read: '', unread: '' };
+    if (said.read || said.unread) {
+      // The part not read is an item of its own that does not shrink: in a narrow dock the part read is cut first.
+      const where = jel('span', 'jobs-where');
+      where.title = [said.read, said.unread].filter(Boolean).join(' · ');
+      if (said.read) {
+        const read = jel('span', 'dim jobs-read', said.read);
+        if (S.jobsLooked) read.append(', ', jel('span', 'jobs-age', jobsAgeText()));
+        where.append(read);
+      }
+      // The dot is an item of its own: a flex item loses a space at its edge, and the gap spaces the three.
+      if (said.read && said.unread) where.append(jel('span', 'dim jobs-sep', '·'));
+      if (said.unread) where.append(jel('span', 'dim jobs-unread', said.unread));
+      line.append(where);
+    }
+  }
+  $('#jobs-head').replaceChildren(...(id ? [line] : []));
+  paintJobsTools();
+}
+
+/* A request that asks the server to look at the job files: the age the Jobs
+   tab's header gives is of the last answer to one, whichever page sent it,
+   since the files were compared then. */
+async function jobsLookGet(url) {
+  const got = await api.get(url);
+  S.jobsLooked = Date.now();
+  return got;
+}
+
+/* How long ago the job files were last compared, spelled as the manifest's
+   card does. */
+function jobsAgeText() {
+  return cardAge(Math.max(0, Math.round((Date.now() - S.jobsLooked) / 1000)));
+}
+
+/* The tab's tools, in the dock's tab row where the lineage's are. */
+function paintJobsTools() {
+  const out = [];
   if (S.reports && S.reports.jobs) {
-    const coverage = jel('button', 'btn sm', 'Coverage in Reports');
+    const coverage = jel('button', 'btn sm icobtn', 'Coverage in Reports');
+    coverage.type = 'button';
     coverage.title = 'Which models every job read runs, and which none does';
     coverage.addEventListener('click', () => openReports('jobs'));
-    bar.append(coverage);
+    out.push(coverage);
   }
-  const sources = jel('button', 'btn sm', 'Sources…');
+  const sources = jel('button', 'btn sm icobtn', 'Sources…');
+  sources.type = 'button';
   sources.title = 'Where the jobs are read from, and how';
   sources.addEventListener('click', openJobSources);
-  bar.append(sources);
-  head.replaceChildren(bar);
+  out.push(sources);
+  $('#jobs-tools').replaceChildren(...out);
 }
 
 /* No source yet: what the Jobs tab and the coverage in Reports read, and what
@@ -10379,37 +10586,97 @@ function jobsRefusedFile(body, why) {
     + 'No job is known until it is: Sources… writes it again.'), sources);
 }
 
-/* One job and the steps of it that act on the node, as cards. */
-function jobsCard(group, { reason = false } = {}) {
+/* A clock for the jobs that run on their own, the one mark of them (0159). */
+function jobsClock() {
+  const clock = strokeIcon('0 0 16 16', 'jobico', ['M8 2.25a5.75 5.75 0 1 0 0 11.5a5.75 5.75 0 1 0 0-11.5z', 'M8 4.75V8l2.25 1.5']);
+  // The one mark, so it is named for whoever does not see it, not only by the title.
+  clock.removeAttribute('aria-hidden');
+  clock.setAttribute('role', 'img');
+  clock.setAttribute('aria-label', 'Runs on its own');
+  return clock;
+}
+
+/* What a step selects, said once under its command: the segments of jobsWhy
+   joined by a dot, the node as a chip with its kind's bar. */
+function jobsWhyLine(segments, mark, name) {
+  const line = jel('div', 'jobwhy');
+  segments.forEach((parts, i) => {
+    if (i) line.append(' · ');
+    for (const part of parts) {
+      if (part.chip) {
+        const chip = jel('span', 'jobchip-node');
+        chip.append(dot(mark), name);
+        line.append(chip);
+      } else if (part.code) line.append(jel('code', '', part.code));
+      else line.append(part.text);
+    }
+  });
+  return line;
+}
+
+/* A reason the server gave, in the warning's box; what it quoted between
+   backticks is code. */
+function jobsWarn(text) {
+  const box = jel('div', 'jobwarn');
+  box.append(strokeIcon('0 0 16 16', 'jobico', ['M8 2.25L14.25 13H1.75z', 'M8 6.5v3M8 11.25v.1']));
+  const said = jel('span', '');
+  said.append(...jobsBackticks(text).map((x) => (x.code ? jel('code', '', x.text) : x.text)));
+  box.append(said);
+  return box;
+}
+
+/* One job and the steps of it that act on the node, as a card: its tool's
+   colour down its side, then its start said in words (0159). `mark` is what
+   the node's chip draws its kind from, `name` the node's name. */
+function jobsCard(group, { reason = false, mark = 'model', name = '' } = {}) {
   const { job } = group;
+  const sched = jobsSchedule(job);
   const card = jel('div', 'jobcard');
   card.dataset.kind = job.kind;
   const head = jel('div', 'jobhead');
-  head.append(
-    jel('span', 'jobkind', job.kind === 'airflow' ? 'Airflow' : 'dbt Cloud'),
-    jel('b', 'jobname', jobsJobLabel(job)),
-    jobsWhen(job),
-    jel('span', 'grow'),
-  );
-  head.append(jobsFileButton(job.source, job.file, job.line));
-  card.append(head);
-  for (const row of jobsJobLinks(job)) card.append(jel('div', 'joblink', row));
-  for (const step of group.steps) {
-    const line = jel('div', 'jobstep');
-    line.dataset.key = jobsStepKey(job, step);
-    line.dataset.step = step.index;
-    line.append(jel('span', 'steplbl', jobsStepLabel(job, step)));
-    line.append(jel('code', 'stepcmd', step.shown));
-    if (step.ls) {
-      const ls = jel('button', 'btn sm', 'dbt ls');
-      ls.title = 'Type the dbt ls that should list what this step acts on into the terminal, without running it';
-      ls.addEventListener('click', () => sendToTerminal(step.ls));
-      line.append(ls);
-    }
-    card.append(line);
-    for (const row of reason ? [] : jobsLinkRows(step)) card.append(jel('div', 'joblink', row));
-    for (const row of reason ? [step.unresolved] : step.warnings || []) card.append(jel('div', 'joblink why', row));
+  head.append(jel('span', 'jobkind', job.kind === 'airflow' ? 'Airflow' : 'dbt Cloud'), jel('b', 'jobname', job.name));
+  if (job.kind === 'dbt_cloud' && job.ident) head.append(jel('span', 'jobid', job.ident));
+  for (const tag of jobsTags(job)) {
+    const tagEl = jel('span', 'jobtag', tag.text);
+    tagEl.title = tag.title;
+    head.append(tagEl);
   }
+  if (sched.words || sched.cron) {
+    const when = jel('span', 'jobsched');
+    when.dataset.start = sched.start;
+    when.title = sched.title;
+    if (sched.start === 'scheduled') when.append(jobsClock());
+    if (sched.words) when.append(sched.words);
+    if (sched.cron) when.append(jel('span', 'jobcron', sched.cron));
+    head.append(when);
+  }
+  head.append(jel('span', 'grow'), jobsFileButton(job.source, job.file, job.line, true));
+  card.append(head);
+  const meta = jobsMeta(job);
+  if (meta) card.append(jel('div', 'jobmeta', meta));
+  const steps = jel('div', 'jobsteps');
+  for (const step of group.steps) {
+    const row = jel('div', 'jobstep');
+    row.dataset.key = jobsStepKey(job, step);
+    row.dataset.step = step.index;
+    row.append(jel('span', 'steplbl', jobsStepLabel(job, step)), jel('code', 'stepcmd', step.shown));
+    if (step.ls) {
+      const ls = jel('button', 'btn sm icobtn jobls');
+      ls.type = 'button';
+      ls.append(strokeIcon('0 0 16 16', 'jobico', ['M2.5 4l4 4-4 4M8.5 12.25h5']), 'dbt ls');
+      ls.title = 'Type the dbt ls that lists what this step selects, without running it';
+      ls.addEventListener('click', () => sendToTerminal(step.ls));
+      row.append(ls);
+    } else {
+      // The grid has a third column: a step without the button keeps it.
+      row.append(jel('span', ''));
+    }
+    const why = reason ? [] : jobsWhy(step, name);
+    if (why.length) row.append(jobsWhyLine(why, mark, name));
+    for (const w of reason ? [step.unresolved] : step.warnings || []) if (w) row.append(jobsWarn(w));
+    steps.append(row);
+  }
+  card.append(steps);
   return card;
 }
 
@@ -10420,17 +10687,21 @@ function renderJobs(body, view, id, reveal) {
   if (!view.configured) return jobsNoSource(body);
   const out = [];
   if (view.refused) {
-    out.push(jel('div', 'jobs-warn', `${view.refused} file${view.refused === 1 ? '' : 's'} could not be read and may hold more: Sources… says which.`));
+    out.push(jobsWarn(`${view.refused} file${view.refused === 1 ? '' : 's'} could not be read and may hold more: Sources… says which.`));
   }
   if (!view.groups.length) {
     out.push(jel('div', 'compiled-empty', `No step of the jobs read acts on ${nameOfId(id, S.node)}.`));
   }
-  for (const g of jobsByStart(view.groups)) out.push(jobsCard(g));
+  const name = nameOfId(id, S.node);
+  const mark = S.node && S.node.id === id ? S.node : view.kind || 'model';
+  for (const g of jobsByStart(view.groups)) out.push(jobsCard(g, { mark, name }));
   if (view.maybe && view.maybe.length) {
-    const n = jobsMaybeCount(view.maybe);
     const more = jel('details', 'jobs-maybe');
-    more.append(jel('summary', '', `Not resolved, and could act on it (${n})`));
-    for (const g of jobsByStart(view.maybe)) more.append(jobsCard(g, { reason: true }));
+    const summary = jel('summary', '');
+    summary.append(strokeIcon('0 0 16 16', 'jobchev', ['M6 4l4 4-4 4']), 'Not resolved, and could run it',
+      jel('span', 'n', String(jobsMaybeCount(view.maybe))));
+    more.append(summary);
+    for (const g of jobsByStart(view.maybe)) more.append(jobsCard(g, { reason: true, mark, name }));
     out.push(more);
   }
   body.replaceChildren(...out);
@@ -10666,7 +10937,7 @@ function openJobSources({ add = false } = {}) {
 async function jobSourcesForm(box, { add = false } = {}) {
   box.replaceChildren(jel('p', 'setnote', 'Reading the sources…'));
   let summary;
-  try { summary = await api.get('/api/jobs?look=true'); } catch (e) {
+  try { summary = await jobsLookGet('/api/jobs?look=true'); } catch (e) {
     // Not kept: the section asks again the next time it is shown.
     if (S.settingsKept.jobs && S.settingsKept.jobs.contains(box)) delete S.settingsKept.jobs;
     return box.replaceChildren(jel('div', 'jobs-warn', 'jobs: ' + e.message));
@@ -11533,7 +11804,8 @@ async function loadReportsIndex() {
     remarkUnusedPaths();
   }
   paintReportsButton();
-  if (S.dock === 'jobs') paintJobsHead();
+  // Only the buttons that hang on the reports: the head holds the answer's counts and sources.
+  if (S.dock === 'jobs') paintJobsTools();
   if (panelOpen('reports')) paintReportsNav();
 }
 
@@ -12304,7 +12576,7 @@ async function jobsCoverageSection(again) {
   // The job files are looked at as the section opens, never on a click in it
   // (0063).
   let cov;
-  try { cov = await api.get('/api/jobs/coverage?look=true'); }
+  try { cov = await jobsLookGet('/api/jobs/coverage?look=true'); }
   catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
   forgetCatalogJobs();
   const body = jel('div', 'reportbody');
@@ -12441,10 +12713,11 @@ function jobOrderEdgeRows(edges) {
 
 /* Where a step is written, outside the project and so copied rather than
    opened. */
-function jobsFileButton(source, file, line) {
-  const where = jel('button', 'jobfile', `${source} · ${file}:${line}`);
+function jobsFileButton(source, file, line, short = false) {
+  // The Jobs tab's card names the source in the tooltip, the reports in the text.
+  const where = jel('button', 'jobfile', short ? `${file}:${line}` : `${source} · ${file}:${line}`);
   where.type = 'button';
-  where.title = 'Outside the project, so it does not open here. Click to copy where it is.';
+  where.title = (short ? `From ${source}. ` : '') + 'Outside the project, so it does not open here. Click to copy where it is.';
   where.addEventListener('click', () => copyText(`${file}:${line}`));
   return where;
 }
@@ -12606,7 +12879,7 @@ async function jobOrderSection(again) {
   // The job files are looked at as the section opens, never on a click in it
   // (0063).
   let order;
-  try { order = await api.get('/api/jobs/order?look=true'); }
+  try { order = await jobsLookGet('/api/jobs/order?look=true'); }
   catch (e) { return [head, jel('div', 'compiled-empty', e.message)]; }
   // The look may have read the files again. Nothing else is drawn again for
   // it: the section is read again on every showing.
@@ -16293,7 +16566,7 @@ function buildsGrid(read, models, own, days) {
    the verdicts worked out from it, by the answer of each environment. */
 function jobBuildsLoad(read) {
   if (!read.jobsAsked) {
-    read.jobsAsked = api.get('/api/jobs/models?look=true').then((r) => ({
+    read.jobsAsked = jobsLookGet('/api/jobs/models?look=true').then((r) => ({
       configured: !!r.configured,
       refused: r.sources_refused || '',
       jobs: jobBuildsJobs(r.ids || [], r.jobs),
@@ -16303,7 +16576,7 @@ function jobBuildsLoad(read) {
   return read.jobsAsked;
 }
 
-/* A job's schedule as the Jobs tab draws its pill, and under it, small, the
+/* A job's schedule as the Reports' lists draw their pill, and under it, small, the
    zone its cron is read in and so what the verdicts are judged against. A job
    whose cron never fires has a clock and no start to hold a run to, and is
    judged on the threshold like one with no clock. */
@@ -17966,6 +18239,7 @@ function showDock(which, { look = true, id = '' } = {}) {
   // bring a sign-in tab (0016).
   if (which === 'history' && !S.history) loadHistory();
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
+  $('#jobs-tools').classList.toggle('hidden', which !== 'jobs');
   placeWitch(true);
   if (which === 'terminal') { initTerm(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);
@@ -17984,8 +18258,10 @@ function showDock(which, { look = true, id = '' } = {}) {
    its glyph and chevron alone too (`iconic`; Fit has no label), the action
    that matters least to what is drawn. It is measured, never set at a width,
    because the room moves with the sidebar, Query history and the column chip.
-   It is measured with the tools shown, and the open tab folds with the others,
-   so that a click on a tab never moves the tabs under the pointer: wireTabs()
+   It is measured with the lineage's tools shown and any other tab's hidden
+   (the Jobs tab's two buttons are far fewer, and a fold they caused would move
+   the tabs when it opens), and the open tab folds with the others, so that a
+   click on a tab never moves the tabs under the pointer: wireTabs()
    calls it when the row or the tools change, and never on a tab change. The
    tools' own class is the one change of theirs it does not hear, which is why
    the other folds are set there. Only the tools are asked whether they broke,
@@ -17996,8 +18272,11 @@ function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
+  const other = $('#jobs-tools');
+  const otherAway = other.classList.contains('hidden');
   const was = row.classList.contains('folded');
   row.classList.remove('folded');
+  other.classList.add('hidden');
   tools.classList.remove('hidden', 'noname', 'iconic');
   const fit = () => {
     // Without the strip the Halloween theme adds over the tabs, whose room the witch has.
@@ -18014,6 +18293,7 @@ function foldDockTabs() {
   }
   const folded = row.classList.contains('folded');
   tools.classList.toggle('hidden', away);
+  other.classList.toggle('hidden', otherAway);
   if (was === folded) return;
   $$('#dock > .tabs .tab').forEach((t) => {
     const { name, about } = t.dataset;
@@ -18589,8 +18869,8 @@ function tourSteps(c) {
     steps.push({ key: 'jobs', target: '#dock-jobs', title: 'Jobs',
       text: c.jobs
         ? `Which of your orchestrator's jobs run \`${m.name}\`: an Airflow DAG and its task, or a dbt Cloud job and `
-          + 'its step, with its schedule and its dbt command, resolved here as a selection is. Sources… says '
-          + 'where the jobs are read from.'
+          + 'its step, with its schedule and its dbt command, resolved here as a selection is. Sources…, '
+          + 'at the right of the dock\'s tab row, says where the jobs are read from.'
         : 'Which of your orchestrator\'s jobs run a model, read from their YAML, often in another repository: '
           + 'Airflow DAGs or dbt Cloud jobs. None is read yet: Add a source names the folder they are in, and '
           + 'nothing outside the project is read before.' });
@@ -20139,7 +20419,14 @@ async function boot() {
   // Each round costs the server a git status and a walk of the model folders,
   // for a page nobody sees while its tab is hidden. It waits there instead, and
   // catches up the moment the tab is shown again.
-  const poll = () => { paintNight(); if (!document.hidden) { refreshGit(); refreshFreshness(); refreshOpenFiles(); } };
+  const poll = () => {
+    paintNight();
+    if (document.hidden) return;
+    refreshGit(); refreshFreshness(); refreshOpenFiles();
+    // The Jobs tab's header says how long ago the files were compared: the words move, nothing is drawn again.
+    const age = S.dock === 'jobs' && $('#jobs-head .jobs-age');
+    if (age) age.textContent = jobsAgeText();
+  };
   setInterval(poll, 5000);
   document.addEventListener('visibilitychange', poll);
   window.addEventListener('resize', () => Lineage.fit());

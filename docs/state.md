@@ -2818,7 +2818,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), the Lineage space, column roles in the box,
-    the settings, shortcuts, Jobs, the terminal, Compiled,
+    the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), the terminal, Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
@@ -2891,6 +2891,16 @@ of its own, and each panel updates the tour, its page under
       back) lists that level as `+ nothing new`.
     - In a window narrower than the three folds can save, the tools row still
       breaks, now with the control in it.
+47. **The Jobs tab's limits (0159, 2.10.0).**
+    - A cron is worded only in its plain shapes: a range of hours, both day
+      fields, a month, the 29th to the 31st, `@quarterly` and a step that does
+      not divide the day or the hour keep the cron alone.
+    - The Not resolved group is folded by default, though the design pictures
+      it open: a project with many `state:modified` CI jobs would list them
+      under every model.
+    - The Catalog's chips and the Reports lists keep the older wording (the
+      cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
+      changed.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

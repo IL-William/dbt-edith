@@ -1611,6 +1611,17 @@ pub struct NodeJobs {
     /// Files refused across the sources, which could hold more.
     #[serde(skip_serializing_if = "is_zero")]
     pub refused: usize,
+    /// The name (`source_name`) of each source that was read, in the order
+    /// read: what the Jobs tab's header says the jobs came from. A source whose
+    /// path failed, or whose walk was cut at its bound, is not among them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    /// The sources that were not read, as every other answer says it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_read: Option<Unread>,
+    /// Their names, in the order read, for the header to say which.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub not_read_names: Vec<String>,
 }
 
 fn source_name(read: &Read, si: usize) -> String {
@@ -1783,6 +1794,9 @@ pub fn for_node(graph: &Graph, read: &Read, node: u32) -> NodeJobs {
         groups: grouped(graph, read, &hits, Some(node)),
         maybe: grouped(graph, read, &maybe, None),
         refused: read.sources.iter().map(|s| s.refused.len()).sum(),
+        sources: (0..read.sources.len()).filter(|&si| source_was_read(&read.sources[si])).map(|si| source_name(read, si)).collect(),
+        not_read: unread(read),
+        not_read_names: (0..read.sources.len()).filter(|&si| !source_was_read(&read.sources[si])).map(|si| source_name(read, si)).collect(),
     }
 }
 
@@ -2029,6 +2043,11 @@ impl Unread {
     }
 }
 
+/// A source whose folder or file was walked to its end: the test `unread` makes.
+fn source_was_read(s: &SourceRead) -> bool {
+    s.error.is_empty() && !s.capped
+}
+
 /// The sources whose folder or file could not be walked, or was cut at a
 /// bound, or None when every one was read. A job file refused inside a source
 /// that was read is counted apart, as a file (`NodeJobs::refused`).
@@ -2036,13 +2055,10 @@ pub fn unread(read: &Read) -> Option<Unread> {
     let mut reasons: Vec<String> = Vec::new();
     let mut n = 0;
     for s in &read.sources {
-        let why = if !s.error.is_empty() {
-            s.error.clone()
-        } else if s.capped {
-            "stopped at its bound on files or depth".to_string()
-        } else {
+        if source_was_read(s) {
             continue;
-        };
+        }
+        let why = if s.error.is_empty() { "stopped at its bound on files or depth".to_string() } else { s.error.clone() };
         n += 1;
         if !reasons.contains(&why) {
             reasons.push(why);
@@ -3179,6 +3195,47 @@ jobs:
         // The CI step and the templated one could hold any model; an
         // unresolved compile could not run it.
         assert_eq!(jobs.maybe.iter().map(|g| g.job.name.as_str()).collect::<Vec<_>>(), ["CI", "Templated"]);
+    }
+
+    #[test]
+    fn a_node_answer_names_its_sources_in_the_order_read() {
+        let d = dir("node-sources");
+        write(&d, "daily.yml", DAG);
+        write(&d, "cloud/jobs.yml", CLOUD);
+        let g = graph();
+        let mut labelled = source(DBT_CLOUD, &d.join("cloud"), &[]);
+        labelled.label = "cloud".into();
+        let plain = source(AIRFLOW, &d, &[]);
+        let (read, _) = build(&g, &d, &[plain.clone(), labelled]);
+        let found = for_node(&g, &read, g.index["model.shop.orders"]);
+        assert_eq!(found.sources, [plain.path.clone(), "cloud".to_string()], "a label wins over its path, the order is the one read");
+        let (none, _) = build(&g, &d, &[]);
+        assert!(for_node(&g, &none, g.index["model.shop.orders"]).sources.is_empty());
+    }
+
+    #[test]
+    fn a_node_answer_names_the_sources_not_read_apart() {
+        let d = dir("node-not-read");
+        write(&d, "daily.yml", DAG);
+        let g = graph();
+        let orders = g.index["model.shop.orders"];
+        let mut gone = source(DBT_CLOUD, &d.join("missing"), &[]);
+        gone.label = "cloud".into();
+        let (mut read, _) = build(&g, &d, &[source(AIRFLOW, &d, &[]), gone, source(AIRFLOW, &d, &[])]);
+        let found = for_node(&g, &read, orders);
+        assert_eq!(found.sources.len(), 2, "the two that were walked");
+        assert_eq!(found.not_read_names, ["cloud"], "the one with no path, by its label");
+        assert_eq!(found.not_read.as_ref().unwrap().text(), "1 of 3 sources (nothing at this path)");
+        // A walk cut at its bound is not read either.
+        read.sources[0].capped = true;
+        let cut = for_node(&g, &read, orders);
+        assert_eq!(cut.sources.len(), 1);
+        assert_eq!(cut.not_read_names.len(), 2);
+        assert!(cut.not_read.unwrap().reason.contains("stopped at its bound"));
+        // Every source read: neither field leaves.
+        let (whole, _) = build(&g, &d, &[source(AIRFLOW, &d, &[])]);
+        let json = serde_json::to_string(&for_node(&g, &whole, orders)).unwrap();
+        assert!(!json.contains("not_read"), "{json}");
     }
 
     #[test]
