@@ -2675,6 +2675,7 @@ function collinTab(f) {
 function activate(path, focusLineage = true, keepPanel = false) {
   if (!keepPanel) closePanel();
   S.active = path;
+  markGrepOpen();
   const f = S.open.get(path);
   $('#editor-empty').classList.add('hidden');
   if (ownsPane(f)) {
@@ -2736,6 +2737,7 @@ function settleTabs() {
       $('#editor-empty').classList.remove('hidden');
       updateStatus();
       renderCrumbs();
+      markGrepOpen();
     }
   }
   renderTabs();
@@ -17066,7 +17068,7 @@ function grepSummary(result, query) {
   if (query.length < 3) return 'three letters or more';
   if (!result) return 'searching…';
   const files = result.files.length;
-  if (!files) return `no match for "${query}"`;
+  if (!files) return `no match for “${query}”`;
   const hits = result.total;
   const bits = [`${hits} match${hits > 1 ? 'es' : ''} in ${files} file${files > 1 ? 's' : ''}`];
   if (result.capped) bits.push('showing the first found');
@@ -17074,40 +17076,176 @@ function grepSummary(result, query) {
   return bits.join(' · ');
 }
 
+/* A line as the list shows it, [before, match, after]: indentation dropped,
+   and a match that ends past column 24 brought back into the row by cutting the
+   front off at a word edge, 2 to 16 characters before it, or 8 before it when
+   there is none. A narrow sidebar would otherwise hide the very letters that
+   were searched for, behind an ellipsis at the end of the row. */
+function grepLine(text, query) {
+  const trimmed = text.replace(/^\s+/, '');
+  const [before, hit, after] = splitMatch(trimmed, query);
+  const at = before.length;
+  if (!hit || at + hit.length <= 24) return [before, hit, after];
+  let from = Math.max(0, at - 8);
+  for (let j = at - 2; j >= Math.max(0, at - 16); j -= 1) {
+    if (' .(,'.includes(trimmed.charAt(j))) { from = j + 1; break; }
+  }
+  // A cut between the halves of an emoji would show a broken glyph.
+  if (from && trimmed.charCodeAt(from) >= 0xDC00 && trimmed.charCodeAt(from) <= 0xDFFF) from -= 1;
+  if (!from) return [before, hit, after];
+  return ['…' + trimmed.slice(from, at), hit, after];
+}
+
 let grepTimer = null;
 let grepRun = 0;
+/* The files folded in the list, kept from one query to the next and emptied
+   with the box; the hit opened last, as "path:line"; and the result on screen,
+   so a fold redraws without asking the server again. */
+const grepFolded = new Set();
+let grepCur = '';
+let grepLast = { result: null, query: '' };
+
+const GREP_CHEVRON = '<svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>';
 
 function paintGrep(result, query) {
+  grepLast = { result, query };
   $('#grep-status').textContent = grepSummary(result, query);
+  const files = result ? result.files : [];
+  $('#grep-clear').classList.toggle('hidden', !$('#grep-input').value);
+  const fold = $('#grep-fold');
+  fold.classList.toggle('hidden', !files.length);
+  const label = files.every((f) => grepFolded.has(f.path)) ? 'Unfold every file' : 'Fold every file';
+  fold.title = label;
+  fold.setAttribute('aria-label', label);
   const host = $('#grep-results');
   host.textContent = '';
   if (!result) return;
-  for (const f of result.files) {
-    const head = document.createElement('div');
-    head.className = 'grep-file';
-    head.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: base(f.path) }));
-    head.append(Object.assign(document.createElement('span'), { className: 'dir', textContent: dirOf(f.path) }));
+  if (!files.length) {
+    host.append(jel('div', 'gempty', `Nothing in the project holds “${query}”.`));
+    return;
+  }
+  for (const f of files) {
+    const open = !grepFolded.has(f.path);
+    const head = jel('button', 'gfile');
+    head.type = 'button';
+    head.dataset.path = f.path;
     head.title = f.path;
-    head.addEventListener('click', () => openAt(f.path, f.hits[0].line));
+    head.setAttribute('aria-expanded', String(open));
+    head.insertAdjacentHTML('beforeend', GREP_CHEVRON);
+    head.firstElementChild.classList.toggle('open', open);
+    head.append(fileIcon(f.path, fileMark(f.path)), jel('span', 'nm', base(f.path)), jel('span', 'opn', '\u00b7 open'),
+      jel('span', 'dir', f.path.includes('/') ? dirOf(f.path) : ''), jel('span', 'cnt', String(f.hits.length + (f.more || 0))));
+    head.addEventListener('click', () => toggleGrepFile(f.path));
     host.appendChild(head);
+    if (!open) continue;
     for (const h of f.hits) {
-      const row = document.createElement('div');
-      row.className = 'grep-hit';
-      row.append(Object.assign(document.createElement('span'), { className: 'ln', textContent: h.line }));
-      const [before, hit, after] = splitMatch(h.text, query);
-      const body = document.createElement('span');
-      body.className = 'tx';
-      body.append(document.createTextNode(before));
-      if (hit) body.append(Object.assign(document.createElement('mark'), { textContent: hit }));
-      body.append(document.createTextNode(after));
+      const row = jel('button', 'ghit');
+      row.type = 'button';
+      row.dataset.path = f.path;
+      row.dataset.line = h.line;
+      row.setAttribute('aria-current', String(grepCur === `${f.path}:${h.line}`));
+      row.append(jel('span', 'ln', String(h.line)));
+      const body = jel('span', 'tx');
+      markedText(body, grepLine(h.text, query));
       row.appendChild(body);
-      row.addEventListener('click', () => openAt(f.path, h.line));
+      row.addEventListener('click', () => {
+        grepCur = `${f.path}:${h.line}`;
+        for (const r of host.querySelectorAll('.ghit')) r.setAttribute('aria-current', String(r === row));
+        openAt(f.path, h.line);
+      });
       host.appendChild(row);
     }
-    if (f.more) {
-      host.append(Object.assign(document.createElement('div'), {
-        className: 'grep-more', textContent: `+${f.more} more in this file`,
-      }));
+    // The server stops at 20 lines a file, so these are not on the page to show.
+    if (f.more) host.append(jel('div', 'gmore', `+${f.more} more in this file`));
+  }
+  markGrepOpen();
+  // A model's file in a folder the tree never opened is drawn grey until its
+  // mark is asked for: the icons that gained one are redrawn in place, if this
+  // is still the answer on screen.
+  const shown = grepLast;
+  askMarks(files.map((f) => f.path)).then((gained) => {
+    if (!gained || grepLast !== shown) return;
+    for (const head of $$('#grep-results .gfile')) {
+      const mark = fileMark(head.dataset.path);
+      if (mark) head.querySelector('.ficon').replaceWith(fileIcon(head.dataset.path, mark));
+    }
+  });
+}
+
+/* The header of the file open in the editor says so. Called when the active tab
+   changes, which can be while the Search tab is hidden. */
+function markGrepOpen() {
+  // As the tree marks it: a diff tab stands for the file it compares.
+  const open = projectPath(S.active);
+  for (const head of $$('#grep-results .gfile')) head.classList.toggle('cur', !!open && head.dataset.path === open);
+}
+
+/* Folding redraws from the result on screen. The scroll and the focus stay where
+   they were, so the header pressed is still the one under the finger. */
+function redrawGrep(focusPath) {
+  const host = $('#grep-results');
+  const top = host.scrollTop;
+  paintGrep(grepLast.result, grepLast.query);
+  host.scrollTop = top;
+  const head = focusPath && [...host.querySelectorAll('.gfile')].find((h) => h.dataset.path === focusPath);
+  if (head) focusGrepRow(head);
+}
+
+/* Headers are siblings in one scroll box, so one scrolled past the top stays
+   stuck under the next, and focusing it would leave it hidden behind that one.
+   Where it sits unstuck is the height of the rows before it: when that is above
+   the scroll, the list goes back up to it first. */
+function focusGrepRow(row) {
+  const host = $('#grep-results');
+  let at = 0;
+  if (row.classList.contains('gfile')) {
+    for (let r = row.previousElementSibling; r; r = r.previousElementSibling) at += r.offsetHeight;
+  }
+  if (at < host.scrollTop && row.classList.contains('gfile')) {
+    host.scrollTop = at;
+    row.focus({ preventScroll: true });
+  } else row.focus();
+}
+
+function toggleGrepFile(path, open = grepFolded.has(path)) {
+  if (open) grepFolded.delete(path); else grepFolded.add(path);
+  redrawGrep(path);
+}
+
+function foldAllGrep() {
+  const files = grepLast.result ? grepLast.result.files : [];
+  if (files.every((f) => grepFolded.has(f.path))) grepFolded.clear();
+  else for (const f of files) grepFolded.add(f.path);
+  redrawGrep();
+}
+
+/* The list's keys: the arrows move over the visible rows, headers and hits, and
+   the box is one step above the first. Left and right fold a header and
+   unfold it; left on a hit goes to its header. Enter and Space are the buttons'
+   own. */
+function grepKey(e) {
+  const rows = $$('#grep-results .gfile, #grep-results .ghit');
+  const at = rows.indexOf(document.activeElement);
+  if (at < 0) return;
+  const row = rows[at];
+  const head = row.classList.contains('gfile');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (e.key === 'ArrowUp' && !at) $('#grep-input').focus();
+    else focusGrepRow(rows[Math.min(rows.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))]);
+  } else if (e.key === 'Escape') {
+    // Handled here only, as the app's menus do: nothing behind the list acts on it.
+    e.preventDefault();
+    e.stopPropagation();
+    $('#grep-input').focus();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const folded = row.getAttribute('aria-expanded') === 'false';
+    if (head && e.key === 'ArrowLeft' && !folded) toggleGrepFile(row.dataset.path, false);
+    else if (head && e.key === 'ArrowRight' && folded) toggleGrepFile(row.dataset.path, true);
+    else if (!head && e.key === 'ArrowLeft') {
+      const owner = rows.slice(0, at).reverse().find((r) => r.classList.contains('gfile'));
+      if (owner) focusGrepRow(owner);
     }
   }
 }
@@ -17115,12 +17253,15 @@ function paintGrep(result, query) {
 function runGrep() {
   const query = $('#grep-input').value.trim();
   clearTimeout(grepTimer);
+  // An answer still on its way for what was typed before must not land on
+  // a box that has changed since, a cleared one above all.
+  const run = ++grepRun;
+  if (!query) grepFolded.clear();
   if (query.length < 3) {
     paintGrep(null, query);
     return;
   }
   paintGrep(null, query);
-  const run = ++grepRun;
   // A full scan of a large project is well under a second, so a short pause is
   // enough to keep a burst of typing down to one request.
   grepTimer = setTimeout(() => {
@@ -19302,6 +19443,19 @@ async function boot() {
   $$('.k-palette').forEach((k) => { k.textContent = palKey; });
   $('#palette-btn').title = `Search models, macros and files (${palKey})`;
   $('#grep-input').addEventListener('input', runGrep);
+  $('#grep-input').addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const first = $('#grep-results .gfile');
+    if (first) focusGrepRow(first);
+  });
+  $('#grep-clear').addEventListener('click', () => {
+    $('#grep-input').value = '';
+    runGrep();
+    $('#grep-input').focus();
+  });
+  $('#grep-fold').addEventListener('click', foldAllGrep);
+  $('#grep-results').addEventListener('keydown', grepKey);
   renderTabs();
   paintMode();
   $('#editor-host').style.display = 'none';

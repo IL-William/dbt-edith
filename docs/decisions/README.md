@@ -158,6 +158,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0152](0152-a-release-is-checked-on-virustotal-before-it-is-published.md) | A release is checked on VirusTotal before it is published | changing what the release workflow does between the build and the publication, the `VIRUSTOTAL_API_KEY` secret, or the override that publishes a flagged release |
 | [0153](0153-the-lineage-exports-from-one-menu-that-names-each-output.md) | The lineage exports from one menu that names each output | changing an output, a word, the head or the file name of the Export menu, or the look of the toggles above the lineage |
 | [0154](0154-the-palette-groups-its-answers-five-rows-a-group.md) | The palette groups its answers, five rows a group | changing what `Cmd/Ctrl + K` shows of an answer, how many rows a group keeps, how a cut answer is counted, or what its last row hands over to |
+| [0155](0155-the-search-tab-groups-its-lines-by-file-and-keeps-the-match-in-sight.md) | The Search tab groups its lines by file and keeps the match in sight | changing how the Search tab lays out its answer, what a click on a file header or a line does, how a long line is cut, or how many lines a file shows |
 
 ## Keeping these honest
 

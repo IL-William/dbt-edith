@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.6.0 - 2026-11-08
+
+- Group the Search tab's lines by file: a search box with a clear button, a
+  status line with a fold-every-file button, and per file a header that stays
+  in view (icon, name, folder, line count, `· open` for the file in the
+  editor) which folds on a click, its lines opening the file at that line. A
+  match far along a line is brought into the row by cutting the front of the
+  line, and the arrows, Left, Right and Escape move over the list (0155).
+
 ## 2.5.0 - 2026-11-08
 
 - Group the Cmd/Ctrl + K palette's answers and size it to them: models and

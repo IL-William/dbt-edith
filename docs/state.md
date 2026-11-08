@@ -33,7 +33,9 @@ away without leaving the editor. The outline is scanned in the browser (0022);
 Search across file contents: the Search tab reads the indexed
 files rather than their names, so a column used in forty models is findable. It
 never opens a `.env` (0020). A full pass over a 12 000 file project is under a
-second in release, after an ASCII fast path and a per-file pre-check.
+second in release, after an ASCII fast path and a per-file pre-check. The
+lines are grouped by file under a header that folds, and a match far along a
+line is kept in the row by cutting the front of the line (0155).
 
 Selector expressions: the Lineage tab has a third mode where
 you type a dbt selection expression and the canvas draws the set it matches,
@@ -2745,9 +2747,9 @@ of its own, and each panel updates the tour, its page under
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
 38. **The rest of the redesign, one pull request each.** The depth in dbt's
-    syntax, the Lineage space, column roles in the box, Search, the keys
-    excerpt, the manifest card, the settings, shortcuts, Jobs, the terminal,
-    Compiled, Git, Catalog, Reports and the design docs.
+    syntax, the Lineage space, column roles in the box, the keys excerpt,
+    the manifest card, the settings, shortcuts, Jobs, the terminal, Compiled,
+    Git, Catalog, Reports and the design docs.
 39. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
