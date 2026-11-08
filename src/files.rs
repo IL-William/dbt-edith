@@ -722,16 +722,16 @@ mod tests {
     #[test]
     fn grep_finds_a_word_whatever_its_case() {
         let files: &[(&str, &[u8])] = &[
-            ("models/a.sql", b"select BrokerCode\nfrom t\n"),
+            ("models/a.sql", b"select CustomerId\nfrom t\n"),
             ("models/b.sql", b"-- nothing here\n"),
         ];
         let dir = grep_dir("case", files);
-        let r = grep(&dir, &index(files), "brokercode", 50, 10);
+        let r = grep(&dir, &index(files), "customerid", 50, 10);
         assert_eq!(r.total, 1);
         assert_eq!(r.files.len(), 1);
         assert_eq!(r.files[0].path, "models/a.sql");
         assert_eq!(r.files[0].hits[0].line, 1, "line numbers are 1-based");
-        assert_eq!(r.files[0].hits[0].text, "select BrokerCode");
+        assert_eq!(r.files[0].hits[0].text, "select CustomerId");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -855,13 +855,13 @@ mod tests {
     #[test]
     fn grep_reads_crlf_and_a_bom_like_the_editor_does() {
         let mut bytes = vec![0xEF, 0xBB, 0xBF];
-        bytes.extend_from_slice(b"select 1\r\nwhere broker = 1\r\n");
+        bytes.extend_from_slice(b"select 1\r\nwhere customer = 1\r\n");
         let files: &[(&str, &[u8])] = &[("models/a.sql", b"")];
         let dir = grep_dir("crlf", files);
         std::fs::write(dir.join("models/a.sql"), &bytes).unwrap();
-        let r = grep(&dir, &index(files), "broker", 50, 10);
+        let r = grep(&dir, &index(files), "customer", 50, 10);
         assert_eq!(r.files[0].hits[0].line, 2);
-        assert_eq!(r.files[0].hits[0].text, "where broker = 1");
+        assert_eq!(r.files[0].hits[0].text, "where customer = 1");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -877,10 +877,10 @@ mod tests {
     fn find_ci_offsets_land_on_a_character_boundary() {
         // Lowercasing can change a string's length, so an index into the
         // lowercased copy would not be valid here.
-        let line = "SELECT \u{130}STANBUL, brokercode";
-        let at = find_ci(line, "brokercode").unwrap();
+        let line = "SELECT \u{130}STANBUL, customerid";
+        let at = find_ci(line, "customerid").unwrap();
         assert!(line.is_char_boundary(at));
-        assert_eq!(&line[at..at + 10], "brokercode");
+        assert_eq!(&line[at..at + 10], "customerid");
         assert_eq!(find_ci("abc", "zzz"), None);
     }
 

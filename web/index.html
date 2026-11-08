@@ -328,9 +328,19 @@
     </div>
 
     <div id="side-search" class="side-pane hidden">
-      <input id="grep-input" class="filter" placeholder="Search in all files…" spellcheck="false" autocomplete="off">
-      <div id="grep-status" class="muted grep-status"></div>
-      <div id="grep-results" class="list"></div>
+      <div class="sfind">
+        <label class="sinput">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75"/><path d="M10.5 10.5l3.5 3.5"/></svg>
+          <input id="grep-input" type="text" placeholder="Search in all files…" spellcheck="false" autocomplete="off" aria-label="Search in all files">
+          <button id="grep-clear" class="sclear hidden" type="button" title="Clear the search" aria-label="Clear the search"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+        </label>
+        <div class="sstat">
+          <span id="grep-status"></span>
+          <div class="grow"></div>
+          <button id="grep-fold" class="sfold hidden" type="button" title="Fold every file" aria-label="Fold every file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5L8 6l3.5-3.5M4.5 13.5L8 10l3.5 3.5"/></svg></button>
+        </div>
+      </div>
+      <div id="grep-results" class="gres"></div>
     </div>
     <div id="side-models" class="side-pane hidden">
       <input id="model-filter" class="filter" placeholder="Filter models and sources…" spellcheck="false">

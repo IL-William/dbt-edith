@@ -217,6 +217,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | show where a node's config comes from, or derive an fqn from a path | [0038](docs/decisions/0038-a-file-lists-the-keys-that-reach-it.md) |
 | return any value derived from a `.env` file | [0019](docs/decisions/0019-a-resolved-value-may-be-shown.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | make the server read files it was not asked for by name | [0020](docs/decisions/0020-search-never-opens-an-env-file.md) |
+| change how the Search tab groups its lines, what a click on a file's header or a line does, or how a long line is cut | [0155](docs/decisions/0155-the-search-tab-groups-its-lines-by-file-and-keeps-the-match-in-sight.md) |
 | show the structure inside a file, or parse SQL for it | [0022](docs/decisions/0022-the-outline-is-scanned-in-the-browser.md) |
 | read a `.sql` file to work out anything at all | [0002](docs/decisions/0002-lineage-from-the-manifest.md), [0023](docs/decisions/0023-column-lineage-may-be-parsed.md) |
 | resolve a dbt selector, or add a selector method | [0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md) |

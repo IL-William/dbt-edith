@@ -110,13 +110,22 @@ outranking your own code.
 
 ## Search in file contents
 
-![The Search tab for the word amount, its matching lines grouped by file, beside stg_payments.sql](../shots/search-files.png)
+![The Search tab for the word amount: one group per file under a header with its icon, folder and line count, the file open in the editor marked, and each match highlighted](../shots/search-files.png)
 
 The **Search** tab in the sidebar looks inside every indexed file, which
 `Cmd/Ctrl + K` cannot: that one matches names, so a column used in forty models
 is invisible to it. Type three letters or more and the matching lines appear
 grouped by file, with the match highlighted; clicking one opens the file in the
-preview tab with the cursor on that line.
+preview tab with the cursor on that line. Each file's header stays at the top
+while its lines scroll, and carries the file's icon, its name, its folder and
+how many lines it holds; the file open in the editor says `· open`. A click on
+a header folds the file, and the button beside the summary folds or unfolds
+every file; the folded files stay folded as you type, and come back open when
+the box is cleared. A match far along a line is brought into view by cutting the
+front of the line, so the letters you typed are never the part hidden. From the
+keyboard, Down from the box goes to the first file, the arrows move over the
+rows, Left and Right fold and unfold a header, and Escape goes back to the box
+([0155](../decisions/0155-the-search-tab-groups-its-lines-by-file-and-keeps-the-match-in-sight.md)).
 
 It is case-insensitive and plain text, not a pattern. Several files are read at
 once, so results follow typing rather than waiting for Enter. Files it passed

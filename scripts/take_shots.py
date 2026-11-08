@@ -753,7 +753,7 @@ class Shots:
         # Search inside the files, in the sidebar.
         self.click("[data-side=search]")
         self.js("(i => { i.value = 'amount'; i.dispatchEvent(new Event('input', { bubbles: true })); })(document.querySelector('#grep-input'))")
-        self.until("document.querySelectorAll('#grep-results .grep-hit').length > 3", "the search's hits")
+        self.until("document.querySelectorAll('#grep-results .ghit').length > 3", "the search's hits")
         self.rest()
         self.take("search-files")
         self.click("[data-side=files]")
