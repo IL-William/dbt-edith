@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.7.0 - 2026-11-08
+
+- Show the lines of `dbt_project.yml` that configure a file, as it writes them,
+  under a violet `dbt_project.yml` button at the end of the breadcrumb: each
+  level's key and its configs with their line numbers, a thin `⋯` where lines
+  were left out, the folder holding the file tagged, and a key a deeper level
+  replaces struck with the line that replaces it, following dbt's merge rules
+  (`tags` and the hooks add up, `meta` and `docs` go key by key). Picking a line
+  opens `dbt_project.yml` there, and the dialog stays inside the editor (0156).
+
 ## 2.6.0 - 2026-11-08
 
 - Group the Search tab's lines by file: a search box with a clear button, a

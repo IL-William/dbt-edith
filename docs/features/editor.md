@@ -60,21 +60,36 @@ own folder rather than at a guess. Hovering a key that did link names the folder
 resource in the manifest sits under it, and names the other roots it exists
 under when a project has several.
 
-![The violet dbt_project.yml button at the end of customers.sql's breadcrumb, with the list of keys that reach it](../shots/editor-project-keys.png)
+![The violet dbt_project.yml button at the end of stg_payments.sql's breadcrumb, with the lines of dbt_project.yml that reach it, one struck where the staging folder sets it again](../shots/editor-project-keys.png)
 
 The other way round, a model, seed, snapshot, analysis or singular test has a
-round violet button at the end of its breadcrumb, a file with an arrow coming
-into it, for `dbt_project.yml`. It lists every key of that file
-reaching it, broadest first and indented as the file nests them, each with what
-it sets, and picking one opens `dbt_project.yml` at that key. A key reaches a
-file when its chain begins the file's fqn, which is dbt's own rule, so a model
-three folders below the only key written is listed under that key and those
-above it, not under a key for its own folder that does not exist. A package's
-models are reached by the key naming the package and by the configs set
-directly under `models:`. The list says where `dbt_project.yml` configures a
-file, never the config it ends up with: a `config()` in the file and its
-properties YAML both come first, and `tags`, `meta` and the hooks add up
-across levels (0038).
+violet `dbt_project.yml` button at the end of its breadcrumb, the YAML file's
+icon and its name. It opens a dialog with the lines of that file reaching the
+file, as `dbt_project.yml` writes them and with their line numbers: the key of
+each level, and every config set directly under it with all of its own lines.
+Lines left out between two shown, the folders that do not reach the file for
+one, are marked by a thin `⋯`. The folder that holds the file is tagged "is
+here". Picking a line opens `dbt_project.yml` there, and `Open` at its top. A
+key reaches a file when its chain begins the file's fqn, which is dbt's own
+rule, so a model three folders below the only key written is listed under that
+key and those above it, not under a key for its own folder that does not
+exist. A package's models are reached by the key naming the package and by the
+configs set directly under `models:`.
+
+A line a deeper level of the same file replaces is struck, with "replaced on
+line N" naming the setting dbt keeps. That follows dbt's merge rules: `tags`,
+the hooks and `packages` add up and are never struck; `meta`, `docs`, `quoting`
+and `column_types` are replaced key by key, the config's own line staying;
+`grants` too, unless the deeper key starts with `+`, which extends the list;
+every other config is replaced by the deepest level that sets it. A value
+written in flow style (`{node_color: gold}`) is never struck, since one line
+cannot be half struck. The dialog says where `dbt_project.yml` configures a
+file, not the config it ends up with: a `config()` in the file and its
+properties YAML come after every level, which its footer says. For a file of
+an installed package the order is the other way: the lines shown are the root
+project's, which dbt applies after the package's own `dbt_project.yml`,
+properties YAML and `config()`, and the footer says they win over those
+(0038, 0156).
 
 Jinja in a model is coloured by role: delimiters and keywords in orange, what
 dbt itself provides (`ref`, `source`, `this`, `adapter`, `is_incremental`...) in

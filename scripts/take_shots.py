@@ -511,7 +511,8 @@ class Shots:
         parts = path.split("/")[:-1]
         for i in range(len(parts)):
             sub = "/".join(parts[: i + 1])
-            inside = f"!!document.querySelector('#tree .row[data-path^=\"{sub}/\"]')"
+            # Open, not merely listed: a folder folded again keeps its rows.
+            inside = f"document.querySelector('#tree .row[data-path=\"{sub}\"]')?.classList.contains('open') === true"
             if not self.js(inside):
                 self.js(f"document.querySelector('#tree .row[data-path=\"{sub}\"]').click()")
                 self.until(inside, sub)
@@ -651,13 +652,22 @@ class Shots:
         self.take("editor")
         self.rest()
 
-        # The violet button at the end of the breadcrumb, and the keys of
-        # dbt_project.yml that reach the model.
+        # The violet button at the end of the breadcrumb, and the lines of
+        # dbt_project.yml that reach a staging model: one the folder above
+        # sets is struck where the staging folder sets it again.
+        self.open_model("models/staging/stg_payments.sql", "stg_payments")
         self.click("#crumbs .cfg")
-        self.until("document.querySelectorAll('.crumbmenu.config button .lbl').length > 0", "the keys menu")
+        self.until("document.querySelectorAll('.crumbmenu.config .yl').length > 0", "the keys dialog")
         self.take("editor-project-keys")
         self.page.key(*wt.ESCAPE)
-        self.until("!document.querySelector('.crumbmenu')", "the menu to close")
+        self.until("!document.querySelector('.crumbmenu')", "the dialog to close")
+        # As a person leaves it: the tab closed and the folder folded again,
+        # so the shots below are what a retake without this one would give,
+        # with the model they follow, customers, in front.
+        self.js("document.querySelector('#tabbar .ftab[data-key=\"models/staging/stg_payments.sql\"] .x').click()")
+        self.js("document.querySelector('#tree .row[data-path=\"models/staging\"]').click()")
+        self.until("!document.querySelector('#tree .row[data-path=\"models/staging\"]').classList.contains('open')", "staging to fold")
+        self.open_model("models/customers.sql", "customers")
 
         # The lineage: the whole project as a selection in the Lineage space,
         # by folder, its tests hanging under their models.

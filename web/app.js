@@ -903,8 +903,8 @@ function yamlKeyRange(line, col) {
    is out: nothing below either is a path.
 
    Each entry also carries where its key sits and the configs set directly
-   under it, which is what the breadcrumb's list of the keys reaching a file
-   shows (0038). */
+   under it, with the line each starts on, which is what the excerpt of the keys
+   reaching a file shows (0038, 0156). */
 function projectPathKeys(text) {
   const nodes = yamlOutline(text);
   const lines = text.split('\n');
@@ -938,7 +938,10 @@ function projectPathKeys(text) {
     // that is no mapping, whatever the name.
     const sets = kids[i]
       .filter((j) => nodes[j].label.startsWith('+') || nodes[j].kind !== 'map')
-      .map((j) => ({ name: nodes[j].label, value: yamlLineValue(lines[nodes[j].line], nodes[j].col) }));
+      .map((j) => ({
+        name: nodes[j].label, value: yamlLineValue(lines[nodes[j].line], nodes[j].col),
+        node: j, line: nodes[j].line,
+      }));
     out.push({
       block, chain, ranges: [[base + range[0], base + range[1]]],
       line: nodes[i].line, col: range[0], sets,
@@ -947,22 +950,27 @@ function projectPathKeys(text) {
   return out;
 }
 
-/* The value a key holds on its own line, as written, less a trailing comment
-   and one layer of quotes. Empty when the value sits on the lines below, as a
-   mapping, a list or a `|` block, since one line of a menu cannot hold it. A
+/* A value as written on its line, less a trailing comment, quotes kept. A
    quote only opens where YAML could start a quoted scalar, so the apostrophe
    in `don't` hides no comment. */
-function yamlLineValue(line, col) {
-  const kv = yamlKey(line.slice(col));
-  if (!kv) return '';
-  let v = kv.value;
+function yamlValueText(v) {
   let quote = '';
   for (let i = 0; i < v.length; i++) {
     const c = v[i];
     if (quote) { if (c === quote) quote = ''; continue; }
     if ((c === '"' || c === "'") && (i === 0 || '[{, '.includes(v[i - 1]))) { quote = c; continue; }
-    if (c === '#' && (i === 0 || v[i - 1] === ' ' || v[i - 1] === '\t')) { v = v.slice(0, i).trimEnd(); break; }
+    if (c === '#' && (i === 0 || v[i - 1] === ' ' || v[i - 1] === '\t')) return v.slice(0, i).trimEnd();
   }
+  return v;
+}
+
+/* The value a key holds on its own line, as written, less a trailing comment
+   and one layer of quotes. Empty when the value sits on the lines below, as a
+   mapping, a list or a `|` block, since one line of a menu cannot hold it. */
+function yamlLineValue(line, col) {
+  const kv = yamlKey(line.slice(col));
+  if (!kv) return '';
+  const v = yamlValueText(kv.value);
   if (v[0] === '|' || v[0] === '>') return '';
   return unquote(v);
 }
@@ -979,6 +987,9 @@ function projectNameIn(text) {
    are not here: a macro is no node, and a file holds several. */
 const REACHED_BLOCKS = ['models', 'seeds', 'snapshots', 'analyses'];
 const PACKAGE_ROOTS = { models: ['models'], seeds: ['seeds'], snapshots: ['snapshots'], analyses: ['analyses'], tests: ['tests'] };
+
+/* Whether a file sits in an installed package, whose own project owns it. */
+function inPackage(file) { return /^(dbt_packages|dbt_modules)\/[^/]+\/./.test(file); }
 
 /* A file's fqn as dbt builds it: the project, the folders under the resource
    path it sits in, and its name without the extension. Read off the path, so
@@ -997,7 +1008,7 @@ function fileFqn(file, roots, name) {
   let parts = file.split('/');
   let head = name;
   let byBlock = roots || {};
-  if ((parts[0] === 'dbt_packages' || parts[0] === 'dbt_modules') && parts.length > 2) {
+  if (inPackage(file)) {
     head = parts[1];
     parts = parts.slice(2);
     byBlock = PACKAGE_ROOTS;
@@ -1027,14 +1038,17 @@ function fileFqn(file, roots, name) {
    folders below the only key written is reached by that key and by those
    above it, and the deepest one is not necessarily its own folder's. The key
    of the block itself applies to the whole kind, packages included. Where the
-   config is written, never what wins: a `config()` in the file or in its
-   properties YAML comes first, and tags, meta and hooks add up. */
+   config is written, and what a deeper level of this file replaces or adds to
+   as dbt's merge rules say (0156): a `config()` in the file or in its
+   properties YAML is applied after every level and is not looked at. */
 function configLevels(keys, at) {
   if (!at) return [];
-  return keys
+  const levels = keys
     .filter((k) => at.blocks.includes(k.block) && k.chain.length <= at.fqn.length
       && k.chain.every((seg, i) => seg === at.fqn[i]))
     .sort((a, b) => a.chain.length - b.chain.length);
+  // A project writing both blocks is read by dbt through `data_tests:` alone.
+  return levels.some((k) => k.block === 'data_tests') ? levels.filter((k) => k.block !== 'tests') : levels;
 }
 
 /* What the card of a key placed nowhere says. A key named after a config is
@@ -3528,24 +3542,23 @@ const CONFIGURABLE = /\.(sql|py|csv)$/i;
 
 /* The way from a file to the keys of dbt_project.yml that reach it (0038),
    at the far end of the bar, apart from the path it is not a segment of. A
-   round button in the violet of dbt's own YAML, like the profile's. */
+   pill in the violet of dbt's own YAML, with the YAML file's icon and its
+   name, the way the design draws it. */
 function configCrumb(file) {
-  const b = crumbButton('', '', (btn) => openCrumbMenu(btn, { kind: 'config', file }));
+  const b = crumbButton('dbt_project.yml', '', (btn) => openCrumbMenu(btn, { kind: 'config', file }));
   b.classList.add('cfg');
-  b.textContent = '';
-  b.append(strokeIcon('0 0 20 16', 'cfgicon', [
-    'M8.5 1.5h5l3.5 3.5v9.5h-8.5zM13.5 1.5V5H17M11 8.5h3.5M11 11.5h3.5',
-    'M1.5 8h5.5M4.5 5.5 7 8l-2.5 2.5',
-  ]));
+  b.insertAdjacentHTML('afterbegin', YML_ICON);
   b.title = 'dbt_project.yml\nWhere it configures this file';
   b.setAttribute('aria-label', 'Where dbt_project.yml configures this file');
+  b.setAttribute('aria-haspopup', 'dialog');
+  b.setAttribute('aria-expanded', 'false');
   return b;
 }
 
-/* The menu of configCrumb: each key reaching the file, broadest first and
-   indented as the file nests them, with what it sets beside it. The note
-   heading it is the point of the design: this is where dbt_project.yml
-   configures the file, which is not the config the file ends up with. */
+/* The dialog of configCrumb: the lines of dbt_project.yml that reach the file,
+   as it writes them, the ones a deeper level replaces struck (0156). It is
+   where dbt_project.yml configures the file, which is not the config the file
+   ends up with: the footer says what still comes after. */
 async function configMenu(file) {
   const open = S.open.get('dbt_project.yml');
   let raw;
@@ -3564,35 +3577,175 @@ async function configMenu(file) {
 /* configMenu once dbt_project.yml and the roots are read, apart so a test
    reaches it. The text comes from the tab when one is open and from the disk
    otherwise, in the endings the file was saved with, so it is read as the tab
-   would hold it either way: a level's line is CodeMirror's line. */
+   would hold it either way: a line is CodeMirror's line. With no line to show,
+   `note` says why. */
 function configMenuFor(raw, file, roots) {
-  const project = { label: 'dbt_project.yml', pick: () => openProjectAt(0, 0) };
-  if (raw.length > OUTLINE_MAX) return { notes: ['dbt_project.yml is too large to scan.'], rows: [project] };
+  const name = file.slice(file.lastIndexOf('/') + 1);
+  const menu = { name, title: `Where dbt_project.yml configures ${name}`, note: '', lines: [], tag: '', pkg: inPackage(file) };
+  if (raw.length > OUTLINE_MAX) return { ...menu, note: 'dbt_project.yml is too large to scan.' };
   const text = editorText(raw);
   const at = fileFqn(file, roots, projectNameIn(text));
-  if (!at) {
-    return {
-      notes: ['Not a model, seed, snapshot, analysis or test under the paths dbt_project.yml sets.'],
-      rows: [project],
-    };
-  }
+  if (!at) return { ...menu, note: 'Not a model, seed, snapshot, analysis or test under the paths dbt_project.yml sets.' };
   const levels = configLevels(projectPathKeys(text), at);
-  if (!levels.length) return { notes: ['No key of dbt_project.yml reaches this file.'], rows: [project] };
-  return {
-    notes: ['Where dbt_project.yml configures this file. A config() in it, or in its properties YAML, wins.'],
-    rows: levels.map((k, i) => {
-      const sets = k.sets.map((s) => (s.value ? `${s.name}: ${s.value}` : s.name)).join(' · ');
-      return {
-        label: k.chain.length ? k.chain[k.chain.length - 1] : k.block,
-        kind: 'map',
-        depth: k.chain.length,
-        sets,
-        title: [k.block, ...k.chain].join(' › ') + (sets ? `\n${sets}` : ''),
-        current: i === levels.length - 1,
-        pick: () => openProjectAt(k.line, k.col),
-      };
-    }),
+  if (!levels.length) return { ...menu, note: 'No key of dbt_project.yml reaches this file.' };
+  return { ...menu, ...configExcerpt(text, levels, at, name) };
+}
+
+/* How dbt folds a deeper level's config into the upper ones (0156), from the
+   merge metadata each field of dbt-core's config classes declares
+   (`dbt/artifacts/resources/v1/config.py`, `model.py`): these add up or update
+   key by key, `grants` per key unless the deeper key starts with `+`, and every
+   other config, a field with no metadata, is replaced by the deepest level that
+   sets it. */
+const MERGE_APPEND = new Set(['tags', 'pre-hook', 'post-hook', 'packages']);
+const MERGE_UPDATE = new Set(['meta', 'docs', 'quoting', 'column_types', 'contract', 'latest_version_pointer']);
+const MERGE_BY_KEY = new Set(['grants']);
+
+/* The config a key of a level names, as dbt names it: a `+` is dropped and
+   the hooks' underscores are dashes, so `pre_hook` and `+pre-hook` are one. */
+function configName(key) {
+  const n = (key.startsWith('+') ? key.slice(1) : key).trim();
+  return n === 'pre_hook' ? 'pre-hook' : n === 'post_hook' ? 'post-hook' : n;
+}
+
+/* The lines of dbt_project.yml that reach a file, as the file writes them: the
+   key line of each level and every config set directly under it with all of its
+   own lines. Plain data, one entry per line in the file's order:
+   - `over`: the 1-based line of the deeper setting dbt keeps instead of this
+     one (0 when none does), on each line struck, and `noted` on the first of
+     them, which is where the note is written;
+   - `here`: the level that names the folder holding the file;
+   - `gapBefore`: a line holding YAML was left out between this one and the
+     one before. */
+function configExcerpt(text, levels, at, fileName) {
+  const raw = text.split('\n');
+  const nodes = yamlOutline(text);
+  const kids = nodes.map(() => []);
+  nodes.forEach((n, j) => { if (n.parent >= 0) kids[n.parent].push(j); });
+  // The lines of a `|` or `>` block are its value, a `#` among them included.
+  const inBlock = new Set();
+  for (const n of nodes) {
+    const kv = yamlKey(raw[n.line].slice(n.col));
+    if (!kv || (kv.value[0] !== '|' && kv.value[0] !== '>')) continue;
+    for (let l = n.line + 1; l <= n.endLine; l++) if (raw[l].trim() !== '' && yamlIndent(raw[l]) > n.col) inBlock.add(l);
+  }
+  const yamlLine = (l) => { const t = raw[l].trim(); return t !== '' && (t[0] !== '#' || inBlock.has(l)); };
+  // A range ends where its last line of YAML does: a node owns the blank and
+  // comment lines up to the next one, which are no part of its value.
+  const lastOf = (n) => { let e = n.endLine; while (e > n.line && !yamlLine(e)) e--; return e; };
+
+  const shown = new Map();
+  const show = (from, to) => {
+    for (let l = from; l <= to; l++) {
+      if (yamlLine(l) && !shown.has(l)) shown.set(l, { over: 0, noted: false, here: false });
+    }
   };
+  const strike = (n, by) => {
+    for (let l = n.line; l <= lastOf(n); l++) {
+      const e = shown.get(l);
+      if (e) { e.over = by + 1; e.noted = l === n.line; }
+    }
+  };
+
+  // Per level, the settings by config. One written twice at a level is left
+  // alone: YAML keeps the last, and which one the reader means is unknown.
+  const byConfig = levels.map((k) => {
+    const m = new Map();
+    for (const s of k.sets) {
+      const name = configName(s.name);
+      if (!m.has(name)) m.set(name, []);
+      m.get(name).push(s);
+    }
+    return m;
+  });
+  for (const k of levels) {
+    show(k.line, k.line);
+    if (k.chain.length === at.fqn.length - 1) shown.get(k.line).here = true;
+    for (const s of k.sets) show(s.line, lastOf(nodes[s.node]));
+  }
+
+  const stripPlus = (key) => key.replace(/^\++/, '');
+  levels.forEach((k, a) => {
+    for (const [name, group] of byConfig[a]) {
+      if (group.length !== 1 || MERGE_APPEND.has(name)) continue;
+      const up = group[0];
+      // Deepest first, since the deepest level's setting is the one dbt keeps.
+      const deeper = [];
+      for (let b = levels.length - 1; b > a; b--) {
+        const g = byConfig[b].get(name);
+        if (g && g.length === 1) deeper.push(g[0]);
+      }
+      if (!deeper.length) continue;
+      if (!MERGE_UPDATE.has(name) && !MERGE_BY_KEY.has(name)) { strike(nodes[up.node], deeper[0].line); continue; }
+      // Key by key; a value written in flow style on its key line has no key
+      // line of its own to strike, on either side, and one line cannot be half
+      // struck.
+      if (nodes[up.node].kind !== 'map') continue;
+      for (const c of kids[up.node]) {
+        for (const d of deeper) {
+          // A deeper value in flow style may hold the key, unread: nothing is
+          // struck, since the line dbt keeps could be one shown nowhere.
+          if (nodes[d.node].kind !== 'map') break;
+          const hit = kids[d.node].find((j) => (MERGE_BY_KEY.has(name)
+            ? !nodes[j].label.startsWith('+') && nodes[j].label === stripPlus(nodes[c].label)
+            : nodes[j].label === nodes[c].label));
+          if (hit !== undefined) { strike(nodes[c], nodes[hit].line); break; }
+        }
+      }
+    }
+  });
+
+  const lines = [];
+  const startAt = new Map();
+  nodes.forEach((n) => { if (!startAt.has(n.line)) startAt.set(n.line, n); });
+  let prev = -1;
+  let owner = -1;
+  for (const l of [...shown.keys()].sort((x, y) => x - y)) {
+    const e = shown.get(l);
+    let gapBefore = false;
+    for (let m = prev + 1; prev >= 0 && m < l; m++) if (yamlLine(m)) { gapBefore = true; break; }
+    prev = l;
+
+    const col = raw[l].search(/\S/);
+    const rest = raw[l].slice(col).trimEnd();
+    const node = startAt.get(l);
+    // A line no node starts is the text of a `|` block, one level in from its key.
+    while (owner + 1 < nodes.length && nodes[owner + 1].line < l) owner++;
+    const depth = node ? node.depth : (owner >= 0 ? nodes[owner].depth + 1 : 0);
+    let key = '';
+    let punct = '';
+    let value = node ? yamlValueText(rest) : rest;
+    const kv = node && !rest.startsWith('- ') && rest !== '-' ? yamlKey(rest) : null;
+    if (kv) {
+      key = kv.key;
+      value = yamlValueText(kv.value);
+      punct = value ? ': ' : ':';
+    }
+    lines.push({
+      line: l, col, depth, key, punct, value, tpl: value.includes('{{'),
+      over: e.over, noted: e.noted, here: e.here, gapBefore,
+    });
+  }
+  return { lines, tag: `${fileName} is here` };
+}
+
+/* What the dialog's footer says wins over its lines. dbt applies the levels of
+   the project that owns a file first, then the properties YAML, then the file's
+   `config()`; a package's file is also reached by the root project's levels,
+   which this dialog shows, and those come last (`calculate_node_config`, 0156). */
+function configFooter(pkg) {
+  if (!pkg) return 'A config() in the file, or in its properties YAML, wins over these lines.';
+  return 'These are the root project\'s lines. dbt applies them after the package\'s own dbt_project.yml, '
+    + 'properties YAML and config(), so they win over those.';
+}
+
+/* Where the dialog of configCrumb sits: under its button, its right edge on the
+   button's, and held inside the editor pane, whose right edge it would run past
+   when the button sits near it. Rectangles in, a corner out. */
+function configDialogAt(button, pane, box, win) {
+  const left = Math.max(pane.left + 8, Math.min(button.right - box.width, pane.right - 8 - box.width));
+  const top = Math.max(8, Math.min(button.bottom + 4, win.height - box.height - 8));
+  return { left, top };
 }
 
 /* dbt_project.yml at a key, as a link is followed: the chevrons lead back. */
@@ -3675,7 +3828,54 @@ function closeCrumbMenu({ refocus = false } = {}) {
   off();
   el.remove();
   anchor.classList.remove('open');
+  if (anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', 'false');
   if (refocus) anchor.focus();
+}
+
+/* The dialog of configCrumb, built from configMenuFor's answer. Its own
+   classes rather than the crumb menus' rows, since a line here is code: it
+   wraps, and a number and a note sit beside it. */
+function fillConfigDialog(el, menu) {
+  const bold = (text) => Object.assign(document.createElement('b'), { textContent: text });
+  const head = document.createElement('div');
+  head.className = 'k-head';
+  const sentence = document.createElement('span');
+  sentence.append('Where ', bold('dbt_project.yml'), ' configures ', bold(menu.name));
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'k-open';
+  open.append('Open', strokeIcon('0 0 16 16', 'k-ico', ['M6.5 3H3v10h10V9.5', 'M9 2.5h4.5V7M13.5 2.5L7.5 8.5']));
+  open.addEventListener('click', () => openProjectAt(0, 0));
+  head.append(sentence, open);
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', menu.title);
+  el.append(head);
+  if (!menu.lines.length) {
+    el.append(Object.assign(document.createElement('div'), { className: 'k-note', textContent: menu.note }));
+    return;
+  }
+  const box = document.createElement('div');
+  box.className = 'yx';
+  for (const l of menu.lines) {
+    if (l.gapBefore) box.append(Object.assign(document.createElement('div'), { className: 'ygap', textContent: '\u22ef' }));
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'yl' + (l.over ? ' over' : '') + (l.here ? ' cur' : '');
+    const code = document.createElement('span');
+    code.className = 'yc';
+    code.style.setProperty('--d', l.depth);
+    const part = (cls, text) => Object.assign(document.createElement('span'), { className: cls, textContent: text });
+    if (l.key) code.append(part('yk', l.key), part('yp', l.punct));
+    if (l.value) code.append(part(l.tpl ? 'yv tpl' : 'yv', l.value));
+    if (l.noted) code.append(part('ynote', `replaced on line ${l.over}`));
+    if (l.here) code.append(part('ytag', menu.tag));
+    b.append(part('yn', String(l.line + 1)), code);
+    b.addEventListener('click', () => openProjectAt(l.line, l.col));
+    box.append(b);
+  }
+  el.append(box, Object.assign(document.createElement('div'), {
+    className: 'k-foot', textContent: configFooter(menu.pkg),
+  }));
 }
 
 /* The menu a crumb opens. A path crumb lists the folder it sits in, so picking
@@ -3690,11 +3890,10 @@ async function openCrumbMenu(anchor, spec) {
   const ask = ++crumbAsk;
 
   let rows = [];
-  let notes = [];
+  let menu = null;
   if (spec.kind === 'config') {
-    const menu = await configMenu(spec.file);
+    menu = await configMenu(spec.file);
     if (!menu) return;
-    ({ rows, notes } = menu);
   } else if (spec.kind === 'path') {
     let entries;
     try { entries = await api.get('/api/dir?path=' + encodeURIComponent(spec.dir)); }
@@ -3723,17 +3922,15 @@ async function openCrumbMenu(anchor, spec) {
       pick: () => { closeCrumbMenu(); gotoPos(nodes[j].line, nodes[j].col); },
     }));
   }
-  if (!rows.length || ask !== crumbAsk || !anchor.isConnected) return;
+  if ((!menu && !rows.length) || ask !== crumbAsk || !anchor.isConnected) return;
 
   const el = document.createElement('div');
-  el.className = spec.kind === 'config' ? 'crumbmenu config' : 'crumbmenu';
-  for (const text of notes) el.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: text }));
+  el.className = menu ? 'crumbmenu config' : 'crumbmenu';
+  if (menu) fillConfigDialog(el, menu);
   for (const row of rows) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = row.current ? 'on' : '';
-    if (row.depth) b.style.paddingLeft = `${8 + 12 * row.depth}px`;
-    if (row.title) b.title = row.title;
     const ic = document.createElement('span');
     if (row.kind) {
       ic.className = 'sicon';
@@ -3748,18 +3945,28 @@ async function openCrumbMenu(anchor, spec) {
       b.appendChild(fileIcon(row.label, row.mark || null));
     }
     b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: row.label }));
-    if (row.sets) b.append(Object.assign(document.createElement('span'), { className: 'sets', textContent: row.sets }));
     b.addEventListener('click', row.pick);
     el.appendChild(b);
   }
   document.body.appendChild(el);
   anchor.classList.add('open');
 
-  const box = el.getBoundingClientRect();
-  const p = placeFloating(anchor.getBoundingClientRect(), { width: box.width, height: box.height },
-    { width: window.innerWidth, height: window.innerHeight }, 2);
-  el.style.top = `${p.top}px`;
-  el.style.left = `${p.left}px`;
+  if (menu) {
+    // Held to the editor it sits over, which a menu on the window is not.
+    anchor.setAttribute('aria-expanded', 'true');
+    const pane = (anchor.closest('#editor-pane') || document.body).getBoundingClientRect();
+    el.style.maxWidth = `${Math.max(0, pane.width - 16)}px`;
+    const box = el.getBoundingClientRect();
+    const p = configDialogAt(anchor.getBoundingClientRect(), pane, box, { height: window.innerHeight });
+    el.style.top = `${p.top}px`;
+    el.style.left = `${p.left}px`;
+  } else {
+    const box = el.getBoundingClientRect();
+    const p = placeFloating(anchor.getBoundingClientRect(), { width: box.width, height: box.height },
+      { width: window.innerWidth, height: window.innerHeight }, 2);
+    el.style.top = `${p.top}px`;
+    el.style.left = `${p.left}px`;
+  }
 
   const buttons = [...el.querySelectorAll('button')];
   const onKey = (e) => {
@@ -3793,7 +4000,9 @@ async function openCrumbMenu(anchor, spec) {
       window.removeEventListener('resize', onResize);
     },
   };
-  (buttons.find((b) => b.classList.contains('on')) || buttons[0]).focus();
+  // The dialog opens on the line that names the file's folder, else its first.
+  (menu ? el.querySelector('.yl.cur') || el.querySelector('.yl') || buttons[0]
+    : buttons.find((b) => b.classList.contains('on')) || buttons[0]).focus();
 }
 
 // ----------------------------------------------------------------- icons --
@@ -17922,9 +18131,9 @@ function tourSteps(c) {
       text: 'Every `ref()`, `source()` and macro call is a link to the file behind it, and hovering one says what it is. '
         + 'Each part of the breadcrumb above opens a menu of what sits beside it.' });
     steps.push({ key: 'config', target: ['#crumbs .cfg', '.crumbmenu.config'], title: 'Where dbt_project.yml configures it',
-      text: `The violet button at the end of the breadcrumb lists every key of \`dbt_project.yml\` that reaches \`${m.name}\`, `
-        + 'broadest first, with what each one sets. Picking one opens `dbt_project.yml` at that key. A `config()` in the '
-        + 'model, or in its properties YAML, still wins over them.' });
+      text: `The violet \`dbt_project.yml\` button at the end of the breadcrumb shows the lines of \`dbt_project.yml\` that reach \`${m.name}\`, `
+        + 'as the file writes them; a key a deeper folder replaces is struck. Picking a line opens `dbt_project.yml` there. '
+        + 'A `config()` in the model, or in its properties YAML, still wins over them.' });
     steps.push({ key: 'lineage', target: '#dock-lineage', title: 'Lineage',
       text: `\`${m.name}\` and its neighbours, as many levels up and down as the two boxes say, read from \`manifest.json\`: `
         + 'nothing here runs dbt. Click a box to read its file, double-click to centre the lineage on it, and a `+N` '
