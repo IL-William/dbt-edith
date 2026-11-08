@@ -63,7 +63,7 @@
   --node-shadow: none;
   --shadow-sm: 0 6px 18px rgba(0, 0, 0, .45);
   --shadow-xs: 0 4px 12px rgba(0, 0, 0, .35);
-  --shadow-menu: 0 10px 28px rgba(0, 0, 0, .28);   /* the theme menu's, as its board draws it, in every theme */
+  --shadow-menu: 0 10px 28px rgba(0, 0, 0, .28);   /* the theme and export menus', as their boards draw them, in every theme */
   --shadow-modal: 0 18px 60px #0009;
   --shadow-palette: 0 18px 60px #0008;
   --shadow-tour: 0 18px 50px #000b;
@@ -1136,25 +1136,24 @@ kbd {
 }
 .btn:hover { background: var(--btn-hover); border-color: var(--line-strong); }
 .btn.sm { padding: 2px 7px; font-size: 11px; }
-/* A glyph before the label, on one line (docs/state.md): the two toggles
-   above the lineage, .eyebtn, and the actions after them, .icobtn, Fit,
-   Export and Copy image, with the selection bar's Copy names and dbt ls. One
-   rule for both, so a glyph drawn for one family is drawn for the other. The
-   glyph is what tells Copy image from Copy names at a glance. */
+/* A glyph before the label, on one line (docs/state.md): the toggles above the
+   lineage, .eyebtn, and the actions after them, .icobtn, with the selection
+   bar's Copy names and dbt ls. One rule for both, so a glyph drawn for one
+   family is drawn for the other. Fit is its glyph alone, Export carries a
+   chevron, and the picture that tells Copy as image from Copy names sits in the
+   export menu. */
 .eyebtn, .icobtn { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .eyebtn svg, .icobtn svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-/* The tests toggle above the lineage, an eye (testsEye). On, it takes the
-   warning colour: data tests can outnumber the models several times over,
-   and every one is a box. Off, it is muted but not grey, so it stays found.
-   An action keeps the label's own colour: it has no off to be muted by. */
 .eyebtn { color: var(--fg-dim); }
 .eyebtn:hover { color: var(--fg); }
-.eyebtn[aria-pressed=true] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
-.eyebtn[aria-pressed=true]:hover { background: color-mix(in srgb, var(--warn) 20%, transparent); }
-/* The folder bands beside it take the accent instead: they rearrange the
-   canvas rather than weigh it down, and the two can be on at once. */
-.eyebtn.folderbtn[aria-pressed=true] { color: var(--accent); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .12); }
-.eyebtn.folderbtn[aria-pressed=true]:hover { background: rgba(var(--accent-rgb), .2); }
+/* Borderless in both bars above the canvas; a pressed toggle or an open menu
+   takes the neutral selection wash. The pressed look says on, so the eye stays
+   open; amber was a meaning colour on a state (0153). */
+.tools .eyebtn, .tools .icobtn { border-color: transparent; background: none; }
+.tools .eyebtn:hover, .tools .icobtn:hover { border-color: transparent; background: var(--bg-3); color: var(--fg); }
+.tools .eyebtn[aria-pressed=true], .tools .icobtn[aria-expanded=true] { border-color: transparent; background: var(--select); color: var(--fg); }
+.tools .icobtn.only { padding: 2px 4px; }
+.icobtn svg.chev { width: 12px; height: 12px; }
 /* The levels box, under the toggle and over the canvas, so opening it moves
    no button and folds no dock tab; wireFolderLevels() says when (0080). */
 .foldertool { position: relative; display: inline-flex; }
@@ -1166,7 +1165,7 @@ kbd {
 }
 #folder-levels-box.open { display: flex; }
 
-/* Relative, for the Custom selection's panel, which covers the sidebar as
+/* Relative, for the Selection's panel, which covers the sidebar as
    well as the editor and the dock (0101). */
 #body { flex: 1; display: flex; min-height: 0; position: relative; }
 
@@ -1196,8 +1195,8 @@ kbd {
    Reached by the keyboard, a folded tab shows its name under it, over the
    pane, since a tooltip never shows on focus. It does not open in the row, as
    the Reports button's label does: that would push the tabs after it, and on
-   a hover it would move them under the pointer. Fit, Export and Copy image
-   fold the same way once the folded tabs still leave too little room; at the
+   a hover it would move them under the pointer. Export folds its label the same
+   way (Fit has none) once the folded tabs still leave too little room; at the
    row's right end, their name opens leftwards. */
 #dock .tabs.folded .tab > span,
 #lineage-tools.iconic .icobtn > span {
@@ -1896,7 +1895,9 @@ kbd {
 /* ------------------------------------------------------------------ dock -- */
 #dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }
 .dock-pane { flex: 1; min-height: 0; position: relative; }
-.tools { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--fg-dim); padding-right: 4px; }
+.tools { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-dim); padding-right: 4px; }
+/* A thin line between groups of tools. */
+.vsep { flex: 0 0 auto; width: 1px; height: 16px; margin: 0 2px; background: var(--line); }
 .tools input[type=number] {
   width: 42px; background: var(--bg); color: var(--fg); border: 1px solid var(--line);
   border-radius: 4px; padding: 2px 4px; font: 11px var(--mono);
@@ -1910,6 +1911,12 @@ kbd {
 .segbtn:hover:not(:disabled) { background: var(--bg-3); color: var(--fg); }
 .segbtn.active { background: var(--accent-dim); color: var(--fg); }
 .segbtn:disabled { opacity: .35; cursor: default; }
+/* The dock's modes as every dock board draws them: no border, the mode in
+   front raised (0153). Settings' .seg keep theirs. */
+#graph-mode { gap: 2px; padding: 2px; border: 0; border-radius: 7px; background: var(--bg); overflow: visible; }
+#graph-mode .segbtn { height: 22px; padding: 0 9px; border-radius: 5px; font-size: 12px; }
+#graph-mode .segbtn:hover:not(:disabled):not(.active) { background: none; color: var(--fg); }
+#graph-mode .segbtn.active { background: var(--bg-3); box-shadow: 0 0 0 1px var(--line); color: var(--fg); }
 .colchip {
   display: flex; align-items: center; gap: 6px; font: 11px var(--mono);
   background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 1px 4px 1px 9px;
@@ -2607,6 +2614,26 @@ kbd {
 .thememenu button.on .lbl { font-weight: 400; }
 .thememenu .menuhead { padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; }
 .thememenu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The export menu (0153): one row an output, its use, its format, and the file
+   name it saves. */
+.envmenu.exportmenu { width: 350px; min-width: 0; max-width: none; background: var(--bg-3); border-radius: 8px; box-shadow: var(--shadow-menu); }
+.exportmenu .menuhead { display: flex; align-items: baseline; gap: 8px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.exportmenu .menuhead .n { margin-left: auto; font: 10.5px var(--mono); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.exportmenu button.xm-item {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 0 10px; align-items: start;
+  padding: 7px 8px; border-radius: 6px; line-height: 1.45;
+}
+.exportmenu button.xm-item:hover, .exportmenu button.xm-item:focus { background: var(--hover); }
+.exportmenu button.xm-item[aria-disabled=true]:hover { background: transparent; }
+.exportmenu button.xm-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.xm-item svg { width: 15px; height: 15px; margin-top: 2px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--fg-dim); }
+.xm-item .ml { font-size: 12.5px; }
+.xm-item .ms { grid-column: 2; font-size: 11.5px; color: var(--fg-dim); }
+.xm-item .fmt {
+  grid-row: 1; grid-column: 3; display: inline-flex; align-items: center; height: 16px; padding: 0 5px;
+  border-radius: 4px; border: 1px solid var(--line-strong); font: 10.5px/14px var(--mono); color: var(--fg-dim);
+}
+.xm-foot { padding: 4px 8px 6px; font: 11px var(--mono); color: var(--fg-mute); overflow-wrap: anywhere; }
 .tm-check { width: 14px; height: 14px; flex: 0 0 auto; margin-left: auto; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; color: var(--accent); visibility: hidden; }
 .thememenu button[aria-checked=true] .tm-check { visibility: visible; }
 .tm-sw {
@@ -2933,7 +2960,7 @@ html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob { t
    <html>: hw-boxes-tombstone, hw-boxes-coffin, hw-boxes-grimoire. Each is
    the box's rect and its kindbar, drawn by one gradient (#hw-stone, #hw-wood,
    #hw-leather: defs in index.html, outside the canvas, so neither an export
-   nor Copy image carries them), a clip-path for the silhouette, and CSS
+   nor Copy as image carries them), a clip-path for the silhouette, and CSS
    geometry on the kindbar, which keeps the kind's colour. Nothing is added to
    a box. A box taking a ring, a dashed outline included, loses its clip
    (a ring is a stroke, and the clip would cut it at the corners) and

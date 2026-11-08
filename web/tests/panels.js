@@ -70,7 +70,7 @@ PANELS.other = {
   save: function () { return { mine: 1 }; },
   reopen: function () {},
 };
-// A wide one, as the Custom selection's: over the sidebar too, and with
+// A wide one, as the Selection's: over the sidebar too, and with
 // something of its own that Escape closes first, as the selection's card.
 var inside = false;
 PANELS.wide = {

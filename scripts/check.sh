@@ -190,7 +190,8 @@ echo
 echo "== an export with the Halloween theme on, and in Light, in Chrome =="
 # What Lineage.snapshot() writes of a canvas drawn with each box style, against
 # the same canvas with the usual look (0107), and the colours of the file under
-# Halloween and under Light (0150), driven the same way, and skipped the same way.
+# Halloween and under Light (0150), and the Export menu's three outputs, from the
+# keyboard too (0153), driven the same way, and skipped the same way.
 if ! command -v "$py" > /dev/null 2>&1; then
   echo "SKIPPED: no $py"
   skip "the export with the Halloween theme on"

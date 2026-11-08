@@ -376,7 +376,7 @@
                     title="One model and its neighbours, as far up and down as the up and down boxes say. Click a box or open a model to move the focus.">Models</button>
             <button class="segbtn" data-mode="column" disabled>Columns</button>
             <button class="segbtn" data-mode="select" aria-controls="select-panel" aria-expanded="false"
-                    title="Opens the Lineage space: any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Custom selection</button>
+                    title="Opens the Lineage space: any set of nodes you describe, drawn together over the whole window: names, tag:, path: and the other dbt methods, + and @ for what feeds them and what they feed, or one of the project's named selectors from selectors.yml. Read from the manifest: nothing runs dbt.">Selection</button>
           </span>
           <span id="col-chip" class="colchip hidden"></span>
           <label title="Levels of parents drawn. Back to 1 when the model changes other than from the canvas">up <input id="up" type="number" min="0" max="20" value="1"></label>
@@ -386,8 +386,9 @@
                the bar being full in column mode. -->
           <button id="stop-at" class="btn sm eyebtn hidden" type="button" aria-haspopup="menu"
                   aria-label="Stop the walk downstream at"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8H10.5M7.5 5L10.5 8L7.5 11M13.5 3.5V12.5"/></svg><span></span></button>
+          <span class="vsep" aria-hidden="true"></span>
           <!-- collin's indirect edges, walked and drawn dashed when pressed,
-               left out by default; an eye like the tests one (0097). -->
+               left out by default; a dashed arrow, as the edges it draws (0097, 0153). -->
           <button id="indirect-btn" class="btn sm eyebtn hidden" type="button" aria-pressed="false"
                   aria-label="collin's indirect edges on the canvas"></button>
           <!-- An eye drawn by testsEye(), as the snowflake by snowflakeIcon(). -->
@@ -396,19 +397,19 @@
           <!-- A toggle like the eye beside it, so the two read as one family. -->
           <span id="folder-tool" class="foldertool">
           <button id="by-folder" class="btn sm eyebtn folderbtn" type="button" aria-pressed="false"
-                  title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5V12.5H14.5V5.5H7.5L6 3.5H1.5Z"/><path d="M5.5 7.5V12.5M10 7.5V12.5"/></svg><span>by folder</span></button>
+                  title="One band of columns per folder, where the models drawn stop sharing a path, left to right in the order of the folders' numbers, then of the edges between them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4.5V12.5H14.5V5.5H7.5L6 3.5H1.5Z"/><path d="M5.5 7.5V12.5M10 7.5V12.5"/></svg><span>By folder</span></button>
           <!-- Opened under the toggle, over the canvas, by wireFolderLevels(). -->
           <label id="folder-levels-box" title="How many levels of folders to draw: 1 gives a band to each folder where the models drawn stop sharing a path, 2 cuts each band again by its sub-folders, and so on, as deep as a path goes">levels <input id="folder-levels" type="number" min="1" max="4" value="1"></label>
           </span>
-          <!-- Four corners closing on the graph; a file coming down into a
-               tray; a picture, which is what tells this Copy from the
-               selection bar's, a list. -->
-          <button class="btn sm icobtn" id="fit-btn" type="button"
-                  title="Fit the whole graph in the pane"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2.5H5.5M10.5 2.5H14V6M14 10V13.5H10.5M5.5 13.5H2V10"/></svg><span>Fit</span></button>
-          <button class="btn sm icobtn" id="export-btn" type="button"
-                  title="Save what the canvas shows as one HTML file: opens offline, zooms without blurring, prints to one page"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5V10M4.75 6.75L8 10L11.25 6.75M2.5 10.5V13.5H13.5V10.5"/></svg><span>Export</span></button>
-          <button class="btn sm icobtn" id="image-btn" type="button"
-                  title="Copy the canvas as a PNG picture, to paste into a ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5H14V12.5H2Z"/><path d="M2 11L5.75 7.25L9 10.5L10.75 8.75L14 12"/><circle cx="10.75" cy="6" r="1.1"/></svg><span>Copy image</span></button>
+          <span id="tools-sep" class="vsep" aria-hidden="true"></span>
+          <!-- Four corners closing on the graph, alone; a file coming down into a
+               tray, which opens the export menu. Its Copy as image row carries
+               the picture that tells it from the selection bar's Copy names, a
+               list (1.25.2). -->
+          <button class="btn sm icobtn only" id="fit-btn" type="button" title="Fit the whole graph in the pane"
+                  aria-label="Fit the whole graph in the pane"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2.5H5.5M10.5 2.5H14V6M14 10V13.5H10.5M5.5 13.5H2V10"/></svg></button>
+          <button class="btn sm icobtn" id="export-btn" type="button" aria-haspopup="menu" aria-expanded="false"
+                  title="Export what the canvas shows"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5V10M4.75 6.75L8 10L11.25 6.75M2.5 10.5V13.5H13.5V10.5"/></svg><span>Export</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5"/></svg></button>
         </div>
       </div>
       <div id="dock-lineage" class="dock-pane">
@@ -425,7 +426,7 @@
                      placeholder="stg_customers dim_customers+ tag:nightly, or --selector name"
                      aria-label="dbt node selection expression, or --selector and a name">
               <span id="select-sum" class="sel-sum"></span>
-              <!-- A list, against the picture of Copy image above the canvas;
+              <!-- A list, against the tray of the Export menu above the canvas;
                    dbt ls takes the Terminal tab's glyph, where it types. -->
               <button class="btn sm icobtn" id="select-copy" type="button"
                       title="Copy the matching names, one per line, the way dbt ls --output name prints them"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4H13.5M6 8H13.5M6 12H13.5M2.4 4H2.9M2.4 8H2.9M2.4 12H2.9"/></svg><span>Copy names</span></button>

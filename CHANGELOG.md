@@ -13,6 +13,21 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.4.0 - 2026-11-08
+
+- Export what the lineage shows from one Export menu that says what each output
+  is: Copy as image puts a PNG on the clipboard, Save as image saves it as a
+  .png file, and Save as HTML page saves the page that opens offline; the menu
+  counts what the canvas shows and names the file it saves (0153).
+- Draw the lineage's tools as the design does, in the dock and the Lineage
+  space: the modes as one quiet group with the mode in front raised, the third
+  one reading Selection; Tests, By folder and Indirect capitalised, a pressed
+  toggle on a neutral wash instead of amber or blue, the eye always open,
+  Indirect under a dashed arrow, Fit as its glyph alone, and a thin line between
+  groups (0153).
+- Count the tests sent to the canvas in the Tests button's tooltip rather than
+  on the button (0153).
+
 ## 2.3.0 - 2026-11-06
 
 - Draw each file's icon as the design does: a cylinder for a model's SQL, a

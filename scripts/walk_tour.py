@@ -295,7 +295,7 @@ STEPS = [
      " && document.querySelector('#graph-mode .active').dataset.mode === 'select'"
      " && document.querySelector('#select-sum').textContent !== ''"
      " && !document.querySelector('.crumbmenu')"),
-    ("Export, or copy as an image", ["#export-btn", "#image-btn", "#select-copy"],
+    ("Export, or copy as an image", ["#export-btn", "#select-copy"],
      "document.querySelector('#graph-mode .active').dataset.mode === 'select'"),
     ("Catalog", "#dock-catalog",
      f"!document.querySelector('#dock-catalog').classList.contains('hidden')"

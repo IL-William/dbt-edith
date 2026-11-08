@@ -49,7 +49,7 @@ $JSC web/tests/compiledenv.js # the Compiled and Run SQL for another environment
 $JSC web/tests/freshness.js   # the manifest freshness badge and its hover card
 $JSC web/tests/testchips.js   # the Tests cell in Catalog > Columns, and its +N
 $JSC web/tests/strategy.js    # an incremental model's strategy on its box and card, the columns its key names, and the tag of a key
-$JSC web/tests/export.js      # an exported graph: its header, its file, its safety, the theme it is drawn in, and none of the Halloween art
+$JSC web/tests/export.js      # an exported graph: its header, its file, its safety, the theme it is drawn in, none of the Halloween art, and the export menu's words, counts and file names
 $JSC web/tests/layout.js      # where each box sits, and how a long edge gets there
 $JSC web/tests/folders.js     # the canvas drawn by folder: which folder, in what order
 $JSC web/tests/legendpick.js  # a legend entry clicked: what stays lit in each mode
@@ -161,7 +161,8 @@ theme menu sits and what its keys do:
 An export of the lineage with the Halloween theme on has to be the export of
 the same canvas with the usual look, for each of the three box styles, art and
 cut names included (0107), and its colours the theme on screen's, Night under
-Halloween and Light under Light (0150):
+Halloween and Light under Light (0150), and the Export menu works from the
+keyboard, each of its rows saving what it says (0153):
 
 ```
 /tmp/dbt/bin/python scripts/walk_export.py

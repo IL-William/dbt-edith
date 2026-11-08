@@ -146,6 +146,46 @@ check('a shortened title', exportFileName('a b --exclude …', day), 'lineage-a-
 ok('cut at sixty', exportFileName(new Array(100).join('ab'), day).length === 'lineage-'.length + 60 + '-2026-09-23.html'.length);
 check('an empty title', exportFileName('', day), 'lineage-2026-09-23.html');
 check('a day is padded', localDay(new Date(2026, 0, 5)), '2026-01-05');
+check('a .png name keeps the stem', exportFileName('stg_a', day, '.png'), 'lineage-stg_a-2026-09-23.png');
+check('and the menu\'s footer has none', exportFileName('stg_a', day, ''), 'lineage-stg_a-2026-09-23');
+check('a model is named after itself',
+  exportName({ mode: 'model', focus: 0, nodes: [{ name: 'customers' }], edges: [] }, '2026-11-08'), 'lineage-customers-2026-11-08.html');
+check('a column after its model and itself',
+  exportName({ mode: 'column', focus: 0, focus_column: 'amount', nodes: [{ name: 'amount', sub: 'stg_payments  \u00b7  DOUBLE' }], edges: [] }, '2026-11-08', ''),
+  'lineage-stg_payments.amount-2026-11-08');
+check('a named selector with its dashes slugged away',
+  exportName({ mode: 'select', selector: 'customers_and_upstream', nodes: [{ name: 'a' }], edges: [] }, '2026-11-08', ''),
+  'lineage-selector-customers_and_upstream-2026-11-08');
+check('an expression by its slug',
+  exportName({ mode: 'select', select: '+customers +orders', nodes: [{ name: 'a' }], edges: [] }, '2026-11-08', '.png'),
+  'lineage-+customers-+orders-2026-11-08.png');
+
+print('\n--- the head of the Export menu ---');
+check('nodes and edges', exportCount({ mode: 'model', nodes: new Array(4), edges: new Array(3) }), '4 nodes \u00b7 3 edges');
+check('a selection counts the same', exportCount({ mode: 'select', nodes: new Array(40), edges: new Array(57) }), '40 nodes \u00b7 57 edges');
+check('one node and no edge', exportCount({ mode: 'model', nodes: new Array(1), edges: [] }), '1 node');
+check('one of each is singular', exportCount({ mode: 'model', nodes: new Array(2), edges: new Array(1) }), '2 nodes \u00b7 1 edge');
+check('a column canvas counts columns, and not the model boxes',
+  exportCount({ mode: 'column', nodes: [{ id: 'model.x.a::c1' }, { id: 'model.x.b::c2' }, { id: 'model.x' }], edges: new Array(2) }), '2 columns');
+check('one column is singular', exportCount({ mode: 'column', nodes: [{ id: 'model.x.a::c1' }], edges: [] }), '1 column');
+check('nothing drawn', [exportCount(null), exportCount({ mode: 'model', nodes: [], edges: [] })], ['nothing drawn', 'nothing drawn']);
+
+print('\n--- the rows of the Export menu ---');
+var EXPORT_ROWS = eval(src.slice(src.indexOf('function exportTitle'), src.indexOf('function exportLineage')) + ';EXPORT_ROWS');
+check('their keys', EXPORT_ROWS.map(function (r) { return r.key; }), ['export-copy', 'export-png', 'export-html']);
+check('their words, formats and uses', EXPORT_ROWS.map(function (r) { return [r.label, r.fmt, r.say]; }), [
+  ['Copy as image', 'PNG', 'On the clipboard, to paste into a ticket or a chat'],
+  ['Save as image', '.png', 'The same picture, as a file'],
+  ['Save as HTML page', '.html', 'Opens offline, zooms without blurring, prints on one page']]);
+var indexHtml = read('web/index.html');
+ok('one Export button, a menu', (indexHtml.match(/id="export-btn"/g) || []).length === 1 && /id="export-btn"[^>]*aria-haspopup="menu"/.test(indexHtml));
+ok('and no button of its own for the image', indexHtml.indexOf('image-btn') < 0);
+ok('Fit is a glyph named by its label', /id="fit-btn"[^>]*aria-label="[^"]+"[^>]*>(?:(?!<\/button>)[\s\S])*<\/svg><\/button>/.test(indexHtml));
+var outputs = src.slice(src.indexOf('function exportLineage'), src.indexOf('function openExportMenu'));
+ok('the toasts say what was saved, as the board writes them',
+  outputs.indexOf("'saved '") < 0 && outputs.indexOf("'Saved ' + name") > 0 && outputs.indexOf("'Image copied: paste it into the ticket'") > 0);
+ok('the menu says nothing drawn exactly when an export would', /shown: \(\) => \(data && bbox && data\.nodes\.length \? data : null\)/.test(lin)
+  && /if \(!data \|\| !bbox \|\| !data\.nodes\.length\) return null;/.test(lin));
 
 print('\n--- moments, never ages ---');
 var t = Date.UTC(2026, 8, 22, 6, 14) / 1000;

@@ -1,6 +1,6 @@
 # 0026. The lineage exports as one HTML file, built in the browser
 
-Date: 2026-09-23 · Status: accepted
+Date: 2026-09-23 · Status: accepted, amended by 0153
 
 **Trigger:** read before changing what an exported graph carries, or adding a
 way to export one.

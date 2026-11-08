@@ -1,6 +1,6 @@
 # 0035. A model's tests fold past five, and a capped canvas shares its room
 
-Date: 2026-09-30 · Status: accepted, amended by 0040 · Amends 0034
+Date: 2026-09-30 · Status: accepted, amended by 0040 and 0153 · Amends 0034
 
 **Trigger:** read before changing how many tests show under a model, or which
 tests the canvas keeps when it is capped.

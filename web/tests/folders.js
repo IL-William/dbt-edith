@@ -553,13 +553,13 @@ group('the levels box opens on the pointer and closes a moment after (0080)', fu
 
 group('the page asks for it', function () {
   var html = read('web/index.html');
-  ok('a toggle beside the tests eye, off at first', /id="with-tests"[\s\S]{0,500}id="by-folder"[^>]*type="button" aria-pressed="false"/.test(html));
+  ok('a toggle beside the Tests toggle, off at first', /id="with-tests"[\s\S]{0,500}id="by-folder"[^>]*type="button" aria-pressed="false"/.test(html));
   ok('which turns over and redraws the canvas on a click, like the eye',
     /\$\('#by-folder'\)\.addEventListener\('click', \(\) => \{ \$\('#by-folder'\)\.setAttribute\('aria-pressed', String\(!foldersOn\(\)\)\); rerender\(\); \}\)/.test(app));
   ok('and is read from its pressed state', /function foldersOn\(\) \{\s*return \$\('#by-folder'\)\.getAttribute\('aria-pressed'\) === 'true';/.test(app));
   ok('which is what the canvas is handed', /folders: foldersOn\(\) \?/.test(app));
   ok('a levels box right after it, from 1 to 4, at 1 first',
-    /<span>by folder<\/span><\/button>\n\s*<!--[^\n]*-->\n\s*<label id="folder-levels-box"[^>]*>levels <input id="folder-levels" type="number" min="1" max="4" value="1"><\/label>/.test(html));
+    /<span>By folder<\/span><\/button>\n\s*<!--[^\n]*-->\n\s*<label id="folder-levels-box"[^>]*>levels <input id="folder-levels" type="number" min="1" max="4" value="1"><\/label>/.test(html));
   var css = read('web/app.css');
   ok('in a pop-over under the toggle, shut until opened', /#folder-levels-box \{\s*display: none; position: absolute; top: calc\(100% \+ 3px\)/.test(css)
     && /#folder-levels-box\.open \{ display: flex; \}/.test(css) && /<span id="folder-tool" class="foldertool">\s*<button id="by-folder"/.test(html));
@@ -572,6 +572,20 @@ group('the page asks for it', function () {
   ok('each level of sub-folder has its hue, on the canvas and in an exported file',
     [1, 2, 3].every(function (l) { return css.indexOf('.band.l' + l + ' {') >= 0 && app.indexOf("'.band.l" + l + ' {') >= 0; }));
   ok('and so does the eye, on a click', /\$\('#with-tests'\)\.addEventListener\('click', \(\) => \{ paintTestsToggle\(!testsOn\(\)\); rerender\(\); \}\)/.test(app));
+  ok('the toggles are named Tests, By folder and Indirect',
+    /textContent: 'Tests' \}/.test(app) && /textContent: 'Indirect' \}/.test(app) && /<span>By folder<\/span>/.test(html));
+  ok('and the eye is always open: no strike through it', app.indexOf('M2.6 13.4') < 0);
+  ok('a pressed toggle is the neutral wash, not amber nor the accent',
+    !/\.eyebtn[^{]*\[aria-pressed=true\][^{]*\{[^}]*(--warn|--accent)/.test(css)
+    && /\.tools \.eyebtn\[aria-pressed=true\][^{]*\{[^}]*background: var\(--select\)/.test(css));
+  ok('the dock\'s modes raise the one in front on a well, at 12px',
+    /#graph-mode \.segbtn\.active \{[^}]*background: var\(--bg-3\); box-shadow: 0 0 0 1px var\(--line\)/.test(css)
+    && /#graph-mode \.segbtn \{[^}]*font-size: 12px/.test(css));
+  ok('and the third mode is named Selection', /data-mode="select"[\s\S]{0,700}>Selection<\/button>/.test(html));
+  ok('a thin line after stop at, and another before Fit, which moves with them',
+    /id="stop-at"[\s\S]*?<span class="vsep" aria-hidden="true"><\/span>\s*<!--[^]*?id="indirect-btn"/.test(html)
+    && /<span id="tools-sep" class="vsep" aria-hidden="true"><\/span>[\s\S]*?id="fit-btn"/.test(html)
+    && /\['#tools-sep', '#selpanel-tools'\]/.test(app));
   ok('every mode hands the canvas the same options', (app.match(/Lineage\.render\(sub, canvasOptions\(\)\)/g) || []).length === 3);
   ok('an exported file names the folders in its header', /canvasStatus\(sub, ctx\.folders\)/.test(app) && /folders: shot\.folders/.test(app));
   ok('and writes each band\'s name, which the canvas pins to the window instead',

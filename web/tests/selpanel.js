@@ -65,7 +65,7 @@ var hint = fakeEl('', empty);
 hint.remove = function () {};
 ['select-input', 'select-sum', 'lineage-status'].forEach(function (id) { fakeEl(id, dockLineage); });
 var tools = fakeEl('lineage-tools', dock);
-['with-tests', 'folder-tool', 'fit-btn', 'export-btn', 'image-btn'].forEach(function (id) { fakeEl(id, tools); });
+['with-tests', 'folder-tool', 'tools-sep', 'fit-btn', 'export-btn'].forEach(function (id) { fakeEl(id, tools); });
 var catalog = fakeEl('catalog', fakeEl('dock-catalog', dock));
 var panel = fakeEl('select-panel');
 ['selpanel-canvas', 'selpanel-tools', 'selpanel-card'].forEach(function (id) { fakeEl(id, panel); });
@@ -163,7 +163,7 @@ step(function () {
   $('#select-input').value = 'stg_orders+';
   var run = openSelection();
   check('down: the canvas, its tools and the Catalog in the panel',
-    ['dock-lineage', 'with-tests', 'image-btn', 'catalog'].map(where), ['selpanel-canvas', 'selpanel-tools', 'selpanel-tools', 'selpanel-card']);
+    ['dock-lineage', 'with-tests', 'export-btn', 'catalog'].map(where), ['selpanel-canvas', 'selpanel-tools', 'selpanel-tools', 'selpanel-card']);
   check('the card closed and empty, not on the model the dock had', [S.node, text(catalog), cardShown()], [null, '', false]);
   answers.shift()();
   return run;
@@ -179,7 +179,7 @@ step(function () {
   delete els['#catalog .cat-builds'];
   check('up: all of it back where it was, in order',
     [dock.childNodes[0] === dockLineage, tools.childNodes.map(function (c) { return c.id; }), where('catalog')],
-    [true, ['with-tests', 'folder-tool', 'fit-btn', 'export-btn', 'image-btn'], 'dock-catalog']);
+    [true, ['with-tests', 'folder-tool', 'tools-sep', 'fit-btn', 'export-btn'], 'dock-catalog']);
   check('the column\'s lineage drawn again, after the card\'s Last built is', log, ['builds painted', 'column model.jaffle_shop.orders.customer_id']);
   check('and its card back, the box clicked forgotten', [S.node.id, text(catalog)], ['model.jaffle_shop.orders', 'orders']);
 });

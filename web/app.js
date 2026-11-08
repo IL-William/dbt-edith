@@ -4758,8 +4758,8 @@ let selectTimer = null;
    so the canvas keeps its listeners, its find bar and its folder names. */
 const SELECT_MOVES = [
   ['#dock-lineage', '#selpanel-canvas'],
-  ['#with-tests', '#selpanel-tools'], ['#folder-tool', '#selpanel-tools'],
-  ['#fit-btn', '#selpanel-tools'], ['#export-btn', '#selpanel-tools'], ['#image-btn', '#selpanel-tools'],
+  ['#with-tests', '#selpanel-tools'], ['#folder-tool', '#selpanel-tools'], ['#tools-sep', '#selpanel-tools'],
+  ['#fit-btn', '#selpanel-tools'], ['#export-btn', '#selpanel-tools'],
   ['#catalog', '#selpanel-card'],
 ];
 
@@ -5339,7 +5339,7 @@ function selectCapNote(sub, offer) {
    Past the cap every step of zoom and pan slows, a lot on a slow machine, so
    the button says so and is never remembered (0087). It asks for the most
    the server says it draws, `most`, and offers nothing once the canvas was
-   drawn at that. Tests the tests eye keeps off are not counted: no click
+   drawn at that. Tests that Tests keeps off are not counted: no click
    draws them. */
 function capOffer(sub, asked) {
   const most = (sub && sub.most) || 0;
@@ -5353,7 +5353,7 @@ function capOffer(sub, asked) {
     hint: 'slower to zoom and pan',
     title: `${all ? 'Draws every node of this selection' : `Draws ${most} nodes of this selection, the most there is`}, `
       + 'this time only. Past the cap, zooming and panning slow down, a lot on a slow machine; '
-      + 'another selection, or the tests eye, cuts it at the cap again.',
+      + 'another selection, or Tests, cuts it at the cap again.',
   };
 }
 
@@ -5388,21 +5388,18 @@ function selectorsNote(body) {
 function selectEmptyText(sub) {
   const hidden = (sub && sub.hidden_tests) || 0;
   if (hidden && hidden === sub.matched) {
-    return `This selector keeps only tests (${hidden}): open the tests eye to see them.`;
+    return `This selector keeps only tests (${hidden}): press Tests to see them.`;
   }
   return 'Nothing matched.';
 }
 
-/* The word on the tests eye, with the count of tests sent when there are some. */
-function testsLabel(n) {
-  return n ? `tests · ${n}` : 'tests';
-}
-
 /* The tests toggle's words. Data tests can outnumber the models several times
-   over, and every one is a box: the tooltip says so before a click draws them. */
-function testsTitle(on) {
+   over, and every one is a box: the tooltip says so before a click draws them,
+   and, once drawn, how many were sent, the number that decides how heavy the
+   picture is. The button itself says only `Tests`. */
+function testsTitle(on, n = 0) {
   return on
-    ? 'Data tests shown: each one is a box on the canvas, and there can be hundreds, '
+    ? `Data tests shown${n ? ` (${n})` : ''}: each one is a box on the canvas, and there can be hundreds, `
       + 'which slows the canvas and buries the models. Click to hide them.'
     : 'Data tests hidden. Click to draw them on the canvas: there can be hundreds, '
       + 'which slows it and buries the models.';
@@ -6932,13 +6929,10 @@ function closePopup(anchor) {
   return same;
 }
 
-/* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
-   their marks are for uses they approve in writing, and this repository is
-   public (0014). The name in text, and the colour, say which product it is. */
-/* The tests toggle above the lineage, an eye as the Snowflake button is a
-   snowflake: open while the canvas draws data tests, struck through while it
-   does not. Its state lives on the button, read by testsOn(). */
-function testsEye(on) {
+/* The tests toggle above the lineage, an eye. Always open: the pressed look
+   says whether the canvas draws data tests, the eye says which toggle this is.
+   Its state lives on the button, read by testsOn(). */
+function testsEye() {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 16 16');
@@ -6950,15 +6944,22 @@ function testsEye(on) {
   };
   draw('path', { d: 'M1.3 8C2.8 5.2 5.2 3.6 8 3.6S13.2 5.2 14.7 8C13.2 10.8 10.8 12.4 8 12.4S2.8 10.8 1.3 8Z' });
   draw('circle', { cx: 8, cy: 8, r: 2.1 });
-  if (!on) draw('path', { d: 'M2.6 13.4 13.4 2.6' });
   return svg;
 }
 
-/* How many tests the canvas was sent, beside the word on the eye, while it is
-   open: the number that decides how heavy the picture is. */
+/* The indirect toggle's glyph: a dashed line ending in an arrow head, as the
+   edges it draws (0097, 0153). */
+function indirectGlyph() {
+  const svg = strokeIcon('0 0 16 16', '', ['M2 8h12', 'M10.5 5l3 3-3 3']);
+  svg.firstChild.setAttribute('stroke-dasharray', '2 2');
+  return svg;
+}
+
+/* How many tests the canvas was sent, in the tooltip of the tests toggle while
+   it is on: the number that decides how heavy the picture is. */
 function paintTestsCount(sub) {
-  const word = $('#with-tests span');
-  if (word) word.textContent = testsLabel(testsOn() && sub ? sub.nodes.filter((n) => n && n.kind === 'test').length : 0);
+  const b = $('#with-tests');
+  if (b) b.title = testsTitle(testsOn(), testsOn() && sub ? sub.nodes.filter((n) => n && n.kind === 'test').length : 0);
 }
 
 function testsOn() {
@@ -7011,9 +7012,12 @@ function paintTestsToggle(on) {
   b.setAttribute('aria-pressed', String(on));
   b.title = testsTitle(on);
   // The eye alone reads as nothing in particular: the word says what it shows.
-  b.replaceChildren(testsEye(on), Object.assign(document.createElement('span'), { textContent: 'tests' }));
+  b.replaceChildren(testsEye(), Object.assign(document.createElement('span'), { textContent: 'Tests' }));
 }
 
+/* A snowflake drawn here, six arms and nothing more. Not Snowflake's logo:
+   their marks are for uses they approve in writing, and this repository is
+   public (0014). The name in text, and the colour, say which product it is. */
 function snowflakeIcon() {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -7745,7 +7749,7 @@ function paintIndirectToggle() {
   b.title = S.colIndirect
     ? 'collin\'s indirect edges are drawn dashed, upstream from column to column, downstream to one box for the whole model, each named by its SQL clause: QUALIFY, JOIN or WHERE / HAVING. They say which rows a model keeps. Click to leave them out'
     : 'collin\'s indirect edges, a filter\'s, a join key\'s or a dedup key\'s, are left out: the walk, the edges and the counts are the values\' alone. Click to draw them';
-  b.replaceChildren(testsEye(S.colIndirect), Object.assign(document.createElement('span'), { textContent: 'indirect' }));
+  b.replaceChildren(indirectGlyph(), Object.assign(document.createElement('span'), { textContent: 'Indirect' }));
 }
 
 /* The roles the stop at menu lists: every one the cache holds, then any ticked
@@ -7999,8 +8003,7 @@ function relinkTools() {
   $('#by-folder').addEventListener('click', () => { $('#by-folder').setAttribute('aria-pressed', String(!foldersOn())); rerender(); });
   wireFolderLevels();
   $('#fit-btn').addEventListener('click', () => Lineage.fit());
-  $('#export-btn').addEventListener('click', exportLineage);
-  $('#image-btn').addEventListener('click', copyLineageImage);
+  $('#export-btn').addEventListener('click', (e) => openExportMenu(e.currentTarget));
   $$('#graph-mode .segbtn').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
     if (b.dataset.mode === 'select') { openSelection(); return; }
@@ -8049,8 +8052,8 @@ function relinkTools() {
    rejected selector or a failed fetch leaves the last picture on screen while
    those already describe the next one.
 
-   Pure from here to the Export button's handler, which is where the export
-   harness stops reading. */
+   Pure from here to `exportLineage`, Save as HTML page, which is where the
+   export harness stops reading. */
 
 /* What the picture is of: the expression for a selection, the model for its
    neighbourhood, model.column for a column. A column box's `sub` starts with
@@ -8206,14 +8209,47 @@ function localDay(d) {
 /* A name every system accepts. Anything outside a short safe set becomes a
    dash, which covers all Windows forbids, and the cut comes before the final
    trim so a name never ends in a dash or a dot. */
-function exportFileName(title, day) {
+function exportFileName(title, day, ext = '.html') {
   const slug = String(title || '')
     .replace(/[^A-Za-z0-9._+-]+/g, '-')
     .replace(/-{2,}/g, '-')
     .slice(0, 60)
     .replace(/^[-.]+|[-.]+$/g, '');
-  return `lineage-${slug ? slug + '-' : ''}${day}.html`;
+  return `lineage-${slug ? slug + '-' : ''}${day}${ext}`;
 }
+
+/* The name of a file the canvas leaves as, on the exporter's local `day`, with
+   `ext` ('' for the name the menu shows before it is saved). The one name for
+   all three outputs. */
+function exportName(sub, day, ext = '.html') {
+  return exportFileName(shortTitle(exportTitle(sub), 60), day, ext);
+}
+
+/* What the head of the Export menu says the canvas holds, folded tests
+   included (0035): its nodes and edges, or the columns alone on a column
+   canvas, whose model boxes are not columns. Tests count as nodes. It is not always the line under the canvas,
+   which also counts what a selection keeps for context or a cap leaves out. */
+function exportCount(sub) {
+  if (!sub || !sub.nodes || !sub.nodes.length) return 'nothing drawn';
+  const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  if (sub.mode === 'column') {
+    return n(sub.nodes.length - sub.nodes.filter((b) => b.id && !String(b.id).includes('::')).length, 'column');
+  }
+  const edges = (sub.edges || []).length;
+  return edges ? `${n(sub.nodes.length, 'node')} · ${n(edges, 'edge')}` : n(sub.nodes.length, 'node');
+}
+
+/* The menu's three rows: the key a walk finds them by, the board's words, and
+   the strokes of their glyph. Save as image is saved once the picture is drawn
+   (0153); the other two keep the contents 0026 gave them. */
+const EXPORT_ROWS = [
+  { key: 'export-copy', label: 'Copy as image', fmt: 'PNG', say: 'On the clipboard, to paste into a ticket or a chat',
+    glyph: ['M2 3.5H14V12.5H2Z', 'M2 11L5.75 7.25L9 10.5L10.75 8.75L14 12', 'M9.65 6a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0'] },
+  { key: 'export-png', label: 'Save as image', fmt: '.png', say: 'The same picture, as a file',
+    glyph: ['M2 12.5V3.5H14V8.5', 'M2 11L5.75 7.25L8.75 10.25', 'M9.65 6a1.1 1.1 0 1 0 2.2 0a1.1 1.1 0 1 0-2.2 0', 'M12 9.75v4.5M10 12.5l2 2 2-2'] },
+  { key: 'export-html', label: 'Save as HTML page', fmt: '.html', say: 'Opens offline, zooms without blurring, prints on one page',
+    glyph: ['M3.75 1.75h5.5l3 3v9.5h-8.5z', 'M9.25 1.75v3h3', 'M6.75 8L5.25 9.75l1.5 1.75M9.25 8l1.5 1.75-1.5 1.75'] },
+];
 
 function escapeHtml(s) {
   const to = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -8544,10 +8580,10 @@ function pngScale(w, h) {
   return Math.min(2, Math.sqrt(16e6 / (w * h)), 16384 / w, 16384 / h);
 }
 
-/* The Export button. Synchronous from the click to the download: a browser
-   lets a page save an .html file only while the user's gesture lasts, and an
-   await would spend it. */
-function exportLineage() {
+/* Save as HTML page, a row of the Export menu. Synchronous from the click to
+   the download: a browser lets a page save an .html file only while the user's
+   gesture lasts, and an await would spend it. */
+function exportLineage(day = localDay(new Date())) {
   const shot = Lineage.snapshot();
   if (!shot) return toast('nothing drawn to export', 'err');
   const sub = shot.data;
@@ -8575,9 +8611,9 @@ function exportLineage() {
     heading, facts, nodes, legend: legendEntries(sub), svg: shot.svg, frame: shot.frame,
     noun: sub.mode !== 'column' ? 'Nodes' : sub.nodes.some((n) => Lineage.isModelBox(n)) ? 'Columns and models' : 'Columns',
   });
-  const name = exportFileName(heading, localDay(new Date()));
+  const name = exportFileName(heading, day);
   saveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), name);
-  toast('saved ' + name, 'ok');
+  toast('Saved ' + name, 'ok');
 }
 
 function saveBlob(blob, name) {
@@ -8619,26 +8655,78 @@ function renderPng(shot, scale) {
   });
 }
 
-/* The Copy image button: the same picture as a PNG on the clipboard, for a
-   ticket where an attachment takes a click to see. The clipboard item is made
-   inside the click, holding a promise for its content, which is what Safari
-   needs to count it as the user's gesture. Whatever refuses it gets the file
-   instead. */
-function copyLineageImage() {
+/* The canvas as a PNG, started: the picture's promise and the name of its
+   file, or null when nothing is drawn. The snapshots are taken at once, inside
+   the click that asked. */
+function lineagePng(day) {
   const first = Lineage.snapshot({ tight: true });
-  if (!first) return toast('nothing drawn to copy', 'err');
+  if (!first) return null;
   const scale = pngScale(first.frame.w, first.frame.h);
   const shot = Lineage.snapshot({ css: exportCanvasCss(exportCanvasVars()), scale, tight: true });
-  const png = renderPng(shot, scale);
-  const name = exportFileName(shortTitle(exportTitle(shot.data), 60), localDay(new Date()))
-    .replace(/\.html$/, '.png');
+  return { png: renderPng(shot, scale), name: exportName(shot.data, day, '.png') };
+}
+
+/* Copy as image, a row of the Export menu: the same picture as a PNG on the
+   clipboard, for a ticket where an attachment takes a click to see. The
+   clipboard item is made inside the click, holding a promise for its content,
+   which is what Safari needs to count it as the user's gesture. Whatever
+   refuses it gets the file instead. */
+function copyLineageImage(day = localDay(new Date())) {
+  const made = lineagePng(day);
+  if (!made) return toast('nothing drawn to copy', 'err');
+  const { png, name } = made;
   const save = () => png.then((blob) => {
     saveBlob(blob, name);
-    toast('the clipboard took no image, saved ' + name + ' instead', 'ok');
+    toast(`The clipboard took no image, saved ${name} instead`, 'ok');
   }).catch((e) => toast('image: ' + e.message, 'err'));
   if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) return save();
   navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
-    .then(() => toast('image copied: paste it into the ticket', 'ok'), save);
+    .then(() => toast('Image copied: paste it into the ticket', 'ok'), save);
+}
+
+/* Save as image, a row of the Export menu: the same PNG, as a file. Saved once
+   the picture is drawn, after the click, as the clipboard's fallback always
+   was; saveBlob is the download both reuse. */
+function saveLineageImage(day = localDay(new Date())) {
+  const made = lineagePng(day);
+  if (!made) return toast('nothing drawn to save', 'err');
+  made.png.then((blob) => {
+    saveBlob(blob, made.name);
+    toast('Saved ' + made.name, 'ok');
+  }).catch((e) => toast('image: ' + e.message, 'err'));
+}
+
+/* The export menu (0153), under its button and held inside the window from the
+   right: what the canvas shows and how much of it, the three ways out with
+   their use and format, and the name the files take. With nothing drawn the
+   rows are there but cannot be picked, and there is no name. A row acts inside
+   its click, since the HTML download and the clipboard want the gesture. */
+function openExportMenu(anchor) {
+  if (closePopup(anchor)) return;
+  const sub = Lineage.shown();
+  const day = localDay(new Date());
+  const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
+  const menu = el('div', 'envmenu exportmenu');
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Export');
+  menu.dataset.align = 'right';
+  const head = el('div', 'menuhead', 'What the canvas shows');
+  head.append(el('span', 'n', exportCount(sub)));
+  menu.append(head);
+  const act = { 'export-copy': copyLineageImage, 'export-png': saveLineageImage, 'export-html': exportLineage };
+  for (const r of EXPORT_ROWS) {
+    const item = el('button', 'xm-item');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.dataset.key = r.key;
+    item.append(strokeIcon('0 0 16 16', '', r.glyph), el('span', 'ml', r.label), el('span', 'fmt', r.fmt), el('span', 'ms', r.say));
+    if (!sub) item.setAttribute('aria-disabled', 'true');
+    else item.addEventListener('click', () => { closePopup(); anchor.focus(); act[r.key](day); });
+    menu.append(item);
+  }
+  if (sub) menu.append(document.createElement('hr'), el('div', 'xm-foot', exportName(sub, day, '')));
+  anchor.setAttribute('aria-expanded', 'true');
+  openPopup(anchor, menu, () => anchor.setAttribute('aria-expanded', 'false'));
 }
 
 // -------------------------------------------------------------- artifacts --
@@ -10254,7 +10342,7 @@ function goSpace(name) {
 }
 
 /* Lights the tab of the space in front, and the gear while the settings are
-   open; the dock's Custom selection button says whether its space is. Called
+   open; the dock's Selection button says whether its space is. Called
    by every panel's paint. */
 function paintSpaces() {
   const now = spaceNow();
@@ -16856,7 +16944,7 @@ function wireTabs() {
   // The witch is placed again after the fold, which moves the tabs she stands over.
   const refold = () => { foldDockTabs(); placeWitch(false); };
   new ResizeObserver(refold).observe($('#dock > .tabs'));
-  // What the tools hold moves too, the eye's count, the column chip, a mode,
+  // What the tools hold moves too, the column chip, a mode, the indirect button,
   // and it changes while another tab is open, when the tools are hidden and a
   // hidden element reports no resize. So it is watched as markup. A change of
   // the tools' own class is left out: showDock hides and shows them, which
@@ -16924,10 +17012,10 @@ function showDock(which, { look = true, id = '' } = {}) {
    made each tab wider. Once the row cannot hold every label on one line, the
    tabs keep their glyph alone, named by their tooltip, rather than the tools
    breaking onto a second line the 30px row cannot show. If that is still not
-   enough, Fit, Export and Copy image keep theirs alone too, the actions that
-   matter least to what is drawn. It is measured, never set at a width,
-   because the room moves with the sidebar, Query history, the eye's count and
-   the column chip. It is measured with the tools shown, and the open tab
+   enough, Export keeps its glyph and chevron alone too (Fit has no label),
+   the action that matters least to what is drawn. It is measured, never set
+   at a width, because the room moves with the sidebar, Query history and the
+   column chip. It is measured with the tools shown, and the open tab
    folds with the others, so that a click on a tab never moves the tabs under
    the pointer: wireTabs() calls it when the row or the tools change, and
    never on a tab change. The tools' own class is the one change of theirs it
@@ -17498,10 +17586,11 @@ function tourSteps(c) {
         + 'and an empty box starts as the model in front with a level either side. '
         + 'A click on a box opens its card beside the canvas, a double-click opens its file. dbt ls types the same '
         + 'selection into the terminal, for you to check against dbt itself.' });
-    steps.push({ key: 'share', target: ['#export-btn', '#image-btn', '#select-copy'], title: 'Export, or copy as an image',
-      text: 'Whatever the canvas shows, this selection included. Export saves it as one HTML file that opens offline, '
-        + 'zooms without blurring and prints on one page. Copy image puts the same picture on the clipboard as a PNG, '
-        + 'for a ticket. Copy names, in the bar of the selection, copies the names instead, one per line.' });
+    steps.push({ key: 'share', target: ['#export-btn', '#select-copy'], title: 'Export, or copy as an image',
+      text: 'Whatever the canvas shows, this selection included. Export opens a menu that says what you get: Copy as '
+        + 'image puts the picture on the clipboard as a PNG, for a ticket or a chat; Save as image saves the same '
+        + 'picture as a .png file; Save as HTML page saves one file that opens offline, zooms without blurring and '
+        + 'prints on one page. Copy names, in the bar of the selection, copies the names instead, one per line.' });
     steps.push({ key: 'catalog', target: '#dock-catalog', title: 'Catalog',
       text: `What the manifest says of \`${m.name}\`: its materialization, description, tags and tests, where it lands `
         + 'in each environment, the steps of your jobs that run it once the Jobs tab has a source, and its columns '
