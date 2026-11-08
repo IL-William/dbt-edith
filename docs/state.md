@@ -2177,6 +2177,18 @@ tiles of Reports included. `web/tests/shapes.js` fails on a round marker, on a
 mask not set in both its prefixed and plain forms, and on a state the code
 produces that has no shape. Its limits are in Deferred item 37.
 
+The Export menu (0153, 2.4.0), amending 0026, 0035, 0097 and 0140. One Export button
+opens a menu of the three outputs: Copy as image (a PNG on the clipboard), Save
+as image (the same PNG as a file) and Save as HTML page. Its head counts what
+the canvas shows, `exportCount`, and its foot is the file name (`exportName`),
+on the exporter's local day. The HTML page is still saved inside the click; the
+PNG is saved once it is drawn, as the clipboard's fallback always was. The
+toggles above the lineage are borderless and a pressed one takes the neutral
+`--select` wash instead of amber or blue; the Tests eye is always open and its
+count of tests drawn is in its tooltip; Indirect takes a dashed arrow; Fit is
+its glyph alone; the dock's modes are one quiet group; and the third mode reads
+Selection. Its limits are in Deferred item 42.
+
 Themes (0150, 2.2.0), amending 0106 and 0107. Four sets of variables chosen by
 `data-theme` on `<html>`: Night, Graphite, Light and Halloween, picked from the
 half-filled circle between `?` and GitHub, or in Settings > Theme, where Follow
@@ -2400,22 +2412,23 @@ are never edited, so find an item by its title.
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
     line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
-    If that is not enough, Fit, Export and Copy image keep theirs alone too,
-    the same way. Past that, nothing in the tools is set to give way: the
-    browser shrinks each one to its narrowest, so every label that can break
-    does ("Custom selection", "up", "down") and the row spills over the
+    If that is not enough, Fit is its glyph alone already, and Export keeps its
+    glyph and chevron alone too, the same way. Past that, nothing in the tools
+    is set to give way: the browser shrinks each one to its narrowest, so every
+    label that can break does ("up", "down") and the row spills over the
     canvas.
     - **When it happens:** the room left depends on several things at once:
       - the window's width, and the sidebar's;
       - the Query history tab, shown with Snowflake's features on;
-      - the eye's count, which counts the tests the canvas is sent. Past
+      - ~~the eye's count, which counts the tests the canvas is sent. Past
         five on a model it draws fewer of them (0035), so the label can be
-        longer than the boxes on screen suggest;
+        longer than the boxes on screen suggest;~~ Gone in 2.4.0 (0153): the
+        count is in the Tests button's tooltip;
       - the column chip in Columns mode, which carries a column's name and
         has no width limit;
       - the indirect button in Columns mode, there when the cache holds
-        indirect edges (0097): with it, Fit, Export and Copy image fold to
-        their glyphs at 1440px.
+        indirect edges (0097): with it, before the Export menu (0153), Fit,
+        Export and Copy image folded to their glyphs at 1440px.
 
       On Jaffle Shop, with Snowflake's features and the tests on and the
       sidebar at its default width, the tools broke from a 1470px window
@@ -2423,8 +2436,12 @@ are never edited, so find an item by its title.
       glyphs made the labelled tabs wider, so the tabs folded from 1590px: in
       a window the size of a laptop's screen, they show their glyphs alone.
       The glyphs before Fit, Export and Copy image cost the row 60px more:
-      the tabs fold from 1650px. Those three then fold to their glyphs from
-      1300px, and the tools break from 1180px.
+      the tabs folded from 1650px. Those three then folded to their glyphs from
+      1300px, and the tools broke from 1180px. Since the Export menu
+      (0153), Fit is its glyph alone, Copy image a row of the menu and the
+      Tests button carries no count: the tabs fold from 1490px, Export keeps
+      its glyph and chevron alone from 1140px, and the tools break from
+      1100px.
     - **Why the tabs fold that way.** It is measured, rather than set at a
       width through a container query, because the room moves with
       everything listed above, and any width would be wrong for some of it.
@@ -2443,13 +2460,13 @@ are never edited, so find an item by its title.
       ellipsis, the other answer for the tabs, frees nothing without
       Snowflake's features.
     - **What any answer for the tools needs:** no label ever breaks inside
-      its own item. The two toggles, `.eyebtn`, the three actions after
+      its own item. The toggles, `.eyebtn`, the two actions after
       them, `.icobtn`, and the tabs are `nowrap` already. These are not:
       - the segmented modes;
       - the `up` and `down` labels, whose input drops under the word;
       - the column chip.
-    - **Still open: what gives way after the tabs and the three actions.**
-      - The tools that matter least, Export and Copy image first, fold behind
+    - **Still open: what gives way after the tabs and the two actions.**
+      - The tools that matter least, Export first, fold behind
         a `…` menu at the end of the row once they stop fitting. This is the
         way VS Code's panels go. `foldDockTabs` already measures the row, and
         would go on to this once the actions are folded.
@@ -2724,8 +2741,8 @@ of its own, and each panel updates the tour, its page under
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
-38. **The rest of the redesign, one pull request each.** The export menu, the
-    depth in dbt's syntax, the Lineage space, column roles in the box, the
+38. **The rest of the redesign, one pull request each.** The depth in dbt's
+    syntax, the Lineage space, column roles in the box, the
     palette, Search, the keys excerpt, the manifest card, the settings,
     shortcuts, Jobs, the terminal, Compiled, Git, Catalog, Reports and the
     design docs.
@@ -2756,6 +2773,11 @@ of its own, and each panel updates the tour, its page under
       files no node stands for, so they are grey).
     - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
       grey cylinder, as an ephemeral model's is a grey-blue one.
+42. **The Export menu's limits (0153, 2.4.0).**
+    - Save as image saves after the click, once the picture is drawn: it is not
+      yet tried in Safari or Firefox.
+    - The file name's date is taken when the menu opens, so a menu left open
+      past midnight names the day before.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

@@ -75,11 +75,10 @@ file with unsaved edits, and a letter in the Git tab is a file's git status.
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |
 | double-click a lineage node | re-centre the lineage on it and open its file, pinned |
 | `+N` badge on a node | pull in one more level of parents or children |
-| the Lineage tab in the top bar, or the Custom selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a space over the whole window; an empty box opens on the model in front, a level either side |
+| the Lineage tab in the top bar, or the Selection button above the graph | draw your own set of models, in dbt selector syntax, or a named selector, in a space over the whole window; an empty box opens on the model in front, a level either side |
 | click a box in the Lineage space | open its card beside the canvas, its left edge dragged to resize it, closed again by its × or Escape; a double-click opens its file and rolls the space up |
 | wheel / drag | zoom and pan the lineage; a drag that starts on a box pans too, and opens nothing |
-| Export above the graph | save what the canvas shows as one HTML file anyone can open |
-| Copy image above the graph | the same picture as a PNG on the clipboard, for a ticket |
+| Export above the graph | a menu: the picture copied as a PNG, saved as a .png, or one HTML page anyone can open |
 
 On a French keyboard `Alt + W` cannot be typed, so a tab closes with
 `Cmd + Alt + X` there; every shortcut this tool binds carries `Cmd` for that

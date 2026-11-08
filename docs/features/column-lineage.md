@@ -269,7 +269,7 @@ The page always has them to show: Regenerate runs collin with `--indirect`
 every time, so a cache written by an older version needs one Regenerate
 ([0118](../decisions/0118-an-indirect-edge-ends-on-its-models-box-and-names-its-clause.md)).
 
-The **indirect** button beside stop at, an eye like the tests one, shown only
+The **Indirect** button beside stop at, a dashed arrow, shown only
 when the cache holds such edges, draws them, thin and in short dashes, each
 role in a hue of its own, which stays when the edge is lit. Each is named by
 the SQL clause it comes from: `QUALIFY` for a dedup key, `JOIN` for a join key,

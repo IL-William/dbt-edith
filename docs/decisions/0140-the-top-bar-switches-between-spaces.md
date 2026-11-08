@@ -1,6 +1,6 @@
 # 0140. The top bar switches between spaces; a panel is a space
 
-Date: 2026-11-04 · Status: provisional · Amends 0091, 0092, 0100, 0101 and 0137
+Date: 2026-11-04 · Status: provisional, amended by 0153 · Amends 0091, 0092, 0100, 0101 and 0137
 
 **Trigger:** read before adding a space or a panel, changing what the top bar's
 tabs or the gear do, what Escape or a click on a lit tab does, what the
@@ -45,8 +45,8 @@ lines and under about 850px it ran past the window (docs/state.md).
   Lineage glyph. It opens with an empty selector box seeded with
   `1+<name>+1` when a model, a seed or a snapshot is in front, in the name the
   Catalog copies, a version's `name.v2` included (0104), and never over a
-  selection already typed. The dock's Custom selection button keeps its
-  label and opens the same space (0101); its tooltip says so.
+  selection already typed. The dock's third mode now reads Selection, as the
+  space's tab does, and opens the same space (0101, 0153); its tooltip says so.
 - **Reports keep what they had on their tab**: dimmed while no report has
   anything (0075), and the chips of what is new (0066).
 - **The bar folds by measure, never by width.** Nothing in it breaks onto a

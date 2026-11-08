@@ -40,7 +40,7 @@ Shop by `scripts/walk_tour.py`, which needs that dbt and Chrome and skips
 itself without either; CI does not run it, having no Chrome to drive (0074).
 `scripts/walk_depth.py` drives the lineage's depth boxes there the same way,
 `scripts/walk_menu.py` Edith's menu under a real pointer, and
-`scripts/walk_export.py` an export of the lineage with the Halloween theme on and in Light.
+`scripts/walk_export.py` an export of the lineage with the Halloween theme on and in Light, and the Export menu.
 [docs/testing.md](docs/testing.md) lists each part and how to run it alone.
 Updating a vendored library means replacing its files and changing its
 version and each file's SHA-256 in `scripts/audit_vendored.py`, and its
@@ -221,7 +221,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | read a `.sql` file to work out anything at all | [0002](docs/decisions/0002-lineage-from-the-manifest.md), [0023](docs/decisions/0023-column-lineage-may-be-parsed.md) |
 | resolve a dbt selector, or add a selector method | [0024](docs/decisions/0024-selectors-resolved-from-the-manifest.md) |
 | change what the freshness badge claims, or compare the manifest with a commit | [0025](docs/decisions/0025-freshness-is-mtimes-not-commits.md) |
-| export the graph, or change what an exported file carries | [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md) |
+| export the graph, change what an exported file carries, or its menu | [0026](docs/decisions/0026-the-lineage-exports-as-one-html-file.md), [0153](docs/decisions/0153-the-lineage-exports-from-one-menu-that-names-each-output.md) |
 | move a box on the lineage canvas, or read `n.depth` | [0027](docs/decisions/0027-the-canvas-lays-out-from-the-edges.md) |
 | change where the canvas draws a test, or what `attached` means | [0034](docs/decisions/0034-a-test-hangs-under-its-model.md) |
 | change how many tests show under a model, or what a capped canvas keeps | [0035](docs/decisions/0035-tests-fold-past-five.md), [0087](docs/decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md) |

@@ -125,10 +125,11 @@ dashed. The columns are an order, not a distance: the up and down boxes, the +N
 badges and the export's `dbt ls` line still count levels from the focus, as dbt
 does.
 
-The **tests** eye beside the depth boxes draws the data tests on the canvas too.
-It is off to start with and turns amber when on, because tests can outnumber the
-models several times over: hundreds of boxes slow the canvas and bury what it
-was drawn for. Its tooltip says so.
+The **Tests** toggle beside the depth boxes draws the data tests on the canvas
+too. It is off to start with, and pressed it takes the neutral wash of a
+selected row, the same as By folder, because tests can outnumber the models
+several times over: hundreds of boxes slow the canvas and bury what it was
+drawn for. Its tooltip says so and, while they are drawn, how many there are.
 
 A test hangs under the model whose YAML declares it, as a one-line box joined
 to it by a stem. A singular test, which has no YAML, hangs under the last built
@@ -173,12 +174,12 @@ Past five rows, a model shows its first five and a chip, `+12 more tests`,
 counting the tests in the rest; opened, it reads `▴ hide 12 tests` and folds
 them again. The test the lineage is centred on is never folded away: in a
 closed group it shows under the group's row on its own. The line under the
-canvas counts what a chip hides, and the eye, while open, counts the tests on
-the canvas. When the canvas is capped
+canvas counts what a chip hides, and the Tests tooltip, while pressed, counts
+the tests sent. When the canvas is capped
 for room, every model keeps some of its tests: the cap takes one test per model
 a turn.
 
-The **by folder** toggle, beside the eye, draws the same canvas by folder: each
+The **By folder** toggle, beside Tests, draws the same canvas by folder: each
 folder gets a band of columns of its own, at the first level where the models
 drawn stop sharing a path, so numbered layers such as `10_raw`, `20_clean` and
 `30_vault` each read as a block. Their names stay pinned over the top of the
@@ -224,16 +225,33 @@ kept, and a file is
 
 ## Sharing the graph
 
-Three buttons at the right of the bar above the canvas, each with a glyph
-before its name: **Fit**, four corners, brings the whole graph into the pane;
-**Export**, a file coming down into a tray, and **Copy image**, a picture, send
-it out. Copy image copies the picture alone, never the names: those are
-**Copy names**, under a list glyph, in the bar of the
-[Lineage space](selection.md). On a narrow window the dock's tabs show
-their glyphs alone first; on a narrower one still, when the row runs out of
-room even then, these three keep theirs alone too, each named by its tooltip.
+At the right of the bar above the canvas, after a thin line, two buttons: **Fit**,
+four corners and nothing else, named by its tooltip, brings the whole graph into
+the pane; **Export**, a file coming down into a tray with a chevron, opens a
+menu of the three ways out.
 
-**Export** saves what the canvas shows as one HTML file named after it,
+![The Export menu open over the lineage: what the canvas shows and how many nodes and edges, three rows with their format and use, and the name of the file](../shots/lineage-export.png)
+
+Its head says what the canvas shows and how much, folded tests included,
+`4 nodes · 3 edges` (a test is a node), or `8 columns` on a column canvas, the
+model boxes not counted. It can differ from the line under the canvas, which
+also counts what a selection keeps for context or a cap leaves out. Its rows,
+each with a format tag and a sentence, are **Copy as image** (PNG), which puts
+the picture on the clipboard to paste into a ticket or a chat; **Save as image**
+(.png), the same picture as a file; and **Save as HTML page** (.html). Its foot
+is the name the file takes, `lineage-<what it shows>-<date>`, without its
+extension, the date being the exporter's own day. With nothing drawn the head
+says so and the rows cannot be picked. Each output says what it did in a toast:
+`Saved <name>`, `Image copied: paste it into the ticket`, or `The clipboard took
+no image, saved <name> instead`. Enter or Space on the button opens the menu on
+its first row, the arrows step through the rows, Enter picks one and Escape
+closes the menu and gives the button its focus back. Copy names, under a list
+glyph, is in the bar of the [Lineage space](selection.md) and copies the names,
+never the picture. On a narrow window the dock's tabs show their glyphs alone
+first; on a narrower one still, when the row runs out of room even then, Export
+keeps its glyph and chevron alone too, named by its tooltip.
+
+**Save as HTML page** saves what the canvas shows as one HTML file named after it,
 `lineage-<what it shows>-<date>.html`, for a ticket or a message.
 Anyone opens it in a browser with nothing installed and no network. The wheel
 zooms without blurring, at least as close as the canvas does, however tall the
@@ -252,11 +270,12 @@ the files at that moment. Every date carries its offset from UTC: the reader may
 be elsewhere, and reads it later.
 
 **Ctrl+P** then *Save as PDF* in that file prints the whole graph on one page,
-as vectors, so the PDF zooms too. **Copy image** puts the same picture on the
+as vectors, so the PDF zooms too. **Copy as image** puts the same picture on the
 clipboard as a PNG to paste into a ticket's description, and saves the PNG when
-the browser refuses the clipboard. In a ticket, the PDF and the pasted image
-show in place; the HTML file is downloaded and opened, and it is the one that
-pans and lists names. Both are drawn in the theme on screen, and in Night under
+the browser refuses the clipboard; **Save as image** saves it without trying
+the clipboard. In a ticket, the PDF and the pasted image show in place; the
+HTML file is downloaded and opened, and it is the one that pans and lists
+names. Both are drawn in the theme on screen, and in Night under
 Halloween, whose drawings never leave the page
 ([0150](../decisions/0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md)).
 

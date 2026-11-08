@@ -154,7 +154,7 @@ check('a whole canvas says nothing, starts or not', selectCapNote({ truncated: f
 var raised = { expr: 'source:stripe+', tests: 0, max: 20000 };
 check('the same line keeps it', raiseFor(raised, 'source:stripe+', 0), 20000);
 check('another line is cut again', raiseFor(raised, 'source:stripe+1', 0), 0);
-check('so is the tests eye', raiseFor(raised, 'source:stripe+', 1), 0);
+check('so is the Tests toggle', raiseFor(raised, 'source:stripe+', 1), 0);
 check('and an emptied box', raiseFor(raised, '', 0), 0);
 check('nothing asked, nothing lifted', raiseFor(null, 'source:stripe+', 0), 0);
 var lost = selectNotes({ lost_indirect: true });
@@ -165,10 +165,11 @@ check('and says nothing when nothing was lost', selectorsNote({ selectors: [] })
 check('first, so the cap on warnings never drops it',
   selectWarnings(lost.concat(['a', 'b', 'c', 'd', 'e']))[0], lost[0]);
 check('a selector of tests alone, with the tests box off, says why the canvas is empty',
-  selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): open the tests eye to see them.');
-check('the tests eye warns before it draws them', testsTitle(false).indexOf('hundreds') > 0, true);
-check('and counts them while it is open', [testsLabel(0), testsLabel(311)], ['tests', 'tests · 311']);
+  selectEmptyText({ matched: 311, hidden_tests: 311 }), 'This selector keeps only tests (311): press Tests to see them.');
+check('the Tests toggle warns before it draws them', testsTitle(false).indexOf('hundreds') > 0, true);
 check('and says how to hide them once they are drawn', /^Data tests shown.*Click to hide them\.$/.test(testsTitle(true)), true);
+check('the count of tests drawn is in the tooltip, not on the button',
+  [testsTitle(true, 311).indexOf('(311)') > 0, testsTitle(true).indexOf('(') < 0, testsTitle(false, 311).indexOf('311')], [true, true, -1]);
 check('one that matched nothing says that', selectEmptyText({ matched: 0 }), 'Nothing matched.');
 check('and some tests hidden among models is not the same thing',
   selectEmptyText({ matched: 5, hidden_tests: 2 }), 'Nothing matched.');

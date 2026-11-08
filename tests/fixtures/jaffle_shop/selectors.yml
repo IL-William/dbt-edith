@@ -1,4 +1,4 @@
-# Added for dbt-edith. Each selector here is resolved by the Custom selection box
+# Added for dbt-edith. Each selector here is resolved by the Selection box
 # and by `dbt ls --selector`, and scripts/compare_with_dbt.py fails when they disagree.
 # Between them they use every indirect_selection mode, every graph operator, the
 # three set operations, a reference with and without operators of its own, the

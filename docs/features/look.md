@@ -42,12 +42,13 @@ until it is reloaded.
 The terminal keeps its dark colours in every theme for now: a light one wants
 sixteen colours of its own.
 
-## Export and Copy image
+## Exports
 
-Export above the graph and Copy image draw the lineage in the theme on screen,
-so a file sent to a colleague or a picture pasted in a ticket is as light as the
-page was. Under Halloween they take Night: the drawings below stay on the page,
-and a file with the browns and none of the art would be neither theme.
+The Export menu above the graph (Copy as image, Save as image, Save as HTML
+page) draws the lineage in the theme on screen, so a file sent to a colleague
+or a picture pasted in a ticket is as light as the page was. Under Halloween
+each takes Night: the drawings below stay on the page, and a file with the
+browns and none of the art would be neither theme.
 
 ## The Halloween theme
 

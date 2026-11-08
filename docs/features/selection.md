@@ -7,7 +7,7 @@ line.
 
 ![The Lineage space drawing a selection by folder, seeds, staging and models, with each model's tests hanging under it](../shots/lineage.png)
 
-The **Lineage** tab in the top bar, or the Custom selection button above the
+The **Lineage** tab in the top bar, or the Selection button above the
 graph, opens a space over the whole window, the sidebar included, and draws
 there whatever a dbt selector matches, at the window's width and height, so you
 can draw the set you actually work on. Inside it the mode is called Selection.
@@ -77,8 +77,8 @@ start sits next to one drawn before it, and a `+N` badge counts the neighbours
 left out. **Copy names** still lists every match, up to 5 000 names, and a
 narrower selection draws the rest. So does **Draw all**, beside the warning, up
 to 20 000 nodes: for that selection only, since past the cap zooming and panning
-slow down, a lot on a slow machine. Another selection, an emptied box, or the
-tests eye, is cut at 3 000 again
+slow down, a lot on a slow machine. Another selection, an emptied box, or
+Tests, is cut at 3 000 again
 ([0087](../decisions/0087-a-capped-selection-draws-what-is-nearest-its-start.md)).
 
 The start can take most of the canvas by itself: `source:*+` on a project
@@ -105,7 +105,7 @@ that: **Copy names** puts the matching names on the clipboard one per line, the
 way `dbt ls --output name` prints them, and **dbt ls** types the equivalent
 command into the Terminal tab without running it, so you can press Enter and
 compare.
-With the tests eye closed, add `--exclude "resource_type:test"` to dbt's side,
+With Tests off, add `--exclude "resource_type:test"` to dbt's side,
 which is the only routine reason the two counts differ.
 
 A method this build does not know, `state:` for instance, is refused by name

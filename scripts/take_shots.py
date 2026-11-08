@@ -81,7 +81,7 @@ WIDTH, HEIGHT = 1440, 900
 
 # In the order they are taken, which is the order the page's state allows.
 NAMES = [
-    "editor", "editor-project-keys", "lineage", "jobs", "catalog", "column-lineage", "collin-report",
+    "editor", "editor-project-keys", "lineage", "lineage-export", "jobs", "catalog", "column-lineage", "collin-report",
     "search-palette", "search-files", "lineage-node", "selection-card",
     "reports-coverage", "reports-job-order",
     "catalog-location", "catalog-compiled", "terminal", "git",
@@ -680,6 +680,12 @@ class Shots:
             raise AssertionError("timed out waiting for the levels box to close")
         self.click("#fit-btn")
         self.take("lineage")
+        # The export menu over the same canvas, shut again for what follows.
+        self.click("#export-btn")
+        self.until("!!document.querySelector('.exportmenu')", "the export menu")
+        self.take("lineage-export")
+        self.page.key(*wt.ESCAPE)
+        self.until("!document.querySelector('.exportmenu')", "the export menu to close")
         self.click("#by-folder")
         self.click("#with-tests")
         self.code()

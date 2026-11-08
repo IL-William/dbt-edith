@@ -2819,5 +2819,8 @@ const Lineage = (() => {
     init, render, paintBuilds, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
     testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, partialSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked, setSkin, isModelBox,
+    // The payload the canvas holds, for the export menu, without serialising it. The condition is
+    // snapshotOf's, so the menu says "nothing drawn" exactly when an export would.
+    shown: () => (data && bbox && data.nodes.length ? data : null),
   };
 })();
