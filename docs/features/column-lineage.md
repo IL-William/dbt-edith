@@ -167,12 +167,14 @@ another target, a catalog of another table, a table older than its code. Fix in
 the project: a YAML behind the warehouse, a table read without a source or a
 ref, a parent with no known columns, a column a child reads and this model's
 list lacks. Check by hand: SQL collin could not parse, a column matched by name
-to every parent that has it. And what is collin's to fix. A name opens the
-model with its Columns tab, where the marks above say what was found on each
-column. It reads a report from any collin since 0.1.0 (0059). From collin 0.5.0
-the report carries collin's own findings, each with what it saw, what that
-usually means and what to do, and the page shows those instead, in the same
-groups; the badge then counts the models they name (0062).
+to every parent that has it. And what is collin's to fix. A name, a chip with
+the model's kind bar when nothing else is said of it, opens the model with its
+Columns tab, where the marks above say what was found on each column. It reads a
+report from any collin since 0.1.0 (0059). From collin 0.5.0 the report carries
+collin's own findings, each with what it saw, what that usually means and what
+to do, and the page shows those instead, in the same groups, a finding's
+severity a tag after its count; the badge then counts the models they name
+(0062).
 
 Snowflake is in the menu only while Snowflake's features are on for the
 project, see [snowflake.md](snowflake.md).

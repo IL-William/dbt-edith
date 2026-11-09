@@ -1066,6 +1066,17 @@ impl Node {
         (crate::keys::norm(&self.schema), crate::keys::norm(table))
     }
 
+    /// What a chip in a report draws its kind's bar from, as the tree and the
+    /// boxes do: a model's materialization, a source's, seed's or snapshot's
+    /// own kind, nothing for the rest or for a model that names none.
+    pub fn look(&self) -> &str {
+        match self.kind {
+            Kind::Model => &self.materialized,
+            Kind::Source | Kind::Seed | Kind::Snapshot => self.kind.as_str(),
+            _ => "",
+        }
+    }
+
     /// dbt's own name for the kind, the unique_id's first part: a unit test
     /// or a semantic model is named for what it is, though the graph files it
     /// as other.

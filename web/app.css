@@ -249,6 +249,8 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --side-w: 270px;
+  /* The Reports rail and the settings' one, which shares it. */
+  --nav-w: 224px;
   --dock-h: 44%;
 }
 
@@ -848,8 +850,8 @@ kbd {
 [data-tool=dbt] { --tool: var(--tool-dbt); }
 /* The source named at the head of a section, in its colour. */
 .srcchip {
-  flex: 0 0 auto; font: 10.5px/16px var(--ui); padding: 0 5px; border-radius: 3px;
-  color: var(--tool); border: 1px solid color-mix(in srgb, var(--tool) 40%, transparent);
+  display: inline-flex; align-items: center; flex: 0 0 auto; height: 20px; padding: 0 7px; border-radius: 4px;
+  font: 11.5px var(--ui); color: var(--tool); border: 1px solid color-mix(in srgb, var(--tool) 55%, transparent);
 }
 .tooldot { width: 12px; height: 12px; flex: 0 0 auto; background: var(--tool); -webkit-mask: var(--m-tool) center / contain no-repeat; mask: var(--m-tool) center / contain no-repeat; }
 /* How the last run ended, over the tool's glyph: a section's own mark, in the
@@ -1665,27 +1667,27 @@ kbd {
 .panel.open { visibility: visible; clip-path: inset(0); transition: clip-path .2s ease-out, visibility 0s; }
 .panel:focus { outline: none; }
 @media (prefers-reduced-motion: reduce) { .panel, .panel.open { transition: none; } }
-.reports-nav { flex: 0 0 210px; overflow-y: auto; padding: 8px 0; background: var(--bg-2); border-right: 1px solid var(--line); }
+.reports-nav { flex: 0 0 var(--nav-w); overflow-y: auto; padding: 6px 0 12px; background: var(--bg-2); border-right: 1px solid var(--line); }
 .reports-navrow {
-  display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 12px;
-  background: none; border: 0; color: var(--fg-dim); font: 12.5px var(--ui); text-align: left; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 26px; padding: 0 12px 0 14px;
+  background: none; border: 0; color: var(--fg-dim); font: 13px var(--ui); text-align: left; cursor: pointer;
 }
-.reports-navrow:hover { background: var(--bg-3); color: var(--fg); }
+.reports-navrow:hover { background: var(--hover); color: var(--fg); }
 .reports-navrow[aria-current="true"] { background: var(--bg); color: var(--fg); box-shadow: inset 2px 0 0 var(--tool, var(--accent)); }
-.reports-navrow > span:not(.tooldot):not(.rnew):not(.navcount) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports-navrow > span:not(.tooldot):not(.rnew):not(.tabbadge) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports-navrow .rnew { margin-left: auto; flex: 0 0 auto; }
 /* A section with nothing to show yet, listed as where to set it up, dimmed. */
 .reports-navrow.empty:not([aria-current="true"]) { opacity: .65; }
 /* The rail by who reads the files (0137): a head over each group, a count at
    the end of a row that has something, the chips after it. */
 .reports-navgroup + .reports-navgroup { margin-top: 8px; }
-.reports-navhead { padding: 6px 12px 3px; font: 600 10.5px var(--ui); letter-spacing: .9px; text-transform: uppercase; color: var(--tool, var(--fg-dim)); }
+.reports-navhead { display: flex; align-items: center; height: 28px; padding: 0 14px; font: 600 11px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--tool, var(--fg-dim)); }
 /* A rule down the left of the group's rows in its source's colour, the current
    row's marker the same at full strength. */
 .reports-navgroup .reports-navrow { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--tool) 35%, transparent); }
 .reports-navgroup .reports-navrow[aria-current="true"] { box-shadow: inset 2px 0 0 var(--tool); }
-.reports-navrow .navcount { margin-left: auto; flex: 0 0 auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; color: var(--fg-dim); }
-.navcount ~ .rnew { margin-left: 0; }
+.reports-navrow .tabbadge { margin-left: auto; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.tabbadge ~ .rnew { margin-left: 0; }
 .reports-navrow .rhint { margin-left: auto; font-size: 11px; color: var(--fg-dim); opacity: .8; }
 .reports-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* The Lineage space (0092, 0101, 0140), over the whole window: its
@@ -1749,7 +1751,17 @@ kbd {
 @container selmain (max-width: 560px) {
   .selpanel-head .selinput { min-width: 64px; }
 }
-.reports-view .diff-head { padding: 6px 12px 5px; }
+/* A report's head: its name, its source, what it was read from on a line of
+   its own, and a rule under it. */
+.rhead { flex: 0 0 auto; padding: 12px 20px 11px; border-bottom: 1px solid var(--line); }
+.rhead-row { display: flex; align-items: center; gap: 10px; }
+.rhead .ttl { font-size: 15px; font-weight: 600; }
+.rhead .sub { margin-top: 3px; font: 11.5px var(--mono); color: var(--fg-mute); overflow-wrap: anywhere; }
+.rhead .btn, .rhead .btn.sm {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 6px;
+  background: none; font-size: 12px; white-space: nowrap;
+}
+.rhead .btn:hover { background: var(--bg-3); }
 /* The settings (0100, 0163): the Reports rail, then one column of rows as wide
    as a form reads well, a setting's name and why on the left, its control on
    the right, so the window is used without lines running across it. */
@@ -1933,7 +1945,6 @@ kbd {
 .reporttile[data-tone=warn] .rvalue { color: var(--warn); }
 .runnote { margin: 6px 0 0; font-size: 12px; color: var(--fg-dim); max-width: 900px; }
 .runnote[data-tone=warn] { color: var(--warn); }
-.reportlists > .reportfinding { margin-top: 10px; }
 .reportfinding[data-tone=bad] .rtitle { color: var(--bad); }
 .reportfinding[data-tone=warn] .rtitle { color: var(--warn); }
 /* dbt's own message under a node, its first lines as dbt wrote them. */
@@ -1943,32 +1954,55 @@ kbd {
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* collin's report, a section of the reports: figures, then findings by who acts. */
-.reportbody { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 28px; }
-.reportbody > p { margin: 4px 0 0; }
-/* Each tile spans three rows of the grid its label, value and sub are laid on,
-   so that a label which wraps pushes the values of its whole row down with it. */
-.reporttiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
-.reporttile {
-  display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0;
-  background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px;
+.reportbody { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 28px; }
+/* One strip of figures, not a card per figure: a rule between every two
+   tiles, a wrapped row's included, which each tile draws on its own left and
+   top and the strip's overflow trims at its edges. Each tile spans three rows
+   of the grid its label, value and sub are laid on, so that a label which
+   wraps pushes the values of its whole row down with it. */
+.reporttiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); max-width: calc(var(--n, 5) * 240px);
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); overflow: hidden;
 }
-.reporttile .rlabel, .reporttile .rsub { font-size: 11px; color: var(--fg-dim); }
-.reporttile .rvalue { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.reportgroup { margin-top: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
-.reportgroup[data-group=rerun] { border-left-color: var(--warn); }
-.reportgroup[data-group=project] { border-left-color: var(--accent); }
-.reportgroup[data-group=collin] { border-left-color: var(--tool-collin); }
-.reportgroup h3 { margin: 0; font-size: 13.5px; }
-.reportgroup > p { margin: 0 0 6px; font-size: 12px; }
-.reportfinding { border-top: 1px solid var(--line); padding: 3px 0; }
-.reportfinding summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.reporttile {
+  display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; padding: 10px 14px 11px;
+  box-shadow: -1px 0 0 var(--line-soft), 0 -1px 0 var(--line-soft);
+}
+.reporttile .rlabel, .reporttile .rsub { font-size: 11.5px; }
+.reporttile .rlabel { color: var(--fg-dim); }
+.reporttile .rsub { color: var(--fg-mute); }
+.reporttile .rvalue { margin: 2px 0 1px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.reportbody > p { margin: 4px 0 0; }
+.reportbody > .rsummary, .reportbody > .runnote:not([data-tone]) { margin: 12px 0 0; color: var(--fg-2); max-width: 110ch; }
+/* Who acts on a group: a thin bar in its colour down its side. */
+.reportgroup { --grp: var(--line-strong); margin-top: 20px; padding-left: 12px; box-shadow: inset 2px 0 0 var(--grp); }
+.reportgroup[data-group=rerun] { --grp: var(--warn); }
+.reportgroup[data-group=project] { --grp: var(--accent); }
+.reportgroup[data-group=collin] { --grp: var(--tool-collin); }
+.rg-head { display: flex; align-items: center; gap: 8px; }
+.rg-head h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.reportgroup > p { margin: 2px 0 8px; font-size: 12.5px; }
+.reportfinding { border-top: 1px solid var(--line-soft); }
+.reportfinding:last-child { border-bottom: 1px solid var(--line-soft); }
+/* A phrase badge (a macro's "used by ...") stays dim mono beside the title; a count is a pill. */
+.reportfinding .rcount:not(.tabbadge) { font: 11px var(--mono); color: var(--fg-dim); }
+.reportfinding summary { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 0; box-sizing: border-box; cursor: pointer; list-style: none; }
 .reportfinding summary::-webkit-details-marker { display: none; }
-.reportfinding summary::before { content: "\25b8"; color: var(--fg-dim); width: 10px; }
-.reportfinding[open] summary::before { content: "\25be"; }
-.reportfinding .rcount { font: 11px var(--mono); color: var(--fg-dim); }
-.reportfinding .rlever { margin: 1px 0 4px 18px; color: var(--fg-dim); font-size: 12px; max-width: 110ch; }
-.rentries { margin: 0 0 4px; padding-left: 36px; font-size: 12px; }
-.rentries li { margin: 1px 0; overflow-wrap: anywhere; }
+/* The chevron of a fold and of a folder inside one, turned down when open. */
+.rchev { width: 12px; height: 12px; flex: 0 0 auto; fill: none; stroke: var(--fg-mute); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform .12s; }
+.reportfinding[open] > summary .rchev, .checkfolder[open] > summary .rchev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .rchev { transition: none; } }
+.rtitle { font-weight: 500; }
+/* A finding's severity, as collin wrote it. */
+.sevtag {
+  font: 600 9.5px/14px var(--mono); letter-spacing: .04em; text-transform: uppercase; padding: 0 5px; border-radius: 3px;
+  border: 1px solid var(--line-strong); color: var(--fg-dim);
+}
+.reportfinding .rlever { margin: -4px 0 6px 20px; color: var(--fg-dim); font-size: 12.5px; max-width: 110ch; }
+.rentries { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 12px; padding: 0 0 0 20px; list-style: none; font-size: 12px; }
+/* Entries that are blocks of several lines, the steps of a job and the pairs, stand apart. */
+.rentries:has(> li > .rline, > li > .rpairhead) { gap: 10px; }
+.rentries li { overflow-wrap: anywhere; }
 .rentries .rcol, .rentries .rrel { font: 11.5px var(--mono); }
 .rentries .rcol { cursor: pointer; color: var(--fg); }
 .rentries .rcol:hover { text-decoration: underline; }
@@ -2001,34 +2035,54 @@ kbd {
    row, and wraps only past that. */
 .rentries .rpairhead .jobfile { flex: 0 1 auto; max-width: 50%; margin-left: auto; text-align: right; }
 .rquote { font: 11px var(--mono); color: var(--fg); }
-/* The models of a pair, as the links of collin's report are. */
-.reportbody .jobs-model { color: var(--accent); text-decoration: none; }
-.reportbody .jobs-model:hover, .reportbody .jobs-model:focus-visible { text-decoration: underline; }
+/* A model named inside a sentence, a pair's: neutral, the accent coming with
+   the pointer, so that every theme reads it the same. */
+.reportbody .jobs-model { color: var(--fg); text-decoration: none; }
+.reportbody .jobs-model:hover, .reportbody .jobs-model:focus-visible { color: var(--accent); text-decoration: underline; }
+/* A list of nothing but model names: chips in a wrapping row, each with its
+   kind's bar (0148), the same bar the tree and the boxes wear. */
+.rentries.models { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.rentries.models li { margin: 0; }
+.mlink {
+  /* At least the pill's height, and taller, rather than spilled, when a long
+     name wraps in a narrow panel. */
+  display: inline-flex; align-items: center; gap: 6px; min-height: 22px; max-width: 100%; box-sizing: border-box;
+  padding: 2px 9px; text-align: left; border: 1px solid var(--line);
+  border-radius: 11px; background: none; font: 11.5px var(--mono); color: var(--fg); cursor: pointer;
+}
+.mlink .dot { height: 10px; }
+.mlink:hover, .mlink:focus-visible { border-color: var(--line-strong); background: var(--bg-3); outline: none; }
+.mlink:focus-visible { border-color: var(--accent); }
 .rline .jobwhen { max-width: 100%; }
 .rcmd {
-  flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: var(--fg-2); background: var(--bg-3);
-  border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; white-space: pre-wrap; overflow-wrap: anywhere;
+  flex: 1 1 auto; min-width: 0; font: 11.5px var(--mono); color: var(--fg-2); background: var(--bg-2);
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 /* Where a step is written wraps with the line: it is read, not cut at an ellipsis. */
-.rentries .jobfile { max-width: 100%; text-align: left; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-.reportfinding .checkfolder > .rline { margin: 0 0 2px 54px; }
-/* The filter over a section's lists, kept in view as they are scrolled. */
-/* A fixed height, which what else sticks in a section (the builds grid's
-   head) is offset by. */
-.reportbody { --findh: 38px; }
+.rentries .jobfile { max-width: 100%; text-align: left; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; font-size: 11px; color: var(--fg-mute); }
+.rentries .jobfile:hover { color: var(--accent); }
+.reportfinding .checkfolder > .rline { margin: 0 0 2px 40px; }
+/* The filter over a section's lists, kept in view as they are scrolled: a
+   wrapper of a fixed height, which what else sticks in a section (the builds
+   grid's head) is offset by, holding the box. */
+.reportbody { --findh: 44px; }
 .reportfind {
-  position: sticky; top: -12px; z-index: 3; background: var(--bg); box-sizing: border-box; height: var(--findh);
-  padding: 7px 0 0; margin-top: 6px;
+  position: sticky; top: -16px; z-index: 3; background: var(--bg); box-sizing: border-box; height: var(--findh);
+  padding: 14px 0 4px;
 }
-.reportfilter {
-  background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
-  padding: 3px 8px; font: 12px var(--ui); min-width: 220px;
+.reportbox {
+  display: flex; align-items: center; gap: 6px; width: 280px; max-width: 100%; height: 26px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg-mute);
 }
-/* A folder inside a check's fold: a level of its own, with its own arrow, not the fold's. */
-.reportfinding .checkfolder > summary { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 2px 18px; padding: 0; }
-.reportfinding .checkfolder > summary::before { content: "\25b8"; }
-.reportfinding .checkfolder[open] > summary::before { content: "\25be"; }
-.checkfolder > .rentries { padding-left: 54px; }
+.reportbox:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.reportbox-ico { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.reportfilter { flex: 1 1 0; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--fg); font: 12px var(--ui); outline: none; }
+.reportfilter::placeholder { color: var(--fg-mute); }
+/* A folder inside a check's fold: a level of its own, with its own chevron, not the fold's. */
+.reportfinding .checkfolder > summary { display: flex; align-items: center; gap: 6px; min-height: 22px; font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 2px 14px; padding: 0; cursor: pointer; list-style: none; }
+.checkfolder > summary .rchev { width: 11px; height: 11px; }
+.reportfinding .checkfolder > summary::-webkit-details-marker { display: none; }
+.checkfolder > .rentries { padding-left: 40px; }
 /* Two collin versions side by side: tables of figures, the moved rows bright. */
 .versionpick { font: 12px var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
 .cmptable { border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; min-width: 420px; }
@@ -2897,7 +2951,12 @@ kbd {
    give the Catalog the dock bar's tighter padding, and not in the Lineage space's card. */
 .cat-tabs { display: flex; align-items: stretch; height: 32px; margin-left: 2px; }
 #catalog .cat-tabs .tab { display: inline-flex; align-items: center; gap: 7px; padding: 0 9px; white-space: nowrap; }
-#catalog .cat-tabs .tabbadge { margin-left: 0; padding: 0 5px; background: var(--bg-3); color: var(--fg-dim); font: 10px/15px var(--mono); }
+/* The count pill of the Catalog's tabs, the Reports rail's rows and a report's
+   folds: one look, the design's. Each place sets its own margin. */
+#catalog .cat-tabs .tabbadge, .reports-navrow .tabbadge, .reportfinding .tabbadge {
+  padding: 0 5px; background: var(--bg-3); color: var(--fg-dim); font: 10px/15px var(--mono); font-variant-numeric: tabular-nums;
+}
+#catalog .cat-tabs .tabbadge, .reportfinding .tabbadge { margin-left: 0; }
 .cat-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 24px; }
 /* One heading style for both tabs (Context, Location, Jobs, Last built,
    Details, the lists of nodes), with its buttons beside it in a .sechead. */
@@ -3480,7 +3539,7 @@ span.envpill:hover { filter: none; }
 .buildstools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .buildspk { font-size: 12px; color: var(--fg-dim); }
 .buildstable { border-collapse: collapse; font-size: 12px; }
-.buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: calc(var(--findh) - 12px); background: var(--bg); }
+.buildstable th { text-align: left; font-weight: 600; color: var(--fg-dim); padding: 3px 14px 3px 0; border-bottom: 1px solid var(--line); position: sticky; top: calc(var(--findh) - 16px); background: var(--bg); }
 .buildstable td { padding: 2px 14px 2px 0; white-space: nowrap; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
 .buildstable td.bname { font-family: var(--mono); font-size: 11.5px; }
 .buildstable td[data-verdict=ok] { color: var(--ok); }
@@ -3502,12 +3561,12 @@ span.envpill:hover { filter: none; }
 .jobbuild[hidden] { display: none; }
 .jobbuild > summary { cursor: pointer; list-style: none; }
 .jobbuild > summary::-webkit-details-marker { display: none; }
-/* The chevron of the other folds of Reports (.reportfinding), at their size. */
-.jbname::before { content: "\25b8"; color: var(--fg-dim); width: 10px; flex: 0 0 auto; }
-.jobbuild[open] > summary .jbname::before { content: "\25be"; }
+/* The chevron every fold of Reports draws (.rchev), at the top of a name that wraps. */
+.jbname .rchev { align-self: flex-start; margin-top: .2em; }
+.jobbuild[open] > summary .rchev { transform: rotate(90deg); }
 .jobbuild.empty > summary { cursor: default; color: var(--fg-dim); }
 /* No caret on a row with nothing to open, and the room for one kept. */
-.jobbuild.empty > summary .jbname::before { content: ""; display: block; width: 10px; flex: 0 0 10px; }
+.jobbuild.empty > summary .rchev { visibility: hidden; }
 .jbname { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .jbname b { font: 600 12px var(--mono); overflow-wrap: break-word; min-width: 0; }
 .jbtag { flex: 0 0 auto; font-size: 11px; }

@@ -959,7 +959,13 @@ async fn collin_report_page(State(st): State<Arc<AppState>>) -> Response {
     // run does: with versions side by side, that is the first thing to know.
     let name = collin::path_for(&st.target_dir, "collin").file_name().map(|n| n.to_string_lossy().into_owned());
     let producer = caches(&st).await.into_iter().find(|a| Some(&a.file) == name.as_ref()).map(|a| a.producer).unwrap_or_default();
-    Json(ReportPage { overview: &report.overview, producer }).into_response()
+    // Each model carries what its kind's bar is drawn from, which the report
+    // does not say and the manifest does.
+    let graph = st.graph.read().await.clone();
+    let overview = crate::collin_report::looked(&report.overview, |id| {
+        graph.index.get(id).map(|&i| graph.nodes[i as usize].look().to_string()).unwrap_or_default()
+    });
+    Json(ReportPage { overview: &overview, producer }).into_response()
 }
 
 /// The package models the last builds are read from (0117), by their ids in the
@@ -6463,11 +6469,18 @@ mod tests {
         // and no key.
         assert_eq!(index["checks"], serde_json::json!({ "count": 4, "at": 7 }));
         let report = json(&response_of(port, get("/api/reports/checks", &h)).await);
-        let row = |id: &str, name: &str, file: &str, folder: &str| serde_json::json!({ "id": id, "name": name, "file": file, "folder": folder });
+        // Each row also says what its chip's bar is drawn from, when it knows.
+        let row = |id: &str, name: &str, file: &str, folder: &str, look: &str| {
+            let mut row = serde_json::json!({ "id": id, "name": name, "file": file, "folder": folder });
+            if !look.is_empty() {
+                row["materialized"] = look.into();
+            }
+            row
+        };
         assert_eq!(report["manifest_at"], 7);
         assert_eq!(report["sources_without_freshness"]["total"], 1);
-        assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models")]));
-        assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts")]));
+        assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models", "source")]));
+        assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts", "")]));
         assert_eq!(report["models_without_description"]["rows"][0]["name"], "orders");
         assert_eq!(report["models_without_key"]["rows"][0]["name"], "orders");
         assert_eq!(report["keys_maybe_null"]["total"], 0);

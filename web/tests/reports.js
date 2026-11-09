@@ -321,6 +321,8 @@ check('unfiltered, every row and the total as the count', shapes(groupsA, ''), [
 check('filtered, the hits and "n of m", case-insensitively', shapes(groupsA, 'ORDER'), [[['Models', 2, '2 of 3'], ['Sources', 1, '1 of 2']]]);
 check('filtered but nothing hidden, the plain count', shapes(groupsA, 'r'), [[['Models', 3, '3'], ['Sources', 2, '2']]]);
 check('a badge is the count whenever nothing is hidden', shapes([{ folds: [fold('M', rowsA, { badge: 'high' })] }], 'r')[0][0][2], 'high');
+check('a severity is not a badge: the count stays the count, and the fold carries the severity on',
+  [shapes([{ folds: [fold('M', rowsA, { severity: 'info' })] }], '')[0][0][2], reportFiltered([{ folds: [fold('M', rowsA, { severity: 'info' })] }], '')[0].folds[0].severity], ['3', 'info']);
 check('a fold with no hit is dropped while filtered', shapes(groupsA, 'customers'), [[['Models', 1, '1 of 3']]]);
 check('and a group left with no fold', shapes(groupsA, 'nothing like this'), []);
 check('blank spaces in the filter are not part of it', shapes(groupsA, '  order  ').length, 1);
@@ -390,14 +392,20 @@ check('a title says what is counted, in the singular too', [reportsRailCount('wa
 
 print('\n--- the source named at the head of a section ---');
 function row(head) { return head.children[0]; }
-var chip = row(reportHead({ title: 'Job order', tool: 'jobs' })).children[0];
-check('a chip first, with the word the rail head says, and its source for the colour', [chip.className, chip.textContent, chip.dataset.tool], ['srcchip', 'Jobs', 'jobs']);
+var title = row(reportHead({ title: 'Job order', tool: 'jobs' })).children[0];
+check('the title first', [title.className, title.textContent], ['ttl', 'Job order']);
+var chip = row(reportHead({ title: 'Job order', tool: 'jobs' })).children[1];
+check('then a chip, with the word the rail head says, and its source for the colour', [chip.className, chip.textContent, chip.dataset.tool], ['srcchip', 'Jobs', 'jobs']);
 check('the same word as the rail\'s head, for every source',
-  ['dbt', 'collin', 'jobs', 'snowflake'].map(function (t) { return [row(reportHead({ title: 'T', tool: t })).children[0].textContent, reportSourceLabel(t)]; }),
+  ['dbt', 'collin', 'jobs', 'snowflake'].map(function (t) { return [row(reportHead({ title: 'T', tool: t })).children[1].textContent, reportSourceLabel(t)]; }),
   [['dbt', 'dbt'], ['collin', 'collin'], ['Jobs', 'Jobs'], ['Snowflake', 'Snowflake']]);
 check('and the rail groups carry it', reportsRailGroups(reportsSections({ run: { at: 9 }, collin: { at: 5 }, jobs: { sources: 1, at: 3 } })).map(function (g) { return [g.tool, g.label, reportSourceLabel(g.tool)]; }),
   [['dbt', 'dbt', 'dbt'], ['collin', 'collin', 'collin'], ['jobs', 'Jobs', 'Jobs']]);
 check('no dot with no outcome to say: the chip is all', row(reportHead({ title: 'T', tool: 'dbt' })).children.filter(function (c) { return c.className === 'tooldot'; }).length, 0);
 runEndWords = function (tone) { return tone === 'bad' ? 'Ended with errors or failed tests' : ''; };
 var withDot = row(reportHead({ title: 'Last run', tool: 'dbt', tone: 'bad' })).children;
-check('the dot stays for a run outcome, after the chip', [withDot[0].className, withDot[1].className, withDot[1].dataset.tone, withDot[1].title], ['srcchip', 'tooldot', 'bad', 'Ended with errors or failed tests']);
+check('the dot stays for a run outcome, after the chip', [withDot[1].className, withDot[2].className, withDot[2].dataset.tone, withDot[2].title], ['srcchip', 'tooldot', 'bad', 'Ended with errors or failed tests']);
+var withAbout = reportHead({ title: 'T', tool: 'dbt', about: 'read from run_results.json' });
+check('what it was read from is a line of its own under the row, with a rule under the head',
+  [withAbout.className, withAbout.children.map(function (c) { return c.className; }), withAbout.children[1].textContent], ['rhead', ['rhead-row', 'sub'], 'read from run_results.json']);
+check('a section with nothing to say of that has no line, and none is made up', reportHead({ title: 'T', tool: 'dbt' }).children.length, 1);

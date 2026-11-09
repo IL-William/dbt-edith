@@ -2882,7 +2882,7 @@ of its own, and each panel updates the tour, its page under
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
-    Git, ~~Catalog~~ (2.16.0), Reports and the design docs.
+    Git, ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and the design docs.
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
@@ -3106,6 +3106,25 @@ of its own, and each panel updates the tour, its page under
       board's.
     - The hover card's column list keeps its amber type: `--fg-mute` there is
       the shell step's (21).
+53. **The Reports' limits (2.17.0).**
+    - A chip's kind bar is drawn from a `materialized` field the server adds
+      to the rows it already sends (the Checks', the job coverage's and
+      collin's models, `Node::look`): a model's materialization, else its
+      kind. A Checks row or a collin model without it (a model naming no
+      materialization, one collin names that the manifest lacks) is a chip
+      with no bar; a coverage row falls back to its kind, so it always has
+      one. The command line's `--job-coverage` leaves the field out.
+    - A list is drawn as chips only when every entry of it says nothing but a
+      name: a Checks row with a detail (a key's missing `not_null`), a collin
+      model with a detail, or a coverage row in a sub-folder (its path is its
+      text) stays a line. So a filter that leaves a folder one row, or gathers
+      two folders' rows under the one above, turns their chips into lines that
+      say their paths. A model named inside a sentence, a pair's in Job order,
+      is a link, not a chip.
+    - The rail is 224px for the settings' too, which shares `.reports-navrow`
+      and its rules: its rows keep their own height, gap and accent rule.
+    - The mono line under a head is one line of `about` whatever the section;
+      the board draws Job coverage's and Job order's in the UI font.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

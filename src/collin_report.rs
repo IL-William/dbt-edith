@@ -94,6 +94,10 @@ pub struct WrittenModel {
     pub name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub detail: String,
+    /// What the chip's kind bar is drawn from (`Node::look`), filled by the
+    /// route from its manifest: collin's report does not say.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub materialized: String,
 }
 
 /// collin's own findings, in its order. One with no title or no model says
@@ -115,12 +119,24 @@ fn written(report: &Value) -> Vec<Written> {
                     unique_id: text(m, "unique_id"),
                     name: text(m, "name"),
                     detail: text(m, "detail"),
+                    materialized: String::new(),
                 })
                 .filter(|m| !m.unique_id.is_empty())
                 .collect(),
         })
         .filter(|f| !f.title.is_empty() && !f.models.is_empty())
         .collect()
+}
+
+/// The overview with what each model of collin's own findings draws its bar
+/// from, `look` saying it for a unique_id (empty for one the manifest has not).
+/// A copy: the overview is kept as read, and the manifest may change under it.
+pub fn looked(overview: &Overview, look: impl Fn(&str) -> String) -> Overview {
+    let mut out = overview.clone();
+    for m in out.collin_findings.iter_mut().flat_map(|f| f.models.iter_mut()) {
+        m.materialized = look(&m.unique_id);
+    }
+    out
 }
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
@@ -444,6 +460,21 @@ mod tests {
     fn only_numbers_pass_through_from_the_totals() {
         let o = overview(&json!({ "totals": { "models": 2, "note": "x", "columns_root": 0 } }));
         assert_eq!(o.totals.keys().collect::<Vec<_>>(), ["columns_root", "models"]);
+    }
+
+    #[test]
+    fn each_model_of_collin_s_findings_is_given_what_its_bar_is_drawn_from() {
+        let o = overview(&json!({
+            "findings": [{ "category": "c", "title": "t", "models": [
+                { "unique_id": "model.p.a", "name": "a" }, { "unique_id": "seed.p.gone" }] }]
+        }));
+        assert!(o.collin_findings[0].models.iter().all(|m| m.materialized.is_empty()), "the report itself says none");
+        let seen = looked(&o, |id| if id == "model.p.a" { "view".to_string() } else { String::new() });
+        let looks: Vec<&str> = seen.collin_findings[0].models.iter().map(|m| m.materialized.as_str()).collect();
+        assert_eq!(looks, ["view", ""], "a node the manifest lacks has none");
+        assert!(serde_json::to_string(&seen).unwrap().contains(r#""materialized":"view""#));
+        assert!(!serde_json::to_string(&o).unwrap().contains("materialized"), "an empty one is not sent");
+        assert!(o.collin_findings[0].models[0].materialized.is_empty(), "the overview kept as read is not touched");
     }
 
     #[test]

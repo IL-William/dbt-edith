@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.17.0 - 2026-11-09
+
+- Draw the Reports with a rail of 224px whose counts are pills, a head of the
+  name, its source and what it was read from on a line of its own, one strip of
+  figures, a boxed filter, findings on a rule each with a chevron, a count and
+  collin's severity as a tag, and a list of model names as chips wearing their
+  kind's bar.
+
 ## 2.16.0 - 2026-11-09
 
 - Draw the Catalog with one head, the name with its materialization and schema

@@ -6,9 +6,11 @@
 // Run from the repository root: jsc web/tests/joborder.js
 var app = read('web/app.js');
 eval(app.slice(app.indexOf('function reportsSections'), app.indexOf('async function loadReportsIndex')));
+eval(app.slice(app.indexOf('function strokeIcon'), app.indexOf('/* The lineage fields of an /api/meta answer')));
 eval(app.slice(app.indexOf('function reportFoldKey'), app.indexOf('/* Draws one section')));
 eval(app.slice(app.indexOf('function jobsScheduleText'), app.indexOf('async function loadJobs')));
 eval(app.slice(app.indexOf('function jobOrderLine'), app.indexOf('async function jobOrderSection')));
+eval(app.slice(app.indexOf('function checkFoldList'), app.indexOf('/* A macro card\'s first line')));
 eval(app.slice(app.indexOf('function jobsStepRow'), app.indexOf('function renderCoverage')));
 // A top-level const the page holds: read from it, so the test follows the cap.
 var CHECK_SHOWN = Number(/const CHECK_SHOWN = (\d+)/.exec(app)[1]);
@@ -29,6 +31,7 @@ function el(tag) {
         if (typeof arguments[i] === 'object') arguments[i].parentElement = this;
       }
     },
+    appendChild: function (c) { this.append(c); return c; },
     click: function () { if (this.on.click) this.on.click(); },
     dispatchEvent: function () {},
     scrollTop: 0, parentElement: null,
@@ -39,7 +42,7 @@ function el(tag) {
     },
     replaceChildren: function () { this.children = []; this.append.apply(this, arguments); },
     addEventListener: function (type, fn) { this.on[type] = fn; },
-    setAttribute: function (k, v) { this.attrs[k] = v; },
+    setAttribute: function (k, v) { this.attrs[k] = v; if (k === 'class') this.className = v; },
     getAttribute: function (k) { return this.attrs[k]; },
     closest: function (sel) {
       for (var at = this; at; at = at.parentElement) if (matches(at, sel)) return at;
@@ -68,7 +71,7 @@ function find(root, sel, out) {
   return out;
 }
 function Event(type) { this.type = type; }
-var document = { createElement: el };
+var document = { createElement: el, createElementNS: function (ns, tag) { return el(tag); } };
 var jel = function (tag, className, textContent) { var e = el(tag); e.className = className; e.textContent = textContent || ''; return e; };
 // The text an element shows, the strings appended to it included.
 function text(e) {
@@ -144,8 +147,9 @@ check('open while short, folded past 50', [jobOrderGroups(answer(many.slice(0, 5
 // The lists of a drawn section: the folds of a group, top level, in order.
 function folds(body) { return all(body, function (e) { return e.tag === 'details' && e.className === 'reportfinding'; }); }
 function listsOf(body) { return all(body, cls('reportlists'))[0]; }
-function titleOf(d) { return d.children[0].children[0].textContent; }
-function countOf(d) { return d.children[0].children[1].textContent; }
+// A fold's summary starts with its chevron: the title and the count are found by their class.
+function titleOf(d) { return all(d.children[0], cls('rtitle'))[0].textContent; }
+function countOf(d) { return all(d.children[0], cls('rcount'))[0].textContent; }
 
 print('\n--- the figures ---');
 function tiled(a) { return jobOrderTiles(a).map(function (t) { return [t.label, t.value, t.tone]; }); }
@@ -356,6 +360,7 @@ print('\n--- the pieces every section is made of (0137) ---');
 var tiles = reportTiles([{ label: 'Steps', value: '4', sub: 'looked at', tone: 'warn' }, { label: 'Pairs', value: '2' }]);
 check('a tile each: label, value, what is under it', tiles.children.map(function (t) { return t.children.map(text); }), [['Steps', '4', 'looked at'], ['Pairs', '2', '']]);
 check('the tone only where there is one', tiles.children.map(function (t) { return t.dataset.tone || ''; }), ['warn', '']);
+check('the strip says how many tiles it holds, so that a short one is not stretched', [tiles.attrs.style, reportTiles([]).attrs.style], ['--n: 2', '--n: 1']);
 check('no tile, an empty box', [reportTiles([]).className, reportTiles([]).children.length], ['reporttiles', 0]);
 
 var lever = reportLever('No freshness. Neither warn_after nor error_after holds a count.');
@@ -375,6 +380,13 @@ check('another class for the intro of a section', reportLever('Reads it. Then mo
 
 var fold = reportFold({ title: 'Models', count: '3 of 9', open: true, tone: 'warn', lever: 'Why. And so.' });
 check('a fold: its title and count in the summary, then the lever', [fold.tag, fold.className, text(fold.children[0]), fold.children[1].className], ['details', 'reportfinding', 'Models3 of 9', 'rlever']);
+check('the summary is a chevron, the title, then the count as a pill', fold.children[0].children.map(function (c) { return [c.tag, c.className]; }),
+  [['svg', 'rchev'], ['span', 'rtitle'], ['span', 'tabbadge rcount']]);
+check('the chevron is the design\'s, one path', fold.children[0].children[0].children.map(function (c) { return c.attrs.d; }), ['M6 4l4 4-4 4']);
+check('no severity, no tag', all(fold, cls('sevtag')).length, 0);
+check('a severity is a tag after the count, the count still the count',
+  (function () { var f = reportFold({ title: 'T', count: '4', open: false, severity: 'info' }); return f.children[0].children.slice(1).map(function (c) { return [c.className, c.textContent]; }); })(),
+  [['rtitle', 'T'], ['tabbadge rcount', '4'], ['sevtag', 'info']]);
 check('open as asked, in its tone', [fold.open, fold.dataset.tone], [true, 'warn']);
 check('no lever, none drawn', reportFold({ title: 'T', count: '1', open: false }).children.length, 1);
 check('shut by the reader, it is marked as theirs', (function () { var f = reportFold({ title: 'T', count: '1', open: false }); f.children[0].on.click(); return f.dataset.touched; })(), '1');
@@ -391,6 +403,50 @@ check('Show all draws the rest, is remembered on the fold, and the button goes',
   [9, ['row 7', 'and 40 more'], '1']);
 check('under the cap, no button', reportList(rowsL, rowFn, jel('details', ''), 8, 0).children.length, 8);
 check('nothing held back, no "and more"', reportList(rowsL, rowFn, jel('details', ''), Infinity, 0).children.map(text).slice(-1), ['row 7']);
+
+print('\n--- model chips ---');
+check('names alone are chips, anything said after one keeps the lines', [reportNamesOnly(['', '', '']), reportNamesOnly(['', 'no not_null on id']), reportNamesOnly(['models/staging'])], [true, false, false]);
+check('a list with no entry is none', reportNamesOnly([]), false);
+var opens = [];
+var chip = reportModelChip('stg_orders', { kind: 'model', materialized: 'view' }, 'model.shop.stg_orders', function () { opens.push('stg_orders'); });
+check('a chip is a button, its kind\'s bar first and its name after',
+  [chip.tag, chip.type, chip.className, chip.title, chip.children.map(function (c) { return typeof c === 'string' ? c : c.className; })], ['button', 'button', 'mlink', 'model.shop.stg_orders', ['dot', 'stg_orders']]);
+chip.on.click();
+check('and a click does what the link did', opens, ['stg_orders']);
+var bare = reportModelChip('gone', null, 'model.shop.gone', function () {});
+check('a row that says nothing of its kind: a plain chip, no bar', [bare.className, bare.children], ['mlink', ['gone']]);
+check('what a row says its bar is drawn from, as dot takes it: a materialization is a model\'s, a kind is its own',
+  [reportLook('view'), reportLook('source'), reportLook('seed'), reportLook('snapshot'), reportLook(''), reportLook(undefined)],
+  [{ kind: 'model', materialized: 'view' }, { kind: 'source' }, { kind: 'seed' }, { kind: 'snapshot' }, null, null]);
+var asRows = reportList(['a', 'b'], rowFn, jel('details', ''), Infinity, 0, true);
+check('chips go side by side: the list says so', [asRows.className, reportList(['a'], rowFn, jel('details', '')).className], ['rentries models', 'rentries']);
+var folder = reportFolderSummary('marts (3)');
+check('a folder\'s summary is the chevron and its name', [folder.tag, folder.children.map(function (c) { return typeof c === 'string' ? c : c.className; }), text(folder)], ['summary', ['rchev', 'marts (3)'], 'marts (3)']);
+
+print('\n--- chips or lines, decided on the whole fold ---');
+function openReportNode() {}
+function crow(name, folder, detail) { return { id: 'model.shop.' + name, name: name, file: folder + '/' + name + '.sql', folder: folder, detail: detail || '' }; }
+function shapesOf(rows, shown, all) {
+  return checkGroups(rows, shown, true, checkRow, checkSays, all).map(function (g) {
+    var ul = g.tag === 'ul' ? g : all2(g, 'ul')[0];
+    return ul.className;
+  });
+}
+function all2(e, tag) { return all(e, function (x) { return x.tag === tag; }); }
+var ra = crow('a', 'models/marts'), rb = crow('b', 'models/marts'), rc = crow('c', 'models/marts', 'no not_null on id'), rd = crow('d', 'models/marts');
+check('a folder whose rows say nothing but a name is chips', shapesOf([ra, rb, rd], Infinity, [ra, rb, rd]), ['rentries models']);
+check('one with a row saying more is lines', shapesOf([ra, rb, rc], Infinity, [ra, rb, rc]), ['rentries']);
+check('filtered to the rows with no detail, still lines: the fold decides, not the rows left', shapesOf([ra, rb], Infinity, [ra, rb, rc]), ['rentries']);
+check('filtered to the one row with a detail, lines', shapesOf([rc], Infinity, [ra, rb, rc]), ['rentries']);
+check('before Show all and after it, the same: lines', [shapesOf([ra, rb, rc], 1, [ra, rb, rc]), shapesOf([ra, rb, rc], Infinity, [ra, rb, rc])], [['rentries'], ['rentries']]);
+check('chips stay chips under a cap and a filter that keeps their folder', [shapesOf([ra, rb, rd], 1, [ra, rb, rd]), shapesOf([ra, rb], Infinity, [ra, rb, rd])], [['rentries models'], ['rentries models']]);
+check('filtered to one row, it is listed bare with its folder, as a folder of one is', shapesOf([ra], Infinity, [ra, rb, rd]), ['rentries']);
+var sx = crow('x', 'models/marts'), sy = crow('y', 'models/marts'), sz = crow('z', 'models/staging'), sw = crow('w', 'models/staging');
+check('two folders of chips gathered by a filter under the one above say their paths again, as lines',
+  [shapesOf([sx, sy, sz, sw], Infinity, [sx, sy, sz, sw]), shapesOf([sx, sz], Infinity, [sx, sy, sz, sw])], [['rentries models', 'rentries models'], ['rentries']]);
+var chipsList = checkGroups([ra, rb], Infinity, true, checkRow, checkSays, [ra, rb, rd]);
+check('a chip is the model\'s name as a button, the path left to the folder\'s head', all(chipsList[0], cls('mlink')).map(function (c) { return [c.tag, text(c)]; }), [['button', 'a'], ['button', 'b']]);
+check('a line is the name as a link, then what it says', all(checkGroups([rc], Infinity, true, checkRow, checkSays, [rc])[0], cls('filelink')).map(text), ['c']);
 
 var listsHost = el('div');
 var seenArgs = [];
@@ -410,7 +466,8 @@ drawReportLists(listsHost, [{ folds: [] }], '');
 check('and nothing to show, with no filter, says nothing', listsHost.children.length, 0);
 drawReportLists(listsHost, [{ group: 'rerun', label: 'Rerun dbt', desc: 'What dbt wrote is behind.', folds: [foldSpec('A', ['x'])] }, { folds: [foldSpec('B', ['y'])] }], '');
 check('a group with a label is a section under its heading, the fold inside it', [listsHost.children[0].tag, listsHost.children[0].className, listsHost.children[0].dataset.group,
-  listsHost.children[0].children.map(function (c) { return c.tag; }), text(listsHost.children[0].children[0])], ['section', 'reportgroup', 'rerun', ['h3', 'p', 'details'], 'Rerun dbt']);
+  listsHost.children[0].children.map(function (c) { return c.tag; }), text(listsHost.children[0].children[0])], ['section', 'reportgroup', 'rerun', ['div', 'p', 'details'], 'Rerun dbt']);
+check('its heading sits in a head row, which the group\'s bar and the heading share', [listsHost.children[0].children[0].className, listsHost.children[0].children[0].children.map(function (c) { return c.tag; })], ['rg-head', ['h3']]);
 check('one without is bare, after it', listsHost.children.map(function (c) { return c.tag; }), ['section', 'details']);
 var headEl = jel('h3', 'buildsenv', 'QA');
 drawReportLists(listsHost, [{ head: [headEl, jel('p', 'runnote', 'Not read.')], folds: [] }, { head: headEl, folds: [] }], '');
@@ -418,9 +475,11 @@ check('a group with a head brings it, and stays with no fold; a single element i
 
 var drawnWith = [];
 var fbox = reportFilterBox('Filter the things', function (q2) { drawnWith.push(q2); });
-var fin = fbox.children[0];
+var fin = all(fbox, cls('reportfilter'))[0];
 check('a filter box: a search input with its placeholder', [fbox.className, fin.tag, fin.type, fin.placeholder, fin.attrs['aria-label'], fin.className],
   ['reportfind', 'input', 'search', 'Filter the things', 'Filter the things', 'reportfilter']);
+check('in a label with a magnifier before it, inside the wrapper that sticks', [fbox.children[0].tag, fbox.children[0].className, fbox.children[0].children.map(function (c) { return c.tag; })],
+  ['label', 'reportbox', ['svg', 'input']]);
 fin.value = 'orders';
 fin.on.input();
 check('typing draws nothing at once', drawnWith, []);

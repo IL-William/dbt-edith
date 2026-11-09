@@ -2370,6 +2370,10 @@ pub struct Row {
     pub name: String,
     pub kind: &'static str,
     pub folder: String,
+    /// What the row's kind bar is drawn from (`Node::look`), for the chip the
+    /// page draws it as.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub materialized: String,
 }
 
 #[derive(serde::Serialize, Debug)]
@@ -2465,7 +2469,13 @@ pub fn coverage(graph: &Graph, read: &Read) -> Coverage {
         if !root.is_empty() && node.package != root {
             continue;
         }
-        let row = Row { id: node.id.clone(), name: node.name.clone(), kind: node.kind.as_str(), folder: folder(graph, i as u32) };
+        let row = Row {
+            id: node.id.clone(),
+            name: node.name.clone(),
+            kind: node.kind.as_str(),
+            folder: folder(graph, i as u32),
+            materialized: node.look().to_string(),
+        };
         if node.kind == Kind::Model && node.materialized == "ephemeral" {
             cov.ephemeral.push(row);
             continue;

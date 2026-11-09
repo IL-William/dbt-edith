@@ -26,6 +26,10 @@ pub struct Row {
     pub name: String,
     pub file: String,
     pub folder: String,
+    /// What the row's kind bar is drawn from (`Node::look`): the page has no
+    /// node of its own to ask.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub materialized: String,
     /// What a row of a key rule says of its key, the columns and the ones left
     /// uncovered. Empty on the other rules.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -218,6 +222,7 @@ pub fn checks(graph: &Graph) -> Checks {
                     name: n.name.clone(),
                     file: n.file.clone(),
                     folder: crate::jobs::folder(graph, h.node),
+                    materialized: n.look().to_string(),
                     detail: h.detail,
                     column: h.column,
                     key: h.key,
@@ -579,6 +584,26 @@ mod tests {
             },
         }));
         assert_eq!(names(&checks(&g).sources_not_read.rows), ["crm.alone", "crm.only_tested"]);
+    }
+
+    /// The page has no node of its own to draw a chip's bar from: a row says
+    /// what it is drawn from, a model's materialization, a source's own kind,
+    /// and nothing for a model that names none.
+    #[test]
+    fn a_row_says_what_its_kind_bar_is_drawn_from() {
+        let mut bare = model("bare", "shop", "");
+        bare["config"] = json!({});
+        let g = build(json!({
+            "nodes": { "model.shop.tabled": model("tabled", "shop", ""), "model.shop.bare": bare },
+            "sources": { "source.shop.crm.alone": source("alone", "shop", json!({})) },
+        }));
+        let c = checks(&g);
+        let looks = |rows: &[Row]| rows.iter().map(|r| (r.name.clone(), r.materialized.clone())).collect::<Vec<_>>();
+        assert_eq!(looks(&c.models_without_description.rows), [("bare".to_string(), String::new()), ("tabled".to_string(), "table".to_string())]);
+        assert_eq!(looks(&c.sources_not_read.rows), [("crm.alone".to_string(), "source".to_string())]);
+        let sent = serde_json::to_value(&c.models_without_description.rows).unwrap();
+        assert!(sent[0].get("materialized").is_none(), "an empty one is not sent");
+        assert_eq!(sent[1]["materialized"], "table");
     }
 
     #[test]
