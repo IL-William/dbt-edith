@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.15.0 - 2026-11-09
+
+- Show the shortcut list as a sheet inside the window, with a find box that
+  filters it by key, word or group, the groups in columns and a footer saying
+  which keys it draws.
+
 ## 2.14.0 - 2026-11-09
 
 - Lay the settings out as one column of cards, a setting's name and why on the

@@ -2834,7 +2834,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
-    ~~the settings~~ (2.14.0, 0163), shortcuts, ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
+    ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
@@ -3009,6 +3009,16 @@ of its own, and each panel updates the tour, its page under
       lineage choice, a profile and target picker, Snowflake's account line,
       the GitHub "Open" button (the GitHub button's preview, step 21), a `.env`
       value on a line, and a Change button for the Python.
+52. **The shortcut sheet's limits (2.15.0).**
+    - The list is drawn whole and again on every key typed, not virtualised;
+      the ten groups are cheap, but a much longer list would want it.
+    - The find box searches the rows, the keys and the group titles, not the
+      footer or the note under the groups.
+    - A window too short for the head and the foot leaves the groups a few
+      lines to scroll in.
+    - On Windows and Linux the list is two columns wide, not the board's
+      three: the keys are written out there (`Ctrl+Backspace`), and three
+      columns left the words a few characters a line.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

@@ -20272,6 +20272,47 @@ function termLineRows(os) {
   return [];
 }
 
+/* What the list shows for what is typed in its find box. A row stays when its
+   text, one of its keys, or its group's title holds the query, whatever the
+   case; a group's title keeps all of its rows. A key is found by its label as
+   this machine draws it (`label`) and by its modifiers spelled out, as they are
+   said aloud: Cmd, Command and Option on a Mac, where the glyphs cannot be
+   typed, and Ctrl and Alt elsewhere, plus the key's own name (Enter, and Return
+   beside it on a Mac; ArrowUp, Backspace, Escape). Those are matched from the
+   start of a word, never inside one: "man" must not keep every Cmd row through
+   Command. keyCombo's own `Mod` and `+` are not searched, since they are in
+   nearly every row and hit none in particular. Only the first hit in a row's
+   text is marked, split into the parts before, at and after it: a key or a
+   title hit marks nothing. A blank query keeps everything. */
+function filterShortcuts(sheet, query, label, mac) {
+  const q = query.trim().toLowerCase();
+  // A French Mac's keys print alt, not the glyph (0037).
+  const said = mac
+    ? { Mod: 'cmd command', Alt: 'option alt', Shift: 'shift', Ctrl: 'control' }
+    : { Mod: 'ctrl', Alt: 'alt', Shift: 'shift', Ctrl: 'ctrl' };
+  const starts = (words) => words.split(' ').some((w) => w.startsWith(q));
+  const out = [];
+  for (const group of sheet) {
+    const titleHit = !!q && group.title.toLowerCase().includes(q);
+    const rows = [];
+    for (const [combos, what] of group.keys) {
+      const keys = combos.map((c) => label(c));
+      const at = q ? what.toLowerCase().indexOf(q) : -1;
+      const keyHit = !!q && combos.some((c, i) => {
+        const parts = c.split('+');
+        const name = parts.pop().toLowerCase();
+        return keys[i].toLowerCase().includes(q) || starts(name + (mac && name === 'enter' ? ' return' : ''))
+          || parts.some((m) => starts(said[m] || ''));
+      });
+      if (q && at < 0 && !keyHit && !titleHit) continue;
+      rows.push(at < 0 ? { keys, a: what, m: '', b: '' }
+        : { keys, a: what.slice(0, at), m: what.slice(at, at + q.length), b: what.slice(at + q.length) });
+    }
+    if (rows.length) out.push({ title: group.title, rows });
+  }
+  return out;
+}
+
 /* Whether a key pressed here is text: a box, the editor, the terminal. `?` is
    a shortcut only outside all three. */
 function isTyping(el) {
@@ -20288,8 +20329,13 @@ function toggleShortcuts() {
   if (built && !built.classList.contains('hidden')) return closeShortcuts();
   const box = built || buildShortcuts();
   S.keysReturn = document.activeElement;
+  // It opens on every shortcut, whatever was searched for last time.
+  const find = box.querySelector('.keys-find input');
+  find.value = '';
+  // Shown before it is drawn: a hidden box has no scroll to put back to the top.
   box.classList.remove('hidden');
-  box.querySelector('.keys-box').focus();
+  paintShortcuts(box);
+  find.focus();
 }
 
 /* Focus goes back to where the keys were typed, the editor usually. */
@@ -20313,36 +20359,39 @@ function buildShortcuts() {
   panel.setAttribute('aria-label', 'Keyboard shortcuts');
   const head = document.createElement('div');
   head.className = 'keys-head';
+  // Typing redraws the groups only: the head and the foot stay as they are, so
+  // the caret does not leave the box.
+  const find = document.createElement('label');
+  find.className = 'keys-find';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Find a shortcut, a key or a word';
+  input.spellcheck = false;
+  input.setAttribute('aria-label', 'Find a shortcut');
+  input.addEventListener('input', () => paintShortcuts(box));
+  find.append(strokeIcon('0 0 16 16', 'keys-ico', ['M7 2.25a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5z', 'M10.5 10.5l3.5 3.5']), input);
   const close = document.createElement('button');
-  close.className = 'icon';
-  close.textContent = '×';
+  close.type = 'button';
+  close.className = 'keys-x';
   close.title = `Close (${keyLabel('Escape', IS_MAC)})`;
+  close.setAttribute('aria-label', 'Close');
+  close.append(strokeIcon('0 0 16 16', 'keys-ico', ['M4 4l8 8M12 4l-8 8']));
   close.addEventListener('click', closeShortcuts);
   // The tour lives here, where someone looking for what the page can do looks (0074).
   const tour = document.createElement('button');
   tour.type = 'button';
-  tour.className = 'btn sm primary';
+  tour.className = 'btn primary';
   tour.textContent = 'Give me a tour';
   tour.title = 'What each part of the page is for, on a model of this project. It runs nothing.';
   tour.addEventListener('click', startTour);
-  head.append(Object.assign(document.createElement('h2'), { textContent: 'Keyboard shortcuts' }),
+  head.append(Object.assign(document.createElement('h2'), { textContent: 'Keyboard shortcuts' }), find,
     Object.assign(document.createElement('div'), { className: 'grow' }), tour, close);
+  // The grid scrolls and its columns sit inside it: columns on the scrolling box
+  // itself would open more columns to the right, not scroll down, once the
+  // window is shorter than the list.
   const grid = document.createElement('div');
   grid.className = 'keys-grid';
-  for (const group of shortcutSheet(KEYS_OS)) {
-    const sec = document.createElement('section');
-    sec.append(h3(group.title));
-    for (const [combos, what] of group.keys) {
-      const row = document.createElement('div');
-      row.className = 'keys-row';
-      const keys = document.createElement('span');
-      keys.className = 'keys-k';
-      for (const combo of combos) keys.append(Object.assign(document.createElement('kbd'), { textContent: keyLabel(combo, IS_MAC) }));
-      row.append(keys, Object.assign(document.createElement('span'), { className: 'keys-what', textContent: what }));
-      sec.append(row);
-    }
-    grid.append(sec);
-  }
+  grid.append(Object.assign(document.createElement('div'), { className: 'keys-cols' }));
   // The question the list raises first: why not the key every other app uses.
   const note = document.createElement('p');
   note.className = 'keys-note';
@@ -20352,7 +20401,21 @@ function buildShortcuts() {
       + 'type at all: there the same command answers to ⌥⌘X, closing every tab to ⌥⇧⌘X, and back '
       + 'and forward ask for ⌘ for the same reason (0037). ? or F1 opens this list.'
     : 'Ctrl+W belongs to the browser, never to a page: it closes the browser tab. Hence Alt+W to close a tab here.';
-  panel.append(head, grid, note);
+  const foot = document.createElement('div');
+  foot.className = 'keys-foot';
+  const kbd = (text) => Object.assign(document.createElement('kbd'), { textContent: text });
+  const pressed = document.createElement('span');
+  pressed.append(kbd('?'), ' outside a text box, ', kbd('F1'), ' from anywhere but the terminal, ', kbd(keyLabel('Escape', IS_MAC)), ' to close');
+  // The list is drawn in this machine's keys, and the foot says how the other's
+  // read: the terminal's line keys are the exception, its own on each (0073).
+  foot.append(
+    Object.assign(document.createElement('span'), { textContent: IS_MAC
+      ? 'Keys as on a Mac. On Windows and Linux, ⌘ is Ctrl and ⌥ is Alt, the terminal\'s line keys apart.'
+      : 'Keys as on Windows and Linux. On a Mac, Ctrl is ⌘ and Alt is ⌥, the terminal\'s line keys apart.' }),
+    Object.assign(document.createElement('div'), { className: 'grow' }),
+    pressed);
+  grid.append(note);
+  panel.append(head, grid, foot);
   box.append(panel);
   box.addEventListener('mousedown', (e) => { if (e.target === box) closeShortcuts(); });
   // Only the list closes: the search box or a dialog under it stays open.
@@ -20364,6 +20427,39 @@ function buildShortcuts() {
   });
   document.body.append(box);
   return box;
+}
+
+/* The groups the find box leaves, drawn again in the columns; the note stays
+   under them, read after the groups and scrolled with them. */
+function paintShortcuts(box) {
+  const query = box.querySelector('.keys-find input').value;
+  const cols = box.querySelector('.keys-cols');
+  // Each query starts at the top of its hits, not where the last list was scrolled to.
+  box.querySelector('.keys-grid').scrollTop = 0;
+  const groups = filterShortcuts(shortcutSheet(KEYS_OS), query, (c) => keyLabel(c, IS_MAC), IS_MAC);
+  const nodes = [];
+  for (const group of groups) {
+    const sec = document.createElement('section');
+    sec.append(h3(group.title));
+    for (const row of group.rows) {
+      const line = document.createElement('div');
+      line.className = 'keys-row';
+      const keys = document.createElement('span');
+      keys.className = 'keys-k';
+      for (const k of row.keys) keys.append(Object.assign(document.createElement('kbd'), { textContent: k }));
+      const what = document.createElement('span');
+      what.className = 'keys-what';
+      what.append(row.a);
+      if (row.m) what.append(Object.assign(document.createElement('mark'), { textContent: row.m }), row.b);
+      line.append(keys, what);
+      sec.append(line);
+    }
+    nodes.push(sec);
+  }
+  if (!groups.length) {
+    nodes.push(Object.assign(document.createElement('p'), { className: 'keys-none', textContent: `No shortcut says \u201c${query.trim()}\u201d.` }));
+  }
+  cols.replaceChildren(...nodes);
 }
 
 /* What a close key closes: the panel when one is down, since the tab under
