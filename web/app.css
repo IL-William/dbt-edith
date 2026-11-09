@@ -859,12 +859,13 @@ kbd {
 .tooldot[data-tone=bad] { background: var(--bad); -webkit-mask-image: var(--m-bad); mask-image: var(--m-bad); }
 .btn.cllpick { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .btn.cllpick, .btn.cllpick:hover { border-color: var(--tool); }
-.cllpick .tname, .cllnow .tname { color: var(--tool); font-weight: 600; }
+.cllpick .tname { color: var(--tool); font-weight: 600; }
 .cllpick .tdetail, .cllpick .caret, .cllnow .tdetail { color: var(--fg-dim); }
 .cllpick .caret { font-size: 11px; line-height: 1; }
 .btn.cllpick[data-tool=""], .btn.cllpick[data-tool=""]:hover { border-color: var(--line); }
-.cllpick[data-tool=""] .tname, .cllnow[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
-.cllpick[data-tool=""] .tooldot, .cllnow[data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
+.cllpick[data-tool=""] .tname { color: var(--fg-dim); font-weight: 400; }
+.cllnow[data-tool=""] .toolchip { color: var(--fg-dim); border-color: var(--line); }
+.cllpick[data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 .cllpick[data-tone=busy] .tstate, .cllnow[data-tone=busy] .tstate { color: var(--warn); }
 .cllpick[data-tone=failed] .tstate, .cllnow[data-tone=failed] .tstate { color: var(--bad); }
 .btn.cllpick[data-tone=failed], .btn.cllpick[data-tone=failed]:hover { border-color: var(--bad); }
@@ -881,16 +882,6 @@ kbd {
   flex: 0 0 auto; padding: 0 4px; border-radius: 3px; background: var(--warn); color: var(--tone-fg);
   font: 600 9.5px/14px var(--ui); letter-spacing: .5px; text-transform: uppercase;
 }
-/* Snowflake's switch, in its section of the settings (0100). */
-.setrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
-.setrow:hover { background: var(--bg-3); }
-.setrow[aria-busy=true] { cursor: progress; }
-.setlbl { font-size: 12.5px; font-weight: 600; color: var(--fg); }
-/* A switch row that says what it does under its name (the Theme section). */
-.setcol { flex: 1; min-width: 0; }
-.setcol .setnote { margin: 2px 0 0; }
-.setpick { cursor: default; }
-.setpick:hover { background: none; }
 /* The Theme section's cards (0150): each preview carries its own data-theme,
    so it paints itself in that theme's variables, whichever is on screen. */
 .tcards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -912,34 +903,32 @@ kbd {
 .tname { font-weight: 500; }
 .tdesc { font-size: 11.5px; color: var(--fg-dim); }
 @media (max-width: 1180px) { .tcards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Follow the system's tag. */
 .newtag {
-  margin-left: 8px; font: 600 9.5px/14px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
-  border: 1px solid rgba(var(--accent-rgb), .45); border-radius: 4px; padding: 0 4px; vertical-align: 1px;
+  font: 600 9.5px/14px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), .45); border-radius: 4px; padding: 0 4px;
 }
-.setgroup.dim { opacity: .55; }
-/* A group of the Theme section in a card of its own, as the board draws it. */
-.envmenu.inpanel.setcard { max-width: none; padding: 4px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
-.sghead {
-  display: flex; align-items: baseline; gap: 10px; padding: 6px 8px 4px; font-size: 11px; font-weight: 600;
-  letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim);
-}
-.sgnote { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg-mute); }
 .sficon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: var(--tool); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-/* A switch rather than a check mark: on and off have to read at a glance. */
-.envmenu button.switch {
+/* A switch rather than a check mark: on and off have to read at a glance. In
+   the settings it is the board's 32 by 18 with a 14px knob, in the colour of the
+   tool its group sets. */
+.envmenu button.switch, .sgroup button.switch {
   position: relative; flex: 0 0 auto; width: 34px; height: 18px; padding: 0; margin-left: auto;
   border: 1px solid var(--pill-line); border-radius: 9px; background: var(--bg); cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.envmenu button.switch .knob {
+.envmenu button.switch .knob, .sgroup button.switch .knob {
   position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
   background: var(--knob); transition: transform .15s, background .15s;
 }
-.envmenu button.switch[aria-checked=true] { background: var(--tool); border-color: var(--tool); }
-.envmenu button.switch[aria-checked=true] .knob { transform: translateX(16px); background: var(--knob-on); }
-.envmenu button.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.envmenu button.switch[aria-checked=true], .sgroup button.switch[aria-checked=true] { background: var(--tool); border-color: var(--tool); }
+.envmenu button.switch[aria-checked=true] .knob, .sgroup button.switch[aria-checked=true] .knob { transform: translateX(16px); background: var(--knob-on); }
+.envmenu button.switch:focus-visible, .sgroup button.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sgroup button.switch { width: 32px; margin-left: 0; --zrun: 13px; }
+.sgroup button.switch .knob { top: 1px; left: 1px; width: 14px; height: 14px; }
+.sgroup button.switch[aria-checked=true] .knob { transform: translateX(14px); }
 .alphawarn {
-  margin: 6px 4px 3px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 4px;
+  margin: 6px 16px 14px; padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 4px;
   background: color-mix(in srgb, var(--warn) 8%, transparent); color: var(--warn); font-size: 11px; line-height: 1.45;
 }
 /* z-index 64: above the ambient chrome and the palette (50),
@@ -1761,35 +1750,182 @@ kbd {
   .selpanel-head .selinput { min-width: 64px; }
 }
 .reports-view .diff-head { padding: 6px 12px 5px; }
-/* The settings (0100): a section at a time, its blocks one under the other at
-   a reading width, the menus it took the place of drawn on the page. */
-.setlead { margin: 0; font-size: 12px; color: var(--fg-dim); max-width: 760px; }
-.setblock { max-width: 760px; margin-top: 18px; }
-.setblock > h3 {
-  margin: 0 0 6px; font-size: 10.5px; letter-spacing: .9px; text-transform: uppercase;
-  color: var(--fg-dim); font-weight: 600;
+/* The settings (0100, 0163): the Reports rail, then one column of rows as wide
+   as a form reads well, a setting's name and why on the left, its control on
+   the right, so the window is used without lines running across it. */
+.setnav-head {
+  display: flex; align-items: center; height: 34px; padding: 0 14px; font-size: 11px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-dim);
 }
-.setnote { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
-.setnote.warn { color: var(--warn); }
-.setline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 2px; }
-.setpath { font: 11.5px var(--mono); color: var(--fg); overflow-wrap: anywhere; }
-.setactions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
-.setactions a.btn { text-decoration: none; color: var(--fg); }
-.envmenu.inpanel {
-  position: static; z-index: auto; width: auto; min-width: 0; max-width: 560px; max-height: none;
-  overflow: visible; padding: 0; background: none; border: 0; box-shadow: none;
-}
-.envmenu.inpanel .menunote { max-width: none; }
-.cllnow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
-.seticon {
-  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 17px;
-  color: var(--fg-dim);
-}
+.reports-navrow.setnavrow { height: 30px; gap: 10px; box-shadow: none; }
+.reports-navrow.setnavrow[aria-current="true"] { box-shadow: inset 2px 0 0 var(--accent); }
+.seticon { display: grid; place-items: center; flex: 0 0 auto; width: 16px; height: 16px; color: var(--fg-mute); }
+.seticon.tinted { color: var(--tool); }
+.setnavrow[aria-current="true"] .seticon { color: var(--fg-dim); }
+.setnavrow[aria-current="true"] .seticon.tinted { color: var(--tool); }
 .seticon .sficon { width: 14px; height: 14px; }
-.seticon .profileicon { width: 16px; height: 13px; }
 .seticon[data-tool=""] .tooldot { background: var(--none); -webkit-mask-image: var(--m-none); mask-image: var(--m-none); }
 .setglyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .setwarn { margin-left: auto; width: 10px; height: 10px; flex: 0 0 auto; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat; }
+.sethint { margin-left: auto; flex: 0 0 auto; font: 11px var(--mono); color: var(--fg-mute); }
+.sethint.new { padding: 0 6px; border-radius: 8px; line-height: 16px; color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+.setview { flex: 1 1 0; min-width: 0; overflow: auto; }
+.setinner { flex: none; width: 100%; max-width: 920px; margin: 0 auto; padding: 26px 40px 48px; }
+.sethead { margin-bottom: 18px; }
+.sethead h2 { margin: 0; font-size: 18px; font-weight: 600; }
+/* A tool's section: its colour as a bar before the name, never a dot (0148). */
+.sethead[data-tool] h2 { padding-left: 12px; box-shadow: inset 3px 0 0 var(--tool); }
+.sethead p { margin: 4px 0 0; color: var(--fg-dim); max-width: 70ch; }
+.sethead p + p { margin-top: 8px; }
+.sgroup { margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
+/* The Halloween group while another theme is on: its controls stay usable. */
+.sgroup.faded { opacity: .55; }
+.sghead {
+  display: flex; align-items: baseline; gap: 10px; padding: 10px 16px 4px; font-size: 11px; font-weight: 600;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim);
+}
+.sgnote { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--fg-mute); }
+.srow {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; align-items: center;
+  padding: 12px 16px; border-top: 1px solid var(--line-soft);
+}
+.sghead + .srow, .sgroup > .srow:first-child { border-top: 0; }
+.srow.wide { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.srow.press { cursor: pointer; }
+.srow[aria-busy=true] { cursor: progress; }
+.st { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.sd { margin-top: 2px; font-size: 12px; color: var(--fg-dim); }
+.sd p { margin: 0; }
+.sd p + p { margin-top: 4px; }
+.sc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.sc > .setnote { flex: 1 1 100%; margin: 0; }
+.setinner .fnote { font-size: 12px; color: var(--fg-dim); }
+.sc a.btn { text-decoration: none; color: var(--fg); }
+.setinner .btn { display: inline-flex; align-items: center; gap: 6px; }
+.setinner .btn.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 500; }
+.setinner .btn.primary:hover { background: var(--accent); filter: brightness(1.08); }
+.setinner .mono { font: 12px var(--mono); }
+.setinner .dim { color: var(--fg-mute); font-size: 12px; }
+.setnote { margin: 4px 0; font-size: 12px; line-height: 1.5; color: var(--fg-dim); }
+.setnote.warn { color: var(--warn); }
+.setactions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
+/* A state as the shapes rule draws it: its pictogram, then a word. */
+.okline { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+.okline .dot {
+  width: 11px; height: 11px; border-radius: 0; background: var(--fg-mute);
+  -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat;
+}
+.okline[data-tone=ok] .dot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.okline[data-tone=warn] .dot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+/* One column for the three, so the names, the files and what they hold line
+   up; what a file holds wraps inside its column rather than being cut, the
+   match being the part read last and the one most worth reading. */
+.envlist { display: grid; grid-template-columns: minmax(48px, max-content) max-content minmax(0, 1fr); align-items: baseline; gap: 4px 14px; width: 100%; }
+.envline { display: contents; }
+.envlist .envtag { justify-self: start; }
+.envlist .dim { overflow-wrap: anywhere; }
+/* A part never breaks inside: "100% as parsed" stays one. */
+.envlist .dim > span { white-space: nowrap; }
+.envpanel { flex: 1 1 100%; min-width: 0; overflow-x: auto; }
+.seg2 { display: flex; flex-wrap: wrap; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.seg2 button {
+  height: 24px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; font: 12px var(--ui);
+  color: var(--fg-dim); cursor: pointer;
+}
+.seg2 button:hover { color: var(--fg); }
+.seg2 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg2 button[aria-checked=true] { background: var(--bg-3); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+/* Each environment in its colour, the one picked tinted and ringed with it;
+   the manifest, or the developer's own compile, only outlined. */
+.envseg button[data-tone]:not([data-tone=manifest]) { color: var(--tone); }
+.envseg button[data-tone]:not([data-tone=manifest])[aria-checked=true] {
+  background: color-mix(in srgb, var(--tone) 16%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 55%, transparent);
+}
+.pyline { display: flex; align-items: center; gap: 12px; width: 100%; }
+.setinner .chips { flex: 1 1 100%; flex-wrap: wrap; align-items: center; }
+.setinner .chip { font: 11px/20px var(--mono); padding: 0 8px; background: transparent; color: var(--fg-2); }
+/* The tool on screen, as the board draws a tool: its name in a chip of its colour. */
+.toolchip {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--tool) 55%, transparent);
+  border-radius: 4px; font-size: 11.5px; color: var(--tool);
+}
+.sc.cllnow { gap: 6px; }
+.cllnow .tdetail, .cllnow .tstate { font-size: 12px; }
+/* The tools to pick from, a card each, with what is done with one as a plain
+   button under its card. */
+.radios { display: grid; gap: 6px; width: 100%; }
+.radio {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--bg); color: var(--fg); font: 13px/1.45 var(--ui); text-align: left; cursor: pointer;
+}
+.radio:hover { border-color: var(--line-strong); }
+.radio:focus-visible, .radios button.subaction:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.radio[aria-checked=true] { border-color: rgba(var(--accent-rgb), .7); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+/* Not `pointer-events: none`: its tooltip is where the reason is, as in the menu. */
+.radio[aria-disabled=true] { opacity: .5; cursor: default; }
+.rtext { flex: 1 1 0; min-width: 0; }
+.rtop { display: flex; align-items: center; gap: 8px; }
+.rtop .lbl { font-weight: 500; }
+.rtop .sub { margin-left: auto; font: 10.5px var(--mono); color: var(--fg-dim); }
+.rd { display: block; font-size: 12px; color: var(--fg-dim); font-weight: 400; white-space: pre-line; overflow-wrap: anywhere; }
+.rb { width: 14px; height: 14px; margin-top: 2px; flex: 0 0 auto; border-radius: 50%; border: 1.5px solid var(--line-strong); }
+.radio[aria-checked=true] .rb { border: 4px solid var(--accent); }
+.radios button.subaction {
+  justify-self: start; margin-left: 24px; padding: 2px 8px; border: 0; border-radius: 4px; background: none;
+  color: var(--fg-dim); font: 11.5px var(--ui); text-align: left; cursor: pointer;
+}
+.radios button.subaction:hover { background: var(--bg-3); color: var(--fg); }
+.radios button.subaction[data-urgent=true] { color: var(--warn-text); }
+.radios button.subaction .sub { margin-left: 10px; font: 10.5px var(--mono); }
+.radios .menunote { margin-left: 24px; font-size: 11.5px; line-height: 1.4; color: var(--fg-dim); }
+.radios hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.radios .menuhead { font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--fg-dim); }
+.sp2 { margin: 0; padding: 4px 16px 10px; font-size: 12.5px; color: var(--fg-2); max-width: 80ch; }
+.sp2 code { font: 11.5px var(--mono); }
+.sp2.pathwarn { color: var(--warn-text); }
+.sp2.updready { color: var(--ok); font-weight: 600; }
+/* The job sources: a row each, the form of the one being edited under it. */
+.srcitem { border-top: 1px solid var(--line-soft); }
+.srclist > .srcitem:first-child { border-top: 0; }
+.srcline { display: grid; grid-template-columns: 28px minmax(0, 1fr) fit-content(50%) auto; gap: 12px; align-items: center; padding: 10px 16px; }
+.srcico { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; background: var(--bg-3); color: var(--tool-jobs); }
+.srcname { min-width: 0; }
+.srcname b { display: block; font-weight: 500; }
+.srcpath { display: block; font: 12px var(--mono); color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srcsum { min-width: 0; font-size: 12px; color: var(--fg-mute); overflow-wrap: anywhere; }
+.srcsum.warn { color: var(--warn-text); }
+.srcform { padding: 0 16px 14px; }
+.srcnone, .jobsrc .srcnone { margin: 0; padding: 10px 16px; font-size: 12px; color: var(--fg-dim); }
+.jobsrc .srcrefused { margin: 0; padding: 6px 16px 0; }
+.srcadd { padding: 8px 16px 12px; border-top: 1px solid var(--line-soft); }
+.srcfoot { padding: 12px 16px; border-top: 1px solid var(--line-soft); }
+.jobsrc .srcsave { display: flex; align-items: center; gap: 10px; }
+.jobsrc .srcsave p { margin: 0; }
+/* Updates: this build beside the newest, the releases since, how to install. */
+.vcards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.vcard { padding: 12px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-2); }
+.vcard.new { border-color: rgba(var(--accent-rgb), .45); }
+.vk { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim); }
+.setinner .vv { margin-top: 2px; font: 600 20px var(--mono); }
+.vcard.new .vv { color: var(--accent); }
+/* Words, where there is no version to show: the text size, quietly. */
+.setinner .vv.words { margin-top: 2px; font: 13px/1.45 var(--ui); color: var(--fg-dim); }
+.vs { font-size: 12px; color: var(--fg-mute); }
+.relline { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; padding: 6px 16px; border-top: 1px solid var(--line-soft); color: var(--fg); text-decoration: none; }
+.relline:hover { background: var(--bg-3); }
+.relline:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sghead + .relline { border-top: 0; }
+.relline .mono { color: var(--fg-dim); }
+.codebox {
+  display: flex; align-items: flex-start; gap: 12px; margin: 0 16px 14px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--bg);
+}
+.codebox .pre { flex: 1 1 0; min-width: 0; font: 12px/1.6 var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+.setfoot { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+@media (max-width: 900px) {
+  .srow { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .setinner { padding: 18px 16px 32px; }
+}
 .reports-again.stale { color: var(--warn); border-color: var(--warn); }
 .rnew[data-tone=bad] { color: var(--bad); border-color: var(--bad); }
 .rnew[data-tone=warn] { color: var(--warn); border-color: var(--warn); }
@@ -2581,7 +2717,6 @@ kbd {
 }
 /* The sources form, in the settings' Orchestration section (0100). */
 .jobsrc p { margin: 0 0 10px; font-size: 11.5px; }
-.jobsrc-card { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin-bottom: 10px; }
 .jobsrc-top { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
 .jobsrc input[type=text], .jobsrc select {
   background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px;
@@ -2595,7 +2730,6 @@ kbd {
 .jobsrc-zonehint { grid-column: 1 / -1; font-size: 10.5px; margin-bottom: 2px; }
 .jobs-read { font-size: 11.5px; margin-top: 8px; }
 .jobs-read .jobs-warn { margin: 3px 0 0; font-family: var(--mono); font-size: 11px; }
-.jobsrc-foot { display: flex; gap: 6px; align-items: center; }
 .jobsrc-place { margin-bottom: 10px; }
 .jobsrc-choice { display: flex; gap: 6px; align-items: center; font-size: 11.5px; padding: 2px 0; cursor: pointer; }
 .jobsrc-choice input { margin: 0; }
@@ -3115,7 +3249,6 @@ span.envpill:hover { filter: none; }
   content: ''; position: absolute; top: 1px; right: 1px;
   width: 9px; height: 9px; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat;
 }
-.profileicon { width: 17px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* Above the palette and the modal: F1 can open it from either. */
 #shortcuts {
   position: fixed; inset: 0; z-index: 72; background: var(--scrim);
@@ -3413,12 +3546,13 @@ html[data-theme="halloween"] .hw-witch {
 /* The switches' knobs become zombies, facing the side they walk to. One
    sprite sheet of three poses (stand and two strides, 20px apart, a pixel of
    margin round each); app.js steps the sheet while the knob walks. */
-html[data-theme="halloween"] .envmenu button.switch .knob {
+html[data-theme="halloween"] .envmenu button.switch .knob, html[data-theme="halloween"] .sgroup button.switch .knob {
   top: -2px; left: -1px; width: 19px; height: 20px; border-radius: 0; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 60'%3E%3Cdefs%3E%3ClinearGradient id='gZSkin' x1='0' x2='0' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%23a6d77f'/%3E%3Cstop offset='1' stop-color='%236fa650'/%3E%3C/linearGradient%3E%3ClinearGradient id='gZShirt' x1='0' x2='0' y1='0' y2='1'%3E%3Cstop offset='0' stop-color='%23d4702f'/%3E%3Cstop offset='1' stop-color='%23a9481c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(1,1)'%3E%3Cpath d='M10 9.6L16.2 8.2' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M5.8 14.6L5.4 17.1M9.2 14.6L9.6 17.1' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 17.4h2.4M8.8 17.4h2.6' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.4 9.6H11.6L12 12.6L11.2 13.4 10.4 12.6 9.4 14.8 8.2 13 7 14.9 5.8 12.9 4.8 14 4.2 12.6Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.4 10.3L16.4 10.7' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(2 7.6 5)'%3E%3Crect x='3' y='1.4' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M2.8 3.6L3.6 1.4 5 2.6 6.2 .5 7.6 2.2 9 .4 10 2.2 11.8 1.2 12.3 3.4C10 2 5 2 2.8 3.6Z' fill='%232c2620'/%3E%3Ccircle cx='9.1' cy='5.2' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.7' cy='5.3' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.3' cy='5.7' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.4 4.2Q5.3 3.7 6.2 4.2' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.6 8H10.6' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.6 7.4V8.6M7.2 7.4V8.6M8.8 7.4V8.6' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.4 2.6l1 1.3M11.4 2.6l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(1,21)'%3E%3Cpath d='M10 9.4L16 6.8' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M6.2 14.4L3.6 16.6' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M9.4 14.4L11.8 16.9' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M2.4 17.1h2.3M11 17.6h2.7' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 9.3H11.8L12.2 12.4L11.4 13.2 10.6 12.4 9.6 14.6 8.4 12.8 7.2 14.7 6 12.7 5 13.8 4.4 12.4Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.6 10.1L16.4 9.6' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(5 7.8 5)'%3E%3Crect x='3.2' y='1.2' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M3 3.4L3.8 1.2 5.2 2.4 6.4 .3 7.8 2 9.2 .2 10.2 2 12 1 12.5 3.2C10.2 1.8 5.2 1.8 3 3.4Z' fill='%232c2620'/%3E%3Ccircle cx='9.3' cy='5' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.9' cy='5.1' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.5' cy='5.5' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.6 4Q5.5 3.5 6.4 4' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.8 7.8H10.8' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.8 7.2V8.4M7.4 7.2V8.4M9 7.2V8.4' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.6 2.4l1 1.3M11.6 2.4l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3Cg transform='translate(1,41)'%3E%3Cpath d='M10 9.9L16.3 9.8' stroke='%236aa04e' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M6 14.6L7.4 17.2' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M9.4 14.6L8.8 17.2' stroke='%233b2d54' stroke-width='2.3' stroke-linecap='round'/%3E%3Cpath d='M6.2 17.6h2.5M8 17.6h2.4' stroke='%231a1320' stroke-width='1.3' stroke-linecap='round'/%3E%3Cpath d='M4.6 9.9H11.8L12.2 12.9L11.4 13.7 10.6 12.9 9.6 15 8.4 13.2 7.2 15.1 6 13.1 5 14.2 4.4 12.8Z' fill='url(%23gZShirt)'/%3E%3Cpath d='M10.6 10.7L16.4 11.5' stroke='%238fc268' stroke-width='2.2' stroke-linecap='round'/%3E%3Cg transform='rotate(-1 7.8 5)'%3E%3Crect x='3.2' y='1.6' width='9.2' height='8.2' rx='2.5' fill='url(%23gZSkin)'/%3E%3Cpath d='M3 3.8L3.8 1.6 5.2 2.8 6.4 .7 7.8 2.4 9.2 .6 10.2 2.4 12 1.4 12.5 3.6C10.2 2.2 5.2 2.2 3 3.8Z' fill='%232c2620'/%3E%3Ccircle cx='9.3' cy='5.4' r='2' fill='%23f7f3df'/%3E%3Ccircle cx='9.9' cy='5.5' r='.85' fill='%232a1a12'/%3E%3Ccircle cx='5.5' cy='5.9' r='1' fill='%232a1a12'/%3E%3Cpath d='M4.6 4.4Q5.5 3.9 6.4 4.4' stroke='%232c3d22' stroke-width='.5' fill='none'/%3E%3Cpath d='M4.8 8.2H10.8' stroke='%232c3d22' stroke-width='.6'/%3E%3Cpath d='M5.8 7.6V8.8M7.4 7.6V8.8M9 7.6V8.8' stroke='%232c3d22' stroke-width='.55'/%3E%3Cpath d='M10.6 2.8l1 1.3M11.6 2.8l-1 1.3' stroke='%233d5a2a' stroke-width='.5'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") 0 0 / 19px 60px no-repeat;
 }
 /* A switch outside a tool's section (the Theme one) has no --tool to fill its track with. */
-html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] { background: var(--tool, #6f7f93); border-color: var(--tool, #6f7f93); }
-html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob { transform: translateX(15px) scaleX(-1); background-color: transparent; }
+html[data-theme="halloween"] .envmenu button.switch[aria-checked=true], html[data-theme="halloween"] .sgroup button.switch[aria-checked=true] { background: var(--tool, #6f7f93); border-color: var(--tool, #6f7f93); }
+/* The run is the track's width less the zombie's, which a narrower track (the settings') sets in --zrun. */
+html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob, html[data-theme="halloween"] .sgroup button.switch[aria-checked=true] .knob { transform: translateX(var(--zrun, 15px)) scaleX(-1); background-color: transparent; }
 
 /* Lineage boxes, in one of three styles the Theme section picks, a class of
    <html>: hw-boxes-tombstone, hw-boxes-coffin, hw-boxes-grimoire. Each is

@@ -177,3 +177,18 @@ check('and after the shell said none', termVenvText(venvStatus(project, '')), '(
 check('none anywhere', termVenvText(venvStatus(none, undefined)), 'no venv');
 check('a venv the server did not read is only named', termVenvText(venvStatus(project, '/c/Users/me/.venvs/scratch')), '(scratch)');
 check('the one dbt-edith started in', termVenvText(venvStatus({ source: 'activated', name: 'env', path: '/p/env', python: '3.11.9' }, undefined)), '(env) py 3.11.9');
+
+print('\n--- the parts the settings\' Python row draws (0163) ---');
+var parts = venvStatus(project, undefined);
+check('inactive: the path, the versions, the sentence that says so, and what else was found', [parts.path, parts.python, parts.dbt, parts.say, parts.notes],
+  ['C:\\p\\core-env', '3.12.4', 'dbt-core 1.10.0, dbt-snowflake 1.10.0',
+    'found in the project, not activated when dbt-edith started; source its activate script in the terminal', 'also found: fusion-env']);
+check('and the tooltip is those lines again, in order', parts.title, [parts.path, 'dbt: ' + parts.dbt, parts.say, parts.notes].join('\n'));
+var termSays = venvStatus(project, '/c/p/fusion-env');
+check('activated in the terminal', [termSays.path, termSays.say, termSays.notes], ['C:\\p\\fusion-env', 'activated in the terminal', 'also found: core-env']);
+var outside = venvStatus(project, '/c/Users/me/.venvs/scratch');
+check('one it did not read: the path as the terminal said it, no versions', [outside.path, outside.python, outside.dbt],
+  ['/c/Users/me/.venvs/scratch', '', '']);
+var empty = venvStatus({}, undefined);
+check('none: no path, the sentence, nothing else', [empty.path, empty.say, empty.notes, empty.state],
+  ['', 'no VIRTUAL_ENV when dbt-edith started, and none found in the project', '', 'none']);

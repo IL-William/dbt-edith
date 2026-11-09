@@ -166,6 +166,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0160](0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md) | The Lineage space has one bar, and the levels sit beside their toggle | changing the space's bar, By folder's levels, how a model's box, a test's slip or the +N pill is drawn, or the card's layout and counts |
 | [0161](0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md) | The terminal takes the theme's colours and marks what is typed for you | changing the terminal's colours, the Terminal tab's tools in the dock's row, or how a command typed for the person is marked |
 | [0162](0162-a-columns-role-is-a-tag-inside-its-box.md) | A column's role is a tag inside its box | changing where a column box says its role, its size, the role colours as text, how a lit edge is coloured, or the shape a role has in the legend and the menus |
+| [0163](0163-the-settings-are-one-column-of-rows.md) | The settings are one column of rows | adding a setting, or changing how a section of the settings lays out its controls |
 
 ## Keeping these honest
 

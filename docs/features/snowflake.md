@@ -6,7 +6,8 @@ column lineage is in [column-lineage.md](column-lineage.md).
 ## The switch
 
 **Snowflake's features are a setting of the project**, a switch in the
-Snowflake section of the settings, behind the gear in the top bar. They are marked alpha: none of them has yet been
+Snowflake section of the settings, behind the gear in the top bar, in a row of
+its own that a click anywhere toggles, why it is on or off beside the switch. They are marked alpha: none of them has yet been
 checked against a real warehouse. Until you choose, they follow the manifest:
 on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
 nor are the caches it wrote, and the server refuses every Snowflake route.

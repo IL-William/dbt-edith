@@ -17,11 +17,16 @@ colours; the one on screen is checked. The arrows move over them, Enter picks,
 Escape closes the menu and gives the focus back to the button.
 
 The settings have a Theme section with the same four as cards, each with a
-preview, and a switch, **Follow the system**: while it is on the page shows
-Light while the system is light and Night once it turns dark, and follows the
-system as it changes. Picking a theme, from the menu or a card, turns Follow
-off and keeps that pick; turning Follow off keeps the theme on screen. The
-arrows move over the cards and pick as they go.
+preview, and under them **Follow the system**, a row with its switch at the
+right: while it is on the page shows Light while the system is light and Night
+once it turns dark, and follows the system as it changes. Picking a theme, from
+the menu or a card, turns Follow off and keeps that pick; turning Follow off
+keeps the theme on screen. The arrows move over the cards and pick as they go.
+What belongs to Halloween sits in a card of its own under them, dimmed while
+another theme is on with its controls still usable: a switch for the random
+apparitions and the box style, **Headstone**, **Coffin** or **Spellbook**, a row
+of three buttons the arrows move over and pick as they go
+([0163](../decisions/0163-the-settings-are-one-column-of-rows.md)).
 
 What you pick is kept on the machine, in `look.json` in dbt-edith's config
 directory, so it holds for every project and every start; where there is no

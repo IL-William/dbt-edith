@@ -1,6 +1,6 @@
 # 0100. The settings open in a panel of their own
 
-Date: 2026-10-19 · Status: accepted, amended by 0140, 0142 and 0148 · Amends 0031, 0049, 0072 and 0079
+Date: 2026-10-19 · Status: accepted, amended by 0140, 0142, 0148 and 0163 · Amends 0031, 0049, 0072 and 0079
 
 **Trigger:** read before adding a setting, moving one between the settings
 and another place, or changing what the gear, a status bar pill or a section

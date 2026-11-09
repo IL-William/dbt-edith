@@ -76,8 +76,11 @@ dbt-edith started
 
 The pill is green with a check when the venv is active, and amber with a
 triangle when it is not; with none it is a dashed ring. A click
-opens the Project section of the settings, where Python says the same as the
-tooltip; while it is amber, each venv of the project has a button there that
+opens the Project section of the settings, where its Python group says the same
+as the tooltip: the venv's path, its Python and dbt versions as chips, and a
+line with the state's pictogram (a check, a triangle or a dashed ring) and the
+sentence that says it, the rest of the tooltip under them; while it is amber,
+each venv of the project has a button there that
 types the line that activates it in the terminal, `source .../activate` for
 bash, waiting for Enter
 ([0072](../decisions/0072-a-click-on-an-inactive-venv-types-its-activate-line.md),

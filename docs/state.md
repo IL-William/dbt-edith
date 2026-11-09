@@ -2293,6 +2293,18 @@ column chip, without the copy. The boxes stay, hidden, as what holds the depth,
 so 1.18.4's rules are unchanged. Checked with `web/tests/depth.js` and
 `scripts/walk_depth.py`. Its limits are in Deferred item 46.
 
+The settings are one column of rows (0163, 2.14.0), amending 0100. The rail has a
+caption and a hint per section (the tool on screen, on or off, the number of job
+sources, the newest release in the accent, the theme); a section is a head and
+cards, each row a setting's name and why on the left and its control on the
+right. Every setting and help text of 0100 stays in its section: the profile and
+the `.env` files with what each holds, the environment shown first as a row of
+buttons, Python's path, versions and state, the column lineage tools as radio
+cards, Snowflake's one switch, the job sources a row each with Edit unfolding the
+form, Updates as cards, the theme's switches and box styles, and help. Checked
+with `web/tests/settings.js`, `venv.js`, `shapes.js` and `themes.js`. Its limits
+are in Deferred item 51.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2822,7 +2834,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
-    the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
+    ~~the settings~~ (2.14.0, 0163), shortcuts, ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
@@ -2838,8 +2850,8 @@ of its own, and each panel updates the tour, its page under
     - A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
       Light; the selection wash (`--select`, as the boards use) comes with the
       shell step.
-    - The theme has no keyboard shortcut, and the settings' one-column layout
-      is the settings step's.
+    - The theme has no keyboard shortcut, ~~and the settings' one-column layout
+      is the settings step's~~ (2.14.0, 0163).
 
 40. **The file icons' limits (0151, 2.3.0).**
     - The editor's tabs and Open editors draw no file icon, nor the kind's bar
@@ -2977,6 +2989,26 @@ of its own, and each panel updates the tour, its page under
       weight, and takes its 14px and 222.
     - The steps and PARTIAL pills still ask for 6px more between boxes
       (`TAG_ROOM`) on every column canvas, though most boxes have neither.
+51. **The settings' limits (0163, 2.14.0).**
+    - On the Column lineage cards the arrows move the focus and pick nothing
+      (a pick regenerates collin's cache or starts Snowflake's script), and
+      Enter or Space picks. A greyed card and the one that only types collin's
+      install are left out of the steps and reached by Tab.
+    - A source's row says what it found at its last read, so a path edited and
+      not yet saved still shows the old counts.
+    - The rail's count of job sources comes from the Reports index, so it moves
+      when the index is read again: a save, a report written, Reports opened;
+      a `.dbt-edith/jobs.yml` changed by a pull shows in it then.
+    - The Updates section and Edith's menu say the same in two layouts
+      (`paintSetUpdates`, `paintUpdateMenu`), and no harness draws either: the
+      section is checked by its picture and by `take_shots.py` finding the
+      releases listed.
+    - The Halloween zombie's run on the settings' narrower track is the
+      `--zrun` of its switch (13px); it was not looked at in Halloween.
+    - Not built, for want of a feature behind it (0163): a "None" column
+      lineage choice, a profile and target picker, Snowflake's account line,
+      the GitHub "Open" button (the GitHub button's preview, step 21), a `.env`
+      value on a line, and a Change button for the Python.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
