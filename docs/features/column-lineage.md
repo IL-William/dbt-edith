@@ -173,7 +173,7 @@ Columns tab, where the marks above say what was found on each column. It reads a
 report from any collin since 0.1.0 (0059). From collin 0.5.0 the report carries
 collin's own findings, each with what it saw, what that usually means and what
 to do, and the page shows those instead, in the same groups, a finding's
-severity a tag after its count; the badge then counts the models they name
+severity a tag after its count; the chip then counts the models they name
 (0062).
 
 Snowflake is in the menu only while Snowflake's features are on for the

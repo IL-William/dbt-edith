@@ -22,7 +22,7 @@ pull request.
 | [snowflake.md](snowflake.md) | the Snowflake switch, Snowsight links, Clone into my schema, Query history |
 | [terminal-and-git.md](terminal-and-git.md) | the terminal, the Python environment, the Git tab |
 | [updates.md](updates.md) | how it learns a newer release is out, and what it offers |
-| [look.md](look.md) | the themes, Night, Graphite, Light and Halloween, picked from the top bar or the settings: Follow the system, what an export takes, and Halloween's box styles, silk edges and characters |
+| [look.md](look.md) | the themes, Night, Graphite, Light and Halloween, picked from the top bar or the settings: Follow the system, what an export takes, and Halloween's box styles, silk edges and characters, and the rules the design gave the code |
 
 ## How things are marked
 
@@ -59,7 +59,7 @@ file with unsaved edits, and a letter in the Git tab is a file's git status.
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
 | the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar folds the counts, then the names of the tabs not lit, when it runs short |
-| the gear in the top bar | the settings, over the whole window, a section at a time: the project's profile, `.env` files and Python, the column lineage, Snowflake, where the jobs are read from, updates, and help; an amber triangle on it when dbt would find no profile |
+| the gear in the top bar | the settings, over the whole window, a section at a time: Project (the dbt profile, `.env` files and Python), Column lineage, Snowflake, Orchestration (where the jobs are read from), Updates, Theme, and Help and tour; an amber triangle on it when dbt would find no profile |
 | the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
 | the `env` pill in the status bar | the environment menu: a `.env` file, the manifest, or Manage environments... for the settings' Project section |
 | the venv or update pill in the status bar | its section of the settings: Project, or Updates |
@@ -88,7 +88,7 @@ reason (0037).
 
 ![The list of every shortcut, opened by the ? button, with Give me a tour at its top right](../shots/shortcuts.png)
 
-Give me a tour, at the top of the shortcut list, walks through each part of the
+Give me a tour, at the top of the shortcut list and in the settings' Help and tour section, walks through each part of the
 page on a model of your project with parents and children, and one a job runs
 once the Jobs tab has a source, picked the same way every time: the
 `manifest.json` everything is read from and how fresh it is, the editor and the

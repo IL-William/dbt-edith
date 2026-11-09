@@ -2884,7 +2884,7 @@ of its own, and each panel updates the tour, its page under
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), ~~Compiled~~ (2.18.0, 0164),
-    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and the design docs.
+    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and ~~the design docs~~ (docs/design/, look.md).
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.

@@ -101,7 +101,7 @@ can say **when each model last ran in each environment** and how it ended. It
 reads the package's own tables, in the schema each `.env` file places the
 package in, the way the Location table places any model. Three places show it:
 the Catalog's **Last built** section, a mark on each lineage box for the
-environment picked in the selector, and the **Builds by environment** section
+environment the `env` pill names, and the **Builds by environment** section
 of Reports. See [catalog.md](catalog.md), [lineage.md](lineage.md) and
 [jobs-and-reports.md](jobs-and-reports.md).
 
