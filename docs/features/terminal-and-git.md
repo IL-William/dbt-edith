@@ -97,9 +97,31 @@ the Snowflake script; the tooltip names it
 
 ![The Git tab with two changed files, one edited and one new, and the side-by-side diff of docs/building.md above the lineage](../shots/git.png)
 
-A third sidebar tab stages, commits, pulls and pushes, and the branch name in
-its header (and in the status bar) opens a filtered branch switcher rather than a
-list, since a long-lived repository easily carries hundreds of branches.
+A third sidebar tab stages, commits, pulls and pushes. Its first row holds the
+branch (a button that opens a filtered branch switcher rather than a list, since a
+long-lived repository easily carries hundreds of branches, as does the branch name
+in the status bar), then how far the branch is from its upstream in words, `1
+behind` in amber, `2 ahead` in grey, or both, nothing when level or with no
+upstream, and the hover names the upstream. Fetch, pull and push are three
+glyphs whose titles say what each would do: `Pull 1 commit (fast-forward
+only)`, `Push 2 commits`, `Nothing to push` (push stays pressable, and its
+dialog says why).
+
+Under it the changes are in sections, `Conflicts`, `Staged` and `Changes`, each
+with a count and a `Stage all` or `Unstage all` link. A file is a row of its
+letter (modified in amber, new in green, deleted in red, a conflicted file's
+in red), its icon, its whole name, and its
+folder in dim type after it: the name is cut only when the row is too narrow
+for it. `+` stages, `−` unstages and a tick marks a conflicted file resolved,
+each shown when the pointer is on the row or the keyboard is in it. A row is a
+stop of the keyboard: Enter or Space opens its diff, and the row of the diff in
+front is marked.
+
+At the foot, the message box and a button that says what it would commit:
+`Commit 2 files`, `Commit the merge` when a merge has nothing left conflicted,
+`Resolve the conflicts first`, or `Stage a file to commit`, outlined, which says
+why when pressed. The shortcut, `Cmd+Enter` or `Ctrl+Enter` in the box, is drawn
+beside it.
 
 Three rules hold across the whole git surface:
 
@@ -143,11 +165,32 @@ with `--no-verify`. Pull is `--ff-only`, so it can
 never start a merge on its own; if the branches have diverged it says so and
 leaves the choice of merge or rebase to you.
 
-Clicking a changed file opens a side-by-side diff of HEAD against the working
-tree, in its own tab, read-only: a `+` or `-` sits next to every changed line,
-regions with no counterpart on the other side are hatched, long identical
-stretches collapse, and a ruler down the right edge shows where the changes are
-and jumps to them. New files show entirely as added, deleted ones as removed.
+Clicking a changed file opens its diff against HEAD, in its own tab, read-only.
+Its head is one row: the file's icon, its name, its folder, what is compared
+(`your working tree against HEAD`, `a new file, nothing in HEAD`, `deleted from
+your working tree`, with ` · line endings differ (CRLF here, LF in HEAD)` added
+when the two sides end their lines differently, since the lines are compared
+without their CRs and such a file may have no changed line), a `read only` chip, the layout switch and `Open the file`,
+which edits it. Two layouts, picked with the switch (the arrow keys move it):
+
+- **Side by side**, HEAD on the left and the working tree on the right, the
+  panes meeting at a one pixel rule. Regions with no counterpart on the other
+  side are hatched. A `+` or `−` sits next to every changed line, the line is
+  tinted green or red in the rows and in the number gutters, and the words that
+  changed inside it are tinted stronger.
+- **Inline**, one list holding the lines of both sides in order, with a number
+  for HEAD and one for the working tree, the same tints, and the lines that
+  changed marked as lines (not as words).
+
+Both wrap their lines instead of cutting them, so a long line is read whole;
+the 12 lines beside a change stay in view, and a stretch of more than 12
+unchanged lines beyond them folds into a row that says `16 unchanged lines`,
+which a click opens; and a ruler down the right edge shows
+where the changes are and jumps to them. New files show entirely as added,
+deleted ones as removed. The choice of layout holds for every diff tab until the
+page is closed, and switching keeps the first line in view. A Markdown file reads
+the same in its diff as in its own tab: a heading is bold text with quiet `#`
+marks, inline code is in the string colour.
 Editing stays in the file itself, one button away.
 
 Conflicted files get their own section. Opening one highlights the

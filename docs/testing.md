@@ -32,7 +32,8 @@ $JSC web/tests/collineage.js  # composite column ids, node subtitles, and the co
 $JSC web/tests/conflicts.js   # conflict block detection, including half blocks
 $JSC web/tests/colours.js     # materialization colours, custom ones, and seeds apart from tables
 $JSC web/tests/colourvars.js  # every colour a variable: no literal in app.css below the theme blocks (the Halloween theme's art apart) nor in lineage.js
-$JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights
+$JSC web/tests/diff.js        # diff ruler geometry, clamping and pane heights, the inline layout's lines and folds
+$JSC web/tests/gittab.js      # the Git tab's words: ahead and behind, the glyphs' titles, the commit button
 $JSC web/tests/palette.js     # search palette merging nodes and files
 $JSC web/tests/location.js    # written, resolved and built locations
 $JSC web/tests/snowsight.js   # links into Snowsight: a query, and a relation's object, schema and database

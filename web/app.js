@@ -33,6 +33,8 @@ const S = {
   gitModDirs: new Set(), gitUntDirs: new Set(),
   gitPrefixes: [], gitKey: '',
   git: null,                  // full payload of /api/git
+  committing: false,          // a commit is running: the button says so whatever the poll repaints (0165)
+  diffLayout: 'sbs',          // 'sbs' or 'inline', one choice for every diff tab, kept for the page's life (0165)
   artifactAsk: { compiled: 0, run: 0 },        // the latest load of each pane, so an older answer never paints
   artifactCm: { compiled: null, run: null },  // read-only editors for the two files under target/
   artifactInfo: { compiled: null, run: null },  // the last answer of each, so another environment repaints without a request
@@ -1846,6 +1848,8 @@ function modeFor(path) {
 }
 
 function initEditor() {
+  // The marks of a heading are tokens of their own, so they can be quieter than its words (0165).
+  CodeMirror.defineMIME('text/x-markdown', { name: 'markdown', highlightFormatting: true });
   S.cm = CodeMirror($('#editor-host'), {
     lineNumbers: true, lineWrapping: false, indentUnit: 4, tabSize: 4,
     styleActiveLine: false, value: '',
@@ -2320,7 +2324,7 @@ CodeMirror.keyMap.default['Shift-F3'] = 'findPrev';
 function activeEditor() {
   const f = S.active && S.open.get(S.active);
   if (!f) return null;
-  if (f.kind === 'diff') return f.mv ? f.mv.editor() : null;
+  if (f.kind === 'diff') return f.mv ? f.mv.editor() : f.icm;
   return ownsPane(f) ? null : S.cm;
 }
 
@@ -2531,100 +2535,140 @@ async function openDiff(path) {
     let view;
     try { view = await api.get('/api/git/diff?path=' + encodeURIComponent(path)); }
     catch (e) { return toast('diff: ' + e.message, 'err'); }
-    S.open.set(key, { kind: 'diff', path, view, dirty: false, host: null, mv: null });
+    S.open.set(key, { kind: 'diff', path, view, dirty: false, host: null, mv: null, icm: null, pane: null, layout: '' });
     S.order.push(key);
   }
   activate(key);
 }
 
-function mountDiff(key) {
-  const f = S.open.get(key);
-  const host = $('#diff-host');
-  [...host.children].forEach((c) => c.classList.add('hidden'));
-  if (!f.host) {
-    f.host = document.createElement('div');
-    f.host.className = 'diffpane';
-    host.appendChild(f.host);
+/* What the head of a diff says of the two sides it compares. */
+function diffStateText(view) {
+  const said = view.before_missing ? 'a new file, nothing in HEAD'
+    : view.after_missing ? 'deleted from your working tree' : 'your working tree against HEAD';
+  // A file changed only in its line endings is listed with no line marked: the head says why.
+  const here = lineEnding(view.after), there = lineEnding(view.before);
+  const ends = !view.before_missing && !view.after_missing && here && there && here !== there
+    ? ` · line endings differ (${here} here, ${there} in HEAD)` : '';
+  return said + ends + (view.truncated ? ' · truncated' : '');
+}
 
-    const head = document.createElement('div');
-    head.className = 'diff-head';
+/* How a text ends its lines: CRLF when any does, else LF, '' for a text of one
+   line, which has no ending to compare. */
+function lineEnding(text) {
+  if (!text || !/[\r\n]/.test(text)) return '';
+  return /\r\n/.test(text) ? 'CRLF' : 'LF';
+}
 
-    const title = document.createElement('div');
-    title.className = 'diff-title';
-    const icon = fileIcon(f.path, fileMark(f.path));
-    title.append(icon);
-    // A model's file in a folder the tree has not opened: its mark is asked once, by its folder.
-    askMarks([f.path]).then((gained) => {
-      if (gained && icon.isConnected) icon.replaceWith(fileIcon(f.path, fileMark(f.path)));
-    });
-    const nm = document.createElement('b');
-    nm.textContent = base(f.path);
-    const state = document.createElement('span');
-    state.className = 'diff-state';
-    state.textContent = f.view.before_missing ? '(new file)'
-      : f.view.after_missing ? '(deleted)' : '(working tree)';
-    title.append(nm, state);
-    const lock = document.createElement('span');
-    lock.className = 'diff-lock';
-    lock.textContent = 'read only';
-    lock.title = 'Open the file itself to edit it';
-    title.append(lock, Object.assign(document.createElement('div'), { className: 'grow' }));
-    const open = document.createElement('button');
-    open.className = 'btn sm';
-    open.textContent = 'Open the file';
-    open.addEventListener('click', () => openFile(f.path, { preview: true }));
-    const close = document.createElement('button');
-    close.className = 'icon';
-    close.textContent = '×';
-    close.title = 'Close this diff';
-    close.addEventListener('click', () => closeFile(key));
-    title.append(open, close);
-
-    const crumb = document.createElement('div');
-    crumb.className = 'diff-crumb';
-    f.path.split('/').forEach((seg, i, all) => {
-      if (i) crumb.append(Object.assign(document.createElement('span'), { textContent: '›', className: 'sep' }));
-      const b = document.createElement('span');
-      b.textContent = seg;
-      if (i === all.length - 1) b.className = 'leaf';
-      crumb.append(b);
-    });
-    if (f.view.truncated) {
-      crumb.append(Object.assign(document.createElement('span'),
-        { textContent: '  ·  truncated', className: 'sep' }));
-    }
-    head.append(title, crumb);
-    f.host.appendChild(head);
-
-    if (f.view.binary) {
-      f.host.append(Object.assign(document.createElement('div'), {
-        className: 'compiled-empty', textContent: 'Binary file, nothing to show side by side.' }));
-      return;
-    }
-    const pane = document.createElement('div');
-    pane.className = 'mergepane';
-    f.host.appendChild(pane);
-    f.mv = CodeMirror.MergeView(pane, {
-      value: f.view.after,
-      origLeft: f.view.before,
-      lineNumbers: true,
-      // Forwarded to both panes by the addon, so each gets a +/- column.
-      gutters: ['CodeMirror-linenumbers', 'diff-mark'],
-      mode: modeFor(f.path),
-      highlightDifferences: true,
-      connect: 'align',
-      collapseIdentical: 12,
-      revertButtons: false,
-      readOnly: true,
-    });
-    decorateDiff(f.mv, pane);
+/* The lines of both sides in order, for the inline layout: HEAD's lines that
+   are gone ('del'), the working tree's that are new ('add'), and the ones both
+   hold ('same'), each with its number in HEAD (`a`) and in the working tree
+   (`b`), null on the side that has no such line. Built on diff_match_patch in
+   line mode, which the side by side view uses too, so both layouts agree on
+   what changed. A final newline ends its line and starts no other (0165). */
+function inlineDiffLines(before, after) {
+  // A line ends however it ends, and the CR of a CRLF is no part of it: under
+  // core.autocrlf the working file is CRLF against an LF blob, and only the lines
+  // that really changed are listed, as git and the side by side view do (0165).
+  const split = (text) => {
+    if (!text) return [];
+    const parts = text.split(/\r\n|\r|\n/);
+    if (parts[parts.length - 1] === '') parts.pop();
+    return parts;
+  };
+  const keyOf = (l) => l + '\n';
+  const dmp = new diff_match_patch();
+  const packed = dmp.diff_linesToChars_(split(before).map(keyOf).join(''), split(after).map(keyOf).join(''));
+  const diffs = dmp.diff_main(packed.chars1, packed.chars2, false);
+  dmp.diff_charsToLines_(diffs, packed.lineArray);
+  const out = [];
+  // The operation is -1 for a deletion, 0 for text both hold, 1 for an insertion.
+  for (const d of diffs) {
+    // A Diff of the library is read by index: it is not iterable.
+    const kind = d[0] === 0 ? 'same' : d[0] < 0 ? 'del' : 'add';
+    // What the library hands back is made of the lines above, so it splits on LF alone.
+    const lines = d[1].split('\n');
+    lines.pop();
+    for (const text of lines) out.push({ text, kind, a: null, b: null });
   }
-  f.host.classList.remove('hidden');
-  setTimeout(() => {
-    if (!f.mv) return;
-    f.mv.editor().refresh();
-    if (f.mv.leftOriginal()) f.mv.leftOriginal().refresh();
-  }, 0);
+  // A run of added or removed lines that begins with the line right after it
+  // can be drawn two ways, the equal line first or last. git draws it with the
+  // equal lines first, as the side by side view does: the run slides down.
+  for (let i = 0; i < out.length; i++) {
+    const kind = out[i].kind;
+    if (kind === 'same') continue;
+    let j = i;
+    while (j + 1 < out.length && out[j + 1].kind === kind) j++;
+    // The run is i..j; it slides while its first line equals the equal line after it.
+    while (j + 1 < out.length && out[j + 1].kind === 'same' && out[i].text === out[j + 1].text) {
+      out[i].kind = 'same';
+      out[j + 1].kind = kind;
+      i++;
+      j++;
+    }
+    i = j;
+  }
+  let a = 1, b = 1;
+  for (const l of out) {
+    if (l.kind !== 'add') l.a = a++;
+    if (l.kind !== 'del') l.b = b++;
+  }
+  return out;
+}
+
+/* The stretches of unchanged lines the inline layout folds: those more than
+   `margin` lines from a change, kept only when longer than `margin`, as the
+   side by side view's collapseIdentical does. `to` is exclusive. */
+function inlineFolds(lines, margin) {
+  const keep = lines.map(() => false);
+  lines.forEach((l, i) => {
+    if (l.kind === 'same') return;
+    for (let k = Math.max(0, i - margin); k <= Math.min(lines.length - 1, i + margin); k++) keep[k] = true;
+  });
+  const folds = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (keep[i]) continue;
+    let j = i;
+    while (j + 1 < lines.length && !keep[j + 1]) j++;
+    if (j - i + 1 > margin) folds.push({ from: i, to: j + 1 });
+    i = j;
+  }
+  return folds;
+}
+
+/* The runs of added lines and of removed lines, for the overview ruler. */
+function inlineRuns(lines) {
+  const runs = [];
+  lines.forEach((l, i) => {
+    if (l.kind === 'same') return;
+    const last = runs[runs.length - 1];
+    if (last && last.kind === l.kind && last.to === i) last.to = i + 1;
+    else runs.push({ kind: l.kind, from: i, to: i + 1 });
+  });
+  return runs;
+}
+
+/* Where the first line in view lands when the layout changes: a line of the
+   working tree (0-based) to its place among the inline lines, and back. A
+   removed line has no number in the working tree, so it takes the next one's,
+   and the way back takes the removed lines that precede a line with it. */
+function inlineIndexFor(lines, workingLine) {
+  let at = lines.findIndex((l) => l.b != null && l.b >= workingLine + 1);
+  if (at < 0) {
+    // Past the end: the last line the working tree has; a deleted file has none.
+    at = lines.length - 1;
+    while (at > 0 && lines[at].b == null) at--;
+    if (at < 0 || lines[at].b == null) return 0;
+    return at;
+  }
+  // The lines removed just before it belong to it: they stay in view with it.
+  while (at > 0 && lines[at - 1].kind === 'del') at--;
+  return at;
+}
+
+function workingLineFor(lines, index) {
+  for (let i = Math.min(index, lines.length - 1); i < lines.length; i++) if (i >= 0 && lines[i].b != null) return lines[i].b - 1;
+  for (let i = Math.min(index, lines.length - 1); i >= 0; i--) if (lines[i].b != null) return lines[i].b - 1;
+  return 0;
 }
 
 /* The merge addon paints the changed backgrounds; these are the parts that make
@@ -2655,24 +2699,290 @@ function decorateDiff(mv, pane) {
   };
   const leftCm = mv.leftOriginal(), rightCm = mv.editor();
   for (const c of chunks) {
-    for (let l = c.origFrom; l < c.origTo && l < leftCm.lineCount(); l++) mark(leftCm, l, '\u2212');
+    for (let l = c.origFrom; l < c.origTo && l < leftCm.lineCount(); l++) mark(leftCm, l, '−');
     for (let l = c.editFrom; l < c.editTo && l < rightCm.lineCount(); l++) mark(rightCm, l, '+');
   }
 
+  const total = Math.max(1, rightCm.lineCount());
+  drawRuler(pane, chunks.map((c) => {
+    const g = rulerMark(c, total);
+    g.title = g.kind === 'add' ? `lines ${c.editFrom + 1}-${c.editTo}` : `removed at line ${c.editFrom + 1}`;
+    g.go = () => rightCm.scrollIntoView({ line: c.editFrom, ch: 0 }, 120);
+    return g;
+  }));
+}
+
+/* The overview ruler of a diff, one mark per change, clickable; both layouts
+   hand it marks from rulerMark with a title and where a click goes. */
+function drawRuler(pane, marks) {
+  if (!marks.length) return;
   const ruler = document.createElement('div');
   ruler.className = 'diff-ruler';
-  const total = Math.max(1, rightCm.lineCount());
-  for (const c of chunks) {
-    const g = rulerMark(c, total);
+  for (const g of marks) {
     const m = document.createElement('div');
     m.className = g.kind;
     m.style.top = g.top + '%';
     m.style.height = g.height + '%';
-    m.title = g.kind === 'add' ? `lines ${c.editFrom + 1}-${c.editTo}` : `removed at line ${c.editFrom + 1}`;
-    m.addEventListener('click', () => rightCm.scrollIntoView({ line: c.editFrom, ch: 0 }, 120));
+    m.title = g.title;
+    m.addEventListener('click', g.go);
     ruler.appendChild(m);
   }
   pane.appendChild(ruler);
+}
+
+/* The collapsed stretches say how many lines they hide: the stylesheet draws
+   the words from data-n. The merge addon makes the widgets, one per pane. */
+function labelCollapsed(cm) {
+  for (const m of cm.getAllMarks()) {
+    const w = m.replacedWith;
+    if (!m.collapsed || !w || !w.classList || !w.classList.contains('CodeMirror-merge-collapsed-widget')) continue;
+    const at = m.find();
+    if (!at) continue;
+    const n = at.to.line - at.from.line + 1;
+    w.dataset.n = String(n);
+    w.title = `Show the ${n} unchanged lines`;
+  }
+}
+
+/* The layout switch of a diff's head: two radios, arrows move and pick. */
+function diffLayoutSwitch(key) {
+  const seg = document.createElement('span');
+  seg.className = 'seg2';
+  seg.setAttribute('role', 'radiogroup');
+  seg.setAttribute('aria-label', 'Diff layout');
+  const pick = (layout) => {
+    if (S.diffLayout !== layout) {
+      S.diffLayout = layout;
+      if (S.open.has(key)) mountDiff(key);
+    }
+  };
+  const buttons = [['sbs', 'Side by side'], ['inline', 'Inline']].map(([layout, label]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.dataset.layout = layout;
+    b.textContent = label;
+    b.addEventListener('click', () => pick(layout));
+    b.addEventListener('keydown', (e) => {
+      if (!/^Arrow(Left|Right|Up|Down)$/.test(e.key)) return;
+      e.preventDefault();
+      const next = buttons[1 - buttons.indexOf(b)];
+      pick(next.dataset.layout);
+      next.focus();
+    });
+    return b;
+  });
+  seg.append(...buttons);
+  return seg;
+}
+
+function syncDiffLayoutSwitch(f) {
+  for (const b of f.host.querySelectorAll('.seg2 button')) {
+    const on = b.dataset.layout === S.diffLayout;
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+  }
+}
+
+function mountDiff(key) {
+  const f = S.open.get(key);
+  const host = $('#diff-host');
+  [...host.children].forEach((c) => c.classList.add('hidden'));
+  if (!f.host) {
+    f.host = document.createElement('div');
+    f.host.className = 'diffpane';
+    host.appendChild(f.host);
+
+    // One row: the file, where it is, what is compared, then the controls.
+    const head = document.createElement('div');
+    head.className = 'diff-head';
+    const title = document.createElement('div');
+    title.className = 'diff-title';
+    const icon = fileIcon(f.path, fileMark(f.path));
+    title.append(icon);
+    // A model's file in a folder the tree has not opened: its mark is asked once, by its folder.
+    askMarks([f.path]).then((gained) => {
+      if (gained && icon.isConnected) icon.replaceWith(fileIcon(f.path, fileMark(f.path)));
+    });
+    const nm = document.createElement('b');
+    nm.textContent = base(f.path);
+    title.append(nm);
+    const folder = f.path.includes('/') ? dirOf(f.path) : '';
+    if (folder) title.append(Object.assign(document.createElement('span'), { className: 'diff-dir', textContent: folder, title: folder }));
+    title.append(Object.assign(document.createElement('span'), { className: 'diff-state', textContent: diffStateText(f.view) }));
+    const lock = document.createElement('span');
+    lock.className = 'diff-lock';
+    lock.textContent = 'read only';
+    lock.title = 'Open the file itself to edit it';
+    title.append(lock, Object.assign(document.createElement('div'), { className: 'grow' }));
+    if (!f.view.binary) title.append(diffLayoutSwitch(key));
+    const open = document.createElement('button');
+    open.className = 'btn';
+    open.textContent = 'Open the file';
+    open.addEventListener('click', () => openFile(f.path, { preview: true }));
+    const close = document.createElement('button');
+    close.className = 'icon';
+    close.textContent = '×';
+    close.title = 'Close this diff';
+    close.addEventListener('click', () => closeFile(key));
+    title.append(open, close);
+    head.append(title);
+    f.host.appendChild(head);
+
+    if (f.view.binary) {
+      f.host.append(Object.assign(document.createElement('div'), {
+        className: 'compiled-empty', textContent: 'Binary file, nothing to show side by side.' }));
+      return;
+    }
+  }
+  f.host.classList.remove('hidden');
+  if (f.view.binary) return;
+  syncDiffLayoutSwitch(f);
+  if (f.layout !== S.diffLayout) fillDiff(f);
+  setTimeout(() => {
+    if (!f.mv && !f.icm) return;
+    if (f.mv) {
+      f.mv.editor().refresh();
+      if (f.mv.leftOriginal()) f.mv.leftOriginal().refresh();
+    } else f.icm.refresh();
+    if (f.scrollTo != null) {
+      const cm = f.mv ? f.mv.editor() : f.icm;
+      cm.scrollTo(null, cm.heightAtLine(Math.min(f.scrollTo, cm.lineCount() - 1), 'local'));
+      f.scrollTo = null;
+    }
+  }, 0);
+}
+
+/* The body of a diff in the layout picked, in place of the one it had: the
+   first line in view stays in view. The choice is the page's, one for every
+   diff tab, so a tab opened before it is rebuilt when it is shown (0165). */
+function fillDiff(f) {
+  let line = null;
+  if (f.mv || f.icm) {
+    const cm = f.mv ? f.mv.editor() : f.icm;
+    const first = cm.lineAtHeight(cm.getScrollInfo().top, 'local');
+    const lines = f.inlineLines || (f.inlineLines = inlineDiffLines(f.view.before, f.view.after));
+    line = f.mv ? inlineIndexFor(lines, first) : workingLineFor(lines, first);
+  }
+  if (f.ro) f.ro.disconnect();
+  if (f.pane) f.pane.remove();
+  f.mv = f.icm = f.ro = null;
+  const pane = document.createElement('div');
+  pane.className = 'mergepane';
+  // Markdown reads the same here as in its own tab: bold headings, quiet marks (0165).
+  pane.classList.toggle('md-doc', modeFor(f.path) === 'text/x-markdown');
+  f.host.appendChild(pane);
+  f.pane = pane;
+  f.layout = S.diffLayout;
+  f.scrollTo = line;
+  if (S.diffLayout === 'inline') {
+    f.inlineLines = f.inlineLines || inlineDiffLines(f.view.before, f.view.after);
+    f.icm = mountInline(f, pane);
+  } else {
+    f.mv = CodeMirror.MergeView(pane, {
+      // CodeMirror shows a CRLF file with plain line breaks: the addon is given the text it shows,
+      // or it would compare the CRs and mark every line of an autocrlf file.
+      value: f.view.after.replace(/\r\n?/g, '\n'),
+      origLeft: f.view.before.replace(/\r\n?/g, '\n'),
+      lineNumbers: true,
+      lineWrapping: true,
+      // Forwarded to both panes by the addon, so each gets a +/- column.
+      gutters: ['CodeMirror-linenumbers', 'diff-mark'],
+      mode: modeFor(f.path),
+      highlightDifferences: true,
+      // The changed lines are tinted in the number gutters too.
+      chunkClassLocation: ['background', 'gutter'],
+      connect: 'align',
+      collapseIdentical: 12,
+      revertButtons: false,
+      readOnly: true,
+    });
+    labelCollapsed(f.mv.editor());
+    labelCollapsed(f.mv.leftOriginal());
+    decorateDiff(f.mv, pane);
+  }
+  watchDiffWidth(f, pane);
+}
+
+/* Wrapped lines change height with the pane's width, which the addon aligns
+   once: when the width moves, both sides are laid out and aligned again. */
+function watchDiffWidth(f, pane) {
+  if (typeof ResizeObserver !== 'function') return;
+  let width = 0, timer = 0;
+  f.ro = new ResizeObserver(() => {
+    const w = pane.clientWidth;
+    // Hidden, or only its height moved.
+    if (!w || w === width) return;
+    const first = !width;
+    width = w;
+    if (first) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => realignDiff(f), 80);
+  });
+  f.ro.observe(pane);
+}
+
+function realignDiff(f) {
+  if (f.mv) {
+    f.mv.editor().refresh();
+    f.mv.leftOriginal().refresh();
+    // The addon aligns only a view it knows is out of line.
+    if (f.mv.left && f.mv.left.forceUpdate) {
+      f.mv.left.dealigned = true;
+      f.mv.left.forceUpdate();
+    }
+  } else if (f.icm) f.icm.refresh();
+}
+
+/* The inline layout: one read-only editor holding the lines of both sides in
+   order, two number gutters (HEAD's and the working tree's), the sign, the
+   changed rows tinted as in side by side, and the stretches far from a change
+   folded behind the same words. */
+function mountInline(f, pane) {
+  const lines = f.inlineLines;
+  const cm = CodeMirror(pane, {
+    value: lines.map((l) => l.text).join('\n'),
+    mode: modeFor(f.path),
+    lineWrapping: true,
+    readOnly: true,
+    gutters: ['diff-a', 'diff-b', 'diff-mark'],
+  });
+  const cell = (className, text) => Object.assign(document.createElement('div'), { className, textContent: text });
+  cm.operation(() => {
+    lines.forEach((l, i) => {
+      if (l.a != null) cm.setGutterMarker(i, 'diff-a', cell('diff-n', String(l.a)));
+      if (l.b != null) cm.setGutterMarker(i, 'diff-b', cell('diff-n', String(l.b)));
+      if (l.kind === 'same') return;
+      cm.setGutterMarker(i, 'diff-mark', cell('diff-sign ' + l.kind, l.kind === 'add' ? '+' : '−'));
+      cm.addLineClass(i, 'background', 'diff-line-' + l.kind);
+      cm.addLineClass(i, 'gutter', 'diff-line-' + l.kind);
+    });
+    for (const fold of inlineFolds(lines, 12)) collapseInline(cm, fold.from, fold.to);
+  });
+  const total = Math.max(1, lines.length);
+  drawRuler(pane, inlineRuns(lines).map((run) => {
+    const g = rulerMark({ editFrom: run.from, editTo: run.to }, total);
+    g.kind = run.kind;
+    g.title = run.kind === 'add' ? `lines ${lines[run.from].b}-${lines[run.to - 1].b}`
+      : `removed: lines ${lines[run.from].a}-${lines[run.to - 1].a} of HEAD`;
+    g.go = () => cm.scrollIntoView({ line: run.from, ch: 0 }, 120);
+    return g;
+  }));
+  return cm;
+}
+
+/* The same widget the merge addon puts on a stretch it collapses, so one
+   stylesheet draws both; a click on it shows the lines. */
+function collapseInline(cm, from, to) {
+  const widget = document.createElement('span');
+  widget.className = 'CodeMirror-merge-collapsed-widget';
+  widget.dataset.n = String(to - from);
+  widget.title = `Show the ${to - from} unchanged lines`;
+  cm.addLineClass(from, 'wrap', 'CodeMirror-merge-collapsed-line');
+  const mark = cm.markText({ line: from, ch: 0 }, { line: to - 1, ch: cm.getLine(to - 1).length },
+    { replacedWith: widget, inclusiveLeft: true, inclusiveRight: true, clearOnEnter: true });
+  mark.on('clear', () => cm.removeLineClass(from, 'wrap', 'CodeMirror-merge-collapsed-line'));
+  widget.addEventListener('click', () => mark.clear());
 }
 
 /* A tab that owns a pane of its own in #diff-host rather than a CodeMirror
@@ -2696,6 +3006,7 @@ function activate(path, focusLineage = true, keepPanel = false) {
   if (!keepPanel) closePanel();
   S.active = path;
   markGrepOpen();
+  markGitCurrent();
   const f = S.open.get(path);
   $('#editor-empty').classList.add('hidden');
   if (ownsPane(f)) {
@@ -2707,6 +3018,8 @@ function activate(path, focusLineage = true, keepPanel = false) {
     $('#diff-host').classList.add('hidden');
     $('#editor-host').style.display = '';
     S.cm.swapDoc(f.doc);
+    // A Markdown file reads as it does in its diff (0165).
+    S.cm.getWrapperElement().classList.toggle('md-doc', modeFor(path) === 'text/x-markdown');
     paintWarnGutter();
     S.cm.refresh();
   }
@@ -2739,6 +3052,7 @@ function projectPath(key) {
 function dropTab(key) {
   const f = S.open.get(key);
   if (!f) return;
+  if (f.ro) f.ro.disconnect();
   if (f.host) f.host.remove();
   S.open.delete(key);
   S.order = S.order.filter((p) => p !== key);
@@ -2758,6 +3072,7 @@ function settleTabs() {
       updateStatus();
       renderCrumbs();
       markGrepOpen();
+      markGitCurrent();
     }
   }
   renderTabs();
@@ -4515,6 +4830,99 @@ async function showGitFailure(title, res) {
   await modal({ title, body, actions: [{ id: 'ok', label: 'Close' }] });
 }
 
+/* What the branch row says of the distance to the upstream, in words: each
+   part has its tone (the commits to pull are the ones to act on, so they take
+   the warning colour), and the title names the upstream. Nothing when level or
+   when there is no upstream (0165). */
+function aheadBehindWords(info) {
+  const ahead = (info && info.upstream && info.ahead) || 0;
+  const behind = (info && info.upstream && info.behind) || 0;
+  const commits = (n) => n + (n === 1 ? ' commit' : ' commits');
+  const parts = [], said = [];
+  if (ahead) {
+    parts.push({ text: ahead + ' ahead', tone: 'ahead' });
+    said.push(`this branch has ${commits(ahead)} ${info.upstream} does not have`);
+  }
+  if (behind) {
+    parts.push({ text: behind + ' behind', tone: 'behind' });
+    said.push(`${info.upstream} has ${commits(behind)} this branch does not have`);
+  }
+  return { parts, title: said.join('; ') };
+}
+
+/* What each of the three glyphs would do, as its title says, so that no badge
+   has to carry the count. Push stays clickable with nothing to push: the modal
+   says why. */
+function gitActionTitles(info) {
+  const ahead = (info && info.upstream && info.ahead) || 0;
+  const behind = (info && info.upstream && info.behind) || 0;
+  return {
+    fetch: 'Fetch from origin',
+    pull: behind ? `Pull ${behind} commit${behind === 1 ? '' : 's'} (fast-forward only)` : 'Pull (fast-forward only)',
+    // Without an upstream the push publishes the branch, setting it (doPush).
+    push: ahead ? `Push ${ahead} commit${ahead === 1 ? '' : 's'}`
+      : info && info.repo && !info.upstream ? 'Push this branch to origin (sets its upstream)' : 'Nothing to push',
+  };
+}
+
+/* What the push dialog says beside its list of commits: nothing when there are
+   some, else a branch without an upstream publishes itself and one with an
+   upstream has nothing to send, level or only behind. One reading used to cover
+   both, and was false for the second. */
+function pushNote(info, commits) {
+  if (commits.length) return '';
+  return info && info.upstream
+    ? `${info.upstream} already has every commit of ${info.branch}: nothing to push.`
+    : 'No upstream yet, so this is the first push of this branch.';
+}
+
+/* The commit button says what it would commit. During a merge it finishes the
+   merge, once nothing is conflicted; with conflicts left it names the way out. */
+function commitButtonText(info) {
+  if (!info || !info.repo) return 'Commit';
+  if (info.conflicted.length) return 'Resolve the conflicts first';
+  if (info.merging) return 'Commit the merge';
+  const n = info.staged.length;
+  return n ? `Commit ${n} file${n === 1 ? '' : 's'}` : 'Stage a file to commit';
+}
+
+/* Whether a click would commit: files staged, or a merge with nothing conflicted. */
+function commitReady(info) {
+  return !!info && !!info.repo && !info.conflicted.length && (info.merging || info.staged.length > 0);
+}
+
+/* The letter git shows for a file, and the class that colours it: the tree's
+   colours for a modified or new file, red for a deletion and for a conflicted
+   file, the snapshot colour for a rename. */
+function gitLetterClass(letter, conflicted) {
+  if (conflicted) return 'x';
+  return { M: 'm', A: 'a', U: 'u', D: 'd', R: 'r' }[letter] || 'q';
+}
+
+/* Whether a row (its top and bottom) is not wholly inside the list it sits in:
+   only then does giving it the keyboard scroll the list. */
+function outOfView(top, bottom, hostTop, hostBottom) {
+  return top < hostTop || bottom > hostBottom;
+}
+
+function paintCommit() {
+  const btn = $('#commit-btn');
+  if (!btn) return;
+  const ready = commitReady(S.git);
+  btn.disabled = S.committing;
+  btn.textContent = S.committing ? 'Fetching, then committing…' : commitButtonText(S.git);   // hooks can take a while
+  btn.classList.toggle('primary', ready || S.committing);
+  btn.setAttribute('aria-disabled', ready || S.committing ? 'false' : 'true');
+}
+
+/* The row of the diff tab in front is marked, as the tree marks its file. */
+function markGitCurrent() {
+  for (const r of $$('#git-body .git-row')) {
+    if (r.dataset.path && S.active === 'diff:' + r.dataset.path) r.setAttribute('aria-current', 'true');
+    else r.removeAttribute('aria-current');
+  }
+}
+
 function renderGit(info) {
   const host = $('#git-body');
   if (!host) return;
@@ -4523,11 +4931,33 @@ function renderGit(info) {
   const changes = info.staged.length + info.unstaged.length + info.untracked.length + info.conflicted.length;
   badge.textContent = String(changes);
   badge.classList.toggle('hidden', changes === 0);
-  for (const [id, n] of [['#ahead-n', info.ahead], ['#behind-n', info.behind]]) {
+  const ab = aheadBehindWords(info);
+  const abEl = $('#git-ahead-behind');
+  abEl.textContent = '';
+  ab.parts.forEach((part, i) => {
+    if (i) abEl.append(document.createTextNode(', '));
+    abEl.append(Object.assign(document.createElement('span'), { className: 'ab-' + part.tone, textContent: part.text }));
+  });
+  abEl.title = ab.title;
+  abEl.classList.toggle('hidden', !ab.parts.length);
+  const titles = gitActionTitles(info);
+  for (const [id, title] of [['#git-fetch', titles.fetch], ['#git-pull', titles.pull], ['#git-push', titles.push]]) {
     const el = $(id);
-    el.textContent = String(n);
-    el.classList.toggle('hidden', !n);
+    el.title = title;
+    el.setAttribute('aria-label', title);
   }
+  paintCommit();
+
+  // The rebuild below would drop the keyboard from a row or its action: it is
+  // given back to the same path's row, in the same section when it is still there.
+  // Only to one that held it by keyboard: a click on a button focuses it too,
+  // and giving that back would scroll the list and leave the action shown.
+  const was = document.activeElement;
+  const had = host.contains(was) && was.matches(':focus-visible') ? was.closest('.git-row') : null;
+  const keep = had && { path: had.dataset.path, sec: had.dataset.sec, act: was.classList.contains('act') };
+  // Stage all and Unstage all are pressed from the keyboard too: the link is given back by its section.
+  const keepLink = host.contains(was) && was.classList.contains('glink') && was.matches(':focus-visible')
+    ? was.closest('.git-sec').dataset.sec : null;
 
   host.textContent = '';
   if (!info.repo) {
@@ -4552,17 +4982,21 @@ function renderGit(info) {
     host.append(banner);
   }
 
+  let inSection = '';
   const section = (label, count, action) => {
+    inSection = label;
     const h = document.createElement('div');
     h.className = 'git-sec';
+    h.dataset.sec = label;
     h.append(document.createTextNode(label));
     const n = document.createElement('span');
     n.className = 'n';
     n.textContent = count;
-    h.append(n);
+    h.append(n, Object.assign(document.createElement('div'), { className: 'grow' }));
     if (action) {
-      const a = document.createElement('span');
-      a.className = 'act';
+      const a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'glink';
       a.textContent = action.label;
       a.addEventListener('click', action.run);
       h.append(a);
@@ -4570,29 +5004,46 @@ function renderGit(info) {
     host.append(h);
   };
 
-  const row = (path, code, button) => {
+  const row = (path, code, button, conflicted) => {
     const r = document.createElement('div');
     r.className = 'git-row';
+    r.dataset.path = path;
+    r.dataset.sec = inSection;
+    r.tabIndex = 0;
+    const letter = code.trim()[0] || '?';
     const c = document.createElement('span');
-    c.className = 'code st-' + (code.trim()[0] || 'Q');
-    c.textContent = code.trim() || '?';
+    c.className = 'gs ' + gitLetterClass(letter, conflicted);
+    c.textContent = letter;
+    const icon = fileIcon(path, fileMark(path));
+    // A model's file in a folder the tree has not opened: its mark is asked once, by its folder.
+    askMarks([path]).then((gained) => {
+      if (gained && icon.isConnected) icon.replaceWith(fileIcon(path, fileMark(path)));
+    });
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = base(path);
     const dir = document.createElement('span');
     dir.className = 'dir';
-    dir.textContent = dirOf(path);
-    r.append(c, nm, dir);
+    dir.textContent = path.includes('/') ? dirOf(path) : '';
+    r.append(c, icon, nm, dir);
     if (button) {
       const b = document.createElement('button');
-      b.className = 'icon go';
+      b.type = 'button';
+      b.className = 'act';
       b.title = button.title;
+      b.setAttribute('aria-label', button.title);
       b.textContent = button.glyph;
       b.addEventListener('click', (e) => { e.stopPropagation(); button.run(); });
       r.append(b);
     }
     r.title = path + '  (click to see the changes)';
     r.addEventListener('click', () => openDiff(path));
+    // The action is a stop of its own: Enter and Space on the row open the diff.
+    r.addEventListener('keydown', (e) => {
+      if (e.target !== r || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      openDiff(path);
+    });
     host.append(r);
   };
 
@@ -4601,10 +5052,10 @@ function renderGit(info) {
     info.conflicted.forEach((p) => row(p, 'U', {
       glyph: '✓', title: 'Mark resolved (git add)',
       run: () => markResolved(p),
-    }));
+    }, true));
   }
   if (info.staged.length) {
-    section('Staged', info.staged.length, { label: 'unstage all', run: () => gitPost('unstage', { paths: info.staged.map((f) => f.path) }) });
+    section('Staged', info.staged.length, { label: 'Unstage all', run: () => gitPost('unstage', { paths: info.staged.map((f) => f.path) }) });
     info.staged.forEach((f) => row(f.path, f.code[0], {
       glyph: '−', title: 'Unstage', run: () => gitPost('unstage', { paths: [f.path] }),
     }));
@@ -4612,13 +5063,33 @@ function renderGit(info) {
   const pending = [...info.unstaged.map((f) => ({ path: f.path, code: f.code[1] })),
                    ...info.untracked.map((p) => ({ path: p, code: 'U' }))];
   if (pending.length) {
-    section('Changes', pending.length, { label: 'stage all', run: () => gitPost('stage', { paths: pending.map((f) => f.path) }) });
+    section('Changes', pending.length, { label: 'Stage all', run: () => gitPost('stage', { paths: pending.map((f) => f.path) }) });
     pending.forEach((f) => row(f.path, f.code, {
       glyph: '+', title: 'Stage', run: () => gitPost('stage', { paths: [f.path] }),
     }));
   }
   if (!changes) {
     host.append(Object.assign(document.createElement('div'), { className: 'git-empty', textContent: 'Working tree clean.' }));
+  }
+  markGitCurrent();
+  // The section may be gone once everything moved: then the keyboard has no link to return to.
+  if (keepLink) {
+    const link = host.querySelector(`.git-sec[data-sec="${keepLink}"] .glink`);
+    if (link) link.focus({ preventScroll: true });
+  }
+  if (keep) {
+    const rows = [...host.querySelectorAll('.git-row')].filter((r) => r.dataset.path === keep.path);
+    const same = rows.find((r) => r.dataset.sec === keep.sec);
+    const row = same || rows[0];
+    // An action means another thing in another section: only the row is given back then.
+    const act = same && keep.act && row.querySelector('.act');
+    // The row first: the action is shown only while the row holds the keyboard.
+    // The list stays where it is unless the row is out of its view.
+    if (row) {
+      const r = row.getBoundingClientRect(), h = host.getBoundingClientRect();
+      row.focus({ preventScroll: !outOfView(r.top, r.bottom, h.top, h.bottom) });
+    }
+    if (act) act.focus({ preventScroll: true });
   }
 }
 
@@ -4650,13 +5121,13 @@ async function doCommit() {
   const info = S.git;
   if (info && info.conflicted.length) return toast('resolve the conflicts first', 'err');
   if (info && !info.staged.length && !info.merging) return toast('nothing staged: stage some files first', 'err');
+  if (S.committing) return;
 
-  const btn = $('#commit-btn');
-  btn.disabled = true;
-  btn.textContent = 'Fetching, then committing…';   // hooks can take a while
+  S.committing = true;
+  paintCommit();
   const res = await gitPost('commit', { message });
-  btn.disabled = false;
-  btn.textContent = 'Commit';
+  S.committing = false;
+  paintCommit();
   if (!res) return;
   if (!res.ok) return showGitFailure('Commit failed', res);
   $('#commit-msg').value = '';
@@ -4670,7 +5141,7 @@ async function doPush() {
   const info = S.git || {};
   const body = document.createElement('div');
   body.append(para(`Pushing ${info.branch} to origin${info.upstream ? '' : ' (and setting it as upstream)'}.`));
-  body.append(commits.length ? list(commits) : para('No upstream yet, so this is the first push of this branch.'));
+  body.append(commits.length ? list(commits) : para(pushNote(info, commits)));
   if (await modal({ title: 'Push to origin?', body,
                     actions: [{ id: null, label: 'Cancel' }, { id: 'go', label: 'Push', style: 'primary' }] }) !== 'go') return;
   const res = await gitPost('push');
@@ -20832,6 +21303,7 @@ function wireKeys() {
   $('#git-pull').addEventListener('click', doPull);
   $('#git-push').addEventListener('click', doPush);
   $('#commit-btn').addEventListener('click', doCommit);
+  $('#commit-kbd').textContent = keyLabel('Mod+Enter', IS_MAC);
   $('#commit-msg').addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); doCommit(); }
   });
