@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.14.0 - 2026-11-09
+
+- Lay the settings out as one column of cards, a setting's name and why on the
+  left and its control on the right, with a hint per section in the rail (0163).
+
 ## 2.13.0 - 2026-11-09
 
 - Draw a column's role as a tag inside its box, on the second line at the right,

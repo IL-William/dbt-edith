@@ -143,7 +143,8 @@ The `env` pill in the status bar says which of the project's `.env` files the
 DEV, QA or UAT without running dbt. Built stays tied to the manifest's own
 target. The file is picked in the pill's menu, the same menu in the header of
 the resolved column, or in the Project section of the settings, which the
-menu's Manage environments... opens, or from the row of buttons at the top of
+menu's Manage environments... opens, where *In the status bar* is a row of
+buttons, one per file in the colour of its name and the manifest outlined, or from the row of buttons at the top of
 the Compiled and Run tabs, which sets the same choice, so the status bar and the
 Catalog follow it. With no file picked the choice is
 `manifest`; on a manifest built into a developer sandbox it is named `my
@@ -173,8 +174,10 @@ outlined.
   variable value is ever sent to the browser except resolved locations and
   `DBT_TARGET`.
 
-The same section, which *Manage environments* in the menu opens, renames or
-hides files. It also reports, per file, how
+The same section, which *Manage environments* in the menu opens, lists each
+`.env` file with its environment, its `DBT_TARGET`, how many of the variables the
+location config reads it defines, and how often it reproduces what dbt parsed,
+and renames or hides files under *Names*. That last figure is, per file, how
 often that file reproduces what dbt parsed: the file dbt actually had loaded
 scores 100%, which makes it easy to spot which environment a manifest came from.
 

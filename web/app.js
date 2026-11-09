@@ -6244,14 +6244,16 @@ function paintSourceButton(only) {
 }
 
 /* What the column lineage on screen is, from lineagePickLabel: on the menu's
-   button, and atop the settings' Column lineage section. */
-function fillSourceLabel(el, label) {
+   button, and in the settings' Column lineage section, where the tool's name is
+   a chip in its colour (`chip`) and the rest follows in the dim one. */
+function fillSourceLabel(el, label, { chip = false } = {}) {
   const span = (className, textContent) => Object.assign(document.createElement('span'), { className, textContent });
   el.dataset.tool = label.tool;
   el.dataset.tone = label.tone;
   el.title = label.title;
   el.textContent = '';
-  el.append(span('tooldot', ''), span('tname', label.name));
+  if (chip) el.append(span('toolchip', label.name));
+  else el.append(span('tooldot', ''), span('tname', label.name));
   if (label.badge) el.append(span('alpha', label.badge));
   if (label.detail) el.append(span('tdetail', ` · ${label.detail}`));
   if (label.state) el.append(span('tstate', ` · ${label.state}`));
@@ -6269,17 +6271,20 @@ async function openSourceMenu(anchor) {
 }
 
 /* The menu's rows, in the menu or in the settings' Column lineage section:
-   `done` runs before a pick, the menu closing on it. */
-function fillSourceMenu(menu, done) {
+   `done` runs before a pick, the menu closing on it. In the section (`cards`)
+   a tool is a radio card, its sentence under its name, and what is done with it
+   a plain button under the card. */
+function fillSourceMenu(menu, done, { cards = false } = {}) {
   const snowflake = !!(S.features && S.features.snowflake);
   const { tools, others } = lineageTools(S.cllSources || [], S.cllActive, sidecarOn(), snowflake, S.collin);
-  const add = ({ label, sub, tool, on, disabled, title, badge, pick, action, urgent }) => {
+  const add = ({ label, sub, tool, on, disabled, title, badge, pick, action, urgent, install }) => {
     const item = document.createElement('button');
     item.type = 'button';
     // An action is not one of the choices, so it carries no checked state,
     // and no glyph: it is something to do with the tool above it, drawn indented
     // under that tool rather than as another tool.
-    item.setAttribute('role', action ? 'menuitem' : 'menuitemradio');
+    const role = cards ? (action ? '' : 'radio') : (action ? 'menuitem' : 'menuitemradio');
+    if (role) item.setAttribute('role', role);
     if (!action) item.setAttribute('aria-checked', String(on));
     item.dataset.tool = tool;
     // Where the focus comes back to once the settings draw the rows again.
@@ -6287,19 +6292,26 @@ function fillSourceMenu(menu, done) {
     if (on) item.classList.add('on');
     if (action) item.classList.add('subaction');
     if (urgent) item.dataset.urgent = 'true';
+    if (install) item.dataset.install = 'true';
     // Not `disabled`: a disabled button swallows the hover, and its tooltip
     // is the only place that says what is missing.
     if (disabled) item.setAttribute('aria-disabled', 'true');
     if (title) item.title = title;
-    if (!action) {
-      item.append(
-        Object.assign(document.createElement('span'), { className: 'check', textContent: on ? '✓' : '' }),
-        Object.assign(document.createElement('span'), { className: 'tooldot' }),
-      );
+    const span = (className, textContent = '') => Object.assign(document.createElement('span'), { className, textContent });
+    const card = cards && !action;
+    if (card) item.classList.add('radio');
+    else if (!action) item.append(span('check', on ? '✓' : ''), span('tooldot'));
+    // A card: the ring, then the name and tags on a line, and the tool's sentence under them.
+    const line = card ? span('rtop') : item;
+    line.append(span('lbl', label));
+    if (badge) line.append(span('alpha', badge));
+    if (sub) line.append(span('sub', sub));
+    if (card) {
+      const text = span('rtext');
+      text.append(line);
+      if (title) text.append(span('rd', title));
+      item.append(span('rb'), text);
     }
-    item.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: label }));
-    if (badge) item.append(Object.assign(document.createElement('span'), { className: 'alpha', textContent: badge }));
-    if (sub) item.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
     item.addEventListener('click', () => {
       if (disabled) return;
       done();
@@ -6308,7 +6320,7 @@ function fillSourceMenu(menu, done) {
     menu.appendChild(item);
   };
   // The same rows are in the menu and in the settings: the chip in the terminal names the one the person used.
-  const where = menu.classList.contains('inpanel') ? 'the settings' : 'the column lineage menu';
+  const where = cards ? 'the settings' : 'the column lineage menu';
   const update = collinUpdateRow(S.collin, S.cllTool);
   const report = collinReportRow(S.collin, S.cllTool);
   const versions = collinVersionRows(S.collin, S.cllTool);
@@ -6316,7 +6328,7 @@ function fillSourceMenu(menu, done) {
   const compare = collinCompareRow(S.collin, S.cllTool);
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
-      badge: t.alpha ? 'alpha' : '',
+      badge: t.alpha ? 'alpha' : '', install: t.install,
       pick: t.install ? () => installCollin(where) : () => switchLineage({ tool: t.tool }) });
     if (t.tool === 'collin' && report) {
       add({ label: report.label, sub: report.sub, tool: 'collin', on: false, title: report.title, action: true,
@@ -7067,14 +7079,6 @@ function strokeIcon(viewBox, className, shapes) {
   return svg;
 }
 
-/* A user and a plug: the profile is who dbt connects as, and how. */
-function profileIcon() {
-  return strokeIcon('0 0 20 16', 'profileicon', [
-    'M8.5 5a2.7 2.7 0 1 1-5.4 0a2.7 2.7 0 1 1 5.4 0zM1.3 14.5v-.8a4.5 4.5 0 0 1 9 0v.8',
-    'M14 4.5v2.2M17 4.5v2.2M12.6 6.7h5.8V8a2.9 2.9 0 0 1-5.8 0zM15.5 10.9v3.6',
-  ]);
-}
-
 /* The lineage fields of an /api/meta answer, which every route that switches
    the lineage or a feature answers with. */
 function applyLineage(info) {
@@ -7411,8 +7415,11 @@ function snowflakeIcon() {
 function paintSetSnowflake(box) {
   const f = S.features || { snowflake: false, snowflake_set: false };
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
-  const row = el('div', 'setrow');
-  row.dataset.tool = 'snowflake';
+  // The switch's track takes the tool's colour from here.
+  const main = el('section', 'sgroup');
+  main.dataset.tool = 'snowflake';
+  const { row, sc } = buildRow(['Snowflake features', el('span', 'alpha', 'alpha')],
+    'With the profile\'s credentials, for this project only.');
   const toggle = el('button', 'switch');
   toggle.type = 'button';
   toggle.dataset.key = 'snowflake';
@@ -7422,12 +7429,13 @@ function paintSetSnowflake(box) {
   toggle.title = f.snowflake ? 'Switch Snowflake\'s features off for this project' : 'Switch Snowflake\'s features on for this project';
   toggle.append(el('span', 'knob'));
   walkSwitch(toggle, 'snowflake', !!f.snowflake, box.isConnected);
-  row.append(snowflakeIcon(), el('span', 'setlbl', 'Snowflake features'), el('span', 'alpha', 'alpha'), toggle);
+  sc.append(toggle, el('span', 'fnote', featureNote(f, S.meta && S.meta.adapter)));
   // The whole row is the target, the name included, and the switch is what
   // the keyboard reaches. A second click while the first is on its way is
   // dropped, or the two would race to the server, whichever row a redraw
   // has put in its place meanwhile. The answer draws the section again, the
   // focus staying on the switch.
+  row.classList.add('press');
   if (S.featuresBusy) row.setAttribute('aria-busy', 'true');
   row.addEventListener('click', async () => {
     if (S.featuresBusy) return;
@@ -7438,36 +7446,39 @@ function paintSetSnowflake(box) {
       repaintSettings();
     }
   });
+  main.append(row);
 
-  const note = (text) => el('p', 'setnote', text);
+  // After how many days without a success the builds call a model stale (0117).
+  if (f.snowflake) {
+    const days = setRow(main, 'Stale after', 'Days without a success after which a model reads stale.');
+    const field = Object.assign(document.createElement('input'), {
+      type: 'number', min: '1', max: '365', step: '1', value: String(f.builds_stale_days || 7), className: 'daysinput',
+    });
+    field.setAttribute('aria-label', 'Days without a success after which a model reads stale');
+    field.addEventListener('change', () => {
+      const n = Number(field.value);
+      if (!Number.isInteger(n) || n < 1 || n > 365) {
+        field.value = String(f.builds_stale_days || 7);
+        return toast('stale after: a whole number of days from 1 to 365', 'err');
+      }
+      setStaleDays(n);
+    });
+    days.append(field, el('span', 'dim', 'days without a success'));
+  }
+
+  const adds = el('section', 'sgroup');
+  setGroupHead(adds, 'What it adds');
+  adds.append(el('p', 'sp2', 'Column lineage from Snowflake, fetched on click; the Query history tab, read from Snowflake '
+    + 'when it opens; a Snowsight menu beside each relation in the Catalog; and Clone into my schema, '
+    + 'under a model\'s location, which writes the statements that copy it and its direct parents '
+    + 'from an environment into your schema, for you to run. With the dbt_artifacts package in the '
+    + 'project, Last built in the Catalog and Builds by environment in Reports, read when asked.'));
   const warn = el('div', 'alphawarn');
   warn.append(el('b', '', 'Alpha.'), document.createTextNode(
     ' Snowflake\'s features are still being built, and have not yet been checked against a real warehouse. '
     + 'Expect rough edges, and check what they show against Snowflake itself.'));
-  // After how many days without a success the builds call a model stale (0117).
-  const days = el('div', 'setrow setpick');
-  const field = Object.assign(document.createElement('input'), {
-    type: 'number', min: '1', max: '365', step: '1', value: String(f.builds_stale_days || 7), className: 'daysinput',
-  });
-  field.setAttribute('aria-label', 'Days without a success after which a model reads stale');
-  field.addEventListener('change', () => {
-    const n = Number(field.value);
-    if (!Number.isInteger(n) || n < 1 || n > 365) {
-      field.value = String(f.builds_stale_days || 7);
-      return toast('stale after: a whole number of days from 1 to 365', 'err');
-    }
-    setStaleDays(n);
-  });
-  days.append(el('span', 'setlbl', 'Stale after'), field, el('span', 'muted', 'days without a success'));
-  box.replaceChildren(row,
-    note(featureNote(f, S.meta && S.meta.adapter)),
-    note('Column lineage from Snowflake, fetched on click; the Query history tab, read from Snowflake '
-      + 'when it opens; a Snowsight menu beside each relation in the Catalog; and Clone into my schema, '
-      + 'under a model\'s location, which writes the statements that copy it and its direct parents '
-      + 'from an environment into your schema, for you to run. With the dbt_artifacts package in the '
-      + 'project, Last built in the Catalog and Builds by environment in Reports, read when asked.'),
-    ...(f.snowflake ? [days] : []),
-    warn);
+  adds.append(warn);
+  box.replaceChildren(main, adds);
 }
 
 /* A clock, for the jobs that run on one. */
@@ -10416,6 +10427,29 @@ function jobsReadCounts(s) {
   return `${jobsPlural(s.jobs, word[0])}, ${jobsPlural(s.steps, word[1])}`;
 }
 
+/* What a source's row says beside its name once it is read: its counts, the
+   files refused and a walk stopped at its bound (in the warning tone); the
+   error alone, in the warning tone, when nothing was read.
+   Nothing before a read. Pure, for web/tests/settings.js. */
+function jobSourceSummary(s) {
+  if (!s) return { text: '', tone: '' };
+  if (s.error) return { text: s.error, tone: 'warn' };
+  const refused = (s.refused || []).length;
+  const parts = [jobsReadCounts(s).replace(', ', ' \u00b7 ')];
+  if (refused) parts.push(`${jobsPlural(refused, 'file')} refused`);
+  // The walk stopped at its bound: some files were never read, which is worth the warning tone.
+  if (s.capped) parts.push('stopped at 5 000 files');
+  return { text: parts.join(' \u00b7 '), tone: s.capped ? 'warn' : '' };
+}
+
+/* Whether the Reports index, which the settings' rail counts the job sources
+   from, no longer says how many the sources' own read found: the file changed
+   outside the form. An index not yet loaded says nothing, so nothing is read
+   for it. */
+function jobsIndexBehind(index, found) {
+  return !!index && (index.jobs ? index.jobs.sources : 0) !== found;
+}
+
 /* Whether a save read every source with nothing left to correct: each one
    found jobs, none failed, had a file refused or stopped at a bound. */
 function jobsReadClean(sources) {
@@ -11033,7 +11067,8 @@ function openJobSources({ add = false } = {}) {
   openSettings('jobs', { add: add === true });
 }
 
-/* The form, in that section, which stays as it was left while a read leaves
+/* The sources, in that section, one row each with the form of the one being
+   edited unfolded under it. The form stays as it was left while a read leaves
    something to correct: saving reads the sources at once, and what was read
    is the answer to whether the keys are right. A clean read goes on to the
    coverage (jobsSaveCloses), since a form that only repaints the same line
@@ -11048,25 +11083,37 @@ async function jobSourcesForm(box, { add = false } = {}) {
     return box.replaceChildren(jel('div', 'jobs-warn', 'jobs: ' + e.message));
   }
   forgetCatalogJobs();
+  // The rail counts from the index: read it again when the sources moved without the form.
+  if (jobsIndexBehind(S.reports, summary.sources.length)) loadReportsIndex();
   const defaults = summary.airflow_keys || [];
   S.jobsKeys = defaults;
   // Where the sources are kept (0115). Once the project has its file, it is
   // the file that is edited and the settings are ignored; before, the person
   // chooses, and a list already in the settings stays there unless they move it.
-  let hasFile = summary.from === 'project';
+  let from = summary.from;
+  let hasFile = from === 'project';
   let refusedWhy = summary.refused || '';
   let seen = summary.stamp || '';
+  let persist = !!summary.saved;
   let place = hasFile || summary.from !== 'settings' ? 'project' : 'settings';
   const forms = summary.sources.map((s) => ({ kind: s.kind, path: s.path, label: s.label || '', keys: Object.assign({}, s.keys), timezone: s.timezone || '' }));
   // A source being added has its picker open, and what the picker shows is
-  // kept, so that drawing the cards again leaves it as it was without asking
-  // the server again.
-  const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, timezone: '', browsing: true, browsed: null });
+  // kept, so that drawing the rows again leaves it as it was without asking
+  // the server again. It is unfolded, as a source being edited is.
+  const fresh = (kind) => ({ kind, path: '', label: '', keys: {}, timezone: '', open: true, browsing: true, browsed: null });
   if (add) forms.push(fresh('airflow'));
   let reads = summary.sources;
-  const body = jel('div', 'jobsrc');
-  const list = jel('div', 'jobsrc-list');
-  const foot = jel('div', 'jobsrc-foot');
+  // Anything added, removed or typed since the last save: what the foot waits to save.
+  let changed = add;
+  const group = jel('section', 'sgroup jobsrc');
+  const head = jel('div', 'sghead', 'Sources');
+  const kept = jel('span', 'sgnote', '');
+  head.append(kept);
+  // Why the file is not read, under the head whether or not the foot shows.
+  const refused = jel('div', 'jobs-warn srcrefused', '');
+  const list = jel('div', 'srclist');
+  const addRow = jel('div', 'srcadd');
+  const foot = jel('div', 'srcfoot');
   const saved = jel('p', 'muted', '');
   const where = jel('div', 'jobsrc-place');
   const issue = jel('div', 'jobs-warn', '');
@@ -11078,77 +11125,107 @@ async function jobSourcesForm(box, { add = false } = {}) {
     i.spellcheck = false;
     i.value = value || '';
     i.placeholder = placeholder;
-    i.addEventListener('input', () => onInput(i.value));
+    i.addEventListener('input', () => { changed = true; onInput(i.value); });
     return i;
+  };
+  // What a source is called in its row: the label, else its kind.
+  const called = (f) => f.label || (f.kind === 'airflow' ? 'Airflow' : 'dbt Cloud');
+  // The form of one source: the card it was before, unfolded under its row.
+  const formOf = (f, i) => {
+    const card = jel('div', 'srcform');
+    const top = jel('div', 'jobsrc-top');
+    const kind = jel('select', '');
+    for (const [v, label] of [['airflow', 'Airflow'], ['dbt_cloud', 'dbt Cloud']]) {
+      kind.append(Object.assign(document.createElement('option'), { value: v, textContent: label, selected: f.kind === v }));
+    }
+    kind.addEventListener('change', () => { f.kind = kind.value; changed = true; paint(); refreshIssue(); });
+    const remove = jel('button', 'btn sm', 'Remove');
+    remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; changed = true; paint(); refreshIssue(); });
+    const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; refreshIssue(); }, 'grow');
+    const browse = jel('button', 'btn sm', 'Browse…');
+    browse.title = 'Pick the folder or the file from a list';
+    let picker = null;
+    const closePicker = () => {
+      f.browsing = false;
+      f.browsed = null;
+      if (picker) picker.remove();
+      picker = null;
+      browse.classList.remove('on');
+      browse.focus();
+    };
+    const openPicker = () => {
+      f.browsing = true;
+      browse.classList.add('on');
+      // A picker of its own each time, so nothing of the last one is left.
+      picker = jel('div', 'jobsrc-browse');
+      top.after(picker);
+      browseJobSource(picker, f.path, {
+        kept: f.browsed,
+        keep: (k) => { f.browsed = k; },
+        use: (w) => { f.path = w; path.value = w; changed = true; closePicker(); refreshIssue(); },
+        cancel: closePicker,
+      });
+    };
+    browse.addEventListener('click', () => (f.browsing ? closePicker() : openPicker()));
+    top.append(kind, path, browse, input(f.label, 'label', (v) => { f.label = v; }, 'jobsrc-label'), remove);
+    card.append(top);
+    if (f.browsing) openPicker();
+    const example = jel('pre', 'jobs-example-text', jobsExample(f.kind, f.keys, defaults));
+    if (f.kind === 'airflow') {
+      const grid = jel('div', 'jobsrc-keys');
+      for (const [k, d] of defaults) {
+        grid.append(jel('label', '', k), input(f.keys[k], d, (v) => {
+          f.keys[k] = v;
+          example.textContent = jobsExample(f.kind, f.keys, defaults);
+        }));
+      }
+      // Not a key of the files: the zone their crons are read in.
+      const zone = input(f.timezone, 'UTC', (v) => { f.timezone = v; refreshIssue(); }, 'jobsrc-zone');
+      zone.title = "The time zone the DAGs' schedules run in, such as Europe/London, one for every DAG of this source. Airflow takes it from each "
+        + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the timezone beside the start_date it sets (the DAG's own, "
+        + "or default_args.timezone), UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
+      zone.setAttribute('aria-label', 'Time zone of the schedules');
+      grid.append(jel('label', '', 'time zone'), zone,
+        jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or with dag-factory the timezone beside start_date, UTC when absent. Empty is UTC."));
+      const cols = jel('div', 'jobsrc-cols');
+      cols.append(grid, example);
+      card.append(cols);
+    } else {
+      card.append(example);
+    }
+    if (reads[i]) card.append(jobsReadNote(reads[i]));
+    return card;
   };
   const paint = () => {
     list.replaceChildren();
     forms.forEach((f, i) => {
-      const card = jel('div', 'jobsrc-card');
-      const top = jel('div', 'jobsrc-top');
-      const kind = jel('select', '');
-      for (const [v, label] of [['airflow', 'Airflow'], ['dbt_cloud', 'dbt Cloud']]) {
-        kind.append(Object.assign(document.createElement('option'), { value: v, textContent: label, selected: f.kind === v }));
-      }
-      kind.addEventListener('change', () => { f.kind = kind.value; paint(); refreshIssue(); });
-      const remove = jel('button', 'btn sm', 'Remove');
-      remove.addEventListener('click', () => { forms.splice(i, 1); reads = []; paint(); refreshIssue(); });
-      const path = input(f.path, '../orchestration/dags, or an absolute path', (v) => { f.path = v; refreshIssue(); }, 'grow');
-      const browse = jel('button', 'btn sm', 'Browse…');
-      browse.title = 'Pick the folder or the file from a list';
-      let picker = null;
-      const closePicker = () => {
-        f.browsing = false;
-        f.browsed = null;
-        if (picker) picker.remove();
-        picker = null;
-        browse.classList.remove('on');
-        browse.focus();
-      };
-      const openPicker = () => {
-        f.browsing = true;
-        browse.classList.add('on');
-        // A picker of its own each time, so nothing of the last one is left.
-        picker = jel('div', 'jobsrc-browse');
-        top.after(picker);
-        browseJobSource(picker, f.path, {
-          kept: f.browsed,
-          keep: (k) => { f.browsed = k; },
-          use: (w) => { f.path = w; path.value = w; closePicker(); refreshIssue(); },
-          cancel: closePicker,
-        });
-      };
-      browse.addEventListener('click', () => (f.browsing ? closePicker() : openPicker()));
-      top.append(kind, path, browse, input(f.label, 'label', (v) => { f.label = v; }, 'jobsrc-label'), remove);
-      card.append(top);
-      if (f.browsing) openPicker();
-      const example = jel('pre', 'jobs-example-text', jobsExample(f.kind, f.keys, defaults));
-      if (f.kind === 'airflow') {
-        const grid = jel('div', 'jobsrc-keys');
-        for (const [k, d] of defaults) {
-          grid.append(jel('label', '', k), input(f.keys[k], d, (v) => {
-            f.keys[k] = v;
-            example.textContent = jobsExample(f.kind, f.keys, defaults);
-          }));
-        }
-        // Not a key of the files: the zone their crons are read in.
-        const zone = input(f.timezone, 'UTC', (v) => { f.timezone = v; refreshIssue(); }, 'jobsrc-zone');
-        zone.title = "The time zone the DAGs' schedules run in, such as Europe/London, one for every DAG of this source. Airflow takes it from each "
-          + "DAG's start_date: default_timezone for a start_date with no zone; with dag-factory, the timezone beside the start_date it sets (the DAG's own, "
-          + "or default_args.timezone), UTC when absent. Empty is UTC. It decides when a job's builds are late in Reports.";
-        zone.setAttribute('aria-label', 'Time zone of the schedules');
-        grid.append(jel('label', '', 'time zone'), zone,
-          jel('span', 'jobsrc-zonehint', "The zone of the DAGs' start_date, such as Europe/London: default_timezone, or with dag-factory the timezone beside start_date, UTC when absent. Empty is UTC."));
-        const cols = jel('div', 'jobsrc-cols');
-        cols.append(grid, example);
-        card.append(cols);
-      } else {
-        card.append(example);
-      }
-      if (reads[i]) card.append(jobsReadNote(reads[i]));
-      list.append(card);
+      const item = jel('div', 'srcitem');
+      const line = jel('div', 'srcline');
+      const ico = jel('span', 'srcico');
+      ico.append(strokeIcon('0 0 16 16', 'setglyph', f.kind === 'airflow' ? ['M2 4.5h12M2 8h12M2 11.5h7'] : ['M8 2l5.5 3v6L8 14l-5.5-3V5z']));
+      const names = jel('span', 'srcname');
+      names.append(jel('b', '', called(f)), jel('span', 'srcpath', f.path || 'no path yet'));
+      const read = jobSourceSummary(reads[i]);
+      const edit = jel('button', 'btn', 'Edit');
+      edit.type = 'button';
+      edit.dataset.key = 'src:' + i;
+      edit.setAttribute('aria-label', `Edit ${called(f)}`);
+      edit.setAttribute('aria-expanded', String(!!f.open));
+      edit.addEventListener('click', () => {
+        f.open = !f.open;
+        paint();
+        refreshIssue();
+        // The row is drawn again with the form: the focus stays on its button.
+        const back = list.querySelector(`[data-key="src:${i}"]`);
+        if (back) back.focus();
+      });
+      line.append(ico, names, jel('span', read.tone === 'warn' ? 'srcsum warn' : 'srcsum', read.text), edit);
+      item.append(line);
+      if (f.open) item.append(formOf(f, i));
+      list.append(item);
     });
-    if (!forms.length) list.append(jel('p', 'muted', 'No source yet.'));
+    if (!forms.length) list.append(jel('p', 'srcnone', 'No source yet.'));
+    paintFoot();
   };
 
   // The file takes only paths it may hold: a path that is not one says why
@@ -11167,14 +11244,29 @@ async function jobSourcesForm(box, { add = false } = {}) {
     save.disabled = jobsSaveDisabled(busy, why);
   };
 
+  // Read-only, the group is the rows and the button to add one. A source
+  // unfolded, or the list changed, or a save answered, brings the foot.
+  const paintFoot = () => {
+    foot.hidden = !(forms.some((f) => f.open) || changed || saved.textContent);
+  };
+
+  // Where they are kept, beside the head: where the server last said they are,
+  // not the choice a radio holds before a save.
+  const paintKept = () => {
+    kept.textContent = from === 'project' ? 'in .dbt-edith/jobs.yml'
+      : from === 'settings' ? (persist ? 'for you only, outside the project' : 'until dbt-edith stops') : '';
+    refused.textContent = refusedWhy ? `.dbt-edith/jobs.yml is not read: ${refusedWhy}. Saving writes it again.` : '';
+    refused.hidden = !refusedWhy;
+  };
+
   // The choice, or what the file already says. Painted again after a save,
   // since the first one writes the file and the form then edits it.
   const paintPlace = () => {
     where.replaceChildren();
+    paintKept();
     if (hasFile) {
       where.append(jel('p', 'setnote', 'Kept in the project, in .dbt-edith/jobs.yml, which whoever has the repository shares. '
         + 'Saving rewrites that file; the settings are ignored while it exists, and nothing deletes it.'));
-      if (refusedWhy) where.append(jel('div', 'jobs-warn', `.dbt-edith/jobs.yml is not read: ${refusedWhy}. Saving writes it again.`));
       return;
     }
     for (const [v, text] of [
@@ -11192,10 +11284,11 @@ async function jobSourcesForm(box, { add = false } = {}) {
     }
   };
 
-  const addAirflow = jel('button', 'btn sm', '+ Airflow');
-  addAirflow.addEventListener('click', () => { forms.push(fresh('airflow')); paint(); });
-  const addCloud = jel('button', 'btn sm', '+ dbt Cloud');
-  addCloud.addEventListener('click', () => { forms.push(fresh('dbt_cloud')); paint(); });
+  const adder = jel('button', 'btn', 'Add a source');
+  adder.type = 'button';
+  adder.prepend(strokeIcon('0 0 16 16', 'setglyph', ['M8 3.5v9M3.5 8h9']));
+  adder.addEventListener('click', () => { forms.push(fresh('airflow')); changed = true; paint(); refreshIssue(); });
+  addRow.append(adder);
   const save = jel('button', 'btn sm primary', 'Save and read');
   save.addEventListener('click', async () => {
     if (busy) return;
@@ -11210,17 +11303,20 @@ async function jobSourcesForm(box, { add = false } = {}) {
       // put back as it was left.
       const tourKept = S.tour && S.tour.saved && S.tour.saved.panelSaved && S.tour.saved.panelSaved.kept;
       const store = [S.settingsKept, tourKept].find((k) => k && k.jobs && k.jobs.contains(box));
-      const kept = !!store;
-      const route = jobsSaveRoute({ kept, shown: box.isConnected,
+      const kept2 = !!store;
+      const route = jobsSaveRoute({ kept: kept2, shown: box.isConnected,
         clean: jobsSaveCloses(answer, sent, jobSourcesBody(forms, defaults, hasFile ? 'project' : place, seen)) });
       // The file now exists, with this version, whichever way the form goes on.
-      hasFile = answer.from === 'project';
+      from = answer.from;
+      hasFile = from === 'project';
       refusedWhy = answer.refused || '';
       seen = answer.stamp || '';
+      persist = hasFile || !!answer.saved;
+      changed = false;
       if (route === 'gone') {
         // A form read cleanly behind another section is done with: its
         // section reads the sources afresh when it is shown again.
-        if (kept) delete store.jobs;
+        if (kept2) delete store.jobs;
         toast(...jobsSaveToast(answer));
         if (S.dock === 'jobs') loadJobs();
         if (panelOpen('reports') && S.reportsSection === 'jobs') return showReportSection('jobs');
@@ -11240,22 +11336,21 @@ async function jobSourcesForm(box, { add = false } = {}) {
       // The file moved on since the form read it (a pull, an edit in the
       // editor): left as it is, and said, since a second save would fail the same way.
       if (e.changed) saved.textContent = '.dbt-edith/jobs.yml changed on disk since this form read it. Close this section and open it again to read it, and nothing is written over it until then.';
+      paintFoot();
       toast('sources: ' + e.message, 'err');
     } finally {
       busy = false;
       refreshIssue();
     }
   });
-  foot.append(addAirflow, addCloud, jel('div', 'grow'), save);
-  body.append(
-    jel('p', 'setnote', 'Read from their YAML wherever it lives, often in another repository, for the Jobs tab and the '
-      + 'job coverage in Reports. Folders or files holding your jobs, relative to the project or absolute. An Airflow '
-      + 'key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'),
-    where, issue, list, foot, saved);
+  const bar = jel('div', 'srcsave');
+  bar.append(save, saved);
+  foot.append(where, issue, bar);
+  group.append(head, refused, list, addRow, foot);
   paintPlace();
   paint();
   refreshIssue();
-  box.replaceChildren(body);
+  box.replaceChildren(group);
 }
 
 /* Where a save goes once the server has answered. `gone`: the form rolled
@@ -11912,6 +12007,8 @@ async function loadReportsIndex() {
   // Only the buttons that hang on the reports: the head holds the answer's counts and sources.
   if (S.dock === 'jobs') paintJobsTools();
   if (panelOpen('reports')) paintReportsNav();
+  // The settings' rail counts the job sources from the same index.
+  repaintSettings();
 }
 
 function newsChip(n) {
@@ -13021,7 +13118,9 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 /* Every setting, in one panel rolled down from the gear in the top bar, a
    section at a time, as the reports are (0100): the project's profile,
    environments and Python, the column lineage, Snowflake, the orchestration,
-   the updates, the theme, and help. The venv and update pills open their section, the env pill its menu (0142). A
+   the updates, the theme, and help. A section is one column of rows, a
+   setting's name and why on the left and its control on the right (0163). The
+   venv and update pills open their section, the env pill its menu (0142). A
    section is drawn from what the page knows, and drawn again when that
    changes, but a form being filled stays as it was left, through another
    section and back, until the panel rolls up. settingsSections and
@@ -13029,23 +13128,27 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 
 /* The sections, in the rail's order, from what `c` says the page knows: what
    each row says beside its name, the column lineage on screen, Snowflake on
-   or off, a newer release, and the profile's triangle when it is missing. */
+   or off, how many job sources there are, a newer release, and the profile's
+   triangle when it is missing. */
 function settingsSections(c) {
+  const sources = c.sources;
   return [
     { key: 'project', label: 'Project', warn: c.profile || '',
-      title: 'The dbt profile, the .env files the Catalog resolves locations with, and the Python the terminal runs' },
+      title: 'The dbt profile, the .env files the Catalog resolves locations with, and the Python the terminal runs.' },
     { key: 'columns', label: 'Column lineage', tool: c.cllTool || '', hint: c.cll || '',
       title: 'Where the edges between columns come from. A click on a column in Catalog > Columns follows it from model to model.' },
     { key: 'snowflake', label: 'Snowflake', tool: 'snowflake', hint: c.snowflake ? 'on' : 'off',
-      title: 'Column lineage from Snowflake, the Query history tab, Snowsight links and Clone into my schema, for this project' },
+      title: 'Column lineage from Snowflake, the Query history tab, Snowsight links and Clone into my schema, for this project.' },
     { key: 'jobs', label: 'Orchestration', tool: 'jobs',
-      title: 'Where the Airflow DAGs or dbt Cloud jobs that run each model are read from' },
-    { key: 'updates', label: 'Updates', hint: c.update || '',
-      title: 'Which build serves this page, a newer release, and how to install it' },
+      hint: typeof sources === 'number' ? `${sources} source${sources === 1 ? '' : 's'}` : '',
+      title: 'Where the Airflow DAGs or dbt Cloud jobs that run each model are read from. The Jobs tab and the job reports use them.' },
+    // The hint is the newest version, in the accent, or the restart that is left.
+    { key: 'updates', label: 'Updates', hint: c.update || '', news: !!c.update,
+      title: 'Which build serves this page, a newer release, and how to install it.' },
     { key: 'theme', label: 'Theme', hint: c.theme || '',
       title: 'The colours of the whole app, the canvas included. Each keeps the same meaning colours: materializations, tests, ok, warn and bad.' },
     { key: 'help', label: 'Help and tour',
-      title: 'The tour, every shortcut, and dbt-edith on GitHub' },
+      title: 'The tour, every shortcut, and dbt-edith on GitHub.' },
   ];
 }
 
@@ -13066,7 +13169,10 @@ function settingsNow() {
     cllTool: pick.tool,
     cll: pick.tool ? pick.name : 'none',
     snowflake: !!(S.features && S.features.snowflake),
-    update: o ? (o.installed ? 'restart' : 'newer') : '',
+    update: o ? (o.installed ? 'restart' : S.update.latest) : '',
+    // From the Reports index, which reads no job file: an index without the
+    // jobs entry has no source (0063, 0066).
+    sources: S.reports ? (S.reports.jobs ? S.reports.jobs.sources : 0) : null,
     theme: THEMES.find((t) => t.id === themeNow()).name,
   };
 }
@@ -13085,12 +13191,15 @@ function openSettings(section, { add = false } = {}) {
 function settingsIcon(sec) {
   const wrap = jel('span', 'seticon');
   if ('tool' in sec) wrap.dataset.tool = sec.tool;
-  const draw = { project: profileIcon, snowflake: snowflakeIcon, jobs: jobsIcon }[sec.key];
+  // A tool's glyph takes its colour, the others stay quiet.
+  if (sec.tool) wrap.classList.add('tinted');
+  const draw = { snowflake: snowflakeIcon, jobs: jobsIcon }[sec.key];
   if (sec.key === 'theme') {
     wrap.append(themeGlyph());
     return wrap;
   }
   if (draw) wrap.append(draw());
+  else if (sec.key === 'project') wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M2 4.75L8 2.25l6 2.5-6 2.5z', 'M2 4.75v6.5l6 2.5 6-2.5v-6.5M8 7.25v6.5']));
   else if (sec.key === 'columns') wrap.append(jel('span', 'tooldot'));
   else if (sec.key === 'updates') wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 2.5v8M4.75 7.25L8 10.5l3.25-3.25M2.5 13.5h11']));
   else wrap.append(strokeIcon('0 0 16 16', 'setglyph', ['M8 1.8a6.2 6.2 0 1 1 0 12.4a6.2 6.2 0 1 1 0-12.4z',
@@ -13099,8 +13208,9 @@ function settingsIcon(sec) {
 }
 
 function paintSettingsNav(nav = $('#settings-nav')) {
-  nav.replaceChildren(...settingsSections(settingsNow()).map((sec) => {
-    const row = jel('button', 'reports-navrow');
+  const head = jel('div', 'setnav-head', 'Settings');
+  nav.replaceChildren(head, ...settingsSections(settingsNow()).map((sec) => {
+    const row = jel('button', 'reports-navrow setnavrow');
     row.type = 'button';
     row.dataset.key = sec.key;
     row.title = sec.title;
@@ -13111,11 +13221,25 @@ function paintSettingsNav(nav = $('#settings-nav')) {
       dot.title = sec.warn;
       row.append(dot);
     } else if (sec.hint) {
-      row.append(jel('span', 'rhint', sec.hint));
+      row.append(jel('span', sec.news ? 'sethint new' : 'sethint', sec.hint));
     }
     row.addEventListener('click', () => showSettingsSection(sec.key));
     return row;
   }));
+}
+
+/* The head of a section: its name, and in a line what it holds. A tool's
+   carries that tool's colour as a bar before the name (0148). */
+function setHead(sec) {
+  const head = jel('header', 'sethead');
+  if ('tool' in sec) head.dataset.tool = sec.tool;
+  head.append(jel('h2', '', sec.label), jel('p', '', sec.title));
+  if (sec.key === 'jobs') {
+    head.append(jel('p', '', 'Read from their YAML wherever it lives, often in another repository, for the Jobs tab and the '
+      + 'job coverage in Reports. Folders or files holding your jobs, relative to the project or absolute. An Airflow '
+      + 'key is a dotted path: pipeline.name is the key name inside pipeline. Leave one empty for the shape shown.'));
+  }
+  return head;
 }
 
 /* Draws one section, or puts back the one kept with its form as it was left. */
@@ -13126,63 +13250,130 @@ function showSettingsSection(key, { add = false } = {}) {
   const sec = settingsSections(settingsNow()).find((x) => x.key === key);
   let body = S.settingsKept[key];
   if (!body) {
-    body = jel('div', 'reportbody setbody');
-    body.append(jel('p', 'setlead', sec.title));
+    body = jel('div', 'setinner');
+    body.append(setHead(sec));
     drawSettingsSection(key, body, { add });
     if (key === 'project' || key === 'jobs') S.settingsKept[key] = body;
   }
-  const head = jel('div', 'diff-head');
-  const row = jel('div', 'diff-title');
-  row.append(settingsIcon(sec), jel('b', '', sec.label), jel('div', 'grow'));
-  head.append(row);
-  $('#settings-view').replaceChildren(head, body);
+  const view = $('#settings-view');
+  view.replaceChildren(body);
+  view.scrollTop = 0;
   paintSettingsLive();
   // Read again each time, kept or not, for a venv made in the terminal
   // since: the venv pill read it on every click.
   if (key === 'project') api.get('/api/venv').then((v) => { S.venv = v; paintVenv(); }).catch(() => {});
 }
 
-/* A block of a section under its heading. A live one is drawn again by
-   paintSettingsLive whenever what it shows changes. */
-function setBlock(body, title, live = '', className = '') {
-  const block = jel('section', 'setblock');
-  if (title) block.append(jel('h3', '', title));
-  const box = jel('div', ('setbox ' + className).trim());
-  if (live) box.dataset.live = live;
-  block.append(box);
-  body.append(block);
-  return box;
+/* A card of rows under an optional head, with a note beside the head. A live
+   one is drawn again by paintSettingsLive whenever what it shows changes. */
+function setGroup(body, head = '', note = '', live = '') {
+  const group = jel('section', 'sgroup');
+  if (live) group.dataset.live = live;
+  setGroupHead(group, head, note);
+  body.append(group);
+  return group;
+}
+
+function setGroupHead(group, head, note = '') {
+  if (!head) return;
+  const h = jel('div', 'sghead', head);
+  if (note) h.append(jel('span', 'sgnote', note));
+  group.append(h);
+}
+
+/* One row: `name` and `about` on the left, the control on the right. A name
+   is a string or the nodes that make it up (a tag after it); `about` is a
+   string, or paragraphs, each a string or an array of strings and nodes. A
+   `wide` row puts the control under the text across both columns, for what is
+   a table or a form. Returns the row and its control box. */
+function buildRow(name, about, { wide = false } = {}) {
+  const row = jel('div', wide ? 'srow wide' : 'srow');
+  const left = jel('div', 'sl');
+  const st = jel('div', 'st');
+  st.append(...[].concat(name).map((n) => (typeof n === 'string' ? document.createTextNode(n) : n)));
+  left.append(st);
+  if (about) {
+    const sd = jel('div', 'sd');
+    for (const para of [].concat(about)) {
+      const p = jel('p', '');
+      p.append(...[].concat(para).map((n) => (typeof n === 'string' ? document.createTextNode(n) : n)));
+      sd.append(p);
+    }
+    left.append(sd);
+  }
+  const sc = jel('div', 'sc');
+  row.append(left, sc);
+  return { row, sc };
+}
+
+/* A row added to `group`; returns its control box, which a live row marks
+   with its data-live. */
+function setRow(group, name, about, opts) {
+  const { row, sc } = buildRow(name, about, opts);
+  group.append(row);
+  return sc;
+}
+
+/* A state as the shapes rule draws it: a pictogram (ok, warn, none) and a
+   word, never a coloured dot. */
+function okLine(tone, text) {
+  const line = jel('span', 'okline');
+  line.dataset.tone = tone;
+  line.append(jel('span', 'dot'), jel('span', '', text));
+  return line;
 }
 
 function drawSettingsSection(key, body, { add }) {
   switch (key) {
     case 'project': {
-      setBlock(body, 'dbt profile', 'profile');
-      drawSetEnvs(setBlock(body, 'Environments'));
-      setBlock(body, 'Python', 'python');
+      const dbt = setGroup(body, 'dbt');
+      setRow(dbt, 'Profile', ['Who dbt connects as, and how, read by every dbt command in the terminal.',
+        'Its passwords and keys never reach this page: the editor shows a placeholder in their place, and leaving it keeps the value.'])
+        .dataset.live = 'profile';
+      drawSetEnvs(setGroup(body));
+      const py = setGroup(body, 'Python');
+      setRow(py, 'Interpreter', 'The Python the terminal runs dbt with.').dataset.live = 'python';
       break;
     }
-    case 'columns':
-      setBlock(body, 'On screen', 'cllnow', 'cllnow');
-      setBlock(body, 'Where it comes from', 'columns', 'envmenu inpanel cllmenu');
+    case 'columns': {
+      const group = setGroup(body);
+      const now = setRow(group, 'On screen', 'What the canvas draws now.');
+      now.classList.add('cllnow');
+      now.dataset.live = 'cllnow';
+      const radios = jel('div', 'radios');
+      radios.dataset.live = 'columns';
+      setRow(group, 'Where it comes from', 'One source at a time.').append(radios);
       // Asked again, so a cache written since the page loaded is offered too.
       api.get('/api/meta').then(applyLineage).catch(() => {});
       break;
-    case 'snowflake':
-      setBlock(body, '', 'snowflake', 'envmenu inpanel');
+    }
+    case 'snowflake': {
+      const box = jel('div', 'setlive');
+      box.dataset.live = 'snowflake';
+      body.append(box);
       break;
-    case 'jobs':
-      jobSourcesForm(setBlock(body, ''), { add });
+    }
+    case 'jobs': {
+      const holder = jel('div', 'setlive');
+      body.append(holder);
+      jobSourcesForm(holder, { add });
       break;
-    case 'updates':
-      setBlock(body, '', 'updates', 'envmenu updmenu inpanel');
+    }
+    case 'updates': {
+      const box = jel('div', 'setlive');
+      box.dataset.live = 'updates';
+      body.append(box);
       freshenUpdate();
       break;
-    case 'theme':
-      setBlock(body, '', 'themecards', 'tcards');
-      setBlock(body, '', 'themefollow', 'envmenu inpanel setcard');
-      setBlock(body, '', 'themehw', 'envmenu inpanel setcard setgroup');
+    }
+    case 'theme': {
+      const cards = jel('div', 'tcards');
+      cards.dataset.live = 'themecards';
+      body.append(cards);
+      setGroup(body, '', '', 'themefollow');
+      setGroup(body, '', '', 'themehw');
       break;
+    }
     case 'help':
       drawSetHelp(body);
       break;
@@ -13194,19 +13385,51 @@ function paintSettingsBlock(box) {
     case 'profile': return paintSetProfile(box);
     case 'envpick': return paintSetEnvPick(box);
     case 'python': return paintSetPython(box);
-    case 'cllnow': return fillSourceLabel(box, lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin));
+    case 'cllnow': return fillSourceLabel(box, lineagePickLabel(S.meta, S.cllTool, sidecarOn(), S.sidecar, S.collin), { chip: true });
     case 'columns':
       box.replaceChildren();
-      fillSourceMenu(box, () => {});
-      return unmenu(box);
+      box.setAttribute('role', 'radiogroup');
+      box.setAttribute('aria-label', 'Column lineage source');
+      fillSourceMenu(box, () => {}, { cards: true });
+      return rovingCards(box);
     case 'snowflake': return paintSetSnowflake(box);
     case 'themecards': return paintThemeCards(box);
     case 'themefollow': return paintThemeFollow(box);
     case 'themehw': return paintThemeHalloween(box);
-    case 'updates':
-      paintUpdateMenu(box);
-      return unmenu(box);
+    case 'updates': return paintSetUpdates(box);
   }
+}
+
+/* Which of the Column lineage cards are tab stops. `cards` say whether each is
+   `checked` and whether it is `left` out of the arrow steps (greyed, or the one
+   that only types the install). A card left out keeps tabindex 0, since Tab is
+   the only way to it, the install card being the only place that types collin's
+   install; among the others the checked one is the stop, else the first. Pure,
+   for web/tests/settings.js. */
+function cardTabStops(cards) {
+  const steps = cards.map((c, i) => (c.left ? -1 : i)).filter((i) => i >= 0);
+  const stop = steps.find((i) => cards[i].checked);
+  const first = stop === undefined ? steps[0] : stop;
+  return cards.map((c, i) => (c.left || i === first ? 0 : -1));
+}
+
+/* The tool cards of Column lineage as radios, for the keyboard: the arrows move
+   the focus over the cards and pick nothing, since a pick regenerates collin's
+   cache or starts Snowflake's script on the server. Enter or Space, the
+   button's own click, picks. */
+function rovingCards(box) {
+  const cards = [...box.querySelectorAll('.radio')];
+  const left = (c) => c.getAttribute('aria-disabled') === 'true' || !!c.dataset.install;
+  cardTabStops(cards.map((c) => ({ checked: c.getAttribute('aria-checked') === 'true', left: left(c) })))
+    .forEach((tab, i) => { cards[i].tabIndex = tab; });
+  const steps = cards.filter((c) => !left(c));
+  box.onkeydown = (e) => {
+    const at = steps.indexOf(document.activeElement);
+    const to = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: steps.length - 1 }[e.key];
+    if (at < 0 || to === undefined) return;
+    e.preventDefault();
+    steps[(to + steps.length) % steps.length].focus();
+  };
 }
 
 /* Draws `box` again with `paint`, unless it would come out the same: then
@@ -13229,6 +13452,10 @@ function redrawIfChanged(box, paint) {
 function paintSettingsLive() {
   if (!panelOpen('settings')) return;
   redrawIfChanged($('#settings-nav'), paintSettingsNav);
+  // The tool whose edges are on screen colours the head of its section.
+  const head = $('#settings-view .sethead');
+  const sec = settingsSections(settingsNow()).find((x) => x.key === S.settingsSection);
+  if (head && sec && 'tool' in sec && head.dataset.tool !== sec.tool) head.dataset.tool = sec.tool;
   for (const box of $$('#settings-view [data-live]')) redrawIfChanged(box, paintSettingsBlock);
 }
 
@@ -13243,78 +13470,132 @@ function repaintSettings() {
   });
 }
 
-/* A menu's rows, drawn in a section, are buttons on a page: a screen reader
-   is told which is picked, not that a menu is open. */
-function unmenu(box) {
-  for (const e of box.querySelectorAll('[role^=menuitem]')) {
-    const checked = e.getAttribute('aria-checked');
-    e.removeAttribute('role');
-    e.removeAttribute('aria-checked');
-    if (checked !== null) e.setAttribute('aria-pressed', checked);
-  }
-  box.removeAttribute('role');
-}
-
 /* Where dbt looks for the profile, and the button that opens it (0049). */
 function paintSetProfile(box) {
   const p = S.profiles;
   const where = 'dbt looks for it in DBT_PROFILES_DIR, then in the project, then in .dbt in your home folder';
-  if (!p) return box.replaceChildren(jel('p', 'setnote warn', `Nowhere to look for one: ${where}, and there is no home folder. `
+  const warn = (text) => jel('span', 'setnote warn', text);
+  if (!p) return box.replaceChildren(warn(`Nowhere to look for one: ${where}, and there is no home folder. `
     + 'Set DBT_PROFILES_DIR before starting dbt-edith.'));
-  const line = jel('div', 'setline');
-  line.append(jel('code', 'setpath', p.path));
+  const shown = [jel('code', 'mono', p.path)];
   if (p.found && !p.refused) {
     const open = jel('button', 'btn sm', 'Open profiles.yml');
+    open.type = 'button';
     open.dataset.key = 'profile';
     // Its tab rolls the panel up, as any file opened does.
     open.addEventListener('click', openProfiles);
-    line.append(open);
+    shown.push(open, okLine('ok', 'found'));
+  } else {
+    shown.push(warn(p.refused ? `Not opened: ${p.refused}.`
+      : `None there: ${where}, and a dbt command that connects fails until there is one.`));
   }
-  const said = p.refused ? `Not opened: ${p.refused}.`
-    : p.found ? 'Who dbt connects as, and how, read by every dbt command in the terminal. Its passwords and keys never '
-      + 'reach this page: the editor shows a placeholder in their place, and leaving it keeps the value.'
-      : `None there: ${where}, and a dbt command that connects fails until there is one.`;
-  box.replaceChildren(line, jel('p', profileWarning(p) ? 'setnote warn' : 'setnote', said));
+  box.replaceChildren(...shown);
+}
+
+/* What a .env file line says beside its name: the DBT_TARGET it holds, how
+   many of the variables the location config reads it defines, and how often
+   it reproduces what dbt parsed, each left out while unknown. A hidden file
+   says so instead. `refs` is the variables the config reads. */
+function envLineSummary(f, refs) {
+  if (f.hidden) return 'hidden';
+  const parts = [];
+  if (f.target) parts.push(`DBT_TARGET=${f.target}`);
+  if (f.coverage && refs.length) parts.push(`${f.coverage.defined}/${refs.length} variables`);
+  const a = f.agreement;
+  if (a && a.checked) parts.push(`${Math.round((1000 * a.equal) / a.checked) / 10}% as parsed`);
+  return parts.join(' · ');
 }
 
 /* The environments, once the .env files are read again, as the dialog this
-   replaces read them, for a file added or edited since: which one resolves
-   the Catalog's locations, then what each is named and whether it is
+   replaces read them, for a file added or edited since: the files, which one
+   resolves the Catalog's locations, then what each is named and whether it is
    offered. A save has read them already. */
-async function drawSetEnvs(box, { read = true } = {}) {
-  box.replaceChildren(jel('p', 'setnote', 'Reading the .env files…'));
+async function drawSetEnvs(group, { read = true } = {}) {
+  group.replaceChildren();
+  setGroupHead(group, 'Environments');
+  const about = 'Where the Catalog resolves each model\'s database and schema, one environment per file.';
+  const files = setRow(group, '.env files', about);
+  files.append(jel('span', 'setnote', 'Reading the .env files…'));
   if (read || !S.envs) await loadEnvs();
-  if (!S.envs) return box.replaceChildren(jel('p', 'setnote warn', 'The .env files could not be read.'));
+  if (!S.envs) return files.replaceChildren(jel('span', 'setnote warn', 'The .env files could not be read.'));
   if (!envsInUse()) {
-    return box.replaceChildren(jel('p', 'setnote', 'No location config reads an env var, so no .env file changes '
+    return files.replaceChildren(jel('span', 'setnote', 'No location config reads an env var, so no .env file changes '
       + 'what the Catalog shows.'));
   }
-  const pick = jel('div', 'envmenu inpanel');
+  const list = jel('div', 'envlist');
+  for (const f of S.envs.files) {
+    const line = jel('div', 'envline');
+    const said = envLineSummary(f, S.envs.referenced);
+    const sum = jel('span', 'dim mono');
+    said.split(' · ').forEach((part, i) => sum.append(...(i ? [' · '] : []), jel('span', '', part)));
+    line.append(envTag(f.name, envTone(f.name)), jel('span', 'mono', f.file), sum);
+    list.append(line);
+  }
+  files.replaceChildren(list);
+  const pick = setRow(group, 'In the status bar', ['The environment the Catalog and the status bar show first.',
+    'Which .env file the Catalog\'s Location resolves database, schema and alias with, its env vars in place of the ones dbt '
+    + 'had when it parsed, as the env pill in the status bar says.']);
   pick.dataset.live = 'envpick';
   paintSetEnvPick(pick);
-  box.replaceChildren(jel('p', 'setnote', 'Which .env file the Catalog\'s Location resolves database, schema and alias '
-    + 'with, its env vars in place of the ones dbt had when it parsed, as the env pill in the status bar says.'),
-  pick, envManageForm(() => drawSetEnvs(box, { read: false })));
+  setRow(group, 'Names', 'Leave a name empty for the automatic one, the file\'s suffix in capitals. A hidden file is not offered, '
+    + 'here or in the Catalog\'s environment menu.', { wide: true })
+    .append(envManageForm(() => drawSetEnvs(group, { read: false })));
 }
 
+/* The environment the Catalog shows, one radio each, in the colour of its
+   name; the manifest, or the developer's own compile, only outlined. The
+   arrows move and pick together, as the theme cards do. */
 function paintSetEnvPick(box) {
-  box.replaceChildren(...(envsInUse() ? envChoices().map((c) => envRow(c, () => selectEnv(c.file))) : []));
-  unmenu(box);
+  if (!envsInUse()) return box.replaceChildren();
+  // The manifest first, as the board orders it; the menus keep theirs.
+  const listed = envChoices();
+  const choices = [...listed.filter((c) => c.file === ''), ...listed.filter((c) => c.file !== '')];
+  const seg = jel('div', 'seg2 envseg');
+  seg.setAttribute('role', 'radiogroup');
+  seg.setAttribute('aria-label', 'Environment shown');
+  const stop = choices.some((c) => c.current) ? -1 : 0;
+  choices.forEach((c, i) => {
+    const b = jel('button', '', c.label);
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(c.current));
+    b.dataset.key = 'env:' + c.label;
+    b.dataset.tone = c.tone;
+    b.tabIndex = c.current || i === stop ? 0 : -1;
+    b.title = c.title || c.sub;
+    b.addEventListener('click', () => selectEnv(c.file));
+    seg.append(b);
+  });
+  seg.onkeydown = (e) => {
+    const all = [...seg.querySelectorAll('button')];
+    const at = all.indexOf(document.activeElement);
+    const to = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 }[e.key];
+    if (at < 0 || to === undefined) return;
+    e.preventDefault();
+    const next = (to + all.length) % all.length;
+    // Focused first: the redraw the pick causes puts the focus back by data-key.
+    all[next].focus();
+    selectEnv(choices[next].file);
+  };
+  box.replaceChildren(seg);
 }
 
 /* The venv the status bar names, why, and the line that activates each one
    a click can offer (0072). */
 function paintSetPython(box) {
-  const { text, title, state, offer } = venvStatus(S.venv || {}, S.termVenv);
-  const pill = jel('span', 'venvpill', text);
-  pill.dataset.state = state;
-  const line = jel('div', 'setline');
-  line.append(pill);
-  box.replaceChildren(line, ...title.split('\n').filter(Boolean).map((l) => jel('p', 'setnote', l)));
-  if (!offer.length) return;
+  const v = venvStatus(S.venv || {}, S.termVenv);
+  const path = jel('div', 'pyline');
+  path.append(v.path ? jel('code', 'mono', v.path) : jel('span', 'dim', 'no venv'));
+  const chips = jel('div', 'chips');
+  if (v.python) chips.append(jel('span', 'chip', 'py ' + v.python));
+  for (const d of v.dbt.split(', ').filter(Boolean)) chips.append(jel('span', 'chip', d));
+  chips.append(okLine({ on: 'ok', off: 'warn' }[v.state] || 'none', v.say));
+  box.replaceChildren(path, chips, ...v.notes.split('\n').filter(Boolean).map((l) => jel('p', 'setnote', l)));
+  if (!v.offer.length) return;
   const bar = jel('div', 'setactions');
-  for (const e of offer) {
+  for (const e of v.offer) {
     const b = jel('button', 'btn sm', `Activate ${e.name} in the terminal`);
+    b.type = 'button';
     b.dataset.key = 'venv:' + e.path;
     b.title = [e.activation, e.dbt && 'dbt: ' + e.dbt].filter(Boolean).join('\n');
     b.addEventListener('click', () => sendToTerminal(e.activation, false, null, 'the settings'));
@@ -13323,33 +13604,143 @@ function paintSetPython(box) {
   box.append(bar, jel('p', 'setnote', 'Each types the line that activates it, and leaves Enter to you.'));
 }
 
+/* When the next look for a newer release is due, in the Updates section's
+   foot: updateLook says it with the last one, for Edith's menu. */
+function nextLook(u, now) {
+  if (!u || u.off || u.checking) return '';
+  if (u.next > now) return `The next look at GitHub is ${whenLooked(u.next, now)}.`;
+  return u.next ? 'The next look at GitHub is due now.' : '';
+}
+
+/* The Updates section: this build and the newest, the releases since, how to
+   install the one on offer, and the look for a newer one. Edith's menu draws
+   the same answers in a popup (paintUpdateMenu). */
+function paintSetUpdates(box) {
+  const u = S.update || { current: S.version };
+  const o = updateOffer(u, S.os);
+  const now = Math.floor(Date.now() / 1000);
+  const kids = [];
+  const card = (head, value, under, fresh, figure) => {
+    const c = jel('div', fresh ? 'vcard new' : 'vcard');
+    c.append(jel('div', 'vk', head), jel('div', figure ? 'vv mono' : 'vv words', value), jel('div', 'vs', under));
+    return c;
+  };
+  const cards = jel('div', 'vcards');
+  // The next look is the foot's to say, so the card names the last one only.
+  const last = updateLook(Object.assign({}, u, { next: 0 }), now);
+  const newest = u.newer ? u.latest : u.off ? 'Not looked for' : u.latest ? (u.latest === u.current ? 'This is the newest' : u.latest)
+    : u.checking ? 'Looking…' : u.failed ? 'No answer from GitHub' : 'Not looked for yet';
+  // A version is a figure; anything else is words, which the card does not say
+  // twice: with no look made, nor failed, nor on its way, there is nothing to add.
+  const figure = !!(u.newer || (u.latest && u.latest !== u.current && !u.off));
+  const under = !u.off && !u.checking && !u.checked && !u.failed ? '' : last;
+  cards.append(card('This build', u.current || S.version || '?', S.build || '', false, true),
+    card('Newest', newest, under, !!u.newer, figure));
+  kids.push(cards);
+  const unsafe = pathWarning(S.pathReadsCwd, S.pathEntry);
+  if (unsafe.length) {
+    const g = jel('section', 'sgroup');
+    unsafe.forEach((parts, i) => {
+      const p = jel('p', i ? 'sp2' : 'sp2 pathwarn');
+      for (const part of parts) p.append(part.code === undefined ? document.createTextNode(part) : jel('code', '', part.code));
+      g.append(p);
+    });
+    kids.push(g);
+  }
+  if (o) {
+    const link = (href, className, title, key) => {
+      const a = jel('a', className);
+      a.href = href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      if (title) a.title = title;
+      a.dataset.key = key;
+      return a;
+    };
+    const listed = releaseRows(u);
+    const rel = jel('section', 'sgroup');
+    if (listed) {
+      setGroupHead(rel, listed.head);
+      for (const r of listed.rows) {
+        const a = link(r.href, 'relline', r.tip, 'rel:' + r.version);
+        a.append(jel('span', 'mono', r.version), jel('span', '', r.title));
+        rel.append(a);
+      }
+      if (listed.older) {
+        const a = link(listed.older.href, 'relline', listed.older.tip, 'rel:older');
+        a.append(jel('span', 'mono', ''), jel('span', '', listed.older.label));
+        rel.append(a);
+      }
+      kids.push(rel);
+    } else if (o.notes) {
+      const a = link(o.notes, 'relline', 'The release notes, on GitHub', 'rel:notes');
+      a.append(jel('span', 'mono', ''), jel('span', '', 'What changed'));
+      rel.append(a);
+      kids.push(rel);
+    }
+    const how = jel('section', 'sgroup');
+    setGroupHead(how, 'How to install it');
+    if (o.installed) how.append(jel('p', 'sp2 updready', 'Installed: restart dbt-edith to run it'));
+    if (o.step) how.append(jel('p', 'sp2', o.step));
+    // One command per button, the recommended first and drawn as the primary
+    // one; each types its line into the terminal and leaves Enter to you (0123).
+    o.options.forEach((option, i) => {
+      const run = jel('button', i ? 'btn' : 'btn primary', option.button);
+      run.type = 'button';
+      run.dataset.key = 'upd:' + option.kind;
+      run.title = option.command;
+      run.addEventListener('click', () => {
+        sendToTerminal(option.command, false, () => notice(updateNotice('typed', option.kind)), 'the settings');
+        watchInstall();
+      });
+      const cmd = jel('div', 'codebox');
+      cmd.append(jel('div', 'pre', option.command), run);
+      how.append(cmd);
+    });
+    for (const line of o.lines) how.append(jel('p', 'sp2', line));
+    kids.push(how);
+  }
+  if (!u.off) {
+    const foot = jel('div', 'setfoot');
+    // Not `disabled`, which takes no focus: the focus goes back to it once drawn.
+    const look = jel('button', 'btn', u.checking ? 'Looking…' : 'Check for updates');
+    look.type = 'button';
+    look.dataset.key = 'upd-check';
+    if (u.checking) look.setAttribute('aria-disabled', 'true');
+    look.addEventListener('click', () => { if (!u.checking) checkForUpdate(); });
+    foot.append(jel('span', 'dim', nextLook(u, now)), jel('div', 'grow'), look);
+    kids.push(foot);
+  }
+  box.replaceChildren(...kids);
+}
+
 /* The tour, the shortcut list and GitHub, each one click away. */
 function drawSetHelp(body) {
-  const tour = setBlock(body, 'The tour');
-  const go = jel('button', 'btn sm primary', 'Give me a tour');
+  const group = setGroup(body);
+  const go = jel('button', 'btn primary', 'Give me a tour');
   go.type = 'button';
   go.addEventListener('click', startTour);
-  tour.append(jel('p', 'setnote', 'It opens a model of this project and points at what each part of the page does with '
-    + 'it. It runs nothing and changes no setting, and puts the page back as it was when it ends.'), go);
-  const keys = setBlock(body, 'Shortcuts');
-  const list = jel('button', 'btn sm', 'Every shortcut');
+  setRow(group, 'Tour', ['A walk through the app, one step per part, on your own project.',
+    'It opens a model of this project and points at what each part of the page does with it. It runs nothing and '
+    + 'changes no setting, and puts the page back as it was when it ends.']).append(go);
+  const list = jel('button', 'btn', 'Show them');
   list.type = 'button';
   list.addEventListener('click', toggleShortcuts);
-  keys.append(jel('p', 'setnote', `Also behind ${keyLabel('?', IS_MAC)} outside a text box, and ${keyLabel('F1', IS_MAC)} `
-    + 'from anywhere.'), list);
-  const gh = setBlock(body, 'dbt-edith on GitHub');
+  setRow(group, 'Keyboard shortcuts', [['Every key the app answers to. ', jel('kbd', '', keyLabel('?', IS_MAC)),
+    ' outside a text box, ', jel('kbd', '', keyLabel('F1', IS_MAC)), ' from anywhere.']]).append(list);
+  const sc = setRow(group, 'dbt-edith on GitHub', ['Issues, releases and the README.',
+    'Both open GitHub in a new tab; an issue or a star needs a GitHub account.']);
   const links = githubLinks(S.repo, S.version, S.build, S.os);
-  const bar = jel('div', 'setactions');
   for (const [href, label, title] of [[links.issue, 'Raise an issue or a request', 'A new issue on GitHub, your version already in it'],
     [links.star, 'Give dbt-edith a star', 'The repository on GitHub, whose Star button is at the top right']]) {
-    const a = jel('a', 'btn sm', label);
+    const a = jel('a', 'btn', label);
     a.href = href;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.title = title;
-    bar.append(a);
+    sc.append(a);
   }
-  gh.append(bar, jel('p', 'setnote', 'Both open GitHub in a new tab; an issue or a star needs a GitHub account.'));
+  sc.append(jel('span', 'dim mono', 'v' + (S.version || '?')));
 }
 
 // -------------------------------------------------------------- hover card --
@@ -18945,11 +19336,12 @@ function walkSwitch(toggle, key, now, real) {
   const prev = S.hw.sides.get(key);
   S.hw.sides.set(key, now);
   if (!switchWalks(prev, now, hwOn()) || hwReduced()) return;
-  const there = 'translateX(15px) scaleX(-1)';
   const knob = toggle.firstChild;
   // A frame later: an animation on a node not yet in the page starts too early.
   requestAnimationFrame(() => {
     if (!knob.isConnected || !knob.animate) return;
+    // The run is the track's width less the zombie's: a narrower track sets its own.
+    const there = `translateX(${getComputedStyle(toggle).getPropertyValue('--zrun').trim() || '15px'}) scaleX(-1)`;
     const opts = { duration: 300, easing: 'ease-out' };
     knob.animate([{ transform: now ? 'none' : there }, { transform: now ? there : 'none' }], opts);
     knob.animate([{ top: '-2px' }, { top: '-5px', offset: 0.4 }, { top: '-2px' }], opts);
@@ -18961,11 +19353,9 @@ function walkSwitch(toggle, key, now, real) {
 
 /* A switch row of the Theme section, drawn as Snowflake's is, the zombie of
    the Halloween theme walking its knob. `real` tells the box in the page from
-   the probe redrawIfChanged compares with. */
-function switchRow(key, label, about, on, onClick, real) {
-  const row = jel('div', 'setrow');
-  // The switch's track takes its colour from --tool, whatever the theme: a section sets one.
-  row.dataset.tool = 'theme';
+   the probe redrawIfChanged compares with; `tag` follows the name. */
+function switchRow(key, label, about, on, onClick, real, tag = null) {
+  const { row, sc } = buildRow(tag ? [label, tag] : label, about);
   const toggle = jel('button', 'switch');
   toggle.type = 'button';
   toggle.dataset.key = key;
@@ -18974,9 +19364,8 @@ function switchRow(key, label, about, on, onClick, real) {
   toggle.setAttribute('aria-label', label);
   toggle.append(jel('span', 'knob'));
   walkSwitch(toggle, key, on, real);
-  const text = jel('div', 'setcol');
-  text.append(jel('span', 'setlbl', label), jel('p', 'setnote', about));
-  row.append(text, toggle);
+  sc.append(toggle);
+  row.classList.add('press');
   row.addEventListener('click', onClick);
   return row;
 }
@@ -19030,40 +19419,54 @@ function paintThemeCards(box) {
 
 /* Follow the system, a switch of its own. */
 function paintThemeFollow(box) {
-  const row = switchRow('theme-follow', 'Follow the system', 'Light while the system is light, Night once it turns dark.', !!S.look.follow,
+  // The switch's track takes its colour from --tool, whatever the theme: a group sets one.
+  box.dataset.tool = 'theme';
+  box.replaceChildren(switchRow('theme-follow', 'Follow the system', 'Light while the system is light, Night once it turns dark.', !!S.look.follow,
     // Off, it keeps the theme on screen.
-    () => setLook(S.look.follow ? { follow: false, theme: themeNow() } : { follow: true }), box.isConnected);
-  row.querySelector('.setlbl').after(jel('span', 'newtag', 'new'));
-  box.replaceChildren(row);
+    () => setLook(S.look.follow ? { follow: false, theme: themeNow() } : { follow: true }), box.isConnected, jel('span', 'newtag', 'new')));
 }
 
 /* What only the Halloween theme has: its apparitions and its box style.
    Dimmed while another theme is on, its controls still usable. */
 function paintThemeHalloween(box) {
   const on = themeNow() === 'halloween';
-  box.classList.toggle('dim', !on);
-  const head = jel('div', 'sghead', 'With Halloween');
-  if (!on) head.append(jel('span', 'sgnote', 'once the Halloween theme is on'));
-  const apparitions = switchRow('look-apparitions', 'Random apparitions', 'A ghost crossing the page and a pair of eyes in the dark, now and then.',
-    S.look.apparitions !== false, () => setLook({ apparitions: S.look.apparitions === false }), box.isConnected);
+  box.dataset.tool = 'theme';
+  box.classList.toggle('faded', !on);
+  box.replaceChildren();
+  setGroupHead(box, 'With Halloween', on ? '' : 'once the Halloween theme is on');
+  box.append(switchRow('look-apparitions', 'Random apparitions', 'A ghost crossing the page and a pair of eyes in the dark, now and then.',
+    S.look.apparitions !== false, () => setLook({ apparitions: S.look.apparitions === false }), box.isConnected));
   // The lineage's boxes, one of three: a pure CSS switch, so the canvas is not drawn again.
   const styles = [['tombstone', 'Headstone'], ['coffin', 'Coffin'], ['grimoire', 'Spellbook']];
-  const pick = jel('div', 'setrow setpick');
-  const text = jel('div', 'setcol');
-  text.append(jel('span', 'setlbl', 'Box style'), jel('p', 'setnote', 'How the lineage draws its boxes.'));
-  const seg = jel('span', 'seg');
-  seg.setAttribute('role', 'group');
+  const now = hwBoxes(S.look.boxes);
+  const seg = jel('div', 'seg2');
+  seg.setAttribute('role', 'radiogroup');
   seg.setAttribute('aria-label', 'Box style');
   for (const [value, label] of styles) {
-    const b = jel('button', 'segbtn' + (hwBoxes(S.look.boxes) === value ? ' active' : ''), label);
+    const b = jel('button', '', label);
     b.type = 'button';
     b.dataset.key = 'look-boxes-' + value;
-    b.setAttribute('aria-pressed', String(hwBoxes(S.look.boxes) === value));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(now === value));
+    b.tabIndex = now === value ? 0 : -1;
     b.addEventListener('click', () => setLook({ boxes: value }));
     seg.append(b);
   }
-  pick.append(text, seg);
-  box.replaceChildren(head, apparitions, pick);
+  // On the group built here: it is drawn again with it, so no listener piles up.
+  seg.onkeydown = (e) => {
+    const all = [...seg.querySelectorAll('button')];
+    const at = all.indexOf(document.activeElement);
+    const to = { ArrowRight: at + 1, ArrowDown: at + 1, ArrowLeft: at - 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 }[e.key];
+    if (at < 0 || to === undefined) return;
+    e.preventDefault();
+    const next = (to + all.length) % all.length;
+    // Focused first: the redraw the pick causes puts the focus back by data-key.
+    all[next].focus();
+    setLook({ boxes: styles[next][0] });
+  };
+  const { row, sc } = buildRow('Box style', 'How the lineage draws its boxes.');
+  sc.append(seg);
+  box.append(row);
 }
 
 const HW_GHOST = '<svg viewBox="0 0 84 90"><use href="#hw-s-cross"/></svg>';
@@ -20450,7 +20853,7 @@ function paintUpdateMenu(menu) {
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
   const u = S.update || { current: S.version };
   const o = updateOffer(u, S.os);
-  const from = menu.classList.contains('inpanel') ? 'the settings' : 'Edith\'s menu';
+  const from = 'Edith\'s menu';
   // Drawn anew under the focus, at a click and every two seconds of a look:
   // it goes back to the same row, found by its link since an answer can add
   // rows above it, or to the button, without scrolling the menu to it.
@@ -20907,7 +21310,10 @@ function venvKeys(v, e) {
    active venv, 'off' for one found but not active, 'none' for no venv.
    `offer` is what a click offers to type, and `line` the one it types at
    once, '' when it lists them instead. `name` and `py` are the venv's
-   folder name and Python version where known, for the terminal's own chip. */
+   folder name and Python version where known, for the terminal's own chip. The
+   tooltip's lines come apart too, for the settings' Python row: `path`, the
+   versions read (`python`, `dbt`), the sentence that says the state (`say`) and
+   the lines left (`notes`). */
 function venvStatus(v, reported) {
   const found = v.found || [];
   const py = (e) => (e.python ? ' · py ' + e.python : '');
@@ -20916,35 +21322,39 @@ function venvStatus(v, reported) {
     return names.length ? 'also found: ' + names.join(', ') : '';
   };
   const lines = (...parts) => [...parts, committedNote(v)].filter(Boolean).join('\n');
+  // The tooltip is the path, the dbt versions, the state's sentence, then the notes.
+  const whole = (e, path, say, shown) => ({
+    path, python: (e && e.python) || '', dbt: (e && e.dbt) || '', say, notes: lines(also(shown)),
+    title: lines(path, e && e.dbt && ('dbt: ' + e.dbt), say, also(shown)),
+  });
   if (reported) {
     const e = venvMatch(v, reported);
     if (!e) {
       const name = reported.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-      return { text: 'venv ' + name, name, py: '', state: 'on', offer: [], line: '',
-        title: lines(reported, 'activated in the terminal; not a venv dbt-edith read, so its versions are not shown', also(null)) };
+      return Object.assign(whole(null, reported, 'activated in the terminal; not a venv dbt-edith read, so its versions are not shown', null),
+        { text: 'venv ' + name, name, py: '', state: 'on', offer: [], line: '' });
     }
-    return { text: 'venv ' + e.name + py(e), name: e.name, py: e.python || '', state: 'on', offer: [], line: '',
-      title: lines(e.path, e.dbt && ('dbt: ' + e.dbt), 'activated in the terminal', also(e)) };
+    return Object.assign(whole(e, e.path, 'activated in the terminal', e),
+      { text: 'venv ' + e.name + py(e), name: e.name, py: e.python || '', state: 'on', offer: [], line: '' });
   }
   if (!v.name) {
-    return { text: 'no venv', name: '', py: '', state: 'none', offer: [], line: '', title: lines(reported === ''
+    const say = reported === ''
       ? 'none activated in the terminal, and none found in the project'
-      : 'no VIRTUAL_ENV when dbt-edith started, and none found in the project') };
+      : 'no VIRTUAL_ENV when dbt-edith started, and none found in the project';
+    return Object.assign(whole(null, '', say, null), { text: 'no venv', name: '', py: '', state: 'none', offer: [], line: '', notes: lines(), title: lines(say) });
   }
   const active = reported === undefined && v.source === 'activated';
   const offer = active ? [] : venvOffer(v);
-  return {
+  const say = active ? 'activated when dbt-edith started'
+    : reported === '' ? 'not activated in the terminal; source its activate script there'
+      : 'found in the project, not activated when dbt-edith started; source its activate script in the terminal';
+  return Object.assign(whole(v, v.path, say, v), {
     text: (active ? 'venv ' : 'venv (inactive) ') + v.name + py(v),
     name: v.name, py: v.python || '',
     state: active ? 'on' : 'off',
     // Typed at once only when it is the venv the bar names; any other is picked.
     offer, line: offer.length === 1 && offer[0] === v ? v.activation : '',
-    title: lines(v.path, v.dbt && ('dbt: ' + v.dbt),
-      active ? 'activated when dbt-edith started'
-        : reported === '' ? 'not activated in the terminal; source its activate script there'
-          : 'found in the project, not activated when dbt-edith started; source its activate script in the terminal',
-      also(v)),
-  };
+  });
 }
 
 /* The terminal's own chip says it shorter than the status bar's pill, in

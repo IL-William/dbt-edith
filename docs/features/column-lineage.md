@@ -7,8 +7,10 @@ Edges between columns, from one of three tools picked in the settings.
 ![The amount column of stg_payments, from its seed to every column of orders and customers built from it](../shots/column-lineage.png)
 
 Column-level edges come from one of three tools, picked in the settings'
-Column lineage section, behind the gear in the top bar, which says above the
-list which one is on screen. The same choices sit in a menu in Catalog >
+Column lineage section, behind the gear in the top bar, which says in its first
+row, as a chip in the tool's colour, which one is on screen, and lists the tools
+as cards under it, each with the sentence that says what picking it does or what
+it lacks. The same choices sit in a menu in Catalog >
 Columns, and the settings' rail names the tool on screen beside the section.
 
 | | Tool | Where its edges come from |

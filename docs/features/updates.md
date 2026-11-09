@@ -8,21 +8,25 @@ your day knows what came out overnight, wherever you are. When one is newer, a
 pill after the version in the status bar says so and the Updates arrow, a down
 arrow onto a line, marks Edith at the top left. Resting the pointer on Edith
 opens a menu, as a click does, and the pill opens the same in the Updates
-section of the settings: the version and build you run, every release since
-yours by the title of the pull request that released it, each linked to its
-notes, and, for a binary installed or built from a clone on that machine, the
+section of the settings, drawn as cards: the version and build you run beside
+the newest release, in the accent when it is newer, every release since yours
+by the title of the pull request that released it, each linked to its notes,
+and, for a binary installed or built from a clone on that machine, the
 clone brought up to the release and the install typed into the terminal for you to run, or for a release's own Windows `.exe`
 the download of the next one (below); restart dbt-edith once it finishes.
-Otherwise it says why it has no command. The menu also says when GitHub last
+Otherwise it says why it has no command. The menu says when GitHub last
 answered, or what git said when it could not reach it, and when it asks next,
-and Check for updates asks again at once. Nothing about your project is sent, a
+and Check for updates asks again at once; the section says the answer under the
+newest release and keeps the next look and the button in its foot, none of them
+when the check is off. Nothing about your project is sent, a
 failed look is tried again within the hour and stays out of the status bar, and
 `--no-update-check` turns it off (0068, 0079).
 
 ![The Updates section of the settings: the build you run, the two releases since it, and a button to check again](../shots/updates.png)
 
 The update is the menu's button, `Update to` the newest release, and right under
-it is how it goes: it types the command into the terminal below, Enter there
+it is how it goes (the section lists it under *How to install it*, each command
+in a box with its button beside it, the recommended one filled): it types the command into the terminal below, Enter there
 runs it, a minute or two, and dbt-edith then has to be stopped where it was
 started and started again, since the version that started serves the page until
 then. A card in the middle of the page says so once the command is typed (Press

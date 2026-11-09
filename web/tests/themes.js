@@ -204,7 +204,7 @@ ok('and sits under its button, held inside the window from the right',
 ok('the cards are radios, the arrows move and pick, the checked one is the tab stop',
   /setAttribute\('role', 'radiogroup'\)/.test(src) && /setAttribute\('role', 'radio'\)/.test(src) && /ArrowRight: at \+ 1/.test(src)
   && /card\.tabIndex = t\.id === shown \? 0 : -1/.test(src) && /Home: 0, End: cards\.length - 1/.test(src));
-ok('the Halloween group is dimmed, its controls left usable', /box\.classList\.toggle\('dim', !on\)/.test(src) && /\.setgroup\.dim \{ opacity: \.55; \}/.test(css) && !/\.setgroup\.dim[^{]*\{[^}]*pointer-events/.test(css));
+ok('the Halloween group is dimmed, its controls left usable', /box\.classList\.toggle\('faded', !on\)/.test(src) && /\.sgroup\.faded \{ opacity: \.55; \}/.test(css) && !/\.sgroup\.faded[^{]*\{[^}]*pointer-events/.test(css));
 
 print('\n--- the top bar ---');
 ok('the page starts in Night, so there is no flash for most', /<html lang="en" data-theme="night">/.test(html));

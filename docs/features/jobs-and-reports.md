@@ -100,7 +100,16 @@ behind the gear in the top bar, which **Sources…** and **Add a source**, in
 the dock's tab row beside the Jobs tab and in the Job coverage section of
 Reports, open too: one or more
 folders or files, absolute or relative to the project, each an Airflow or a
-dbt Cloud source. **Browse…**
+dbt Cloud source. Each source is a row, named by its label or its kind, with
+its path and, once read, what it found (`1 DAG · 3 tasks`, `2 jobs · 5 steps`,
+the files refused, or why nothing was read), and beside the heading where the
+sources are kept. **Edit** unfolds that source's form under its row, and folds
+it again with what was typed kept; **Add a source** adds an Airflow one,
+unfolded, its picker open, and its kind menu turns it into a dbt Cloud one.
+While a form is unfolded or the list differs from what was read, the foot
+under the rows holds the choice of where to keep them, the issue found, and
+**Save and read**; with nothing to save the group is only the rows and the
+button. **Browse…**
 beside a path, open already on a source being added, lists one folder at a
 time, its folders and YAML files only: a click opens a folder or picks a file,
 and **Use** writes it from the project when it sits within two folders above
