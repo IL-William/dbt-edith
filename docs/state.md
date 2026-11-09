@@ -2884,7 +2884,7 @@ of its own, and each panel updates the tour, its page under
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), ~~Compiled~~ (2.18.0, 0164),
-    Git, ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and the design docs.
+    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and the design docs.
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
@@ -3142,6 +3142,45 @@ of its own, and each panel updates the tour, its page under
       writes `{{ this }}`, a source whose name holds a dot falls back to
       `source('<its node name>')`, and a version written as a string reads
       `v=2`, not `v='2'`.
+
+55. **The Git tab's limits (0165, 2.19.0).**
+    - The inline layout marks the lines that changed, not the words inside
+      them, where side by side tints both. A line changed in one word shows as
+      the old line and the new one.
+    - A file without a final newline reads in the inline layout as one with it:
+      the newline ends its line and is no line of its own, so a change of that
+      alone shows in the inline layout as nothing. Side by side shows it as a
+      last empty line, as the editor does.
+    - Where a file ends in a newline, Inline reads it as git does and side by
+      side as the editor does, with one more, empty, last line: an empty line
+      and a line of text added at the end show as the empty line first in Inline
+      (as `git diff` does) and the text first side by side.
+    - The layout is the page's, not a setting (rejected in 0165): a reload
+      returns to side by side.
+    - After the pane is made narrower or wider, side by side is laid out and
+      aligned again after a short wait, so wrapped lines are briefly out of line
+      with their counterparts. It leans on the addon's own flag (`dealigned`).
+    - The board's `Commit` shortcut is drawn as `Ctrl+Enter` outside a Mac, as
+      the other keycaps are, not `Ctrl+↩`.
+    - The commit button's words for a merge with a file still conflicted
+      (`Resolve the conflicts first`) are not on the board, which has no merge.
+    - What the board leaves out stays: the Conflicts section, the merge banner
+      with Abort merge, Keep ours, theirs and both in the editor, the change
+      ruler, the notice that git is paused, the branch switcher and Unstage
+      all. They are drawn in the new rows, not as the board draws them.
+    - A row's icon and the diff head's take a model's colour only once its
+      folder's marks are known; the first paint of a row can be neutral.
+    - The diff head's folder is cut at its left when long (`dirOf`), where the
+      board shows it whole.
+    - Looked at in headless Chrome on Jaffle Shop in Night, Graphite, Light and
+      Halloween, both layouts; not at a pane resized with a long diff open, nor
+      while a commit runs: the realignment on a resize and the commit's words
+      are read from the code.
+    - A folded stretch sits a few pixels above the next line, where the board's
+      row is flush: the replaced text keeps the line's own height beside it.
+    - The head's `line endings differ` note calls a side CRLF when any of its
+      lines ends that way: a HEAD with mixed endings against a working file all
+      in CRLF gets no note and no marked line, and a lone `\r` reads as LF.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

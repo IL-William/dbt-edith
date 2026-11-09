@@ -181,6 +181,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | add a framework, a bundler, or upgrade CodeMirror | [0004](docs/decisions/0004-frontend-without-a-build-step.md) |
 | touch a frontend change that seems to have no effect | [0005](docs/decisions/0005-embedded-in-release-disk-in-debug.md) |
 | touch `src/git.rs` | [0007](docs/decisions/0007-git-through-the-cli.md), [0121](docs/decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md) |
+| change the Git tab's branch row, its rows or its commit button, or how a diff lays out, wraps or folds its lines | [0165](docs/decisions/0165-the-git-tab-says-how-far-it-is-from-origin-in-words-and-the-diff-wraps-its-lines.md), [0007](docs/decisions/0007-git-through-the-cli.md) |
 | touch `src/envs.rs`, or evaluate Jinja | [0009](docs/decisions/0009-env-resolution-by-scanner.md) |
 | change the location table or the environment selector | [0010](docs/decisions/0010-moved-compares-parsed-with-built.md) |
 | persist anything, or add a write endpoint | [0011](docs/decisions/0011-settings-outside-the-project.md) |

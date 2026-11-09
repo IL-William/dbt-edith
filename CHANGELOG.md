@@ -13,6 +13,35 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.19.0 - 2026-11-09
+
+- Say how far the branch is from origin in words in the Git tab's first row,
+  `1 behind` in amber and `2 ahead` in grey beside the branch, and let the
+  titles of fetch, pull and push say what each would do, `Pull 1 commit
+  (fast-forward only)` or `Nothing to push`, in place of the badges (0165).
+- Draw each changed file as its letter, its icon and its whole name with the
+  folder after it, Stage and Unstage appearing on hover or when the row has the
+  keyboard, and open its diff on Enter or Space (0165).
+- Write the section actions as buttons in sentence case, `Stage all` and
+  `Unstage all`, after a count pill, and mark the row of the diff in front (0165).
+- Let the commit button say what it would commit, `Commit 2 files`, `Commit the
+  merge` or `Stage a file to commit`, with the shortcut drawn beside it (0165).
+- Wrap the lines of a diff instead of cutting them, tint an added line green and
+  a removed one red in the rows and the number gutters, hatch where a side has
+  no line, and fold unchanged stretches into `N unchanged lines` (0165).
+- Add an Inline layout to the diff beside Side by side, with a number for HEAD
+  and one for the working tree, kept for every diff until the page is closed
+  (0165).
+- Show a diff's head on one line: the file, its folder, what is compared, a
+  `read only` chip, the layout switch and `Open the file` (0165).
+- Show a Markdown heading as bold text and its `#` marks quietly, and inline
+  code in the string colour, in a Markdown tab as in its diff (0165).
+- Mark only the lines that changed in the diff of a file with Windows line
+  endings, in both layouts, and say in the head `line endings differ (CRLF here,
+  LF in HEAD)` whenever the two sides end their lines differently (0165).
+- Open the diff of a large file with non-ASCII text, which failed with an error
+  when the cut at 2 MiB fell inside a character (0165).
+
 ## 2.18.0 - 2026-11-09
 
 - Say when and where on one line on the Compiled and Run tabs: a check or a

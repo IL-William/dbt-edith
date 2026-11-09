@@ -828,10 +828,24 @@ pub fn diff(root: &Path, rel: &str, on_disk: &Path, max_bytes: usize) -> DiffVie
 
     if view.before.len() > max_bytes || view.after.len() > max_bytes {
         view.truncated = true;
-        view.before.truncate(max_bytes);
-        view.after.truncate(max_bytes);
+        cut_at_char(&mut view.before, max_bytes);
+        cut_at_char(&mut view.after, max_bytes);
     }
     view
+}
+
+/// `String::truncate` panics when the cut falls inside a multibyte character,
+/// which turned the diff of a large non-ASCII file into a 500: the cut steps
+/// back to the character's start instead.
+fn cut_at_char(s: &mut String, max_bytes: usize) {
+    if s.len() <= max_bytes {
+        return;
+    }
+    let mut cut = max_bytes;
+    while !s.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    s.truncate(cut);
 }
 
 pub fn merge_abort(root: &Path) -> GitRun {
@@ -1758,6 +1772,20 @@ mod tests {
         for d in [loose, parent, linked] {
             let _ = std::fs::remove_dir_all(&d);
         }
+    }
+
+    #[test]
+    fn a_cut_inside_a_multibyte_character_steps_back_to_its_start() {
+        // "é" is two bytes, so a cut at 3 falls in the middle of the second one.
+        let mut s = "aéé".to_string();
+        cut_at_char(&mut s, 2);
+        assert_eq!(s, "a");
+        let mut s = "aéé".to_string();
+        cut_at_char(&mut s, 3);
+        assert_eq!(s, "aé");
+        let mut s = "aéé".to_string();
+        cut_at_char(&mut s, 5);
+        assert_eq!(s, "aéé");
     }
 
     /// A linked worktree reads the main repository's `config`, so a key added

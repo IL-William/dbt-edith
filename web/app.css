@@ -145,14 +145,6 @@
   --git-u: #4ec78d;
   /* The warning colour as text: the pill's "manifest" and age, the card's amber line */
   --warn-text: #e0a34b;
-  /* Diffs */
-  --diff-add: #2f6b47;
-  --diff-add-bg: #1c2c22;
-  --diff-add-fg: #56b98b;
-  --diff-del: #6b4a4a;
-  --diff-del-bg: #2d1f1f;
-  --diff-del-fg: #d88;
-  --diff-del-word: #6b3a3a;
   /* Code */
   --syn-kw: #c4a7f2;
   --syn-str: #a5c98c;
@@ -285,21 +277,15 @@
   --on-accent: var(--tone-fg);
   --knob-on: var(--tone-fg);
   --err: var(--bad);
-  --diff-add-fg: var(--ok);
   /* Washes and lines of a meaning, over the page */
   --bad-bg: color-mix(in srgb, var(--bad) 13%, var(--bg));
   --bad-wash: color-mix(in srgb, var(--bad) 7%, var(--bg));
   --bad-line: color-mix(in srgb, var(--bad) 48%, var(--bg));
   --bad-line-hi: color-mix(in srgb, var(--bad) 71%, var(--bg));
-  --diff-del: color-mix(in srgb, var(--bad) 48%, var(--bg));
-  --diff-del-bg: color-mix(in srgb, var(--bad) 13%, var(--bg));
-  --diff-del-word: color-mix(in srgb, var(--bad) 43%, var(--bg));
   --err-bg: color-mix(in srgb, var(--bad) 30%, var(--bg));
   --ok-wash: color-mix(in srgb, var(--ok) 7%, var(--bg));
   --ok-tint: color-mix(in srgb, var(--ok) 15%, var(--bg));
   --ok-line: color-mix(in srgb, var(--ok) 59%, var(--bg));
-  --diff-add: color-mix(in srgb, var(--ok) 47%, var(--bg));
-  --diff-add-bg: color-mix(in srgb, var(--ok) 13%, var(--bg));
   --seed-wash: color-mix(in srgb, var(--seed) 10%, var(--bg));
   --warn-wash: color-mix(in srgb, var(--warn) 8%, var(--bg));
   --warn-line: color-mix(in srgb, var(--warn) 20%, var(--bg));
@@ -327,7 +313,6 @@
   --bad-fg: color-mix(in srgb, var(--bad) 58%, var(--fg));
   --bad-fg-2: color-mix(in srgb, var(--bad) 56%, var(--fg));
   --bad-soft: color-mix(in srgb, var(--bad) 77%, var(--fg));
-  --diff-del-fg: color-mix(in srgb, var(--bad) 79%, var(--fg));
   --err-fg: color-mix(in srgb, var(--bad) 8%, var(--fg));
   --dis-fg: color-mix(in srgb, var(--warn) 81%, var(--fg));
   --conflict-mid-fg: color-mix(in srgb, var(--accent) 60%, var(--fg));
@@ -1431,45 +1416,73 @@ kbd {
   display: inline-block; min-width: 15px; margin-left: 5px; padding: 0 4px;
   background: var(--accent-dim); border-radius: 8px; font: 9.5px var(--mono); text-align: center;
 }
-.git-head { display: flex; align-items: center; gap: 3px; padding: 5px 6px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+/* The Git tab (0165): the branch and how far it is from origin in one row, the
+   changes with whole names, stage on hover, the commit box at the foot. */
+.git-head { display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 6px 0 8px; border-bottom: 1px solid var(--line-soft); flex: 0 0 auto; }
 .branchbtn {
-  display: flex; align-items: center; gap: 6px; max-width: 165px;
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 5px;
-  color: var(--fg); font: 11.5px var(--ui); padding: 3px 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; max-width: 165px; height: 24px; box-sizing: border-box;
+  background: none; border: 1px solid var(--line); border-radius: 6px;
+  color: var(--fg); font: 12px var(--mono); padding: 0 8px; cursor: pointer;
 }
-.branchbtn:hover { border-color: var(--accent); color: var(--accent); }
+.branchbtn:hover { border-color: var(--line-strong); }
+.branchbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.branchbtn svg { flex: 0 0 auto; }
 .branchbtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.icon .cnt {
-  position: absolute; margin: -12px 0 0 12px; font: 9px var(--mono);
-  background: var(--accent); color: var(--on-accent); border-radius: 7px; padding: 0 3px;
-}
+.git-ab { margin-left: 4px; font: 11px var(--mono); white-space: nowrap; color: var(--fg-dim); }
+.git-ab .ab-behind { color: var(--warn-text); }
+.git-ab .ab-ahead { color: var(--fg-dim); }
+.git-head .icobtn.only { width: 22px; height: 22px; padding: 0; justify-content: center; border-color: transparent; background: none; color: var(--fg-mute); }
+.git-head .icobtn.only:hover { background: var(--bg-3); color: var(--fg); border-color: transparent; }
+.git-head .icobtn.only svg { width: 12px; height: 12px; }
 .icon { position: relative; }
 .git-body { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
 .git-sec {
-  display: flex; align-items: center; gap: 6px; padding: 5px 8px 3px;
-  font: 600 10.5px var(--ui); text-transform: uppercase; letter-spacing: .7px; color: var(--fg-dim);
+  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 10px;
+  font: 600 11px var(--ui); text-transform: uppercase; letter-spacing: .05em; color: var(--fg-dim);
 }
-.git-sec .n { font-family: var(--mono); letter-spacing: 0; }
-.git-sec .act { margin-left: auto; font: 10px var(--ui); color: var(--accent); cursor: pointer; text-transform: none; letter-spacing: 0; }
-.git-sec .act:hover { text-decoration: underline; }
-.git-row { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px; white-space: nowrap; }
-.git-row:hover { background: var(--bg-3); }
-.git-row .nm { overflow: hidden; text-overflow: ellipsis; }
-.git-row .dir { color: var(--fg-dim); font-size: 10.5px; margin-left: auto; padding-left: 8px; overflow: hidden; text-overflow: ellipsis; }
-.git-row .code { font: 10px var(--mono); width: 18px; flex: 0 0 auto; text-align: center; }
-.git-row .go { flex: 0 0 auto; visibility: hidden; }
-.git-row:hover .go { visibility: visible; }
-.st-M { color: var(--warn); } .st-A { color: var(--ok); } .st-D { color: var(--bad); }
-.st-U { color: var(--bad); font-weight: 600; } .st-R { color: var(--snapshot); } .st-Q { color: var(--fg-dim); }
-.git-commit { flex: 0 0 auto; padding: 6px; border-top: 1px solid var(--line); }
+.git-sec .n { font: 10.5px/16px var(--mono); letter-spacing: 0; padding: 0 6px; border-radius: 8px; background: var(--bg-3); color: var(--fg-dim); }
+.git-sec .glink {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: 400 11.5px var(--ui); letter-spacing: 0; text-transform: none; color: var(--accent);
+}
+.git-sec .glink:hover { text-decoration: underline; }
+.git-sec .glink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.git-row { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 6px 0 10px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+.git-row:hover { background: var(--hover); }
+.git-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.git-row[aria-current=true] { background: var(--select); }
+.git-row .gs { width: 12px; flex: 0 0 auto; text-align: center; font: 600 10.5px var(--mono); color: var(--fg-dim); }
+.git-row .gs.m { color: var(--git-m); }
+.git-row .gs.u, .git-row .gs.a { color: var(--git-u); }
+.git-row .gs.d, .git-row .gs.x { color: var(--bad); }
+.git-row .gs.r { color: var(--snapshot); }
+.git-row .nm { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.git-row .dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 11px var(--mono); color: var(--fg-mute); }
+.git-row .act {
+  width: 20px; height: 20px; flex: 0 0 auto; display: none; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 4px; background: none; cursor: pointer; color: var(--fg-dim); font: 14px/1 var(--mono);
+}
+.git-row:hover .act, .git-row:focus-visible .act { display: flex; }
+/* In a rule of its own: a browser without :has() drops the whole rule it is in. */
+.git-row:has(:focus-visible) .act { display: flex; }
+.git-row .act:hover { background: var(--bg-3); color: var(--fg); }
+.git-row .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.git-commit { flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--line-soft); display: grid; gap: 6px; }
 #commit-msg {
-  width: 100%; resize: vertical; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px;
-  font: 12px var(--ui); outline: none; margin-bottom: 6px;
+  width: 100%; box-sizing: border-box; height: 58px; min-height: 58px; resize: vertical; background: var(--bg); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  font: 12.5px var(--ui); outline: none;
 }
-#commit-msg:focus { border-color: var(--accent-dim); }
-.btn.wide { width: 100%; }
-.git-empty { padding: 14px 10px; color: var(--fg-dim); font-size: 11.5px; text-align: center; }
+#commit-msg:focus { border-color: rgba(var(--accent-rgb), .7); }
+.git-crow { display: flex; align-items: center; gap: 8px; }
+.git-crow .btn { flex: 1 1 0; height: 28px; box-sizing: border-box; padding: 0 9px; text-align: center; }
+.git-crow .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.git-crow .btn.primary:hover { background: var(--accent); filter: brightness(1.08); }
+/* Nothing to commit: outlined, still pressable, for it says why. */
+.git-crow .btn[aria-disabled=true] { background: none; color: var(--fg-dim); }
+.git-crow .btn:disabled { opacity: .6; cursor: default; }
+.git-crow kbd { flex: 0 0 auto; font: 10.5px/16px var(--mono); padding: 0 5px; background: var(--bg-2); }
+.git-empty { padding: 4px 12px 8px; color: var(--fg-mute); font-size: 12px; }
 .conflict-banner {
   margin: 6px; padding: 7px 9px; border-radius: 5px; font-size: 11.5px;
   background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad-fg);
@@ -2076,20 +2089,29 @@ kbd {
 .cmptable tr:not(.moved) td { color: var(--fg-dim); }
 .diffpane { position: absolute; inset: 0; display: flex; flex-direction: column; }
 .diffpane.hidden { display: none; }
-.diff-head { flex: 0 0 auto; background: var(--bg-2); border-bottom: 1px solid var(--line); padding: 5px 10px 4px; }
-.diff-title { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
-.diff-title b { font-weight: 600; }
-.diff-state { color: var(--fg-dim); font: 11px var(--mono); }
+/* One row: the file, where it is, what is compared, then the controls (0165).
+   The collin comparison tab's head is this one with its own contents. */
+.diff-head { flex: 0 0 auto; border-bottom: 1px solid var(--line-soft); padding: 0 10px 0 14px; }
+.diff-title { display: flex; align-items: center; gap: 10px; height: 36px; min-width: 0; font-size: 12.5px; }
+.diff-title b { font-weight: 600; white-space: nowrap; }
+.diff-dir { font: 11px var(--mono); color: var(--fg-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.diff-state { color: var(--fg-mute); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* The comparison's A and against B labels are short: they never give way first. */
+.reportpane .diff-state { flex: 0 0 auto; overflow: visible; }
 .diff-lock {
-  font: 9.5px var(--mono); color: var(--fg-dim); border: 1px solid var(--line);
-  border-radius: 8px; padding: 0 6px;
+  font: 10.5px/16px var(--ui); color: var(--fg-dim); border: 1px solid var(--line);
+  border-radius: 8px; padding: 0 6px; white-space: nowrap; flex: 0 0 auto;
 }
-.diff-crumb { font: 10.5px var(--mono); color: var(--fg-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.diff-crumb .sep { opacity: .5; margin: 0 4px; }
-.diff-crumb .leaf { color: var(--fg-path); }
+.diff-title .btn { height: 26px; box-sizing: border-box; padding: 0 10px; background: none; white-space: nowrap; flex: 0 0 auto; }
+.diff-title .btn:hover { background: none; }
+.diff-title .seg2 { flex: 0 0 auto; flex-wrap: nowrap; }
+.diff-title .seg2 button { height: 22px; padding: 0 9px; white-space: nowrap; }
 
 /* Per-line + and - next to the line numbers, as in a review UI. */
 .CodeMirror-gutter.diff-mark { width: 14px; }
+.CodeMirror-gutter.diff-a, .CodeMirror-gutter.diff-b { width: 40px; }
+.diff-n { padding-right: 8px; text-align: right; color: var(--fg-mute); font-size: 11.5px; }
+.mergepane .CodeMirror-linenumber { color: var(--fg-mute); font-size: 11.5px; }
 /* A key of dbt_project.yml that dbt would warn applies to nothing (0103). */
 .CodeMirror-gutter.cfgwarn { width: 14px; }
 /* The "!" stays in the markup for readers that take text; the triangle is the mask. */
@@ -2101,32 +2123,35 @@ kbd {
 .cfgwarn-mark:hover { background: var(--fg); }
 .cfgwarn-mark.stale { background: var(--none); }
 .cfgwarn-mark.stale:hover { background: var(--fg); }
-.diff-sign { font: 11px var(--mono); text-align: center; line-height: inherit; }
-.diff-sign.add { color: var(--diff-add-fg); }
-.diff-sign.del { color: var(--diff-del-fg); }
+.diff-sign { font: 11px var(--mono); text-align: center; line-height: inherit; color: var(--fg-mute); }
+.diff-sign.add { color: var(--ok); }
+.diff-sign.del { color: var(--bad); }
 
-/* Where one side has no matching lines at all. */
+/* The changed lines. The merge addon marks them with the class of its left
+   view in both panes, so the pane says which side a line is: the working tree
+   gained it, HEAD lost it. The words that changed take a stronger tint, and no
+   rule is drawn above or below a run. */
+.CodeMirror-merge-editor .CodeMirror-merge-l-chunk, .diff-line-add { background: color-mix(in srgb, var(--ok) 11%, transparent); }
+.CodeMirror-merge-left .CodeMirror-merge-l-chunk, .diff-line-del { background: color-mix(in srgb, var(--bad) 11%, transparent); }
+.CodeMirror-merge-l-chunk-start, .CodeMirror-merge-l-chunk-end { border: 0; }
+.CodeMirror-merge-l-inserted, .CodeMirror-merge-r-inserted {
+  background-image: none; background-color: color-mix(in srgb, var(--ok) 24%, transparent); border-radius: 2px;
+}
+.CodeMirror-merge-l-deleted, .CodeMirror-merge-r-deleted {
+  background-image: none; background-color: color-mix(in srgb, var(--bad) 24%, transparent); border-radius: 2px;
+}
+
+/* Where one side has no matching lines at all: hatched, as on the board. */
 .CodeMirror-merge-spacer {
-  background-image: repeating-linear-gradient(135deg,
-    transparent, transparent 4px, var(--line) 4px, var(--line) 5px);
-  background-color: var(--bg-2);
-}
-
-/* Word-level changes inside a line. The addon ships a faint underline image
-   that vanishes on a dark background; a tint reads far better. */
-.CodeMirror-merge-r-inserted, .CodeMirror-merge-l-inserted {
-  background-image: none; background-color: var(--diff-add); border-radius: 2px;
-}
-.CodeMirror-merge-r-deleted, .CodeMirror-merge-l-deleted {
-  background-image: none; background-color: var(--diff-del-word); border-radius: 2px;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--line-soft) 6px 7px);
 }
 
 /* Overview of where the changes are, clickable. */
 .diff-ruler { position: absolute; top: 0; right: 0; bottom: 0; width: 11px; z-index: 4; pointer-events: none; }
-.diff-ruler div { position: absolute; right: 1px; width: 8px; min-height: 2px; border-radius: 1px; cursor: pointer; pointer-events: auto; opacity: .75; }
-.diff-ruler div:hover { opacity: 1; }
-.diff-ruler .add { background: var(--diff-add); }
-.diff-ruler .del { background: var(--diff-del); }
+.diff-ruler div { position: absolute; right: 1px; width: 8px; min-height: 2px; border-radius: 1px; cursor: pointer; pointer-events: auto; }
+.diff-ruler .add { background: var(--ok); }
+.diff-ruler .del { background: var(--bad); }
 .mergepane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
 /* A percentage height only resolves against a parent that has a definite one.
    The addon's panes are inline-blocks with auto height, so without this the
@@ -2136,16 +2161,28 @@ kbd {
 .mergepane .CodeMirror-merge-pane,
 .mergepane .CodeMirror-merge-gap { height: 100%; box-sizing: border-box; }
 .mergepane .CodeMirror-merge .CodeMirror { height: 100%; }
-.CodeMirror-merge-gap { background: var(--bg-2); border-color: var(--line); }
-.CodeMirror-merge-r-chunk { background: var(--diff-add-bg); }
-.CodeMirror-merge-r-chunk-start { border-top: 1px solid var(--diff-add); }
-.CodeMirror-merge-r-chunk-end { border-bottom: 1px solid var(--diff-add); }
-.CodeMirror-merge-l-chunk { background: var(--diff-del-bg); }
-.CodeMirror-merge-l-chunk-start { border-top: 1px solid var(--diff-del); }
-.CodeMirror-merge-l-chunk-end { border-bottom: 1px solid var(--diff-del); }
-.CodeMirror-merge-r-connect { fill: var(--diff-add-bg); stroke: var(--diff-add); }
-.CodeMirror-merge-l-connect { fill: var(--diff-del-bg); stroke: var(--diff-del); }
-.CodeMirror-merge-collapsed-widget { background: var(--bg-3); color: var(--fg-dim); border-color: var(--line); }
+/* Two panes at half each, meeting at a one pixel rule: no connector, no lock. */
+.mergepane .CodeMirror-merge-2pane .CodeMirror-merge-pane { width: calc(50% - .5px); }
+.mergepane .CodeMirror-merge-2pane .CodeMirror-merge-gap { width: 1px; border: 0; background: var(--line); }
+/* The gap is a 1px rule with overflow hidden, yet the scroll-lock button inside it stays a tab stop
+   (Enter unlocks the scrolling): hidden, it is no stop at all. */
+.mergepane .CodeMirror-merge-scrolllock-wrap { display: none; }
+.mergepane > .CodeMirror { height: 100%; }
+/* The stretches folded: a row the width of the pane that says how many lines it holds. */
+.CodeMirror-merge-collapsed-widget {
+  display: block; box-sizing: border-box; padding: 0 12px; border: 0; border-radius: 0; background: var(--bg-2);
+  color: var(--fg-mute); font: 11.5px/24px var(--ui); cursor: pointer;
+}
+.CodeMirror-merge-collapsed-widget:hover { color: var(--fg); }
+.CodeMirror-merge-collapsed-widget:before { content: "\22EF  " attr(data-n) " unchanged lines"; }
+
+/* Markdown reads the same in a tab and in a diff: a heading is bold text, its
+   marks quiet, inline code in the string colour (0165). CodeMirror tags code
+   as a comment, which is why it is scoped to a Markdown editor; written with the
+   theme class too, to outrank the SQL comment's rule further down. */
+.md-doc .cm-header { color: var(--fg); font-weight: 700; }
+.md-doc .cm-header.cm-formatting-header { color: var(--fg-mute); font-weight: 400; }
+.md-doc.cm-s-default .cm-comment, .md-doc .cm-s-default .cm-comment { color: var(--syn-str); font-style: normal; }
 /* The editor's and the lineage's placeholder, named apart so a row elsewhere
    marked `empty` is not made a centred flex box. */
 .pane-empty { display: flex; align-items: center; justify-content: center; flex: 1; color: var(--fg-dim); }

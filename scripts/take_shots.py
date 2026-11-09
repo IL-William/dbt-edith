@@ -902,7 +902,7 @@ class Shots:
         # The diff of the edited note, side by side, in its own tab.
         self.js("[...document.querySelectorAll('#git-body *')].find((e) => e.children.length === 0 && e.textContent === 'building.md').click()")
         self.until("!document.querySelector('#diff-host').classList.contains('hidden')", "the diff")
-        self.until("document.querySelector('#behind-n')?.textContent.trim() !== ''", "the commit to pull", 30)
+        self.until("document.querySelector('#git-ahead-behind')?.textContent.trim() !== ''", "the commit to pull", 30)
         self.rest()
         self.take("git")
         self.side_to(271)
