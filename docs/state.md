@@ -2195,7 +2195,7 @@ toggles above the lineage are borderless and a pressed one takes the neutral
 `--select` wash instead of amber or blue; the Tests eye is always open and its
 count of tests drawn is in its tooltip; Indirect takes a dashed arrow; Fit is
 its glyph alone; the dock's modes are one quiet group; and the third mode reads
-Selection. Its limits are in Deferred item 39.
+Selection. Its limits are in Deferred item 38.
 
 Themes (0150, 2.2.0), amending 0106 and 0107. Four sets of variables chosen by
 `data-theme` on `<html>`: Night, Graphite, Light and Halloween, picked from the
@@ -2213,7 +2213,7 @@ it; the file's `:root` holds the theme's `color-scheme`. `look.json` holds `{
 theme, follow, apparitions, boxes }`, and a 2.1 file is read once and rewritten
 without `halloween` or `sound`. `scripts/take_shots.py --theme` takes the
 pictures in another theme, and `docs/shots` are Night's. The terminal takes
-the theme's colours (0161); the themes' other limits are in item 37.
+the theme's colours (0161); the themes' other limits are in item 36.
 
 A release is checked on VirusTotal before it is published (0152, no version),
 amending 0123. A `virustotal` job sits between `windows` and `release`: it
@@ -2254,7 +2254,7 @@ brought into the row by cutting the front of the line at a word edge, never
 inside an emoji. A file still shows the server's 20 lines, `+N more in this
 file` being text. The arrows, Left, Right and Escape move over the list, and an
 answer that arrives after the box was cleared is dropped. Checked with
-`web/tests/grep.js`. Its limits are in Deferred item 40.
+`web/tests/grep.js`. Its limits are in Deferred item 39.
 
 The keys reaching a file, as written and struck (0156, 2.7.0), amending 0038.
 The violet `dbt_project.yml` button at the end of the breadcrumb opens a dialog
@@ -2268,7 +2268,7 @@ too except for a `+` sub-key, and everything else is clobbered by the deepest
 level. The footer says a `config()` and the properties YAML win over these
 lines for a file of the project, and for a file of an installed package that
 these lines win over the package's own. Picking a line opens the file there.
-Checked with `web/tests/projectdirs.js`. Its limits are in Deferred item 41.
+Checked with `web/tests/projectdirs.js`. Its limits are in Deferred item 40.
 
 The manifest's card holds the parse (0157, 2.8.0), amending 0071 and 0025. The
 pill is one outline with its age and drift inside; hovering after a rest shows
@@ -2280,7 +2280,7 @@ button that presses Enter, 0071's exception for a command that reaches no
 warehouse, moved from the freshness badge's click to this button, so a parse
 takes two gestures. A poll that changes the answer redraws the card in place
 with the focus kept. Checked with `web/tests/freshness.js`. Its limits are in
-Deferred item 42.
+Deferred item 41.
 
 The depth in dbt's words (0158, 2.9.0). The lineage's up and down boxes became
 dbt's selector around the focus's name, `1+ customers +0`: each number opens a
@@ -2293,7 +2293,7 @@ a name past 24 characters is cut in the middle; in a narrow dock the name is the
 first thing to fold, to the bar of its kind. The same control sits around the
 column chip, without the copy. The boxes stay, hidden, as what holds the depth,
 so 1.18.4's rules are unchanged. Checked with `web/tests/depth.js` and
-`scripts/walk_depth.py`. Its limits are in Deferred item 44.
+`scripts/walk_depth.py`. Its limits are in Deferred item 43.
 
 A job's start in words (0159, 2.10.0), amending 0063 and 0077. The Jobs tab
 draws a card per job with its tool's colour down its side, the schedule worded
@@ -2309,7 +2309,7 @@ line why it reaches the model, and Sources and Coverage sit in the dock's tab
 row. Three fields leave the server: the names of the sources read, those not
 read, and `not_read`. The Catalog's chips, the Reports lists and the command
 line keep the older wording. Checked with `web/tests/jobs.js`. Its limits are in
-Deferred item 45.
+Deferred item 44.
 
 The Lineage space has one bar (0160, 2.11.0), amending 0080, 0034, 0040 and
 0092. The selector sits on the left of a 44px bar and the canvas's tools on the
@@ -2323,7 +2323,7 @@ flag, not a width: Context in three columns, Location as a list that writes a
 value once where written, resolved and built agree. A canvas's tests are counted
 apart, `7 nodes · 6 edges · 11 tests`, under the canvas and in the Export menu. Checked
 with `web/tests/slips.js`, `folders.js` and `locationlines.js`. Its limits are
-in Deferred item 46.
+in Deferred item 45.
 
 The terminal takes the theme's colours (0161, 2.12.0), amending 0150 and 0071.
 xterm.js reads the page's variables, the sixteen `--ansi-*` colours that each of
@@ -2333,7 +2333,7 @@ and the shell and holds Clear and Restart the shell. A command the page typed
 for the person is marked at the end of its line by a chip saying which page
 typed it and whether Enter is theirs, in place of the toast, and the toast stays
 for the line the shell did not echo. Checked with `web/tests/terminal.js`,
-`themes.js` and `venv.js`. Its limits are in Deferred item 47.
+`themes.js` and `venv.js`. Its limits are in Deferred item 46.
 
 A column's role is a tag inside its box (0162, 2.13.0), amending 0096, 0097, 0118
 and 0160. The tag sits on the second line at the right of a box now 250 by 48,
@@ -2343,7 +2343,7 @@ thicker; a role is a line 14 by 2 in the legend, the stop at menu and the column
 card, dashed for the roles that keep rows. The Halloween styles draw the tag on
 a dark fill, inside the coffin's cut end and the grimoire's frame. Checked with
 `web/tests/slips.js`, `themes.js`, `halloween.js` and `legendpick.js`. Its limits
-are in Deferred item 48.
+are in Deferred item 47.
 
 The settings are one column of rows (0163, 2.14.0), amending 0100. The rail has a
 caption and a hint per section (the tool on screen, on or off, the number of job
@@ -2355,7 +2355,7 @@ buttons, Python's path, versions and state, the column lineage tools as radio
 cards, Snowflake's one switch, the job sources a row each with Edit unfolding the
 form, Updates as cards, the theme's switches and box styles, and help. Checked
 with `web/tests/settings.js`, `venv.js`, `shapes.js` and `themes.js`. Its limits
-are in Deferred item 49.
+are in Deferred item 48.
 
 The shortcut list is a sheet in the window (2.15.0, no decision of its own),
 amending 0030 in its layout only. It opens from under the top bar to above the
@@ -2367,7 +2367,107 @@ matched from the start of a word. The first hit in a row's words is marked; the
 groups alone are drawn again on each key, so the box keeps its focus and caret,
 and the list opens with the box focused and emptied. On Windows and Linux the
 keys are written out and the list is two columns. Checked with `web/tests/keys.js`.
-Its limits are in Deferred item 50.
+Its limits are in Deferred item 49.
+
+The Catalog has one head and the dock's tabs (2.16.0, no decision of its own).
+The head is the name with `table · main` beside it in mono (the materialization
+and the schema, as the hover card words them, an incremental model reading
+`merge · marts`) and the crumb under it, lined up with the name; the meta is what
+gives way first in a narrow card. Preview and Columns are the dock's own tabs,
+the count in a badge, with one heading style for both. The filter is a boxed
+"Filter columns" that counts inside itself (`7/8 typed`), Sort a segmented tray
+(`A-Z`, `Tests`, `Key`) with the current one raised, a row 32px with the type in
+muted mono capitals and the lineage counts in the text's colour, turning accent
+on the row's hover, and the test chips 17px high in a wrapping row. The Lineage
+space's card, which shows the same Catalog, takes the same head, tabs and chips.
+Checked with `web/tests/catalog.js`. Its limits are in Deferred item 51.
+
+Reports as the design draws them (2.17.0, no decision of its own). The rail is
+224px, the settings' too, its counts pills; the head is the title and its
+source's chip with Read again at the right and what the section was read from in
+mono on a line under it, over a rule; the figures are one strip split by thin
+rules, as wide as they need; the filter is a boxed field with a glyph; a group
+has a 2px bar in the colour of who acts on it; a finding is a row with an svg
+chevron, its count in a pill and, in collin's report, the severity as a bordered
+tag. A list of names alone is a wrapping row of chips wearing their kind's bar,
+which the server sends as a `materialized` field on rows it already sends (the
+Checks', the job coverage's and collin's models); a list whose entries say more
+stays a list. Builds by job and the Jobs tab use the same chevron. Checked with
+`web/tests/reports.js` and `joborder.js`. Its limits are in Deferred item 52.
+
+The Compiled tab says when and where on one line (0164, 2.18.0), amending 0147
+and 0139. The head is one plain line: a check and `Compiled 2 min ago` (`Last
+run ...` on the Run tab), the date and time on its hover, the file's path as a
+mono link, then the environment picker and Compile again as a ghost button; a
+file that moved since keeps the line with an amber wash, a triangle and `changed
+since: ...` after the age. The environments are one segmented group after
+`Relations for`, in 0147's order with the manifest's own last, each name in its
+environment's colour and the picked one tinted, a radio group the arrows, Home
+and End move through; it is drawn only when a `.env` can be picked. One note,
+tinted in the environment's colour and led by its tag, says how many relations
+were swapped, from which file, and how many were kept as compiled, with the
+fold of where the SQL may differ under it. A swapped relation in the SQL takes
+the environment's colour, and its hover is the call it stands for
+(`ref('stg_customers'), for PROD`) then the relation it replaced. Light's CI,
+STG, UAT and other environment colours are a notch darker, so a name holds 3:1
+on the wash it sits on. Checked with `web/tests/compiled.js`, `compiledenv.js`,
+`shapes.js` and `themes.js`. Its limits are in Deferred item 53.
+
+The Git tab and its diff as the design draws them (0165, 2.19.0), amending 0007.
+The first row is the branch as a button with how far it is from origin in words,
+`1 behind` in amber and `2 ahead` in grey, and fetch, pull and push titled with
+what each would do (`Pull 1 commit (fast-forward only)`, `Nothing to push`). A
+changed file is its letter, its icon and its whole name with the folder after
+it, Stage or Unstage showing on hover or keyboard focus, Enter or Space opening
+its diff; the sections have a count pill and `Stage all` and `Unstage all`
+buttons, and the commit button says what it would commit (`Commit 2 files`,
+`Commit the merge`, `Stage a file to commit`) with its shortcut beside it. The
+diff wraps its long lines, tints an added line green and a removed one red in
+the row and its numbers, hatches where a side has no line and folds unchanged
+stretches into `N unchanged lines`; its head is one line with a `read only` tag,
+the layout switch and Open the file. A new Inline layout shows one column with a
+number for HEAD and one for the working tree, built on the page from
+`diff_match_patch` in line mode, and is kept for every diff until the page is
+closed. Under Windows line endings only the lines that changed are marked, in
+both layouts, and the head says `line endings differ (CRLF here, LF in HEAD)`;
+the push dialog says `origin/main already has every commit of main: nothing to
+push.` when there is an upstream with nothing to send; and a large file with
+non-ASCII text opens, its 2 MiB cut falling on a character's edge, where it
+failed with an error. Checked with `web/tests/diff.js` and `gittab.js`. Its
+limits are in Deferred item 54.
+
+The shell as the boards draw it (0166, 0167, 2.20.0), amending 0140, 0142 and
+0075. The top bar's search is a field in the middle of it; the right group is
+four plain squares (`?`, the theme, GitHub and the settings), the settings
+button drawing the board's sliders with no name unfolding; the counts of models,
+seeds and tests moved to the status bar, whose left says where you are in the
+space in front (the file and its cursor in Code, the selection in Lineage, the
+section in Reports and the settings), with the venv plain and a pictogram for its
+state, the `env` pill without a caret and git's branch with its glyph. The top
+bar folds by cutting the search field's words first, then the project's name,
+then the names of the tabs not lit; the dock keeps its front tab's name until
+Export's label is cut. Reports is dimmed a little less while it has nothing, so
+its glyph holds 3:1 in Light. Open editors is folded by default behind a button
+the keyboard opens, and selected rows take the selection wash. The editor has a
+46px gutter with no rule, the cursor's line lit, tabs with their line under the
+bar and a × only on the tab in front or under the pointer, and a breadcrumb with
+slashes and the file in the text colour. The hover card is drawn on the card
+colour, with the node's file and tags, its counts and a two-column list of types,
+and a card opened from the editor is placed inside the editor, falling back to
+the window when it is taller than the editor (0167). Checked with
+`web/tests/status.js`, `hovercard.js`, `spaces.js`, `explorer.js`, `themes.js` and
+`scripts/walk_depth.py`. Its limits are in Deferred item 55.
+
+The design's codes and rules are in the docs (#190, no version, no decision).
+`docs/design/` holds the pictures of the design's codes as the boards drew them,
+one shape per meaning in the four themes, the colours by meaning on a Night page
+and a Light page, and Edith's mark, with the three ways they differ from the app.
+`docs/features/look.md` gains "The design's rules": colours only from the
+theme's variables, one shape per meaning with no round dot as a marker, the
+kind's bar, an environment's colour kept as a tag, and the later screens'
+decisions linked. The feature pages were read again against the screens and their
+words fixed where they had drifted. Held by `web/tests/colourvars.js`, `shapes.js`
+and `themes.js`.
 
 ## Deferred, in the order they were chosen
 
@@ -2888,16 +2988,12 @@ of its own, and each panel updates the tour, its page under
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
-35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
-    syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
-    ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), ~~Compiled~~ (2.18.0, 0164),
-    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0), ~~the shell~~ (2.20.0, 0166) and ~~the design docs~~ (docs/design/, look.md).
-36. **The C runtime of the Windows `.exe` (0149).** Link it statically
+35. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
     Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
     runs, so the search path 0149 sets does not cover it.
-37. **The themes' limits (0150, 2.2.0).**
+36. **The themes' limits (0150, 2.2.0).**
     - The page is Night until `/api/look` answers, so a Light user sees one
       flash on load. Serving `index.html` with the theme already set would end
       it.
@@ -2907,11 +3003,11 @@ of its own, and each panel updates the tour, its page under
       Light; the selection wash (`--select`, as the boards use) comes with the
       shell step.~~ Settled in 2.20.0 (0166): the shell's selected rows take
       `--select`. The wash leaves a few of Light's kind marks below 3:1 all the
-      same (item 56).
+      same (item 55).
     - The theme has no keyboard shortcut, ~~and the settings' one-column layout
       is the settings step's~~ (2.14.0, 0163).
 
-38. **The file icons' limits (0151, 2.3.0).**
+37. **The file icons' limits (0151, 2.3.0).**
     - The editor's tabs and Open editors draw no file icon, nor the kind's bar
       (0148): a tab knows its file, not its node.
     - A file deleted in the working tree is not in the tree, so no row shows
@@ -2922,34 +3018,34 @@ of its own, and each panel updates the tour, its page under
       the palette asks for each file's folder too.
     - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
       grey cylinder, as an ephemeral model's is a grey-blue one.
-39. **The Export menu's limits (0153, 2.4.0).**
+38. **The Export menu's limits (0153, 2.4.0).**
     - Save as image saves after the click, once the picture is drawn: it is not
       yet tried in Safari or Firefox.
     - The file name's date is taken when the menu opens, so a menu left open
       past midnight names the day before.
-40. **The Search tab's limits (0155, 2.6.0).**
+39. **The Search tab's limits (0155, 2.6.0).**
     - A line is cut at the front only once the match ends past column 24, so
       in a very narrow sidebar the match can still sit behind the row's
       ellipsis.
     - Graphite and Halloween were not looked at; the tab was drawn and
       checked in Night and Light.
-41. **The keys excerpt's limits (0156, 2.7.0).**
+40. **The keys excerpt's limits (0156, 2.7.0).**
     - A config written twice at one level (`+schema` and `schema` side by
       side) is skipped on both sides, so the upper level's line stays unstruck
       though dbt replaces it. 0156 chose that over guessing which of the two
       dbt keeps.
     - The footer for a file of an installed package is covered by tests, not
       pictured in `docs/shots`.
-42. **The manifest card's test (0157, 2.8.0).** Nothing tests the card in the
+41. **The manifest card's test (0157, 2.8.0).** Nothing tests the card in the
     page: the age rewritten in place when a poll changes the answer, the focus
     kept on the Run button. Before 0157 the badge's click had no such test
     either.
-43. **Static analysis still to add.**
+42. **Static analysis still to add.**
     - Clippy, about 80 lints on the code today, all of style, complexity or
       performance and none of correctness, to be fixed or allowed one by one
       before they run in CI.
     - Fuzzing the hand-written parsers with `cargo-fuzz`.
-44. **The depth control's limits (0158, 2.9.0).**
+43. **The depth control's limits (0158, 2.9.0).**
     - Metrics, semantic models, saved queries and functions are not loaded,
       though dbt's graph holds them as parents and children, so `dbt ls` can
       count more than a menu row says.
@@ -2970,7 +3066,7 @@ of its own, and each panel updates the tour, its page under
       page never draws.
     - After a column request fails outside the collin wait, an open menu keeps
       saying "Counting the levels…" until the next focus.
-45. **The Jobs tab's limits (0159, 2.10.0).**
+44. **The Jobs tab's limits (0159, 2.10.0).**
     - A cron is worded only in its plain shapes: a range of hours, both day
       fields, a month, the 29th to the 31st, `@quarterly` and a step that does
       not divide the day or the hour keep the cron alone.
@@ -2980,14 +3076,14 @@ of its own, and each panel updates the tour, its page under
     - The Catalog's chips and the Reports lists keep the older wording (the
       cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
       changed.
-46. **The Lineage space's limits (0160, 2.11.0).**
+45. **The Lineage space's limits (0160, 2.11.0).**
     - Light has no node shadow: the design draws one near enough invisible, and
       a filter per box costs too much on a canvas of thousands. The ring round
       the box clicked is a rect, not a filter, for the same reason.
     - The dock's Catalog keeps its row of stats and its table of three
       columns; only the space's card is laid out narrow. ~~The card's head (the
       name with `table · main` beside it), its tabs and its chips are the
-      Catalog step's.~~ Done in 2.16.0 (item 52).
+      Catalog step's.~~ Done in 2.16.0 (item 51).
     - ~~A column's box keeps the look it had, with its 180 by 40, its fonts and
       its role tag: it carries `.col`, and the column step restyles it.~~ Gone in
       2.13.0 (0162). Edges are 1.5px on every canvas.
@@ -2995,7 +3091,7 @@ of its own, and each panel updates the tour, its page under
       else sets them now.
     - With By folder pressed the dock's tools row is about 50px wider, so its
       folds come about 50px sooner and it breaks a little earlier, at about
-      1100px with the folds spent (item 44's last limit).
+      1100px with the folds spent (item 43's last limit).
     - The legend keeps its alphabetical order and its bar for a kind, where the
       design lists the kinds, then the tests, and draws a kind as a square.
     - The legend and the line under the canvas overlap on a narrow canvas, with
@@ -3010,7 +3106,7 @@ of its own, and each panel updates the tour, its page under
     - A four-digit `+N` on the outermost column reaches 42px from the box, while
       the export frame pads 40px (`web/lineage.js:291`), so about 2px of it is
       clipped in a file.
-47. **The terminal's limits (0161, 2.12.0).**
+46. **The terminal's limits (0161, 2.12.0).**
     - The eleven ANSI colours the design does not draw (black, magenta, white
       and the eight brights) are ours, in each of the four themes, and have not
       been judged by the designer.
@@ -3026,7 +3122,11 @@ of its own, and each panel updates the tour, its page under
     - `S.termPrompt` is set false before `settle` decides whether Enter is
       pressed, so a key typed in that window leaves it false, and under bash
       (Git Bash) the line keys of 0073 are off until the next prompt.
-48. **The column box's limits (0162, 2.13.0).**
+    - If the person presses Enter themselves while the page waits for the
+      command's echo, the toast still tells them to press Enter.
+    - The cursor is drawn in `--accent`, where the board draws it in `--fg`
+      (0161's choice).
+47. **The column box's limits (0162, 2.13.0).**
     - A column's edge is at full opacity, not the design's 85%: at 85% `window`
       and `inferred` fall under 3:1 on the page in Night, Graphite and Halloween
       (2.75 to 2.89), and in Light `passthrough`, `rename`, `cast`, `generated`,
@@ -3062,7 +3162,7 @@ of its own, and each panel updates the tour, its page under
       second line comes within 0.3 to 3.3px of the role tag, and an all-capitals
       coffin name ends 4px inside it. The clip wants measuring with
       `getComputedTextLength` rather than counting.
-49. **The settings' limits (0163, 2.14.0).**
+48. **The settings' limits (0163, 2.14.0).**
     - On the Column lineage cards the arrows move the focus and pick nothing
       (a pick regenerates collin's cache or starts Snowflake's script), and
       Enter or Space picks. A greyed card and the one that only types collin's
@@ -3082,7 +3182,7 @@ of its own, and each panel updates the tour, its page under
       lineage choice, a profile and target picker, Snowflake's account line,
       the GitHub "Open" button (the GitHub button's preview, step 21), a `.env`
       value on a line, and a Change button for the Python.
-50. **The shortcut sheet's limits (2.15.0).**
+49. **The shortcut sheet's limits (2.15.0).**
     - The list is drawn whole and again on every key typed, not virtualised;
       the ten groups are cheap, but a much longer list would want it.
     - The find box searches the rows, the keys and the group titles, not the
@@ -3091,13 +3191,23 @@ of its own, and each panel updates the tour, its page under
       lines to scroll in.
     - On Windows and Linux the list is two columns wide, not the board's
       three: the keys are written out there (`Ctrl+Backspace`), and three
-      columns left the words a few characters a line.
-51. **Two flaky Rust tests (`src/mcp.rs`).**
-    `mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
-    and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
-    answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
-    so they fail now and then. Freezing the clock in them would end it.
-52. **The Catalog's limits (2.16.0).**
+      columns left the words a few characters a line. The key column's 200px
+      was worked out for Consolas and not rendered with it.
+    - A second `?` typed while the sheet is open lands in its find box.
+50. **Flaky tests (two in `src/mcp.rs`, the Chrome walks).**
+    - `mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
+      and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
+      answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
+      so they fail now and then. Freezing the clock in them would end it.
+    - The walks of `scripts/check.sh` (the menu, the tour, the export) fail with
+      "Chrome did not start" or "Chrome closed the connection" when another walk,
+      or `take_shots.py`, runs at the same time: `free_port` in `walk_tour.py`
+      finds a port free and lets it go before Chrome takes it, so two runs can
+      pick the same one. Run one at a time, or have `free_port` hold the port
+      until Chrome has it.
+    - `walk_tour.py`'s check that the tour "rings #selpanel-head" failed once in
+      a full run, the ring still on the previous target.
+51. **The Catalog's limits (2.16.0).**
     - The Catalog's tabs say `tablist`, `tab` and `aria-selected` but move
       between them with Tab alone, as the dock's do: arrows would be a new key
       model for both.
@@ -3115,9 +3225,11 @@ of its own, and each panel updates the tour, its page under
       filled for a scheduled one, the warning's for one not read), where the
       board draws every chip on `--line`; only its shape and the clock are the
       board's.
+    - A relation's name wraps in the middle of a word in a narrow dock, as it did
+      before the redesign.
     - ~~The hover card's column list keeps its amber type: `--fg-mute` there is
       the shell step's (21).~~ Settled in 2.20.0 (0166).
-53. **The Reports' limits (2.17.0).**
+52. **The Reports' limits (2.17.0).**
     - A chip's kind bar is drawn from a `materialized` field the server adds
       to the rows it already sends (the Checks', the job coverage's and
       collin's models, `Node::look`): a model's materialization, else its
@@ -3136,7 +3248,8 @@ of its own, and each panel updates the tour, its page under
       and its rules: its rows keep their own height, gap and accent rule.
     - The mono line under a head is one line of `about` whatever the section;
       the board draws Job coverage's and Job order's in the UI font.
-54. **The Compiled tab's limits (0164, 2.18.0).**
+    - No test covers the regular expression that finds the count pills.
+53. **The Compiled tab's limits (0164, 2.18.0).**
     - The age is said as the manifest card says it, so a file a few days old
       reads `Compiled 2 d ago` and one a few hours old `Compiled 3h07 ago`; the
       two units are not spelled alike.
@@ -3151,8 +3264,13 @@ of its own, and each panel updates the tour, its page under
       writes `{{ this }}`, a source whose name holds a dot falls back to
       `source('<its node name>')`, and a version written as a string reads
       `v=2`, not `v='2'`.
+    - The fold's macro findings take the link colour on the environment-tinted
+      note, where the board writes the macro's name in mono.
+    - No test pins that the picker and the note are drawn only when
+      `envRowShown()` is true, nor that the editor's wrapper gets `data-tone`,
+      from which the swap marks read their colour.
 
-55. **The Git tab's limits (0165, 2.19.0).**
+54. **The Git tab's limits (0165, 2.19.0).**
     - The inline layout marks the lines that changed, not the words inside
       them, where side by side tints both. A line changed in one word shows as
       the old line and the new one.
@@ -3171,6 +3289,7 @@ of its own, and each panel updates the tour, its page under
       with their counterparts. It leans on the addon's own flag (`dealigned`).
     - The board's `Commit` shortcut is drawn as `Ctrl+Enter` outside a Mac, as
       the other keycaps are, not `Ctrl+↩`.
+    - The commit box's keycap is drawn dim, and its contrast was not measured.
     - The commit button's words for a merge with a file still conflicted
       (`Resolve the conflicts first`) are not on the board, which has no merge.
     - What the board leaves out stays: the Conflicts section, the merge banner
@@ -3190,7 +3309,7 @@ of its own, and each panel updates the tour, its page under
     - The head's `line endings differ` note calls a side CRLF when any of its
       lines ends that way: a HEAD with mixed endings against a working file all
       in CRLF gets no note and no marked line, and a lone `\r` reads as LF.
-56. **The shell's limits (0166, 0167, 2.20.0).**
+55. **The shell's limits (0166, 0167, 2.20.0).**
     - The editor's tabs have no kind bar: a tab knows its file, not its node
       (item 34).
     - The sidebar's tabs keep their accent underline, the tree its indents, and
@@ -3210,6 +3329,17 @@ of its own, and each panel updates the tour, its page under
       and Run tabs and the diff keep the old gutter (their own steps).
     - The hover card's types are `--fg-mute`, no longer the amber of
       `--source`; the Catalog's own types are another step's.
+56. **The witch hat on the dock's tabs (Halloween).** The hat on the tab in
+    front pushes the pane under the dock's row down about 14px, on the Catalog
+    as on Compiled and Run and every other dock tab; it is one fix for all of
+    them, not one per tab.
+57. **What the design docs step left (#190).**
+    - The code still says "Jobs settings" where the settings' section is now
+      Orchestration: `src/job.rs:65`, `src/job_coverage.rs:62`,
+      `src/job_order.rs:63`, the `--help` text in `src/main.rs:180` and the header
+      `src/jobs.rs:450` writes in a `jobs.yml`.
+    - The pictures of `docs/design/` differ from the page in three ways, listed
+      in its README; they are to be redrawn from the boards.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
