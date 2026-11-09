@@ -13,6 +13,14 @@ Preview, and a Column / Type / Description / Tests table under Columns. The
 upstream and downstream lists navigate like the graph: click moves the lineage
 and the catalog to that node, double-click also opens its file. The column count
 opens the Columns tab.
+The head names the node with its materialization and schema beside it
+(`table · main`, as the hover card says them), the package and the file under
+it, and the two tabs as the dock's are drawn,
+Columns with its count. Over the Columns table a field filters the columns by
+name, the number of columns kept and of columns typed inside it at the right
+(`3 of 8 · 7/8 typed`); Sort puts the columns A to Z or by their tests, and by
+their key where a key names a column of the node, a seed or a source as well as
+a model.
 Each version of a versioned model is a node of its own, named as `dbt ls`
 names it, `orders.v2`, which is also what the name's copy glyph copies: a
 `--select` takes that one version. Beside the name, a chip says where it stands:

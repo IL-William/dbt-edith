@@ -2882,7 +2882,7 @@ of its own, and each panel updates the tour, its page under
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
-    Git, Catalog, Reports and the design docs.
+    Git, ~~Catalog~~ (2.16.0), Reports and the design docs.
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
@@ -2974,9 +2974,9 @@ of its own, and each panel updates the tour, its page under
       a filter per box costs too much on a canvas of thousands. The ring round
       the box clicked is a rect, not a filter, for the same reason.
     - The dock's Catalog keeps its row of stats and its table of three
-      columns; only the space's card is laid out narrow. The card's head (the
+      columns; only the space's card is laid out narrow. ~~The card's head (the
       name with `table · main` beside it), its tabs and its chips are the
-      Catalog step's.
+      Catalog step's.~~ Done in 2.16.0 (item 52).
     - ~~A column's box keeps the look it had, with its 180 by 40, its fonts and
       its role tag: it carries `.col`, and the column step restyles it.~~ Gone in
       2.13.0 (0162). Edges are 1.5px on every canvas.
@@ -3086,6 +3086,26 @@ of its own, and each panel updates the tour, its page under
     and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
     answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
     so they fail now and then. Freezing the clock in them would end it.
+52. **The Catalog's limits (2.16.0).**
+    - The Catalog's tabs say `tablist`, `tab` and `aria-selected` but move
+      between them with Tab alone, as the dock's do: arrows would be a new key
+      model for both.
+    - The Sort tray is `--bg` and its raised segment `--bg-3`, as the dock's
+      mode switch is, since the pane under it is `--bg-2`; the board draws the
+      tray `--bg-2` on a `--bg` pane. The pane's own fill is the dock step's.
+    - The filter box keeps its 230px with the count inside: while a word is
+      typed the count (`3 of 8 · 7/8 typed`) takes more of the box as the
+      column count grows, and on a model of a few hundred columns leaves the
+      word about 20px.
+    - The columns table is still a `table`, not the board's grid of rows, so a
+      row's hover tint stops at its cells and the board's 8px bleed is not
+      drawn.
+    - A job chip keeps the colours that say how its job starts (green and
+      filled for a scheduled one, the warning's for one not read), where the
+      board draws every chip on `--line`; only its shape and the clock are the
+      board's.
+    - The hover card's column list keeps its amber type: `--fg-mute` there is
+      the shell step's (21).
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
