@@ -70,7 +70,7 @@ understood, and the box rewrites itself to the part that was resolved.
 | `--selector name` | a named selector from `selectors.yml`, [below](#named-selectors) |
 
 Disabled nodes are never returned, as in dbt. Tests take part only when the
-tests **eye** is open, and then each term brings the tests of what it
+**Tests** button is pressed, and then each term brings the tests of what it
 selected, a test joining whenever a parent of it did, which is dbt's own
 default. So a test excluded by name stays out, and `+` and `@` reach tests the
 way dbt's graph does. A term that matches nothing is called out under the
@@ -142,7 +142,7 @@ so a `buildable` one keeps only the tests whose inputs all sit upstream of the
 selection, and an `empty` one keeps none, as `dbt ls --selector` would
 ([0032](../decisions/0032-named-selectors-from-the-manifest.md)).
 
-The tests **eye** means something else here. The selector's definition
+The **Tests** button means something else here. The selector's definition
 already decided which tests belong, so the box only decides what is drawn.
 Either way the models the selected tests belong to are drawn, dimmed when the
 selector did not select them itself, so you see what a test reads and how the

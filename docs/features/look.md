@@ -2,8 +2,8 @@
 
 The page has four sets of colours, Night, Graphite, Light and Halloween, picked
 from the top bar or the settings. A theme changes the colours of the whole
-page, the lineage canvas and the editor included, and nothing about what
-dbt-edith reads or shows. The colours that carry a meaning, the kinds of node,
+page, the lineage canvas, the editor and the terminal included, and nothing
+about what dbt-edith reads or shows. The colours that carry a meaning, the kinds of node,
 the tests, the environments, a warning, a success or a failure, keep theirs in
 every theme, in a darker twin where the page is light (0150, 0106, 0107, 0108).
 
@@ -44,8 +44,55 @@ until it is reloaded.
   and the code colours at least 4.5:1 on the page.
 - **Halloween**: orange and black, with a ghost and a witch, below.
 
-The terminal keeps its dark colours in every theme for now: a light one wants
-sixteen colours of its own.
+The terminal wears the theme too: its page, text, cursor and selection are the
+theme's, and each theme has sixteen ANSI colours of its own
+([0161](../decisions/0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md)).
+
+## The design's rules
+
+**Colours come only from the theme's variables.** Below the theme blocks of
+`web/app.css` and in `web/lineage.js`, nothing writes a hex, a colour function or
+a colour name, the Halloween art's drawing colours apart, so a theme re-points
+all the page draws
+([0150](../decisions/0150-a-theme-is-a-set-of-variables-on-the-page-and-halloween-is-one.md)).
+`web/tests/colourvars.js` fails on a literal. A name a block declares is declared
+in Night first, and Light declares a darker twin of every meaning colour, at
+least 3:1 on its page and its sidebar; `web/tests/themes.js` holds that.
+
+**One shape per meaning, and no marker is a round dot.** A kind is a bar, a
+state a check, a triangle, a cross, a dashed ring, a clock or a slashed circle,
+an environment a tag, a column's role a tag inside its box (0162), a tool its
+glyph, unsaved edits a pencil
+([0148](../decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md));
+`web/tests/shapes.js` fails on a round marker outside its short list.
+
+**The kind's bar** is the thin bar, 3px wide and in the node's colour, that says
+what a node is built as: a model's materialization, a source, a seed, a snapshot.
+It sits inside the left edge of a box, and before a name in the sidebar, the
+palette, the Catalog, the cards, the legend and Reports' chips of model names; in
+a narrow dock it stands in for the name in the depth control
+([0148](../decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md),
+[0160](../decisions/0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md),
+[0158](../decisions/0158-the-depth-is-written-as-dbt-writes-a-selector.md)).
+`web/tests/shapes.js` holds its width and its corners.
+
+**An environment keeps its colour everywhere and is a tag, never a dot.** The
+tag carries its name in the colour of its family, DEV, CI, QA, STG, UAT, PROD
+or the neutral other, in the status bar, the environment menu, the Catalog,
+the Compiled tab's note (0164), the settings and Reports; the
+manifest's own is only outlined (0148). `web/tests/shapes.js` holds the tag, and
+`web/tests/themes.js` that Light declares each colour.
+
+The later screens' choices are recorded in [0158, the depth as a selector](../decisions/0158-the-depth-is-written-as-dbt-writes-a-selector.md),
+[0159, a job's start in words](../decisions/0159-a-jobs-start-is-said-in-words-and-a-clock-marks-the-ones-that-run-alone.md),
+[0160, the Lineage space's bar](../decisions/0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md),
+[0161, the terminal's colours](../decisions/0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md),
+[0162, a column's role tag](../decisions/0162-a-columns-role-is-a-tag-inside-its-box.md),
+[0163, the settings' rows](../decisions/0163-the-settings-are-one-column-of-rows.md),
+[0164, the Compiled tab's line](../decisions/0164-the-compiled-tab-says-when-and-where-on-one-line-and-the-environment-is-picked-beside-it.md)
+and [0165, the Git tab and the diff](../decisions/0165-the-git-tab-says-how-far-it-is-from-origin-in-words-and-the-diff-wraps-its-lines.md).
+The codes as the design drew them, one shape per meaning in each theme, the
+colours by meaning and Edith's mark, are pictured in [docs/design/](../design/).
 
 ## Exports
 

@@ -107,7 +107,7 @@ palette, the Catalog and the cards, so a model looks the same everywhere.
 `incremental` leaves the incremental models and the edges between them. In
 column mode the legend names what happened to each column instead, and
 `transform` leaves the transform edges and the two columns each one joins;
-`raw`, `generated` and `mixed` leave the columns wearing that badge, and
+`raw`, `generated` and `mixed` leave the columns wearing that tag, and
 `indirect`, the dashed entry for collin's filter, join key and dedup key
 edges, shown once the indirect button is on, leaves those edges and the
 columns or model boxes they join, and `QUALIFY`, `JOIN` and `WHERE / HAVING`

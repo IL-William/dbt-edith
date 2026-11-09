@@ -39,14 +39,15 @@ row, M for modified and U for untracked, and a folder holding changes carries
 the same letter, fainter.
 
 The header above the tree names the project and carries two buttons. The first
-collapses every folder, which is what following three `ref()` calls into a deep
-project usually calls for; folders already read stay in the page, so reopening
-one asks the server nothing. The second reopens the tree down to the file being
-edited, and is greyed when the open tab is the dbt profile, which lives outside
-the project.
+reopens the tree down to the file being edited, and is greyed when no file is
+open or the open tab is the dbt profile, which lives outside the project. The
+second collapses every folder, which is what following three `ref()` calls into
+a deep project usually calls for; folders already read stay in the page, so
+reopening one asks the server nothing.
 
-That profile is not in the tree, unless the project holds one: the Project
-section of the settings, behind the gear in the top bar, opens it instead.
+That profile is not in the tree, unless the project holds one: the **Open
+profiles.yml** button in the Project section of the settings, behind the gear in
+the top bar, opens it instead.
 dbt-edith looks for it where dbt does, in `DBT_PROFILES_DIR` as dbt-edith was
 started with it, then in the project, then in `~/.dbt`, and the section names
 the file it found. When there is none, it names where dbt would read one, and
@@ -59,8 +60,9 @@ file it points at.
 A `profiles.yml` in the project is one of the project's files, and is held to
 it as every path the editor opens is. When it links to a file outside the
 project, dbt still follows the link, but dbt-edith does not open it: the
-button turns grey with its triangle, its tooltip says `profiles.yml: not opened`
-and why, and a click says the same. To edit that file here, start dbt-edith
+Project section offers no button and says `Not opened:` and why, and the gear
+carries its amber triangle, its tooltip saying `profiles.yml not opened` and
+why. To edit that file here, start dbt-edith
 with `DBT_PROFILES_DIR` set to the folder it links to. A link that stays in the
 project opens as any file does
 ([0094](../decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md)).

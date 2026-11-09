@@ -683,9 +683,9 @@ dbt-edith path/to/project --job 'Nightly build' --output json
 ```
 
 The jobs are the ones the project names in its own `.dbt-edith/jobs.yml`, which
-the Jobs settings write when you choose to keep the sources in the project
-([Jobs](jobs-and-reports.md#jobs)), read as the Jobs tab reads them over the
-same files, and never the settings: the command line reads none. Without that
+the Orchestration section of the settings writes when you choose to keep the
+sources in the project ([Jobs](jobs-and-reports.md#jobs)), read as the Jobs tab
+reads them over the same files, and never the settings: the command line reads none. Without that
 file the call exits 2 with `no .dbt-edith/jobs.yml in this project; name the
 sources in the Jobs settings`, and with one that does not read, exits 2 with its
 reason and line. The call never runs dbt.

@@ -90,7 +90,7 @@ whether that DAG runs dbt or not, a dbt Cloud job started by a scheduled job's
 end. A dbt Cloud job whose schedule trigger is on is scheduled even when the
 vars file writes its cron. A DAG with `schedule: null`, a CI job or a merge job
 is not. A job that hangs on something no file read says is neither, and the
-news on the Reports button counts only the models surely not scheduled
+news on the Reports tab counts only the models surely not scheduled
 ([0077](../decisions/0077-a-start-no-file-says-is-neither-scheduled-nor-unscheduled.md)). Click a model to open it: the reports roll up,
 and the Jobs tab lists its jobs. Coming back finds the list as you left it,
 folds and scroll.
@@ -112,8 +112,8 @@ under the rows holds the choice of where to keep them, the issue found, and
 button. **Browse…**
 beside a path, open already on a source being added, lists one folder at a
 time, its folders and YAML files only: a click opens a folder or picks a file,
-and **Use** writes it from the project when it sits within two folders above
-it, in full otherwise
+and **Use this folder** (**Use this file** on a file) writes it from the project
+when it sits within two folders above it, in full otherwise
 ([0070](../decisions/0070-a-source-is-picked-from-folders-the-server-lists.md)).
 Where the sources are kept is chosen the first time they are saved: **In the
 project, `.dbt-edith/jobs.yml`** (shared, committed, the default), or **For me
@@ -243,7 +243,7 @@ jobs once the Jobs tab has a source, and the order of their steps with it, the
 project's macros while one is reached by no node and nothing explains it, this
 tool's own checks while one finds a node, and the builds of each environment
 once the dbt_artifacts package is there. The order of the steps, the checks and
-the builds are listed but never light the button. The panel covers the whole
+the builds are listed but never light the tab. The panel covers the whole
 window, the sidebar too, so a list is read at full width, as the settings do
 (0137, 0140). The tab is lit while the panel is down and does nothing when
 clicked then. Anything that shows a file or a dock tab rolls it up again: a name
@@ -255,7 +255,7 @@ last drew it or the index says: the Job order counts nothing until it has been
 shown, since counting it would ask for the job files, and the builds count
 nothing, a number across environments matching none on the page. Each count is a
 number the section shows. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and closes it.
-While no section has anything to show, the button is dimmed and its tooltip says
+While no section has anything to show, the tab is dimmed and its tooltip says
 what will fill it; it opens on the job coverage, where a source is added (0075).
 
 Every section reads the same way: a head with its name, the source in a chip
@@ -269,12 +269,12 @@ row of the section, not only the rows drawn, and a fold says `3 of 40` while it
 narrows. What you filtered, opened, unfolded and scrolled is kept when you leave
 a section and come back (0137).
 
-What is new since you last looked rides on the button, a chip per report in
+What is new since you last looked rides on the tab, a chip per report in
 its colour: the last run's errors and failed tests in red, the config paths
 that apply to nothing in dbt's orange, collin's models to investigate in pink,
 and in amber how many more models no scheduled job runs than when you last
 looked at the coverage. Alone, a chip says its words, "12 to
-investigate"; with others, its count alone, so the button stays short, and the
+investigate"; with others, its count alone, so the tab stays short, and the
 tooltip says each in full. The panel opens on the first of them. A section is read again
 each time it is shown, and never redrawn while you read it: when its file
 changes underneath, its **Read again** button says so (0064).
@@ -295,7 +295,7 @@ test at its YAML. A node the
 command did not reach is counted, never listed: not run says nothing about it.
 The section says when the manifest was written after the run, or when the run
 names tables the manifest names otherwise, likely another target. Errors and
-failed tests ride on the Reports button until you look (0065).
+failed tests ride on the Reports tab until you look (0065).
 
 **Warnings** lists what dbt would warn of as it parses, worked out from the
 manifest without running dbt: for now, the config paths of `dbt_project.yml`
@@ -309,7 +309,7 @@ the block's kind and no disabled node is under them. The list is dbt's, checked
 against dbt-core and Fusion, a disabled node counting as dbt counts it. When
 `dbt_project.yml` was saved after the manifest, or other files changed since,
 the section says so first: a folder added since the last parse is in no
-manifest. The count rides on the button from the first look of each page,
+manifest. The count rides on the tab from the first look of each page,
 then only when it rises, and only while the manifest matches the project. In
 the editor, each such key carries an amber mark in the gutter, grey while the
 manifest is behind: its hover card says why, and a click opens the section. A
@@ -321,7 +321,7 @@ which line (0103).
 ![The Job order section of Reports: two pairs of steps that only the clock orders, each with the models that link them](../shots/reports-job-order.png)
 
 **Job order** is listed beside the coverage once a source is named, and never
-lights the button nor opens the panel: it is a question asked, and a project
+lights the tab nor opens the panel: it is a question asked, and a project
 with jobs would nearly always have an answer, some of them meant, such as two
 DAGs on different crons. It answers what `dbt-edith --job-order` answers
 ([command-line.md](command-line.md#the-order-between-jobs),
@@ -378,12 +378,12 @@ picked reads; not dbt's cross-database helpers nor its generic tests, which
 run only when something calls them, nor a project's `default` materialization
 where the adapter has its own. Each name opens the macro at its line. The
 click on a macro's card, `used by 9 models`, opens this section on that
-macro, at its top, listed then without lighting the button:
+macro, at its top, listed then without lighting the tab:
 every node reaching it, by kind, with the macro it comes through when it does
 not call it itself, or a note when dbt recorded no call, then the macros
 calling it. Under dbt Fusion, which lists a macro reached through another as
 a direct call, fewer nodes read as reached through other macros. The section
-is listed, and lights the button, only while one of the first three reasons
+is listed, and lights the tab, only while one of the first three reasons
 holds, or a materialization or strategy macro no node names, and the panel
 then opens on it rather than on an empty coverage; it carries no chip, since
 the count would never go (0105).
@@ -416,15 +416,15 @@ Only the project's own enabled models and sources are looked at, an installed
 package's being the package's to document, test and read. A source whose
 manifest says nothing of freshness, as another producer's may, is given no
 verdict. The section is listed in the panel while one of the seven lists a node,
-but never lights the button, carries no chip, since the count would rarely go
+but never lights the tab, carries no chip, since the count would rarely go
 down, and is never the section the panel opens on (0116).
 
 **Builds by environment** is listed once Snowflake's features are on and the
 manifest holds the dbt_artifacts package's `model_executions` and `invocations`
 models. Nothing is asked until you press **Read from Snowflake** in its head
 (**Refresh** after), which reads each environment's tables one after the other,
-drawing each as it lands. It carries no chip on the button: there is no file
-written to watch. Per environment, named by a tag in its colour: tiles for the models in
+drawing each as it lands. It carries no chip on the tab: there is no file
+written to watch. Per environment, named by a tag in its colour: figures for the models in
 **error** (the last attempt failed), **stale** (no success within the threshold,
 set in the Snowflake section of the settings), **not built** (no run in the last
 90 days) and fine, and a fold for each of the first three listing the models,
@@ -436,7 +436,7 @@ tick include packages. An environment that cannot place the package's tables
 says why instead of showing numbers, and one the read failed on says what
 Snowflake said, with a link to the profile when the connection is to blame.
 Every enabled model is listed, by name, and the section stays where it is in the
-list and leaves the button dimmed until it has been read
+list and leaves the tab dimmed until it has been read
 ([snowflake.md](snowflake.md),
 [0117](../decisions/0117-the-last-build-per-environment-is-read-from-dbt-artifacts.md)).
 
