@@ -687,8 +687,8 @@ the Orchestration section of the settings writes when you choose to keep the
 sources in the project ([Jobs](jobs-and-reports.md#jobs)), read as the Jobs tab
 reads them over the same files, and never the settings: the command line reads none. Without that
 file the call exits 2 with `no .dbt-edith/jobs.yml in this project; name the
-sources in the Jobs settings`, and with one that does not read, exits 2 with its
-reason and line. The call never runs dbt.
+sources in the Orchestration section of the settings`, and with one that does not
+read, exits 2 with its reason and line. The call never runs dbt.
 
 ```
 DAG jaffle_daily  scheduled 0 6 * * *  jaffle_daily.yml:2

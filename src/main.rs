@@ -177,15 +177,15 @@ struct Args {
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe"])]
     overview: bool,
 
-    /// Print one DAG or dbt Cloud job, step by step, with the nodes each step runs and what it waits for, and exit, without serving: its id or name. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    /// Print one DAG or dbt Cloud job, step by step, with the nodes each step runs and what it waits for, and exit, without serving: its id or name. Needs .dbt-edith/jobs.yml, which the Orchestration section of the settings writes
     #[arg(long, value_name = "NAME", conflicts_with_all = ["select", "selector", "column", "describe", "overview"])]
     job: Option<String>,
 
-    /// Print the dbt dependencies between steps of jobs that start on their own which the job files do not order, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    /// Print the dbt dependencies between steps of jobs that start on their own which the job files do not order, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Orchestration section of the settings writes
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job"])]
     job_order: bool,
 
-    /// Print which models, seeds and snapshots no scheduled job runs, which run only in jobs whose schedule is not read or that nothing starts, and the steps that select nothing, as the Job coverage report lists them, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Jobs settings write
+    /// Print which models, seeds and snapshots no scheduled job runs, which run only in jobs whose schedule is not read or that nothing starts, and the steps that select nothing, as the Job coverage report lists them, and exit, without serving. Needs .dbt-edith/jobs.yml, which the Orchestration section of the settings writes
     #[arg(long, conflicts_with_all = ["select", "selector", "column", "describe", "overview", "job", "job_order"])]
     job_coverage: bool,
 
