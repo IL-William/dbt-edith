@@ -963,7 +963,7 @@ settings down, a section at a time from a rail, as the reports: Project, with
 the profile, the environments and Python, Column lineage, Snowflake,
 Orchestration, Updates, and Help and tour. The rail names the column lineage on
 screen, says whether Snowflake is on and whether a newer release is out, and
-the gear and the Project row carry the amber triangle the profile's button had
+the settings button and the Project row carry the amber triangle the profile's button had
 when dbt would find no profile. The status bar's venv pill opens Project, the update
 pill Updates, and the `env` pill the environment menu, whose last row opens
 Project (0142, 1.75.1); a venv is activated from its button there, the click
@@ -1998,7 +1998,9 @@ and opened on a model, seed or snapshot with an empty selector it draws
 `1+<model>+1`; a selection typed is never replaced. The settings open over the
 whole window like the others. The bar no longer wraps: it cuts the project's
 name down to 120px, then folds the gear's name, the counts, and the names of
-the tabs not lit. Checked with `web/tests/spaces.js`, `selpanel.js`,
+the tabs not lit (since 2.20.0, 0166: the search field's words, the name, then
+the tabs, the gear being a square with no name and the counts in the status
+bar). Checked with `web/tests/spaces.js`, `selpanel.js`,
 `reports.js` and `panels.js`, and the fold in `scripts/walk_depth.py`. What is
 left of the bar on a narrow window is Deferred item 10, and what the Lineage
 space has yet to take, item 15.
@@ -2572,9 +2574,10 @@ are never edited, so find an item by its title.
 8. **The dock's bar on a narrow window.** The dock's tabs and the lineage's
     tools share one row, 30px high. The tabs give way first: each carries a
     glyph beside its name, and once the row cannot hold every label on one
-    line they keep the glyph alone, named by its tooltip (`foldDockTabs`).
-    If that is not enough, Fit is its glyph alone already, and Export keeps its
-    glyph and chevron alone too, the same way. Past that, nothing in the tools
+    line the ones not in front keep the glyph alone, named by its tooltip
+    (`foldDockTabs`). If that is not enough the tab in front folds too, and
+    after that Fit is its glyph alone already, and Export keeps its glyph and
+    chevron alone, the same way (0166). Past that, nothing in the tools
     is set to give way: the browser shrinks each one to its narrowest, so every
     label that can break does ("up", "down") and the row spills over the
     canvas.
@@ -2686,12 +2689,15 @@ are never edited, so find an item by its title.
         of what is new.
 
 10. **The top bar on a very narrow window.** The bar no longer breaks onto
-    lines: it folds its counts, then the names of the tabs not lit (0140).
-    On Jaffle Shop it still runs past the window under about 650px, where the
-    project's name is already cut to 40px and the Search, the shortcut list,
-    the pumpkin, GitHub, the gear and the manifest's pill are what is left.
-    - **Possible answers:** fold the Search button to its glyph, or move the
-      look's and GitHub's buttons into one menu.
+    lines: it cuts the search field's words, then the project's name, then
+    the names of the tabs not lit (0140, 0166; the counts left it for the
+    status bar). Measured since 0166: on Jaffle Shop the bar fits down to 660px
+    and runs past the window at 650px (657px against 650px), where the
+    project's name is already cut to 40px and the search, the shortcut list,
+    the theme, GitHub, the settings button and the manifest's pill are what is
+    left.
+    - **Possible answers:** ~~fold the Search button to its glyph~~ (done in
+      2.20.0, 0166), or move the look's and GitHub's buttons into one menu.
     - **How to check it:** measured with Snowflake's features off only; the
       news chips on the Reports tab, which several reports can fill, were not.
 11. **The README's options, held to `--help`.** The README writes its options
@@ -2852,8 +2858,9 @@ of its own, and each panel updates the tour, its page under
       text, line numbers, placeholders, toasts) keep their pre-2.0 values until
       the screen using each is redrawn; the other themes derive these names
       from their own, so they follow when Night's change.
-    - Declared and not read yet: `--cur-line`, `--dots`, `--node-shadow`, `--py`
-      and ~~`--ansi-*`~~ (read by the terminal since 2.12.0, 0161).
+    - Declared and not read yet: ~~`--cur-line`~~ (read since 2.20.0, 0166),
+      `--dots`, `--node-shadow`, `--py` and ~~`--ansi-*`~~ (read by the terminal
+      since 2.12.0, 0161).
 32. **Contrast and browser controls (#164, #165).**
     - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
       is 3.0:1, below AA.
@@ -2884,7 +2891,7 @@ of its own, and each panel updates the tour, its page under
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), ~~Compiled~~ (2.18.0, 0164),
-    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and ~~the design docs~~ (docs/design/, look.md).
+    ~~Git~~ (2.19.0, 0165), ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0), ~~the shell~~ (2.20.0, 0166) and ~~the design docs~~ (docs/design/, look.md).
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
@@ -2896,9 +2903,11 @@ of its own, and each panel updates the tour, its page under
       it.
     - Another open page keeps its theme until it is reloaded.
     - The "new" tag beside Follow the system is static text.
-    - A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
+    - ~~A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
       Light; the selection wash (`--select`, as the boards use) comes with the
-      shell step.
+      shell step.~~ Settled in 2.20.0 (0166): the shell's selected rows take
+      `--select`. The wash leaves a few of Light's kind marks below 3:1 all the
+      same (item 56).
     - The theme has no keyboard shortcut, ~~and the settings' one-column layout
       is the settings step's~~ (2.14.0, 0163).
 
@@ -3106,8 +3115,8 @@ of its own, and each panel updates the tour, its page under
       filled for a scheduled one, the warning's for one not read), where the
       board draws every chip on `--line`; only its shape and the clock are the
       board's.
-    - The hover card's column list keeps its amber type: `--fg-mute` there is
-      the shell step's (21).
+    - ~~The hover card's column list keeps its amber type: `--fg-mute` there is
+      the shell step's (21).~~ Settled in 2.20.0 (0166).
 53. **The Reports' limits (2.17.0).**
     - A chip's kind bar is drawn from a `materialized` field the server adds
       to the rows it already sends (the Checks', the job coverage's and
@@ -3181,6 +3190,26 @@ of its own, and each panel updates the tour, its page under
     - The head's `line endings differ` note calls a side CRLF when any of its
       lines ends that way: a HEAD with mixed endings against a working file all
       in CRLF gets no note and no marked line, and a lone `\r` reads as LF.
+56. **The shell's limits (0166, 0167, 2.20.0).**
+    - The editor's tabs have no kind bar: a tab knows its file, not its node
+      (item 34).
+    - The sidebar's tabs keep their accent underline, the tree its indents, and
+      the sidebar its width and the rule beside it; only the row's height
+      (34px, the editor's tab bar's) follows the boards.
+    - The tree's head has no chevron: nothing folds there.
+    - The page keeps a minimum width, from the dock's tools (step 06's depth
+      control), which no fold of the top bar reaches: on Jaffle Shop about
+      1017px with no model open and 1052px with one, so below that it runs
+      past the window, as it does on main. The dock's row is still `bare`
+      there for the same reason.
+    - On a selected row in Light the table, materialized view, seed, source,
+      snapshot, exposure, other and custom kind marks are 2.6 to 2.9:1 (the
+      boards' own values over `--select`); only the view, incremental, YAML
+      and Python marks and git's letters are held by a test.
+    - The editor's gutter and current line are the main editor's: the Compiled
+      and Run tabs and the diff keep the old gutter (their own steps).
+    - The hover card's types are `--fg-mute`, no longer the amber of
+      `--source`; the Catalog's own types are another step's.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

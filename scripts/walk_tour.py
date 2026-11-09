@@ -436,7 +436,7 @@ class Walk:
         # dbt parse lands with the tour still up. The watcher reads the
         # manifest, and the page hears of it at its next poll.
         parse()
-        page.until("document.querySelectorAll('#counts .chip').length > 0", "the manifest", 30)
+        page.until("document.querySelector('#status-counts').textContent !== ''", "the manifest", 30)
         time.sleep(1)
         self.check("a manifest landing during the tour offers nothing under it, and notes nothing",
                    not page.js("!!document.querySelector('.tour-offer')") and not (self.config / "tour.json").exists())

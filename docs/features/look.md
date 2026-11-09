@@ -12,7 +12,7 @@ every theme, in a darker twin where the page is light (0150, 0106, 0107, 0108).
 ## Picking one
 
 The half-filled circle in the top bar, between the shortcut list's `?` and
-GitHub, opens a menu of the four, each with a small swatch painted in its own
+GitHub (all four plain squares at the bar's right), opens a menu of the four, each with a small swatch painted in its own
 colours; the one on screen is checked. The arrows move over them, Enter picks,
 Escape closes the menu and gives the focus back to the button.
 

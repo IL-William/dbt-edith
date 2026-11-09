@@ -144,9 +144,12 @@ check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-
 }), []);
 // Git's letters are 10.5px text at the end of a tree row (0151): the sidebar, a selected row, and a folder's dimmed one all hold 4.5:1.
 (function () {
-  var bg2 = channels2(light.decl['--bg-2']), onSel = channels2(light.decl['--accent-dim']);
+  var bg2 = channels2(light.decl['--bg-2']);
   function hex(c) { return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join(''); }
   function mix(a, b, p) { return a.map(function (v, i) { return Math.round(v * p + b[i] * (1 - p)); }); }
+  // A selected row is the wash (--select, an rgba) laid over the sidebar (0166).
+  var wash = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(light.decl['--select']);
+  var onSel = mix([+wash[1], +wash[2], +wash[3]], bg2, parseFloat(wash[4]));
   var bad = [];
   ['--git-m', '--git-u'].forEach(function (n) {
     var c = channels2(light.decl[n]);
@@ -154,6 +157,28 @@ check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-
     if (ratio(hex(mix(c, bg2, .85)), light.decl['--bg-2']) < 4.5) bad.push(n + ' dimmed on a folder');
   });
   check('Light\'s git letters are at least 4.5:1 on its sidebar, on a selected row and dimmed on a folder', bad, []);
+  // The icons of a selected row are the kind colours (a file's, 0151). The board's Light values for the table, materialized view,
+  // seed, source, snapshot, exposure, other and custom kinds are 2.6 to 2.9:1 on the wash, as they are drawn (docs/state.md, the shell's
+  // limits): the ones that hold are checked, so a change that loses one is seen.
+  var kinds = ['--k-view', '--k-incr', '--dbt-yaml', '--py'];
+  check('Light\'s view, incremental, YAML and Python marks are at least 3:1 on a selected row (--select over --bg-2)', kinds.filter(function (n) {
+    return ratio(lightValue(n), hex(onSel)) < 3;
+  }), []);
+}());
+// Reports is dimmed while it has nothing to show (0075, 0166): its glyph, --fg-mute at the tab's opacity over the bar, is a control and holds 3:1 in every theme.
+(function () {
+  var dim = /\.sp\.dim \{ opacity: ([\d.]+); \}/.exec(css);
+  ok('the dimmed tab\'s opacity is declared once', !!dim);
+  var o = dim ? parseFloat(dim[1]) : 1;
+  function mixed(fg, bg) {
+    var a = channels2(fg), b = channels2(bg);
+    return '#' + a.map(function (v, i) { return ('0' + Math.round(v * o + b[i] * (1 - o)).toString(16)).slice(-2); }).join('');
+  }
+  var bad = [['Night', night], ['Graphite', graphite], ['Light', light], ['Halloween', halloween]].filter(function (t) {
+    var fg = t[1].decl['--fg-mute'] || night.decl['--fg-mute'], bg = t[1].decl['--bg-2'] || night.decl['--bg-2'];
+    return ratio(mixed(fg, bg), bg) < 3;
+  }).map(function (t) { return t[0]; });
+  check('the dimmed Reports glyph is at least 3:1 on the bar (--bg-2) in the four themes', bad, []);
 }());
 // The warning colour as text (the pill's "manifest" and its age, the card's amber line): Light darkens it, the others keep Night's.
 check('every theme but Light has Night\'s warning text, and Light\'s is at least 4.5:1 on its sidebar and on a card',

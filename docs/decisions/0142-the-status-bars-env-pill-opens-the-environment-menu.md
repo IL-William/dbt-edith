@@ -1,6 +1,6 @@
 # 0142. The status bar's `env` pill opens the environment menu
 
-Date: 2026-11-04 · Status: accepted · Amends 0100
+Date: 2026-11-04 · Status: accepted, amended by 0166 · Amends 0100
 
 **Trigger:** read before changing what a click on the status bar's `env` pill
 does, what its menu offers, or where an environment is picked.
@@ -26,6 +26,8 @@ hiding environments stays in one place, the settings.
   settings' Project section. A second click on the pill closes it, and the menu
   opens above the pill when there is no room below. The pill carries the caret
   and the tooltip the Catalog's has, and `aria-haspopup="menu"`.
+  *Amended by [0166](0166-the-shell-is-laid-out-as-the-boards-draw-it.md): the
+  status bar's pill has no caret; the Catalog's keeps it.*
 - **Naming and hiding environments stays in the settings**, as 0100 has it.
   The venv pill keeps opening the settings.
 

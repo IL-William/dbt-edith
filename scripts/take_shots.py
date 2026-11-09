@@ -614,7 +614,7 @@ class Shots:
     def load(self, url):
         self.page.call("Page.navigate", url=url)
         self.front()
-        self.until("document.querySelectorAll('#counts .chip').length > 0", "the page to load", 30)
+        self.until("document.querySelector('#status-counts').textContent !== ''", "the page to load", 30)
 
     def run(self, edith):
         self.edith = edith
@@ -622,7 +622,7 @@ class Shots:
         page.call("Emulation.setDeviceMetricsOverride", width=WIDTH, height=HEIGHT, deviceScaleFactor=self.scale, mobile=False)
         page.call("Page.navigate", url=edith.url)
         self.front()
-        self.until("document.querySelectorAll('#counts .chip').length > 0", "the page to load", 30)
+        self.until("document.querySelector('#status-counts').textContent !== ''", "the page to load", 30)
         self.until("[...document.querySelectorAll('.tour-offer button')].some((b) => b.textContent === 'Not now')", "the tour's offer")
         self.js("[...document.querySelectorAll('.tour-offer button')].find((b) => b.textContent === 'Not now').click()")
         # Named through the route the sources form saves with, in the settings

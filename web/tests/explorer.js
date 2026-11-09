@@ -6,7 +6,8 @@ var code = src.slice(src.indexOf('function ancestorsOf'), src.indexOf('async fun
 
 var S = { open: new Map(), rows: new Map(), gitMod: new Set(), gitUnt: new Set(), gitAdded: new Set(),
           gitModDirs: new Set(), gitUntDirs: new Set(), gitPrefixes: [] };
-var branchEl = { textContent: '' };
+var nameEl = { textContent: '' };
+var branchEl = { dataset: {}, classList: { toggle: function () {} }, querySelector: function () { return nameEl; } };
 function $(sel) { return branchEl; }
 var document = { createElement: function () { return { className: '', textContent: '', title: '', attrs: {}, setAttribute: function (k, v) { this.attrs[k] = v; }, remove: function () { this.gone = true; } }; } };
 eval(code);
@@ -46,7 +47,7 @@ var payload = { repo: true, branch: 'master',
  'models/staging/c.sql','models/newfolder/d.sql','staged.sql','added.sql'].forEach(function(p){ addRow(p, false); });
 
 applyGit(payload);
-print('branch shown: ' + branchEl.textContent);
+print('branch shown: ' + nameEl.textContent);
 print('\n--- git alone ---');
 check('models/staging/a.sql', 'amber');
 check('macros/m.sql', 'amber');

@@ -46,12 +46,12 @@ a deep project usually calls for; folders already read stay in the page, so
 reopening one asks the server nothing.
 
 That profile is not in the tree, unless the project holds one: the **Open
-profiles.yml** button in the Project section of the settings, behind the gear in
-the top bar, opens it instead.
+profiles.yml** button in the Project section of the settings, behind the settings button
+(the sliders) in the top bar, opens it instead.
 dbt-edith looks for it where dbt does, in `DBT_PROFILES_DIR` as dbt-edith was
 started with it, then in the project, then in `~/.dbt`, and the section names
 the file it found. When there is none, it names where dbt would read one, and
-the gear and the section's row carry an amber triangle. It is the one file outside the project
+the settings button and the section's row carry an amber triangle. It is the one file outside the project
 dbt-edith opens, and saving it writes that file in place: dbt-edith never
 creates one (0017, 0049). A profile that is a link, `~/.dbt/profiles.yml`
 pointing into a dotfiles repository say, stays a link: the save writes the
@@ -60,8 +60,8 @@ file it points at.
 A `profiles.yml` in the project is one of the project's files, and is held to
 it as every path the editor opens is. When it links to a file outside the
 project, dbt still follows the link, but dbt-edith does not open it: the
-Project section offers no button and says `Not opened:` and why, and the gear
-carries its amber triangle, its tooltip saying `profiles.yml not opened` and
+Project section offers no button and says `Not opened:` and why, and the settings
+button carries its amber triangle, its tooltip saying `profiles.yml not opened` and
 why. To edit that file here, start dbt-edith
 with `DBT_PROFILES_DIR` set to the folder it links to. A link that stays in the
 project opens as any file does
@@ -78,7 +78,9 @@ rather than holding one
 
 ![The Cmd/Ctrl + K palette on the letter s, its answers in groups of five rows with a +N more row, and the keys in its foot](../shots/search-palette.png)
 
-`Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
+The search field in the middle of the top bar opens the same palette, and
+shows its shortcut; when the window is narrow the field shrinks, then keeps its
+glyph and shortcut alone. `Cmd/Ctrl + K` searches three things at once: dbt nodes from the manifest, the
 macros it lists, and a flat index of every file in the project. That last half
 matters more than it sounds: a script or a dotfile is not a dbt node, and a
 manifest-only search can never find one.

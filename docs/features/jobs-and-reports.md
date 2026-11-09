@@ -96,7 +96,7 @@ and the Jobs tab lists its jobs. Coming back finds the list as you left it,
 folds and scroll.
 
 Point dbt-edith at the jobs in the Orchestration section of the settings,
-behind the gear in the top bar, which **Sources…** and **Add a source**, in
+behind the settings button (the sliders) in the top bar, which **Sources…** and **Add a source**, in
 the dock's tab row beside the Jobs tab and in the Job coverage section of
 Reports, open too: one or more
 folders or files, absolute or relative to the project, each an Airflow or a

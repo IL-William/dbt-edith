@@ -13,6 +13,31 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.0 - 2026-11-09
+
+- Draw the top bar as the boards do: the search a field in the middle, the right
+  group four plain squares, the settings button the board's sliders with no name
+  unfolding, and the project's name quieter (0166).
+- Move the counts of models, seeds and tests to the status bar, and make its left
+  say where you are in the space in front: the file and its cursor in Code, the
+  selection in Lineage, the section in Reports and the settings (0166).
+- Draw the status bar's venv plain, with a pictogram for its state, its `env` pill
+  without a caret, and git's branch with its glyph (0166).
+- Fold the top bar by cutting the search field's words before the project's name
+  and the tabs, and the dock's tabs by keeping the tab in front named before
+  Export's label is cut (0166).
+- Dim Reports a little less while it has nothing, so its glyph holds 3:1 in Light
+  (0166).
+- Collapse Open editors by default behind a button the keyboard opens, and wash
+  selected rows in the selection colour (0166).
+- Draw the editor as the boards do: a 46px gutter with no rule, the cursor's line
+  lit, tabs with their line under the bar and a × only on the tab in front or
+  under the pointer, and a breadcrumb with slashes and the file in the text
+  colour (0166).
+- Draw the hover card on the card colour, the node card with its file and tags,
+  its counts and a two-column list of types, and keep a card opened from the
+  editor inside the editor (0167).
+
 ## 2.19.0 - 2026-11-09
 
 - Say how far the branch is from origin in words in the Git tab's first row,

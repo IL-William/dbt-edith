@@ -84,7 +84,7 @@ check('the type column is dim, not the source colour', /color:\s*var\(--fg-mute\
 check('the figure of a Lineage cell stands out, the arrow does not', [/var\(--fg-mute\)/.test(rule('.cols .c-lin')), /var\(--fg\)/.test(rule('.cols .c-lin b'))], [true, true]);
 check('the Catalog\'s crumb is scoped, the editor\'s breadcrumb keeps its own', /margin:\s*3px 0 6px 11px/.test(rule('.cat-head .crumb')), true);
 check('the dock\'s tab is the Catalog\'s too, in a row 32px high', /height:\s*32px/.test(rule('.cat-tabs')), true);
-check('the hover card\'s column type is another step\'s: it keeps its colour', /color:\s*var\(--source\)/.test(rule('.hc-col .c-type')), true);
+check('the hover card\'s column type is quiet too (the shell step), not the source colour', /color:\s*var\(--fg-mute\)/.test(rule('.hc-col .c-type')) && !/--source/.test(rule('.hc-col .c-type')), true);
 check('the Location sizes are the Catalog\'s alone: the settings\' table and the clone dialog keep theirs',
   [/font-size:\s*10px/.test(rule('.loc th')), /padding:\s*4px 12px 4px 0/.test(rule('.loc td')), /padding:\s*5px 12px 5px 0/.test(rule('.cat-body .loc td'))], [true, true, true]);
 check('the words beside the name give way before the name does',

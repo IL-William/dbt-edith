@@ -49,6 +49,35 @@ check('and keeps its left', zero.left, 500);
 print('\n--- the gap is a parameter ---');
 check('a wider gap pushes the card further down', placeFloating(atRect(100, 100, 200, 48), CARD, VIEW, 20).top, 168);
 
+print('\n--- a view that is not the window: the editor (0167) ---');
+var EDITOR = { top: 100, left: 260, width: 700, height: 400 };      // rows 100..500, columns 260..960
+check('below the anchor when it fits in the view',
+  placeFloating(atRect(300, 150, 60, 18), CARD, EDITOR).top, 176);
+var low = placeFloating(atRect(300, 440, 60, 18), CARD, EDITOR);
+check('a low line opens above, not over what is under the view', low.top, 232);
+check('flagged as flipped', low.above, true);
+check('never lower than the view\'s bottom', low.top + CARD.height <= 100 + 400, true);
+check('left edge is the view\'s, not the window\'s', placeFloating(atRect(100, 150, 40, 18), CARD, EDITOR).left, 264);
+check('right edge is the view\'s', placeFloating(atRect(900, 150, 40, 18), CARD, EDITOR).left, 960 - 320 - 4);
+check('clamped inside the view when neither side fits',
+  placeFloating(atRect(300, 250, 60, 18), { width: 320, height: 380 }, EDITOR).top, 116);
+check('the window is the default view: no top and no left',
+  placeFloating(atRect(100, 700, 200, 48), CARD, { width: 1200, height: 800, top: 0, left: 0 }).top, 492);
+
+print('\n--- the room a card may take ---');
+var WIN = { width: 1200, height: 800 };
+var inside = { left: 260, top: 100, right: 960, bottom: 500 };
+check('no editor: the window', hoverView(WIN, null, CARD), { top: 0, left: 0, width: 1200, height: 800 });
+check('the editor, when the card fits in it', hoverView(WIN, inside, CARD), { top: 100, left: 260, width: 700, height: 400 });
+check('the editor cut by the window\'s edge', hoverView(WIN, { left: 260, top: 100, right: 1500, bottom: 900 }, CARD),
+  { top: 100, left: 260, width: 940, height: 700 });
+check('a card taller than the editor falls back to the window', hoverView(WIN, inside, { width: 330, height: 420 }),
+  { top: 0, left: 0, width: 1200, height: 800 });
+check('a card wider than the editor falls back to the window too', hoverView({ width: 840, height: 800 }, { left: 520, top: 100, right: 840, bottom: 500 }, { width: 330, height: 200 }),
+  { top: 0, left: 0, width: 840, height: 800 });
+check('an editor scrolled out of the window falls back too', hoverView(WIN, { left: 0, top: -300, right: 900, bottom: 60 }, CARD),
+  { top: 0, left: 0, width: 1200, height: 800 });
+
 print('\n--- what a test checks ---');
 var col = { kind: 'test', name: 'not_null_orders_customer_id', test_name: 'not_null', column: 'customer_id' };
 check('a column test names its generic and column', testFacts(col, 'column'), [{ text: 'not_null on customer_id' }]);

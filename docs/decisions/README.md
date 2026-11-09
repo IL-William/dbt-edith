@@ -169,6 +169,8 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0163](0163-the-settings-are-one-column-of-rows.md) | The settings are one column of rows | adding a setting, or changing how a section of the settings lays out its controls |
 | [0164](0164-the-compiled-tab-says-when-and-where-on-one-line-and-the-environment-is-picked-beside-it.md) | The Compiled tab says when and where on one line and the environment is picked beside it | changing the Compiled or Run tab's line, its environment picker, the note under it, how a swapped relation is marked, or the description in the dock's row |
 | [0165](0165-the-git-tab-says-how-far-it-is-from-origin-in-words-and-the-diff-wraps-its-lines.md) | The Git tab says how far it is from origin in words, and the diff wraps its lines | changing the Git tab's branch row, rows or commit button, or how a diff lays out, wraps or folds its lines |
+| [0166](0166-the-shell-is-laid-out-as-the-boards-draw-it.md) | The shell is laid out as the boards draw it | changing what the top bar or the status bar holds and in which order, how either folds, what the dock's tabs keep when their row is full, or what the status bar says on its left |
+| [0167](0167-a-hover-card-from-the-editor-stays-in-the-editor.md) | A hover card from the editor stays in the editor | changing where a hover card opens, or what bounds it |
 
 ## Keeping these honest
 

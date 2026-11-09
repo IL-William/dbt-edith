@@ -59,7 +59,9 @@ there is only one. If the shell does not echo the line within a second, the toas
 
 ## Python environment
 
-The status bar shows the virtualenv, labelled `venv` when it was active as
+The status bar shows the virtualenv, plain and led by a pictogram for its state
+(a check when active, an amber triangle when found and not active, a dashed ring
+for none), labelled `venv` when it was active as
 dbt-edith started and `venv (inactive)` when it was merely found in the project,
 with the Python and dbt versions in the tooltip. When several are present, the
 one that actually contains dbt wins.

@@ -54,6 +54,8 @@ function fillCatalogJobs() {}
 function paintReportsButton() {}
 function paintSettingsButton() {}
 function selectPanelUp() {}
+// What the status bar says of each space has its own test (status.js).
+function updateStatus() {}
 // What the selection's panel has open inside itself: Escape closes it first.
 var card = false;
 function closeSelCard() { var was = card; card = false; return was; }

@@ -145,6 +145,9 @@ function canvasOptions() { return {}; }
 function paintLegend() {}
 function paintTestsCount() {}
 function rememberSelection() {}
+// The status bar's words have their own test (status.js).
+function updateStatus() {}
+function selectionHere(line) { return line; }
 var jel = function (tag, className, textContent) { var el = fakeEl(''); el.textContent = textContent; return el; };
 
 // A `const` or a `let` an eval declares stays inside it: the slice's are made `var`s.

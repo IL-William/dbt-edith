@@ -26,8 +26,8 @@
      the meaning colours), the rule after this block derives about seventy more
      from those by color-mix, and a name none of them restates keeps Night's
      value.
-     --cur-line and --node-shadow are in every block, and nothing reads them
-     yet (--dots is the canvas's grid, 0160). The terminal reads --bg, --fg,
+     --node-shadow is in every block, and nothing reads it yet (--dots is the
+     canvas's grid, 0160). The terminal reads --bg, --fg,
      --accent, --select and the sixteen --ansi- colours of whichever theme is
      on (0161). */
   /* Surfaces */
@@ -725,20 +725,36 @@ kbd {
 
 /* ---------------------------------------------------------------- chrome -- */
 #topbar, #statusbar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 0 10px; background: var(--bg-2); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
   flex: 0 0 auto;
 }
-#topbar { height: 38px; }
+#topbar { height: 40px; gap: 4px; padding: 0 8px 0 14px; }
+#topbar > .sep { height: 16px; margin: 0 8px; }
 /* Nothing in the bar breaks onto a second line (docs/state.md had it break under
-   about 1000px). The project's name gives way first, cut with an ellipsis, then
-   the counts and the tabs' names fold, measured by foldTopbar() (0140). */
+   about 1000px). The search field gives way first, down to 200px, then its
+   words, then the project's name, cut with an ellipsis, then the tabs not lit
+   fold to their glyph: all measured by foldTopbar() (0140, 0166). */
 #topbar > * { flex: 0 0 auto; white-space: nowrap; }
 #topbar > .grow { flex: 1 1 0; min-width: 0; }
-#topbar > #project { flex: 0 1 auto; min-width: 40px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-#topbar.nocounts #counts { display: none; }
-/* The gear's name stays folded, lit or not: the first thing to give up (0140). */
-#topbar.nolabel #settings-btn .rlabel { display: none; }
+#topbar > #project { flex: 0 0 auto; min-width: 40px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; padding: 3px 6px; color: var(--fg-dim); }
+/* The name only gives way once the search field has given all it can (nosearch is
+   set), so the field is what shrinks with the window first. */
+#topbar.nosearch > #project { flex: 0 1 auto; }
+/* The board's search field. Its width follows the window down to 200px, then
+   nosearch takes its words away. */
+#topbar > .search {
+  display: flex; align-items: center; gap: 8px; flex: 0 1 360px; min-width: 200px; max-width: 34vw; height: 26px;
+  padding: 0 5px 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg);
+  color: var(--fg-mute); font: 12px var(--ui); cursor: pointer; text-align: left;
+}
+#topbar > .search:hover { border-color: var(--line-strong); color: var(--fg-dim); }
+#topbar > .search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.search svg { flex: 0 0 auto; }
+.search .ph { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.search kbd { flex: 0 0 auto; }
+#topbar.nosearch .search { flex: 0 0 auto; min-width: 0; max-width: none; }
+#topbar.nosearch .search .ph { display: none; }
 /* Environment colours. Filled, so the environment behind every resolved value
    stays visible from anywhere; manifest mode is only outlined. */
 [data-tone] { --tone: var(--env-other); }
@@ -758,6 +774,12 @@ kbd {
 .envpill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .envpill-k { font-weight: 400; opacity: .7; }
 .envpill-caret { font-size: 9px; opacity: .75; }
+/* In the status bar the pill is a notch smaller and has no caret (0166); the key
+   keeps the pill's colour at a quieter weight, and only the outlined manifest pill
+   greys it. The Catalog's keeps its caret (0142). */
+#statusbar .envpill { height: 16px; padding: 0 7px; border-radius: 8px; font: 600 10.5px/14px var(--ui); }
+#statusbar .envpill-k { font-weight: 400; opacity: .75; }
+#statusbar .envpill[data-tone=manifest] .envpill-k { color: var(--fg-dim); opacity: 1; }
 .envpill.sm { font-size: 10px; line-height: 14px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; letter-spacing: 0; }
 .envmenu {
   position: fixed; z-index: 65; min-width: 230px; max-width: 380px; padding: 4px;
@@ -906,8 +928,8 @@ kbd {
    below the env and crumb menus (65) and the modal (70). A card that opens by
    accident must never cover a surface that was opened on purpose. */
 .hovercard {
-  position: fixed; z-index: 64; min-width: 220px; max-width: 380px; padding: 8px 10px;
-  background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
+  position: fixed; z-index: 64; min-width: 220px; max-width: 380px; padding: 11px 14px 12px;
+  background: var(--bg-3); border: 1px solid var(--line-strong); border-radius: 8px;
   box-shadow: var(--shadow);
   font: 12px var(--ui); color: var(--fg);
 }
@@ -923,28 +945,56 @@ kbd {
 .hc-link:hover { color: var(--accent); }
 .hc-desc { margin-top: 7px; line-height: 1.45; }
 .hc-counts { margin-top: 7px; font: 10.5px var(--mono); color: var(--fg-dim); }
-.hc-cols { margin-top: 7px; border-top: 1px solid var(--line); padding-top: 6px; }
-.hc-col { display: flex; gap: 10px; font: 11px var(--mono); line-height: 1.6; }
+.hc-cols { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; row-gap: 3px; font: 12px var(--mono); }
+.hc-col { display: contents; }
 .hc-col .c-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hc-col .c-type { margin-left: auto; color: var(--source); white-space: nowrap; }
-.hc-more { font: 10.5px var(--mono); color: var(--fg-dim); margin-top: 2px; }
-.hc-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.hc-col .c-type { color: var(--fg-mute); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.hc-more { grid-column: 1 / -1; font: 10.5px var(--mono); color: var(--fg-dim); }
 .hc-value {
   margin-top: 7px; font: 12px var(--mono); word-break: break-all; white-space: pre-wrap;
-  background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
 }
 .hc-note { margin-top: 6px; font-size: 11px; line-height: 1.45; white-space: pre-line; }
 .hc-note.warn { color: var(--warn); }
 .hc-note.hc-rule { margin-top: 2px; padding-left: 12px; }
 .hc-sub s { opacity: .6; }
-#status-branch { cursor: pointer; }
+/* A node's card (0166): 330px, one gap between its parts instead of a margin on each.
+   The box's line sits at the head's right, the file in mono under the name with the
+   tags at its right, the description in italics (only here: the other cards' share
+   the class), the counts as numbers in the text colour, the columns in two columns
+   with their types quiet. */
+.hc-node { width: 330px; display: flex; flex-direction: column; gap: 7px; }
+.hc-node > * { margin-top: 0; }
+.hc-node .hc-head { gap: 8px; }
+.hc-node .hc-head .offchip { margin-left: 0; }
+.hc-mt { margin-left: auto; font: 11px var(--mono); color: var(--fg-dim); font-weight: 400; white-space: nowrap; }
+.hc-mt s { opacity: .6; }
+.hc-node > .hc-path { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -3px; font: 11px var(--mono); color: var(--fg-mute); }
+.hc-file { min-width: 0; word-break: break-all; }
+.hc-node .hc-tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.hc-node .tagchip { font: 11px/18px var(--mono); padding: 0 7px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--fg-dim); }
+.hc-node .hc-desc { color: var(--fg-dim); font-style: italic; line-height: 1.45; }
+.hc-stats { display: flex; gap: 12px; font: 11px var(--mono); color: var(--fg-dim); }
+.hc-stats b { color: var(--fg); font-weight: 500; }
+.hc-stats.ruled { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+#status-branch { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 #status-branch:hover { color: var(--accent); }
-#statusbar { height: 24px; border-bottom: none; border-top: 1px solid var(--line); font-size: 11px; gap: 14px; }
-/* One line whatever the width: every item keeps its size and only the file
-   path gives way, since the editor tab already shows the file name. */
+#status-branch svg { flex: 0 0 auto; }
+#status-branch[data-paused=true] svg { display: none; }
+#statusbar { height: 24px; gap: 14px; padding: 0 12px; border-bottom: none; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--fg-dim); }
+/* One line whatever the width: every item keeps its size and the place gives way
+   first, since the editor tab already shows the file name, the counts after it. */
 #statusbar > * { white-space: nowrap; flex: 0 0 auto; }
-#statusbar > #status-file { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#statusbar > #status-where { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#statusbar > #status-counts { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #statusbar > .grow { flex: 1 1 0; }
+/* Where the space in front puts you (0166): the file with its cursor and state in
+   the editor, else the space's name and the place in it. The path is mono, what
+   goes with it is quieter. */
+#status-where .mono { font: 11px var(--mono); }
+#status-where .lead { color: var(--fg-mute); }
+#status-where .note, #status-where .sepa { color: var(--fg-mute); }
+#status-where .sepa { margin: 0 6px; }
 /* A newer dbt-edith (0068): outlined in the accent, quieter than an
    environment's filled pill, since nothing is wrong with the one running. */
 .updpill {
@@ -975,7 +1025,15 @@ kbd {
 /* The status bar's opens the project's settings (0100); the copy in them is
    only its state. */
 #status-venv { cursor: pointer; }
-#status-venv:hover { filter: brightness(1.2); }
+/* Plain in the status bar (0166): no outline, no fill, the state said by its
+   pictogram, and in words by the amber of one found and not active. The settings'
+   own copy keeps the pill. */
+#status-venv, #status-venv[data-state] { padding: 0; border: 0; border-radius: 0; background: none; color: var(--fg-dim); font: inherit; }
+#status-venv:hover { color: var(--fg); }
+#status-venv[data-state=on]::before { background: var(--ok); }
+#status-venv[data-state=off], #status-venv[data-state=off]:hover { color: var(--warn-text); }
+#status-venv[data-state=off]::before { background: var(--warn); }
+#status-venv::before { width: 11px; height: 11px; background: var(--fg-mute); }
 /* A build twenty releases behind lists them all: on a short window the menu
    scrolls rather than run past it, its button out of reach. */
 .envmenu.updmenu { width: 400px; max-width: calc(100vw - 8px); max-height: calc(100vh - 8px); overflow-y: auto; }
@@ -1076,6 +1134,8 @@ kbd {
   background: var(--accent); -webkit-mask: var(--m-newer) center / contain no-repeat; mask: var(--m-newer) center / contain no-repeat;
 }
 .sep { width: 1px; height: 18px; background: var(--line); }
+/* The settings' Python row (.setinner .chip, below) is built on these: the top bar's
+   own counts that used them moved to the status bar. */
 .chips { display: flex; gap: 6px; }
 .chip {
   font: 11px var(--mono); color: var(--fg-dim);
@@ -1172,51 +1232,39 @@ kbd {
 .btn.mc-run { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
 .btn.mc-run:hover, .btn.mc-run:focus-visible { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
 .btn.mc-run:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* The spaces (0140): Code, Lineage and Reports side by side, the one in front lit
-   and marked aria-current. Reports carries what is new in them on its tab: each
-   section's news in its own colour, collin's as collin's, so it reads as the
+/* The spaces (0140, 0166): Code, Lineage and Reports as underlined tabs, the one in
+   front lit and marked aria-current. Reports carries what is new in them on its tab:
+   each section's news in its own colour, collin's as collin's, so it reads as the
    tool's. When the bar runs out of room the tabs not lit keep their glyph alone
    (the name stays read out), as the dock's do. */
-.spaces {
-  display: inline-flex; align-items: stretch; height: 26px; padding: 2px; gap: 2px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
-}
+.spaces { display: inline-flex; align-items: stretch; align-self: stretch; margin-left: 14px; }
 .sp {
-  display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;
-  background: none; border: 1px solid transparent; border-radius: 5px;
-  color: var(--fg-dim); font: 12px var(--ui); cursor: pointer;
+  position: relative; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px;
+  background: none; border: 0; border-radius: 0;
+  color: var(--fg-dim); font: 13px var(--ui); cursor: pointer;
 }
-.sp svg { flex: 0 0 auto; }
-.sp:hover, .sp:focus-visible { color: var(--fg); background: var(--bg-3); }
-.sp[aria-current=page] { color: var(--fg); background: var(--accent-dim); border-color: var(--accent); }
+.sp svg { flex: 0 0 auto; color: var(--fg-mute); }
+.sp:hover, .sp:hover svg, .sp:focus-visible, .sp:focus-visible svg { color: var(--fg); }
+.sp:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.sp[aria-current=page], .sp[aria-current=page] svg { color: var(--fg); }
+.sp[aria-current=page]::after {
+  content: ""; position: absolute; left: 11px; right: 11px; bottom: -1px; height: 2px;
+  border-radius: 2px 2px 0 0; background: var(--accent);
+}
 /* No report has anything yet: dimmed rather than hidden, so it can be found (0075).
-   .7 keeps the glyph at 3:1 against the bar, a control's minimum. */
-.sp.dim { opacity: .7; }
+   .8 keeps the glyph (--fg-mute) at 3:1 against the bar, a control's minimum, in
+   the four themes: .7 left Light's at 2.7 (web/tests/themes.js). */
+.sp.dim { opacity: .8; }
 .sp.dim:hover, .sp.dim:focus-visible { opacity: 1; }
 .sp .rnews { display: inline-flex; gap: 4px; }
 .sp .rnews:empty { display: none; }
-#topbar.folded .sp:not([aria-current=page]) { padding: 0 7px; }
+#topbar.folded .sp:not([aria-current=page]) { padding: 0 9px; }
 #topbar.folded .sp:not([aria-current=page]) .nm {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
 }
-/* The gear is a space too, lit while the settings are open. A glyph alone until
-   the pointer or the focus is on it, or they are open: the top bar is full, and
-   the name only needs saying to whoever reaches for it. */
-.reportsbtn { display: inline-flex; flex: none; align-items: center; color: var(--fg-dim); padding: 4px 8px; }
-.reportsbtn:hover, .reportsbtn:focus-visible, .reportsbtn.on { color: var(--fg); }
-.reportsbtn svg { flex: 0 0 auto; }
-.reportsbtn .rlabel {
-  display: inline-grid; grid-template-columns: 0fr; overflow: hidden; opacity: 0; white-space: nowrap;
-  transition: grid-template-columns .45s cubic-bezier(.4, 0, .2, 1), opacity .35s ease-in-out .05s, margin-left .45s cubic-bezier(.4, 0, .2, 1);
-}
-/* The grid track shrinks around the inner span, and the box clips what the
-   track cannot hold, so the box is as wide as the visible text at every step
-   and the unfold takes the whole time. The span keeps its full width, so the
-   box's scrollWidth stays the name's whole width while it is folded. */
-.reportsbtn .rlabel > span { min-width: 0; }
-.reportsbtn:hover .rlabel, .reportsbtn:focus-visible .rlabel, .reportsbtn.on .rlabel { grid-template-columns: 1fr; opacity: 1; margin-left: 6px; }
-.reportsbtn.on { background: var(--accent-dim); border-color: var(--accent); }
-@media (prefers-reduced-motion: reduce) { .reportsbtn .rlabel { transition: none; } }
+/* The settings, in the square the other three of the right group share; lit while
+   they are open. The name is the tooltip's, not unfolded (0166). */
+#settings-btn.on { background: var(--select); color: var(--fg); }
 .rnew { font: 10.5px var(--mono); color: var(--tool, var(--accent)); border: 1px solid var(--tool, var(--accent)); border-radius: 8px; padding: 0 6px; }
 .versioninput {
   width: 120px; font: 12px var(--mono); color: var(--fg); background: var(--bg);
@@ -1280,6 +1328,9 @@ kbd {
   display: flex; align-items: center; gap: 2px; padding: 0 6px;
   height: 30px; flex: 0 0 auto; border-bottom: 1px solid var(--line); background: var(--bg-2);
 }
+/* The sidebar's row is as tall as the editor's tab bar beside it, so the line under
+   the two is one (0166); the dock's keeps its own height. */
+#sidebar > .tabs { height: 34px; }
 .tab {
   background: none; border: none; color: var(--fg-dim); font: 12px var(--ui);
   padding: 4px 9px; border-radius: 4px 4px 0 0; cursor: pointer; border-bottom: 2px solid transparent;
@@ -1294,17 +1345,21 @@ kbd {
   fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
 }
 /* foldDockTabs(): out of sight but still the button's name for a screen reader.
-   Reached by the keyboard, a folded tab shows its name under it, over the
-   pane, since a tooltip never shows on focus. It does not open in the row, as
-   the Reports button's label does: that would push the tabs after it, and on
-   a hover it would move them under the pointer. Export folds its label the same
-   way (Fit has none) once the folded tabs still leave too little room; at the
-   row's right end, their name opens leftwards. */
-#dock .tabs.folded .tab > span,
+   The tab in front keeps its name until the row is bare, and while the row is
+   measured the widest one does, whichever is in front. Reached by the keyboard,
+   a folded tab shows its name under it, over the pane, since a tooltip never
+   shows on focus. It does not open in the row: that would push the tabs after
+   it, and on a hover it would move them under the pointer. Export folds its
+   label the same way (Fit has none) once the bare tabs still leave too little
+   room; at the row's right end, their name opens leftwards. */
+#dock .tabs.folded:not(.measure) .tab:not(.active) > span,
+#dock .tabs.folded.measure .tab:not(.widest) > span,
+#dock .tabs.bare .tab > span,
 #lineage-tools.iconic .icobtn > span {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
 }
-#dock .tabs.folded .tab:focus-visible > span,
+#dock .tabs.folded:not(.measure) .tab:not(.active):focus-visible > span,
+#dock .tabs.bare .tab:focus-visible > span,
 #lineage-tools.iconic .icobtn:focus-visible > span {
   top: calc(100% + 3px); left: 0; width: auto; height: auto; overflow: visible; clip-path: none; z-index: 20;
   padding: 2px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-3); color: var(--fg);
@@ -1325,7 +1380,7 @@ kbd {
   cursor: pointer; white-space: nowrap; user-select: none;
 }
 .row:hover { background: var(--bg-3); }
-.row.sel { background: var(--accent-dim); }
+.row.sel { background: var(--select); }
 .row .nm { overflow: hidden; text-overflow: ellipsis; }
 .row .sub { color: var(--fg-dim); font-size: 11px; margin-left: auto; padding-left: 8px; }
 .caret {
@@ -1361,21 +1416,30 @@ kbd {
 .dot { width: 3px; height: 12px; border-radius: 2px; flex: 0 0 auto; }
 
 /* --------------------------------------------------------- open editors -- */
-#open-editors { flex: 0 0 auto; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+#open-editors { flex: 0 0 auto; display: flex; flex-direction: column; }
 #open-editors.collapsed .oe-list { display: none; }
 .oe-head {
-  display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px 0 4px;
-  cursor: pointer; user-select: none; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 10px;
+  user-select: none; flex: 0 0 auto;
 }
 .oe-head:hover { background: var(--bg-3); }
+#open-editors > .oe-head { border-top: 1px solid var(--line-soft); }
+/* The toggle (0166): the chevron, the title and the count are one button, so the
+   keyboard opens the list, and the head's two actions stay beside it. */
+.oe-toggle {
+  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; height: 100%; padding: 0;
+  background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.oe-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.oe-chev { flex: 0 0 auto; color: var(--fg-mute); transition: transform .12s; }
+.oe-toggle[aria-expanded=true] .oe-chev { transform: rotate(90deg); }
 /* The same row above the tree, where there is nothing to fold: the tree fills
    the pane and the title is a label, not a toggle. */
-.tree-head { cursor: default; }
 .tree-head:hover { background: none; }
-.oe-title { font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; color: var(--fg-dim); }
+.oe-title { font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--fg-dim); }
 .oe-count {
-  font: 10px var(--mono); background: var(--bg-3); border-radius: 8px;
-  padding: 0 6px; color: var(--fg-dim); min-width: 18px; text-align: center;
+  font: 10.5px/16px var(--mono); letter-spacing: 0; background: var(--bg-3); border-radius: 8px;
+  padding: 0 6px; color: var(--fg-dim);
 }
 .icon {
   display: flex; align-items: center; justify-content: center; width: 20px; height: 18px;
@@ -1384,13 +1448,13 @@ kbd {
 .icon:hover { background: var(--icon-hover); color: var(--fg); }
 .icon:disabled { opacity: .25; cursor: default; background: none; }
 .icon.warn:hover { color: var(--warn); }
-.oe-list { overflow: auto; max-height: 34vh; padding: 2px 0 4px; }
+.oe-list { overflow: auto; max-height: 34vh; padding: 2px 0 4px; border-bottom: 1px solid var(--line-soft); }
 .oe-row {
   display: flex; align-items: center; gap: 6px; padding: 2px 6px 2px 4px;
   cursor: pointer; white-space: nowrap; font-size: 12px;
 }
 .oe-row:hover { background: var(--bg-3); }
-.oe-row.active { background: var(--accent-dim); }
+.oe-row.active { background: var(--select); }
 .oe-row .state {
   width: 16px; height: 16px; flex: 0 0 auto; display: flex; align-items: center;
   justify-content: center; border-radius: 3px; color: var(--fg-dim); font-size: 13px; line-height: 1;
@@ -1525,26 +1589,34 @@ kbd {
 /* ---------------------------------------------------------------- editor -- */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 #editor-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+/* The bar's line is a shadow inside it, not a border or a margin: the bar scrolls
+   on x, which would clip a tab pulled down over it, and the active tab's --bg
+   paints over the line so the tab opens into the editor (0166). */
 .tabbar {
-  display: flex; height: 30px; flex: 0 0 auto; overflow-x: auto;
-  border-bottom: 1px solid var(--line); background: var(--bg-2);
+  display: flex; height: 34px; flex: 0 0 auto; overflow-x: auto;
+  box-shadow: inset 0 -1px 0 var(--line); background: var(--bg-2);
 }
 .ftab {
-  display: flex; align-items: center; gap: 7px; padding: 0 10px; cursor: pointer;
-  border-right: 1px solid var(--line); color: var(--fg-dim); white-space: nowrap; font-size: 12px;
+  display: flex; align-items: center; gap: 8px; padding: 0 8px 0 13px; cursor: pointer;
+  border-right: 1px solid var(--line-soft); color: var(--fg-dim); white-space: nowrap; font-size: 13px;
 }
-.ftab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
-.ftab .x { opacity: .4; font-size: 14px; line-height: 1; }
-.ftab .x:hover { opacity: 1; }
-/* A buffer with unsaved edits: the pencil of "being edited" in the close slot,
-   the × again under the pointer. */
+.ftab.active { background: var(--bg); color: var(--fg); }
+/* The × shows on the tab in front and under the pointer or the focus of another,
+   never moving the tabs (visibility keeps its room); a buffer with unsaved edits
+   keeps the pencil of "being edited" in the same slot, the × again under the
+   pointer. */
+.ftab .x {
+  display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px;
+  color: var(--fg-mute); font-size: 14px; line-height: 1;
+}
+.ftab:not(.active):not(.dirty):not(:hover):not(:focus-within) .x { visibility: hidden; }
+.ftab .x:hover { background: var(--bg-3); color: var(--fg); }
 .ftab.dirty .x::before {
-  content: ''; display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
+  content: ''; display: inline-block; width: 11px; height: 11px;
   background: currentColor; -webkit-mask: var(--m-edit) center / contain no-repeat; mask: var(--m-edit) center / contain no-repeat;
 }
-.ftab.dirty .x { opacity: .9; }
 .ftab.dirty .x:hover::before {
-  content: "×"; width: auto; height: auto; vertical-align: baseline; font-size: 14px;
+  content: "×"; width: auto; height: auto; font-size: 14px;
   background: none; -webkit-mask: none; mask: none;
 }
 .ftab.preview span:first-child { font-style: italic; }
@@ -1554,10 +1626,10 @@ kbd {
 
 /* ----------------------------------------------------------- breadcrumbs -- */
 .crumbs {
-  display: flex; align-items: center; height: 22px; flex: 0 0 auto;
+  display: flex; align-items: center; height: 28px; flex: 0 0 auto; padding: 0 10px 0 14px;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  background: var(--bg); border-bottom: 1px solid var(--line);
-  font: 11.5px var(--ui); color: var(--fg-dim);
+  background: var(--bg);
+  font: 12px var(--mono); color: var(--fg-dim);
 }
 .crumbs::-webkit-scrollbar { height: 0; }
 .crumb {
@@ -1567,14 +1639,19 @@ kbd {
 }
 .crumb:hover, .crumb.open { background: var(--bg-3); color: var(--fg); }
 /* The Catalog's own .crumb, further down, gives a margin that lifted every
-   segment 3.5px and cut the top off a hover, or off the config pill. */
-.crumbs .crumb { margin: 0; }
+   segment 3.5px and cut the top off a hover, or off the config pill. It also
+   sets a font and a colour of its own, which the bar's 12px (0166) takes back. */
+.crumbs .crumb { margin: 0; font: inherit; }
 .crumb:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 /* The two chevrons before the path: a hair wider than a crumb so the pair
    reads as one control, and still there when its stack is empty. */
 .crumb.nav { padding: 0 3px; color: var(--fg-dim); font-size: 14px; }
 .crumb.nav:disabled { opacity: .3; cursor: default; background: none; }
 .crumb-sep { flex: 0 0 auto; color: var(--crumb-sep); font-size: 12px; }
+/* The path's own parts are told apart by a slash, the file's by its colour; the
+   symbols inside the file keep the chevron, which steps into it (0166). */
+.crumb-sep.sl { color: var(--line-strong); }
+.crumb.cur { color: var(--fg); }
 .sicon { font: 10px var(--mono); color: var(--fg-dim); letter-spacing: -.5px; }
 .sicon[data-kind=map] { color: var(--accent); }
 .sicon[data-kind=seq] { color: var(--source); }
@@ -1593,7 +1670,7 @@ kbd {
   font: 12px var(--ui); text-align: left; white-space: nowrap; cursor: pointer;
 }
 .crumbmenu button:hover, .crumbmenu button:focus { background: var(--bg-3); outline: none; }
-.crumbmenu button.on { background: var(--accent-dim); }
+.crumbmenu button.on { background: var(--select); }
 .crumbmenu button.on .lbl { font-weight: 600; }
 .crumbmenu .caret { width: 11px; height: 11px; }
 /* The keys of dbt_project.yml reaching a file (0038, 0156): pushed to the end
@@ -2244,6 +2321,16 @@ kbd {
 .CodeMirror { height: 100%; font: 12.5px/1.5 var(--mono); background: var(--bg); color: var(--code-fg); }
 .CodeMirror-gutters { background: var(--bg); border-right: 1px solid var(--line); }
 .CodeMirror-linenumber { color: var(--fg-faint); }
+/* The editor's gutter as the board draws it (0166): numbers 46px wide, right-
+   aligned with 18px of padding before the code (about 64px with it, as the
+   board's rule renders), no rule, the numbers a notch quieter than text; the
+   cursor's line is lit in the page and its number. Scoped to the main editor: the
+   Compiled and Run tabs and the diff are steps of their own. */
+#editor-host .CodeMirror-gutters { border-right: 0; }
+#editor-host .CodeMirror-linenumber { min-width: 46px; padding: 0 18px 0 0; color: var(--fg-mute); }
+#editor-host .cm-curline { background: var(--cur-line); }
+#editor-host .CodeMirror-gutter-background.cm-curline-gutter { background: var(--cur-line); }
+#editor-host .cm-curline-gutter .CodeMirror-linenumber { color: var(--fg); }
 .CodeMirror-cursor { border-left: 1.5px solid var(--accent); }
 .CodeMirror-selected { background: var(--select) !important; }
 .cm-s-default .cm-keyword { color: var(--syn-kw); }
@@ -3333,9 +3420,13 @@ span.envpill:hover { filter: none; }
 .pal-box kbd { font: 10.5px/16px var(--mono); padding: 0 5px; background: var(--bg-2); }
 
 /* ------------------------------------------------------------- shortcuts -- */
-.keysbtn { width: 24px; height: 24px; padding: 0; border-radius: 50%; font-weight: 600; color: var(--fg-dim); }
-.keysbtn:hover { color: var(--fg); }
-#github-btn, #theme-btn { display: inline-flex; align-items: center; justify-content: center; }
+/* The right group of the top bar, plain squares: ?, theme, GitHub and settings (0166). */
+.keysbtn {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 6px; background: none; font: 600 13px var(--ui); color: var(--fg-dim); cursor: pointer;
+}
+.keysbtn:hover, .keysbtn[aria-expanded=true] { background: var(--bg-3); color: var(--fg); }
+.keysbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The theme menu (0150), under its button: one row a theme, a swatch painted
    in that theme's own variables (it carries its data-theme). */
 .envmenu.thememenu { width: 214px; min-width: 0; background: var(--bg-3); border-radius: 8px; box-shadow: var(--shadow-menu); }
@@ -3402,11 +3493,11 @@ span.envpill:hover { filter: none; }
 .ghmenu a.menulink:hover .ghglyph, .ghmenu a.menulink:focus .ghglyph { color: var(--fg); }
 /* Under the labels, past the 14px glyph and its gap. */
 .ghmenu .menunote { padding-left: 30px; }
-/* The gear (0100), with the Reports button's look, and a triangle while the
-   profile is missing: the button that said so is gone into the settings. */
+/* The settings button (0100): a triangle on its corner while the profile is
+   missing or refused, since the button that said so is gone into the settings. */
 #settings-btn { position: relative; }
 #settings-btn[data-warn=true]::after {
-  content: ''; position: absolute; top: 1px; right: 1px;
+  content: ''; position: absolute; top: 2px; right: 2px;
   width: 9px; height: 9px; background: var(--warn); -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat;
 }
 /* Above the palette and the modal: F1 can open it from either. */

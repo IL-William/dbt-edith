@@ -17,8 +17,9 @@ requests the page makes for the lineage, and the control itself:
   - Back and Forward to another tab bring back the depth it was left with,
     whether the canvas moves or stays on the same model;
   - the same model drawn again, from the Lineage space and back, keeps it;
-  - the top bar, just above the width where its tabs fold, still fits and folds
-    the same with the settings open and back on Code;
+  - the top bar folds the search field first, then the project's name, then
+    its tabs, and just above the width where each of the last two comes still
+    fits and folds the same with the settings open and back on Code;
   - the control is driven by the keyboard alone: Enter on a number opens its
     menu on the level drawn, an arrow and Enter draw another (one request),
     Escape gives the focus back to the button, and Enter on the copy button
@@ -107,19 +108,23 @@ class Walk:
         self.page.js(f"document.querySelector('.crumb.nav[aria-label^={which}]').click()")
 
     def fold(self):
-        """The top bar's fold (0140): the gear's name has its room held back
-        while the bar has no fold class; just above the width where its tabs
-        fold, opening the settings and coming back to Code leaves it inside
-        the window and folded as it was; and a long project name is cut
-        before the counts go."""
+        """The top bar's fold (0140, 0166): the search field shrinks with the
+        window down to 200px while the project's name keeps its width; then
+        `nosearch` takes its words away; then the name is cut, never under
+        120px; then `folded` keeps the tabs not lit to their glyph. Just above
+        the width where each of the last two comes, opening the settings and
+        coming back to Code leaves the bar inside the window and folded as it
+        was."""
         page = self.page
         # Fits, classes, the manifest badge (whose age repaints and so refolds
-        # the bar), the name's room, and what the gear's name still needs.
+        # the bar), the name's room, whether the name is cut, the search
+        # field's width and whether its words show.
         state = """(b => [b.scrollWidth <= b.clientWidth, b.className,
           document.querySelector('#fresh-badge').textContent,
           document.querySelector('#project').clientWidth,
           document.querySelector('#project').scrollWidth > document.querySelector('#project').clientWidth,
-          b.querySelector('.grow').offsetWidth - (b.querySelector('#settings-btn .rlabel').scrollWidth + 6)])(document.querySelector('#topbar'))"""
+          document.querySelector('#palette-btn').offsetWidth,
+          getComputedStyle(document.querySelector('#palette-btn .ph')).display !== 'none'])(document.querySelector('#topbar'))"""
 
         def at(width):
             page.call("Emulation.setDeviceMetricsOverride", width=width, height=800, deviceScaleFactor=1, mobile=False)
@@ -127,7 +132,7 @@ class Walk:
             return page.js(state)
 
         wide = at(1400)
-        self.check("wide, nothing folded and room for the gear's name to unfold", wide[1] == "" and wide[5] >= 0, str(wide))
+        self.check("wide, nothing folded and the search field shows its words", wide[1] == "" and wide[6], str(wide))
 
         def round_trip(width, what):
             """The settings opened and left for Code at `width`: the bar fits and
@@ -156,23 +161,31 @@ class Walk:
             return width
 
         # Past each fold by 20px, so a badge repainting between two reads is the
-        # only thing that can move it. Above the first, the gear's name still
-        # unfolds under the settings, and only the room held back for it keeps
-        # the bar inside the window.
-        round_trip(first_below("nolabel", 1300) + 20, "just above the gear's name folding")
-        round_trip(first_below("folded", 1200) + 20, "just above the tabs folding")
+        # only thing that can move it.
+        round_trip(first_below("nosearch", 1400) + 20, "just above the search field losing its words")
+        round_trip(first_below("folded", 1400) + 20, "just above the tabs folding")
 
         name = "a_long_invented_project_name_for_the_jaffle_shop_staging_and_marts_models"
         page.js(f"document.querySelector('#project').textContent = '{name}'")
-        cut_with_counts, counts_with_name_cut_short = False, True
+        search_first, name_kept, search_min, name_cut, name_floor = True, True, True, False, True
+        full = at(1400)[3]
+        seen_nosearch = False
         for width in range(1400, 700, -10):
             now = at(width)
-            if "nocounts" not in now[1]:
-                cut_with_counts = cut_with_counts or now[4]
-                # Never cut under 120px while the counts are still there.
-                counts_with_name_cut_short = counts_with_name_cut_short and (not now[4] or now[3] >= 120)
-        self.check("a long project name is cut, its counts still there", cut_with_counts)
-        self.check("  down to 120px, never less, before they go", counts_with_name_cut_short)
+            if "nosearch" not in now[1]:
+                # The field gives way alone: its words stay and it never goes under
+                # 200px, and the name keeps the width it had in the wide bar.
+                search_first = search_first and now[6]
+                search_min = search_min and now[5] >= 200
+                name_kept = name_kept and now[3] == full
+            elif "folded" not in now[1]:
+                seen_nosearch = True
+                name_cut = name_cut or now[3] < full
+                # Never cut under 120px while the tabs are still named.
+                name_floor = name_floor and now[3] >= 120
+        self.check("the search field shrinks to 200px, words and all, with the name as wide as ever", search_first and search_min and name_kept)
+        self.check("then its words go (nosearch), and only then is a long name cut", seen_nosearch and name_cut)
+        self.check("  down to 120px, never less, before the tabs fold", name_floor)
         page.js("document.querySelector('#project').textContent = 'jaffle_shop'")
         page.call("Emulation.clearDeviceMetricsOverride")
 
