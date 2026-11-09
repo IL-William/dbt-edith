@@ -32,6 +32,31 @@ change
 ([0130](../decisions/0130-a-path-that-reads-the-current-folder-is-warned-of-not-typed-around.md),
 [0071](../decisions/0071-a-click-types-a-dbt-command-and-leaves-enter-to-you.md)).
 
+The terminal wears the theme: its page is the page's colour, its text, cursor
+and selection the theme's, and its sixteen ANSI colours are each theme's own, so
+Light has a light terminal and Halloween a brown one. Picking another theme
+repaints it at once. The text is 12.5px on rows of about 19px
+([0161](../decisions/0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md)).
+
+While the Terminal tab is open, the dock's row beside the tabs holds its tools:
+a chip with the venv the terminal runs dbt with, in the words the prompt uses
+(`(dbt) py 3.11.9` when active, `(dbt) inactive` when found and not active,
+`no venv` otherwise) and the same check, triangle or dashed ring as the status
+bar's pill; the shell and the project it starts in (`zsh · jaffle_shop`); and
+two buttons. Clear empties the screen and keeps the shell. Restart the shell
+closes the connection, which ends the shell, and starts a new one in the
+project's folder, with no "disconnected" line. Both give the focus back to the
+terminal.
+
+A button that types a command into the terminal, the manifest card's, a job
+step's `dbt ls`, the selection's, the Compiled and Run tabs', the settings'
+activation lines and the update's, marks it at the end of its line with a chip:
+`typed from the Jobs tab · Enter is yours`, or `run from the manifest's card`
+for the one command whose Enter the page presses. The chip goes when you type
+a key or paste, when bash shows its next prompt, on Clear and on Restart, and
+there is only one. If the shell does not echo the line within a second, the toast
+`command ready in the terminal, press Enter to run it` says it instead.
+
 ## Python environment
 
 The status bar shows the virtualenv, labelled `venv` when it was active as

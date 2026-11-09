@@ -14,6 +14,8 @@ const S = {
   stampsAgain: false, // one was asked for meanwhile, and runs once that look is done
   cm: null,
   term: null, ws: null, fit: null,
+  termKeys: 0,                // how many keys or pastes the person has typed into the terminal, so a command waiting for its Enter can tell a line they changed (0161)
+  typedChip: null,            // the chip beside a command typed for the person: its decoration and marker, one at a time (0161)
   venv: null,                 // /api/meta's venv: the one dbt-edith was started in, and each found
   termVenv: undefined,        // the terminal's VIRTUAL_ENV at its last prompt, '' for none, undefined unheard (0069)
   pathReadsCwd: '',           // /api/meta: why the terminal's shell reads the current folder, relative, empty or cmd, '' when it does not, so what is typed may run a program in the project (0130)
@@ -6306,6 +6308,8 @@ function fillSourceMenu(menu, done) {
     });
     menu.appendChild(item);
   };
+  // The same rows are in the menu and in the settings: the chip in the terminal names the one the person used.
+  const where = menu.classList.contains('inpanel') ? 'the settings' : 'the column lineage menu';
   const update = collinUpdateRow(S.collin, S.cllTool);
   const report = collinReportRow(S.collin, S.cllTool);
   const versions = collinVersionRows(S.collin, S.cllTool);
@@ -6314,7 +6318,7 @@ function fillSourceMenu(menu, done) {
   for (const t of tools) {
     add({ label: t.label, sub: t.sub, tool: t.tool, on: t.active, disabled: !t.available, title: t.title,
       badge: t.alpha ? 'alpha' : '',
-      pick: t.install ? installCollin : () => switchLineage({ tool: t.tool }) });
+      pick: t.install ? () => installCollin(where) : () => switchLineage({ tool: t.tool }) });
     if (t.tool === 'collin' && report) {
       add({ label: report.label, sub: report.sub, tool: 'collin', on: false, title: report.title, action: true,
         pick: () => openReports('collin') });
@@ -6336,12 +6340,12 @@ function fillSourceMenu(menu, done) {
       }
       if (install) {
         add({ label: install.label, sub: install.sub, tool: 'collin', on: false, title: install.title, action: true,
-          pick: askCollinVersion });
+          pick: () => askCollinVersion(where) });
       }
     }
     if (t.tool === 'collin' && update) {
       add({ label: update.label, sub: update.sub, tool: 'collin', on: false, title: update.title, action: true,
-        urgent: update.urgent, pick: () => sendToTerminal(update.command) });
+        urgent: update.urgent, pick: () => sendToTerminal(update.command, false, null, where) });
     }
   }
   if (others.length) {
@@ -6376,8 +6380,8 @@ async function switchLineage(body) {
 /* Types the command that installs collin into the terminal and leaves it
    there: building it is the user's decision, and their cargo's download, never
    this server's (0042). */
-function installCollin() {
-  if (S.collin && S.collin.install) sendToTerminal(S.collin.install);
+function installCollin(from) {
+  if (S.collin && S.collin.install) sendToTerminal(S.collin.install, false, null, from);
 }
 
 /* Runs collin and waits for it: the Regenerate button, and a column clicked
@@ -6794,7 +6798,7 @@ async function chooseCollinVersion(version) {
 
 /* Asks which version to install, then types the command into the terminal,
    where the user runs it: dbt-edith never downloads anything (0042). */
-async function askCollinVersion() {
+async function askCollinVersion(from) {
   const body = document.createElement('div');
   body.append(Object.assign(document.createElement('p'), {
     textContent: 'Which collin version? It is installed from its tag into a folder of its own, beside the collin you have, '
@@ -6813,7 +6817,7 @@ async function askCollinVersion() {
   if (!version) return toast('a collin version is three numbers, such as 0.4.0', 'err');
   try {
     const { command } = await api.get('/api/collin/install?version=' + encodeURIComponent(version));
-    sendToTerminal(command);
+    sendToTerminal(command, false, null, from);
   } catch (e) {
     toast('collin: ' + e.message, 'err');
   }
@@ -8676,7 +8680,7 @@ function relinkTools() {
     if (!named && !sub) return toast('run a selection first', 'err');
     const command = named ? selectorCommand(named) : lsCommand(sub.select, sub.exclude || '');
     if (!command) return toast('not typed: the selection holds a character the shell would act on', 'err');
-    sendToTerminal(command);
+    sendToTerminal(command, false, null, 'the selection');
   });
   $('#select-named').addEventListener('click', (e) => openSelectorMenu(e.currentTarget));
   $('#stop-at').addEventListener('click', (e) => openStopAt(e.currentTarget));
@@ -9429,6 +9433,8 @@ function paintArtifact(kind, keepScroll) {
   const held = S.artifactInfo[kind];
   if (!held) return false;
   const { info, name, isTest } = held;
+  // Named in the terminal beside a command this pane types.
+  const from = kind === 'run' ? 'the Run tab' : 'the Compiled tab';
   const head = $('#' + kind + '-head');
   const body = $('#' + kind + '-body');
   head.textContent = '';
@@ -9447,7 +9453,7 @@ function paintArtifact(kind, keepScroll) {
     send.className = 'btn sm';
     send.textContent = 'Type it in the terminal';
     send.title = 'Puts the command in the integrated terminal without running it';
-    send.addEventListener('click', () => sendToTerminal(said.command));
+    send.addEventListener('click', () => sendToTerminal(said.command, false, null, from));
     box.append(send);
     const det = document.createElement('details');
     det.style.marginTop = '12px';
@@ -9470,7 +9476,7 @@ function paintArtifact(kind, keepScroll) {
   redo.className = 'btn sm';
   redo.textContent = said.button;
   redo.title = 'Puts ' + said.command + ' in the integrated terminal without running it';
-  redo.addEventListener('click', () => sendToTerminal(said.command));
+  redo.addEventListener('click', () => sendToTerminal(said.command, false, null, from));
   bar.append(redo, artifactPath(said));
   head.append(bar);
 
@@ -9818,20 +9824,37 @@ function freshnessRuns(why) {
    no warehouse, and a command that can is never run for the user (0071), nor
    that button's while the shell reads the current folder (0130).
    `typed`, when given, is called once the command is in the terminal in place
-   of the toast, for the update, whose card says what to do next (0111). */
-function sendToTerminal(cmd, run, typed) {
+   of the toast, for the update, whose card says what to do next (0111).
+   `from` names the page that typed it, as the person saw it: the chip beside
+   the line says so, in place of the toast, once the shell has echoed it (0161).
+   For `run`, Enter follows the echo, so that the chip is placed on the line
+   before its output scrolls it. */
+function sendToTerminal(cmd, run, typed, from) {
   // Always on a click, and the terminal is what it asks to see.
   closePanel();
   showDock('terminal');
   let tries = 0;
   const attempt = () => {
-    if (S.ws && S.ws.readyState === 1) {
-      const d = run ? cmd + '\r' : cmd;
-      S.termPrompt = promptAfter(S.termPrompt, d);
-      S.ws.send(JSON.stringify({ t: 'i', d }));
+    const ws = S.ws;
+    if (ws && ws.readyState === 1) {
+      S.termPrompt = promptAfter(S.termPrompt, run ? cmd + '\r' : cmd);
+      // Where the line starts, as a row of the whole buffer: a shell that wraps a long line by moving the cursor leaves its rows unmarked as wrapped.
+      const first = S.term ? S.term.buffer.active.baseY + S.term.buffer.active.cursorY : 0;
+      const before = S.term ? termLineToCursor(first) : '';
+      const keys = S.termKeys;
+      ws.send(JSON.stringify({ t: 'i', d: cmd }));
       S.term && S.term.focus();
       if (typed) typed();
-      else toast(run ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
+      const settle = (seen) => {
+        const live = S.ws === ws && ws.readyState === 1;
+        // Enter only for a line still as it was sent: a key typed since, or a new shell, may have changed what it would run.
+        const ran = enterAfterEcho(run, keys, S.termKeys, live);
+        const drawn = live && seen && showTypedChip(typedChipText(from, ran));
+        if (ran) ws.send(JSON.stringify({ t: 'i', d: '\r' }));
+        if (!drawn && live && !typed) toast(ran ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
+      };
+      if (S.term) awaitEcho(first, before, cmd, settle);
+      else settle(false);
     } else if (tries++ < 40) setTimeout(attempt, 100);
     else toast('terminal is not connected', 'err');
   };
@@ -10744,7 +10767,7 @@ function jobsCard(group, { reason = false, mark = 'model', name = '' } = {}) {
       ls.type = 'button';
       ls.append(strokeIcon('0 0 16 16', 'jobico', ['M2.5 4l4 4-4 4M8.5 12.25h5']), 'dbt ls');
       ls.title = 'Type the dbt ls that lists what this step selects, without running it';
-      ls.addEventListener('click', () => sendToTerminal(step.ls));
+      ls.addEventListener('click', () => sendToTerminal(step.ls, false, null, 'the Jobs tab'));
       row.append(ls);
     } else {
       // The grid has a third column: a step without the button keeps it.
@@ -13291,7 +13314,7 @@ function paintSetPython(box) {
     const b = jel('button', 'btn sm', `Activate ${e.name} in the terminal`);
     b.dataset.key = 'venv:' + e.path;
     b.title = [e.activation, e.dbt && 'dbt: ' + e.dbt].filter(Boolean).join('\n');
-    b.addEventListener('click', () => sendToTerminal(e.activation));
+    b.addEventListener('click', () => sendToTerminal(e.activation, false, null, 'the settings'));
     bar.append(b);
   }
   box.append(bar, jel('p', 'setnote', 'Each types the line that activates it, and leaves Enter to you.'));
@@ -13948,7 +13971,7 @@ function fillFreshCard(el, f) {
     // The 0071 exception, moved here from the badge by 0157: dbt parse reaches
     // no warehouse, so Enter is pressed for the user unless the shell reads the
     // current folder (0130).
-    run.addEventListener('click', () => { closePopup(); sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd)); });
+    run.addEventListener('click', () => { closePopup(); sendToTerminal('dbt parse', freshnessRuns(S.pathReadsCwd), null, 'the manifest\'s card'); });
     act.append(run, make('span', 'hint', b.action.hint));
   } else if (b.doneOk) {
     const ok = make('span', 'mc-ok');
@@ -17733,6 +17756,55 @@ function promptAfter(prompt, d) {
   return /[\r\n]/.test(d) ? false : prompt;
 }
 
+/* xterm.js's colours from the page's variables, `read` giving the value of
+   one by its name. Every theme reaches the terminal this way, all sixteen
+   ANSI colours included (0161). The selection is the theme's own, translucent,
+   so the text under it keeps its colour. */
+function termTheme(read) {
+  const ansi = (n) => read('--ansi-' + n);
+  return {
+    background: read('--bg'), foreground: read('--fg'), cursor: read('--accent'), cursorAccent: read('--bg'),
+    selectionBackground: read('--select'), selectionInactiveBackground: read('--select'),
+    black: ansi('k'), red: ansi('r'), green: ansi('g'), yellow: ansi('y'),
+    blue: ansi('b'), magenta: ansi('m'), cyan: ansi('c'), white: ansi('w'),
+    brightBlack: ansi('k-hi'), brightRed: ansi('r-hi'), brightGreen: ansi('g-hi'), brightYellow: ansi('y-hi'),
+    brightBlue: ansi('b-hi'), brightMagenta: ansi('m-hi'), brightCyan: ansi('c-hi'), brightWhite: ansi('w-hi'),
+  };
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/* What the chip beside a command typed for you says, and where it came from:
+   the page that typed it, as the person saw it. `run` is for the one command
+   whose Enter the app presses (0157). */
+function typedChipText(from, run) {
+  if (run) return from ? `run from ${from}` : 'run for you';
+  return (from ? `typed from ${from}` : 'typed for you') + ' · Enter is yours';
+}
+
+/* Whether the shell has echoed `cmd` since the line read `before` up to the
+   cursor: longer by its length, and ending in it. Compared on the line and not
+   looked for in it, so a command typed twice is seen twice. */
+function echoed(before, now, cmd) {
+  return now.length >= before.length + cmd.length && now.endsWith(cmd);
+}
+
+/* Whether Enter is pressed for a command the page typed with `run`: only on a
+   line nobody has touched since (`keysBefore` and `keysNow` count the person's
+   keys) and in the shell it was typed into (`live`). */
+function enterAfterEcho(run, keysBefore, keysNow, live) {
+  return !!run && live && keysBefore === keysNow;
+}
+
+/* Whether `d`, which xterm.js hands to onData, is a key or a paste and not its
+   own answer to the shell: a device or cursor report, a focus report, or a
+   reply to a colour query. Only the first takes the chip away. */
+function typedByPerson(d) {
+  return !/^\x1b(?:\[[?>]?[\d;]*[cnRIO]|[P\]])/.test(d);
+}
+
 /* The OSC number pty.rs has bash print its VIRTUAL_ENV under. */
 const VENV_OSC = 6973;
 
@@ -17740,9 +17812,11 @@ function initTerm() {
   if (S.term) return;
   S.term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    fontSize: 12.5, cursorBlink: true, scrollback: 5000,
-    // Night's dark colours in every theme: a light terminal wants all sixteen ANSI colours as light twins (0150, Deferred 32).
-    theme: { background: '#0e1219', foreground: '#d7dee8', cursor: '#4da3ff', selectionBackground: '#2b3a4d' },
+    // xterm.js multiplies the font's own cell height (15px at 12.5px on macOS) by lineHeight: 19 / 15 is the design's 19px rows.
+    fontSize: 12.5, lineHeight: 19 / 15, cursorBlink: true, scrollback: 5000,
+    theme: termTheme(cssVar),
+    // registerDecoration, which holds the chip of a command typed for you, is a proposed API.
+    allowProposedApi: true,
   });
   S.fit = new FitAddon.FitAddon();
   S.term.loadAddon(S.fit);
@@ -17753,11 +17827,14 @@ function initTerm() {
   S.term.parser.registerOscHandler(VENV_OSC, (data) => {
     // Sent before each of bash's prompts, so bash reads its line again (0073).
     S.termPrompt = true;
+    // The next prompt: whatever was typed for the person has been dealt with.
+    dropTypedChip();
     if (data.length <= 4096 && !/[\x00-\x1f]/.test(data)) heardVenv(data);
     return true;
   });
   connectTerm();
   S.term.onData((d) => {
+    if (typedByPerson(d)) { S.termKeys++; dropTypedChip(); }
     S.termPrompt = promptAfter(S.termPrompt, d);
     if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ t: 'i', d }));
   });
@@ -17803,6 +17880,97 @@ function copyTermSelection() {
   if (!text) return;
   if (!navigator.clipboard) return toast('clipboard unavailable', 'err');
   navigator.clipboard.writeText(text).catch(() => toast('clipboard unavailable', 'err'));
+}
+
+/* The text from buffer row `first` to the cursor, the rows between included,
+   whether or not the shell marked them as one wrapped line. */
+function termLineToCursor(first) {
+  const buf = S.term.buffer.active;
+  const last = buf.baseY + buf.cursorY;
+  let text = '';
+  for (let y = first; y <= last; y++) {
+    const line = buf.getLine(y);
+    if (line) text += y === last ? line.translateToString(false, 0, buf.cursorX) : line.translateToString(false);
+  }
+  return text;
+}
+
+/* Waits for the shell to echo `cmd`, which comes back through the socket and
+   the parser, a moment after it was sent; `done` hears whether it did. A shell
+   that does not echo it (a program reading the keys itself) gives up after
+   the time a slow link takes. */
+function awaitEcho(first, before, cmd, done) {
+  const from = Date.now();
+  const look = () => {
+    if (S.term.buffer.active.type === 'normal' && echoed(before, termLineToCursor(first), cmd)) return done(true);
+    if (Date.now() - from > 800) return done(false);
+    setTimeout(look, 30);
+  };
+  look();
+}
+
+/* The chip beside a command typed for you, at the end of its line. One at a
+   time: a second command replaces it. It sits on a marker, which the terminal
+   moves with the line as output scrolls it, and which goes with the line when
+   it leaves the scrollback. False when it could not be made. */
+function showTypedChip(label) {
+  dropTypedChip();
+  const marker = S.term.registerMarker(0);
+  if (!marker) return false;
+  const deco = S.term.registerDecoration({ marker, x: S.term.buffer.active.cursorX, width: 1, layer: 'top' });
+  if (!deco) { marker.dispose(); return false; }
+  // The element is made and moved by xterm.js, at every render.
+  deco.onRender((el) => {
+    if (el.firstChild) return;
+    el.append(Object.assign(document.createElement('span'), { className: 'termtyped', textContent: label }));
+  });
+  S.typedChip = { deco, marker };
+  return true;
+}
+
+/* Gone at the next key, the next prompt, Clear and Restart. */
+function dropTypedChip() {
+  const held = S.typedChip;
+  if (!held) return;
+  S.typedChip = null;
+  held.deco.dispose();
+  held.marker.dispose();
+}
+
+/* The tab's tools in the dock's row: the venv the terminal runs dbt with, and
+   the shell with the folder it starts in. */
+function paintTermTools() {
+  const status = venvStatus(S.venv || {}, S.termVenv);
+  const chip = $('#term-venv');
+  chip.textContent = termVenvText(status);
+  chip.dataset.state = status.state;
+  chip.title = status.title;
+  const project = (S.meta && S.meta.project) || '';
+  const shell = $('#term-shell');
+  shell.textContent = project ? `${S.shellName} · ${project}` : S.shellName;
+  shell.classList.toggle('hidden', !S.shellName);
+}
+
+function clearTerm() {
+  dropTypedChip();
+  S.term.clear();
+  S.term.focus();
+}
+
+/* A new shell in the same terminal. Closing the socket ends the old shell
+   (the server kills it when its socket goes), so there is nothing to wait for.
+   S.ws is the new socket before the old one's close lands, which is what
+   tells its onclose to say nothing of the shell that was left. */
+function restartShell() {
+  dropTypedChip();
+  if (S.ws) S.ws.close();
+  S.term.reset();
+  // No shell yet: what the new one will say at its first prompt.
+  S.termVenv = undefined;
+  S.termPrompt = undefined;
+  connectTerm();
+  paintVenv();
+  S.term.focus();
 }
 
 function connectTerm() {
@@ -18418,6 +18586,8 @@ function wireTabs() {
   });
   watch.observe(tools, { subtree: true, childList: true, characterData: true, attributes: true });
   watch.observe($('#history-tab'), { attributes: true, attributeFilter: ['class'] });
+  $('#term-clear').addEventListener('click', clearTerm);
+  $('#term-restart').addEventListener('click', restartShell);
   wireTopbar();
 }
 
@@ -18464,8 +18634,9 @@ function showDock(which, { look = true, id = '' } = {}) {
   if (which === 'history' && !S.history) loadHistory();
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
   $('#jobs-tools').classList.toggle('hidden', which !== 'jobs');
+  $('#term-tools').classList.toggle('hidden', which !== 'terminal');
   placeWitch(true);
-  if (which === 'terminal') { initTerm(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
+  if (which === 'terminal') { initTerm(); paintTermTools(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);
   // The tour waits on it, to point at the tab once it is filled.
   return loading;
@@ -18483,9 +18654,10 @@ function showDock(which, { look = true, id = '' } = {}) {
    that matters least to what is drawn. It is measured, never set at a width,
    because the room moves with the sidebar, Query history and the column chip.
    It is measured with the lineage's tools shown and any other tab's hidden
-   (the Jobs tab's two buttons are far fewer, and a fold they caused would move
-   the tabs when it opens), and the open tab folds with the others, so that a
-   click on a tab never moves the tabs under the pointer: wireTabs()
+   (the Jobs tab's two buttons and the terminal's chip and two buttons are far
+   fewer, and a fold they caused would move the tabs when it opens), and the
+   open tab folds with the others, so that a click on a tab never moves the
+   tabs under the pointer: wireTabs()
    calls it when the row or the tools change, and never on a tab change. The
    tools' own class is the one change of theirs it does not hear, which is why
    the other folds are set there. Only the tools are asked whether they broke,
@@ -18496,11 +18668,11 @@ function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
-  const other = $('#jobs-tools');
-  const otherAway = other.classList.contains('hidden');
+  const others = [$('#jobs-tools'), $('#term-tools')];
+  const othersAway = others.map((e) => e.classList.contains('hidden'));
   const was = row.classList.contains('folded');
   row.classList.remove('folded');
-  other.classList.add('hidden');
+  others.forEach((e) => e.classList.add('hidden'));
   tools.classList.remove('hidden', 'noname', 'iconic');
   const fit = () => {
     // Without the strip the Halloween theme adds over the tabs, whose room the witch has.
@@ -18517,7 +18689,7 @@ function foldDockTabs() {
   }
   const folded = row.classList.contains('folded');
   tools.classList.toggle('hidden', away);
-  other.classList.toggle('hidden', otherAway);
+  others.forEach((e, i) => e.classList.toggle('hidden', othersAway[i]));
   if (was === folded) return;
   $$('#dock > .tabs .tab').forEach((t) => {
     const { name, about } = t.dataset;
@@ -18678,6 +18850,8 @@ function applyLook() {
   // The box style's class only while the theme is on, so that any other costs the page nothing.
   for (const b of ['tombstone', 'coffin', 'grimoire']) root.classList.toggle('hw-boxes-' + b, on && b === hwBoxes(S.look.boxes));
   paintNight();
+  // The terminal's colours are the theme's, and xterm.js repaints at once.
+  if (S.term) S.term.options.theme = termTheme(cssVar);
   // The boxes' art, drawn by the lineage itself, which keeps it through its own redraws.
   Lineage.setSkin(on ? hwBoxes(S.look.boxes) : null);
   $('#theme-btn').title = 'Theme: ' + THEMES.find((t) => t.id === theme).name;
@@ -20272,6 +20446,7 @@ function paintUpdateMenu(menu) {
   const el = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
   const u = S.update || { current: S.version };
   const o = updateOffer(u, S.os);
+  const from = menu.classList.contains('inpanel') ? 'the settings' : 'Edith\'s menu';
   // Drawn anew under the focus, at a click and every two seconds of a look:
   // it goes back to the same row, found by its link since an answer can add
   // rows above it, or to the button, without scrolling the menu to it.
@@ -20305,7 +20480,7 @@ function paintUpdateMenu(menu) {
         run.title = option.command;
         run.addEventListener('click', () => {
           closePopup();
-          sendToTerminal(option.command, false, () => notice(updateNotice('typed', option.kind)));
+          sendToTerminal(option.command, false, () => notice(updateNotice('typed', option.kind)), from);
           watchInstall();
         });
         menu.append(run);
@@ -20615,6 +20790,7 @@ async function boot() {
   applyInfo(info);
   $('#status-shell').textContent = info.shell;
   S.shellName = info.shell_name || '';
+  paintTermTools();
   S.pathReadsCwd = (info.path_reads_cwd || {}).why || '';
   S.pathEntry = (info.path_reads_cwd || {}).entry || '';
   // Which build drew this page. A release binary embeds web/ (0005), so this is
@@ -20680,6 +20856,7 @@ function paintVenv() {
     ? 'click to activate it in the terminal, from the project\'s settings'
     : 'click for the project\'s settings');
   el.dataset.state = state;
+  paintTermTools();
   repaintSettings();
 }
 
@@ -20725,7 +20902,8 @@ function venvKeys(v, e) {
    named: its path never goes to the server. `state` colours it: 'on' for an
    active venv, 'off' for one found but not active, 'none' for no venv.
    `offer` is what a click offers to type, and `line` the one it types at
-   once, '' when it lists them instead. */
+   once, '' when it lists them instead. `name` and `py` are the venv's
+   folder name and Python version where known, for the terminal's own chip. */
 function venvStatus(v, reported) {
   const found = v.found || [];
   const py = (e) => (e.python ? ' · py ' + e.python : '');
@@ -20738,14 +20916,14 @@ function venvStatus(v, reported) {
     const e = venvMatch(v, reported);
     if (!e) {
       const name = reported.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
-      return { text: 'venv ' + name, state: 'on', offer: [], line: '',
+      return { text: 'venv ' + name, name, py: '', state: 'on', offer: [], line: '',
         title: lines(reported, 'activated in the terminal; not a venv dbt-edith read, so its versions are not shown', also(null)) };
     }
-    return { text: 'venv ' + e.name + py(e), state: 'on', offer: [], line: '',
+    return { text: 'venv ' + e.name + py(e), name: e.name, py: e.python || '', state: 'on', offer: [], line: '',
       title: lines(e.path, e.dbt && ('dbt: ' + e.dbt), 'activated in the terminal', also(e)) };
   }
   if (!v.name) {
-    return { text: 'no venv', state: 'none', offer: [], line: '', title: lines(reported === ''
+    return { text: 'no venv', name: '', py: '', state: 'none', offer: [], line: '', title: lines(reported === ''
       ? 'none activated in the terminal, and none found in the project'
       : 'no VIRTUAL_ENV when dbt-edith started, and none found in the project') };
   }
@@ -20753,6 +20931,7 @@ function venvStatus(v, reported) {
   const offer = active ? [] : venvOffer(v);
   return {
     text: (active ? 'venv ' : 'venv (inactive) ') + v.name + py(v),
+    name: v.name, py: v.python || '',
     state: active ? 'on' : 'off',
     // Typed at once only when it is the venv the bar names; any other is picked.
     offer, line: offer.length === 1 && offer[0] === v ? v.activation : '',
@@ -20762,6 +20941,14 @@ function venvStatus(v, reported) {
           : 'found in the project, not activated when dbt-edith started; source its activate script in the terminal',
       also(v)),
   };
+}
+
+/* The terminal's own chip says it shorter than the status bar's pill, in
+   the words the prompt uses: (name) py 3.11.9, (name) inactive, no venv. */
+function termVenvText({ state, name, py }) {
+  if (state === 'none') return 'no venv';
+  if (state === 'off') return `(${name}) inactive`;
+  return py ? `(${name}) py ${py}` : `(${name})`;
 }
 
 /* What a click on an inactive venv offers to type: the venv the bar names

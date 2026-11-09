@@ -164,6 +164,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0158](0158-the-depth-is-written-as-dbt-writes-a-selector.md) | The depth is written as dbt writes a selector | changing the depth control, what its menus list or what its copy writes |
 | [0159](0159-a-jobs-start-is-said-in-words-and-a-clock-marks-the-ones-that-run-alone.md) | A job's start is said in words, and a clock marks the ones that run alone | changing how the Jobs tab words a job's schedule, what marks a job as running on its own, or what its header says |
 | [0160](0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md) | The Lineage space has one bar, and the levels sit beside their toggle | changing the space's bar, By folder's levels, how a model's box, a test's slip or the +N pill is drawn, or the card's layout and counts |
+| [0161](0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md) | The terminal takes the theme's colours and marks what is typed for you | changing the terminal's colours, the Terminal tab's tools in the dock's row, or how a command typed for the person is marked |
 
 ## Keeping these honest
 

@@ -2210,8 +2210,8 @@ theme on screen, and Night under Halloween, from a probe element that carries
 it; the file's `:root` holds the theme's `color-scheme`. `look.json` holds `{
 theme, follow, apparitions, boxes }`, and a 2.1 file is read once and rewritten
 without `halloween` or `sound`. `scripts/take_shots.py --theme` takes the
-pictures in another theme, and `docs/shots` are Night's. The terminal keeps
-Night's colours (Deferred item 32); its other limits are in item 39.
+pictures in another theme, and `docs/shots` are Night's. The terminal takes
+the theme's colours (0161); the themes' other limits are in item 39.
 
 A release is checked on VirusTotal before it is published (0152, no version),
 amending 0123. A `virustotal` job sits between `windows` and `release`: it
@@ -2782,19 +2782,19 @@ of its own, and each panel updates the tour, its page under
     of its `link` up to the next `link`, not up to the tag's closing `>`; it
     should cut each chunk at `>` first, so a `type` on a later tag is never
     taken for this one's.
-32. **The terminal's colours (#164, #165).** The xterm theme in `web/app.js` is
+32. ~~**The terminal's colours (#164, #165).** The xterm theme in `web/app.js` is
     still literal hex, Night's in every theme: Light shows a dark terminal until
     it reads the theme's. The terminal should take the theme's colours once it
     reads them by `getComputedStyle`, which wants all sixteen ANSI colours as
     light twins (the design has five); it also keeps the old cursor colour and
-    an opaque selection.
+    an opaque selection.~~ Settled in 2.12.0 (0161).
 33. **Colour names the default look does not carry yet (#165).**
     - About 100 names its block does not define (scrims, chips, diff, code
       text, line numbers, placeholders, toasts) keep their pre-2.0 values until
       the screen using each is redrawn; the other themes derive these names
       from their own, so they follow when Night's change.
     - Declared and not read yet: `--cur-line`, `--dots`, `--node-shadow`, `--py`
-      and `--ansi-*`.
+      and ~~`--ansi-*`~~ (read by the terminal since 2.12.0, 0161).
 34. **Contrast and browser controls (#164, #165).**
     - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
       is 3.0:1, below AA.
@@ -2821,7 +2821,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), column roles in the box,
-    the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), the terminal, Compiled,
+    the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
@@ -2931,6 +2931,19 @@ of its own, and each panel updates the tour, its page under
     - The model's dashed stem is drawn in `--line-strong`, as the design asks,
       which stands about 1.5:1 on Light's canvas and 1.8:1 on Night's, where
       the dotted grey it replaced stood near 3:1.
+49. **The terminal's limits (0161, 2.12.0).**
+    - The eleven ANSI colours the design does not draw (black, magenta, white
+      and the eight brights) are ours, in each of the four themes, and have not
+      been judged by the designer.
+    - The chip is drawn only when the shell echoes the command at the cursor,
+      within about a second: a program reading the keys itself or a shell that
+      repaints the line gets the toast. zsh says nothing at its prompt, so its
+      chip stays until a key, Clear or Restart.
+    - The chip sits a few cells right of the typed text and is clipped by the
+      terminal's right edge on a line that fills the width.
+    - The command the page runs for you (the manifest card's `dbt parse`) is
+      sent in two writes, Enter after the echo, and left out when a key was typed
+      in between.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:

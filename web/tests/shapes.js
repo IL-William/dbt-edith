@@ -79,7 +79,7 @@ print('\n--- the shapes are defined once ---');
 print('\n--- every marker is drawn with a shape ---');
 [
   '.freshbadge .dot', '.mc-head .dot', '.tooldot', '.qdot', '.jobdot', '.setwarn',
-  '#settings-btn[data-warn=true]::after', '.cfgwarn-mark', '.brand.newer::after', '.venvpill::before',
+  '#settings-btn[data-warn=true]::after', '.cfgwarn-mark', '.brand.newer::after', '.venvpill::before', '.termchip::before',
   '.ftab.dirty .x::before', '.oe-row .state.editing::before',
 ].forEach(function (sel) {
   check(sel + ' masks a --m-* shape', masks(sel), true);
@@ -141,6 +141,11 @@ check('the venv pill\'s states are read out of venvStatus', venvStates.sort(), [
 check('on is the check, off the triangle, none the ring the pill starts from',
   [maskedAs('.venvpill[data-state=on]::before', 'ok'), maskedAs('.venvpill[data-state=off]::before', 'warn'),
     maskedAs('.venvpill::before', 'none'), rulesFor('.venvpill[data-state=none]::before').length], [true, true, true, 0]);
+check('and the terminal\'s venv chip draws the same three, over the colours the pill uses',
+  [maskedAs('.termchip[data-state=on]::before', 'ok'), maskedAs('.termchip[data-state=off]::before', 'warn'),
+    maskedAs('.termchip::before', 'none'), rulesFor('.termchip[data-state=none]::before').length,
+    declares('.termchip[data-state=on]::before', /background:\s*var\(--ok\)/), declares('.termchip[data-state=off]::before', /background:\s*var\(--warn\)/)],
+  [true, true, true, 0, true, true]);
 // A tool's last run: ok, warn, bad, over its glyph.
 var runEnd = app.match(/function runEndTone\(c\) \{[\s\S]*?\n\}/)[0];
 var runTones = [];

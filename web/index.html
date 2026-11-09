@@ -448,6 +448,16 @@
         </div>
         <!-- The Jobs tab's two buttons, in the lineage tools' place while it is open (0159). -->
         <div id="jobs-tools" class="tools hidden"></div>
+        <!-- The terminal's: the venv it runs dbt with, the shell and where it starts, then Clear and Restart (0161). -->
+        <div id="term-tools" class="tools hidden">
+          <span id="term-venv" class="termchip" data-state="none" title="The Python the terminal runs dbt with"></span>
+          <span id="term-shell" class="termshell hidden" title="The shell the terminal runs, started in the project's folder"></span>
+          <span class="vsep" aria-hidden="true"></span>
+          <button id="term-clear" class="btn sm icobtn only" type="button" title="Clear"
+                  aria-label="Clear the terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="M4 12L12 4"/></svg></button>
+          <button id="term-restart" class="btn sm icobtn only" type="button" title="Restart the shell"
+                  aria-label="Restart the shell"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.3"/><path d="M13.25 1.75v3h-3"/></svg></button>
+        </div>
       </div>
       <div id="dock-lineage" class="dock-pane">
         <!-- What floats over the top of the canvas, one under the other: the

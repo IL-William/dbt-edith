@@ -25,9 +25,11 @@
      it: each states the names its design gives it (surfaces, text, the accent,
      the meaning colours), the rule after this block derives about seventy more
      from those by color-mix, and a name none of them restates keeps Night's
-     value, as the terminal's does in all three.
-     --cur-line, --node-shadow and the --ansi- colours are in every block, and
-     nothing reads them yet (--dots is the canvas's grid, 0160). */
+     value.
+     --cur-line and --node-shadow are in every block, and nothing reads them
+     yet (--dots is the canvas's grid, 0160). The terminal reads --bg, --fg,
+     --accent, --select and the sixteen --ansi- colours of whichever theme is
+     on (0161). */
   /* Surfaces */
   --line-strong: #334052;   /* a menu's or a hovered button's edge */
   --line-soft: #1a2029;     /* the rules between table rows */
@@ -55,8 +57,6 @@
   --placeholder: #55606f;
   --scroll-thumb: #2b3746;
   --scroll-thumb-hover: #3b4a5d;
-  --term-bg: #0e1219;
-  --term-thumb: #2f3b4c;
   /* Shadows and scrims */
   --shadow: 0 12px 32px rgba(0, 0, 0, .45);
   --node-shadow: none;
@@ -169,12 +169,24 @@
   --syn-param: #f07178;
   --syn-jatom: #c792ea;
   --syn-p: #8b97a8;
-  /* The terminal's ANSI colours */
+  /* The terminal's ANSI colours: the design draws five, the other eleven are
+     the One Dark family's, the brights a step lighter */
   --ansi-y: #e5c07b;
   --ansi-c: #56b6c2;
   --ansi-g: #98c379;
   --ansi-r: #e06c75;
   --ansi-b: #61afef;
+  --ansi-k: #3b4250;
+  --ansi-m: #c678dd;
+  --ansi-w: #abb2bf;
+  --ansi-k-hi: #7a8696;
+  --ansi-r-hi: #ff7b86;
+  --ansi-g-hi: #b5dc95;
+  --ansi-y-hi: #f0d197;
+  --ansi-b-hi: #86c4ff;
+  --ansi-m-hi: #dc9cf0;
+  --ansi-c-hi: #79d2dc;
+  --ansi-w-hi: #e6ebf2;
   /* Test chips, the two named after their generic */
   --t-nn: #7fd6a6;
   --t-nn-line: #3e6b52;
@@ -377,6 +389,17 @@
   --ansi-g: #98c379;
   --ansi-r: #e06c75;
   --ansi-b: #61afef;
+  --ansi-k: #3b3b3b;
+  --ansi-m: #c678dd;
+  --ansi-w: #b4b4b4;
+  --ansi-k-hi: #808080;
+  --ansi-r-hi: #ff7b86;
+  --ansi-g-hi: #b5dc95;
+  --ansi-y-hi: #f0d197;
+  --ansi-b-hi: #86c4ff;
+  --ansi-m-hi: #dc9cf0;
+  --ansi-c-hi: #79d2dc;
+  --ansi-w-hi: #e8e8e8;
   /* Kept for the rules that still read them */
   --model: #4da3ff;
   --seed: #4ec78d;
@@ -482,6 +505,17 @@
   --ansi-g: #3d8a2a;
   --ansi-r: #c23b47;
   --ansi-b: #2363c9;
+  --ansi-k: #383a42;
+  --ansi-m: #a626a4;
+  --ansi-w: #5c6370;
+  --ansi-k-hi: #696c77;
+  --ansi-r-hi: #a3202b;
+  --ansi-g-hi: #2f6f20;
+  --ansi-y-hi: #7a5300;
+  --ansi-b-hi: #1a4fa8;
+  --ansi-m-hi: #87208a;
+  --ansi-c-hi: #0b6670;
+  --ansi-w-hi: #868991;
   /* Kept for the rules that still read them */
   --model: #1f74d6;
   --seed: #1e9461;
@@ -598,6 +632,17 @@
   --ansi-g: #98c379;
   --ansi-r: #e06c75;
   --ansi-b: #61afef;
+  --ansi-k: #3d2e20;
+  --ansi-m: #c678dd;
+  --ansi-w: #d4c5b1;
+  --ansi-k-hi: #8c7a66;
+  --ansi-r-hi: #ff7b86;
+  --ansi-g-hi: #b5dc95;
+  --ansi-y-hi: #f0d197;
+  --ansi-b-hi: #86c4ff;
+  --ansi-m-hi: #dc9cf0;
+  --ansi-c-hi: #79d2dc;
+  --ansi-w-hi: #efe3d3;
   /* Kept for the rules that still read them */
   --model: #4da3ff;
   --seed: #4ec78d;
@@ -2884,9 +2929,33 @@ span.envpill:hover { filter: none; }
 .hc-test .t-name { display: block; color: var(--fg-dim); word-break: break-all; }
 
 /* -------------------------------------------------------------- terminal -- */
-#term { height: 100%; padding: 4px 2px 0 8px; background: var(--term-bg); }
+/* The theme's page colour, so the terminal is the same surface in all four. */
+/* The padding is on xterm.js's own element: the fit addon subtracts that one's, and would
+   let the text run under the scrollbar and the bottom padding were it on #term. */
+#term { height: 100%; background: var(--bg); }
+#term > .xterm { height: 100%; padding: 10px 16px 16px; }
 .xterm-viewport::-webkit-scrollbar { width: 8px; }
-.xterm-viewport::-webkit-scrollbar-thumb { background: var(--term-thumb); border-radius: 4px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 4px; }
+/* The venv the terminal runs dbt with, drawn as the status bar's pill is: the
+   state is a pictogram over the colour that says which. */
+.termchip {
+  display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 11px;
+  border: 1px solid var(--line); font: 11.5px var(--mono); color: var(--fg-2); white-space: nowrap;
+}
+.termchip::before {
+  content: ''; width: 11px; height: 11px; flex: 0 0 auto; background: var(--fg-dim);
+  -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat;
+}
+.termchip[data-state=on]::before { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.termchip[data-state=off]::before { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+.termshell { font: 11.5px var(--mono); color: var(--fg-dim); white-space: nowrap; }
+/* A command typed for the person, marked at the end of its line by xterm.js's
+   decoration; the pointer goes through it to the text. */
+.termtyped {
+  display: inline-flex; align-items: center; height: 18px; margin-left: 12px; padding: 0 7px; border-radius: 9px;
+  background: rgba(var(--accent-rgb), .12); font: 11px var(--ui); color: var(--accent);
+  white-space: nowrap; pointer-events: none; vertical-align: 1px;
+}
 
 /* --------------------------------------------------------------- palette -- */
 /* Cmd/Ctrl + K is as tall as its rows (0154): the list scrolls inside a

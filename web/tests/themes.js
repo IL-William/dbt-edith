@@ -127,9 +127,22 @@ check('every theme but Light keeps Night\'s git letters, which are the warning a
   [graphite, halloween].map(function (b) { return ['--git-m', '--git-u'].filter(function (n) { return n in b.decl; }).length; })
     .concat([night.decl['--git-m'] === night.decl['--warn'], night.decl['--git-u'] === night.decl['--ok'], graphite.decl['--warn'] === night.decl['--warn'], halloween.decl['--ok'] === night.decl['--ok']]),
   [0, 0, true, true, true, true]);
-check('the terminal keeps Night\'s dark colours: no theme declares them', [light, graphite, halloween].map(function (b) {
-  return ['--term-bg', '--term-thumb'].filter(function (n) { return n in b.decl; }).length;
-}), [0, 0, 0]);
+// The terminal is the page's surface and the theme's own sixteen colours (0161).
+ok('no theme keeps a terminal background or scrollbar of its own: the terminal reads --bg and --scroll-thumb',
+  [night, derived, graphite, light, halloween].every(function (b) { return !('--term-bg' in b.decl) && !('--term-thumb' in b.decl); })
+  && /#term \{[^}]*background: var\(--bg\)/.test(css) && /xterm-viewport::-webkit-scrollbar-thumb \{[^}]*var\(--scroll-thumb\)/.test(css));
+var ANSI = ['k', 'r', 'g', 'y', 'b', 'm', 'c', 'w'].reduce(function (list, c) { return list.concat('--ansi-' + c, '--ansi-' + c + '-hi'); }, []);
+check('every theme declares all sixteen ANSI colours itself',
+  [night, graphite, light, halloween].map(function (b) { return ANSI.filter(function (n) { return !(n in b.decl); }); }), [[], [], [], []]);
+[['Night', night], ['Graphite', graphite], ['Light', light], ['Halloween', halloween]].forEach(function (t) {
+  var b = t[1];
+  function own(n) { return n in b.decl ? b.decl[n] : night.decl[n]; }
+  check(t[0] + '\'s terminal text is at least 4.5:1 on its page', ratio(own('--fg'), own('--bg')) >= 4.5, true);
+  // Black is drawn dim by design, a colour for backgrounds a program paints, so it is the one left out.
+  check(t[0] + '\'s other fifteen ANSI colours are at least 3:1 on its page',
+    ANSI.filter(function (n) { return n !== '--ansi-k' && ratio(b.decl[n], own('--bg')) < 3; })
+      .map(function (n) { return n + ' ' + b.decl[n] + ' ' + ratio(b.decl[n], own('--bg')).toFixed(2); }), []);
+});
 
 print('\n--- Graphite ---');
 function channels(v) {

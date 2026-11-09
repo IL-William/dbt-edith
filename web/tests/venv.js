@@ -169,3 +169,11 @@ check('a venv set aside for want of an answer does not claim to be committed', v
   'git is paused here: this repository\'s own configuration names a program (filter.x.clean). git in the terminal is unaffected.',
 ]);
 check('a committed venv the terminal activates is only named', venvStatus(none, '/c/p/shipped').text, 'venv shipped');
+
+print('\n--- the terminal\'s own chip (0161) ---');
+check('an active venv, as the prompt names it, with its Python', termVenvText(venvStatus(project, '/c/p/fusion-env')), '(fusion-env) py 3.12.4');
+check('a venv found and not active', termVenvText(venvStatus(project, undefined)), '(core-env) inactive');
+check('and after the shell said none', termVenvText(venvStatus(project, '')), '(core-env) inactive');
+check('none anywhere', termVenvText(venvStatus(none, undefined)), 'no venv');
+check('a venv the server did not read is only named', termVenvText(venvStatus(project, '/c/Users/me/.venvs/scratch')), '(scratch)');
+check('the one dbt-edith started in', termVenvText(venvStatus({ source: 'activated', name: 'env', path: '/p/env', python: '3.11.9' }, undefined)), '(env) py 3.11.9');
