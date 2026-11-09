@@ -13,6 +13,17 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.12.0 - 2026-11-09
+
+- Draw the terminal in the theme's colours: its page, text, cursor, selection
+  and all sixteen ANSI colours follow Night, Graphite, Light and Halloween, and
+  a theme picked repaints it at once, at 12.5px on rows of about 19px (0161).
+- Name the terminal's venv and shell in the dock's row while its tab is open
+  (`(dbt) py 3.11.9`, `zsh · jaffle_shop`), with Clear and Restart the shell as
+  two buttons beside them (0161).
+- Mark a command typed for you at the end of its line with a chip saying which
+  page typed it and whether Enter is yours, in place of the toast (0161).
+
 ## 2.11.0 - 2026-11-09
 
 - Give the Lineage space one bar: the selector on the left and the canvas's tools

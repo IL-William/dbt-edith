@@ -109,3 +109,40 @@ check('a bracketed paste keeps its newlines in the line',
   promptAfter(true, '\x1b[200~select 1\nfrom orders\x1b[201~'), true);
 check('a command running stays so until the next prompt', promptAfter(false, 'y'), false);
 check('a prompt never reported stays unknown', promptAfter(undefined, '\r'), undefined);
+
+print('\n--- the terminal takes the theme\'s colours (0161) ---');
+var vars = {
+  '--bg': '#fbfbfa', '--fg': '#383a42', '--accent': '#1f6fd1', '--select': 'rgba(31, 111, 209, .12)',
+  '--ansi-k': 'k', '--ansi-r': 'r', '--ansi-g': 'g', '--ansi-y': 'y', '--ansi-b': 'b', '--ansi-m': 'm', '--ansi-c': 'c', '--ansi-w': 'w',
+  '--ansi-k-hi': 'K', '--ansi-r-hi': 'R', '--ansi-g-hi': 'G', '--ansi-y-hi': 'Y', '--ansi-b-hi': 'B', '--ansi-m-hi': 'M', '--ansi-c-hi': 'C', '--ansi-w-hi': 'W',
+};
+var asked = [];
+var theme = termTheme(function (n) { asked.push(n); return vars[n]; });
+check('the page and the text are the theme\'s, the cursor its accent', [theme.background, theme.foreground, theme.cursor, theme.cursorAccent], ['#fbfbfa', '#383a42', '#1f6fd1', '#fbfbfa']);
+check('the selection is the theme\'s translucent one, in focus or not', [theme.selectionBackground, theme.selectionInactiveBackground], ['rgba(31, 111, 209, .12)', 'rgba(31, 111, 209, .12)']);
+check('the eight colours', [theme.black, theme.red, theme.green, theme.yellow, theme.blue, theme.magenta, theme.cyan, theme.white], ['k', 'r', 'g', 'y', 'b', 'm', 'c', 'w']);
+check('and the eight brights', [theme.brightBlack, theme.brightRed, theme.brightGreen, theme.brightYellow, theme.brightBlue, theme.brightMagenta, theme.brightCyan, theme.brightWhite], ['K', 'R', 'G', 'Y', 'B', 'M', 'C', 'W']);
+check('it reads variables the themes declare and nothing else', asked.filter(function (n) { return !(n in vars); }), []);
+check('a value is never invented when a variable is empty', termTheme(function () { return ''; }).brightWhite, '');
+check('xterm.js is made with it, and may register decorations, and repaints when a theme is picked',
+  [/theme: termTheme\(cssVar\)/.test(src), /allowProposedApi: true/.test(src), /if \(S\.term\) S\.term\.options\.theme = termTheme\(cssVar\);/.test(src)], [true, true, true]);
+check('the text is 12.5px, on rows of 19px where the font\'s cell is 15px: xterm.js multiplies the two', /fontSize: 12\.5, lineHeight: 19 \/ 15/.test(src), true);
+
+print('\n--- the chip beside a command typed for you ---');
+check('typed, with Enter left to the person', typedChipText('the Jobs tab', false), 'typed from the Jobs tab · Enter is yours');
+check('run, when the app pressed Enter', typedChipText('the manifest\'s card', true), 'run from the manifest\'s card');
+check('no page named, still honest', [typedChipText('', false), typedChipText(undefined, true)], ['typed for you · Enter is yours', 'run for you']);
+check('the shell echoed it when the line grew by it', echoed('(dbt) jaffle_shop % ', '(dbt) jaffle_shop % dbt parse', 'dbt parse'), true);
+check('not before', echoed('(dbt) jaffle_shop % ', '(dbt) jaffle_shop % ', 'dbt parse'), false);
+check('not half of it', echoed('% ', '% dbt pa', 'dbt parse'), false);
+check('a command typed twice is seen twice', [echoed('% dbt parse', '% dbt parse', 'dbt parse'), echoed('% dbt parse', '% dbt parsedbt parse', 'dbt parse')], [false, true]);
+check('a key or a paste takes the chip away', ['a', '\r', '\x1b[A', '\x1bOA', '\x1b[200~select 1\x1b[201~', '\x7f'].map(typedByPerson), [true, true, true, true, true, true]);
+check('xterm.js\'s own answers to the shell do not', ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[12;34R', '\x1b[0n', '\x1b[I', '\x1b[O', '\x1bP>|xterm.js(5.5.0)\x1b\\', '\x1b]11;rgb:0f0f/1313/1818\x07'].map(typedByPerson),
+  [false, false, false, false, false, false, false, false]);
+['the Jobs tab', 'the selection', 'the Compiled tab', 'the Run tab', 'the manifest\\\'s card', 'the settings', 'the column lineage menu', 'Edith\\\'s menu'].forEach(function (name) {
+  check('a page that types a command names itself: ' + name.replace(/\\/g, ''), src.indexOf("'" + name + "'") >= 0, true);
+});
+check('Enter follows the echo of a command the page runs, on a line nobody touched', enterAfterEcho(true, 4, 4, true), true);
+check('not after a key the person typed in between', enterAfterEcho(true, 4, 5, true), false);
+check('not into a shell that was restarted', enterAfterEcho(true, 4, 4, false), false);
+check('and never for a command that only waits', enterAfterEcho(false, 4, 4, true), false);

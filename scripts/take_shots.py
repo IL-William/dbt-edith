@@ -871,8 +871,24 @@ class Shots:
             time.sleep(0.1)
         else:
             raise AssertionError("timed out waiting for git's answer")
+        # Then a command the page types for you, from the Compiled tab's bar,
+        # left at the prompt with the chip saying where it came from. The bar
+        # is drawn when the tab is shown, and its button brings the terminal back.
+        self.dock("compiled")
+        self.until("!!document.querySelector('#compiled-head .fresh-bar button')", "the Compiled tab's bar")
+        self.click("#compiled-head .fresh-bar button")
+        for _ in range(100):
+            self.frame()
+            if self.js("!!document.querySelector('#term .termtyped')"):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("timed out waiting for the typed command's chip")
         self.rest()
         self.take("terminal")
+        # A fresh shell, so no half-typed line is left for a later command.
+        self.click("#term-restart")
+        self.until("/[%$#]\\s*$/.test(document.querySelector('#term .xterm-rows')?.textContent || '')", "the new shell's prompt", 30)
 
         # The Git tab: something to commit, and a commit to pull.
         stage_git(self.work, self.project)

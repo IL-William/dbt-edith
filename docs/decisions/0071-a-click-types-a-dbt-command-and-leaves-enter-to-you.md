@@ -1,6 +1,6 @@
 # 0071. A click types a dbt command and leaves Enter to you
 
-Date: 2026-10-12 · Status: accepted, amended by 0157 (its exception moved from the freshness badge to the manifest card's button) · Amends 0025
+Date: 2026-10-12 · Status: accepted, amended by 0157 (its exception moved from the freshness badge to the manifest card's button) and 0161 (the terminal marks a command typed for you) · Amends 0025
 
 **Trigger:** read before passing `run` to `sendToTerminal`, or making any
 button press Enter in the terminal.
