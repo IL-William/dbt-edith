@@ -1,6 +1,6 @@
 # 0139. The Compiled and Run SQL is shown per environment by swapping its relations
 
-Date: 2026-11-04 · Status: accepted, amended by 0143 · Builds on 0113 and 0058
+Date: 2026-11-04 · Status: accepted, amended by 0143 and 0164 (how a swap is marked in the SQL) · Builds on 0113 and 0058
 
 **Trigger:** read before changing what the Compiled or Run tab shows when an
 environment is picked, which text the page replaces in the SQL, what the

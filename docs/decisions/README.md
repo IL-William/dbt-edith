@@ -167,6 +167,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0161](0161-the-terminal-takes-the-themes-colours-and-marks-what-is-typed-for-you.md) | The terminal takes the theme's colours and marks what is typed for you | changing the terminal's colours, the Terminal tab's tools in the dock's row, or how a command typed for the person is marked |
 | [0162](0162-a-columns-role-is-a-tag-inside-its-box.md) | A column's role is a tag inside its box | changing where a column box says its role, its size, the role colours as text, how a lit edge is coloured, or the shape a role has in the legend and the menus |
 | [0163](0163-the-settings-are-one-column-of-rows.md) | The settings are one column of rows | adding a setting, or changing how a section of the settings lays out its controls |
+| [0164](0164-the-compiled-tab-says-when-and-where-on-one-line-and-the-environment-is-picked-beside-it.md) | The Compiled tab says when and where on one line and the environment is picked beside it | changing the Compiled or Run tab's line, its environment picker, the note under it, how a swapped relation is marked, or the description in the dock's row |
 
 ## Keeping these honest
 

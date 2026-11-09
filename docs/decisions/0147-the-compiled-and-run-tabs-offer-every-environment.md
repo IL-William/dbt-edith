@@ -1,6 +1,6 @@
 # 0147. The Compiled and Run tabs offer every environment
 
-Date: 2026-11-05 · Status: accepted · Amends 0139, 0142
+Date: 2026-11-05 · Status: accepted, amended by 0164 (where the buttons sit and what the note says) · Amends 0139, 0142
 
 **Trigger:** read before changing what the top of the Compiled or Run tab
 shows when environments exist, how an environment is picked from it, or what it

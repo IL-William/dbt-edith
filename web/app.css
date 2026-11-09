@@ -125,10 +125,7 @@
   --env-uat: #e8905a;
   --env-prod: #e06c75;
   --env-other: #c9b458;     /* an environment the page has no name for */
-  --env-manifest: #4a5870;  /* outlined; filled only as the Compiled tab's picked chip */
-  --env-manifest-on: #fff;  /* its name on that fill */
-  --env-manifest-on-line: #6f7f93;
-  --env-swap: #78a0dc;      /* a value swapped into a compiled file */
+  --env-manifest: #4a5870;  /* outlined, never filled */
   /* Tools: the coloured name, its glyph, a rule */
   --tool-dbt: #ff694b;
   --tool-collin: #e070d0;
@@ -274,7 +271,6 @@
   --edge-test: color-mix(in srgb, var(--fg) 44%, var(--bg));
   --none: color-mix(in srgb, var(--fg) 54%, var(--bg));
   --link-line: color-mix(in srgb, var(--fg) 54%, var(--bg));
-  --env-manifest-on-line: color-mix(in srgb, var(--fg) 54%, var(--bg));
   --fg-faint: color-mix(in srgb, var(--fg) 34%, var(--bg));
   /* Names that are another one */
   --fg-path: var(--fg-2);
@@ -282,7 +278,6 @@
   --code-fg: var(--fg);
   --syn-var: var(--fg);
   --find-cur-fg: var(--fg);
-  --env-manifest-on: var(--fg);
   --crumb-fg: var(--fg-dim);
   --knob: var(--fg-dim);
   --placeholder: var(--fg-mute);
@@ -584,8 +579,10 @@
   --r-inferred-text: #5e6977;
   --r-raw-text: #41752f;
   --r-generated-text: #ab2fb4;
-  /* Night's colour, same hue, darker: 3:1 on the page and the sidebar's --bg-2 for a mark, 4.5:1 on the page for code */
-  --env-ci: #308df0; --env-stg: #079ba3; --env-uat: #d17338; --env-other: #9f8b32; --env-swap: #638dcd;
+  /* Night's colour, same hue, darker: 3:1 on the page and the sidebar's --bg-2 for a mark, 4.5:1 on the page for code.
+     The four tones the board does not draw are darker again, since a name sits on its own wash (the picked radio's 16%,
+     the note's tag on 8% and 14%) and holds 3:1 there too */
+  --env-ci: #2979ce; --env-stg: #06848b; --env-uat: #b46330; --env-other: #89782b;
   --f-md: #638fc1; --f-macro: #8f8e62;
   --syn-num: #bb5637; --syn-atom: #4c71c1; --syn-macro: #4c71c1; --syn-param: #c44a54; --syn-jatom: #925eb2;
   /* Shadows and scrims, warm and light */
@@ -777,19 +774,6 @@ kbd {
 .envpill-k { font-weight: 400; opacity: .7; }
 .envpill-caret { font-size: 9px; opacity: .75; }
 .envpill.sm { font-size: 10px; line-height: 14px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; letter-spacing: 0; }
-/* The environments on the Compiled and Run tabs (0147): outlined when off,
-   filled like the pill when it is the one in use. */
-.env-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
-.envchip {
-  font: 600 10px/14px var(--ui); color: var(--fg); background: transparent;
-  border: 1px solid var(--tone); border-radius: 9px; padding: 0 7px; cursor: pointer;
-}
-.envchip.on { color: var(--tone-fg); background: var(--tone); }
-.envchip[data-tone=manifest] { border-color: var(--env-manifest); }
-.envchip[data-tone=manifest].on { color: var(--env-manifest-on); background: var(--env-manifest); border-color: var(--env-manifest-on-line); }
-.envchip:hover { filter: brightness(1.15); }
-.envchip.on { cursor: default; filter: none; }
-.envchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .envmenu {
   position: fixed; z-index: 65; min-width: 230px; max-width: 380px; padding: 4px;
   background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 6px;
@@ -2280,6 +2264,9 @@ kbd {
 #dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }
 .dock-pane { flex: 1; min-height: 0; position: relative; }
 .tools { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-dim); padding-right: 4px; }
+/* The Compiled and Run tabs' description (0164): one dim line that gives way, with an ellipsis, to the tabs. */
+#artifact-tools { min-width: 0; flex: 0 1 auto; }
+.tababout { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-dim); }
 /* A thin line between groups of tools. */
 .vsep { flex: 0 0 auto; width: 1px; height: 16px; margin: 0 2px; background: var(--line); }
 .tools input[type=number] {
@@ -2599,31 +2586,76 @@ kbd {
 /* ------------------------------------------------------------- artifacts -- */
 /* The Compiled and Run tabs: same pane twice, over target/compiled/ and
    target/run/. */
-.compiled-head { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
+.compiled-head { flex: 0 0 auto; }
 #dock-compiled, #dock-run, #dock-jobs { display: flex; flex-direction: column; }
 .compiled-body { flex: 1; min-height: 0; overflow: hidden; }
-.compiled-body .CodeMirror { height: 100%; }
-.fresh-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 10px; row-gap: 3px;
-  padding: 7px 12px; font-size: 12px;
-  border-left: 3px solid var(--ok); background: var(--ok-wash);
+.compiled-body .CodeMirror { height: 100%; --env: var(--tone); }
+/* One line for when and where, the environment beside it, the button last
+   (0164). It wraps on a narrow dock rather than cutting the picker. */
+.chead {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line-soft);
 }
-/* Its own line, at full width: these paths run past a hundred characters and
-   the segment that identifies the file is the last one. */
+/* A stale file keeps the amber bar the line had before: a wash and a rule at the left, drawn inside so the line does not shift. */
+.chead.stale { background: var(--warn-wash); box-shadow: inset 2px 0 0 var(--warn); }
+.cstat { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--fg); white-space: nowrap; }
+/* The state is a pictogram, the manifest pill's: a check, or a triangle once
+   something it was built from has moved. */
+.cstat .dot {
+  width: 11px; height: 11px; border-radius: 0; flex: 0 0 auto; background: var(--fg-dim);
+  -webkit-mask: var(--m-none) center / contain no-repeat; mask: var(--m-none) center / contain no-repeat;
+}
+.cstat[data-tone=ok] .dot { background: var(--ok); -webkit-mask-image: var(--m-ok); mask-image: var(--m-ok); }
+.cstat[data-tone=stale] .dot { background: var(--warn); -webkit-mask-image: var(--m-warn); mask-image: var(--m-warn); }
+/* Amber only when the file is stale: a fresh one can still carry a word about a file that could not be read. */
+.cchanged { font-size: 12px; color: var(--fg-dim); min-width: 0; }
+.cchanged[data-tone=stale] { color: var(--warn-text); }
+/* These paths run past a hundred characters and the segment that identifies
+   the file is the last one, so a long one is cut at its left. */
 .artifact-path {
-  flex: 0 0 100%; min-width: 0; font: 11px var(--mono); text-align: left;
+  flex: 0 1 auto; min-width: 0; max-width: 100%; font: 11.5px var(--mono); text-align: left;
   direction: rtl; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 0; margin: 0; border: 0; background: none; color: var(--fg-dim);
+  padding: 0 0 4px; margin: 0; border: 0; background: none; color: var(--fg-mute);
 }
-.artifact-path.link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
-.artifact-path.link:hover { color: var(--accent); }
+.artifact-path.link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.artifact-path.link:hover { color: var(--fg); }
 .artifact-path.outside { cursor: default; opacity: .75; }
-.fresh-bar.stale { border-left-color: var(--warn); background: var(--warn-wash); }
-.fresh-bar.missing { border-left-color: var(--bad-line-hi); background: var(--bad-wash); }
-.fresh-bar b { font-family: var(--mono); font-size: 11.5px; }
-.fresh-bar .why { color: var(--fg-dim); font-size: 11px; }
-.fresh-bar.stale .why { color: var(--warn); }
-.fresh-bar .grow { flex: 1; }
+.btn.artifact-redo { color: var(--fg); font-size: 12px; padding: 3px 9px; white-space: nowrap; }
+.cenv { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
+/* An environment is its name in its colour, never a dot (0148); the picked one
+   is tinted and ringed in it. --env is the tone's colour (set by the page's
+   [data-tone] rules), the manifest's own is quiet. */
+.cenv .envseg { display: flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.cenv .envseg button {
+  --env: var(--tone); height: 22px; padding: 0 9px; border: 0; border-radius: 5px;
+  background: none; font: 12px var(--ui); color: var(--env); cursor: pointer;
+}
+.cenv .envseg button[data-tone=manifest] { --env: var(--fg-mute); color: var(--fg-dim); }
+.cenv .envseg button:hover { background: color-mix(in srgb, var(--env) 8%, transparent); }
+.cenv .envseg button[aria-checked=true] {
+  background: color-mix(in srgb, var(--env) 16%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--env) 55%, transparent); cursor: default;
+}
+.cenv .envseg button[data-tone=manifest]:hover { color: var(--fg); }
+.cenv .envseg button[data-tone=manifest][aria-checked=true] { background: var(--bg-3); box-shadow: 0 0 0 1px var(--line-strong); color: var(--fg); }
+.cenv .envseg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The one note under the line: what the swap changed and what it could not. */
+.cnote {
+  --env: var(--tone); margin: 8px 14px; padding: 8px 11px; border-radius: 7px; font-size: 12px; color: var(--fg-2);
+  background: color-mix(in srgb, var(--env) 8%, transparent); box-shadow: inset 2px 0 0 var(--env);
+}
+.cnote[data-tone=manifest] { --env: var(--fg-mute); }
+.cnote b { font-weight: 600; color: var(--fg); }
+/* Where the SQL may differ beyond its relations: the fold, open when drawn, one
+   line per finding, led by the warning's triangle (0164). */
+.cdiffer { margin-top: 5px; }
+.cdiffer > summary { cursor: pointer; font-weight: 600; color: var(--warn-text); }
+.cdiffer > summary::before {
+  content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 5px; vertical-align: -1px; background: var(--warn);
+  -webkit-mask: var(--m-warn) center / contain no-repeat; mask: var(--m-warn) center / contain no-repeat;
+}
+.cdiffer ul { margin: 2px 0 0; padding-left: 18px; font-size: 12px; color: var(--fg-2); }
+.cdiffer li { margin: 1px 0; }
 .compiled-empty { padding: 16px; font-size: 12px; color: var(--fg-dim); }
 .compiled-empty code {
   display: inline-block; font: 11.5px var(--mono); background: var(--bg-3);
@@ -2632,19 +2664,12 @@ kbd {
 .compiled-empty ul { font: 10.5px var(--mono); padding-left: 16px; color: var(--fg-mute); }
 
 /* The SQL shown for another environment (0139): a swapped relation is tinted in
-   the environment's colour, one kept as dbt compiled it is amber. */
-.env-bar {
-  padding: 5px 12px 6px; font-size: 11.5px; border-left: 3px solid var(--tone);
-  background: var(--bg-2); border-top: 1px solid var(--line);
+   the environment's colour (--env from the editor's data-tone), one kept as dbt
+   compiled it is amber. */
+.cm-env-swap {
+  background: color-mix(in srgb, var(--env) 10%, transparent);
+  border-bottom: 1px dotted var(--env); border-radius: 2px;
 }
-.env-line { display: flex; align-items: center; gap: 7px; }
-.env-differ { margin-top: 4px; }
-.env-differ > summary { cursor: pointer; color: var(--tone); font-weight: 600; }
-.env-bar[data-tone=manifest] .env-differ > summary { color: var(--fg); }
-.env-reads { margin: 2px 0 0; padding-left: 18px; font: 11px var(--mono); color: var(--fg-dim); }
-.env-reads li { margin: 1px 0; }
-.env-bar[data-tone=manifest] { border-left-color: var(--env-manifest); }
-.cm-env-swap { background: color-mix(in srgb, var(--env-swap) 16%, transparent); border-bottom: 1px dotted var(--accent); }
 .cm-env-kept { background: color-mix(in srgb, var(--warn) 20%, transparent); border-bottom: 1px solid var(--warn); }
 
 /* ------------------------------------------------------------------ jobs -- */

@@ -845,7 +845,8 @@ class Shots:
 
         # The compiled SQL, as it would read in that environment.
         self.dock("compiled")
-        self.until("document.querySelector('#dock-compiled').textContent.includes('Shown for')", "the environment's SQL")
+        # The note under the line leads with the picked environment's tag.
+        self.until("!!document.querySelector('#compiled-head .cnote .envtag')", "the environment's SQL")
         self.rest()
         self.take("catalog-compiled")
         # Back on the manifest's own environment, which the pictures after
@@ -875,8 +876,8 @@ class Shots:
         # left at the prompt with the chip saying where it came from. The bar
         # is drawn when the tab is shown, and its button brings the terminal back.
         self.dock("compiled")
-        self.until("!!document.querySelector('#compiled-head .fresh-bar button')", "the Compiled tab's bar")
-        self.click("#compiled-head .fresh-bar button")
+        self.until("!!document.querySelector('#compiled-head .artifact-redo')", "the Compiled tab's bar")
+        self.click("#compiled-head .artifact-redo")
         for _ in range(100):
             self.frame()
             if self.js("!!document.querySelector('#term .termtyped')"):

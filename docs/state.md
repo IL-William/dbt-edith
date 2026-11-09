@@ -2866,8 +2866,10 @@ of its own, and each panel updates the tour, its page under
     - The env var hover card (`web/app.js`, near line 351) and the Snowflake
       column lineage (near line 7476) read `S.env` directly instead of
       `activeEnv()`, so a stale choice can show there.
-    - The row of buttons is one wrapping line; a project with very many `.env`
-      files makes it tall.
+    - The row of buttons is no longer a wrapping line: 0164 made it one
+      segmented group that does not wrap. This is not settled: a project with
+      very many `.env` files makes the group wider than a narrow dock, and it
+      then takes a line of its own and is cut at the dock's edge.
 34. **Markers and shapes still to draw (#166, 0148).**
     - Editor tabs carry no kind bar: a tab knows its file, not its node.
     - ~~A column's role is still an 8px square (the column card, the legend, the
@@ -2881,7 +2883,7 @@ of its own, and each panel updates the tour, its page under
       the top bar re-folds on it.
 35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
-    ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
+    ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), ~~Compiled~~ (2.18.0, 0164),
     Git, ~~Catalog~~ (2.16.0), ~~Reports~~ (2.17.0) and the design docs.
 36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
@@ -3125,6 +3127,21 @@ of its own, and each panel updates the tour, its page under
       and its rules: its rows keep their own height, gap and accent rule.
     - The mono line under a head is one line of `about` whatever the section;
       the board draws Job coverage's and Job order's in the UI font.
+54. **The Compiled tab's limits (0164, 2.18.0).**
+    - The age is said as the manifest card says it, so a file a few days old
+      reads `Compiled 2 d ago` and one a few hours old `Compiled 3h07 ago`; the
+      two units are not spelled alike.
+    - The date and time are on the age's hover only, and the file's path is cut
+      at its left on a short dock, the identifying segment kept.
+    - The note does not say which database the relations moved to: a swap can
+      reach several, and the board's `to <database>` would be true for one.
+    - A project with very many `.env` files makes the picker wider than a narrow
+      dock (item 33).
+    - A swapped relation's hover is the call that names it, built from the node:
+      the model's own table in a Run statement reads `ref('customers')` where dbt
+      writes `{{ this }}`, a source whose name holds a dot falls back to
+      `source('<its node name>')`, and a version written as a string reads
+      `v=2`, not `v='2'`.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
