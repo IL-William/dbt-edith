@@ -2648,6 +2648,10 @@ kbd {
 .jobwhen { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0 8px; }
 .jobwhen b { font: 600 9.5px/16px var(--ui); letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }
 .jobchip { background: none; cursor: pointer; padding: 1px 8px; }
+/* In the Catalog: the Jobs tool's clock, the job, an arrow in the dim colour,
+   the step. Colours stay the chip's own, which say how the job starts. */
+.cat-body .jobchip { display: inline-flex; align-items: center; gap: 7px; min-height: 22px; box-sizing: border-box; padding: 2px 9px; border-radius: 11px; font: 11.5px/1.3 var(--mono); text-align: left; }
+.cat-body .jobchip .sl { color: var(--fg-mute); }
 .jobchip.more { border-style: dashed; color: var(--fg-dim); }
 .jobchip:hover, .jobchip:focus-visible { border-color: var(--accent); outline: none; }
 /* Where a chip's click landed: what the step draws is haloed and faded as a
@@ -2766,7 +2770,7 @@ kbd {
 .detail td.c1 { font-family: var(--mono); white-space: nowrap; }
 .detail td.c2 { font-family: var(--mono); color: var(--source); white-space: nowrap; }
 /* Scoped to .links in the catalog: .stat .v.link is a different, plain link. */
-.detail .links, .cat-body .links { display: flex; flex-wrap: wrap; gap: 5px; }
+.detail .links, .cat-body .links { display: flex; flex-wrap: wrap; gap: 6px; }
 .detail .link, .cat-body .links .link {
   font: 11px var(--mono); background: var(--bg-3); border: 1px solid var(--line);
   border-radius: 4px; padding: 2px 7px; cursor: pointer;
@@ -2869,32 +2873,44 @@ kbd {
 /* --------------------------------------------------------------- catalog -- */
 .catalog { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 .cat-head { flex: 0 0 auto; padding: 12px 16px 0; border-bottom: 1px solid var(--line); }
-.cat-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+.cat-title { display: flex; align-items: center; gap: 8px; }
 .cat-title .dot { width: 3px; height: 15px; }
-.cat-title .btn { margin-left: auto; font-weight: 400; }
+/* The name keeps its whole text, as it did; the words beside it give way first,
+   so in the card at its narrowest Open file stays clear of the card's close. */
+.cat-title .nm { flex: 0 0 auto; font-size: 15px; font-weight: 600; white-space: nowrap; }
+.cat-title .meta { flex: 0 1000 auto; min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; font: 11.5px var(--mono); color: var(--fg-dim); white-space: nowrap; }
 .cat-title .cat-copy { margin-left: -3px; flex: 0 0 auto; }
+/* A bordered button on no fill: Open file, and Regenerate below. */
+.btn.ghost { background: none; border-color: var(--line); }
+.btn.ghost:hover { background: none; border-color: var(--line-strong); }
+.cat-title .btn.ghost { height: 24px; margin-left: auto; padding: 0 10px; flex: 0 0 auto; }
+/* The rule below is shared by name with the editor's breadcrumb (.crumbs
+   .crumb), which has always taken its font from it: the Catalog's own, after
+   it, is scoped to its head and lines up with the name past the kind bar. */
 .crumb { font: 11px var(--mono); color: var(--fg-dim); margin: 3px 0 10px; word-break: break-all; }
 .crumb b { color: var(--fg); font-weight: 400; }
-.cat-tabs { display: flex; gap: 18px; }
-.ctab {
-  background: none; border: none; padding: 5px 0 7px; cursor: pointer;
-  color: var(--fg-dim); font: 600 11px var(--ui); letter-spacing: .8px;
-  border-bottom: 2px solid transparent; text-transform: uppercase;
-}
-.ctab:hover { color: var(--fg); }
-.ctab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.cat-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 24px; }
+/* The editor's breadcrumb buttons share the class and its 5px padding, which
+   would set the path off from the name above it. */
+.cat-head .crumb { margin: 3px 0 6px 11px; padding: 0; color: var(--fg-mute); }
+.cat-head .crumb b { color: var(--fg-dim); }
+/* The dock's tabs (.tab, .tab.active), in a row of their own. #dock .tab would
+   give the Catalog the dock bar's tighter padding, and not in the Lineage space's card. */
+.cat-tabs { display: flex; align-items: stretch; height: 32px; margin-left: 2px; }
+#catalog .cat-tabs .tab { display: inline-flex; align-items: center; gap: 7px; padding: 0 9px; white-space: nowrap; }
+#catalog .cat-tabs .tabbadge { margin-left: 0; padding: 0 5px; background: var(--bg-3); color: var(--fg-dim); font: 10px/15px var(--mono); }
+.cat-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 24px; }
+/* One heading style for both tabs (Context, Location, Jobs, Last built,
+   Details, the lists of nodes), with its buttons beside it in a .sechead. */
 .cat-body h3 {
-  font-size: 10.5px; color: var(--fg-dim); text-transform: uppercase;
-  letter-spacing: .9px; margin: 18px 0 8px; font-weight: 600;
+  font-size: 11px; color: var(--fg-dim); text-transform: uppercase;
+  letter-spacing: .05em; margin: 20px 0 8px; font-weight: 600;
 }
-.cat-body h3:first-child { margin-top: 0; }
-.cat-body .sechead { display: flex; align-items: center; gap: 12px; margin: 18px 0 8px; }
-.cat-body .cat-jobs > h3 { margin-top: 18px; }
+.cat-body > h3:first-child, .cat-body > .sechead:first-child { margin-top: 4px; }
+.cat-body .sechead { display: flex; align-items: center; gap: 10px; margin: 20px 0 8px; }
 .cat-body .sechead h3 { margin: 0; }
 .cat-desc { margin: 0; color: var(--fg-2); max-width: 90ch; }
-.stats { display: flex; flex-wrap: wrap; gap: 30px; }
-.stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 2px; }
+.stats { display: flex; flex-wrap: wrap; gap: 32px; }
+.stat .k { font-size: 11px; color: var(--fg-dim); margin-bottom: 1px; }
 .stat .v { font-size: 15px; font-weight: 600; }
 .stat .v.link { cursor: pointer; }
 .stat .v.link:hover, .stat .v.link:focus-visible { color: var(--accent); }
@@ -2912,6 +2928,7 @@ kbd {
 .stat .keymore { font: 400 11.5px var(--ui); color: var(--accent); cursor: pointer; }
 .stat .keymore:hover { text-decoration: underline; }
 .stat .keylink:focus-visible, .stat .keymore:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.stats-under { margin-top: 6px; font-size: 11.5px; color: var(--fg-dim); }
 .loc { border-collapse: collapse; font-size: 11.5px; width: 100%; }
 .loc th {
   text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
@@ -2920,6 +2937,11 @@ kbd {
 }
 .loc td { padding: 4px 12px 4px 0; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); word-break: break-all; }
 .loc td.k { font-family: var(--ui); color: var(--fg-dim); width: 70px; }
+/* The Catalog's Location, as its board draws it; the settings' environments
+   table and the clone dialog keep the sizes above. */
+.cat-body .loc th { font-size: 10.5px; letter-spacing: .05em; padding-bottom: 6px; }
+.cat-body .loc td { padding: 5px 12px 5px 0; }
+.cat-body .loc td.k { font-size: 12px; width: 76px; }
 .loc td.tpl { color: var(--source); }
 .loc td.moved { color: var(--warn); }
 .loc td.moved::after { content: '  \2192'; opacity: .7; }
@@ -2979,31 +3001,40 @@ span.envpill:hover { filter: none; }
 .envpanel input[type=text]:focus { border-color: var(--accent-dim); outline: none; }
 .envpanel .loc td.k { white-space: nowrap; word-break: normal; }
 .envpanel p { margin: 10px 0 0; font-size: 11px; }
-.kvline { display: grid; grid-template-columns: 130px 1fr; gap: 3px 12px; font-size: 12px; }
+.kvline { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px; font-size: 12px; }
 .kvline dt { color: var(--fg-dim); }
 .kvline dd { margin: 0; font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
 
-.coltools { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; }
+.coltools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--fg-dim); margin-bottom: 8px; }
 .coltools .grow { flex: 1; }
-.colfind { position: relative; display: inline-flex; align-items: center; }
-.colfilter {
-  width: 210px; padding: 3px 76px 3px 7px; outline: none;
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px;
-  font: 11.5px var(--mono);
+/* The filter is a boxed field with its count inside at the right: the
+   count shown and the count typed, which cannot be read as part of the word. */
+.colfind {
+  display: flex; align-items: center; gap: 6px; width: 230px; height: 26px; box-sizing: border-box; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg-mute);
 }
-.colfilter:focus { border-color: var(--accent-dim); }
-.colcount {
-  position: absolute; right: 7px; pointer-events: none;
-  font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
-}
+.colfind:focus-within { border-color: rgba(var(--accent-rgb), .7); }
+.colfind-ico { width: 13px; height: 13px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.colfilter { flex: 1 1 0; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--fg); font: 12px var(--mono); }
+.colfilter::placeholder { color: var(--fg-mute); }
+.colcount { flex: 0 0 auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.coltools .cllpick { height: 24px; box-sizing: border-box; gap: 7px; padding: 0 8px 0 9px; border-radius: 12px; background: none; font-size: 12px; }
+.coltools .cllpick:hover { background: var(--hover); }
+.coltools .btn.ghost { height: 20px; padding: 0 7px; font-size: 11px; }
+/* Sort: the dock's modes as #graph-mode draws them, the one in front raised. */
+.coltools .seg { gap: 2px; padding: 2px; border: 0; border-radius: 7px; background: var(--bg); overflow: visible; }
+.coltools .segbtn { height: 20px; padding: 0 8px; border-radius: 5px; font-size: 11.5px; }
+.coltools .segbtn:hover:not(:disabled):not(.active) { background: none; color: var(--fg); }
+.coltools .segbtn.active { background: var(--bg-3); box-shadow: 0 0 0 1px var(--line); color: var(--fg); }
 .cols .c-name mark { background: var(--accent-dim); color: var(--fg); border-radius: 2px; }
 .cols { width: 100%; border-collapse: collapse; font-size: 12px; }
 .cols th {
-  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
-  color: var(--fg-dim); font-weight: 600; padding: 0 10px 6px 0; border-bottom: 1px solid var(--line);
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--fg-dim); font-weight: 600; padding: 0 16px 6px 0; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--bg-2);
 }
-.cols td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.cols .testchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.cols td { padding: 6px 16px 6px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 .cols tr:hover td { background: var(--hover); }
 .cols tr.c-linked { cursor: pointer; }
 .cols tr.c-linked:hover td { background: var(--row-open); }
@@ -3015,8 +3046,9 @@ span.envpill:hover { filter: none; }
 /* In the incremental orange, outlined like the canvas's role tags. */
 .cols .keytag { display: inline-block; margin-left: 7px; padding: 0 4px; font: 9.5px var(--mono); letter-spacing: .4px; color: var(--k-incr); border: 1px solid var(--k-incr); border-radius: 3px; vertical-align: 1px; user-select: none; }
 .cols .keytag.dashed { border-style: dashed; }
-.cols .c-lin { font: 10.5px var(--mono); white-space: nowrap; color: var(--fg-dim); }
-.cols .c-lin b { color: var(--accent); font-weight: 600; }
+.cols .c-lin { font: 11px var(--mono); white-space: nowrap; color: var(--fg-mute); }
+.cols .c-lin b { color: var(--fg); font-weight: 500; }
+.cols tr:hover .c-lin b { color: var(--accent); }
 /* What a generated column is set to, in the canvas badge's pink, clipped:
    a typed null recast reads whole, a long literal on hover (0096). */
 .cols .c-gen { display: inline-block; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--r-generated); cursor: help; }
@@ -3037,7 +3069,7 @@ span.envpill:hover { filter: none; }
 .cols tr.c-linked:hover .c-ask { color: var(--accent); font-style: normal; }
 .filelink { color: var(--accent); cursor: pointer; text-decoration: none; }
 .filelink:hover { text-decoration: underline; }
-.cols .c-name { font-family: var(--mono); white-space: nowrap; }
+.cols .c-name { font: 12.5px var(--mono); white-space: nowrap; }
 
 /* --------------------------------------------------------- query history -- */
 .history { height: 100%; display: flex; flex-direction: column; min-height: 0; }
@@ -3052,6 +3084,11 @@ span.envpill:hover { filter: none; }
 .histnote.bad { border-left: 2px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); color: var(--bad-fg-2); }
 .histtable { table-layout: auto; }
 .histtable td { white-space: nowrap; vertical-align: baseline; }
+/* The Catalog's columns table took the board's wider cells; the query
+   history shares .cols and keeps the narrower ones, which leave its SQL the
+   width. */
+.histtable th { padding: 0 10px 6px 0; letter-spacing: .7px; }
+.histtable td { padding: 5px 10px 5px 0; }
 .histtable .h-row { cursor: pointer; }
 .histtable .h-row.h-open td { background: var(--row-open); }
 .histtable .h-when, .histtable .h-num { font-variant-numeric: tabular-nums; color: var(--fg-dim); }
@@ -3078,13 +3115,15 @@ span.envpill:hover { filter: none; }
 }
 .histfoot { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 11px; }
 .envmenu.histmenu { min-width: 260px; }
-.cols .c-type { font-family: var(--mono); color: var(--source); white-space: nowrap; }
-.cols .c-desc { color: var(--fg-2); }
+.cols .c-type { font: 11px var(--mono); letter-spacing: .03em; text-transform: uppercase; color: var(--fg-mute); white-space: nowrap; }
+.cols .c-desc { font-size: 13px; color: var(--fg-2); }
 .cols .c-undeclared .c-name { color: var(--fg-dim); font-style: italic; }
-.nul { color: var(--fg-faint); }
+/* An empty cell's mark and a value left to its default: muted, not faint, so
+   that the mark still reads at 3:1 and more in every theme. */
+.nul { color: var(--fg-mute); }
 .testchip {
-  display: inline-block; font: 10px var(--mono); background: var(--bg-3);
-  border: 1px solid var(--chip-line); border-radius: 9px; padding: 1px 7px; margin: 0 3px 3px 0; white-space: nowrap;
+  display: inline-block; font: 10.5px/17px var(--mono); background: var(--bg-3);
+  border: 1px solid var(--chip-line); border-radius: 9px; padding: 0 7px; white-space: nowrap;
 }
 .testchip.nn { border-color: var(--t-nn-line); color: var(--t-nn); }
 .testchip.un { border-color: var(--t-un-line); color: var(--t-un); }

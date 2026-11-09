@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.16.0 - 2026-11-09
+
+- Draw the Catalog with one head, the name with its materialization and schema
+  beside it, the dock's tabs with the column count in a badge, one style for its
+  headings, a boxed column filter that counts inside, a Sort tray, and dim
+  types and arrows in the columns table, its lineage counts in the main text colour.
+
 ## 2.15.0 - 2026-11-09
 
 - Show the shortcut list as a sheet inside the window, with a find box that

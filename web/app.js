@@ -9894,6 +9894,21 @@ function versionChip(n) {
   };
 }
 
+/* The words after the name: the materialization and the schema, as the hover
+   card's second line says them (an incremental model's strategy in place of
+   the materialization), and nothing for a node that has neither. A disabled
+   node keeps its materialization: its chip beside says it is disabled. The test count stays out: Context counts them. */
+function catalogMeta(n) {
+  return [Lineage.subtitleParts({ ...n, disabled: false }).lead, n.schema].filter(Boolean).join(' \u00b7 ');
+}
+
+/* The Catalog's tabs: a test has no columns of its own, so it has Preview
+   alone; `count` is the badge after a label, none for Preview. */
+function catalogTabList(n) {
+  if (n.kind === 'test') return [{ key: 'preview', label: 'Preview', count: 0 }];
+  return [{ key: 'preview', label: 'Preview', count: 0 }, { key: 'columns', label: 'Columns', count: n.columns.length }];
+}
+
 function renderCatalog(n) {
   S.node = n;
   const host = $('#catalog');
@@ -9911,7 +9926,10 @@ function renderCatalog(n) {
   // The name is what gets pasted next, into a --select, a ref() or a query.
   const copy = copyGlyph(n.name, 'Copy the name');
   copy.classList.add('cat-copy');
-  title.append(dot(n), document.createTextNode(n.name), copy);
+  const name = Object.assign(document.createElement('span'), { className: 'nm', textContent: n.name, title: n.name });
+  title.append(dot(n), name, copy);
+  const meta = catalogMeta(n);
+  if (meta) title.append(Object.assign(document.createElement('span'), { className: 'meta', textContent: meta }));
   if (n.disabled) {
     const off = document.createElement('span');
     off.className = 'offchip';
@@ -9927,7 +9945,7 @@ function renderCatalog(n) {
   }
   if (n.file) {
     const open = document.createElement('button');
-    open.className = 'btn sm';
+    open.className = 'btn ghost';
     open.textContent = 'Open file';
     open.addEventListener('click', () => {
       if (n.kind === 'test' && n.test_name) return openTest(n, { pin: true });
@@ -9947,15 +9965,19 @@ function renderCatalog(n) {
 
   const tabs = document.createElement('div');
   tabs.className = 'cat-tabs';
-  // A test has no columns of its own, so it has Preview alone. The tab picked
-  // stays picked, for the next model shown.
+  tabs.setAttribute('role', 'tablist');
+  // The tab picked stays picked, for the next model shown.
   const test = n.kind === 'test';
   const shown = test ? 'preview' : S.catTab;
-  for (const [key, label] of test ? [['preview', 'Preview']]
-    : [['preview', 'Preview'], ['columns', `Columns${n.columns.length ? ' (' + n.columns.length + ')' : ''}`]]) {
+  for (const { key, label, count } of catalogTabList(n)) {
+    // The dock's tab look; `ctab` stays for what finds the Catalog's tabs by it.
     const t = document.createElement('button');
-    t.className = 'ctab' + (shown === key ? ' active' : '');
-    t.textContent = label;
+    t.type = 'button';
+    t.className = 'tab ctab' + (shown === key ? ' active' : '');
+    t.setAttribute('role', 'tab');
+    t.setAttribute('aria-selected', String(shown === key));
+    t.append(label);
+    if (count) t.append(Object.assign(document.createElement('span'), { className: 'tabbadge', textContent: String(count) }));
     t.addEventListener('click', () => (test ? renderCatalog(n) : showCatalogTab(n, key)));
     tabs.appendChild(t);
   }
@@ -10101,14 +10123,18 @@ function jobsStepLabel(job, step) {
 /* A step on a Catalog chip: its job and itself, without the DAG and the
    task the Jobs tab writes in front, which the section's title says. */
 function jobsChipText(job, step) {
-  const own = job.kind === 'airflow' ? (step.name || 'task ' + step.n) : `step ${step.n}/${job.steps}`;
-  return `${job.name} › ${own}`;
+  return jobsChipParts(job, step).join(' › ');
+}
+
+/* The chip's two halves, drawn either side of its own arrow. */
+function jobsChipParts(job, step) {
+  return [job.name, job.kind === 'airflow' ? (step.name || 'task ' + step.n) : `step ${step.n}/${job.steps}`];
 }
 
 /* One chip per step that runs the node, scheduled jobs first, as the Jobs
    tab lists them, and each job's steps in their order. */
 function jobsChips(groups) {
-  return jobsByStart(groups).flatMap((g) => g.steps.map((step) => ({ job: g.job, step, text: jobsChipText(g.job, step) })));
+  return jobsByStart(groups).flatMap((g) => g.steps.map((step) => ({ job: g.job, step, text: jobsChipText(g.job, step), parts: jobsChipParts(g.job, step) })));
 }
 
 /* Said once where a reason for a job's start is longer than a pill. */
@@ -16567,7 +16593,7 @@ function catalogPreview(body, n, inCard = false) {
   body.appendChild(h3('context'));
   const stats = document.createElement('div');
   stats.className = 'stats';
-  // The strategy and the key where they are used, beside Mat. type; elsewhere
+  // The strategy and the key where they are used, beside Materialization; elsewhere
   // they were inherited, and "details" says so.
   // A disabled model is never run, so nothing is said of how.
   const incremental = n.kind === 'model' && n.materialized === 'incremental' && !n.disabled;
@@ -16583,15 +16609,14 @@ function catalogPreview(body, n, inCard = false) {
     if (h) h.scrollIntoView({ block: 'start' });
   } : null);
   stats.append(
-    stat(inCard ? 'Materialization' : 'Mat. type', n.materialized || n.kind),
+    stat('Materialization', n.materialized || n.kind),
     ...(incremental ? [strategyStat(n)] : []),
     ...(keyed ? [keyStat(n)] : []),
     // The card reads Columns, Tests, Upstream, Downstream, as the design lists them (0160).
     ...(inCard ? [columns, tests, up, down] : [columns, up, down, tests]),
   );
   const totals = document.createElement('div');
-  totals.className = 'muted';
-  totals.style.cssText = 'font-size:11px;margin-top:8px';
+  totals.className = 'stats-under';
   totals.textContent = `${n.upstream_total} models upstream in total, ${n.downstream_total} downstream (whole graph).`;
   body.append(stats, totals);
   catalogLocation(body, n, inCard);
@@ -16684,8 +16709,7 @@ function catalogTestPreview(body, n) {
     stat('Models read', `${n.parents.length}`, () => lineageOneUp(n)),
   );
   const totals = document.createElement('div');
-  totals.className = 'muted';
-  totals.style.cssText = 'font-size:11px;margin-top:8px';
+  totals.className = 'stats-under';
   totals.textContent = `${n.upstream_total} models upstream in total (whole graph).`;
   body.append(stats, totals);
   catalogTestConfig(body, n);
@@ -16793,8 +16817,14 @@ function paintCatalogJobs(box, view) {
   if (!view.configured) return box.replaceChildren();
   const id = box.dataset.node;
   const list = jel('div', 'links');
+  // A step's chip carries the Jobs tool's glyph (the clock) and its arrow in
+  // the dim colour; the notes beside them are words alone.
   const chip = (cls, text, title, reveal) => {
-    const b = jel('button', cls, text);
+    const b = jel('button', cls, Array.isArray(text) ? '' : text);
+    if (Array.isArray(text)) {
+      b.dataset.tool = 'jobs';
+      b.append(jel('span', 'tooldot', ''), text[0], jel('span', 'sl', '\u203a'), text[1]);
+    }
     b.type = 'button';
     b.title = title;
     b.addEventListener('click', () => showJobsFor(id, reveal));
@@ -16805,7 +16835,7 @@ function paintCatalogJobs(box, view) {
   for (const c of chips) {
     const start = jobsStart(c.job);
     const word = { scheduled: 'scheduled, ', unread: 'schedule not read, ' }[start] || '';
-    chip('jobchip', c.text,
+    chip('jobchip', c.parts,
       `${jobsJobLabel(c.job)}: ${word}${jobsScheduleText(c.job)}\n${c.step.shown}\nclick: show it in the Jobs tab`,
       { key: jobsStepKey(c.job, c.step), index: c.step.index }).dataset.start = start;
   }
@@ -17651,9 +17681,11 @@ function fillTestsCard(el, n, c) {
    anyway, and a key in S would only be there to go stale. */
 function paintTests(td, n, c, expanded) {
   td.textContent = '';
+  // The chips wrap in a box of their own: a cell cannot be a flex box and stay a cell.
+  const box = td.appendChild(Object.assign(document.createElement('div'), { className: 'testchips' }));
   const all = c.tests || [];
   if (!all.length) {
-    td.append(Object.assign(document.createElement('span'), { className: 'nul', textContent: '–' }));
+    box.append(Object.assign(document.createElement('span'), { className: 'nul', textContent: '–' }));
     return;
   }
   const cut = expanded ? { shown: all, hidden: [] } : testChips(all);
@@ -17661,7 +17693,7 @@ function paintTests(td, n, c, expanded) {
     const chip = document.createElement('span');
     chip.className = 'testchip' + (t.label === 'not_null' ? ' nn' : t.label === 'unique' ? ' un' : '');
     chip.textContent = t.label;
-    td.appendChild(chip);
+    box.appendChild(chip);
     if (!t.file) { chip.title = `${t.name}\n${t.id}`; continue; }
     // A chip opens its test where it is declared (0041): a chip hangs on the
     // model whose YAML declares it, the one this Catalog shows.
@@ -17714,7 +17746,7 @@ function paintTests(td, n, c, expanded) {
     e.preventDefault();
     toggle(e);
   });
-  td.appendChild(more);
+  box.appendChild(more);
 }
 
 /* Whether a column answers the Columns filter: its name holds the text, in any
@@ -17768,6 +17800,13 @@ function columnReach(c, r, indirect) {
   return { up: `\u2190${r.up}`, down: `${r.down}\u2192`, title: `${one}\nin all: ${r.up} upstream, ${r.down} downstream${left}` };
 }
 
+/* One side of a Lineage cell, `\u21902` or `2\u2192`, as its arrow and its
+   figure apart, so the figure can be the one to stand out. */
+function reachParts(text) {
+  const figure = (t) => Object.assign(document.createElement('b'), { textContent: t });
+  return text.startsWith('\u2190') ? ['\u2190', figure(text.slice(1))] : [figure(text.slice(0, -1)), text.slice(-1)];
+}
+
 /* Whether the Columns table has a Lineage column: Snowflake picked, or a
    column with an edge, a mark of collin's, or a value it is generated from,
    which a column nothing reads still has (0096). */
@@ -17794,6 +17833,13 @@ function indirectOnlyCell(c) {
   return { text: 'indirect only', title: 'only indirect edges reach or leave it; turn indirect on to draw them' };
 }
 
+/* What the filter box says at its right edge: how many columns the word kept
+   (only while one is typed), then how many have a type from catalog.json. No
+   types at all is a sentence of its own beside the box, so nothing here. */
+function columnCountText(kept, total, typed, filtering) {
+  return [filtering ? `${kept} of ${total}` : '', typed ? `${typed}/${total} typed` : ''].filter(Boolean).join(' \u00b7 ');
+}
+
 function catalogColumns(body, n) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -17811,25 +17857,28 @@ function catalogColumns(body, n) {
   const filter = document.createElement('input');
   filter.id = 'col-filter';
   filter.className = 'colfilter';
-  filter.placeholder = 'Filter by name';
+  filter.placeholder = 'Filter columns';
+  filter.setAttribute('aria-label', 'Filter columns by name');
   filter.value = S.colFilter;
   filter.spellcheck = false;
   filter.autocomplete = 'off';
   filter.title = `Filter the columns by name (${keyLabel('Mod+F', IS_MAC)}). ${keyLabel('Escape', IS_MAC)} clears it.`;
-  // The count sits inside the box, so it cannot be read as part of the typed
-  // count beside it.
+  // The count of columns kept and the count typed sit together inside the box,
+  // at its right edge.
   const shown = document.createElement('span');
   shown.className = 'colcount';
-  const box = document.createElement('span');
+  const box = document.createElement('label');
   box.className = 'colfind';
-  box.append(filter, shown);
+  box.append(strokeIcon('0 0 16 16', 'colfind-ico', ['M7 2.25a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5z', 'M10.5 10.5l3.5 3.5']), filter, shown);
   tools.append(box);
   const untyped = n.columns.filter((c) => !c.data_type).length;
-  const note = document.createElement('span');
-  note.textContent = untyped === n.columns.length
-    ? 'no types: run dbt compile --write-catalog to pull them from Snowflake'
-    : `${n.columns.length - untyped}/${n.columns.length} typed`;
-  tools.append(note, sourceMenu());
+  const typed = n.columns.length - untyped;
+  if (!typed) {
+    tools.append(Object.assign(document.createElement('span'), {
+      textContent: 'no types: run dbt compile --write-catalog to pull them from Snowflake',
+    }));
+  }
+  tools.append(sourceMenu());
   // This table can only ever show the tests that name a column. Saying how many
   // it cannot show is what stops it from reading as the whole story.
   const onModel = splitTests(n.tests).model.length;
@@ -17854,7 +17903,7 @@ function catalogColumns(body, n) {
   }
   if (S.cllTool === 'collin' && S.collin && S.collin.found) {
     const again = document.createElement('button');
-    again.className = 'btn sm';
+    again.className = 'btn sm ghost';
     again.textContent = 'Regenerate';
     again.disabled = S.collin.state === 'running';
     again.title = 'Run collin again over the compiled SQL. Run dbt compile first for SQL that changed.';
@@ -17879,16 +17928,22 @@ function catalogColumns(body, n) {
   const keyShown = keys.some((k) => keyColumns(k.entries, n.columns).some((e) => e.column));
   const sort = S.colSort === 'key' && !keyShown ? 'az' : S.colSort;
   tools.append(Object.assign(document.createElement('div'), { className: 'grow' }));
-  tools.appendChild(document.createTextNode('Sort by'));
-  for (const [key, label] of [['az', 'A-Z'], ['tests', 'Tests'], ...(keyShown ? [['key', 'Key']] : [])]) {
+  tools.appendChild(document.createTextNode('Sort'));
+  const seg = document.createElement('span');
+  seg.className = 'seg';
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Sort the columns');
+  for (const [key, label] of [['az', 'A\u2013Z'], ['tests', 'Tests'], ...(keyShown ? [['key', 'Key']] : [])]) {
     const b = document.createElement('button');
-    b.className = 'btn sm';
+    b.type = 'button';
+    b.className = 'segbtn' + (sort === key ? ' active' : '');
     b.textContent = label;
+    b.setAttribute('aria-pressed', String(sort === key));
     if (key === 'key') b.title = 'the columns of the keys first, by key and place in it, then the rest A-Z';
-    if (sort === key) b.style.borderColor = 'var(--accent)';
     b.addEventListener('click', () => { S.colSort = key; renderCatalog(n); });
-    tools.appendChild(b);
+    seg.appendChild(b);
   }
+  tools.appendChild(seg);
   body.appendChild(tools);
   const said = S.cllTool === 'collin' && collinModelNote(n.collin, n.columns);
   const flags = S.cllTool === 'collin' ? collinColumnNotes(n.collin) : new Map();
@@ -17963,14 +18018,15 @@ function catalogColumns(body, n) {
         if (c.up || c.down || live) lin.append(document.createTextNode('  '));
       }
       if (c.up || c.down) {
-        const u = document.createElement('b');
-        const dn = document.createElement('b');
+        // The figure alone is bold, the arrow stays dim (reachParts).
+        const u = document.createElement('span');
+        const dn = document.createElement('span');
         lin.append(u, document.createTextNode('  '), dn);
         // The cell's title wins over the row's, so it says what a click does too.
         const fill = (r) => {
           const reach = columnReach(c, r, cacheHasIndirect(S.meta && S.meta.cll_kinds));
-          u.textContent = reach.up;
-          dn.textContent = reach.down;
+          u.replaceChildren(...reachParts(reach.up));
+          dn.replaceChildren(...reachParts(reach.down));
           lin.title = `${reach.title}\n${action}`;
         };
         if (reaches.v) fill(reaches.v.get(c.name) || null);
@@ -18043,7 +18099,7 @@ function catalogColumns(body, n) {
       if (match) r.name.append(Object.assign(document.createElement('mark'), { textContent: match }));
       r.name.append(after);
     }
-    shown.textContent = q ? `${kept} of ${rows.length}` : '';
+    shown.textContent = columnCountText(kept, rows.length, typed, !!q);
     none.textContent = q && !kept ? `No column name contains "${q}".` : '';
     none.classList.toggle('hidden', !none.textContent);
   };
