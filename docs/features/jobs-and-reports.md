@@ -258,12 +258,16 @@ number the section shows. `Ctrl+Alt+R` (`⌥⌘R` on a Mac) opens and closes it.
 While no section has anything to show, the button is dimmed and its tooltip says
 what will fill it; it opens on the job coverage, where a source is added (0075).
 
-Every section reads the same way: figures over it, a few notes, a filter, then
-folds, each with a title, a count and one line saying what it means. The rest of
-that explanation is behind **why**. The filter searches every row of the
-section, not only the rows drawn, and a fold says `3 of 40` while it narrows.
-What you filtered, opened, unfolded and scrolled is kept when you leave a
-section and come back (0137).
+Every section reads the same way: a head with its name, the source in a chip
+and, on a line of its own, what it was read from, with **Read again** at its
+right; figures in one strip, a few notes, a filter, then folds, each with a
+chevron, a title, a count in a pill and one line saying what it means. The rest
+of that explanation is behind **why**. A list that names models and says
+nothing else of them is a row of chips, each with its kind's bar before the
+name; a click opens the model as a name always did. The filter searches every
+row of the section, not only the rows drawn, and a fold says `3 of 40` while it
+narrows. What you filtered, opened, unfolded and scrolled is kept when you leave
+a section and come back (0137).
 
 What is new since you last looked rides on the button, a chip per report in
 its colour: the last run's errors and failed tests in red, the config paths

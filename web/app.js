@@ -6680,7 +6680,7 @@ function collinReportBody(view) {
   const body = jel('div', 'reportbody');
   body.append(reportTiles(collinReportTiles(view.totals)));
   const n = view.to_investigate || 0;
-  body.append(jel('p', 'muted', n
+  body.append(jel('p', 'rsummary', n
     ? `${n} model${n > 1 ? 's' : ''} or table${n > 1 ? 's' : ''} to look at. A name opens the model, whose Columns tab says what collin noted on each column.`
     : 'Nothing to investigate: every model collin read came out clean.'));
   // A short list is worth seeing at once; a long one is a count first.
@@ -6741,19 +6741,30 @@ function collinEntryRow(f, e) {
 function collinWrittenSections(written) {
   return collinWrittenGroups(written).map((g) => ({ group: g.group, label: g.label, desc: g.desc,
     folds: g.findings.map((f) => ({
-      title: f.title, tone: '', badge: f.severity || undefined, lever: f.why || '',
+      title: f.title, tone: '', severity: f.severity || undefined, lever: f.why || '',
       rows: f.models, open: (len) => len <= 5,
       find: (m) => `${m.name || ''} ${m.unique_id} ${m.detail || ''}`,
-      // What to do is the fix, so it is read at once and not behind "why".
-      draw: (hits, d) => [...(f.action ? [jel('p', 'rlever', f.action)] : []), reportList(hits, (m) => {
-        const li = jel('li', '');
-        const a = jel('a', 'filelink', m.name || shortId(m.unique_id));
-        a.title = m.unique_id;
-        a.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(m.unique_id); });
-        li.append(a);
-        if (m.detail) li.append(jel('span', 'muted', ': ' + m.detail));
-        return li;
-      }, d, CHECK_SHOWN)],
+      // What to do is the fix, so it is read at once and not behind "why". The
+      // chips are decided on the finding's every model, so a filter never
+      // turns its list from lines to chips.
+      draw: (hits, d) => {
+        const names = reportNamesOnly(f.models.map((m) => m.detail || ''));
+        return [...(f.action ? [jel('p', 'rlever', f.action)] : []), reportList(hits, (m) => {
+          const li = jel('li', '');
+          const name = m.name || shortId(m.unique_id);
+          const open = () => openReportNode(m.unique_id);
+          if (names) {
+            li.append(reportModelChip(name, reportLook(m.materialized), m.unique_id, open));
+            return li;
+          }
+          const a = jel('a', 'filelink', name);
+          a.title = m.unique_id;
+          a.addEventListener('click', (ev) => { ev.preventDefault(); open(); });
+          li.append(a);
+          if (m.detail) li.append(jel('span', 'muted', ': ' + m.detail));
+          return li;
+        }, d, CHECK_SHOWN, 0, names)];
+      },
     })) }));
 }
 
@@ -6975,7 +6986,9 @@ function collinComparePane(key, view, pair) {
   };
   const section = (heading, desc) => {
     const s = el('section', 'reportgroup');
-    s.append(el('h3', '', heading));
+    const gh = el('div', 'rg-head');
+    gh.append(el('h3', '', heading));
+    s.append(gh);
     if (desc) s.append(el('p', 'muted', desc));
     body.append(s);
     return s;
@@ -7006,7 +7019,7 @@ function collinComparePane(key, view, pair) {
     if (!count) return;
     const d = el('details', 'reportfinding');
     const sum = el('summary');
-    sum.append(el('span', 'rtitle', heading), el('span', 'rcount', String(count)));
+    sum.append(reportChevron(), el('span', 'rtitle', heading), el('span', 'tabbadge rcount', String(count)));
     d.append(sum);
     const list = el('ul', 'rentries');
     for (const e of items) list.append(el('li', 'rrel', line(e)));
@@ -10863,7 +10876,7 @@ function renderJobs(body, view, id, reveal) {
   if (view.maybe && view.maybe.length) {
     const more = jel('details', 'jobs-maybe');
     const summary = jel('summary', '');
-    summary.append(strokeIcon('0 0 16 16', 'jobchev', ['M6 4l4 4-4 4']), 'Not resolved, and could run it',
+    summary.append(reportChevron('jobchev'), 'Not resolved, and could run it',
       jel('span', 'n', String(jobsMaybeCount(view.maybe))));
     more.append(summary);
     for (const g of jobsByStart(view.maybe)) more.append(jobsCard(g, { reason: true, mark, name }));
@@ -10891,14 +10904,28 @@ function revealJobStep(body, id, want) {
   if (!maybe) line.classList.add('jobs-hit');
 }
 
+/* What a coverage row adds after the name: the folder it sits in. */
+function coverageSays(r, path) {
+  return path || '';
+}
+
 /* A model of the coverage, its kind's bar first: the name opens it with the
    Jobs tab listing its jobs, and its folder follows, muted. */
-function coverageRow(r, path) {
+function coverageRow(r, path, chip = false) {
   const li = jel('li', '');
+  const title = `Open ${r.name}, with the Jobs tab listing its jobs`;
+  const open = () => openFromReport(r.id, { dock: 'jobs' });
+  // The row says what its bar is drawn from; the kind alone is what it falls back to.
+  const node = reportLook(r.materialized) || r.kind;
+  if (chip) {
+    // A chip has no folder after it, so its tooltip names the folder.
+    li.append(reportModelChip(r.name, node, r.folder ? `${title}\n${r.folder}` : title, open));
+    return li;
+  }
   const link = jel('a', 'filelink', r.name);
-  link.title = `Open ${r.name}, with the Jobs tab listing its jobs`;
-  link.addEventListener('click', (ev) => { ev.preventDefault(); openFromReport(r.id, { dock: 'jobs' }); });
-  li.append(dot(r.kind), ' ', link);
+  link.title = title;
+  link.addEventListener('click', (ev) => { ev.preventDefault(); open(); });
+  li.append(dot(node), ' ', link);
   if (path) li.append(jel('span', 'muted', ' · ' + path));
   return li;
 }
@@ -10930,7 +10957,7 @@ function renderCoverage(body, cov) {
   // A group with nothing in it is not drawn (reportFiltered).
   const models = (title, rows, tone, lever, open) => folds.push({ title, tone, lever, rows, open,
     find: (r) => `${r.name} ${r.folder || ''}`,
-    draw: (hits, d, more) => checkFoldList(hits, d, more, coverageRow) });
+    draw: (hits, d, more) => checkFoldList(hits, d, more, coverageRow, coverageSays, rows) });
   const short = (n) => n <= 50;
   models('Run by no job', cov.never, 'warn', '', short);
   models('Only in unscheduled jobs', cov.unscheduled, '',
@@ -12134,7 +12161,7 @@ function paintReportsNav() {
       row.append(jel('span', '', sec.label));
       const count = reportsRailCount(sec.key, S.reports, S.collin, S.reportsCounts);
       if (count) {
-        const n = jel('span', 'navcount', String(count.n));
+        const n = jel('span', 'tabbadge', String(count.n));
         n.title = count.title;
         row.append(n);
       }
@@ -12161,8 +12188,9 @@ function paintReportStale() {
 /* The head every section shares: what it is, what it was read from, and its
    buttons, Read again saying when the file has changed since. */
 function reportHead({ title, tool, tone, about, again, extra = [] }) {
-  const head = jel('div', 'diff-head');
-  const row = jel('div', 'diff-title');
+  const head = jel('div', 'rhead');
+  const row = jel('div', 'rhead-row');
+  row.append(jel('span', 'ttl', title));
   // The source, named in its colour. The mark stays only to say how the last
   // run ended: the colour is never all that says whose a section is.
   const chip = jel('span', 'srcchip', reportSourceLabel(tool));
@@ -12178,13 +12206,16 @@ function reportHead({ title, tool, tone, about, again, extra = [] }) {
     dot.title = words;
     row.append(dot);
   }
-  row.append(jel('b', '', title), jel('span', 'diff-state', about || ''), jel('div', 'grow'), ...extra);
+  row.append(jel('div', 'grow'), ...extra);
   if (typeof again === 'function') {
-    const read = jel('button', 'btn sm reports-again', 'Read again');
+    const read = jel('button', 'btn reports-again', 'Read again');
     read.addEventListener('click', again);
     row.append(read);
   }
   head.append(row);
+  // What it was read from, on a line of its own; a section with nothing to say
+  // of that has no line.
+  if (about) head.append(jel('div', 'sub', about));
   return head;
 }
 
@@ -12261,6 +12292,8 @@ function restoreReportPlace(view, place) {
 /* The figures over a section, a tile each. */
 function reportTiles(tiles) {
   const box = jel('div', 'reporttiles');
+  // How many, so that a strip of one or two figures is not stretched across the page.
+  box.setAttribute('style', `--n: ${Math.max(tiles.length, 1)}`);
   for (const t of tiles) {
     const tile = jel('div', 'reporttile');
     if (t.tone) tile.dataset.tone = t.tone;
@@ -12301,25 +12334,73 @@ function reportLever(text, cls = 'rlever') {
   return p;
 }
 
+/* The chevron before a fold's title, a folder's name or a job's, turned down
+   by the stylesheet while it is open: Reports has this one only. The Jobs tab's
+   own fold gives it its class. */
+function reportChevron(className = 'rchev') {
+  return strokeIcon('0 0 16 16', className, ['M6 4l4 4-4 4']);
+}
+
+/* A folder inside a fold: its name and how many it holds, behind a chevron. */
+function reportFolderSummary(text) {
+  const sum = jel('summary', '');
+  sum.append(reportChevron(), text);
+  return sum;
+}
+
 /* A fold as reportFiltered hands it back: its title and count, then its lever.
-   Its list is the caller's, appended to it. Opened or shut by the reader, it
-   is `touched`, and the filter then keeps it as it was left. */
+   Its list is the caller's, appended to it. A finding that has a severity
+   (collin's) says it in a tag after the count. Opened or shut by the reader,
+   it is `touched`, and the filter then keeps it as it was left. */
 function reportFold(f) {
   const d = jel('details', 'reportfinding');
   d.open = f.open;
   if (f.tone) d.dataset.tone = f.tone;
   const sum = jel('summary', '');
-  sum.append(jel('span', 'rtitle', f.title), jel('span', 'rcount', f.count));
+  // A count is a pill; a phrase in its place (a macro's "used by 3 models, 2
+  // tests") stays text, which a pill would squeeze.
+  const counted = /^\d[\d,. ]*(of \d[\d,. ]*)?$/.test(String(f.count || ''));
+  sum.append(reportChevron(), jel('span', 'rtitle', f.title), jel('span', counted ? 'tabbadge rcount' : 'rcount', f.count));
+  if (f.severity) sum.append(jel('span', 'sevtag', f.severity));
   sum.addEventListener('click', () => { d.dataset.touched = '1'; });
   d.append(sum);
   if (f.lever) d.append(reportLever(f.lever));
   return d;
 }
 
+/* Whether a list says nothing of its models but their names, `says` being what
+   each entry adds after the name: such a list is drawn as chips in a wrapping
+   row, one that says more stays a line an entry. */
+function reportNamesOnly(says) {
+  return says.length > 0 && says.every((x) => !x);
+}
+
+/* The node a chip's bar is drawn from, in the shape `dot` takes, out of what
+   the server says a row's bar is drawn from (`Node::look`): a model's
+   materialization, or the kind itself for a source, a seed or a snapshot.
+   Null when the row says nothing: its chip has no bar. */
+function reportLook(look) {
+  if (!look) return null;
+  return ['source', 'seed', 'snapshot'].includes(look) ? { kind: look } : { kind: 'model', materialized: look };
+}
+
+/* A model as a chip: its kind's bar, then its name, a button the keyboard
+   reaches. The bar is the tree's and the boxes' (`dot`). */
+function reportModelChip(name, node, title, open) {
+  const chip = jel('button', 'mlink', '');
+  chip.type = 'button';
+  chip.title = title;
+  if (node) chip.append(dot(node));
+  chip.append(name);
+  chip.addEventListener('click', open);
+  return chip;
+}
+
 /* A fold's entries: the first `cap`, a button for the rest, and how many the
-   server held back (`more`). Show all is remembered on the fold. */
-function reportList(rows, rowFn, d, cap = Infinity, more = 0) {
-  const ul = jel('ul', 'rentries');
+   server held back (`more`). Show all is remembered on the fold. `chips` draws
+   the entries side by side, as reportNamesOnly says of them. */
+function reportList(rows, rowFn, d, cap = Infinity, more = 0, chips = false) {
+  const ul = jel('ul', 'rentries' + (chips ? ' models' : ''));
   const paint = (upTo) => {
     const items = rows.slice(0, upTo).map(rowFn);
     if (rows.length > upTo) {
@@ -12350,7 +12431,9 @@ function drawReportLists(host, groups, q) {
     if (g.label) {
       section = jel('section', 'reportgroup');
       section.dataset.group = g.group || '';
-      section.append(jel('h3', '', g.label), jel('p', 'muted', g.desc || ''));
+      const gh = jel('div', 'rg-head');
+      gh.append(jel('h3', '', g.label));
+      section.append(gh, jel('p', 'muted', g.desc || ''));
       out.push(section);
     } else if (g.head) {
       out.push(...[].concat(g.head));
@@ -12376,6 +12459,7 @@ function drawReportLists(host, groups, q) {
    left (`redraw`) does not wait. */
 function reportFilterBox(placeholder, draw) {
   const box = jel('div', 'reportfind');
+  const field = jel('label', 'reportbox');
   const input = jel('input', 'reportfilter');
   input.type = 'search';
   input.placeholder = placeholder;
@@ -12409,7 +12493,8 @@ function reportFilterBox(placeholder, draw) {
     input.value = value;
     run();
   };
-  box.append(input);
+  field.append(strokeIcon('0 0 16 16', 'reportbox-ico', ['M7 2.25a4.75 4.75 0 1 0 0 9.5 4.75 4.75 0 0 0 0-9.5z', 'M10.5 10.5l3.5 3.5']), input);
+  box.append(field);
   return box;
 }
 
@@ -12703,7 +12788,7 @@ async function checksSection(again) {
     folds.push({
       title: c.title, tone: '', lever: c.why, rows, of: total, open: (n) => n <= 50,
       find: (row) => `${row.name} ${row.id} ${row.folder || ''} ${checkDetail(row)}`,
-      draw: (hits, d, more) => checkFoldList(hits, d, more),
+      draw: (hits, d, more) => checkFoldList(hits, d, more, checkRow, checkSays, rows),
     });
   }
   body.append(reportTiles(tiles), jel('p', 'runnote', "Only the project's own enabled models and sources are looked at, never an installed package's."));
@@ -12718,9 +12803,9 @@ const CHECK_SHOWN = 100;
 /* A fold of rows by folder: the first CHECK_SHOWN, a button for the rest, and
    how many the server held back. A list of thousands draws its first rows, as
    Slowest does: the folds that are closed would draw them all the same. */
-function checkFoldList(hits, d, more, row = checkRow) {
+function checkFoldList(hits, d, more, row = checkRow, says = checkSays, all = hits) {
   const groups = jel('div', '');
-  const draw = (shown) => groups.replaceChildren(...checkGroups(hits, shown, d.open, row));
+  const draw = (shown) => groups.replaceChildren(...checkGroups(hits, shown, d.open, row, says, all));
   draw(CHECK_SHOWN);
   const out = [groups];
   const rest = hits.length - CHECK_SHOWN;
@@ -12747,37 +12832,62 @@ function checkFoldList(hits, d, more, row = checkRow) {
 /* The first `shown` of a check's rows, by folder as the job coverage groups its
    own. The folders are made of every row the server sent, so a folder's count
    is the whole of it, drawn or not. `row` draws one: a check's by default, the
-   coverage's for the models no job runs. */
-function checkGroups(rows, shown, open, row = checkRow) {
+   coverage's for the models no job runs; `says` is what it adds to the name,
+   and a list whose rows add nothing is drawn as chips. A list is chips only
+   when none of its rows says more than a name in the fold's unfiltered rows
+   (`all`), so that a filter or Show all never turns lines into chips, and none
+   says more where it is drawn now: a filter that gathers rows of two folders
+   under the folder above gives them back their path, as lines. */
+function checkGroups(rows, shown, open, row = checkRow, says = checkSays, all = rows) {
   const out = [];
   const drawn = new Set(rows.slice(0, shown).map((r) => r.id));
+  // The rows of every list of the unfiltered fold that has one saying more than a name.
+  const lines = new Set();
+  for (const g of jobsCoverageGroups(all)) {
+    const bare = g.rows.length === 1 || !g.folder;
+    if (!reportNamesOnly(g.rows.map((r) => says(r, bare ? r.folder : r.rest)))) g.rows.forEach((r) => lines.add(r.id));
+  }
+  const chips = (list, bare) => !list.some((r) => lines.has(r.id) || says(r, bare ? r.folder : r.rest));
   for (const g of jobsCoverageGroups(rows)) {
     const here = g.rows.filter((r) => drawn.has(r.id));
     if (!here.length) continue;
     // A folder of one is no level to unfold: the row is listed bare.
     if (g.rows.length === 1 || !g.folder) {
-      const ul = jel('ul', 'rentries');
-      for (const r of here) ul.append(row(r, r.folder));
+      const names = chips(g.rows, true);
+      const ul = jel('ul', 'rentries' + (names ? ' models' : ''));
+      for (const r of here) ul.append(row(r, r.folder, names));
       out.push(ul);
       continue;
     }
     const folder = jel('details', 'checkfolder');
     folder.open = open;
-    folder.append(jel('summary', '', `${g.folder} (${g.rows.length})`));
-    const ul = jel('ul', 'rentries');
-    for (const r of here) ul.append(row(r, r.rest));
+    folder.append(reportFolderSummary(`${g.folder} (${g.rows.length})`));
+    const names = chips(g.rows, false);
+    const ul = jel('ul', 'rentries' + (names ? ' models' : ''));
+    for (const r of here) ul.append(row(r, r.rest, names));
     folder.append(ul);
     out.push(folder);
   }
   return out;
 }
 
-function checkRow(row, path) {
+/* What a check's row adds after the name: its detail, else the folder it sits in. */
+function checkSays(row, path) {
+  return checkDetail(row) || path || '';
+}
+
+function checkRow(row, path, chip = false) {
   const li = jel('li', '');
-  const name = jel('a', 'filelink', row.name);
-  name.title = row.file ? `${row.id} · ${row.file}` : row.id;
+  const title = row.file ? `${row.id} · ${row.file}` : row.id;
   // A key row opens the Columns tab on the column it left untested.
-  name.addEventListener('click', (ev) => { ev.preventDefault(); openReportNode(row.id, row.column); });
+  const open = () => openReportNode(row.id, row.column);
+  if (chip) {
+    li.append(reportModelChip(row.name, reportLook(row.materialized), title, open));
+    return li;
+  }
+  const name = jel('a', 'filelink', row.name);
+  name.title = title;
+  name.addEventListener('click', (ev) => { ev.preventDefault(); open(); });
   li.append(name);
   const detail = checkDetail(row);
   if (detail) li.append(jel('span', '', ': ' + detail));
@@ -13068,7 +13178,7 @@ function jobOrderFolders(hits, open, shown = Infinity) {
     const shared = jobOrderShared(pairs);
     const folder = jel('details', 'checkfolder');
     folder.open = open;
-    folder.append(jel('summary', '', `${jobsJobLabel({ kind: pairs[0].step.kind, name: pairs[0].step.job })} (${pairs.length})`));
+    folder.append(reportFolderSummary(`${jobsJobLabel({ kind: pairs[0].step.kind, name: pairs[0].step.job })} (${pairs.length})`));
     if (shared) folder.append(jel('p', 'rline', shared));
     const ul = jel('ul', 'rentries');
     for (const p of first) ul.append(jobOrderPair(p, { inFold: true, shared: !!shared }));
@@ -17503,7 +17613,7 @@ async function jobBuildsSection() {
     const nameBox = jel('span', 'jbname');
     const nm = jobBreakable(job.name, twins.get(job));
     nm.title = `${job.source} · ${job.file}:${job.line}`;
-    nameBox.append(nm);
+    nameBox.append(reportChevron(), nm);
     const meta = jel('span', 'jbmodels', counted(job.models.length, 'model', 'models'));
     const apart = (job.seeds || 0) + (job.snapshots || 0);
     if (apart) meta.append(jel('span', 'muted', ` + ${counted(apart, 'seed or snapshot', 'seeds and snapshots')} not read`));

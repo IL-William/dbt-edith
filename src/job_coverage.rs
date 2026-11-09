@@ -8,7 +8,8 @@
 //! same over the same files. The lists keep that function's order, a node by
 //! folder then name then id and a step as the files were walked, so the same
 //! files give the same answer (0055). The page's own rows (`jobs`, a step's
-//! `index`) are left out of the JSON, which has a view of its own: what
+//! `index`, and a row's `materialized`, which a chip's bar is drawn from) are
+//! left out of the JSON, which has a view of its own: what
 //! `/api/jobs/coverage` sends does not change. A list is the answer, so text
 //! and compact cut none of them; the sentence over them says how much there
 //! is.
@@ -149,8 +150,18 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
+/// The rows as the command line has always printed them: the look a chip's bar
+/// is drawn from is the page's own, as its `jobs` and a step's `index` are.
+fn bare(mut cov: Coverage) -> Coverage {
+    for r in cov.never.iter_mut().chain(&mut cov.unscheduled).chain(&mut cov.unread).chain(&mut cov.ephemeral) {
+        r.materialized.clear();
+    }
+    cov
+}
+
 impl View {
     fn of(cov: Coverage, not_read: Option<jobs::Unread>, files_refused: usize, none_read: bool) -> View {
+        let cov = bare(cov);
         // With no source, or none that was read, every node is "run by no
         // job", which says nothing of the project; the page draws no list
         // then either. What the project holds, its total and its ephemerals,
@@ -448,6 +459,9 @@ mod tests {
         // The route the page reads is not touched: it still sends both.
         let cov = serde_json::to_value(jobs::coverage(&graph(), &read_of(&every_list("route")))).unwrap();
         assert!(cov.get("jobs").is_some() && cov["empty"][0].get("index").is_some());
+        // ... and its rows carry what a chip's bar is drawn from, which the command line leaves out.
+        assert_eq!((cov["never"][0]["materialized"].clone(), cov["never"][2]["materialized"].clone()), (json!("table"), json!("seed")));
+        assert!(json["never"][0].get("materialized").is_none());
     }
 
     fn read_of(root: &Path) -> std::sync::Arc<jobs::Read> {
@@ -494,7 +508,7 @@ mod tests {
     fn the_sentence_is_the_pages() {
         let view = |total, never, unscheduled, unread| {
             let rows = |n: usize| {
-                (0..n).map(|i| Row { id: format!("model.p.m{i}"), name: format!("m{i}"), kind: "model", folder: String::new() }).collect::<Vec<_>>()
+                (0..n).map(|i| Row { id: format!("model.p.m{i}"), name: format!("m{i}"), kind: "model", folder: String::new(), materialized: String::new() }).collect::<Vec<_>>()
             };
             View::of(
                 Coverage { configured: true, total, never: rows(never), unscheduled: rows(unscheduled), unread: rows(unread), ..Default::default() },
