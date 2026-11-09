@@ -231,9 +231,16 @@ the indirect edges below). With no edges and Snowflake not picked,
 nothing changes: the Columns table is exactly as it was and the Columns switch
 stays disabled.
 
-**The tag above a column box says what produced it**, read off the edges into
+**The tag in a column box says what produced it**, read off the edges into
 it: their role, or `mixed` when two roles meet there. A column nothing feeds
-in view is tagged by where it starts. With a cache that lists collin 0.8.0's
+in view is tagged by where it starts. The tag sits inside the box, on its
+second line at the right, an outline in the role's colour round the role in
+capitals ([0162](../decisions/0162-a-columns-role-is-a-tag-inside-its-box.md));
+the line, `model · type`, stops short of it. A column's box is 250 by 48, a
+model's but wider, and shows the owning model's materialization as its bar. The
+word is a shade of the role's colour that reads on the box in every theme, and
+`mixed` is plain grey. The count of a column's steps (`×2`) and the `PARTIAL`
+pill stay above the box's left end. With a cache that lists collin 0.8.0's
 roots ([0096](../decisions/0096-a-column-a-literal-sets-is-generated-not-raw.md)):
 
 | Tag | The column |
@@ -255,7 +262,10 @@ branch of a union that sets it differently, `'store' | 'web'`, or `generated`
 alone when collin could not tell all of it, as for a value computed from a
 literal or a union it read in part. Its row opens the column even when
 nothing reads it, drawn alone. The legend lists each tag on the canvas, with
-or without a role on an edge, and a click on it lights its columns.
+or without a role on an edge, and a click on it lights its columns. A role is
+a line 14 by 2 there, in the stop at menu and on a column's card, as its edges
+are, and dashed for the roles that keep rows. An edge wears its role's colour
+lit or not; a lit one is only thicker.
 
 **Indirect edges are hidden unless asked for, and end on their model's box.**
 A `filter`, a `join_key` or a `dedup_key` edge, which collin writes under
@@ -271,7 +281,8 @@ every time, so a cache written by an older version needs one Regenerate
 
 The **Indirect** button beside stop at, a dashed arrow, shown only
 when the cache holds such edges, draws them, thin and in short dashes, each
-role in a hue of its own, which stays when the edge is lit. Each is named by
+role in a hue of its own, which stays when the edge is lit, as every column
+edge's does. Each is named by
 the SQL clause it comes from: `QUALIFY` for a dedup key, `JOIN` for a join key,
 `WHERE / HAVING` for a filter. Upstream, an edge runs from column to column,
 as any other, and carries no label: neighbouring columns are too close for one,

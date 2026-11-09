@@ -1,6 +1,6 @@
 # 0118. An indirect edge ends on its model's box and names its clause
 
-Date: 2026-10-26 · Status: accepted · Amends 0097 and 0099
+Date: 2026-10-26 · Status: accepted, amended by 0162 (every lit column edge keeps its colour, as an indirect one did) · Amends 0097 and 0099
 
 **Trigger:** read before changing what the page asks collin for, how a
 downstream indirect edge is drawn or walked, what names an indirect role on

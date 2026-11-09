@@ -180,11 +180,17 @@ check('each has a path in BUILD_MARK and a rule for its look', verdicts.map(func
   return new RegExp('\\n\\s+' + v + ': \'M').test(marks) && rulesFor('.bdot.' + v).length === 1;
 }), [true, true, true, true]);
 
-print('\n--- an environment is a tag, a role a square ---');
+print('\n--- an environment is a tag, a role a line (0162) ---');
 check('no envdot is left in app.js or app.css', [/envdot/.test(app), /envdot/.test(css)], [false, false]);
 check('a tag reads its colour from --tone', declares('.envtag', /color:\s*var\(--tone\)/), true);
 check('and the manifest\'s is outlined, not filled', declares('.envtag[data-tone=manifest]', /background:\s*transparent;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--env-manifest\)/), true);
-check('the column card\'s role marker is the square, not a kind\'s bar', /className: 'rolesq' \}\);\s*\n\s*tone\.style\.background = Lineage\.roleColor/.test(app), true);
+check('the column card\'s role marker is the role\'s line, not a kind\'s bar nor a square', /Lineage\.roleSwatch\(Array\.isArray\(n\.generated\)/.test(app)
+  && /className: line\.dashed \? 'rolesq dash' : 'rolesq'/.test(app), true);
+check('a role\'s line is 14 by 2 wherever it is drawn: the stop at menu and the card, the legend', [declares('.rolesq', /width:\s*14px/), declares('.rolesq', /height:\s*2px/),
+  declares('.legend i.role', /width:\s*14px/), declares('.legend i.role', /height:\s*2px/), declares('.legend i.dash', /width:\s*14px/)], [true, true, true, true, true]);
+check('and the stop at menu draws it by the same function, dashed for an indirect role', /Lineage\.roleSwatch\(role\)/.test(app) && /line\.dashed \? 'rolesq dash' : 'rolesq'/.test(app), true);
+check('the role tag in a box is an outlined rect with text in it, never a round dot', /rect', \{\s*x: W - TAG\.edge - w, y: TAG\.top, width: w, height: TAG\.h, rx: 3/.test(read('web/lineage.js'))
+  && !/roletag[^\n]*(circle|r: )/.test(read('web/lineage.js')), true);
 
 print('\n--- the Halloween look leaves the markers alone ---');
 check('no selector of the look names a marker class', rules.filter(function (r) {

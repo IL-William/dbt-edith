@@ -2811,8 +2811,9 @@ of its own, and each panel updates the tour, its page under
       files makes it tall.
 36. **Markers and shapes still to draw (#166, 0148).**
     - Editor tabs carry no kind bar: a tab knows its file, not its node.
-    - A column's role is still an 8px square (the column card, the legend, the
-      stop at menu) until roles are drawn inside the column boxes.
+    - ~~A column's role is still an 8px square (the column card, the legend, the
+      stop at menu) until roles are drawn inside the column boxes.~~ Gone in
+      2.13.0 (0162).
     - In Job coverage, `dot(r.kind)` draws nothing, an inline `.dot` in a block
       `li`, and would be grey anyway, the row carrying no materialization
       (`Row` in `src/jobs.rs`).
@@ -2820,7 +2821,7 @@ of its own, and each panel updates the tour, its page under
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
 37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
-    syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), column roles in the box,
+    syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     the settings, shortcuts, ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
     Git, Catalog, Reports and the design docs.
 38. **The C runtime of the Windows `.exe` (0149).** Link it statically
@@ -2912,9 +2913,9 @@ of its own, and each panel updates the tour, its page under
       columns; only the space's card is laid out narrow. The card's head (the
       name with `table · main` beside it), its tabs and its chips are the
       Catalog step's.
-    - A column's box keeps the look it had, with its 180 by 40, its fonts and
-      its role tag: it carries `.col`, and the column step restyles it. Edges
-      are 1.5px on every canvas.
+    - ~~A column's box keeps the look it had, with its 180 by 40, its fonts and
+      its role tag: it carries `.col`, and the column step restyles it.~~ Gone in
+      2.13.0 (0162). Edges are 1.5px on every canvas.
     - The design hides the levels at 640px and below; they stay, since nothing
       else sets them now.
     - With By folder pressed the dock's tools row is about 50px wider, so its
@@ -2944,6 +2945,38 @@ of its own, and each panel updates the tour, its page under
     - The command the page runs for you (the manifest card's `dbt parse`) is
       sent in two writes, Enter after the echo, and left out when a key was typed
       in between.
+50. **The column box's limits (0162, 2.13.0).**
+    - A column's edge is at full opacity, not the design's 85%: at 85% `window`
+      and `inferred` fall under 3:1 on the page in Night, Graphite and Halloween
+      (2.75 to 2.89), and in Light `passthrough`, `rename`, `cast`, `generated`,
+      `filter`, `join_key`, `dedup_key` and `indirect` (2.63 to 2.90), where
+      `web/tests/themes.js` holds the marks at 3:1. A lit edge is told from a
+      resting one by its width alone, 3px against 1.5 on a column canvas.
+    - `mixed` and a role the palette has no colour for are drawn in the dimmed
+      text colour, outline and word, not in the edge's grey, which is 1.4:1 to
+      1.7:1 on a box. Every role that has a colour has a text twin that reaches
+      4.5:1 on the box, its focus fill, find's current match and Halloween's
+      dark fill in the four themes; none was left short. The legend lists them
+      in the same neutral.
+    - The longest role word, `PASSTHROUGH`, leaves a second line about 20
+      characters of `model  ·  type`, and a longer model name is cut with an
+      ellipsis; the hover card and the box's label say it whole. The clip counts
+      characters at the widths measured for a Mac's system mono; Windows'
+      Consolas is narrower, so a line may stop earlier than it needs there.
+    - Under the coffin's art the names are cut to the room the tag leaves them,
+      17 characters at most and about 12 to 14 beside a long role word, so that
+      they stay clear of the tag, which sits up in the cut end; the tombstone's tag lies
+      over the small decoration at its lower right. The plain look past 400 boxes
+      cuts no name and stops no second line for the skins' own text shift (13px
+      in the coffin and the grimoire), so a long name may touch the coffin's tag
+      and a long second line may run 5px under the tag's outline.
+    - The lit tombstone's rule for a model's box (the moss from 14px, 192 wide) is
+      written with `:where()` and no weight of its own, and loses to the resting
+      rule's: a ringed model's moss is 5 to 215 like a resting one's (seen in
+      headless Chrome, left as it was). The column canvas's lit rule has the
+      weight, and takes its 14px and 222.
+    - The steps and PARTIAL pills still ask for 6px more between boxes
+      (`TAG_ROOM`) on every column canvas, though most boxes have neither.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -3228,9 +3261,9 @@ known limit, unranked:
   - the clipped corners of a tombstone or a coffin take no click;
   - in find, a match that is also selected or focused shows the match ring
     only;
-  - in column mode the AGGREGATE badges nearly touch the box above, with the
-    look off as well, and the hover card's anchor was not checked on a column
-    box with a role tag;
+  - ~~in column mode the AGGREGATE badges nearly touch the box above, with the
+    look off as well~~ Gone in 2.13.0 (0162): the tag is inside the box. The hover
+    card's anchor was not checked on a column box with a role tag;
   - a tab left open from before the upgrade sends three fields to `/api/look`,
     gets a 422 and loses that save without a word.
 - **collin's project (0109):**

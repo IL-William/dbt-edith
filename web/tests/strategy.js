@@ -46,8 +46,8 @@ check('a default that could not be read keeps the materialization',
   subtitle({ kind: 'model', materialized: 'incremental', schema: 's', tests: 0 }), 'incremental  ·  s');
 check('a disabled model strikes nothing', subtitleParts({ kind: 'model', disabled: true, materialized: 'incremental',
   strategy_shown: 'append', strategy_named: 'merge' }), { lead: 'disabled', struck: '', rest: '' });
-check('column mode keeps its own line', subtitleParts({ sub: 'orders  ·  number', strategy_named: 'merge' }),
-  { lead: 'orders  ·  number', struck: '', rest: '' });
+check('column mode keeps its own line, its spaces as drawn', subtitleParts({ sub: 'orders  ·  number', strategy_named: 'merge' }),
+  { lead: 'orders · number', struck: '', rest: '' });
 
 print('\n--- the box, which cuts the line from its end ---');
 check('the struck word in a tspan of its own', written(subtitleParts(keyless), 34),

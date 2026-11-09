@@ -5,8 +5,10 @@
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function isNightHour'), src.indexOf('function placeWitch')));
 var lin = read('web/lineage.js');
-eval(lin.slice(lin.indexOf('const ART_MAX'), lin.indexOf('let skin = null')));
+// One eval: the art's room reads the column's width and the role tag's size, which sit before the boxes' room.
+eval(lin.slice(lin.indexOf('const MODEL_W ='), lin.indexOf('  /* Second line of a node box.')) + lin.slice(lin.indexOf('const ART_MAX'), lin.indexOf('let skin = null')));
 var ART_MAX = +/const ART_MAX = (\d+)/.exec(lin)[1];
+var COLUMN_W = +/COLUMN_W = (\d+)/.exec(lin)[1], TAG = eval('(' + /const TAG = (\{[^}]*\})/.exec(lin)[1] + ')');
 var css = read('web/app.css');
 var html = read('web/index.html');
 
@@ -79,21 +81,25 @@ var boxCss = css.slice(css.indexOf('/* Lineage boxes, in one of three styles'), 
 });
 ok('no filter on a box, and nothing but fills, strokes and clips', !/filter:/.test(boxCss));
 // The model's box is 220 wide now (0160): the silhouettes follow it, and each skin keeps the x its names had.
-ok('the tombstone\'s moss runs the model\'s width, 210 and 192 when ringed, and a column\'s 170 and 152',
+ok('the coffin\'s tag steps in and up, further up under the art, where the names are cut and lifted to match, and no plain-look rule lifts it as far',
+  /hw-boxes-coffin #graph g\.colcanvas \.roletag \{ transform: translate\(-12px, -2px\); \}/.test(css)
+  && /hw-boxes-coffin #graph g\.hw-on\.colcanvas \.roletag \{ transform: translate\(-6px, -7px\); \}/.test(css));
+ok('the tombstone\'s moss runs the model\'s width, 210 and 192 when ringed, and a column canvas\'s 240 and 222, told by the canvas and not the box (0162)',
   /hw-boxes-tombstone \.nd:not\(\.rider\) \.kindbar \{ x: 5px; y: 42px; width: 210px;/.test(boxCss)
   && /:where\(\.nd\.focus[^)]*\):not\(\.rider\) \.kindbar \{ x: 14px; width: 192px; \}/.test(boxCss)
-  && /\[data-id\*="::"\]:not\(\.rider\) \.kindbar \{ y: 37px; width: 170px;/.test(boxCss)
-  && /\[data-id\*="::"\]:not\(\.rider\) \.kindbar \{ width: 152px; \}/.test(boxCss));
+  && /hw-boxes-tombstone #graph g\.colcanvas \.nd:not\(\.rider\) \.kindbar \{ width: 240px; \}/.test(boxCss)
+  && /hw-boxes-tombstone #graph g\.colcanvas :is\([^)]*\):not\(\.rider\) \.kindbar \{ x: 14px; width: 222px; \}/.test(boxCss)
+  && !/data-id\*=/.test(boxCss) && !/\.col\b/.test(boxCss.replace(/\.cols\b/g, '')));
 ok('a skin sets every number of the kind bar\'s geometry it needs: the box\'s own are inset now',
   /hw-boxes-coffin \.nd:not\(\.rider\) \.kindbar \{ x: 12px; y: 12px; width: 12px; height: 24px;/.test(boxCss)
-  && /hw-boxes-grimoire \.nd:not\(\.rider\):not\(\.col\) \.kindbar \{ y: 0; height: 48px; \}/.test(boxCss));
+  && /hw-boxes-grimoire \.nd:not\(\.rider\) \.kindbar \{ y: 0; height: 48px; \}/.test(boxCss));
 ok('the names keep the x they had when a model\'s text started at 12: 7px back from the box\'s own 19',
-  /hw-boxes-tombstone \.nd:not\(\.rider\):not\(\.col\) :is\(\.t1, \.t2\) \{ transform: translateX\(-7px\); \}/.test(boxCss)
-  && /:is\(\.hw-boxes-coffin, \.hw-boxes-grimoire\) \.nd:not\(\.rider\):not\(\.col\) :is\(\.t1, \.t2\) \{ transform: translateX\(13px\); \}/.test(boxCss)
+  /hw-boxes-tombstone \.nd:not\(\.rider\) :is\(\.t1, \.t2\) \{ transform: translateX\(-7px\); \}/.test(boxCss)
+  && /:is\(\.hw-boxes-coffin, \.hw-boxes-grimoire\) \.nd:not\(\.rider\) :is\(\.t1, \.t2\) \{ transform: translateX\(13px\); \}/.test(boxCss)
   && /hw-boxes-tombstone #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translateX\(10px\)/.test(css)
   && /hw-boxes-coffin #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translate\(41px, 1px\)/.test(css)
   && /hw-boxes-grimoire #graph g\.hw-on \.nd:not\(\.rider\) \.t1 \{[^}]*translateX\(39px\)/.test(css));
-ok('the model\'s text starts at 19 in the canvas, so 12 + 7 in a skin\'s old terms', /x: columnMode \? 12 : PAD_L, y: 20/.test(lin) && /PAD_L = 19/.test(lin));
+ok('a box\'s text starts at 19 in the canvas, a column\'s as a model\'s, so 12 + 7 in a skin\'s old terms', /x: PAD_L, y: 20/.test(lin) && /x: PAD_L, y: 35/.test(lin) && /PAD_L = 19/.test(lin));
 ok('reduced motion stops the hover', /prefers-reduced-motion: reduce\) \{[\s\S]*hover rect\.box[^}]*animation: none/.test(css));
 ok('the defs sit in the page, not in the canvas lineage.js draws', html.indexOf('id="hw-stone"') < html.indexOf('<header id="topbar">') && lin.indexOf('hw-stone') < 0);
 
@@ -110,8 +116,26 @@ print('\n--- the art (0107) ---');
 check('art is wanted under a skin and a count', [artWanted(3, 'coffin', ART_MAX), artWanted(ART_MAX, 'tombstone', ART_MAX)], [true, true]);
 check('not past the count, without a skin, or with nothing drawn', [artWanted(ART_MAX + 1, 'coffin', ART_MAX), artWanted(5, null, ART_MAX), artWanted(0, 'coffin', ART_MAX)], [false, false, false]);
 check('the count is the model lineage\'s cap, where the pan and the drawing were measured', ART_MAX, 400);
-check('a name has less room under a skin than the usual 25 and 24, a column less than a model',
-  ['tombstone', 'coffin', 'grimoire'].map(function (k) { var m = artBudget(k, false), c = artBudget(k, true); return m.name < 25 && c.name < 24 && c.name <= m.name && c.sub <= m.sub; }),
+check('a name has less room under a skin than the usual 25 and 29, a column a little more than a model, being wider (0162)',
+  ['tombstone', 'coffin', 'grimoire'].map(function (k) { var m = artBudget(k, false), c = artBudget(k, true); return m.name < 25 && c.name < 29 && c.name > m.name && c.sub > m.sub; }),
+  [true, true, true]);
+var TAGGED = ['passthrough', 'rename', 'cast', 'aggregate', 'window', 'transform', 'inferred', 'raw', 'generated', 'mixed'];
+// Where each skin starts the lines and how far in it moves the tag, as the budget reads them.
+var SKINS = { tombstone: { x: 29, shift: 0 }, coffin: { x: 60, shift: 6 }, grimoire: { x: 58, shift: 8 } };
+check('beside the widest tag a skin\'s second line, at 5px a character, keeps the 8px gap, for every role',
+  Object.keys(SKINS).map(function (k) {
+    return TAGGED.filter(function (r) {
+      var tagLeft = COLUMN_W - TAG.edge - SKINS[k].shift - tagWidth(r);
+      return SKINS[k].x + artBudget(k, true, r).sub * 5 > tagLeft - TAG.gap;
+    });
+  }), [[], [], []]);
+check('the coffin\'s name keeps 2px clear of the tag lifted into its rows, at 7.2px a character, and a longer word cuts it more',
+  [TAGGED.filter(function (r) { return SKINS.coffin.x + artBudget('coffin', true, r).name * 7.2 > COLUMN_W - TAG.edge - SKINS.coffin.shift - tagWidth(r) - 2; }),
+    artBudget('coffin', true, 'passthrough').name < artBudget('coffin', true, 'raw').name, artBudget('coffin', true, 'passthrough').name <= 14], [[], true, true]);
+check('and a name that shares no rows with its tag, the tombstone\'s and the grimoire\'s, keeps the whole room',
+  ['tombstone', 'grimoire'].map(function (k) { return artBudget(k, true, 'passthrough').name === artBudget(k, true).name; }), [true, true]);
+check('a column\'s second line stops short of its role tag, more for a longer word, in every skin',
+  ['tombstone', 'coffin', 'grimoire'].map(function (k) { return artBudget(k, true, 'passthrough').sub < artBudget(k, true, 'raw').sub && artBudget(k, true, 'raw').sub < artBudget(k, true).sub + 1; }),
   [true, true, true]);
 check('an unknown skin takes the tombstone\'s room', artBudget('mummy', false), artBudget('tombstone', false));
 ['tombstone', 'coffin', 'grimoire'].forEach(function (k) {

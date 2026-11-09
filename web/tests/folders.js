@@ -20,7 +20,7 @@ function group(name, fn) {
 }
 
 var MODEL = { w: 200, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 0, bundle: 4 };
-var COLUMN = { w: 180, h: 40, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4 };
+var COLUMN = { w: 250, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4 };
 
 // [name, file, kind, package]: kind defaults to model, package to shop.
 function graph(specs, links) {
@@ -307,7 +307,7 @@ group('the line under the canvas', function () {
   // collin's indirect edges left out of a column graph are said (0097).
   check('a column graph says its indirect edges are hidden',
     canvasStatus({ mode: 'column', focus_column: 'loaded_at', nodes: new Array(2), edges: new Array(1), indirect_hidden: true }),
-    'loaded_at · 2 columns · 1 edges · indirect edges hidden');
+    'loaded_at · 2 columns · 1 edge · indirect edges hidden');
   check('with them, how many', canvasStatus(sub, { folders: 4, against: 0 }), '12 nodes · 15 edges · 4 folders');
   check('and the edges drawn against their order', canvasStatus(sub, { folders: 3, against: 1 }),
     '12 nodes · 15 edges · 3 folders · 1 edge against their order');

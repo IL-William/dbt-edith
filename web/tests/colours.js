@@ -113,8 +113,8 @@ check('the role is set as a custom property, not as stroke',
       /setProperty\('--edge-col'/.test(lin), true);
 var edgeRule = css.split('\n').filter(function (l) { return /^\s*\.edge\s*\{/.test(l); })[0] || '';
 check('.edge reads the custom property', /var\(--edge-col/.test(edgeRule), true);
-check('.edge.hi still sets stroke outright',
-      /\.edge\.hi\s*\{[^}]*stroke:\s*var\(--edge-hot\)/.test(css), true);
+check('.edge.hi still sets stroke outright, the role\'s colour when there is one and the accent when there is none (0162)',
+      /\.edge\.hi\s*\{[^}]*stroke:\s*var\(--edge-col, var\(--edge-hot\)\)/.test(css), true);
 
 print('\n--- the role badge on a column box ---');
 // The badge says what produced the column it sits on, so it is read off the
@@ -211,9 +211,10 @@ check('every dash is its own: a test, a back edge, an indirect edge and both', d
   return v && dashes.indexOf(v) === i; }).length, 5);
 check('an indirect edge is drawn before .edge.hi, which keeps its dash and takes the stroke',
       css.indexOf('.edge.indirect {') < css.indexOf('.edge.hi {') && !/\.edge\.hi \{[^}]*dasharray/.test(css), true);
-check('a lit indirect edge keeps its role\'s hue, after .edge.hi, and still its dash',
-      css.indexOf('.edge.hi {') < css.indexOf('.edge.indirect.hi {') && /\.edge\.indirect\.hi \{[^}]*stroke:\s*var\(--edge-col\)/.test(css)
-      && !/\.edge\.indirect\.hi \{[^}]*dasharray/.test(css), true);
+check('a lit column edge is 3px against 1.5, its colour kept, and a model canvas\'s lit edge stays 2px in the accent',
+      /\.colcanvas \.edge\.hi \{ stroke-width: 3; \}/.test(css) && /\.edge \{[^}]*stroke-width: 1\.5;/.test(css) && /\.edge\.hi \{ stroke: var\(--edge-col, var\(--edge-hot\)\); stroke-width: 2; \}/.test(css), true);
+check('a lit indirect edge keeps its role\'s hue and its dash: .edge.hi takes the hue itself and no rule of its own is left for it',
+      css.indexOf('.edge.indirect {') < css.indexOf('.edge.hi {') && css.indexOf('.edge.indirect.hi') < 0 && !/\.edge\.hi \{[^}]*dasharray/.test(css), true);
 check('the canvas gives an indirect edge its class', /isRowKind\(d\.edge_kinds && d\.edge_kinds\[i\]\) \? ' indirect' : ''/.test(lin), true);
 
 print('\n--- a seed does not pass for a table ---');

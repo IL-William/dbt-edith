@@ -6,7 +6,7 @@ var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 eval(lin.slice(lin.indexOf('function subtitle(n)'), lin.indexOf('  function init(')));
 var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor, subtitle: subtitle,
-  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch };
+  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch, legendColour: legendColour };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function selectKindCounts'), src.indexOf('async function loadSidecar')));
@@ -252,7 +252,7 @@ ok('a manifest that lost indirect_selection says so in the file too',
 check('a context box is no drawn match', namedFacts.undrawn, ['t2', 'orders']);
 var colFacts = exportFacts({ mode: 'column', focus: 0, focus_column: 'amount', truncated: false, edges: [[1, 0]],
   nodes: [{ name: 'amount', sub: 'fct_orders  ·  number', depth: 0 }, { name: 'amount', sub: 'stg_payments', depth: -1 }] }, ctx);
-check('column mode, and how far it reaches', colFacts.lines[0], 'amount · 2 columns · 1 edges  ·  1 level up, 0 down');
+check('column mode, and how far it reaches', colFacts.lines[0], 'amount · 2 columns · 1 edge  ·  1 level up, 0 down');
 // A synthetic cache looks exactly like a real one apart from its source.
 ok('column mode names the cache it was drawn from', colFacts.lines[1].indexOf('column lineage from snowflake') >= 0);
 ok('no other mode does', facts.lines[1].indexOf('column lineage') < 0);
@@ -328,7 +328,9 @@ var rowsDoc = exportDocument({ heading: 'x', noun: 'Columns', svg: svgText, fram
   facts: { kicker: 'Column', lines: [], warnings: [], undrawn: [], command: '' }, nodes: [] });
 ok('an exported legend draws indirect as a dash', rowsDoc.indexOf('<i class="dash" style="background:repeating-linear-gradient(90deg,'
   + roleColor('indirect') + ' 0 3px,transparent 3px 5px)"></i>indirect') > 0
-  && rowsDoc.indexOf('<i style="background:' + roleColor('rename') + '"></i>rename') > 0);
+  && rowsDoc.indexOf('<i class="role" style="background:' + roleColor('rename') + '"></i>rename') > 0);
+ok('a role is a solid line, 14 by 2, in the file as on screen (0162)', rowsDoc.indexOf('.legend i.role { width: 14px; height: 2px;') > 0
+  && rowsDoc.indexOf('.legend i.dash { width: 14px; height: 2px;') > 0);
 ok('and so is a clause, in the colour of its role', rowsDoc.indexOf('<i class="dash" style="background:repeating-linear-gradient(90deg,'
   + roleColor('dedup_key') + ' 0 3px,transparent 3px 5px)"></i>QUALIFY') > 0);
 // The list under the picture is headed for what it holds: model boxes join the columns (0118).
@@ -339,7 +341,9 @@ ok('the export heads its list Columns and models when a model box is drawn',
 ok('an indirect edge\'s clause is written along its own path', /id: `edge-\$\{i\}`/.test(lin)
   && /el\('textPath', \{ href: `#edge-\$\{i\}`, startOffset: '50%'/.test(lin) && /class: 'edgelabel'/.test(lin));
 ok('the only reference in it is to the file itself', !/href: [^#`]/.test(lin.slice(lin.indexOf("el('textPath'"), lin.indexOf("el('textPath'") + 120)));
-ok('and a lit indirect edge keeps its hue there too', exportCanvasCss(exportCanvasVars()).indexOf('.edge.hi {') < exportCanvasCss(exportCanvasVars()).indexOf('.edge.indirect.hi {'));
+ok('and a lit edge keeps its role\'s hue there too, indirect or not, and only thickens (0162)',
+  exportCanvasCss(exportCanvasVars()).split('\n').indexOf('.edge.hi { stroke: var(--edge-col, var(--edge-hot)); stroke-width: 2; }') >= 0
+  && exportCanvasCss(exportCanvasVars()).indexOf('.edge.indirect.hi') < 0);
 ok('the label is drawn on an edge that ends on a model\'s box only', /isRowKind\(kind\) && !L\.back\[i\] && isModelBox\(d\.nodes\[b\]\)/.test(lin));
 ok('and the file styles the label', exportCanvasCss(exportCanvasVars()).split('\n').some(function (l) { return /^\.edgelabel \{/.test(l); }));
 ok('and the file styles that dash', rowsDoc.indexOf('.legend i.dash {') > 0);
@@ -381,7 +385,7 @@ ok('nor its DOM helpers', !/\$\$?\(/.test(viewer));
 print('\n--- the canvas looks the same in the file ---');
 var asked = exportCanvasVars();
 var copied = exportCanvasCss(asked);
-var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.role(?!sq)|\.band)/.test(l); });
+var rules = css.split('\n').filter(function (l) { return /^(#graph text|\.edge|\.nd|\.colcanvas|\.role(?!sq)|\.band)/.test(l); });
 // .rolesq is a menu's and a card's square, not the canvas's: the file has no menu.
 ok('the canvas rules are where this test looks for them', rules.length >= 17);
 ok('the folder bands among them', rules.some(function (l) { return /^\.band \{/.test(l); })
@@ -401,7 +405,7 @@ var longSub = { lead: 'incremental', struck: '', rest: 'analytics_marts  \u00b7 
 var made = function (n) { return { name: n, attrs: {}, textContent: '', setAttribute: function (k, v) { this.attrs[k] = v; } }; };
 writeSub(probe, longSub, 0, made);
 ok('written whole into the element it is handed, not left empty', probe.textContent === 'incremental  \u00b7  analytics_marts  \u00b7  12 tests' || probe.textContent.length > 20);
-var fontRules = css.split('\n').filter(function (l) { return /^#graph \.nd/.test(l) && !/\.hit/.test(l); });
+var fontRules = css.split('\n').filter(function (l) { return /^#graph \.(nd|colcanvas|roletaglabel)/.test(l) && !/\.hit/.test(l); });
 ok('the canvas\'s font rules are there to be copied', fontRules.length >= 4);
 check('and are copied as they are', fontRules.filter(function (l) { return copied.split('\n').indexOf(l) < 0; }), []);
 ok('the glow of a box clicked is not: a file has no click, and snapshot() takes the ring off', copied.indexOf('.glow') < 0 && /querySelectorAll\('\.glow'\)\.forEach\(\(x\) => x\.remove\(\)\)/.test(lin));

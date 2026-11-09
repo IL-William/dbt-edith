@@ -39,9 +39,10 @@ check('another cache does not wait', collinRunning('fusion', { state: 'running' 
 check('no collin info does not wait', collinRunning('collin', null), false);
 
 print('\n--- node subtitle ---');
-check('column mode uses sub',
+// Its spaces as SVG draws them, one to a run, so the room beside the tag counts what shows (0162).
+check('column mode uses sub, its spaces as drawn',
       subtitle({ sub: 'stg_crm__customers  ·  varchar', kind: 'model', materialized: 'view', schema: 'analytics', tests: 3 }),
-      'stg_crm__customers  ·  varchar');
+      'stg_crm__customers · varchar');
 check('model mode without sub',
       subtitle({ sub: '', kind: 'model', materialized: 'incremental', schema: 'analytics', tests: 2 }),
       'incremental  ·  analytics  ·  2 tests');
@@ -683,7 +684,7 @@ check('the badge is drawn only for a box that has more than one',
       /const count = columnMode \? stepsLabel\(n\.expression\) : '';\s*if \(count\) g\.appendChild\(stepsBadge\(count\)\)/.test(lin), true);
 check('the box\'s label says how it is computed, the badge having no tooltip of its own',
       /computed by \$\{n\.expression\.text/.test(lin) && !/stepsBadge[\s\S]{0,900}el\('title'/.test(lin), true);
-check('a card opened by an expression alone has no dot', /if \(Array\.isArray\(n\.generated\) \|\| rows\) \{\s*tone = /.test(app), true);
+check('a card opened by an expression alone has no line', /if \(Array\.isArray\(n\.generated\) \|\| rows\) \{\s*const line = /.test(app), true);
 check('the card says the text and the steps', expressionSaid({ text: 'sum(amount)', steps: 2 }).join(' | '), 'expression  sum(amount) | steps  2');
 check('a cut text is marked', expressionSaid({ text: 'sum(a', steps: 1, cut: true })[0], 'expression  sum(a (cut)');
 check('a chain at the limit is recursive, never 32', expressionSaid({ text: 'x', steps: 32 })[1], 'steps  recursive');
@@ -777,7 +778,9 @@ var cols = [{ id: 'model.shop.stg_orders::status' }, { id: 'model.shop.orders::s
 check('the status line counts the columns partly traced',
       canvasStatus({ mode: 'column', focus_column: 'status', nodes: cols, edges: [] }, null), 'status · 3 columns · 2 partly traced · 0 edges');
 check('and says nothing when there are none',
-      canvasStatus({ mode: 'column', focus_column: 'status', nodes: [cols[0]], edges: [] }, null), 'status · 1 columns · 0 edges');
+      canvasStatus({ mode: 'column', focus_column: 'status', nodes: [cols[0]], edges: [] }, null), 'status · 1 column · 0 edges');
+check('a column canvas says 1 edge and 1 column, as a model\'s says 1 node and 1 edge (0162)',
+      canvasStatus({ mode: 'column', focus_column: 'status', nodes: [cols[0], cols[0]], edges: [[0, 1]] }, null), 'status · 2 columns · 1 edge');
 check('a model canvas never counts them',
       canvasStatus({ mode: 'model', nodes: [{ partial: ['x'] }], edges: [] }, null), '1 node · 0 edges');
 
@@ -962,3 +965,23 @@ drain().then(function () {
     check('and the pane is emptied', [art.S.artifactInfo.compiled, art.body()].join(), ',empty-note');
   });
 }).then(function () { print('\ndone'); }, function (e) { print('FAIL  a step threw ' + e); });
+
+print('\n--- a column box: 250 by 48, the role inside it (0162) ---');
+check('the canvas is told its mode for the rules that differ in column mode, a column box is 250 by 48 and has no class of its own',
+      [/W = columnMode \? COLUMN_W : MODEL_W;\s*H = 48;/.test(lin), /root\.classList\.toggle\('colcanvas', columnMode\)/.test(lin), /class: 'nd' \+ \(columnMode/.test(lin)].join(), 'true,true,false');
+check('the kind bar is a model\'s, 3 by the height less 20, whatever the mode', /\{ class: 'kindbar', x: 7, y: 10, width: 3, height: b\.h - 20, style: `fill:\$\{nodeColor\(n\)\}` \}/.test(lin), true);
+check('the role is a tag in the box, after its two lines, and the pills above it keep their place',
+      /g\.appendChild\(t2\);\s*\}\s*if \(roles\[i\]\) g\.appendChild\(roleTag\(roles\[i\]\)\);\s*const count = columnMode \? stepsLabel/.test(lin) && !/roleBadge/.test(lin), true);
+check('the second line is cut for the room the tag leaves, when drawn, when the art cuts it again, and when an export spells it',
+      /writeSub\(t2, subtitleParts\(n\), boxRoom\(columnMode, roles\[i\]\)\.sub, el\)/.test(lin)
+      && /const role = tagOf\(nd\), left = on \? artBudget\(skin, columnMode, role\) : boxRoom\(columnMode, role\)/.test(lin)
+      && /const left = boxRoom\(colMode, tagOf\(nd\)\)/.test(lin)
+      && /const tag = cls === 't2' \? nd\.querySelector\('\.roletag rect'\) : null;/.test(lin), true);
+check('the steps and PARTIAL pills keep the rolebadge class and its rules, the tag has its own', /class: 'rolebadge stepsbadge'/.test(lin) && /class: 'rolebadge partialbadge'/.test(lin)
+      && /class: 'roletag'/.test(lin) && !/class: 'roletag rolebadge'/.test(lin), true);
+check('the tag\'s rules are in the file an export writes: the word\'s font and the outline',
+      exportCanvasCssHas('#graph .roletaglabel { font: 600 9.5px var(--mono); letter-spacing: .04em; }') && exportCanvasCssHas('.roletag rect { fill: none; stroke-width: 1; }'), true);
+function exportCanvasCssHas(line) {
+  var at = app.indexOf('function exportCanvasCss'), body = app.slice(at, app.indexOf('function exportPageCss'));
+  return body.indexOf("'" + line + "'") > 0 && read('web/app.css').split('\n').indexOf(line) >= 0;
+}

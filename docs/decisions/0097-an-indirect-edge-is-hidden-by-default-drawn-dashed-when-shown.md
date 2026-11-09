@@ -1,6 +1,6 @@
 # 0097. An indirect edge is hidden by default, drawn dashed when shown
 
-Date: 2026-10-18 · Status: accepted, amended by 0153 · Amends 0096 and 0089
+Date: 2026-10-18 · Status: accepted, amended by 0153 and 0162 (a lit edge keeps its role's colour) · Amends 0096 and 0089
 
 **Trigger:** read before changing how an edge of a role is drawn or walked,
 what the legend groups, or which edges a column's badge or counts read.

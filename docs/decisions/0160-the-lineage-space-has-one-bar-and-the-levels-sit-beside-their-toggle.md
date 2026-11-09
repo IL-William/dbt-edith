@@ -1,6 +1,6 @@
 # 0160. The Lineage space has one bar, and the levels sit beside their toggle
 
-Date: 2026-11-09 · Status: accepted · Amends 0080, 0034, 0040 and 0092
+Date: 2026-11-09 · Status: accepted, amended by 0162 (a column's box and its role tag) · Amends 0080, 0034, 0040 and 0092
 
 **Trigger:** read before changing the Lineage space's bar, By folder and its
 levels, how a model's box, a test's slip or the +N pill is drawn, or what the

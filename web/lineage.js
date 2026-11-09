@@ -9,16 +9,18 @@ const Lineage = (() => {
   const HGAP = 80, VGAP = 14;
   // A lane carries no text, so two of them only need telling apart.
   const LANE = 10;
-  // Column mode draws a role tag in the 14 px above a box: a lane beside a box
-  // keeps this much further off, or the tag's fill hides it.
+  // Column mode draws the steps and PARTIAL pills in the 14 px above a box: a
+  // lane beside a box keeps this much further off, or the pill's fill hides
+  // it. The role tag sits inside the box (0162) and asks for no room here.
   const TAG_ROOM = 6;
   // From this many long edges out of one node they share a lane per kind, or a
   // date spine read across the graph becomes a band of hundreds of lines.
   const BUNDLE = 4;
-  // Re-assigned per mode in render(): column boxes are smaller than model boxes.
-  // 220 for a model's, the one width the dock and the Lineage space share, the
-  // canvas moving between them without a redraw (0160).
-  const MODEL_W = 220;
+  // Re-assigned per mode in render(). 220 for a model's, the one width the dock
+  // and the Lineage space share, the canvas moving between them without a
+  // redraw (0160); 250 for a column's, which holds the role tag beside its
+  // second line (0162). Both are 48 tall.
+  const MODEL_W = 220, COLUMN_W = 250;
   let W = MODEL_W, H = 48;
   /* Colour carries the materialization, which is what you actually reason about
      when reading a DAG: what exists in the warehouse, and what gets rebuilt. */
@@ -130,6 +132,14 @@ const Lineage = (() => {
     return ROLE[String(kind || '').toLowerCase()] || EDGE_PLAIN;
   }
 
+  /* The colour the legend gives an entry: a role's own, and for `mixed` or a
+     word the palette has no colour for the dimmed text colour the tag in the
+     box wears, where the edge's grey would be nearly invisible (0162). */
+  function legendColour(kind) {
+    const colour = roleColor(kind);
+    return colour === EDGE_PLAIN ? 'var(--fg-dim)' : colour;
+  }
+
   /* The legend's word for an edge's role: the SQL clause for an indirect
      one, QUALIFY, JOIN or WHERE / HAVING (0118), the role itself for the
      rest. */
@@ -150,16 +160,30 @@ const Lineage = (() => {
       Object.keys(CLAUSE).filter((k) => present.has(k)).map((k) => [CLAUSE[k], roleColor(k)]));
   }
 
+  /* A role's swatch (0162): a line 14 by 2, as the edges it names are drawn,
+     in the role's colour; dashed for an indirect role and for the legend's
+     `indirect`, as those edges are, so a role keeps one shape wherever it is
+     shown. The background is the line, its size is the stylesheet's. */
+  function roleSwatch(kind) {
+    const colour = roleColor(kind);
+    return dashSwatch(kind === 'indirect' || isRowKind(kind), colour);
+  }
+
+  function dashSwatch(dashed, colour) {
+    return dashed
+      ? { dashed, style: `background:repeating-linear-gradient(90deg,${colour} 0 3px,transparent 3px 5px)` }
+      : { dashed, style: `background:${colour}` };
+  }
+
   /* A legend entry's swatch: a dashed line for `indirect` and each clause, as
      their edges are drawn, the bar of its box for a kind or a test (their
-     colour is a box variable, never a role's), a square of the colour for
-     every other entry. Shared with the exported page, whose legend has no
-     stylesheet of the canvas's. */
+     colour is a box variable, never a role's), a solid line of the colour for
+     every other entry, which is a role (0162). Shared with the exported page,
+     whose legend has no stylesheet of the canvas's. */
   function legendSwatch(label, colour) {
-    const dashed = label === 'indirect' || Object.values(CLAUSE).includes(label);
-    return dashed
-      ? { cls: 'dash', style: `background:repeating-linear-gradient(90deg,${colour} 0 3px,transparent 3px 5px)` }
-      : { cls: /^var\(--[kt]-/.test(colour) ? 'kind' : '', style: `background:${colour}` };
+    if (/^var\(--[kt]-/.test(colour)) return { cls: 'kind', style: `background:${colour}` };
+    const line = dashSwatch(label === 'indirect' || Object.values(CLAUSE).includes(label), colour);
+    return { cls: line.dashed ? 'dash' : 'role', style: line.style };
   }
 
   /* What produced each column, read off its incoming edges, so the badge sits on
@@ -258,8 +282,8 @@ const Lineage = (() => {
 
   /* The area an exported picture shows: the layout's box plus room for what is
      drawn outside the boxes, a +N badge reaching 28 or more beside one (4px off
-     the box and as wide as its number) and a role tag
-     14 above one. A page gets at least a screenful at natural size, because it
+     the box and as wide as its number) and a pill (the steps, PARTIAL) 14
+     above one. A page gets at least a screenful at natural size, because it
      scales its picture to fit the window: one box alone would arrive six times
      too big, which the canvas avoids by capping its own zoom at 1.1. An image
      has a size of its own and takes the tight frame. */
@@ -975,8 +999,8 @@ const Lineage = (() => {
 
   /* How far apart two neighbours in a column sit, centre to centre. Two boxes
      keep VGAP between them; two lanes only need telling apart, so they sit
-     closer. A lane beside a box keeps clear of the role tag column mode draws
-     above each box. */
+     closer. A lane beside a box keeps clear of the pills column mode draws
+     above one (the steps, PARTIAL). */
   function dagGap(g, a, b, dim) {
     const da = g.dummy[a], db = g.dummy[b];
     return dagHalf(g, a, dim) + dagHalf(g, b, dim) + (da && db ? dim.lane : dim.vgap) + (da !== db ? dim.badge : 0);
@@ -1340,7 +1364,7 @@ const Lineage = (() => {
      so the renderer can dash it: without arrowheads, left to right is the only
      direction a reader has. The back half of a two-node loop runs beside its
      forward half rather than on it. A self-loop is an ear on the right of its
-     box, above the +N badge and right of the role tag. `bbox` counts the lanes,
+     box, above the +N badge. `bbox` counts the lanes,
      which can run above or below every box. */
   function dagDraw(d, g, lay, y, dim) {
     const step = dim.w + dim.hgap, n = d.nodes.length, bb = [Infinity, Infinity, -Infinity, -Infinity];
@@ -1415,12 +1439,42 @@ const Lineage = (() => {
      A model's name is 13px at weight 500 (7.4px a character, measured on a
      Mac's system font with identifiers) and its second line 11px mono (6.6px),
      in the 220 wide box less the 19px the kind bar and its gap take and 12px
-     on the right. A column's box keeps the sizes it had until its own step. */
+     on the right. A column's name is 12.5px mono (7.5px a character) in the
+     250 wide one, and its second line, 11px mono, stops short of the role tag
+     that sits at its right (0162): the tag's width and 8px. The clip counts
+     characters, the doubled spaces round the dot included, so a line with a
+     type is drawn a little short of its room and one that is a bare name, which
+     has no spaces to fold, fits it exactly. */
   const NAME_PX = 7.4, SUB_PX = 6.6, PAD_L = 19, PAD_R = 12;
+  const COLUMN_NAME_PX = 7.5;
 
-  function boxRoom(columnMode) {
-    return columnMode ? { name: 24, sub: 30 }
-      : { name: Math.floor((MODEL_W - PAD_L - PAD_R) / NAME_PX), sub: Math.floor((MODEL_W - PAD_L - PAD_R + 2) / SUB_PX) };
+  /* A column's role tag (0162), inside its box on the second line at the
+     right: `edge` in from the box's right, `gap` kept clear on its left, 9.5px
+     mono capitals at 6.1px a character (weight 600 and .04em of spacing) and
+     12px for its padding and outline, `h` tall from `top`. */
+  const TAG = { h: 14, top: 25, edge: 10, gap: 8, char: 6.1, pad: 12 };
+
+  function tagLabel(role) {
+    return String(role).toUpperCase();
+  }
+
+  function tagWidth(role) {
+    return Math.round(tagLabel(role).length * TAG.char + TAG.pad);
+  }
+
+  /* The role a drawn box wears as its tag, '' for one that wears none. */
+  function tagOf(nd) {
+    const tag = nd.querySelector('.roletag');
+    return tag ? tag.getAttribute('data-role') : '';
+  }
+
+  /* `role` is the tag the box wears, when it wears one. */
+  function boxRoom(columnMode, role) {
+    if (!columnMode) {
+      return { name: Math.floor((MODEL_W - PAD_L - PAD_R) / NAME_PX), sub: Math.floor((MODEL_W - PAD_L - PAD_R + 2) / SUB_PX) };
+    }
+    const stop = role ? COLUMN_W - TAG.edge - tagWidth(role) - TAG.gap : COLUMN_W - PAD_R + 2;
+    return { name: Math.floor((COLUMN_W - PAD_L - PAD_R) / COLUMN_NAME_PX), sub: Math.floor((stop - PAD_L) / SUB_PX) };
   }
 
   /* Second line of a node box. Column mode ships a ready-made `sub`; model mode
@@ -1445,7 +1499,10 @@ const Lineage = (() => {
      a unique key it inserts every row; `rest` is the schema and the test
      count. subtitle() writes the struck word out in words for the rest. */
   function subtitleParts(n) {
-    if (n.sub) return { lead: n.sub, struck: '', rest: '' };
+    // A column's line, the server's `model  ·  type`, with its spaces as SVG
+    // draws them, one to a run: the room beside the role tag is counted in
+    // characters drawn (0162).
+    if (n.sub) return { lead: n.sub.replace(/\s+/g, ' '), struck: '', rest: '' };
     const lead = n.disabled ? 'disabled' : n.kind === 'source' ? 'source'
       : (n.strategy_shown || n.materialized || n.kind);
     const bits = [];
@@ -1874,12 +1931,22 @@ const Lineage = (() => {
      artWanted, artBudget and artGeometry are what web/tests/halloween.js
      slices. */
   const ART_MAX = 400;
-  // The characters a name and its subtitle may have, for a model's box then a column's.
+  // The characters a name and its subtitle may have, for a model's box then a
+  // column's (30px wider); `x`, where the second line starts once the skin has
+  // moved it; and `shift`, how far in from the box's right the skin moves a
+  // column's role tag, off the grimoire's frame and into the coffin's narrow
+  // end (0162). The second line is stopped short of the tag where it ends up;
+  // the name too where `clear` says the tag is lifted into the name's rows,
+  // as the coffin's is.
   const ART_ROOM = {
-    tombstone: { name: [23, 21], sub: [40, 37] },
-    coffin: { name: [16, 15], sub: [32, 29] },
-    grimoire: { name: [19, 17], sub: [38, 34] },
+    tombstone: { name: [23, 27], sub: [40, 46], x: 29, shift: 0, clear: false },
+    coffin: { name: [16, 17], sub: [32, 38], x: 60, shift: 6, clear: true },
+    grimoire: { name: [19, 24], sub: [38, 44], x: 58, shift: 8, clear: false },
   };
+  // The skins' second line, 8.4px Georgia with .3px of spacing, is 5px a
+  // character at the widest (many m's and capitals); a name, bold 11px, 7.2.
+  // A name keeps 2px clear of a tag it shares rows with.
+  const ART_SUB_PX = 5, ART_NAME_PX = 7.2, ART_NAME_GAP = 2;
   const ART_POINTS = {
     coffin: [[4, 17], [56, 2], [176, 12], [197, 19], [197, 29], [176, 36], [56, 46], [4, 31]],
     // Only the head end's lid, round the cap and a little way along: further, its line would run through the subtitle.
@@ -1903,9 +1970,15 @@ const Lineage = (() => {
     return !!sk && !rider;
   }
 
-  function artBudget(sk, columnMode) {
-    const room = ART_ROOM[sk] || ART_ROOM.tombstone;
-    return { name: room.name[columnMode ? 1 : 0], sub: room.sub[columnMode ? 1 : 0] };
+  function artBudget(sk, columnMode, role) {
+    const room = ART_ROOM[sk] || ART_ROOM.tombstone, i = columnMode ? 1 : 0;
+    const sub = columnMode && role
+      ? Math.min(room.sub[1], Math.floor((COLUMN_W - TAG.edge - room.shift - tagWidth(role) - TAG.gap - room.x) / ART_SUB_PX))
+      : room.sub[i];
+    const name = columnMode && role && room.clear
+      ? Math.min(room.name[1], Math.floor((COLUMN_W - TAG.edge - room.shift - tagWidth(role) - ART_NAME_GAP - room.x) / ART_NAME_PX))
+      : room.name[i];
+    return { name, sub };
   }
 
   /* The shape of a box of `w` by `h`, its trim, and its parts, as the mockup
@@ -1959,13 +2032,14 @@ const Lineage = (() => {
     if (!on && !texted) return;
     const columnMode = data.mode === 'column';
     const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
-    const room = on ? artBudget(skin, columnMode) : null;
     plain.forEach((nd) => {
       const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
       if (!n) return;
-      // The names are cut again, to the room the art leaves them, or the usual one.
-      if (t1) t1.textContent = clip(n.name, room ? room.name : boxRoom(columnMode).name);
-      if (t2) writeSub(t2, subtitleParts(n), room ? room.sub : boxRoom(columnMode).sub, el);
+      // The names are cut again, to the room the art leaves them, or the usual
+      // one; the second line stops short of the role tag the box wears.
+      const role = tagOf(nd), left = on ? artBudget(skin, columnMode, role) : boxRoom(columnMode, role);
+      if (t1) t1.textContent = clip(n.name, left.name);
+      if (t2) writeSub(t2, subtitleParts(n), left.sub, el);
       if (!on) return;
       const box = nd.querySelector('rect.box');
       const w = +box.getAttribute('width'), h = +box.getAttribute('height'), geo = artGeometry(skin, w, h);
@@ -2091,8 +2165,8 @@ const Lineage = (() => {
     data = d;
     lastOpts = opts;
     const columnMode = d.mode === 'column';
-    W = columnMode ? 180 : MODEL_W;
-    H = columnMode ? 40 : 48;
+    W = columnMode ? COLUMN_W : MODEL_W;
+    H = 48;
     // Selection mode sends no focus, and this is why it does not need to: an
     // absent index reads as undefined here and marks no box, rather than
     // picking the first one by accident.
@@ -2110,6 +2184,9 @@ const Lineage = (() => {
     drawn = L.bands || L.folded
       ? { folders: top, sub: bands.length - top, against: L.against || 0, folded: L.folded || 0 } : null;
     root.textContent = '';
+    // Told on the canvas for the rules that differ in column mode: a column's
+    // name is mono, and Halloween's bars are as wide as its boxes (0162).
+    root.classList.toggle('colcanvas', columnMode);
     texted = false;
     nodeEls = []; edgeEls = []; labelEls = []; beadEls = []; groupEls = [];
 
@@ -2146,10 +2223,10 @@ const Lineage = (() => {
           + (isRowKind(d.edge_kinds && d.edge_kinds[i]) ? ' indirect' : ''),
         'data-a': d.nodes[a].id, 'data-b': d.nodes[b].id, d: L.paths[i], id: `edge-${i}`,
       });
-      // A custom property, not `stroke`: setting the property leaves `.edge.hi`
-      // free to override the stroke outright, so a selected edge turns
-      // accent-coloured, except an indirect one, which keeps its role's hue
-      // (`.edge.indirect.hi` in app.css).
+      // A custom property, not `stroke`: setting the property leaves the
+      // stylesheet free to decide what a lit edge looks like. A role's colour
+      // stays lit or not, only thicker; the accent is for an edge that has no
+      // role, which is every edge of a model canvas (`.edge.hi` in app.css).
       const kind = d.edge_kinds && d.edge_kinds[i];
       if (kind) {
         path.dataset.kind = kind;
@@ -2185,7 +2262,7 @@ const Lineage = (() => {
       const b = place[i];
       if (!b) return;                         // a folded test, or one in a closed group
       const g = el('g', {
-        class: 'nd' + (columnMode ? ' col' : '') + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '')
+        class: 'nd' + (i === d.focus ? ' focus' : '') + (n.disabled ? ' off' : '') + (n.context ? ' ctx' : '')
           + (b.rider ? ` rider ${b.test}` + (b.member ? ' member' : '') + (b.warn ? ' warn' : '') : ''),
         transform: `translate(${b.x},${b.y})`,
       });
@@ -2194,11 +2271,10 @@ const Lineage = (() => {
       // Inline style, not a fill attribute: a CSS rule such as `.nd rect` would
       // outrank the attribute and repaint this bar in the box colour. A
       // hanging test's bar has the shape of its kind, which riderBars draws.
-      // A model's is a 3px bar inset 7 from the left and 10 from top and bottom;
-      // a column's keeps its 6px flush bar until its own step.
+      // A 3px bar inset 7 from the left and 10 from top and bottom, a model's
+      // and a column's alike (0160, 0162).
       if (!b.rider) {
-        g.appendChild(el('rect', Object.assign({ class: 'kindbar', style: `fill:${nodeColor(n)}` },
-          columnMode ? { width: 6, height: b.h } : { x: 7, y: 10, width: 3, height: b.h - 20 })));
+        g.appendChild(el('rect', { class: 'kindbar', x: 7, y: 10, width: 3, height: b.h - 20, style: `fill:${nodeColor(n)}` }));
       }
       // Ephemeral models are inlined into their children, nothing exists in the
       // warehouse, so they are drawn like the disabled ones: dashed.
@@ -2215,18 +2291,18 @@ const Lineage = (() => {
         g.appendChild(t1);
         if (b.warn) g.appendChild(warnMark(b.w, b.h, 0));
       } else {
-        const t1 = el('text', { class: 't1', x: columnMode ? 12 : PAD_L, y: 20 });
+        const t1 = el('text', { class: 't1', x: PAD_L, y: 20 });
         t1.textContent = clip(n.name, boxRoom(columnMode).name);
         g.appendChild(t1);
       }
 
       if (!b.rider) {
-        const t2 = el('text', { class: 't2', x: columnMode ? 12 : PAD_L, y: 35 });
-        writeSub(t2, subtitleParts(n), boxRoom(columnMode).sub, el);
+        const t2 = el('text', { class: 't2', x: PAD_L, y: 35 });
+        writeSub(t2, subtitleParts(n), boxRoom(columnMode, roles[i]).sub, el);
         g.appendChild(t2);
       }
 
-      if (roles[i]) g.appendChild(roleBadge(roles[i]));
+      if (roles[i]) g.appendChild(roleTag(roles[i]));
       const count = columnMode ? stepsLabel(n.expression) : '';
       if (count) g.appendChild(stepsBadge(count));
       // After the steps pill when there is one, so the two never overlap.
@@ -2346,25 +2422,28 @@ const Lineage = (() => {
     return drawn;
   }
 
-  /* The role, as a tag above the box rather than inside it: both lines of a
-     column box are already full, and a badge that overlaps a column name is
-     worse than no badge. VGAP leaves room, and fit() pads beyond it.
+  /* The role, as a tag inside the box (0162): on the second line's baseline
+     at the right, 14px tall, an outline in the role's colour at 55%, no fill
+     of its own (the stylesheet's `fill: none`, which Halloween's rules
+     replace with a dark one), and the role in capitals in the colour's text
+     twin, the one that holds 4.5:1 on the box (`--r-<role>-text`). A role the
+     palette has no colour for, `mixed` or a word a newer producer wrote, is
+     neutral all through: claiming a hue would pick a winner at random. The
+     colours are inline, with the outline's opacity an attribute, so a file
+     keeps them. */
+  const ROLE_TEXT = new Set(['passthrough', 'rename', 'cast', 'aggregate', 'window', 'transform', 'inferred', 'raw', 'generated']);
 
-     Dark fill with a coloured outline, not a coloured fill: the role ramp runs
-     from a light slate to a dark grey, so one text colour could never stay
-     legible across all of them. */
-  function roleBadge(role) {
-    const label = role.toUpperCase();
-    const w = label.length * 5.8 + 12;
-    const colour = roleColor(role);
-    const g = el('g', { class: 'rolebadge' });
+  function roleTag(role) {
+    const label = tagLabel(role), w = tagWidth(role), key = String(role).toLowerCase();
+    const known = ROLE_TEXT.has(key);
+    const g = el('g', { class: 'roletag', 'data-role': role });
     g.appendChild(el('rect', {
-      x: W - w - 4, y: -14, width: w, height: 14, rx: 3,
-      style: `fill:var(--bg-2);stroke:${colour}`,
+      x: W - TAG.edge - w, y: TAG.top, width: w, height: TAG.h, rx: 3, 'stroke-opacity': .55,
+      style: `stroke:${known ? roleColor(key) : 'var(--fg-dim)'}`,
     }));
     const t = el('text', {
-      class: 'rolelabel', x: W - w / 2 - 4, y: -4, 'text-anchor': 'middle',
-      style: `fill:${colour}`,
+      class: 'roletaglabel', x: W - TAG.edge - w / 2, y: TAG.top + 10.5, 'text-anchor': 'middle',
+      style: `fill:${known ? `var(--r-${key}-text)` : 'var(--fg-dim)'}`,
     });
     t.textContent = label;
     g.appendChild(t);
@@ -2372,8 +2451,7 @@ const Lineage = (() => {
   }
 
   /* The count of a column's transformations, small and on the left above its
-     box, where the role badge is on the right: the same dark pill with a
-     neutral outline. The expression is in the box's label and its hover card,
+     box: a dark pill with a neutral outline. The expression is in the box's label and its hover card,
      not a <title>, whose native tooltip would land over the card. Only when
      the box has more than one step to count (`stepsLabel`). */
   function pillWidth(label) { return label.length * 5.8 + 12; }
@@ -2506,7 +2584,7 @@ const Lineage = (() => {
   function glowOf(nd) {
     const box = nd.querySelector('rect.box');
     const w = +box.getAttribute('width'), h = +box.getAttribute('height');
-    const r = nd.classList.contains('rider') || nd.classList.contains('col') ? 7 : 9;
+    const r = nd.classList.contains('rider') ? 7 : 9;
     return el('rect', { class: 'glow', x: -2, y: -2, width: w + 4, height: h + 4, rx: r, 'pointer-events': 'none' });
   }
 
@@ -2770,8 +2848,9 @@ const Lineage = (() => {
       g.querySelectorAll('.nd:not(.rider)').forEach((nd) => {
         const n = byId.get(nd.dataset.id), t1 = nd.querySelector('.t1'), t2 = nd.querySelector('.t2');
         if (!n) return;
-        if (t1) t1.textContent = clip(n.name, boxRoom(colMode).name);
-        if (t2) writeSub(t2, subtitleParts(n), boxRoom(colMode).sub, el);
+        const left = boxRoom(colMode, tagOf(nd));
+        if (t1) t1.textContent = clip(n.name, left.name);
+        if (t2) writeSub(t2, subtitleParts(n), left.sub, el);
       });
     }
     g.querySelectorAll('.kept').forEach((x) => x.classList.remove('kept'));
@@ -2807,7 +2886,10 @@ const Lineage = (() => {
       if (!t || !full || t.textContent === same) return;
       const cls = t.getAttribute('class'), nd = t.parentNode, small = nd.classList.contains('rider');
       const mark = nd.querySelector('.warnmark'), count = mark && mark.querySelector('.warncount');
-      const room = (+nd.querySelector('rect.box').getAttribute('width') || W) - 8 - (+t.getAttribute('x') || 12)
+      // A column's second line stops short of its role tag, wherever the tag starts.
+      const tag = cls === 't2' ? nd.querySelector('.roletag rect') : null;
+      const right = tag ? +tag.getAttribute('x') - TAG.gap : (+nd.querySelector('rect.box').getAttribute('width') || W) - 8;
+      const room = right - (+t.getAttribute('x') || 12)
         - (mark ? warnRoom(count ? count.textContent : 0) : 0);
       const natural = measure(cls, full, 0, small, write);
       if (write) write(t); else t.textContent = full;
@@ -2918,7 +3000,7 @@ const Lineage = (() => {
 
   return {
     init, render, paintBuilds, fit, select, overrun, reveal, clear, snapshot, subtitle, subtitleParts, subJoin, adapterName, nodeColor, matLabel,
-    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, partialSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, find, findStep, findEnd, placeHeads,
+    testLevel, roleColor, nodeRoles, generatedSaid, rowsKept, stepsLabel, expressionSaid, partialSaid, isRowKind, clauseOf, rowLegend, edgeLegendLabel, legendSwatch, legendColour, roleSwatch, find, findStep, findEnd, placeHeads,
     legendKeeps, pick, picked: () => picked, setSkin, isModelBox,
     // The payload the canvas holds, for the export menu, without serialising it. The condition is
     // snapshotOf's, so the menu says "nothing drawn" exactly when an export would.
