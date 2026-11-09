@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-08.
+belongs here. Last updated 2026-11-09.
 
 ## Shipped
 
@@ -832,7 +832,7 @@ and sends it as a header, the terminal's socket taking it in its address. A
 `.env` that is a link out of the project is no longer listed. Each has a test
 beside it; the update command's branch was settled by 0129, and a collin
 install in a shared folder is refused on macOS and Linux (0128) and in
-Deferred for Windows, item 25.
+Deferred for Windows, item 24.
 
 The update says when it is installed (0095, 1.28.1). The first update run from
 Edith's menu on the VM, 1.25.0 to 1.28.0, worked, and read wrong to the person
@@ -955,7 +955,7 @@ it had; a double-click opens the box's file, rolls the panel up, and the dock
 draws that model's lineage. The dock's canvas is moved into
 the panel rather than copied, so its find, folded tests and legend pick come
 along (0092). A model's lineage and git are to open the same way (Deferred,
-items 16 and 17).
+items 15 and 16).
 
 The settings open in a panel (0100, 1.36.0). One gear in the top bar, in place
 of the column lineage menu, the snowflake and the profile's button, rolls the
@@ -1868,7 +1868,7 @@ by an asset or another job, a manual one, and a cron this cannot read are
 judged on the global threshold, not a clock; the DAG of an invocation is
 inferred from the job's selections, not read, since `dbt_artifacts` does not
 record it; and a long list of assets is cut short in the schedule pill, whole
-only in its tooltip. Seeds, snapshots and tests wait on item 22. Since 1.60.0 a
+only in its tooltip. Seeds, snapshots and tests wait on item 21. Since 1.60.0 a
 row opens one environment at a time: a click on a cell lists that environment's
 errored, late and not built models, another cell of the row switches, the same
 cell closes, and a click elsewhere on the row opens the environment picked last,
@@ -1912,7 +1912,7 @@ version under `<config>/collin/` has to be owned by the account, with its
 binary and each folder up to that one writable by nobody else, and a link below
 it is refused. The menu names the path, the owner or who may write it, and the
 `chmod` or `chown`. Checked with `cargo test` (`collin_run::`, the version route
-in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 25.
+in `api::`) and `web/tests/collineage.js`. The Windows part is Deferred item 24.
 
 Rows with nothing to show keep their place (1.69.1). A job with no model to
 open in Builds by job, drawn narrow and out of the table's columns, and a
@@ -1987,7 +1987,7 @@ the model or macro and the line where the SQL branches on the environment
 tabs show the file as dbt wrote it. Checked with `cargo test`,
 `web/tests/compiledenv.js` and `scripts/compare_with_dbt.py`, which asserts
 that each non-ephemeral parent's relation appears verbatim in its child's
-compiled SQL. What it leaves out is Deferred item 30.
+compiled SQL. What it leaves out is Deferred item 29.
 
 Spaces in the top bar (0140, 1.74.0), amending 0091, 0092, 0100, 0101 and
 0137. Code, Lineage and Reports are tabs after the project's name, the one in
@@ -2001,7 +2001,7 @@ name down to 120px, then folds the gear's name, the counts, and the names of
 the tabs not lit. Checked with `web/tests/spaces.js`, `selpanel.js`,
 `reports.js` and `panels.js`, and the fold in `scripts/walk_depth.py`. What is
 left of the bar on a narrow window is Deferred item 10, and what the Lineage
-space has yet to take, item 16.
+space has yet to take, item 15.
 
 A column click waits for collin (1.74.1). A first click on a column in
 Catalog > Columns while collin's cache was behind the manifest drew the model's
@@ -2098,7 +2098,7 @@ the browser's and not the page's; a browser that takes no SVG icon gets
 `web/favicon-32.png`, the same mark on a dark tile. Checked with
 `api::tests::every_icon_the_page_names_is_served_as_its_type`, which fetches
 every icon `index.html` names, without the key, as a browser does. Its limit is
-in Deferred item 31.
+in Deferred item 30.
 
 Edith's mark in the top bar (1.77.2). The mark sits before her name, which
 takes the mark's square on its i; the button is still labelled Edith and opens
@@ -2131,7 +2131,7 @@ repaints the row of a tab that is open and only then, so a selection in the SQL
 is not dropped by a reload that changed nothing. A stored choice that outlives
 the environments in use falls back to the manifest's own for the tab, the
 Catalog and the Builds dots alike. Checked with `web/tests/compiledenv.js`. Its
-limits are in Deferred item 35.
+limits are in Deferred item 33.
 
 Every colour from a variable (no version). Each colour the page paints is a
 variable in `app.css`'s `:root`, named by what it means: one value that meant
@@ -2148,7 +2148,7 @@ every export (0106). Nothing changed on screen: the pictures of
 fails on a literal colour in `app.css` outside `:root` (the Halloween section
 aside) or in `lineage.js`, and on a colour passed to the drawing as an
 attribute; `web/tests/colours.js` resolves `var()` through `:root`. Its limits
-are in Deferred items 32 to 34.
+are in Deferred items 31 and 32.
 
 The default look in deeper colours (2.0.0). The values of `:root` take the
 redesign's Night block: a darker blue-black page, lighter and softer lines and
@@ -2164,7 +2164,7 @@ The Halloween look re-points nine variables only, so a second `body.halloween`
 rule holds the old values of the 27 others the change moves, until that look
 becomes a theme; `web/tests/halloween.js` checks that every name it holds
 exists in `:root`. The export takes the new colours with no change of its own.
-Its limits are in Deferred items 32 to 34.
+Its limits are in Deferred items 31 and 32.
 
 Each meaning in its own shape (0148, 2.1.0), amending 0049, 0079, 0100, 0117
 and 0137. Colour alone said several things at once: one green was a table, "up
@@ -2181,7 +2181,7 @@ shape stays; the canvas draws a build's state as a path (`BUILD_MARK`). The six
 places that drew an environment's dot now draw `envTag()`, the builds heads and
 tiles of Reports included. `web/tests/shapes.js` fails on a round marker, on a
 mask not set in both its prefixed and plain forms, and on a state the code
-produces that has no shape. Its limits are in Deferred item 36.
+produces that has no shape. Its limits are in Deferred item 34.
 
 The Export menu (0153, 2.4.0), amending 0026, 0035, 0097 and 0140. One Export button
 opens a menu of the three outputs: Copy as image (a PNG on the clipboard), Save
@@ -2193,7 +2193,7 @@ toggles above the lineage are borderless and a pressed one takes the neutral
 `--select` wash instead of amber or blue; the Tests eye is always open and its
 count of tests drawn is in its tooltip; Indirect takes a dashed arrow; Fit is
 its glyph alone; the dock's modes are one quiet group; and the third mode reads
-Selection. Its limits are in Deferred item 41.
+Selection. Its limits are in Deferred item 39.
 
 Themes (0150, 2.2.0), amending 0106 and 0107. Four sets of variables chosen by
 `data-theme` on `<html>`: Night, Graphite, Light and Halloween, picked from the
@@ -2211,7 +2211,7 @@ it; the file's `:root` holds the theme's `color-scheme`. `look.json` holds `{
 theme, follow, apparitions, boxes }`, and a 2.1 file is read once and rewritten
 without `halloween` or `sound`. `scripts/take_shots.py --theme` takes the
 pictures in another theme, and `docs/shots` are Night's. The terminal takes
-the theme's colours (0161); the themes' other limits are in item 39.
+the theme's colours (0161); the themes' other limits are in item 37.
 
 A release is checked on VirusTotal before it is published (0152, no version),
 amending 0123. A `virustotal` job sits between `windows` and `release`: it
@@ -2252,7 +2252,7 @@ brought into the row by cutting the front of the line at a word edge, never
 inside an emoji. A file still shows the server's 20 lines, `+N more in this
 file` being text. The arrows, Left, Right and Escape move over the list, and an
 answer that arrives after the box was cleared is dropped. Checked with
-`web/tests/grep.js`. Its limits are in Deferred item 42.
+`web/tests/grep.js`. Its limits are in Deferred item 40.
 
 The keys reaching a file, as written and struck (0156, 2.7.0), amending 0038.
 The violet `dbt_project.yml` button at the end of the breadcrumb opens a dialog
@@ -2266,7 +2266,7 @@ too except for a `+` sub-key, and everything else is clobbered by the deepest
 level. The footer says a `config()` and the properties YAML win over these
 lines for a file of the project, and for a file of an installed package that
 these lines win over the package's own. Picking a line opens the file there.
-Checked with `web/tests/projectdirs.js`. Its limits are in Deferred item 43.
+Checked with `web/tests/projectdirs.js`. Its limits are in Deferred item 41.
 
 The manifest's card holds the parse (0157, 2.8.0), amending 0071 and 0025. The
 pill is one outline with its age and drift inside; hovering after a rest shows
@@ -2278,7 +2278,7 @@ button that presses Enter, 0071's exception for a command that reaches no
 warehouse, moved from the freshness badge's click to this button, so a parse
 takes two gestures. A poll that changes the answer redraws the card in place
 with the focus kept. Checked with `web/tests/freshness.js`. Its limits are in
-Deferred item 44.
+Deferred item 42.
 
 The depth in dbt's words (0158, 2.9.0). The lineage's up and down boxes became
 dbt's selector around the focus's name, `1+ customers +0`: each number opens a
@@ -2291,7 +2291,57 @@ a name past 24 characters is cut in the middle; in a narrow dock the name is the
 first thing to fold, to the bar of its kind. The same control sits around the
 column chip, without the copy. The boxes stay, hidden, as what holds the depth,
 so 1.18.4's rules are unchanged. Checked with `web/tests/depth.js` and
-`scripts/walk_depth.py`. Its limits are in Deferred item 46.
+`scripts/walk_depth.py`. Its limits are in Deferred item 44.
+
+A job's start in words (0159, 2.10.0), amending 0063 and 0077. The Jobs tab
+draws a card per job with its tool's colour down its side, the schedule worded
+beside the cron and its zone (`Every day at 05:00`, `Weekdays at 06:30`), and a
+clock in place of the green Scheduled pill for the jobs that run on their own.
+A cron is worded only where it reads as one short sentence: the presets, up to
+four times a day, a few named days, one day from the 1st to the 28th, every N
+hours or minutes that divide the day or the hour. Any other stays as the cron
+alone, and the cron and its zone are always shown, UTC where the source names
+none. CI and merge are tags; the header names the sources read and the age of
+the last look, and says apart a source that was not read. A step says in one
+line why it reaches the model, and Sources and Coverage sit in the dock's tab
+row. Three fields leave the server: the names of the sources read, those not
+read, and `not_read`. The Catalog's chips, the Reports lists and the command
+line keep the older wording. Checked with `web/tests/jobs.js`. Its limits are in
+Deferred item 45.
+
+The Lineage space has one bar (0160, 2.11.0), amending 0080, 0034, 0040 and
+0092. The selector sits on the left of a 44px bar and the canvas's tools on the
+right, with no title row; By folder's levels are a minus, a number and a plus
+beside the toggle, in the dock and in the space, so nothing opens over the bar
+and a touch reaches them. A model's box is 220 by 48 with a kind bar inset in it,
+the box clicked has a ring behind it (a rect, never a filter), a dot grid sits
+behind the canvas and the `+N` badge is a pill, the three Halloween box styles
+included. A model's tests are slips on a dashed stem. The card lays out by a
+flag, not a width: Context in three columns, Location as a list that writes a
+value once where written, resolved and built agree. A canvas's tests are counted
+apart, `7 nodes · 6 edges · 11 tests`, under the canvas and in the Export menu. Checked
+with `web/tests/slips.js`, `folders.js` and `locationlines.js`. Its limits are
+in Deferred item 46.
+
+The terminal takes the theme's colours (0161, 2.12.0), amending 0150 and 0071.
+xterm.js reads the page's variables, the sixteen `--ansi-*` colours that each of
+the four themes declares among them, and a theme picked repaints it at once,
+Halloween included. While the Terminal tab is open the dock's row names the venv
+and the shell and holds Clear and Restart the shell. A command the page typed
+for the person is marked at the end of its line by a chip saying which page
+typed it and whether Enter is theirs, in place of the toast, and the toast stays
+for the line the shell did not echo. Checked with `web/tests/terminal.js`,
+`themes.js` and `venv.js`. Its limits are in Deferred item 47.
+
+A column's role is a tag inside its box (0162, 2.13.0), amending 0096, 0097, 0118
+and 0160. The tag sits on the second line at the right of a box now 250 by 48,
+its word in a shade of the role's colour that holds 4.5:1 on the box in every
+theme; a column's edge wears its role's colour lit or not, a lit one only
+thicker; a role is a line 14 by 2 in the legend, the stop at menu and the column
+card, dashed for the roles that keep rows. The Halloween styles draw the tag on
+a dark fill, inside the coffin's cut end and the grimoire's frame. Checked with
+`web/tests/slips.js`, `themes.js`, `halloween.js` and `legendpick.js`. Its limits
+are in Deferred item 48.
 
 The settings are one column of rows (0163, 2.14.0), amending 0100. The rail has a
 caption and a hint per section (the tool on screen, on or off, the number of job
@@ -2303,7 +2353,19 @@ buttons, Python's path, versions and state, the column lineage tools as radio
 cards, Snowflake's one switch, the job sources a row each with Edit unfolding the
 form, Updates as cards, the theme's switches and box styles, and help. Checked
 with `web/tests/settings.js`, `venv.js`, `shapes.js` and `themes.js`. Its limits
-are in Deferred item 51.
+are in Deferred item 49.
+
+The shortcut list is a sheet in the window (2.15.0, no decision of its own),
+amending 0030 in its layout only. It opens from under the top bar to above the
+status bar with its title, a find box and Give me a tour held at the top, the
+groups in columns that scroll on their own, and a footer strip saying which keys
+it draws. The box filters the rows by their words, a group by its title and a row
+by its keys: a modifier spelled out and a key drawn as a glyph by its name, each
+matched from the start of a word. The first hit in a row's words is marked; the
+groups alone are drawn again on each key, so the box keeps its focus and caret,
+and the list opens with the box focused and emptied. On Windows and Linux the
+keys are written out and the list is two columns. Checked with `web/tests/keys.js`.
+Its limits are in Deferred item 50.
 
 ## Deferred, in the order they were chosen
 
@@ -2642,16 +2704,7 @@ are never edited, so find an item by its title.
     comes without the steps that lead to the bug. Templates under
     `.github/ISSUE_TEMPLATE/` would ask for the steps, what was expected and
     what showed.
-13. ~~**The levels box, over what is under it.** By folder's levels box (0080)
-    opens while the pointer rests on the toggle, so a touch screen cannot
-    reach it at all.~~ Gone in 2.11.0 (0160): the levels are a minus, a number
-    and a plus beside the toggle, in the dock and in the Lineage space, so
-    nothing opens over the bar and a touch reaches them.
-    - ~~**What it covers while open:** the count beside the Custom selection
-      field, and the left of the lineage's find bar (0081).~~
-    - ~~**Possible answers:** open it on a click too, or place it where it
-      covers no tool.~~
-14. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
+13. **`cargo vet` on the lockfile.** `cargo audit` says nobody has filed a
     problem against these versions; `cargo vet` would say someone read them,
     importing the attestations Mozilla, Google and others publish. Measured
     on 2026-10-15 with six public registries imported, 24 of the 129 crates
@@ -2662,7 +2715,7 @@ are never edited, so find an item by its title.
     Worth adopting once the registries reach these versions, with trusted
     publishers for the crates one author maintains, which covers serde, syn,
     anyhow and tokio's family (0085).
-15. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
+14. **A target for Regenerate.** The page and `--run-collin` (0099) run collin
     without `--target`, so their caches say "target not recorded", and
     `--column` (0088) cannot say which target its answer describes. The
     manifest does not record the target it was compiled for, so the page
@@ -2670,12 +2723,12 @@ are never edited, so find an item by its title.
     the one picked, which the user then has to have compiled and generated
     the catalog under.
 
-Items 16 to 18 are the rest of the plan chosen with the panels' mechanism
+Items 15 to 17 are the rest of the plan chosen with the panels' mechanism
 (0091), Custom selection (0092) and the settings (0100). Each is a pull request
 of its own, and each panel updates the tour, its page under
 [features/](features/) and the README's pictures (0082):
 
-16. **The Lineage space takes every mode.** Since 0140 the space is the
+15. **The Lineage space takes every mode.** Since 0140 the space is the
     Custom selection's, renamed, and holds only the selector bar, its canvas
     tools and a card. A model's lineage seen whole is the same space with
     its Models and Columns modes: `#lineage-tools` moves into it as a whole
@@ -2687,18 +2740,18 @@ of its own, and each panel updates the tour, its page under
     box opens on `1+<model>+1`. `focusNode` and `paintMode` are the risky
     parts, since both assume the dock's canvas; it wants its own planning
     pass and its own decision.
-17. **git seen whole.** The side-by-side diff and the commit in a panel, the
+16. **git seen whole.** The side-by-side diff and the commit in a panel, the
     git panel of the sidebar staying the way in.
-18. **Boxes without their text far out, then the cap again.** Past 3 000
+17. **Boxes without their text far out, then the cap again.** Past 3 000
     boxes zoom and pan slow down (0087). Drawing a box without its text when
     it is too small to read would let the selection draw more before it is
     capped.
-19. **From the command line, for an agent.** Ideas for `--describe`,
+18. **From the command line, for an agent.** Ideas for `--describe`,
     `--overview`, `--column` and `--sql` (0102), unranked:
     - a shorter `--overview` JSON (`--depth 2` first is settled, 0136);
     - `--jobs KIND:PATH`, to name job sources on a line without the project's
       file (0115), which MCP could not take without a path in a line (0110).
-20. **Where the sources file goes after a save.** The form already offers
+19. **Where the sources file goes after a save.** The form already offers
     `.dbt-edith/jobs.yml` (shared, committed) beside "For me only" (0115),
     but the command line and MCP read only the file, never the settings, so
     someone who wants an agent to see the sources without sharing them must
@@ -2723,7 +2776,7 @@ of its own, and each panel updates the tour, its page under
     refuses paths outside the project, where the git folder lies in a worktree
     or when the dbt project sits in a subfolder; and nothing may ever add to a
     tracked ignore file, which is the repository's.
-21. **When a table last changed, from Snowflake's metadata.** The last
+20. **When a table last changed, from Snowflake's metadata.** The last
     builds (0117) say when dbt ran a model, which is the package's word. What
     Snowflake says of the table itself, `LAST_ALTERED` in the schema's
     `INFORMATION_SCHEMA.TABLES`, is a different question (the table changed,
@@ -2731,28 +2784,28 @@ of its own, and each panel updates the tour, its page under
     needs its own read per environment and its own privilege, and would show
     beside the package's answer, not instead of it, since the two disagree on
     a model changed by hand.
-22. **Seeds, snapshots and tests in the builds.** The package keeps
+21. **Seeds, snapshots and tests in the builds.** The package keeps
     `seed_executions`, `snapshot_executions` and `test_executions` beside
     `model_executions` (0117), with the same `node_id` and the same invocation.
     The read joins the models' table alone, so a seed or a snapshot box carries
     no mark and a test's last result is not in the section. Each is one more
     query per environment, and a test's status words (`pass`, `fail`) are
     already in the verdict.
-23. **The package's schema is the config before `generate_schema_name`.**
+22. **The package's schema is the config before `generate_schema_name`.**
     The builds place the package's tables with the relation the Location
     table resolves (0113), which is the config as written. A project whose
     `generate_schema_name` rewrites the package's schema sends the query to a
     table that is not there, and the section shows Snowflake's error for the
     relation it asked. Fixing it means evaluating that macro, which this tool
     does not do (the `generate_*_name` note below).
-24. **Runs of one target by several people.** An `.env` file that sets
+23. **Runs of one target by several people.** An `.env` file that sets
     `DBT_TARGET` keeps that target's runs (0117), and every run under one
     target is one, whoever ran it: two developers building `dev` into their
     own schemas share one last attempt. Telling them apart needs the model's
     `schema` column to leave the warehouse (who built where) and the schema
     each environment really builds into, which `generate_schema_name` decides
     and this tool does not evaluate (0113).
-25. **A collin install in a folder others can write to, on Windows.** On
+24. **A collin install in a folder others can write to, on Windows.** On
     macOS and Linux a version installed under `<config>/collin/<X.Y.Z>/bin/`
     is run only when its binary and each folder up to `<config>/collin/` belong
     to the account and are writable by nobody else (0128, 1.61.1). Windows is
@@ -2760,22 +2813,22 @@ of its own, and each panel updates the tour, its page under
     read, so the same check needs a call into the Windows security API or
     `icacls` parsed, and a folder Administrators own is the user's own on many
     machines (0042, 0060, 0094).
-26. **A version resource for the MSVC `.exe` (0123).** The release's file has
+25. **A version resource for the MSVC `.exe` (0123).** The release's file has
     none, since `rc.exe` is off `PATH` outside a developer prompt (0093). The
     runner has it; the work is a resource script `build.rs` hands to it, or a
     step in the workflow, and a check that the properties read as 0093 says.
-27. **Signing the release's `.exe`.** The certificate options are in the
+26. **Signing the release's `.exe`.** The certificate options are in the
     release paragraph below: Azure Artifact Signing wants an organisation in
     Europe and its certificates last three days, SignPath's free plan an OSI
     licence, and an endpoint's certificate exclusion pins one certificate.
-28. **`collin.exe` as a release asset.** collin is still built with cargo on
+27. **`collin.exe` as a release asset.** collin is still built with cargo on
     Windows (0043); its own repository would carry the asset, and the update
     that installs it (0043, 0060) would download as 0123 does.
-29. **Downloads off Windows.** A macOS or Linux build is installed with cargo
+28. **Downloads off Windows.** A macOS or Linux build is installed with cargo
     from a clone; a release asset for them would need its own build, hash and
     command, and 0123 gives them none.
 
-30. **The Compiled and Run SQL for another environment, left out (0139).**
+29. **The Compiled and Run SQL for another environment, left out (0139).**
     - From the command line and MCP: `--describe --sql --env` would print the
       swapped SQL as the tabs show it; the tabs do it in the page, from the
       locations `/api/compiled` carries, and the command line has no copy of
@@ -2789,25 +2842,19 @@ of its own, and each panel updates the tour, its page under
       beside a manifest built for QA, names relations the page does not look
       for: they are counted as not found and the text is left as it is.
 
-31. **The tab icon's test reads past the tag (#161).** The test in `src/api.rs`
+30. **The tab icon's test reads past the tag (#161).** The test in `src/api.rs`
     that fetches every icon `index.html` names reads each `type` from the start
     of its `link` up to the next `link`, not up to the tag's closing `>`; it
     should cut each chunk at `>` first, so a `type` on a later tag is never
     taken for this one's.
-32. ~~**The terminal's colours (#164, #165).** The xterm theme in `web/app.js` is
-    still literal hex, Night's in every theme: Light shows a dark terminal until
-    it reads the theme's. The terminal should take the theme's colours once it
-    reads them by `getComputedStyle`, which wants all sixteen ANSI colours as
-    light twins (the design has five); it also keeps the old cursor colour and
-    an opaque selection.~~ Settled in 2.12.0 (0161).
-33. **Colour names the default look does not carry yet (#165).**
+31. **Colour names the default look does not carry yet (#165).**
     - About 100 names its block does not define (scrims, chips, diff, code
       text, line numbers, placeholders, toasts) keep their pre-2.0 values until
       the screen using each is redrawn; the other themes derive these names
       from their own, so they follow when Night's change.
     - Declared and not read yet: `--cur-line`, `--dots`, `--node-shadow`, `--py`
       and ~~`--ansi-*`~~ (read by the terminal since 2.12.0, 0161).
-34. **Contrast and browser controls (#164, #165).**
+32. **Contrast and browser controls (#164, #165).**
     - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
       is 3.0:1, below AA.
     - ~~The exported page sets no `color-scheme`, so its node list can show a
@@ -2815,13 +2862,13 @@ of its own, and each panel updates the tour, its page under
       theme's.
     - ~~Checkboxes and radios take the browser's dark-scheme blue, not the
       accent (no `accent-color`).~~ Settled in 2.2.0 (0150).
-35. **The environment choice (#163, 0147).**
+33. **The environment choice (#163, 0147).**
     - The env var hover card (`web/app.js`, near line 351) and the Snowflake
       column lineage (near line 7476) read `S.env` directly instead of
       `activeEnv()`, so a stale choice can show there.
     - The row of buttons is one wrapping line; a project with very many `.env`
       files makes it tall.
-36. **Markers and shapes still to draw (#166, 0148).**
+34. **Markers and shapes still to draw (#166, 0148).**
     - Editor tabs carry no kind bar: a tab knows its file, not its node.
     - ~~A column's role is still an 8px square (the column card, the legend, the
       stop at menu) until roles are drawn inside the column boxes.~~ Gone in
@@ -2832,16 +2879,16 @@ of its own, and each panel updates the tour, its page under
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
-37. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
+35. **The rest of the redesign, one pull request each.** ~~The depth in dbt's
     syntax~~ (2.9.0, 0158), ~~the Lineage space~~ (2.11.0, 0160), ~~column roles in the box~~ (2.13.0, 0162),
     ~~the settings~~ (2.14.0, 0163), ~~shortcuts~~ (2.15.0), ~~Jobs~~ (2.10.0, 0159), ~~the terminal~~ (2.12.0, 0161), Compiled,
     Git, Catalog, Reports and the design docs.
-38. **The C runtime of the Windows `.exe` (0149).** Link it statically
+36. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
     Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
     runs, so the search path 0149 sets does not cover it.
-39. **The themes' limits (0150, 2.2.0).**
+37. **The themes' limits (0150, 2.2.0).**
     - The page is Night until `/api/look` answers, so a Light user sees one
       flash on load. Serving `index.html` with the theme already set would end
       it.
@@ -2853,7 +2900,7 @@ of its own, and each panel updates the tour, its page under
     - The theme has no keyboard shortcut, ~~and the settings' one-column layout
       is the settings step's~~ (2.14.0, 0163).
 
-40. **The file icons' limits (0151, 2.3.0).**
+38. **The file icons' limits (0151, 2.3.0).**
     - The editor's tabs and Open editors draw no file icon, nor the kind's bar
       (0148): a tab knows its file, not its node.
     - A file deleted in the working tree is not in the tree, so no row shows
@@ -2864,34 +2911,34 @@ of its own, and each panel updates the tour, its page under
       the palette asks for each file's folder too.
     - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
       grey cylinder, as an ephemeral model's is a grey-blue one.
-41. **The Export menu's limits (0153, 2.4.0).**
+39. **The Export menu's limits (0153, 2.4.0).**
     - Save as image saves after the click, once the picture is drawn: it is not
       yet tried in Safari or Firefox.
     - The file name's date is taken when the menu opens, so a menu left open
       past midnight names the day before.
-42. **The Search tab's limits (0155, 2.6.0).**
+40. **The Search tab's limits (0155, 2.6.0).**
     - A line is cut at the front only once the match ends past column 24, so
       in a very narrow sidebar the match can still sit behind the row's
       ellipsis.
     - Graphite and Halloween were not looked at; the tab was drawn and
       checked in Night and Light.
-43. **The keys excerpt's limits (0156, 2.7.0).**
+41. **The keys excerpt's limits (0156, 2.7.0).**
     - A config written twice at one level (`+schema` and `schema` side by
       side) is skipped on both sides, so the upper level's line stays unstruck
       though dbt replaces it. 0156 chose that over guessing which of the two
       dbt keeps.
     - The footer for a file of an installed package is covered by tests, not
       pictured in `docs/shots`.
-44. **The manifest card's test (0157, 2.8.0).** Nothing tests the card in the
+42. **The manifest card's test (0157, 2.8.0).** Nothing tests the card in the
     page: the age rewritten in place when a poll changes the answer, the focus
     kept on the Run button. Before 0157 the badge's click had no such test
     either.
-45. **Static analysis still to add.**
+43. **Static analysis still to add.**
     - Clippy, about 80 lints on the code today, all of style, complexity or
       performance and none of correctness, to be fixed or allowed one by one
       before they run in CI.
     - Fuzzing the hand-written parsers with `cargo-fuzz`.
-46. **The depth control's limits (0158, 2.9.0).**
+44. **The depth control's limits (0158, 2.9.0).**
     - Metrics, semantic models, saved queries and functions are not loaded,
       though dbt's graph holds them as parents and children, so `dbt ls` can
       count more than a menu row says.
@@ -2907,7 +2954,12 @@ of its own, and each panel updates the tour, its page under
       back) lists that level as `+ nothing new`.
     - In a window narrower than the three folds can save, the tools row still
       breaks, now with the control in it.
-47. **The Jobs tab's limits (0159, 2.10.0).**
+    - No test drives a column chain past 20 levels with the cap not reached, and
+      `_cut` is also true when the cap is hit only at the 21st level, which the
+      page never draws.
+    - After a column request fails outside the collin wait, an open menu keeps
+      saying "Counting the levels…" until the next focus.
+45. **The Jobs tab's limits (0159, 2.10.0).**
     - A cron is worded only in its plain shapes: a range of hours, both day
       fields, a month, the 29th to the 31st, `@quarterly` and a step that does
       not divide the day or the hour keep the cron alone.
@@ -2917,7 +2969,7 @@ of its own, and each panel updates the tour, its page under
     - The Catalog's chips and the Reports lists keep the older wording (the
       cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
       changed.
-48. **The Lineage space's limits (0160, 2.11.0).**
+46. **The Lineage space's limits (0160, 2.11.0).**
     - Light has no node shadow: the design draws one near enough invisible, and
       a filter per box costs too much on a canvas of thousands. The ring round
       the box clicked is a rect, not a filter, for the same reason.
@@ -2932,7 +2984,7 @@ of its own, and each panel updates the tour, its page under
       else sets them now.
     - With By folder pressed the dock's tools row is about 50px wider, so its
       folds come about 50px sooner and it breaks a little earlier, at about
-      1100px with the folds spent (item 46's last limit).
+      1100px with the folds spent (item 44's last limit).
     - The legend keeps its alphabetical order and its bar for a kind, where the
       design lists the kinds, then the tests, and draws a kind as a square.
     - The legend and the line under the canvas overlap on a narrow canvas, with
@@ -2944,7 +2996,10 @@ of its own, and each panel updates the tour, its page under
     - The model's dashed stem is drawn in `--line-strong`, as the design asks,
       which stands about 1.5:1 on Light's canvas and 1.8:1 on Night's, where
       the dotted grey it replaced stood near 3:1.
-49. **The terminal's limits (0161, 2.12.0).**
+    - A four-digit `+N` on the outermost column reaches 42px from the box, while
+      the export frame pads 40px (`web/lineage.js:291`), so about 2px of it is
+      clipped in a file.
+47. **The terminal's limits (0161, 2.12.0).**
     - The eleven ANSI colours the design does not draw (black, magenta, white
       and the eight brights) are ours, in each of the four themes, and have not
       been judged by the designer.
@@ -2957,7 +3012,10 @@ of its own, and each panel updates the tour, its page under
     - The command the page runs for you (the manifest card's `dbt parse`) is
       sent in two writes, Enter after the echo, and left out when a key was typed
       in between.
-50. **The column box's limits (0162, 2.13.0).**
+    - `S.termPrompt` is set false before `settle` decides whether Enter is
+      pressed, so a key typed in that window leaves it false, and under bash
+      (Git Bash) the line keys of 0073 are off until the next prompt.
+48. **The column box's limits (0162, 2.13.0).**
     - A column's edge is at full opacity, not the design's 85%: at 85% `window`
       and `inferred` fall under 3:1 on the page in Night, Graphite and Halloween
       (2.75 to 2.89), and in Light `passthrough`, `rename`, `cast`, `generated`,
@@ -2989,7 +3047,11 @@ of its own, and each panel updates the tour, its page under
       weight, and takes its 14px and 222.
     - The steps and PARTIAL pills still ask for 6px more between boxes
       (`TAG_ROOM`) on every column canvas, though most boxes have neither.
-51. **The settings' limits (0163, 2.14.0).**
+    - In the Halloween skins 5px a character is not the widest: an all-capitals
+      second line comes within 0.3 to 3.3px of the role tag, and an all-capitals
+      coffin name ends 4px inside it. The clip wants measuring with
+      `getComputedTextLength` rather than counting.
+49. **The settings' limits (0163, 2.14.0).**
     - On the Column lineage cards the arrows move the focus and pick nothing
       (a pick regenerates collin's cache or starts Snowflake's script), and
       Enter or Space picks. A greyed card and the one that only types collin's
@@ -3009,7 +3071,7 @@ of its own, and each panel updates the tour, its page under
       lineage choice, a profile and target picker, Snowflake's account line,
       the GitHub "Open" button (the GitHub button's preview, step 21), a `.env`
       value on a line, and a Change button for the Python.
-52. **The shortcut sheet's limits (2.15.0).**
+50. **The shortcut sheet's limits (2.15.0).**
     - The list is drawn whole and again on every key typed, not virtualised;
       the ten groups are cheap, but a much longer list would want it.
     - The find box searches the rows, the keys and the group titles, not the
@@ -3019,6 +3081,11 @@ of its own, and each panel updates the tour, its page under
     - On Windows and Linux the list is two columns wide, not the board's
       three: the keys are written out there (`Ctrl+Backspace`), and three
       columns left the words a few characters a line.
+51. **Two flaky Rust tests (`src/mcp.rs`).**
+    `mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
+    and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
+    answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
+    so they fail now and then. Freezing the clock in them would end it.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
@@ -3106,7 +3173,7 @@ written in its pull request or left by its review, unranked:
 - **The selection cap (0087):**
   - each pause in typing redraws up to 3 000 boxes, even when the answer did
     not change;
-  - past 3 000 boxes zoom and pan slow down (Deferred, item 18);
+  - past 3 000 boxes zoom and pan slow down (Deferred, item 17);
   - Copy names lists the first 5 000 names, where Draw all goes to 20 000;
   - a tall canvas, fitted, is a thin column at the smallest zoom, as it was
     before;
@@ -3743,7 +3810,7 @@ each a known limit, unranked:
   pixels. Deferred item 10 stays.
 - **The spaces plan after its first change (#147, 0140):** the Lineage space is
   to take every mode, and column lineage still opens in the dock's Lineage tab
-  (Deferred item 16); Jobs and the project list as spaces of their own are to
+  (Deferred item 15); Jobs and the project list as spaces of their own are to
   be discussed.
 - **The column wait (#151):** `paintCollin` ends the wait only on `failed`, so
   an `idle` state after a restart in the middle of a run leaves the drawing up;
