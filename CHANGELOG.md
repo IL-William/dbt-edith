@@ -13,6 +13,28 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.18.0 - 2026-11-09
+
+- Say when and where on one line on the Compiled and Run tabs: a check or a
+  triangle, `Compiled 2 min ago` or `Last run 2 min ago`, the file's path as a
+  link, and the button that types the command again; the date and time are on
+  the age's hover, and the line turns amber, with `changed since: ...`, when
+  something it was built from moved (0164).
+- Pick the environment from a radio group beside it, `Relations for DEV |
+  PROD | QA | manifest`, each name in its colour with the picked one tinted, and
+  the arrow keys, Home and End moving through it (0164).
+- Replace the line under the buttons with one note led by the environment's tag,
+  `3 relations swapped, read from .env.prod; 1 kept as compiled`, with the fold
+  of where the SQL may differ under its sentence (0164).
+- Mark a swapped relation in the SQL in its environment's colour, and give the
+  `ref()` or `source()` it stands for, then the relation it replaced, on hover
+  (0164).
+- Describe the open tab at the right of the dock's row, as its tooltip does
+  (0164).
+- Darken Light's CI, STG, UAT and other environment colours a notch, in the
+  status bar's pill, the Catalog's tags and everywhere else they appear, so a
+  name holds 3:1 on the wash it sits on (0164).
+
 ## 2.17.0 - 2026-11-09
 
 - Draw the Reports with a rail of 224px whose counts are pills, a head of the

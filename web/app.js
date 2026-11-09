@@ -9494,25 +9494,38 @@ function paintArtifact(kind, keepScroll) {
     return false;
   }
 
-  const bar = document.createElement('div');
-  bar.className = 'fresh-bar' + (said.tone === 'stale' ? ' stale' : '');
-  bar.append(Object.assign(document.createElement('b'), { textContent: said.when }));
-  bar.append(Object.assign(document.createElement('span'), { className: 'why', textContent: said.why }));
-  bar.append(Object.assign(document.createElement('div'), { className: 'grow' }));
-  const redo = document.createElement('button');
-  redo.className = 'btn sm';
-  redo.textContent = said.button;
-  redo.title = 'Puts ' + said.command + ' in the integrated terminal without running it';
-  redo.addEventListener('click', () => sendToTerminal(said.command, false, null, from));
-  bar.append(redo, artifactPath(said));
-  head.append(bar);
-
   const content = artifactContent(info);
   const env = activeEnv();
   const shown = envSql(content, info.relations || [], env, (S.meta && S.meta.sandbox) || '');
-  // Also with none picked: the row is how a person who has not found the status
+  const tone = env ? envTone(envDisplayName(env)) : 'manifest';
+  // Also with none picked: the group is how a person who has not found the status
   // bar's pill learns the tab can switch (0147).
-  if (envRowShown()) head.append(artifactEnvBar(shown, info.env_reads, env));
+  const pick = envRowShown();
+
+  // One line for when and where, the environment beside it, the button last (0164).
+  const line = document.createElement('div');
+  line.className = 'chead' + (info.stale ? ' stale' : '');
+  const stat = document.createElement('span');
+  stat.className = 'cstat';
+  stat.dataset.tone = said.tone;
+  stat.title = said.date;
+  stat.append(Object.assign(document.createElement('span'), { className: 'dot' }), said.stat);
+  line.append(stat);
+  if (said.changed) {
+    const why = Object.assign(document.createElement('span'), { className: 'cchanged', textContent: said.changed });
+    why.dataset.tone = said.tone;
+    line.append(why);
+  }
+  line.append(artifactPath(said), Object.assign(document.createElement('div'), { className: 'grow' }));
+  if (pick) line.append(artifactEnvPick(kind));
+  const redo = document.createElement('button');
+  redo.className = 'btn sm ghost artifact-redo';
+  redo.textContent = said.button;
+  redo.title = 'Puts ' + said.command + ' in the integrated terminal without running it';
+  redo.addEventListener('click', () => sendToTerminal(said.command, false, null, from));
+  line.append(redo);
+  head.append(line);
+  if (pick) head.append(artifactEnvNote(shown, info.env_reads, env, tone));
   // What the row was last drawn from, so a reload of the list repaints only for
   // a change this row has not seen, and keeps the focus a click just restored.
   S.artifactRow = envRowKey();
@@ -9528,58 +9541,86 @@ function paintArtifact(kind, keepScroll) {
     body.appendChild(S.artifactCm[kind].getWrapperElement());
   }
   const cm = S.artifactCm[kind];
+  // The environment's colour for the marks below, which read --env from here.
+  cm.getWrapperElement().dataset.tone = tone;
   cm.setValue(shown.text);
   if (scrolled) cm.scrollTo(scrolled.left, scrolled.top);
   const doc = cm.getDoc();
   shown.swaps.forEach((w) => doc.markText(doc.posFromIndex(w.start), doc.posFromIndex(w.end), {
-    className: 'cm-env-swap', title: `was ${w.was} in the compiled file` }));
+    className: 'cm-env-swap', title: swapTitle(w, envDisplayName(env)) }));
   shown.kept.forEach((k) => doc.markText(doc.posFromIndex(k.start), doc.posFromIndex(k.end), {
     className: 'cm-env-kept', title: `${k.name} stays as dbt compiled it: ${k.reason}` }));
   setTimeout(() => cm.refresh(), 0);
   return true;
 }
 
-/* The environments, one button each, and under them the line naming the one the
-   SQL is shown for and the places it may differ beyond its relations. A button
-   sets the one shared choice, so the status bar, the Catalog and the Builds marks
-   follow (0147). A macro's finding opens the macro at that line, as Cmd+K opens
-   one. */
-function artifactEnvBar(shown, envReads, env) {
-  const box = document.createElement('div');
-  box.className = 'env-bar';
-  box.dataset.tone = env ? envTone(envDisplayName(env)) : 'manifest';
-  const chips = document.createElement('div');
-  chips.className = 'env-chips';
-  envChoices().forEach((c) => {
+/* "Relations for" and the environments as a radio group: each name in its
+   colour, a tag and never a dot, the picked one tinted, in the order the menu
+   lists them, the manifest's own last (0147). A pick sets the one shared
+   choice, so the status bar, the Catalog and the Builds marks follow. The
+   picked button is the group's one tab stop, and the arrow keys move and pick
+   as in any radio group; selectEnv gives the focus back after the repaint. */
+function artifactEnvPick(kind) {
+  const box = Object.assign(document.createElement('span'), { className: 'cenv' });
+  // One label per tab: both tabs can be in the page at once, so the id carries the kind.
+  const label = Object.assign(document.createElement('span'), { id: kind + '-env-label', textContent: 'Relations for' });
+  box.append(label);
+  const group = document.createElement('span');
+  group.className = 'envseg';
+  group.setAttribute('role', 'radiogroup');
+  group.setAttribute('aria-labelledby', label.id);
+  const choices = envChoices();
+  // With no choice current the first radio is the group's tab stop, as in the settings' picker.
+  const stop = choices.some((c) => c.current) ? -1 : 0;
+  choices.forEach((c, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'envchip' + (c.current ? ' on' : '');
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(c.current));
+    b.tabIndex = c.current || i === stop ? 0 : -1;
     b.dataset.tone = c.tone;
-    b.setAttribute('aria-pressed', String(c.current));
     b.title = c.file ? (c.title || c.sub) : `${c.sub}: ${c.title}`;
     b.textContent = c.label;
     b.addEventListener('click', () => { if (!c.current) selectEnv(c.file); });
-    chips.append(b);
+    group.append(b);
   });
-  box.append(chips);
+  group.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const at = Math.max(0, choices.findIndex((c) => c.current));
+    const to = radioStep(at, choices.length, e.key);
+    if (to < 0) return;
+    e.preventDefault();
+    if (to !== at) selectEnv(choices[to].file);
+  });
+  box.append(group);
+  return box;
+}
+
+/* The one note under the line: what the swap changed and what it could not,
+   led by the environment's tag, then the fold of where the SQL may differ beyond
+   its relations, one line per finding, open when drawn (0164). A macro's finding
+   opens the macro at that line, as Cmd+K opens one. */
+function artifactEnvNote(shown, envReads, env, tone) {
+  const box = document.createElement('div');
+  box.className = 'cnote';
+  box.dataset.tone = tone;
   const words = env
     ? artifactEnvWords(shown, envDisplayName(env), env, envReads)
-    : { head: artifactOwnWords((S.meta && S.meta.sandbox) || ''), findings: [] };
-  const line = document.createElement('div');
-  line.className = 'env-line';
-  // No tag here: the picked button above carries the environment's colour and
-  // the words name it, so a tag would say it a second time.
-  line.append(words.head);
-  box.append(line);
+    : artifactOwnWords((S.meta && S.meta.sandbox) || '');
+  const text = document.createElement('div');
+  if (words.tag) {
+    text.append(envTag(words.tag, tone), ' ');
+  }
+  text.append(Object.assign(document.createElement('b'), { textContent: words.head }), words.rest);
+  box.append(text);
   if (words.findings.length) {
-    // Folded by a click, open to start with: the list is what the person came
-    // to this line for, and the SQL under it is long.
+    // Open to start with: the list is what the person came to this note for,
+    // and the SQL under it is long.
     const fold = document.createElement('details');
-    fold.className = 'env-differ';
+    fold.className = 'cdiffer';
     fold.open = true;
     fold.append(Object.assign(document.createElement('summary'), { textContent: words.differ }));
     const ul = document.createElement('ul');
-    ul.className = 'env-reads';
     words.findings.forEach((f) => {
       const li = document.createElement('li');
       if (f.macro) {
@@ -9632,14 +9673,16 @@ function cardAge(secs) {
   return secs < 10 ? 'a moment ago' : humanAge(secs).replace(/^(\d+)(s|min|d)$/, '$1 $2') + ' ago';
 }
 
-/* Every word the Compiled or Run tab puts on screen for one file. The bar
+/* Every word the Compiled or Run tab puts on screen for one file. The line
    answers, of a single file, the question the manifest badge answers of the
    whole project: is what you are reading still what the source says?
 
-   It leads with the date rather than the age, because that is the number you
-   can compare with something. "3h ago" does not say whether this predates the
-   nightly build, the pull you did at nine, or the edit still open in the
-   editor; "22/09/2026 08:14" does, and the age rides beside it for the glance.
+   It leads with the age, as the manifest card says one ("Compiled 2 min ago"),
+   and keeps the date for the hover. The date is what you can compare with:
+   "3h ago" does not say whether this predates the nightly build, the pull you
+   did at nine, or the edit still open in the editor, whereas "22/09/2026
+   08:14" does. It is one hover away rather than in the line, which the
+   environment's picker shares (0164).
 
    Amber means something it was built from has moved since: the model, its
    schema file, dbt_project.yml, a macro, or for a run, a compile that happened
@@ -9649,17 +9692,17 @@ function artifactBar(info, name, isTest) {
   const kind = info && info.kind === 'run' ? 'run' : 'compiled';
   const w = {
     compiled: {
-      verb: 'compiled', dir: 'target/compiled/', what: 'compiled SQL',
+      verb: 'Compiled', dir: 'target/compiled/', what: 'compiled SQL',
       cmd: 'dbt compile', fresh: 'Compile again', stale: 'Recompile',
     },
     // A test's run file is written by `dbt test` and never by `dbt run`, which
     // would select nothing and leave the tab saying the same thing afterwards.
     // Compiling is the same command for both.
     run: isTest ? {
-      verb: 'last run', dir: 'target/run/', what: 'run SQL',
+      verb: 'Last run', dir: 'target/run/', what: 'run SQL',
       cmd: 'dbt test', fresh: 'Test again', stale: 'Test again',
     } : {
-      verb: 'last run', dir: 'target/run/', what: 'run SQL',
+      verb: 'Last run', dir: 'target/run/', what: 'run SQL',
       cmd: 'dbt run', fresh: 'Run again', stale: 'Run again',
     },
   }[kind];
@@ -9671,11 +9714,10 @@ function artifactBar(info, name, isTest) {
       candidates: (info && info.candidates) || [] };
   }
 
-  const age = humanAge(info.age_secs || 0) + ' ago';
   // "changed since" once, then the list. Said per entry it ran to five copies
   // of "changed after this was run" and stopped being readable at a glance,
   // which is the only thing this line is for.
-  const why = [age];
+  const why = [];
   if ((info.changed || []).length) why.push('changed since: ' + info.changed.join(', '));
   (info.reasons || []).forEach((r) => why.push(r));
   // The absolute path is the tooltip either way: it is what you paste into a
@@ -9683,10 +9725,11 @@ function artifactBar(info, name, isTest) {
   return {
     kind, found: true, command,
     tone: info.stale ? 'stale' : 'ok',
-    when: w.verb + ' ' + new Date((info.compiled_at || 0) * 1000).toLocaleString(),
-    // The age leads this line and what moved follows it, because the age is
-    // the part that is always true and the part a glance is looking for.
-    why: why.join(' \u00b7 ') + (info.stale ? ' (may be out of date)' : ''),
+    stat: w.verb + ' ' + cardAge(info.age_secs || 0),
+    date: w.verb + ' ' + new Date((info.compiled_at || 0) * 1000).toLocaleString(),
+    // What moved follows the age and is amber with it; a stale file that names
+    // nothing still says what it costs.
+    changed: why.join(' \u00b7 ') + (info.stale ? (why.length ? ' ' : '') + '(may be out of date)' : ''),
     button: info.stale ? w.stale : w.fresh,
     link: !!info.rel,
     path: info.rel || info.path,
@@ -14598,11 +14641,11 @@ function repaintArtifacts() {
 }
 
 function selectEnv(file) {
-  // A click on a chip of the Compiled or Run pane rebuilds the row it was made
-  // in, so the keyboard would lose its place without this (0147).
-  const held = document.activeElement && document.activeElement.closest
-    ? document.activeElement.closest('#compiled-head, #run-head') : null;
-  const heldIn = held && document.activeElement.classList.contains('envchip') ? held.id : '';
+  // A click or an arrow on the group of the Compiled or Run pane rebuilds the
+  // row it was made in, so the keyboard would lose its place without this (0147, 0164).
+  const group = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.envseg') : null;
+  const held = group ? group.closest('#compiled-head, #run-head') : null;
+  const heldIn = held ? held.id : '';
   S.env = file;
   paintEnvSelect();
   if (S.node) renderCatalog(S.node);
@@ -14611,7 +14654,7 @@ function selectEnv(file) {
   // So does the SQL of the visible Compiled or Run tab, from the answer it holds
   // (0139), and the buttons on it (0147).
   repaintArtifacts();
-  const back = heldIn && $('#' + heldIn + ' .envchip.on');
+  const back = heldIn && $('#' + heldIn + ' .envseg [aria-checked=true]');
   if (back) back.focus();
   // Remembered as the starting point for the next tab; failure is harmless.
   api.send('/api/envs/select', 'POST', { file: file || null }).catch(() => {});
@@ -15207,12 +15250,34 @@ function artifactContent(info) {
   return (info.content + (info.truncated ? '\n\n-- truncated by dbt-edith\n' : '')).replace(/\r\n?/g, '\n');
 }
 
+/* The call a relation was written as in the model, from its node id and name:
+   `ref('stg_customers')`, `ref('orders', v=2)` for a versioned model (its name
+   carries `.v2`), `source('jaffle_shop', 'raw_orders')` for a source table.
+   A source whose own name holds a dot cannot be split back, and is named by the
+   node's name alone. */
+function relationRef(rel) {
+  const parts = String(rel.id || '').split('.');
+  if (parts[0] === 'source') {
+    return parts.length === 4 ? `source('${parts[2]}', '${parts[3]}')` : `source('${rel.name}')`;
+  }
+  const m = /^([^.]+)\.v(.+)$/.exec(rel.name);
+  if (!m) return `ref('${rel.name}')`;
+  return /^\d+(\.\d+)?$/.test(m[2]) ? `ref('${m[1]}', v=${m[2]})` : `ref('${m[1]}', v='${m[2]}')`;
+}
+
+/* The hover on a swapped relation: the call it stands for and the environment,
+   then what the file dbt wrote had there. */
+function swapTitle(swap, envName) {
+  return `${swap.ref}, for ${envName}\nwas ${swap.was} as compiled`;
+}
+
 /* `content` with each relation in `relations` replaced by the one `env`
    resolves for it. Every occurrence is found first, on identifier boundaries
    and longest first at one position, and the output is built in one pass, so a
    swapped name is never read again: QA to UAT cannot chain. The node's own
    relation is also looked for with the suffixes a run's statement gives it.
-   Positions in `swaps` and `kept` are in the returned text. `unseen` names the
+   Positions in `swaps` and `kept` are in the returned text, and each carries the
+   name of the node whose relation it is, for the hover. `unseen` names the
    parents the SQL never mentions, a node's own relation never being one. */
 function envSql(content, relations, env, sandbox = '') {
   const out = { text: content, swaps: [], kept: [], unseen: [], counts: { swapped: 0, kept: 0, same: 0 } };
@@ -15228,7 +15293,7 @@ function envSql(content, relations, env, sandbox = '') {
         from: relationWithSuffix(rel.relation, suffix), to: to.text ? relationWithSuffix(to.text, suffix) : '',
       }));
     }
-    forms.forEach((f) => cands.push({ id, name: rel.name, from: f.from, to: f.to, reason: to.reason }));
+    forms.forEach((f) => cands.push({ id, name: rel.name, ref: relationRef(rel), from: f.from, to: f.to, reason: to.reason }));
   });
   const hits = [];
   cands.forEach((c) => {
@@ -15261,7 +15326,7 @@ function envSql(content, relations, env, sandbox = '') {
       text += was;
     } else {
       swapped.add(h.c.id);
-      out.swaps.push({ start: text.length, end: text.length + h.c.to.length, was });
+      out.swaps.push({ start: text.length, end: text.length + h.c.to.length, was, name: h.c.name, ref: h.c.ref });
       text += h.c.to;
     }
   });
@@ -15283,18 +15348,23 @@ function envReadWords(f) {
   }
 }
 
-/* The words under the bar for one environment: what was swapped, and where the
-   SQL may differ beyond its relations. A finding in a macro carries what a
-   click needs to open it. */
+/* The note under the line for one environment: its tag, what was swapped in
+   bold, the rest of what is known as one sentence, and where the SQL may
+   differ beyond its relations. The tag and the bold part are separate so the
+   page can set each; nothing says "to <database>", because a swap can move
+   relations to several, and the counts and the file are what is known for sure
+   (0164). A finding in a macro carries what a click needs to open it. */
 function artifactEnvWords(result, envName, file, envReads) {
   const c = result.counts;
-  const parts = [];
-  if (c.swapped) parts.push(`${c.swapped} ${c.swapped === 1 ? 'relation' : 'relations'} swapped`);
-  if (c.kept) parts.push(`${c.kept} kept as compiled`);
-  if (!c.swapped && !c.kept) {
-    parts.push(c.same ? 'every relation reads the same as compiled' : 'no relation in this SQL to swap');
-  }
-  if (result.unseen.length) parts.push(`${result.unseen.length} not found in this SQL`);
+  // With something swapped or kept the file follows the bold part as its source;
+  // with nothing to swap the bold part is a whole sentence, and the file closes it.
+  const rest = [c.swapped || c.kept ? `, read from ${file}` : ` (read from ${file})`];
+  if (c.kept) rest.push(`; ${c.kept} kept as compiled`);
+  if (result.unseen.length) rest.push(`; ${result.unseen.length} not found in this SQL`);
+  let head;
+  if (c.swapped) head = `${c.swapped} ${c.swapped === 1 ? 'relation' : 'relations'} swapped`;
+  else if (c.kept) head = 'No relation swapped';
+  else head = c.same ? 'Every relation reads the same as compiled' : 'No relation in this SQL to swap';
   const findings = (envReads || []).map((f) => ({
     text: f.through
       ? `${f.macro_name}, ${envReadWords(f)}, through ${f.through}`
@@ -15302,19 +15372,31 @@ function artifactEnvWords(result, envName, file, envReads) {
     macro: f.macro_id && f.file ? { file: f.file, name: f.macro_name, line: f.line || 1 } : null,
   }));
   return {
-    head: `Shown for ${envName} (${file}): ${parts.join(', ')}`,
+    tag: envName,
+    head,
+    rest: rest.join('') + '.',
     differ: findings.length ? `May differ beyond its relations (${findings.length})` : '',
     findings,
   };
 }
 
-/* The line under the buttons when no .env file is picked: nothing is swapped,
-   so it says whose placement the SQL carries. On a sandbox manifest that is the
-   developer's own compile, named as the menu names it (0143). */
+/* The note when no .env file is picked: nothing is swapped, so it says whose
+   placement the SQL carries. On a sandbox manifest that is the developer's own
+   compile, named as the menu names it (0143). */
 function artifactOwnWords(sandbox) {
   return sandbox
-    ? `Shown as dbt wrote it, into ${sandbox}`
-    : 'Shown as dbt compiled it for the manifest\'s target';
+    ? { tag: '', head: 'As your own compile wrote it,', rest: ` into ${sandbox}, nothing swapped.`, differ: '', findings: [] }
+    : { tag: '', head: 'As dbt compiled it.', rest: ' The relations are the manifest\'s own, nothing swapped.', differ: '', findings: [] };
+}
+
+/* Where a key moves the picked one in a radio group of `count` from `at`: the
+   arrows step and wrap, Home and End go to the ends; -1 for any other key. */
+function radioStep(at, count, key) {
+  if (key === 'ArrowRight' || key === 'ArrowDown') return (at + 1) % count;
+  if (key === 'ArrowLeft' || key === 'ArrowUp') return (at + count - 1) % count;
+  if (key === 'Home') return 0;
+  if (key === 'End') return count - 1;
+  return -1;
 }
 
 /* True when switching environment can change something on screen. */
@@ -15326,12 +15408,12 @@ function envsInUse() { return !!(S.envs && S.envs.referenced.length); }
    all fall back to the manifest's own. */
 function activeEnv() { return envsInUse() ? S.env : ''; }
 
-/* The row of buttons on the Compiled and Run tabs is drawn when there is a file
+/* The radio group on the Compiled and Run tabs is drawn when there is a file
    to pick: a project that reads env_var with a default and has no .env file, or
    hides them all, has nothing to offer (0147). */
 function envRowShown() { return envsInUse() && S.envs.files.some((f) => !f.hidden); }
 
-/* What the row of buttons and the swap are drawn from, to tell a reload that
+/* What the radio group and the swap are drawn from, to tell a reload that
    changed them from one that did not. */
 function envRowKey() {
   return JSON.stringify([!!S.envs, envsInUse(), envRowShown(), activeEnv(),
@@ -19165,6 +19247,17 @@ function showSide(which) {
   if (which === 'search') $('#grep-input').focus();
 }
 
+/* What the Compiled and Run tabs are, in the dock's row at the right while one
+   is open: the tab button's own tooltip, read once into data-about by
+   wireTabs, so the two cannot drift (0164). */
+function paintArtifactTools(which) {
+  const tab = $('#dock > .tabs .tab[data-dock="' + which + '"]');
+  const text = (tab && tab.dataset.about) || '';
+  const about = $('#artifact-about');
+  about.textContent = text;
+  about.title = text;
+}
+
 /* `look` is off for a tab brought forward by a click in a report that has
    just looked at the job files itself (0063), and for the tour's Jobs step
    and its putting back of the dock, which ask for none (0075). The reports
@@ -19196,6 +19289,8 @@ function showDock(which, { look = true, id = '' } = {}) {
   $('#lineage-tools').classList.toggle('hidden', which !== 'lineage');
   $('#jobs-tools').classList.toggle('hidden', which !== 'jobs');
   $('#term-tools').classList.toggle('hidden', which !== 'terminal');
+  $('#artifact-tools').classList.toggle('hidden', which !== 'compiled' && which !== 'run');
+  if (which === 'compiled' || which === 'run') paintArtifactTools(which);
   placeWitch(true);
   if (which === 'terminal') { initTerm(); paintTermTools(); setTimeout(() => { try { S.fit.fit(); } catch {} S.term.focus(); }, 30); }
   if (which === 'lineage') setTimeout(() => Lineage.fit(), 30);
@@ -19215,10 +19310,11 @@ function showDock(which, { look = true, id = '' } = {}) {
    that matters least to what is drawn. It is measured, never set at a width,
    because the room moves with the sidebar, Query history and the column chip.
    It is measured with the lineage's tools shown and any other tab's hidden
-   (the Jobs tab's two buttons and the terminal's chip and two buttons are far
-   fewer, and a fold they caused would move the tabs when it opens), and the
-   open tab folds with the others, so that a click on a tab never moves the
-   tabs under the pointer: wireTabs()
+   (the Jobs tab's two buttons, the terminal's chip and two buttons and the
+   Compiled tab's one line of text are far fewer or give way with an ellipsis,
+   and a fold they caused would move the tabs when it opens), and the open tab
+   folds with the others, so that a click on a tab never moves the tabs under
+   the pointer: wireTabs()
    calls it when the row or the tools change, and never on a tab change. The
    tools' own class is the one change of theirs it does not hear, which is why
    the other folds are set there. Only the tools are asked whether they broke,
@@ -19229,7 +19325,7 @@ function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
   const away = tools.classList.contains('hidden');
-  const others = [$('#jobs-tools'), $('#term-tools')];
+  const others = [$('#jobs-tools'), $('#term-tools'), $('#artifact-tools')];
   const othersAway = others.map((e) => e.classList.contains('hidden'));
   const was = row.classList.contains('folded');
   row.classList.remove('folded');

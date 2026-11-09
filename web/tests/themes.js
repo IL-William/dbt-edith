@@ -99,6 +99,43 @@ check('each is at least 4.5:1 on Light\'s page', syn.filter(function (n) { retur
 check('its text is readable on its page and on its cards', ['--fg', '--fg-2', '--fg-dim', '--fg-mute'].map(function (n) {
   return ratio(light.decl[n], light.decl['--bg']) >= 4.5 && ratio(light.decl[n], light.decl['--bg-3']) >= 4.5;
 }), [true, true, true, true]);
+// The Compiled tab names an environment in its colour (0164): the picker's names, the note's tag and the marks in the SQL.
+var ENV_NAMES = ['--env-dev', '--env-qa', '--env-prod', '--env-ci', '--env-stg', '--env-uat', '--env-other'];
+check('Light declares every environment colour the picker can name, each at least 3:1 on its sidebar',
+  ENV_NAMES.filter(function (n) { return !(n in light.decl) || ratio(light.decl[n], light.decl['--bg-2']) < 3; }), []);
+// A name sits on its own wash, not on the bare sidebar: the picked radio's 16%, the note's tag on the note's 8% and its own 14% (0164).
+(function () {
+  function mixOver(c, base, p) { return [0, 1, 2].map(function (i) { return c[i] * p + base[i] * (1 - p); }); }
+  function hex(c) { return '#' + c.map(function (v) { return ('0' + Math.round(v).toString(16)).slice(-2); }).join(''); }
+  var base = channels2(light.decl['--bg-2']), bad = [];
+  ENV_NAMES.forEach(function (n) {
+    var c = channels2(light.decl[n]);
+    var radio = hex(mixOver(c, base, .16)), note = mixOver(c, base, .08), tag = hex(mixOver(c, note, .14));
+    [['the picked radio', radio], ['the note\'s tag', tag]].forEach(function (p) {
+      if (ratio(light.decl[n], p[1]) < 3) bad.push(n + ' on ' + p[0] + ' ' + ratio(light.decl[n], p[1]).toFixed(2));
+    });
+  });
+  check('and on the washes they sit on, the picked radio and the note\'s tag', bad, []);
+}());
+// The dotted underline of a swapped relation is the environment's full colour on the editor's page (--bg), over the 10% wash the same mark carries (0164).
+(function () {
+  function mixOver(c, base, p) { return [0, 1, 2].map(function (i) { return c[i] * p + base[i] * (1 - p); }); }
+  function hex(c) { return '#' + c.map(function (v) { return ('0' + Math.round(v).toString(16)).slice(-2); }).join(''); }
+  var bad = [];
+  [['Night', night], ['Graphite', graphite], ['Light', light], ['Halloween', halloween]].forEach(function (t) {
+    var pick = function (n) { return n in t[1].decl ? t[1].decl[n] : night.decl[n]; };
+    ENV_NAMES.forEach(function (n) {
+      var under = hex(mixOver(channels2(pick(n)), channels2(pick('--bg')), .10));
+      if (ratio(pick(n), under) < 3) bad.push(t[0] + ' ' + n + ' ' + ratio(pick(n), under).toFixed(2));
+    });
+  });
+  check('the underline of a swapped relation holds 3:1 over the editor\'s page and its wash, in every theme', bad, []);
+  ok('and the rule draws it in the full colour, not a mix', /\.cm-env-swap \{[^}]*border-bottom: 1px dotted var\(--env\);/.test(css));
+}());
+check('--env-manifest-on and its line are gone with the chip that read them',
+  [night, derived, graphite, light, halloween].map(function (b) { return '--env-manifest-on' in b.decl || '--env-manifest-on-line' in b.decl; }).concat([/--env-manifest-on/.test(css)]), [false, false, false, false, false, false]);
+check('the swap colour the marks used to have is gone from every block and every rule',
+  [night, derived, graphite, light, halloween].map(function (b) { return '--env-swap' in b.decl; }).concat([/--env-swap/.test(css)]), [false, false, false, false, false, false]);
 // The two colours a file's icon takes beyond the kinds' (0151): dbt's YAML and Python's yellow.
 check('every theme declares --dbt-yaml and --py, Light with its own twins',
   [night, graphite, light, halloween].map(function (b) { return ['--dbt-yaml', '--py'].filter(function (n) { return !(n in b.decl); }); }), [[], [], [], []]);

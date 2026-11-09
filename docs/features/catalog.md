@@ -152,8 +152,8 @@ DEV, QA or UAT without running dbt. Built stays tied to the manifest's own
 target. The file is picked in the pill's menu, the same menu in the header of
 the resolved column, or in the Project section of the settings, which the
 menu's Manage environments... opens, where *In the status bar* is a row of
-buttons, one per file in the colour of its name and the manifest outlined, or from the row of buttons at the top of
-the Compiled and Run tabs, which sets the same choice, so the status bar and the
+buttons, one per file in the colour of its name and the manifest outlined, or from the Relations for group on
+the Compiled and Run tabs' line, which sets the same choice, so the status bar and the
 Catalog follow it. With no file picked the choice is
 `manifest`; on a manifest built into a developer sandbox it is named `my
 compile`, with the sandbox beside it, since it is the developer's own compile.
@@ -210,25 +210,37 @@ to check a macro or a `ref()` expanded the way you meant. **Run** is
 warehouse, `create or replace transient table ...` and all, which is what you
 read when the table is there but looks wrong.
 
-Each names the date its file was written, with the age beside it:
+The dock's row says which of the two is open, at the right, in one dim line:
+`The model's SQL with the Jinja gone, from target/compiled/`, or `The statement
+dbt executed to materialise it, from target/run/`. It is the tab's own tooltip, so
+the two read the same.
+
+Under the row, one line says when and where. A pictogram (a check, or a
+triangle once something moved), how old the file is as the manifest's card says
+it, and the file's path:
 
 ```
-last run 29/07/2026 16:48:06   54d ago, the model file changed after this was run
-target/run/shop/models/marts/.../fct_orders.sql
+✓ Last run 54 d ago   target/run/shop/models/marts/.../fct_orders.sql     Relations for [DEV|QA|PROD|manifest]  [Run again]
 ```
 
-That path is a link. Clicking it opens the file tree at the file, so the folder
-dbt wrote, the files beside it and the file itself are one click away.
+The date and time the file was written are one hover away, on the age; the age
+is what a glance wants. The path is a link. Clicking it opens the file tree at
+the file, so the folder dbt wrote, the files beside it and the file itself are
+one click away. When the dock is too narrow for the line it wraps; the
+environments' group stays whole. The last button types the command that
+regenerates the file (`Compile again`, `Recompile`, `Run again`, or `Test again`
+for a test) and leaves Enter to you.
 
-The bar turns amber when something the file was built from has moved since it
-was written, and names what: the model, its schema file, `dbt_project.yml`, or a
-macro. The Run tab asks one more question only it can ask, since dbt writes
-`compiled/` on every compile and `run/` only on a run: has this model been
-compiled again since it was last executed?
+The pictogram is a triangle, the line turns amber (a wash and a rule at its left)
+and adds `changed since: ...`, when something the file was built from has moved since it was written: the
+model, its schema file, `dbt_project.yml`, or a macro. The Run tab asks one more
+question only it can ask, since dbt writes `compiled/` on every compile and
+`run/` only on a run: has this model been compiled again since it was last
+executed?
 
 Age alone never colours anything. A file nothing has touched since is still
 exactly what dbt would write, whether that was an hour ago or last month, and a
-clock threshold only ever teaches you to ignore the colour. The date is there to
+clock threshold only ever teaches you to ignore the colour. The age is there to
 be read, not to expire.
 
 Any macro counts, not just the ones your model calls. The manifest lists the
@@ -249,20 +261,23 @@ would read under that `.env` file, to paste into Snowsight without compiling
 again. Each relation the SQL holds, the model's parents and, through an
 ephemeral one, that one's parents, is replaced by the relation the Catalog's
 Location table resolves for the file, and a Run statement's own table, with its
-`__dbt_tmp` and `__dbt_backup` names, likewise. A swapped relation is tinted,
-and its tooltip gives the name it had in the file dbt wrote. With none picked,
-the tabs show the file as dbt wrote it (on a sandbox manifest, that choice is
-named `my compile`, with the sandbox).
+`__dbt_tmp` and `__dbt_backup` names, likewise. With none picked, the tabs show
+the file as dbt wrote it (on a sandbox manifest, that choice is named `my
+compile`, with the sandbox).
 
-A row of buttons at the top of both tabs offers every environment, and the
-manifest's own choice last, with or without one picked; a click sets the
-choice the status bar's pill shows and the Catalog follows. With none picked, a
-line under it says whose placement the SQL carries, such as `Shown as dbt
-compiled it for the manifest's target`.
+**Relations for** is a group of radio buttons at the right of the line, one
+for every environment in the order the menu lists them, then the manifest's own,
+as the menu does. Each name is in its environment's colour, as everywhere else,
+and the picked one is tinted and ringed in it; there is no dot. It is offered with or without one
+picked, and only when the project has a `.env` file to pick; with none, the line
+ends at the path and the button. A pick sets the choice the status bar's pill shows and the Catalog
+follows. The keyboard moves in it as in any radio group: Tab reaches the picked
+one, the arrows move and pick, and Home and End go to the ends.
 
-The picked button is filled in its environment's colour. A line under the
-buttons names the environment, as plain words, and counts what it did: `Shown for
-QA (.env.qa): 12 relations swapped, 1 kept as compiled`. A relation the file
+One note under the line says what the swap did. It leads with the environment's
+tag, in its environment's colour, then in bold how many relations were
+swapped, then where they were read from: PROD **3 relations swapped**, read from
+`.env.prod`; 1 kept as compiled; 2 not found in this SQL. A relation the file
 cannot place stays as dbt compiled it, in amber, and its tooltip says why: a
 variable the file does not define, a placeholder, a database or schema left to
 the profile, or a model dbt built elsewhere than its config says, which means a
@@ -270,15 +285,26 @@ the profile, or a model dbt built elsewhere than its config says, which means a
 into a developer sandbox, where every model sits away from its config, that
 last case does not apply to a model built into the sandbox: it is written where
 the file places it, and only a model built outside the sandbox, or whose alias
-moved, is kept.
+moved, is kept. With nothing swapped the bold part says so (`Every relation
+reads the same as compiled`, `No relation in this SQL to swap`); with none
+picked it reads `As dbt compiled it.` and `The relations are the manifest's own,
+nothing swapped.`, or on a sandbox manifest `As your own compile wrote it, into
+<schema>, nothing swapped.`
 
-Under it, **May differ beyond its relations** lists what in the model, or in a
-macro it reaches, however deep, reads the environment: a key of `target`, an
-`env_var()`, a call that asks the warehouse (`run_query`, `adapter.get_*`...),
-`is_incremental()`, and a project's own `generate_schema_name`,
-`generate_database_name` or `generate_alias_name` that reads the target. Each
-line names the macro and the line in it, and a macro opens at that line when
-clicked; the list is a fold, open to start with, and counts what it holds. A
+In the SQL, a swapped relation is marked in the environment's colour with a
+dotted underline in that colour, and hovering it gives the call it stands for
+and the environment, then the relation it was in the file dbt wrote:
+`ref('stg_customers'), for PROD`, then `was "jaffle_shop"."main"."stg_customers"
+as compiled`. A source reads `source('jaffle_shop', 'raw_orders')` and a
+versioned model `ref('orders', v=2)`.
+
+Under the sentence, a fold, **May differ beyond its relations (3)**, open when
+drawn, gives what in the model, or in a macro it reaches, however deep, reads
+the environment: a key of `target`, an `env_var()`, a call that asks the
+warehouse (`run_query`, `adapter.get_*`...), `is_incremental()`, and a project's
+own `generate_schema_name`, `generate_database_name` or `generate_alias_name`
+that reads the target. Each finding is a line of its own, naming the macro and
+the line in it; a macro opens at that line when clicked. A
 `generate_*_name` that reads the target only through a macro it calls says
 `through` that macro and gives no line, and opens at its own first line. A line
 in the model itself counts from the top of the file, blank lines included.

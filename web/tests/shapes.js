@@ -81,7 +81,7 @@ print('\n--- every marker is drawn with a shape ---');
 [
   '.freshbadge .dot', '.mc-head .dot', '.okline .dot', '.tooldot', '.qdot', '.jobdot', '.setwarn',
   '#settings-btn[data-warn=true]::after', '.cfgwarn-mark', '.brand.newer::after', '.venvpill::before', '.termchip::before',
-  '.ftab.dirty .x::before', '.oe-row .state.editing::before',
+  '.ftab.dirty .x::before', '.oe-row .state.editing::before', '.cstat .dot', '.cdiffer > summary::before',
 ].forEach(function (sel) {
   check(sel + ' masks a --m-* shape', masks(sel), true);
 });
@@ -113,6 +113,16 @@ freshTones.forEach(function (t) {
     t in SHAPE ? maskedAs('.mcard[data-tone="' + t + '"] .mc-head .dot', SHAPE[t]) : maskedAs('.mc-head .dot', 'none'),
   ], [true, true]);
 });
+// The Compiled and Run line: a file is up to date, or something it was built from moved (0164).
+var artifactTones = [];
+(app.match(/tone: info\.stale \? '[a-z]+' : '[a-z]+'/) || [''])[0].replace(/'([a-z]+)'/g, function (m, t) { artifactTones.push(t); });
+check('the line\'s states are read out of artifactBar', artifactTones.sort(), ['ok', 'stale']);
+check('up to date is the check and stale the triangle, over the colours the manifest pill uses',
+  [maskedAs('.cstat[data-tone=ok] .dot', 'ok'), maskedAs('.cstat[data-tone=stale] .dot', 'warn'), maskedAs('.cstat .dot', 'none'),
+    declares('.cstat[data-tone=ok] .dot', /background:\s*var\(--ok\)/), declares('.cstat[data-tone=stale] .dot', /background:\s*var\(--warn\)/)],
+  [true, true, true, true, true]);
+check('and the note\'s fold of findings leads with the same triangle, in the warning colour',
+  [maskedAs('.cdiffer > summary::before', 'warn'), declares('.cdiffer > summary::before', /background:\s*var\(--warn\)/)], [true, true]);
 // A query: the ring is the base, the others have their own.
 var qs = app.match(/function queryState\(row\) \{[\s\S]*?\n\}/)[0];
 var queryStates = {};
@@ -185,6 +195,19 @@ print('\n--- an environment is a tag, a role a line (0162) ---');
 check('no envdot is left in app.js or app.css', [/envdot/.test(app), /envdot/.test(css)], [false, false]);
 check('a tag reads its colour from --tone', declares('.envtag', /color:\s*var\(--tone\)/), true);
 check('and the manifest\'s is outlined, not filled', declares('.envtag[data-tone=manifest]', /background:\s*transparent;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--env-manifest\)/), true);
+check('the Compiled tab\'s picker draws no dot before a name: it is the name in its colour',
+  [rulesFor('.cenv .envseg button::before').length, declares('.cenv .envseg button', /color:\s*var\(--env\)/), declares('.cenv .envseg button', /--env:\s*var\(--tone\)/)], [0, true, true]);
+check('the picked one is tinted and ringed in it, the manifest\'s in the page\'s greys',
+  [declares('.cenv .envseg button[aria-checked=true]', /color-mix\(in srgb, var\(--env\) 16%, transparent\)/),
+    declares('.cenv .envseg button[aria-checked=true]', /box-shadow:\s*0 0 0 1px color-mix\(in srgb, var\(--env\) 55%, transparent\)/),
+    declares('.cenv .envseg button[data-tone=manifest][aria-checked=true]', /background:\s*var\(--bg-3\)[^}]*var\(--line-strong\)/)], [true, true, true]);
+check('the path keeps room under its text for the dotted underline, and the changed-since words are amber only when stale',
+  [declares('.artifact-path', /padding:\s*0 0 4px/), declares('.cchanged', /color:\s*var\(--fg-dim\)/), declares('.cchanged[data-tone=stale]', /color:\s*var\(--warn-text\)/),
+    /why\.dataset\.tone = said\.tone/.test(app)], [true, true, true, true]);
+check('the note\'s tag is the environment tag the rest of the page draws, not a style of its own', [/envTag\(words\.tag, tone\)/.test(app), /envname/.test(css), /envname/.test(app)], [true, false, false]);
+check('a swapped relation in the SQL is marked in the environment\'s colour, not a fixed blue',
+  [declares('.cm-env-swap', /color-mix\(in srgb, var\(--env\) 10%, transparent\)/), declares('.cm-env-swap', /dotted var\(--env\)/),
+    /--env-swap/.test(css)], [true, true, false]);
 check('the column card\'s role marker is the role\'s line, not a kind\'s bar nor a square', /Lineage\.roleSwatch\(Array\.isArray\(n\.generated\)/.test(app)
   && /className: line\.dashed \? 'rolesq dash' : 'rolesq'/.test(app), true);
 check('a role\'s line is 14 by 2 wherever it is drawn: the stop at menu and the card, the legend', [declares('.rolesq', /width:\s*14px/), declares('.rolesq', /height:\s*2px/),
