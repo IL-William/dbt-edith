@@ -212,5 +212,48 @@ ok('the theme button sits between the shortcuts and GitHub',
   html.indexOf('id="keys-btn"') < html.indexOf('id="theme-btn"') && html.indexOf('id="theme-btn"') < html.indexOf('id="github-btn"'));
 ok('and the pumpkin and the speaker are gone', !/look-btn|look-sound|hw-s-pump|hw-g-pump|hw-g-flame|hw-g-stem/.test(html + css + src));
 ok('and with them every sound', !/AudioContext|createOscillator|hwSound|look-sound/.test(src));
-ok('the accent tints the browser\'s own controls, and a lit edge reads --edge-hot',
-  /html \{ accent-color: var\(--accent\); \}/.test(css) && /\.edge\.hi \{ stroke: var\(--edge-hot\)/.test(css));
+ok('the accent tints the browser\'s own controls, and a lit edge reads its role\'s colour, --edge-hot where it has none',
+  /html \{ accent-color: var\(--accent\); \}/.test(css) && /\.edge\.hi \{ stroke: var\(--edge-col, var\(--edge-hot\)\)/.test(css));
+
+print('\n--- a column box\'s role tag reads on its box (0162) ---');
+var lineage = read('web/lineage.js');
+var tagRoles = /const ROLE_TEXT = new Set\(\[([^\]]*)\]\)/.exec(lineage)[1].match(/[a-z]+/g);
+ok('nine roles wear a tag with a colour of their own: ' + tagRoles.length, tagRoles.length === 9);
+check('each has a text twin declared in Night, and in each block, so a theme has something to part from',
+  [night, graphite, light, halloween].map(function (b) { return tagRoles.filter(function (r) { return !('--r-' + r + '-text' in b.decl); }); }), [[], [], [], []]);
+// The tag's word sits on the box's fill, on its focus fill, on find's current match, and on the dark fill Halloween puts behind it.
+var BOX = { night: night, graphite: graphite, light: light, halloween: halloween };
+// --hit-bg, find's current match, is a literal in Night and a mix of --warn into --bg in the others.
+function hitBg(name) {
+  var b = BOX[name], at = function (n) { return n in b.decl ? b.decl[n] : night.decl[n]; };
+  var m = /^color-mix\(in srgb, var\(--warn\) (\d+)%, var\(--bg\)\)$/.exec(derived.decl['--hit-bg'] || '');
+  if (name === 'night' || !m) return at('--hit-bg');
+  var w = channels(at('--warn')), g = channels(at('--bg')), p = +m[1] / 100;
+  return '#' + w.map(function (v, i) { return ('0' + Math.round(v * p + g[i] * (1 - p)).toString(16)).slice(-2); }).join('');
+}
+function boxPlaces(name) {
+  var b = BOX[name], at = function (n) { return n in b.decl ? b.decl[n] : night.decl[n]; };
+  return ['--bg-3', '--focus-bg'].concat(name === 'halloween' ? ['--bg-2'] : []).map(function (n) { return [n, at(n)]; })
+    .concat([['--hit-bg', hitBg(name)]]);
+}
+Object.keys(BOX).forEach(function (name) {
+  var b = BOX[name], at = function (n) { return n in b.decl ? b.decl[n] : night.decl[n]; };
+  check(name + ': every tag word is at least 4.5:1 on the box, its focus fill, find\'s current match' + (name === 'halloween' ? ' and the tag\'s dark fill' : ''),
+    tagRoles.map(function (r) {
+      return boxPlaces(name).filter(function (p) { return ratio(at('--r-' + r + '-text'), p[1]) < 4.5; }).map(function (p) { return r + ' on ' + p[0]; });
+    }).reduce(function (a, c) { return a.concat(c); }, []), []);
+});
+check('the word is the role\'s own colour where that already reads, and the colour taken toward the text where it does not: no twin is further than the role from the text',
+  [night, graphite, light, halloween].map(function (b) {
+    var fg = channels(b.decl['--fg'] || night.decl['--fg']);
+    return tagRoles.filter(function (r) {
+      var role = channels(b.decl['--r-' + r]), twin = channels(b.decl['--r-' + r + '-text']);
+      var far = function (c) { return Math.abs(c[0] - fg[0]) + Math.abs(c[1] - fg[1]) + Math.abs(c[2] - fg[2]); };
+      return far(twin) > far(role);
+    });
+  }), [[], [], [], []]);
+check('transform is a step lighter in the three dark themes, 4.5:1 on the box, and Light\'s stays',
+  [night, graphite, halloween].map(function (b) { return b.decl['--r-transform']; }).concat([light.decl['--r-transform']]), ['#e86b6b', '#e86b6b', '#e86b6b', '#c03a3a']);
+ok('and the lightened one is 4.5:1 or more on each dark box fill', ['night', 'graphite', 'halloween'].every(function (n) {
+  return ratio(BOX[n].decl['--r-transform'], BOX[n].decl['--bg-3']) >= 4.5;
+}));

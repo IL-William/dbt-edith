@@ -13,6 +13,24 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.13.0 - 2026-11-09
+
+- Draw a column's role as a tag inside its box, on the second line at the right,
+  where it sat above the box and read as the box above's (0162).
+- Draw a column's box as the design does: 250 by 48 like a model's, its name in
+  mono at 12.5px and the model and type beneath it, the second line cut short of
+  the tag.
+- Colour a column's edge by its role whether or not it is lit, a lit one only
+  thicker, where it turned the accent blue.
+- Draw a role as a line 14 by 2 in the legend, the stop at menu and the column
+  card, dashed for the roles that keep rows, as the edges are.
+- Make the role colours readable as text: `transform` is a step lighter in the
+  dark themes, and the tag's word takes a shade of its role's colour that holds
+  4.5:1 on the box and on find's current match in each theme.
+- Say `1 edge` and `1 column` on a column canvas, as a model's canvas says `1 node`.
+- Draw the tag in the three Halloween box styles, on a dark fill, inside the
+  coffin's cut end and the grimoire's frame, and follow the new box sizes there.
+
 ## 2.12.0 - 2026-11-09
 
 - Draw the terminal in the theme's colours: its page, text, cursor, selection

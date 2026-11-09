@@ -214,7 +214,7 @@
   --r-cast: #c9b08a;
   --r-aggregate: #cf7a3f;
   --r-window: #8b46c9;
-  --r-transform: #e05a5a;
+  --r-transform: #e86b6b;
   --r-inferred: #5f6a78;
   --r-raw: #7fb069;
   --r-generated: #f5a7f9;
@@ -222,6 +222,16 @@
   --r-join-key: #948739;
   --r-dedup-key: #8677ce;
   --r-indirect: #8d99a8;
+  /* The text twins of the roles a box wears as a tag (0162): the role's colour taken toward the text colour until it holds 4.5:1 on the box, on its focus fill and on find's current match. The tag's outline and the edges keep the role's own. */
+  --r-passthrough-text: #c3ccd6;
+  --r-rename-text: #9fb0c4;
+  --r-cast-text: #c9b08a;
+  --r-aggregate-text: #cf7a3f;
+  --r-window-text: #a57bd4;
+  --r-transform-text: #e86b6b;
+  --r-inferred-text: #858f9c;
+  --r-raw-text: #7fb069;
+  --r-generated-text: #f5a7f9;
   /* Shapes, one per meaning: the pictograms a state, a tool and a newer
      release are drawn with, as masks over the colour that says which. */
   --m-ok: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.75l3.25 3.25L13 4.5'/%3E%3C/svg%3E");
@@ -430,7 +440,7 @@
   --r-cast: #c9b08a;
   --r-aggregate: #cf7a3f;
   --r-window: #8b46c9;
-  --r-transform: #e05a5a;
+  --r-transform: #e86b6b;
   --r-inferred: #5f6a78;
   --r-raw: #7fb069;
   --r-generated: #f5a7f9;
@@ -438,6 +448,15 @@
   --r-join-key: #948739;
   --r-dedup-key: #8677ce;
   --r-indirect: #8d99a8;
+  --r-passthrough-text: #c3ccd6;
+  --r-rename-text: #9fb0c4;
+  --r-cast-text: #c9b08a;
+  --r-aggregate-text: #cf7a3f;
+  --r-window-text: #a97bd3;
+  --r-transform-text: #e86b6b;
+  --r-inferred-text: #888f99;
+  --r-raw-text: #7fb069;
+  --r-generated-text: #f5a7f9;
 }
 
 /* Light: for daylight and screenshots. Its meaning colours are darker twins, each at least 3:1 on the page and on the sidebar's --bg-2 */
@@ -554,6 +573,15 @@
   --r-join-key: #948739;
   --r-dedup-key: #8677ce;
   --r-indirect: #808d9e;
+  --r-passthrough-text: #5c6a7b;
+  --r-rename-text: #596a7f;
+  --r-cast-text: #7b6441;
+  --r-aggregate-text: #a1541f;
+  --r-window-text: #8a46c7;
+  --r-transform-text: #bd393a;
+  --r-inferred-text: #5e6977;
+  --r-raw-text: #41752f;
+  --r-generated-text: #ab2fb4;
   /* Night's colour, same hue, darker: 3:1 on the page and the sidebar's --bg-2 for a mark, 4.5:1 on the page for code */
   --env-ci: #308df0; --env-stg: #079ba3; --env-uat: #d17338; --env-other: #9f8b32; --env-swap: #638dcd;
   --f-md: #638fc1; --f-macro: #8f8e62;
@@ -673,7 +701,7 @@
   --r-cast: #c9b08a;
   --r-aggregate: #cf7a3f;
   --r-window: #8b46c9;
-  --r-transform: #e05a5a;
+  --r-transform: #e86b6b;
   --r-inferred: #5f6a78;
   --r-raw: #7fb069;
   --r-generated: #f5a7f9;
@@ -681,6 +709,15 @@
   --r-join-key: #948739;
   --r-dedup-key: #8677ce;
   --r-indirect: #8d99a8;
+  --r-passthrough-text: #c3ccd6;
+  --r-rename-text: #9fb0c4;
+  --r-cast-text: #c9b08a;
+  --r-aggregate-text: #cf7a3f;
+  --r-window-text: #a874cc;
+  --r-transform-text: #e86b6b;
+  --r-inferred-text: #848990;
+  --r-raw-text: #7fb069;
+  --r-generated-text: #f5a7f9;
 }
 
 * { box-sizing: border-box; }
@@ -775,7 +812,8 @@ kbd {
 /* The stop at button, lit while it stops the walk, and its role swatches. */
 #stop-at.on { color: var(--accent); border-color: rgba(var(--accent-rgb), .55); background: rgba(var(--accent-rgb), .12); }
 #stop-at span:empty { display: none; }
-.rolesq { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
+.rolesq { width: 14px; height: 2px; border-radius: 1px; flex: 0 0 auto; }
+.rolesq.dash { border-radius: 0; }
 .stopmenu button.absent .lbl, .stopmenu button.absent .rolesq { opacity: .5; }
 .envmenu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 /* An environment: its name in its colour, a tag, never a dot (the dot's
@@ -2130,8 +2168,9 @@ kbd {
 }
 #graph.panning { cursor: grabbing; }
 #graph text { font-family: var(--ui); user-select: none; }
-/* --edge-col is set per path in column mode, where the colour carries the role.
-   `.edge.hi` still outranks it, so selecting an edge highlights it as before. */
+/* --edge-col is set per path in column mode, where the colour carries the role:
+   the edge wears it lit or not, and `.edge.hi` below only thickens it. Model
+   mode sets none, and a lit edge takes the accent. */
 .edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.5; }
 /* A line into a test (0034): dotted, in the tests' grey, since it carries no
    data. Before `.edge.hi`, so a selected one still turns accent. */
@@ -2143,14 +2182,15 @@ kbd {
 /* An indirect edge, a filter's, a join key's or a dedup key's (0097): the
    column decided which rows exist, not what a value is. Thin and in short
    dashes, neither the test's dots nor the back edge's long dashes; before
-   `.edge.hi`, which keeps the dashes and takes the stroke. */
+   `.edge.hi`, which keeps the dashes and thickens the line (0118, 0162). */
 .edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }
-.edge.hi { stroke: var(--edge-hot); stroke-width: 2; }
+.edge.hi { stroke: var(--edge-col, var(--edge-hot)); stroke-width: 2; }
+/* On a column canvas the colour stays, so a lit edge is told by its width:
+   3px against the 1.5 of the rest, where a fan of six edges out of one box
+   would otherwise barely change when the box is clicked (0162). */
+.colcanvas .edge.hi { stroke-width: 3; }
 /* Lit, the stem takes the lit stroke and keeps its dashes and its thin line. */
 .edge.test.stem.hi { stroke: var(--edge-hot); stroke-width: 1.5; }
-/* An indirect edge lit keeps its role's hue, which the legend says: the dash
-   and the width are all `.edge.hi` changes of it (0118). */
-.edge.indirect.hi { stroke: var(--edge-col); }
 /* An edge drawn against its direction, where column lineage loops: with no
    arrowheads, left to right is the only direction a reader has (0027). */
 .edge.back { stroke-dasharray: 5 4; }
@@ -2162,10 +2202,10 @@ kbd {
    the edge (0118), in its role's hue. A label never takes the pointer. */
 .edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 /* A model's box (0160): 220 by 48, radius 7, a 3px kind bar inset in it, the
-   name at 13px and the second line at 11px in mono. A column's box, `.col`,
-   keeps the look it had until its own step. */
+   name at 13px and the second line at 11px in mono. A column's (0162) is 250
+   by 48 and the same, but for its name, which is 12.5px mono, and the role tag
+   at the right of its second line. */
 .nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 7; }
-.nd.col rect.box { rx: 5; }
 .nd:hover rect.box { stroke: var(--line-strong); }
 /* The box the lineage is on, and the one clicked: an accent border on the
    focus fill. The clicked one also has a glow, the rect Lineage lays behind
@@ -2194,13 +2234,11 @@ kbd {
 .nd .warncount { font-size: 9px; }
 .nd .kindbar { stroke: none; rx: 2; }
 .nd .kindbar.seg { rx: 1; }
-.nd.col .kindbar { rx: 3; }
 .nd .t1 { fill: var(--fg); font-size: 13px; font-weight: 500; }
 .nd .t2 { fill: var(--fg-dim); font-size: 11px; }
 #graph .nd .t2 { font-family: var(--mono); }
-.nd.col .t1 { font-size: 11.5px; font-weight: 400; }
-.nd.col .t2 { font-size: 9.5px; }
-#graph .nd.col .t2 { font-family: var(--ui); }
+.colcanvas .nd .t1 { font-size: 12.5px; font-weight: 400; }
+#graph .colcanvas .nd .t1 { font-family: var(--mono); }
 .nd .t2 .struck { opacity: .6; text-decoration: line-through; }
 /* The +N pill, 24 by 18: a rect and its number, the tint of a quiet control. */
 .nd .more-badge .pill { fill: var(--bg-2); stroke: var(--line); }
@@ -2270,8 +2308,10 @@ kbd {
   padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-/* The `indirect` entry, a dash as its edges are drawn (0097). */
-.legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
+/* A role, a line as its edges are drawn (0162), dashed for the `indirect` entry
+   and the clauses (0097). */
+.legend i.role { width: 14px; height: 2px; border-radius: 1px; vertical-align: 3px; }
+.legend i.dash { width: 14px; height: 2px; border-radius: 0; vertical-align: 3px; }
 /* A kind or a test, the bar of its box. */
 .legend i.kind { width: 3px; height: 10px; border-radius: 2px; vertical-align: -1px; }
 /* The entries take a click, the strip around them still does not: a pan
@@ -3186,9 +3226,13 @@ span.envpill:hover { filter: none; }
 ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 5px; border: 2px solid var(--bg-2); }
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
-/* The role tag above a column box. Its colours are inline, set per role. */
+/* The pills above a column box, the steps and PARTIAL. Their colours are inline. */
 .rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }
 .rolebadge rect { stroke-width: 1; }
+/* The role tag inside a column box (0162). Its colours are inline, the role's
+   outline and its text twin; the outline is a rect with no fill of its own. */
+#graph .roletaglabel { font: 600 9.5px var(--mono); letter-spacing: .04em; }
+.roletag rect { fill: none; stroke-width: 1; }
 /* Where a jump to a test landed, lit and faded (0041). */
 .cm-flash { animation: cm-flash 1.8s ease-out; }
 @keyframes cm-flash { 0%, 40% { background: rgba(var(--accent-rgb), .38); box-shadow: inset 3px 0 0 var(--accent); } 100% { background: transparent; box-shadow: none; } }
@@ -3386,8 +3430,9 @@ html[data-theme="halloween"] .envmenu button.switch[aria-checked=true] .knob { t
    (a ring is a stroke, and the clip would cut it at the corners) and
    becomes a rounded rect: the silhouette only gives way to say something
    about the box. The tests under a model, and the chips, keep their shape.
-   The model's box is 220 by 48 and a column's 180 by 40, which
-   .nd[data-id*="::"] tells apart. A hover only moves the rect and the kindbar,
+   The model's box is 220 by 48 and a column canvas's 250 by 48, which
+   #graph g.colcanvas tells apart, being the mode's and not the box's own
+   (0162). A hover only moves the rect and the kindbar,
    never .nd, whose transform is the box's place. The plain look's box text
    starts at 19 in a model's box, where it started at 12, and the kind bar is
    inset: so each skin sets the geometry it needs, never the attributes', and
@@ -3414,9 +3459,9 @@ html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t1 { fill: #e4e
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 { fill: #d3d6d9; font-size: 9.5px; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .t2 .struck { opacity: .9; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) .kindbar { x: 5px; y: 42px; width: 210px; height: 6px; rx: 1.5; }
-html[data-theme="halloween"].hw-boxes-tombstone .nd[data-id*="::"]:not(.rider) .kindbar { y: 37px; width: 170px; height: 3px; }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.colcanvas .nd:not(.rider) .kindbar { width: 240px; }
 html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 192px; }
-html[data-theme="halloween"].hw-boxes-tombstone :where(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off)[data-id*="::"]:not(.rider) .kindbar { width: 152px; }
+html[data-theme="halloween"].hw-boxes-tombstone #graph g.colcanvas :is(.nd.focus, .nd.sel, .nd.hit, .nd.hitcur, .nd.off):not(.rider) .kindbar { x: 14px; width: 222px; }
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover rect.box,
 html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
 /* As if something pushed from underneath. */
@@ -3432,7 +3477,6 @@ html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t1 { fill: #f3e2c4
 html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t2 { fill: #dcc399; font-size: 9px; transform: translateX(20px); }
 html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .t2 .struck { opacity: .9; }
 html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider) .kindbar { x: 12px; y: 12px; width: 12px; height: 24px; rx: 2; stroke: #d4af37; stroke-width: 1.6; }
-html[data-theme="halloween"].hw-boxes-coffin .nd[data-id*="::"]:not(.rider) .kindbar { y: 10px; height: 20px; }
 html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider):hover rect.box,
 html[data-theme="halloween"].hw-boxes-coffin .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }
 /* A shake, the lid lifting a little. */
@@ -3449,7 +3493,7 @@ html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t1 { fill: #f1e3
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 { fill: #dcc895; font-size: 9px; transform: translateX(20px); }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .t2 .struck { opacity: .9; }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .kindbar { x: 8px; width: 7px; rx: 1.5; stroke: #d4af37; stroke-width: .9; }
-html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):not(.col) .kindbar { y: 0; height: 48px; }
+html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider) .kindbar { y: 0; height: 48px; }
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover rect.box,
 html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover .kindbar { transform-box: fill-box; transform-origin: left center; animation: hw-lift .45s ease-in-out; }
 /* The cover lifting from its spine. */
@@ -3462,9 +3506,9 @@ html[data-theme="halloween"].hw-boxes-grimoire .nd:not(.rider):hover .kindbar { 
 /* The plain look's names keep the sizes, the font and the x they had when a
    model's box text started at 12 (0160): 7px back from where the box's own
    look starts them, and these skins' own translate on top. */
-html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph .nd:not(.rider):not(.col) :is(.t1, .t2) { font-weight: 400; font-family: var(--ui); }
-html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider):not(.col) :is(.t1, .t2) { transform: translateX(-7px); }
-html[data-theme="halloween"]:is(.hw-boxes-coffin, .hw-boxes-grimoire) .nd:not(.rider):not(.col) :is(.t1, .t2) { transform: translateX(13px); }
+html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes-grimoire) #graph .nd:not(.rider) :is(.t1, .t2) { font-weight: 400; font-family: var(--ui); }
+html[data-theme="halloween"].hw-boxes-tombstone .nd:not(.rider) :is(.t1, .t2) { transform: translateX(-7px); }
+html[data-theme="halloween"]:is(.hw-boxes-coffin, .hw-boxes-grimoire) .nd:not(.rider) :is(.t1, .t2) { transform: translateX(13px); }
 
 /* The art (0107): under ART_MAX plain boxes the lineage lays a group on each,
    a silhouette path, a trim path and a few parts (see Lineage.setSkin), and
@@ -3499,17 +3543,26 @@ html[data-theme="halloween"]:is(.hw-boxes-tombstone, .hw-boxes-coffin, .hw-boxes
 }
 html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t1 { fill: #e4e6e8; transform: translateX(10px); }
 html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd:not(.rider) .t2 { fill: #d3d6d9; transform: translateX(10px); }
-html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(12px, -3px); }
-html[data-theme="halloween"].hw-boxes-tombstone #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(12px, -5px); }
 /* Off the lid line that runs above and below them. */
 html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t1 { fill: #f3e2c4; transform: translate(41px, 1px); }
 html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd:not(.rider) .t2 { fill: #dcc399; transform: translate(41px, -2px); }
-html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(38px, -2px); }
-html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(38px, -6px); }
 html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t1 { fill: #f1e3b5; transform: translateX(39px); }
 html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd:not(.rider) .t2 { fill: #d4af37; font-style: italic; transform: translateX(39px); }
-html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t1 { transform: translate(36px, -3px); }
-html[data-theme="halloween"].hw-boxes-grimoire #graph g.hw-on .nd[data-id*="::"]:not(.rider) .t2 { transform: translate(36px, -5px); }
+/* A column's role tag (0162) over stone, wood and leather: a dark fill of the
+   page's own behind it, so a colour that reads on the plain box reads here
+   too, and the outline whole. */
+html[data-theme="halloween"] .roletag rect { fill: var(--bg-2); stroke-opacity: 1; }
+/* The coffin's end is cut at the corners below 70% of its height: the tag moves
+   in and up to sit inside it. Under the art that is 6px in and 7px up, with the
+   names lifted 3px so the two keep apart, and cut at 17 characters; the plain
+   look past 400 boxes cuts nothing, so its tag only steps in 12px and up 2,
+   which leaves its corner inside the end. The grimoire's gold frame runs 10px
+   in from its right: the tag keeps inside it. The tombstone's is as the plain
+   look has it. */
+html[data-theme="halloween"].hw-boxes-coffin #graph g.colcanvas .roletag { transform: translate(-12px, -2px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on.colcanvas .roletag { transform: translate(-6px, -7px); }
+html[data-theme="halloween"].hw-boxes-grimoire #graph g.colcanvas .roletag { transform: translateX(-8px); }
+html[data-theme="halloween"].hw-boxes-coffin #graph g.hw-on.colcanvas .nd:not(.rider) .t1 { transform: translate(41px, -2px); }
 /* The art moves with the pointer, never the group that carries the box's place. */
 html[data-theme="halloween"].hw-boxes-tombstone #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center bottom; animation: hw-shudder .45s ease-in-out; }
 html[data-theme="halloween"].hw-boxes-coffin #graph .nd:not(.rider):hover .hw-art { transform-box: fill-box; transform-origin: center; animation: hw-shake .45s ease-in-out; }

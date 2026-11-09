@@ -5,7 +5,7 @@
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
 var Lineage = { nodeRoles: nodeRoles, roleColor: roleColor, matLabel: matLabel, nodeColor: nodeColor,
-  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch };
+  edgeLegendLabel: edgeLegendLabel, rowLegend: rowLegend, legendSwatch: legendSwatch, legendColour: legendColour, roleSwatch: roleSwatch };
 
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function legendEntries'), src.indexOf('function paintLegend')));
@@ -104,10 +104,15 @@ check('only the clauses on the canvas are listed',
   labels(legendEntries({ mode: 'column', roots_known: true, nodes: [{ name: 'a', kind: 'seed' }, { name: 'b', kind: 'model' }],
     edges: [[0, 1]], edge_kinds: ['join_key'] })), ['raw', 'indirect', 'JOIN']);
 check('and every clause swatch is a dash, as its edges are', ['indirect', 'QUALIFY', 'JOIN', 'WHERE / HAVING', 'rename']
-  .map(function (l) { return legendSwatch(l, '#123456').cls; }), ['dash', 'dash', 'dash', 'dash', '']);
-check('a kind or a test takes the bar of its box, a role stays a square',
+  .map(function (l) { return legendSwatch(l, '#123456').cls; }), ['dash', 'dash', 'dash', 'dash', 'role']);
+check('a kind or a test takes the bar of its box, a role a line 14 by 2 (0162)',
   [legendSwatch('table', 'var(--k-table)').cls, legendSwatch('singular', 'var(--t-singular)').cls, legendSwatch('rename', roleColor('rename')).cls],
-  ['kind', 'kind', '']);
+  ['kind', 'kind', 'role']);
+check('a role\'s swatch is solid, an indirect one\'s dashed, as their edges are',
+  [roleSwatch('rename').dashed, roleSwatch('filter').dashed, roleSwatch('indirect').dashed, roleSwatch('generated').dashed], [false, true, true, false]);
+check('and it is the colour of the role, the line\'s size being the stylesheet\'s',
+  [roleSwatch('rename').style, /^background:repeating-linear-gradient\(90deg,var\(--r-filter\) 0 3px,transparent 3px 5px\)$/.test(roleSwatch('filter').style)],
+  ['background:' + roleColor('rename'), true]);
 // A model's box on the canvas stands for columns and starts nothing: no raw
 // badge on it, with or without roots in the cache.
 var boxed = { mode: 'column', roots_known: true, nodes: [
@@ -156,16 +161,16 @@ ok('a role ticked redraws, and the menu stays open for the next',
 eval(src.slice(src.indexOf('function canvasStatus'), src.indexOf('function selectWarnings')));
 check('the status line names the roles stopped at',
   canvasStatus({ mode: 'column', focus_column: 'order_date', nodes: [{}, {}], edges: [[0, 1]], stopped_at: ['window'] }, null),
-  'order_date · 2 columns · 1 edges · stopped downstream at window');
+  'order_date · 2 columns · 1 edge · stopped downstream at window');
 check('and says nothing when nothing stopped',
   canvasStatus({ mode: 'column', focus_column: 'order_date', nodes: [{}, {}], edges: [[0, 1]] }, null),
-  'order_date · 2 columns · 1 edges');
+  'order_date · 2 columns · 1 edge');
 check('a model\'s box is counted apart from the columns, as a model',
   canvasStatus({ mode: 'column', focus_column: 'status', nodes: [{ id: 'model.shop.stg_orders::status' }, { id: 'model.shop.orders::status' },
     { id: 'model.shop.orders' }], edges: [[0, 1], [0, 2]] }, null),
   'status · 2 columns · 1 model · 2 edges');
 check('two of them', canvasStatus({ mode: 'column', focus_column: 'status', nodes: [{ id: 'a::x' }, { id: 'b' }, { id: 'c' }], edges: [] }, null),
-  'status · 1 columns · 2 models · 0 edges');
+  'status · 1 column · 2 models · 0 edges');
 check('a column canvas cut at the cap says where',
   canvasStatus({ mode: 'column', focus_column: 'status', nodes: new Array(1000).fill({ id: 'a::x' }), edges: [], truncated: true }, null),
   'status · 1000 columns · 0 edges · truncated at 1000');
@@ -174,3 +179,13 @@ ok('ticks in a row draw only the last answer',
   /const ask = \+\+S\.colDraw;[\s\S]{0,400}if \(ask !== S\.colDraw\) return;/.test(src));
 ok('leaving column mode drops a column answer still on its way',
   /async function focusNode[\s\S]{0,300}S\.colDraw\+\+/.test(src) && /async function runSelection\(\) \{[\s\S]{0,200}S\.colDraw\+\+/.test(src));
+
+print('\n--- a role the tag draws neutral is neutral in the legend (0162) ---');
+var mixedSub = { mode: 'column', roots_known: true, nodes: [{ name: 'a', kind: 'seed' }, { name: 'b', kind: 'model' }, { name: 'c', kind: 'model' }],
+  edges: [[0, 2], [1, 2]], edge_kinds: ['rename', 'teleported'] };
+var mixedEntries = legendEntries(mixedSub);
+check('the legend lists mixed in the tag\'s neutral, not the edge\'s grey',
+  mixedEntries.filter(function (e) { return e[0] === 'mixed'; }).map(function (e) { return e[0] + ':' + e[1]; }), ['mixed:var(--fg-dim)']);
+check('and so a role the palette has no colour for', legendEntries({ mode: 'column', roots_known: true, nodes: [{ name: 'a', kind: 'seed' }, { name: 'b', kind: 'model' }],
+  edges: [[0, 1]], edge_kinds: ['teleported'] }).filter(function (e) { return e[0] === 'teleported'; }).map(function (e) { return e[1]; }), ['var(--fg-dim)']);
+check('a role with a colour of its own keeps it', mixedEntries.filter(function (e) { return e[0] === 'rename'; })[0][1], roleColor('rename'));

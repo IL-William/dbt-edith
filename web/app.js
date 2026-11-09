@@ -5537,8 +5537,7 @@ function canvasStatus(sub, drawn) {
   const cut = sub.truncated ? (sub.mode === 'column' ? ` · truncated at ${sub.nodes.length}` : ' · truncated') : '';
   // A model canvas counts its tests apart; a column canvas has none.
   const tally = sub.mode === 'column' ? { tests: 0, edges: sub.edges.length } : testTally(sub);
-  // A column canvas's line keeps its words until its own step; a model's are plural only where they should be.
-  const edges = sub.mode === 'column' || tally.edges !== 1 ? `${tally.edges} edges` : '1 edge';
+  const edges = tally.edges !== 1 ? `${tally.edges} edges` : '1 edge';
   const tail = `${edges}${tally.tests ? testsStatus(tally.tests, folded) : foldedStatus(folded)}${stopped}${indirect}${cut}`;
   // The indirect edges' boxes stand for a model each, which no column is.
   const models = sub.mode === 'column' ? sub.nodes.filter((n) => n.id && !String(n.id).includes('::')).length : 0;
@@ -5546,7 +5545,7 @@ function canvasStatus(sub, drawn) {
   const partly = sub.mode === 'column' ? sub.nodes.filter((n) => n.partial && n.partial.length).length : 0;
   const modelNodes = tally.tests ? tally.nodes : sub.nodes.length;
   return (sub.mode === 'column'
-    ? `${sub.focus_column} · ${sub.nodes.length - models} columns${partly ? ` · ${partly} partly traced` : ''}${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
+    ? `${sub.focus_column} · ${sub.nodes.length - models} column${sub.nodes.length - models === 1 ? '' : 's'}${partly ? ` · ${partly} partly traced` : ''}${models ? ` · ${models} model${models === 1 ? '' : 's'}` : ''} · ${tail}`
     : `${modelNodes} node${modelNodes === 1 ? '' : 's'} · ${tail}`) + foldersStatus(drawn);
 }
 
@@ -8034,7 +8033,7 @@ function legendEntries(sub) {
   const rows = Lineage.rowLegend(kinds);
   const apart = new Set(rows.map(([label]) => label));
   for (const k of kinds.map(Lineage.edgeLegendLabel).concat(badges)) {
-    if (k && !apart.has(k) && !seen.has(k)) seen.set(k, Lineage.roleColor(k));
+    if (k && !apart.has(k) && !seen.has(k)) seen.set(k, Lineage.legendColour(k));
   }
   return [...seen].sort((a, b) => a[0].localeCompare(b[0])).concat(rows);
 }
@@ -8196,9 +8195,11 @@ function openStopAt(anchor) {
       b.setAttribute('aria-checked', String(on));
       b.querySelector('.check').textContent = on ? '✓' : '';
     };
+    // A line, dashed for an indirect role, as its edges are drawn (0162).
     const sq = document.createElement('i');
-    sq.className = 'rolesq';
-    sq.style.background = Lineage.roleColor(role);
+    const line = Lineage.roleSwatch(role);
+    sq.className = line.dashed ? 'rolesq dash' : 'rolesq';
+    sq.setAttribute('style', line.style);
     b.append(Object.assign(document.createElement('span'), { className: 'check' }), sq,
       Object.assign(document.createElement('span'), { className: 'lbl', textContent: role }),
       Object.assign(document.createElement('span'), { className: 'sub' }));
@@ -8919,6 +8920,8 @@ function exportCanvasVars() {
     '--t-model', '--t-singular', '--t-column',
     '--r-passthrough', '--r-rename', '--r-cast', '--r-aggregate', '--r-window', '--r-transform', '--r-inferred',
     '--r-raw', '--r-generated', '--r-filter', '--r-join-key', '--r-dedup-key', '--r-indirect',
+    '--r-passthrough-text', '--r-rename-text', '--r-cast-text', '--r-aggregate-text', '--r-window-text',
+    '--r-transform-text', '--r-inferred-text', '--r-raw-text', '--r-generated-text',
   ];
   const probe = document.createElement('i');
   probe.hidden = true;
@@ -8947,15 +8950,14 @@ function exportCanvasCss(vars = {}) {
     '.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }',
     '.edge.test.stem { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
-    '.edge.hi { stroke: var(--edge-hot); stroke-width: 2; }',
+    '.edge.hi { stroke: var(--edge-col, var(--edge-hot)); stroke-width: 2; }',
+    '.colcanvas .edge.hi { stroke-width: 3; }',
     '.edge.test.stem.hi { stroke: var(--edge-hot); stroke-width: 1.5; }',
-    '.edge.indirect.hi { stroke: var(--edge-col); }',
     '.edge.back { stroke-dasharray: 5 4; }',
     '.edge.test.back { stroke-dasharray: 5 3 1 3; }',
     '.edge.indirect.back { stroke-dasharray: 9 2 3 2 3 2; }',
     '.edgelabel { font-size: 8px; letter-spacing: .4px; fill: var(--edge-col, var(--edge)); pointer-events: none; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }',
     '.nd rect.box { fill: var(--bg-3); stroke: var(--line); stroke-width: 1; rx: 7; }',
-    '.nd.col rect.box { rx: 5; }',
     '.nd:hover rect.box { stroke: var(--line-strong); }',
     '.nd.focus rect.box, .nd.sel rect.box { stroke: rgba(var(--accent-rgb), .9); stroke-width: 1; fill: var(--focus-bg); }',
     '.nd.off rect.box { stroke-dasharray: 3 3; }',
@@ -8976,13 +8978,11 @@ function exportCanvasCss(vars = {}) {
     '.nd .warncount { font-size: 9px; }',
     '.nd .kindbar { stroke: none; rx: 2; }',
     '.nd .kindbar.seg { rx: 1; }',
-    '.nd.col .kindbar { rx: 3; }',
     '.nd .t1 { fill: var(--fg); font-size: 13px; font-weight: 500; }',
     '.nd .t2 { fill: var(--fg-dim); font-size: 11px; }',
     '#graph .nd .t2 { font-family: var(--mono); }',
-    '.nd.col .t1 { font-size: 11.5px; font-weight: 400; }',
-    '.nd.col .t2 { font-size: 9.5px; }',
-    '#graph .nd.col .t2 { font-family: var(--ui); }',
+    '.colcanvas .nd .t1 { font-size: 12.5px; font-weight: 400; }',
+    '#graph .colcanvas .nd .t1 { font-family: var(--mono); }',
     '.nd .t2 .struck { opacity: .6; text-decoration: line-through; }',
     '.nd .more-badge .pill { fill: var(--bg-2); stroke: var(--line); }',
     '.nd .more-badge:hover .pill { stroke: var(--line-strong); }',
@@ -8997,6 +8997,8 @@ function exportCanvasCss(vars = {}) {
     '.band-name.l1, .band-name.l2, .band-name.l3 { font-size: 12px; font-weight: 500; }',
     '.rolelabel { font: 8.5px var(--mono); letter-spacing: .4px; }',
     '.rolebadge rect { stroke-width: 1; }',
+    '#graph .roletaglabel { font: 600 9.5px var(--mono); letter-spacing: .04em; }',
+    '.roletag rect { fill: none; stroke-width: 1; }',
   ].join('\n');
 }
 
@@ -9020,7 +9022,8 @@ h1 { margin: 1px 0 6px; font-size: 17px; font-weight: 600; overflow-wrap: anywhe
 .facts .warn { color: var(--warn); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font: 10.5px var(--mono); color: var(--fg-dim); }
 .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
-.legend i.dash { width: 13px; height: 2px; border-radius: 0; vertical-align: 3px; }
+.legend i.dash { width: 14px; height: 2px; border-radius: 0; vertical-align: 3px; }
+.legend i.role { width: 14px; height: 2px; border-radius: 1px; vertical-align: 3px; }
 .legend i.kind { width: 3px; height: 10px; border-radius: 2px; vertical-align: -1px; }
 .tools { display: none; align-items: center; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--fg-dim); }
 button { display: none; padding: 2px 8px; font: 11px var(--ui); color: var(--fg); background: var(--bg-3); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
@@ -13538,13 +13541,14 @@ function hoverLeave() {
    another column are two facts rather than one contradiction. All in the
    box's payload, so it paints once. */
 function fillColumnCard(el, n, rows) {
-  // The square is the role the card is about, as the stop at menu draws one,
-  // not a kind's bar; a card opened only by an expression is neither generated
-  // nor kept by anything, and gets none.
+  // The line is the role the card is about, as the stop at menu draws one
+  // (dashed for the rows it keeps), not a kind's bar; a card opened only by an
+  // expression is neither generated nor kept by anything, and gets none.
   let tone = null;
   if (Array.isArray(n.generated) || rows) {
-    tone = Object.assign(document.createElement('span'), { className: 'rolesq' });
-    tone.style.background = Lineage.roleColor(Array.isArray(n.generated) ? 'generated' : 'indirect');
+    const line = Lineage.roleSwatch(Array.isArray(n.generated) ? 'generated' : 'indirect');
+    tone = Object.assign(document.createElement('span'), { className: line.dashed ? 'rolesq dash' : 'rolesq' });
+    tone.setAttribute('style', line.style);
   }
   hoverCardBody(el, { title: n.name, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file });
   // The card's lines, one box each: what sets the column, what computes it

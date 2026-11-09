@@ -165,7 +165,7 @@ group('the same answer every time', function () {
 });
 
 var MODEL = { w: 200, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 0, bundle: 4 };
-var COLUMN = { w: 180, h: 40, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4 };
+var COLUMN = { w: 250, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4 };
 
 // A path as its commands, every number absolute: M x,y then C and L.
 function parse(s) {
@@ -337,7 +337,7 @@ group('loops, and nothing at all', function () {
     points(self.paths[0]).every(function (p) { return p[0] >= box.x + box.w && p[1] <= box.y + 8; }));
   check('no node, no frame', dagLayout(loops['no node'], COLUMN).bbox, null);
   var one = dagLayout(loops['one node'], COLUMN);
-  check('one node, its own box as the frame', one.bbox, { x0: one.boxes[0].x, y0: one.boxes[0].y, x1: one.boxes[0].x + 180, y1: one.boxes[0].y + 40 });
+  check('one node, its own box as the frame', one.bbox, { x0: one.boxes[0].x, y0: one.boxes[0].y, x1: one.boxes[0].x + 250, y1: one.boxes[0].y + 48 });
 });
 
 group('the frame holds everything drawn', function () {

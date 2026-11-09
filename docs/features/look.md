@@ -81,7 +81,8 @@ random apparitions and the box style.
   focus, selected, a find match or drawn dashed (an ephemeral model) takes its
   ring on the silhouette itself. The tests under a model keep their usual
   shape, and the ring round the box you click is not drawn: its states have
-  colours of their own. Edges become thin silk, the edges of the box you select turn orange,
+  colours of their own. A column's role tag, inside its box, has a dark fill here, and the coffin
+  and the spellbook move it in from their ends. Edges become thin silk, the edges of the box you select turn orange (a column edge keeps its role's hue, its dewdrops orange),
   and a cobweb hangs in two corners of the canvas. The dashes that say an edge
   is a test, a back edge or indirect are kept, and those edges have no
   dewdrops.
