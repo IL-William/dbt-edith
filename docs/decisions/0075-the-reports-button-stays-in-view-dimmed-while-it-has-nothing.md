@@ -1,6 +1,6 @@
 # 0075. The Reports button stays in view, dimmed while it has nothing
 
-Date: 2026-10-13 · Status: accepted, amended by 0105 · Amends 0064, 0070 and 0074
+Date: 2026-10-13 · Status: accepted, amended by 0105 and 0166 · Amends 0064, 0070 and 0074
 
 **Trigger:** read before hiding the Reports button, or changing what it shows
 or says while no report has anything.

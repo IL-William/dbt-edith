@@ -6,7 +6,7 @@ column lineage is in [column-lineage.md](column-lineage.md).
 ## The switch
 
 **Snowflake's features are a setting of the project**, a switch in the
-Snowflake section of the settings, behind the gear in the top bar, in a row of
+Snowflake section of the settings, behind the settings button (the sliders) in the top bar, in a row of
 its own that a click anywhere toggles, why it is on or off beside the switch. They are marked alpha: none of them has yet been
 checked against a real warehouse. Until you choose, they follow the manifest:
 on when its adapter is `snowflake`, off otherwise. Off, Snowflake is not in the menu at all,
@@ -148,7 +148,7 @@ which Snowflake's error then names.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | the column lineage menu says `Snowflake · failed` | the script could not start; its tooltip and the Columns tab say why | usually no `snowflake-connector-python` in the Python it found, one older than 4.7.3 (the script refuses it, naming the advisories and the upgrade command), or no `profiles.yml` it can read |
-| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the Snowflake section of the settings, behind the gear in the top bar |
+| Snowflake is not in the column lineage menu | Snowflake's features are off for the project, which is the default when the manifest's adapter is not `snowflake` | switch them on in the Snowflake section of the settings, behind the settings button (the sliders) in the top bar |
 | a clicked column comes back with no lineage | the object was not built by a query Snowflake could analyse, or the role cannot see it | check with `sf_lineage.py probe`, and check the environment pill names the objects you mean |
 | a query in Query history has no Snowsight link | Snowflake gave no organization name for the account | copy the query id from its row and filter Snowsight's own history by it |
 | Last built marks an environment "could not be read", and its hover and Builds by environment say "is not defined in .env.x" or "was not resolved against" it | the `.env` file cannot place the package's tables, as the Location table could not | define the variable in that file, or read the manifest's own environment |

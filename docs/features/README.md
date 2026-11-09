@@ -43,7 +43,7 @@ file with unsaved edits, and a letter in the Git tab is a file's git status.
 | click a table, model or seed name in a properties `.yml` | move the lineage onto it, staying in the file |
 | click a folder key under `models:` in `dbt_project.yml` | open that folder in the explorer, expanded |
 | the violet file at the end of the breadcrumb, in a model | the keys of `dbt_project.yml` that reach it, and what each sets; pick one to open it there |
-| `Cmd/Ctrl + K` | search models, sources, macros and every file in the project |
+| `Cmd/Ctrl + K`, or the search field in the top bar | search models, sources, macros and every file in the project |
 | `Cmd/Ctrl + F` | find in the file you are in, in the Compiled or Run SQL, a node on the lineage, or filter the Catalog's columns |
 | the copy glyph beside the name in the Catalog | that name on the clipboard |
 | `?` outside a text box, `F1`, or the `?` in the top bar | every shortcut, in one list |
@@ -58,18 +58,18 @@ file with unsaved edits, and a letter in the Git tab is a file's git status.
 | `Cmd/Ctrl + Alt + P` / `Cmd/Ctrl + Alt + N` | back to the link you followed, and forward again |
 | `Cmd/Ctrl + \`` | jump to the terminal |
 | click a column in Catalog > Columns | draw its lineage, fetched from Snowflake when Snowflake is the picked tool |
-| the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar folds the counts, then the names of the tabs not lit, when it runs short |
-| the gear in the top bar | the settings, over the whole window, a section at a time: Project (the dbt profile, `.env` files and Python), Column lineage, Snowflake, Orchestration (where the jobs are read from), Updates, Theme, and Help and tour; an amber triangle on it when dbt would find no profile |
+| the Code, Lineage and Reports tabs in the top bar | switch between the editor with its dock, the Lineage space and the Reports over the whole window; the tab of the space in front is lit and does nothing when clicked, Code and Escape go back to the editor, and the bar cuts the search field's words, then the project's name, then the names of the tabs not lit, when it runs short |
+| the settings button (the sliders) in the top bar | the settings, over the whole window, a section at a time: Project (the dbt profile, `.env` files and Python), Column lineage, Snowflake, Orchestration (where the jobs are read from), Updates, Theme, and Help and tour; an amber triangle on it when dbt would find no profile |
 | the column lineage menu in Catalog > Columns, or the settings' Column lineage section | pick Fusion, Collin or Snowflake; a greyed tool says what it lacks |
 | the `env` pill in the status bar | the environment menu: a `.env` file, the manifest, or Manage environments... for the settings' Project section |
-| the venv or update pill in the status bar | its section of the settings: Project, or Updates |
+| the venv's words, or the update pill, in the status bar | its section of the settings: Project, or Updates |
 | the Query history tab | your own Snowflake queries of the last 7 days, twenty at a time, each linked to Snowsight |
 | Snowsight beside a relation in Catalog > Location | its object, schema or database, opened in Snowsight |
 | Clone into my schema, under Catalog > Location | the statements that copy a model and its direct parents from an environment into your schema, for you to run |
 | hover a lineage node, a `ref()`, a macro or a `var()` | a card with what it is |
 | the first line of a macro's card, `used by 9 models` | every node reaching the macro, in the Reports panel |
 | hover a folder key in `dbt_project.yml` | the folder it configures, or why there is none |
-| the manifest's pill, right of the top bar | how stale the lineage is; its card lists the files and holds Run dbt parse; its arrows read `manifest.json` again |
+| the manifest's pill, beside the search field in the top bar | how stale the lineage is; its card lists the files and holds Run dbt parse; its arrows read `manifest.json` again |
 | the Search tab in the sidebar | find a word inside every file, not just in their names |
 | click a segment of the breadcrumb bar | a menu of that folder's contents, or of the neighbouring keys |
 | click a lineage node, a model's or one of its columns' | select it, fill the Node panel, and open its model's file as a preview tab, the canvas staying put |

@@ -1,6 +1,6 @@
 # 0140. The top bar switches between spaces; a panel is a space
 
-Date: 2026-11-04 · Status: provisional, amended by 0153 · Amends 0091, 0092, 0100, 0101 and 0137
+Date: 2026-11-04 · Status: provisional, amended by 0153 and 0166 · Amends 0091, 0092, 0100, 0101 and 0137
 
 **Trigger:** read before adding a space or a panel, changing what the top bar's
 tabs or the gear do, what Escape or a click on a lit tab does, what the
@@ -60,6 +60,10 @@ lines and under about 850px it ran past the window (docs/state.md).
   unfold, on hover and while the settings are open, the room it will take is
   held back from the bar's slack: neither can push the bar past the window,
   and opening the settings and coming back folds nothing differently.
+  *Amended by [0166](0166-the-shell-is-laid-out-as-the-boards-draw-it.md): the
+  gear's name no longer unfolds and the counts are in the status bar, so the
+  bar folds the search field's words first, then the project's name, then the
+  tabs.*
 
 ## Rejected
 

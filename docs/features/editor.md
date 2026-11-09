@@ -102,10 +102,15 @@ turn the rest of the file into a string.
 ![customers.sql in the editor, the card of the stg_orders it reads under the pointer, and its lineage below](../shots/editor.png)
 
 Pausing on a lineage box, or on a `ref()` / `source()` in the editor, opens a
-small card with the model's description, its first columns and their types, the
-upstream, downstream and test counts, and its tags. It is the Catalog Preview in
+small card: the model's name with its materialization and schema at the right,
+its file with its tags beside it, its description in italics, its column,
+upstream, downstream and test counts in one line, then its first columns, each
+with its type in capitals. It is the Catalog Preview in
 passing, without leaving the file or the graph. Panning, zooming, scrolling,
 clicking or typing dismisses it, and a click on a `ref()` still navigates.
+A card opened from the editor stays inside the editor: from a line low in the
+file it opens above it rather than over the dock, and one taller than the
+editor takes the window instead. The lineage's cards use the window.
 On a macro, the card names the package it came from and its file, which is how
 to tell the project's `hub` from automate_dv's, with the description and
 arguments its YAML documents. It then says who calls it, from what the manifest
@@ -195,9 +200,18 @@ reused by the next single click, so browsing the project does not pile up tabs.
 Double-clicking, or editing the file, pins it, and so does following a link out
 of it, a `ref()`, a macro call, a `var()` or a `Cmd/Ctrl + K` result, so that
 Back has it to return to; the link's target opens as the preview in its turn.
-The **Open editors** panel at the top of the sidebar lists every open file
-with its own close and save buttons, plus save-all and close-all in its
-header. Closing a tab never touches the file on disk.
+A tab shows its close × only while it is in front, or under the pointer or the
+focus; a file with unsaved edits shows the pencil in its place, the × under the
+pointer. The bar's line runs under the tabs, and the one in front opens into the
+editor. The line the cursor is on is lit in the page and its number in the
+gutter.
+
+The **Open editors** panel at the top of the sidebar starts closed, a row with a
+chevron, the title and the number of open files; Enter or a click on it opens
+the list of every open file with its own close and save buttons, plus save-all and
+close-all in its header, and the choice holds until the page is reloaded. The
+open file's row has the selection's wash, as the tree's does. Closing a tab never
+touches the file on disk.
 
 A tab follows its file when something else rewrites it: a `git pull` in the
 terminal, a checkout, dbt, another editor. With nothing unsaved, it shows the
@@ -211,8 +225,9 @@ back, after asking, and closing it asks first.
 ## Breadcrumbs
 
 The row under the tabs says where you are twice over: the file's path through
-the project, then, inside a `.yml` or a `.md`, where the cursor sits in the
-document, as `models > 0 > data_tests`. Every segment is a button. A path
+the project, its parts told apart by a slash and the file's own in the text
+colour, then, inside a `.yml` or a `.md`, where the cursor sits in the
+document, after a chevron, as `models › 0 › data_tests`. Every segment is a button. A path
 segment opens a menu of the folder it sits in, where a folder drills one level
 down and a file opens in a preview tab; a document segment lists the keys or the
 list entries beside it and jumps the cursor to the one you pick. Arrow keys move
@@ -221,3 +236,16 @@ in the menu, Enter picks, Escape closes.
 A `.sql` file shows its path and stops there. Finding a CTE name honestly means
 masking SQL strings and comments first, and a bar that is occasionally wrong is
 worse than one that is short.
+
+## The status bar
+
+Its left says where you are in the space in front. In Code it is the open
+file's path with the cursor's line and column after it, then what is true of the
+tab: modified, truncated, read only, outside the project. In the Lineage space
+it is the selection last drawn (a named selector by its name), and in Reports
+and the settings the section in front. After it come the counts of the
+project's models, sources, seeds, snapshots and tests, the venv, the `env` pill
+(a click opens its menu; it has no caret here), the branch and the shell, the
+manifest and build, and the update pill when there is one. When the window is
+narrow the place is cut first and the counts after it, so the bar stays one
+line.

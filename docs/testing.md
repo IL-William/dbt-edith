@@ -70,7 +70,8 @@ $JSC web/tests/locationlines.js # the card's Location as a list: one value where
 $JSC web/tests/spaces.js      # the top bar's tabs: the lit one, a click on it, Code from the settings opened over Reports, Escape
 $JSC web/tests/colwait.js     # a column asked for during a collin run: the canvas waits cleared, the last click is drawn, a failure gives the model back
 $JSC web/tests/working.js     # Edith's mark moving while she works: which requests count, its delay, its fade, two at once
-$JSC web/tests/settings.js    # the settings panel: its sections, what its rail and its rows say (a .env file, a job source, the next look for a release), where it opens, the gear's mark
+$JSC web/tests/settings.js    # the settings panel: its sections, what its rail and its rows say (a .env file, a job source, the next look for a release), where it opens, the settings button's mark
+$JSC web/tests/status.js      # the status bar's place for each space, its counts, and the order of the top bar's and the status bar's controls
 $JSC web/tests/tour.js        # the guided tour's steps, which it leaves out, and where its ring and card go
 $JSC web/tests/launchkey.js   # the launch key: taken from the link, kept per origin, dropped from the address, sent as a header
 $JSC web/tests/halloween.js   # the Halloween theme: after dark, the wait for an apparition, the witch's way, its timers and saves, the box art's rules

@@ -49,7 +49,7 @@ terminal and the lineage refreshes on its own when dbt rewrites the file.
 
 ![The amber manifest pill in the top bar and its card, saying a saved edit is not in the manifest yet](../shots/manifest-pill.png)
 
-At the right of the top bar one outlined pill holds a mark, the word
+In the top bar, between the search field and the buttons at its right, one outlined pill holds a mark, the word
 `manifest`, its age and the drift from the default branch, and ends in circling
 arrows that read `manifest.json` again at once, for the rare time the poll has
 not. The outline turns amber or red with the mark. The mark answers one
@@ -286,9 +286,10 @@ its first row, the arrows step through the rows, Enter picks one and Escape
 closes the menu and gives the button its focus back. Copy names, under a list
 glyph, is in the bar of the [Lineage space](selection.md) and copies the names,
 never the picture. On a narrow window the depth control's name gives way to the bar of its kind
-first, then the dock's tabs show their glyphs alone; on a narrower one still,
-when the row runs out of room even then, Export keeps its glyph and chevron
-alone too, named by its tooltip.
+first, then the dock's tabs not in front show their glyphs alone, the one in
+front keeping its name; on a narrower one, when the row runs out of room even
+then, the front tab's name goes too, and on a narrower one still Export keeps
+its glyph and chevron alone, each named by its tooltip.
 
 **Save as HTML page** saves what the canvas shows as one HTML file named after it,
 `lineage-<what it shows>-<date>.html`, for a ticket or a message.

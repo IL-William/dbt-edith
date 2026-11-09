@@ -52,6 +52,7 @@ const S = {
   depthKey: '',               // the ask the depth control waits on: an answer under another key is not its own
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
+  selectShown: '',            // the line the lineage last drew, for the status bar
   selectAsk: 0,               // bumped per run, so only the latest answer is drawn
   cardAsk: 0,                 // bumped per box clicked and per card closed, so only the latest box's Catalog shows (0101)
   colRaise: null,             // {key, max} a click asked a column's canvas to draw past the cap, for that request only (0118)
@@ -1777,6 +1778,25 @@ function flashLines(from, to) {
   flashed = { doc, handles, timer };
 }
 
+/* The cursor's line, lit in the page and its number in the gutter (--cur-line,
+   0166). One at a time, with the document it belongs to as flashLines keeps its
+   own: a tab switched to has its line painted after swapDoc, and the line left
+   behind in the other document is cleared there, not left lit under it. */
+let curLine = null;
+function paintCurLine() {
+  if (!S.cm) return;
+  const doc = S.cm.getDoc();
+  const handle = doc.getLineHandle(doc.getCursor('head').line);
+  if (curLine && curLine.doc === doc && curLine.handle === handle) return;
+  if (curLine) {
+    curLine.doc.removeLineClass(curLine.handle, 'background', 'cm-curline');
+    curLine.doc.removeLineClass(curLine.handle, 'gutter', 'cm-curline-gutter');
+  }
+  doc.addLineClass(handle, 'background', 'cm-curline');
+  doc.addLineClass(handle, 'gutter', 'cm-curline-gutter');
+  curLine = { doc, handle };
+}
+
 /* The folder a config key in dbt_project.yml configures, opened in the tree
    rather than in a tab: there is nothing to read in a folder. A chain the
    server could not place does nothing here, since the card is what explains
@@ -1799,12 +1819,14 @@ async function openConfigPath(t) {
    resolve onto whatever mark that line ends with. */
 function wireHovers(cm) {
   const wrap = cm.getWrapperElement();
+  // The editor's cards stay over the editor (0167), the tabs and the code both.
+  const inEditor = () => $('#editor-pane').getBoundingClientRect();
   wrap.addEventListener('mousemove', (e) => {
     const cl = e.target.classList;
     if (cl && cl.contains('cfgwarn-mark')) {
       const mark = e.target;
       return hoverEnter(unusedHoverKey(mark.unusedPaths, mark.unusedStale), () => mark.getBoundingClientRect(),
-        (el) => fillUnusedCard(el, mark.unusedPaths, mark.unusedStale));
+        (el) => fillUnusedCard(el, mark.unusedPaths, mark.unusedStale), inEditor);
     }
     const kind = linkUnder(cl);
     if (!kind) return hoverLeave();
@@ -1813,17 +1835,17 @@ function wireHovers(cm) {
     if (kind === 'dir') {
       const dm = cm.findMarksAt(pos).find((mk) => mk.dirTarget);
       if (!dm) return hoverLeave();
-      return hoverEnter('dir:' + dirKey(dm.dirTarget), at, (el) => fillDirCard(el, dm.dirTarget));
+      return hoverEnter('dir:' + dirKey(dm.dirTarget), at, (el) => fillDirCard(el, dm.dirTarget), inEditor);
     }
     if (kind === 'macro') {
       const mm = cm.findMarksAt(pos).find((mk) => mk.macroTarget);
       if (!mm) return hoverLeave();
-      return hoverEnter('macro:' + mm.macroTarget.id, at, (el) => fillMacroCard(el, mm.macroTarget));
+      return hoverEnter('macro:' + mm.macroTarget.id, at, (el) => fillMacroCard(el, mm.macroTarget), inEditor);
     }
     if (kind === 'var' || kind === 'env') {
       const vm = cm.findMarksAt(pos).find((mk) => mk.varTarget);
       if (!vm) return hoverLeave();
-      return hoverEnter(`${vm.varTarget.kind}:${vm.varTarget.name}`, at, (el) => fillVarCard(el, vm.varTarget));
+      return hoverEnter(`${vm.varTarget.kind}:${vm.varTarget.name}`, at, (el) => fillVarCard(el, vm.varTarget), inEditor);
     }
     const mark = cm.findMarksAt(pos).find((mk) => mk.refTarget);
     if (!mark) return hoverLeave();
@@ -1832,9 +1854,9 @@ function wireHovers(cm) {
       return hoverEnter('miss:' + t.name, at, (el) => {
         hoverCardBody(el, { title: t.name });
         el.append(Object.assign(document.createElement('div'), { className: 'hc-desc muted', textContent: mark.refTitle }));
-      });
+      }, inEditor);
     }
-    hoverEnter('node:' + t.id, at, (el) => fillNodeCard(el, t.id, t));
+    hoverEnter('node:' + t.id, at, (el) => fillNodeCard(el, t.id, t), inEditor);
   });
   wrap.addEventListener('mouseleave', hoverLeave);
 }
@@ -1866,6 +1888,7 @@ function initEditor() {
   });
   S.cm.on('cursorActivity', updateStatus);
   S.cm.on('cursorActivity', crumbCursor);
+  S.cm.on('cursorActivity', paintCurLine);
   let rescan = null;
   S.cm.on('change', (cm, ch) => {
     // A reload scans its own tab: under a diff tab, S.cm still holds the last
@@ -3020,6 +3043,7 @@ function activate(path, focusLineage = true, keepPanel = false) {
     S.cm.swapDoc(f.doc);
     // A Markdown file reads as it does in its diff (0165).
     S.cm.getWrapperElement().classList.toggle('md-doc', modeFor(path) === 'text/x-markdown');
+    paintCurLine();
     paintWarnGutter();
     S.cm.refresh();
   }
@@ -3530,26 +3554,71 @@ function jump(from, to) {
 const jumpBack = () => jump('back', 'fwd');
 const jumpForward = () => jump('fwd', 'back');
 
+/* The left of the status bar (0166): in Code, the file in front with its cursor
+   and the state of the buffer, the path in mono and the rest quieter; in another
+   space, its name and the place in it, as the boards draw them. `selection` is the
+   line the lineage last drew, `section` the title of the section in front in
+   Reports or the settings. Pure: updateStatus() draws what it returns.
+   `lead` is the space's name when the place is inside one, `notes` what goes
+   after `here`. */
+function statusWhere({ space, file, at, selection, section }) {
+  if (space === 'lineage') return { lead: 'Lineage', here: selection || '', mono: true, notes: [] };
+  if (space === 'reports') return { lead: 'Reports', here: section || '', mono: false, notes: [] };
+  if (space === 'settings') return { lead: 'Settings', here: section || '', mono: false, notes: [] };
+  if (!file) return { lead: '', here: 'no file', mono: false, notes: [] };
+  const cursor = at ? `${at.line + 1}:${at.ch + 1}` : '';
+  if (file.kind === 'diff') return { lead: '', here: file.path, mono: true, notes: ['diff against HEAD', 'read only'] };
+  if (file.kind === 'compare') {
+    return { lead: '', here: `target/collin/${file.pair.a} against target/collin/${file.pair.b}`, mono: true, notes: ['read only'] };
+  }
+  const notes = [cursor, file.dirty ? 'modified' : ''];
+  if (file.kind === 'profile') {
+    notes.push('outside the project');
+    if (file.hidden) notes.push(`${file.hidden} secret${file.hidden === 1 ? '' : 's'} kept on the server`);
+  } else if (file.truncated) {
+    notes.push('truncated');
+  }
+  return { lead: '', here: file.path, mono: true, notes: notes.filter(Boolean) };
+}
+
+/* The kinds the counts name, in their order, with their plurals: "5 models · 3
+   seeds". The status bar's, the top bar having given its chips up. */
+function statusCounts(counts) {
+  const c = counts || {};
+  return ['model', 'source', 'seed', 'snapshot', 'test']
+    .filter((k) => c[k])
+    .map((k) => `${c[k]} ${k}${c[k] > 1 ? 's' : ''}`)
+    .join(' · ');
+}
+
+/* The name of the section in front in Reports or the settings, as its rail says it. */
+function sectionInFront(space) {
+  if (space === 'reports') {
+    const sec = reportsSections(S.reports, S.macroFocus).find((x) => x.key === S.reportsSection);
+    return sec ? sec.label : '';
+  }
+  const sec = settingsSections({}).find((x) => x.key === S.settingsSection);
+  return sec ? sec.label : '';
+}
+
 function updateStatus() {
-  const s = $('#status-file');
-  if (!S.active) { s.textContent = 'no file'; return; }
-  const f = S.open.get(S.active);
-  if (f.kind === 'diff') {
-    s.textContent = `${f.path}  ·  diff against HEAD  ·  read only`;
-    return;
-  }
-  if (f.kind === 'compare') {
-    s.textContent = `target/collin/${f.pair.a} against target/collin/${f.pair.b}  ·  read only`;
-    return;
-  }
-  if (f.kind === 'profile') {
-    const at = S.cm.getCursor();
-    const hidden = f.hidden ? `  ·  ${f.hidden} secret${f.hidden === 1 ? '' : 's'} kept on the server` : '';
-    s.textContent = `${f.path}  ·  ${at.line + 1}:${at.ch + 1}${f.dirty ? '  ·  modified' : ''}  ·  outside the project${hidden}`;
-    return;
-  }
-  const c = S.cm.getCursor();
-  s.textContent = `${S.active}  ·  ${c.line + 1}:${c.ch + 1}${f.dirty ? '  ·  modified' : ''}${f.truncated ? '  ·  truncated' : ''}`;
+  const space = spaceNow();
+  const f = S.active && space === 'code' ? S.open.get(S.active) : null;
+  const where = statusWhere({
+    space,
+    file: f && { kind: f.kind, path: f.kind === 'diff' || f.kind === 'profile' ? f.path : S.active, dirty: f.dirty,
+      truncated: f.truncated, hidden: f.hidden, pair: f.pair },
+    at: f && S.cm ? S.cm.getCursor() : null,
+    selection: S.selectShown,
+    section: space === 'reports' || space === 'settings' ? sectionInFront(space) : '',
+  });
+  const out = [];
+  // The space's name alone while it has no place yet (an empty selector box).
+  if (where.lead) out.push(Object.assign(document.createElement('span'), { className: 'lead', textContent: where.lead }));
+  if (where.lead && where.here) out.push(Object.assign(document.createElement('span'), { className: 'sepa', textContent: '›' }));
+  if (where.here) out.push(Object.assign(document.createElement('span'), { className: where.mono ? 'mono' : '', textContent: where.here }));
+  for (const note of where.notes) out.push(Object.assign(document.createElement('span'), { className: 'note', textContent: ` · ${note}` }));
+  $('#status-where').replaceChildren(...out);
 }
 
 // ------------------------------------------------------------ breadcrumbs --
@@ -3818,10 +3887,14 @@ function renderCrumbs() {
   if (ownsPane(f) || f.kind === 'profile') return;
 
   const segs = pathCrumbs(S.active);
+  // A slash between the path's parts and the file's own in the text colour; the
+  // chevron stays for what is inside the file, as it steps into it (0166).
   segs.forEach((seg, i) => {
-    if (i) bar.appendChild(crumbSep());
-    bar.appendChild(crumbButton(seg.label, '', (btn) =>
-      openCrumbMenu(btn, { kind: 'path', dir: seg.dir, current: seg.path })));
+    if (i) bar.appendChild(crumbSep('/'));
+    const b = crumbButton(seg.label, '', (btn) =>
+      openCrumbMenu(btn, { kind: 'path', dir: seg.dir, current: seg.path }));
+    if (i === segs.length - 1) b.classList.add('cur');
+    bar.appendChild(b);
   });
 
   const nodes = S.outline && S.outline.path === S.active ? S.outline.nodes : [];
@@ -4080,8 +4153,8 @@ async function openProjectAt(line, ch) {
   gotoPos(line, ch);
 }
 
-function crumbSep() {
-  return Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '›' });
+function crumbSep(mark = '›') {
+  return Object.assign(document.createElement('span'), { className: mark === '/' ? 'crumb-sep sl' : 'crumb-sep', textContent: mark });
 }
 
 function crumbButton(label, kind, open) {
@@ -4528,8 +4601,18 @@ function applyGit(info) {
   S.gitModDirs = ancestorsOf(info.modified);
   S.gitUntDirs = ancestorsOf(info.untracked);
   for (const pre of S.gitPrefixes) S.gitUntDirs.add(pre.replace(/\/$/, ''));
-  $('#status-branch').textContent = info.repo ? 'git ' + (info.branch || 'detached') : info.paused ? 'git paused' : '';
+  paintBranch(info);
   paintTree();
+}
+
+/* The status bar's branch: the branch glyph and its name; git being paused (0121)
+   is no branch, so it keeps its words and no glyph. */
+function paintBranch(info) {
+  const el = $('#status-branch');
+  const paused = !info.repo && !!info.paused;
+  el.classList.toggle('hidden', !info.repo && !paused);
+  el.dataset.paused = String(paused);
+  el.querySelector('.bn').textContent = info.repo ? (info.branch || 'detached') : paused ? 'git paused' : '';
 }
 
 const underGitPrefix = (path) => S.gitPrefixes.some((pre) => (path + '/').startsWith(pre));
@@ -5732,6 +5815,8 @@ async function runSelection() {
     $('#select-sum').textContent = '';
     $('#lineage-status').textContent = '';
     paintSelectWarnings([]);
+    S.selectShown = '';
+    updateStatus();
     return;
   }
   try {
@@ -5742,6 +5827,9 @@ async function runSelection() {
     // box and the picture never say two different things.
     if (sub.stripped) $('#select-input').value = selectionText(sub);
     const line = $('#select-input').value.trim();
+    // The status bar names what was drawn, not what is being typed.
+    S.selectShown = selectionHere(line);
+    updateStatus();
     // A seed was never typed: it is made again each time, and would only
     // push the lines that were out of the ArrowUp history.
     if (line !== S.selectSeed) rememberSelection(line);
@@ -5781,6 +5869,8 @@ async function runSelection() {
   } catch (e) {
     if (ask !== S.selectAsk) return;
     S.selectSub = null;
+    S.selectShown = '';
+    updateStatus();
     $('#select-sum').textContent = '';
     $('#select-sum').title = '';
     paintSelectWarnings([e.message], true);
@@ -6105,6 +6195,14 @@ function selectionText(sub) {
 function boxSelector(text) {
   const m = /(?:^|\s)--selector(?:=|\s+)["']?([^\s"']+)/.exec(String(text || ''));
   return m ? m[1] : '';
+}
+
+/* What the status bar says of a selection drawn: the line as typed, but for a
+   line that is only `--selector X`, which is shown as X. */
+function selectionHere(line) {
+  const text = String(line || '').trim();
+  const m = /^--selector(?:=|\s+)["']?([^\s"']+)["']?$/.exec(text);
+  return m ? m[1] : text;
 }
 
 /* The menu's filter. A name that matches comes before a description that
@@ -7538,7 +7636,7 @@ function profileLink() {
 
 /* What is wrong with the profile, '' while there is one to open, or nowhere
    to look for one. A missing one is why dbt would fail, and where it should be
-   is the question the user would ask: the gear carries a triangle for it, and the
+   is the question the user would ask: the settings button carries a triangle for it, and the
    settings say where dbt looks (0049, 0100). A refused one has nothing to open
    either, and says why (0094). */
 function profileWarning(p) {
@@ -7595,8 +7693,8 @@ function followBuildsSwitch() {
   });
 }
 
-/* The gear: a triangle while the profile is missing or refused (0100). It is lit
-   by paintSpaces(), as a space. */
+/* The settings button: a triangle while the profile is missing or refused (0100).
+   It is lit by paintSpaces(), as a space. */
 function paintSettingsButton() {
   const b = $('#settings-btn');
   const warn = profileWarning(S.profiles);
@@ -11946,10 +12044,10 @@ function jobSourcesRead(answer) {
 
 
 // ----------------------------------------------------------------- spaces --
-/* The top bar's tabs (0140): Code, Lineage and Reports, and the gear beside
-   Search. A space is a panel without an ×, and Code is no panel down. A tab is
-   a place, never a switch: the one in front does nothing when clicked, and
-   what takes you back to Code is its tab or Escape. */
+/* The top bar's tabs (0140): Code, Lineage and Reports, and the settings
+   button among the squares. A space is a panel without an ×, and Code is no
+   panel down. A tab is a place, never a switch: the one in front does nothing
+   when clicked, and what takes you back to Code is its tab or Escape. */
 const SPACE_OF = { '': 'code', select: 'lineage', reports: 'reports', settings: 'settings' };
 
 const spaceNow = () => SPACE_OF[S.panel] || 'code';
@@ -11969,7 +12067,7 @@ function goSpace(name) {
   }
 }
 
-/* Lights the tab of the space in front, and the gear while the settings are
+/* Lights the tab of the space in front, and the settings button while the settings are
    open; the dock's Selection button says whether its space is. Called
    by every panel's paint. */
 function paintSpaces() {
@@ -11982,6 +12080,8 @@ function paintSpaces() {
   gear.classList.toggle('on', now === 'settings');
   gear.setAttribute('aria-expanded', String(now === 'settings'));
   $('#graph-mode [data-mode=select]').setAttribute('aria-expanded', String(now === 'lineage'));
+  // The status bar says where the space in front puts you.
+  updateStatus();
 }
 
 // ----------------------------------------------------------------- panels --
@@ -12023,7 +12123,7 @@ const PANELS = {
     paint: () => { paintSettingsButton(); paintSpaces(); },
     // A form left half filled goes with the panel, as it went with its
     // dialog, but for the tour's, which puts it back as it was left. Rolled
-    // down over Reports, by a Sources… there or the gear, a close from the
+    // down over Reports, by a Sources… there or the settings button, a close from the
     // keyboard or its own buttons gives Reports back, as the dialog left it
     // down under it.
     closed: ({ restore } = {}) => {
@@ -12637,6 +12737,7 @@ async function openReports(section, { reread = true } = {}) {
   if (!reread && key === S.reportsDrawn) {
     S.reportsSection = key;
     paintReportsNav();
+    updateStatus();
     return;
   }
   showReportSection(key);
@@ -13037,6 +13138,7 @@ async function showReportSection(key) {
   if (S.reportsDrawn) S.reportsPlace[S.reportsDrawn] = keepReportPlace(view) || S.reportsPlace[S.reportsDrawn];
   S.reportsSection = key;
   paintReportsNav();
+  updateStatus();
   const ask = ++S.reportsAsk;
   if (key !== S.reportsDrawn) {
     view.replaceChildren(jel('div', 'compiled-empty', 'Reading…'));
@@ -13765,7 +13867,7 @@ async function openFromReport(id, { dock = '', column = '' } = {}) {
 }
 
 // --------------------------------------------------------------- settings --
-/* Every setting, in one panel rolled down from the gear in the top bar, a
+/* Every setting, in one panel rolled down from the sliders in the top bar, a
    section at a time, as the reports are (0100): the project's profile,
    environments and Python, the column lineage, Snowflake, the orchestration,
    the updates, the theme, and help. A section is one column of rows, a
@@ -13895,6 +13997,7 @@ function setHead(sec) {
 /* Draws one section, or puts back the one kept with its form as it was left. */
 function showSettingsSection(key, { add = false } = {}) {
   S.settingsSection = key;
+  updateStatus();
   redrawIfChanged($('#settings-nav'), paintSettingsNav);
   if (add) delete S.settingsKept.jobs;
   const sec = settingsSections(settingsNow()).find((x) => x.key === key);
@@ -14405,17 +14508,32 @@ const HOVER_COLS = 8;      // the card never scrolls: the rest is counted, not l
 /* Where a box of size `box` goes next to `at`, inside `view`. Below when it
    fits, above when it does not, clamped rather than clipped when neither works.
    `view` is a parameter rather than a read of `window` so this can be checked
-   without a DOM. */
+   without a DOM; its `top` and `left` are optional (0 by default) and place it
+   somewhere other than the window's corner, as the editor's card is (0167). */
 function placeFloating(at, box, view, gap = 8) {
-  const below = at.bottom + gap + box.height <= view.height;
-  const above = at.top - gap - box.height >= 0;
+  const vt = view.top || 0, vl = view.left || 0;
+  const below = at.bottom + gap + box.height <= vt + view.height;
+  const above = at.top - gap - box.height >= vt;
   let top;
   if (below) top = at.bottom + gap;
   else if (above) top = at.top - gap - box.height;
-  else top = Math.max(4, Math.min(at.bottom + gap, view.height - box.height - 4));
+  else top = Math.max(vt + 4, Math.min(at.bottom + gap, vt + view.height - box.height - 4));
   // A box wider than the viewport pins to the left edge rather than going negative.
-  const left = Math.max(4, Math.min(at.left, view.width - box.width - 4));
+  const left = Math.max(vl + 4, Math.min(at.left, vl + view.width - box.width - 4));
   return { top, left, above: !below && above };
+}
+
+/* The room a hover card may take: the window, or, for a card opened from the
+   editor, the part of the editor that is in the window (0167). A card taller
+   than that falls back to the window rather than overflow the editor, since a
+   card must be read whole. */
+function hoverView(win, within, box) {
+  const whole = { top: 0, left: 0, width: win.width, height: win.height };
+  if (!within) return whole;
+  const left = Math.max(0, within.left), top = Math.max(0, within.top);
+  const right = Math.min(win.width, within.right), bottom = Math.min(win.height, within.bottom);
+  if (box.height > bottom - top || box.width > right - left) return whole;
+  return { top, left, width: Math.max(0, right - left), height: bottom - top };
 }
 
 /* The head every card shares. Returns the element so a filler can keep appending. */
@@ -14470,24 +14588,31 @@ function subNodes(p) {
   return [`${p.lead} `, Object.assign(document.createElement('s'), { textContent: p.struck }), p.rest ? `  ·  ${p.rest}` : ''];
 }
 
-function hoverCardBody(el, { title, tone, sub, crumb }) {
+function hoverCardBody(el, { title, tone, sub, crumb, node }) {
   el.textContent = '';
+  el.classList.toggle('hc-node', !!node);
   const head = document.createElement('div');
   head.className = 'hc-head';
   if (tone) head.appendChild(tone);
   head.append(Object.assign(document.createElement('span'), { className: 'hc-name', textContent: title }));
   el.appendChild(head);
-  // A string, or the nodes subNodes() makes of a box's line.
+  // A string, or the nodes subNodes() makes of a box's line. A node's card
+  // (0166) puts it at the head's right and its file on a row of its own, where
+  // the tags join it; the other cards keep a line under the name.
   if (sub) {
-    const line = Object.assign(document.createElement('div'), { className: 'hc-sub' });
+    const line = Object.assign(document.createElement(node ? 'span' : 'div'), { className: node ? 'hc-mt' : 'hc-sub' });
     line.append(...[].concat(sub));
-    el.append(line);
+    (node ? head : el).append(line);
   }
-  if (crumb) el.append(Object.assign(document.createElement('div'), { className: 'hc-crumb', textContent: crumb }));
+  if (crumb && node) {
+    const row = Object.assign(document.createElement('div'), { className: 'hc-path' });
+    row.append(Object.assign(document.createElement('span'), { className: 'hc-file', textContent: crumb }));
+    el.append(row);
+  } else if (crumb) el.append(Object.assign(document.createElement('div'), { className: 'hc-crumb', textContent: crumb }));
   return el;
 }
 
-let hoverCard = null;                        // { el, at, off }
+let hoverCard = null;                        // { el, at, within, off }
 let hoverTimer = null, hoverGrace = null;
 let hoverKey = '';                           // what the card shows, or is about to
 
@@ -14508,18 +14633,20 @@ function closeHoverCard() {
 function placeHoverCard() {
   if (!hoverCard) return;
   const box = hoverCard.el.getBoundingClientRect();
-  const p = placeFloating(hoverCard.at, { width: box.width, height: box.height },
-    { width: window.innerWidth, height: window.innerHeight });
+  const size = { width: box.width, height: box.height };
+  const win = { width: window.innerWidth, height: window.innerHeight };
+  const within = hoverCard.within ? hoverCard.within() : null;
+  const p = placeFloating(hoverCard.at, size, hoverView(win, within, size));
   hoverCard.el.style.top = `${p.top}px`;
   hoverCard.el.style.left = `${p.left}px`;
 }
 
-function openHoverCard(at, fill) {
+function openHoverCard(at, fill, within) {
   const el = document.createElement('div');
   el.className = 'hovercard';
   el.setAttribute('role', 'tooltip');
   document.body.appendChild(el);
-  hoverCard = { el, at, off: () => {} };
+  hoverCard = { el, at, within, off: () => {} };
   fill(el);
   placeHoverCard();
 
@@ -14547,8 +14674,9 @@ function openHoverCard(at, fill) {
 /* `key` identifies what is under the pointer, so a mousemove that stays on the
    same thing neither restarts the delay nor repaints. Moving to a different one
    while a card is open swaps it without waiting again, the way a group of
-   tooltips behaves. */
-function hoverEnter(key, getRect, fill) {
+   tooltips behaves. `within`, when given, returns the rect the card stays
+   inside: the editor's for a card it opens, the window's for the canvas's. */
+function hoverEnter(key, getRect, fill, within) {
   clearTimeout(hoverGrace);
   hoverGrace = null;
   if (key === hoverKey) return;
@@ -14561,7 +14689,7 @@ function hoverEnter(key, getRect, fill) {
   const show = () => {
     hoverTimer = null;
     if (hoverCard) { hoverCard.off(); hoverCard.el.remove(); hoverCard = null; }
-    openHoverCard(getRect(), fill);
+    openHoverCard(getRect(), fill, within);
   };
   if (swap) show();
   else hoverTimer = setTimeout(show, HOVER_DELAY);
@@ -14636,7 +14764,14 @@ function fillNodeCard(el, id, seed) {
     if (!hoverCard || hoverCard.el !== el) return;   // closed, or swapped for another
     const tone = dot(n);
     tone.removeAttribute('title');           // no native tooltip inside the card
-    hoverCardBody(el, { title: n.name || id, tone, sub: subNodes(Lineage.subtitleParts(n)), crumb: n.file || id });
+    // The box's line without its test count, which the stats below say.
+    hoverCardBody(el, { title: n.name || id, tone, sub: subNodes(Lineage.subtitleParts({ ...n, tests: 0 })), crumb: n.file || id, node: true });
+    if (n.tags && n.tags.length) {
+      const tags = document.createElement('span');
+      tags.className = 'hc-tags';
+      for (const t of n.tags) tags.append(Object.assign(document.createElement('span'), { className: 'tagchip', textContent: t }));
+      el.querySelector('.hc-path').append(tags);
+    }
     if (n.disabled) {
       const off = Object.assign(document.createElement('span'), { className: 'offchip', textContent: 'disabled' });
       el.querySelector('.hc-head').appendChild(off);
@@ -14669,9 +14804,21 @@ function fillNodeCard(el, id, seed) {
       }));
     }
 
-    const counts = test ? [`${n.upstream_total} upstream`] : [`${n.columns.length} columns`, `${n.upstream_total} upstream`,
-      `${n.downstream_total} downstream`, `${n.tests.length} tests`];
-    el.append(Object.assign(document.createElement('div'), { className: 'hc-counts', textContent: counts.join('  ·  ') }));
+    // The numbers in the text colour, their words quieter; a test's card says
+    // only what it reads.
+    const stat = (num, word) => {
+      const one = document.createElement('span');
+      one.append(Object.assign(document.createElement('b'), { textContent: String(num) }), ` ${word}`);
+      return one;
+    };
+    const stats = document.createElement('div');
+    stats.className = 'hc-stats' + (n.columns.length ? ' ruled' : '');
+    if (test) stats.append(stat(n.upstream_total, 'up'));
+    else {
+      stats.append(stat(n.columns.length, n.columns.length === 1 ? 'column' : 'columns'), stat(n.upstream_total, 'up'),
+        stat(n.downstream_total, 'down'), stat(n.tests.length, n.tests.length === 1 ? 'test' : 'tests'));
+    }
+    el.append(stats);
 
     if (n.columns.length) {
       const list = document.createElement('div');
@@ -14691,12 +14838,6 @@ function fillNodeCard(el, id, seed) {
       el.appendChild(list);
     }
 
-    if (n.tags && n.tags.length) {
-      const tags = document.createElement('div');
-      tags.className = 'hc-tags';
-      for (const t of n.tags) tags.append(Object.assign(document.createElement('span'), { className: 'tagchip', textContent: t }));
-      el.appendChild(tags);
-    }
     placeHoverCard();
   };
 
@@ -15087,21 +15228,22 @@ function paintEnvSelect() {
   if (!envsInUse()) { pill.classList.add('hidden'); return; }
   const visible = S.envs.files.filter((f) => !f.hidden);
   if (S.env && !visible.some((f) => f.file === S.env)) S.env = '';
-  fillEnvPill(pill, 'env');
+  fillEnvPill(pill, 'env', false);
   pill.classList.remove('hidden');
   repaintSettings();
 }
 
-/* A button showing the environment in use, coloured by envTone, with a caret:
-   the Catalog's and the status bar's both open the menu (0142). */
-function fillEnvPill(el, prefix) {
+/* A button showing the environment in use, coloured by envTone: the Catalog's and
+   the status bar's both open the menu (0142). The Catalog's keeps its caret; the
+   status bar's has none (0166), the pill being a notch smaller there. */
+function fillEnvPill(el, prefix, caret = true) {
   const own = manifestChoice((S.meta && S.meta.sandbox) || '');
   const name = S.env ? envDisplayName(S.env) : own.label;
   el.textContent = '';
   el.dataset.tone = S.env ? envTone(name) : 'manifest';
   if (prefix) el.append(Object.assign(document.createElement('span'), { className: 'envpill-k', textContent: prefix }));
   el.append(document.createTextNode(name));
-  el.append(Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
+  if (caret) el.append(Object.assign(document.createElement('span'), { className: 'envpill-caret', textContent: '▾' }));
   const now = S.env ? `Catalog locations are resolved with ${S.env}.` : own.now;
   el.title = `${now} Click to pick an environment.`;
 }
@@ -19775,23 +19917,24 @@ function showDock(which, { look = true, id = '' } = {}) {
    the row still broke without it, rather than the tools breaking onto a second
    line the 30px row cannot show: first the depth control's name gives way to
    the bar of its kind (`noname`; it repeats the editor's tab and the focus box,
-   and stays whole in the bar's tooltip, the menus and the copy), then the
-   tabs keep their glyph alone, named by their tooltip, and last Export keeps
-   its glyph and chevron alone too (`iconic`; Fit has no label), the action
-   that matters least to what is drawn. It is measured, never set at a width,
-   because the room moves with the sidebar, Query history and the column chip.
-   It is measured with the lineage's tools shown and any other tab's hidden
-   (the Jobs tab's two buttons, the terminal's chip and two buttons and the
-   Compiled tab's one line of text are far fewer or give way with an ellipsis,
-   and a fold they caused would move the tabs when it opens), and the open tab
-   folds with the others, so that a click on a tab never moves the tabs under
-   the pointer: wireTabs()
-   calls it when the row or the tools change, and never on a tab change. The
-   tools' own class is the one change of theirs it does not hear, which is why
-   the other folds are set there. Only the tools are asked whether they broke,
-   since a tab cannot, and a tab taller than the row, under a large minimum
-   font, would keep the labels folded at any width. Past every fold, the tools
-   still break: docs/state.md has the rest. */
+   and stays whole in the bar's tooltip, the menus and the copy), then the tabs
+   not in front keep their glyph alone, named by their tooltip, the one in
+   front keeping its name (`folded`), then the front tab folds as well
+   (`bare`), and last Export keeps its glyph and chevron alone too (`iconic`;
+   Fit has no label), the action that matters least to what is drawn (0166).
+   It is measured, never set at a width, because the room moves with the
+   sidebar, Query history and the column chip. It is measured with the
+   lineage's tools shown and any other tab's hidden (the Jobs tab's two
+   buttons, the terminal's chip and two buttons and the Compiled tab's one
+   line of text are far fewer or give way with an ellipsis, and a fold they
+   caused would move the tabs when it opens), and with the widest tab's name in
+   front, whichever is, so that a click on a tab never changes what folds:
+   wireTabs() calls it when the row or the tools change, and never on a tab
+   change. The tools' own class is the one change of theirs it does not hear,
+   which is why the other folds are set there. Only the tools are asked
+   whether they broke, since a tab cannot, and a tab taller than the row, under
+   a large minimum font, would keep the labels folded at any width. Past every
+   fold, the tools still break: docs/state.md has the rest. */
 function foldDockTabs() {
   const row = $('#dock > .tabs');
   const tools = $('#lineage-tools');
@@ -19799,9 +19942,13 @@ function foldDockTabs() {
   const others = [$('#jobs-tools'), $('#term-tools'), $('#artifact-tools')];
   const othersAway = others.map((e) => e.classList.contains('hidden'));
   const was = row.classList.contains('folded');
-  row.classList.remove('folded');
+  row.classList.remove('folded', 'bare', 'measure');
   others.forEach((e) => e.classList.add('hidden'));
   tools.classList.remove('hidden', 'noname', 'iconic');
+  const tabs = $$('#dock > .tabs .tab');
+  // With every name shown, before anything folds: the tab the others are measured against.
+  const widest = tabs.reduce((best, t) => (t.offsetWidth > (best ? best.offsetWidth : 0) ? t : best), null);
+  tabs.forEach((t) => t.classList.toggle('widest', t === widest));
   const fit = () => {
     // Without the strip the Halloween theme adds over the tabs, whose room the witch has.
     const h = row.getBoundingClientRect().height - parseFloat(getComputedStyle(row).paddingTop);
@@ -19811,15 +19958,19 @@ function foldDockTabs() {
   if (!fit()) {
     tools.classList.add('noname');
     if (!fit()) {
-      row.classList.add('folded');
-      if (!fit()) tools.classList.add('iconic');
+      row.classList.add('folded', 'measure');
+      if (!fit()) {
+        row.classList.add('bare');
+        if (!fit()) tools.classList.add('iconic');
+      }
+      row.classList.remove('measure');
     }
   }
   const folded = row.classList.contains('folded');
   tools.classList.toggle('hidden', away);
   others.forEach((e, i) => e.classList.toggle('hidden', othersAway[i]));
   if (was === folded) return;
-  $$('#dock > .tabs .tab').forEach((t) => {
+  tabs.forEach((t) => {
     const { name, about } = t.dataset;
     if (folded) t.title = about ? `${name}: ${about}` : name;
     else if (about) t.title = about;
@@ -19828,38 +19979,29 @@ function foldDockTabs() {
 }
 
 /* The top bar never breaks onto a second line, and never runs past the
-   window (docs/state.md had it do both on a narrow one). The project's name
-   gives way first, cut with an ellipsis down to PROJECT_MIN, and what it
-   could still give up counts as room. Then, cheapest first: the gear keeps its
-   name from unfolding, the counts go, and the tabs not lit keep their glyph
-   alone, named by their tooltip and still read out. Measured, never set at a
-   width, because the room moves with the name, the counts, the news on the
-   Reports tab and the theme's button: it is measured with every tab's name
-   shown, whichever is lit, so a click on a tab never changes what folds
-   (0140). The gear's name unfolds on hover and while the settings are open,
-   so the first check holds back the room it will take, whatever point of its
-   transition the bar is in: neither can push the bar past the window, and
-   opening the settings and coming back never changes what folds. Only the
-   bar's own classes change, so the observers below never hear it. */
+   window (docs/state.md had it do both on a narrow one). Cheapest first:
+   the search field shrinks with the window down to 200px (app.css; the
+   project's name does not give until then), its placeholder cut with an
+   ellipsis; then `nosearch` takes the words away and leaves the glyph and
+   the key; then the project's name gives way, cut with an ellipsis down to
+   PROJECT_MIN; then the tabs not lit keep their glyph alone, named by their
+   tooltip and still read out. Measured, never set at a width, because the
+   room moves with the name, the news on the Reports tab and the theme's
+   button: it is measured with every tab's name shown, whichever is lit, so
+   a click on a tab never changes what folds (0140, 0166). Only the bar's
+   own classes change, so the observers below never hear it. */
 const PROJECT_MIN = 120;
 
 function foldTopbar() {
   const bar = $('#topbar');
   const name = $('#project');
-  const grow = $('#topbar > .grow');
-  bar.classList.remove('nolabel', 'nocounts', 'folded');
-  // What the gear's name has still to take to be unfolded, with its margin.
-  const label = $('#settings-btn .rlabel');
-  const unfolds = Math.max(0, label.scrollWidth + 6 - label.offsetWidth - parseFloat(getComputedStyle(label).marginLeft));
-  // The room left over, and what the name could still give up; none of either once the bar overflows.
-  const fits = (need) => bar.scrollWidth <= bar.clientWidth
-    && grow.offsetWidth + Math.max(0, name.clientWidth - PROJECT_MIN) >= need
+  bar.classList.remove('nosearch', 'folded');
+  // Nothing past the window, and the name either whole or cut no further than PROJECT_MIN.
+  const fits = () => bar.scrollWidth <= bar.clientWidth
     && (name.scrollWidth <= name.clientWidth || name.clientWidth >= PROJECT_MIN);
-  if (fits(unfolds)) return;
-  bar.classList.add('nolabel');
-  if (fits(0)) return;
-  bar.classList.add('nocounts');
-  if (fits(0)) return;
+  if (fits()) return;
+  bar.classList.add('nosearch');
+  if (fits()) return;
   bar.classList.add('folded');
 }
 
@@ -20054,7 +20196,8 @@ function openThemeMenu(anchor) {
     item.addEventListener('click', () => { closePopup(); anchor.focus(); pickTheme(t.id); });
     menu.append(item);
   }
-  openPopup(anchor, menu);
+  anchor.setAttribute('aria-expanded', 'true');
+  openPopup(anchor, menu, () => anchor.setAttribute('aria-expanded', 'false'));
 }
 
 /* A switch that walks. A section is drawn again whenever what it shows
@@ -20391,13 +20534,13 @@ function tourSteps(c) {
         + 'in each environment, the steps of your jobs that run it once the Jobs tab has a source, and its columns '
         + 'under Columns. Its upstream and downstream counts move the lineage, as a box does.' });
   }
-  // In the settings, behind the gear, where every setting is (0100); the
+  // In the settings, behind the sliders, where every setting is (0100); the
   // Columns tab's menu picks the same.
   const columns = c.cll
     ? `On screen: ${c.cll}. A click on a column in Catalog > Columns follows it from model to model, and this `
-      + 'section of the settings, behind the gear in the top bar, picks where the edges come from, as the menu in '
+      + 'section of the settings, behind the sliders in the top bar, picks where the edges come from, as the menu in '
       + 'that tab does.'
-    : 'None yet: this section of the settings, behind the gear in the top bar, picks where a column\'s lineage comes '
+    : 'None yet: this section of the settings, behind the sliders in the top bar, picks where a column\'s lineage comes '
       + 'from. Collin reads the compiled SQL, and picking it runs it, or offers the command that installs it'
       + (c.snowflake ? '; Snowflake fetches a column\'s lineage when you click it.' : '.')
       + ' Then a click on a column in Catalog > Columns follows it from model to model.'
@@ -20760,7 +20903,7 @@ async function endTour() {
   await t.chain;
   closeCrumbMenu();
   // Down for the Column lineage step: what was down before the tour comes
-  // back last, and the gear opens on the section it last showed.
+  // back last, and the settings button opens on the section it last showed.
   if (panelOpen('settings')) closePanel();
   const s = t.saved;
   S.settingsSection = s.settingsSection;
@@ -21330,10 +21473,9 @@ function wireKeys() {
     });
   }
   $('#reveal-btn').addEventListener('click', revealActive);
-  $('#oe-head').addEventListener('click', () => {
-    const box = $('#open-editors');
-    box.classList.toggle('collapsed');
-    $('#oe-caret').textContent = box.classList.contains('collapsed') ? '\u25b8' : '\u25be';
+  $('#oe-toggle').addEventListener('click', (e) => {
+    const open = $('#open-editors').classList.toggle('collapsed') === false;
+    e.currentTarget.setAttribute('aria-expanded', String(open));
   });
   // Its arrows turn until the server has read the file, and a second click
   // meanwhile reads it no sooner.
@@ -21391,15 +21533,7 @@ function applyMeta(meta) {
   $('#project').textContent = meta.project || '(no manifest)';
   $('#project').title = meta.project || '';
   $('#tree-title').textContent = meta.project || 'Project';
-  const c = meta.counts || {};
-  $('#counts').textContent = '';
-  for (const k of ['model', 'source', 'seed', 'snapshot', 'test']) {
-    if (!c[k]) continue;
-    const s = document.createElement('span');
-    s.className = 'chip';
-    s.textContent = `${c[k]} ${k}${c[k] > 1 ? 's' : ''}`;
-    $('#counts').appendChild(s);
-  }
+  $('#status-counts').textContent = statusCounts(meta.counts);
   const when = meta.manifest_mtime ? new Date(meta.manifest_mtime * 1000).toLocaleString() : 'missing';
   $('#status-manifest').textContent = `dbt ${meta.dbt_version || '?'} · manifest ${when}`;
   // A reload can change the count of edges the menu's button names.
@@ -21921,7 +22055,8 @@ function openGithubMenu(anchor) {
   row(links.star, svg('<path d="M8 1.95L9.62 6.33L14.28 6.51L10.62 9.4L11.88 13.89L8 11.3L4.12 13.89L5.38 9.4L1.72 6.51L6.38 6.33Z"/>'),
     'Give dbt-edith a star', 'The repository on GitHub, whose Star button is at the top right');
   menu.append(el('div', 'menunote', 'Both open GitHub in a new tab; an issue or a star needs a GitHub account.'));
-  openPopup(anchor, menu);
+  anchor.setAttribute('aria-expanded', 'true');
+  openPopup(anchor, menu, () => anchor.setAttribute('aria-expanded', 'false'));
 }
 
 async function boot() {

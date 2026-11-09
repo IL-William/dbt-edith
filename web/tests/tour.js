@@ -70,8 +70,8 @@ check('no column lineage, Snowflake off: where its switch is', /in the Snowflake
 check('  Snowflake on: what it does, and no switch to find',
   [/fetches a column/.test(step(tourSteps(ctx({ snowflake: true })), 'columns').text),
     /Snowflake section/.test(step(tourSteps(ctx({ snowflake: true })), 'columns').text)], [true, false]);
-check('  rung in the settings, behind the gear, where every setting is',
-  [step(all, 'columns').target, /behind the gear in the top bar/.test(step(all, 'columns').text)],
+check('  rung in the settings, behind the sliders, where every setting is',
+  [step(all, 'columns').target, /behind the sliders in the top bar/.test(step(all, 'columns').text)],
   ['#settings-view [data-live=columns]', true]);
 check('  a tool on screen: named, and how to use it',
   step(tourSteps(ctx({ cll: 'Collin' })), 'columns').text.indexOf('On screen: Collin. A click on a column') === 0, true);
