@@ -103,6 +103,58 @@ check('elsewhere the shell reads xterm.js\'s, and nothing is added', termRows('o
   }); }); });
 });
 
+print('\n--- the find box ---');
+var macLabel = function (c) { return keyLabel(c, true); }, pcLabel = function (c) { return keyLabel(c, false); };
+var all = shortcutSheet('mac');
+var kept = function (rows) { return rows.map(function (g) { return g.title + ':' + g.rows.length; }); };
+check('a blank query keeps every group and row, marked nowhere',
+  JSON.stringify(kept(filterShortcuts(all, '  ', macLabel, true))) === JSON.stringify(all.map(function (g) { return g.title + ':' + g.keys.length; }))
+  && filterShortcuts(all, '', macLabel, true).every(function (g) { return g.rows.every(function (r) { return r.m === ''; }); }), true);
+var undo = filterShortcuts(all, 'undo', macLabel, true);
+check('a text hit is one row, marked with the case it was written in',
+  JSON.stringify(undo.map(function (g) { return [g.title, g.rows.length]; })), '[["Editor",1]]');
+check('  split before, at and after the hit', [undo[0].rows[0].a, undo[0].rows[0].m, undo[0].rows[0].b], ['', 'Undo', ' and redo']);
+check('  its keys are the Mac labels', undo[0].rows[0].keys, ['⌘Z', '⇧⌘Z']);
+var f3 = filterShortcuts(all, 'f3', macLabel, true);
+check('a key hit keeps the row, unmarked', f3.length === 1 && f3[0].rows.length === 1 && f3[0].rows[0].m === '' && f3[0].rows[0].a === 'The same, as in VS Code', true);
+var cmdG = filterShortcuts(all, '⌘g', macLabel, true);
+check('a Mac label is found as it is drawn', cmdG.length === 1 && cmdG[0].rows[0].keys.join(' ') === '⌘G ⇧⌘G', true);
+check('Ctrl is found on a PC label and not on a Mac one',
+  [filterShortcuts(all, 'ctrl+k', pcLabel, false).length > 0, filterShortcuts(all, 'ctrl+k', macLabel, true).length], [true, 0]);
+var term = filterShortcuts(all, 'terminal', macLabel, true);
+check('a group title keeps the whole group',
+  term.some(function (g) { return g.title === 'Terminal' && g.rows.length === all.filter(function (x) { return x.title === 'Terminal'; })[0].keys.length; }), true);
+check('  and marks a row only where its text holds the title too',
+  term.filter(function (g) { return g.title === 'Terminal'; })[0].rows.every(function (r) { return r.m === ''; }), true);
+var rowTexts = function (groups) { return [].concat.apply([], groups.map(function (g) { return g.rows.map(function (r) { return r.a + r.m + r.b; }); })); };
+check('keyCombo\'s own Mod is not searched: "mod" on a Mac keeps only what the text says',
+  rowTexts(filterShortcuts(all, 'mod', macLabel, true)).indexOf('Save the file') < 0, true);
+check('  nor is its +', rowTexts(filterShortcuts(all, '+', macLabel, true)).indexOf('Save the file') < 0, true);
+check('Cmd and Command find the Mac\'s Mod rows', [rowTexts(filterShortcuts(all, 'cmd', macLabel, true)).indexOf('Save the file') >= 0,
+  rowTexts(filterShortcuts(all, 'command', macLabel, true)).indexOf('Save the file') >= 0], [true, true]);
+check('Option finds the Mac\'s Alt rows', rowTexts(filterShortcuts(all, 'option', macLabel, true)).indexOf('Close the tab') >= 0, true);
+check('Control is not Cmd', rowTexts(filterShortcuts(all, 'control', macLabel, true)).indexOf('Save the file') < 0, true);
+check('on a PC Cmd and Option find nothing, and Alt finds Alt+W',
+  [filterShortcuts(all, 'cmd', pcLabel, false).length, filterShortcuts(all, 'option', pcLabel, false).length,
+    rowTexts(filterShortcuts(all, 'alt', pcLabel, false)).indexOf('Close the tab') >= 0], [0, 0, true]);
+var findG = filterShortcuts(all, 'find', macLabel, true).filter(function (g) { return g.title === 'Find'; })[0];
+check('a title hit keeps the Find group whole', findG && findG.rows.length, 7);
+check('  marking "find" where the text says it',
+  findG.rows.filter(function (r) { return r.m; }).map(function (r) { return r.a + '[' + r.m + ']' + r.b; }).pop(),
+  'Close the [find] bar, or empty the column filter');
+check('  and not "In the Catalog: filter..."', findG.rows.filter(function (r) { return r.a.indexOf('In the Catalog') === 0; })[0].m, '');
+check('Enter and Return find the Enter rows on a Mac', [rowTexts(filterShortcuts(all, 'enter', macLabel, true)).indexOf('Draw it now') >= 0,
+  rowTexts(filterShortcuts(all, 'return', macLabel, true)).indexOf('Draw it now') >= 0], [true, true]);
+check('  and Return is a Mac word only', rowTexts(filterShortcuts(all, 'return', pcLabel, false)).indexOf('Draw it now') < 0, true);
+check('Arrow finds the arrow rows on a Mac and on a PC', [rowTexts(filterShortcuts(all, 'arrow', macLabel, true)).indexOf('Earlier expressions') >= 0,
+  rowTexts(filterShortcuts(all, 'arrow', pcLabel, false)).indexOf('Earlier expressions') >= 0], [true, true]);
+check('Backspace finds the row that deletes the command', rowTexts(filterShortcuts(all, 'backspace', macLabel, true)).indexOf('Delete the command back to its start, all of it in zsh') >= 0, true);
+check('Alt is also a Mac word, for the keyboards that print it', rowTexts(filterShortcuts(all, 'alt', macLabel, true)).indexOf('Close the tab') >= 0, true);
+check('a spelled name is matched from the start of a word: "man" and "and" keep no Cmd row by Command',
+  [rowTexts(filterShortcuts(all, 'man', macLabel, true)).indexOf('Save the file') < 0, rowTexts(filterShortcuts(all, 'and', macLabel, true)).indexOf('Save the file') < 0], [true, true]);
+check('nothing matching leaves no group', filterShortcuts(all, 'zzqx', macLabel, true), []);
+check('the query is trimmed', filterShortcuts(all, ' undo ', macLabel, true)[0].rows[0].m, 'Undo');
+
 print('\n--- isTyping ---');
 check('a text box', isTyping({ tagName: 'INPUT', type: 'text' }), true);
 check('a search box', isTyping({ tagName: 'INPUT', type: 'search' }), true);

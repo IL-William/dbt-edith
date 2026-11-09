@@ -178,8 +178,15 @@ amber, and `Escape` closes the bar with the view left where it is. Only what the
 canvas draws is searched: `Cmd/Ctrl + K` searches the whole project.
 
 In the terminal, `Cmd/Ctrl + F` is the browser's own find. `?` outside a text
-box, `F1` from anywhere, or the `?` button in the top bar lists every shortcut,
-with the keys of the machine you are on.
+box, `F1` from anywhere but the terminal, or the `?` button in the top bar lists every shortcut,
+with the keys of the machine you are on, in a sheet inside the window: the
+groups in columns, the keys before what they do, and a find box that has the
+focus as it opens. Typing there keeps the rows whose text, keys or group title
+hold it, the word marked, and the sheet opens on every shortcut each time. A
+footer says which keys are drawn and how the other system's read, the
+terminal's line keys apart. `F1`, `Esc`, the × or a click outside closes the
+sheet and gives the focus back; a second `?` is typed into the find box, which
+has the focus.
 
 ## Tabs
 
