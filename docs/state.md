@@ -3275,9 +3275,11 @@ of its own, and each panel updates the tour, its page under
       is a link, not a chip.
     - The rail is 224px for the settings' too, which shares `.reports-navrow`
       and its rules: its rows keep their own height, gap and accent rule.
-    - The mono line under a head is one line of `about` whatever the section;
-      the board draws Job coverage's and Job order's in the UI font.
-    - No test covers the regular expression that finds the count pills.
+    - ~~The mono line under a head is one line of `about` whatever the section;
+      the board draws Job coverage's and Job order's in the UI font.~~ Fixed in
+      2.20.4: those two are the board's sentences, in the UI font.
+    - ~~No test covers the regular expression that finds the count pills.~~
+      Fixed in 2.20.4: `reportCounted`, in `web/tests/reports.js`.
 53. **The Compiled tab's limits (0164, 2.18.0).**
     - The age is said as the manifest card says it, so a file a few days old
       reads `Compiled 2 d ago` and one a few hours old `Compiled 3h07 ago`; the
