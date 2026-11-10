@@ -3169,6 +3169,17 @@ kbd {
 .loc th .envpill { cursor: pointer; text-transform: none; }
 .relcell { display: flex; align-items: center; gap: 8px; }
 .relcell span { flex: 1; min-width: 0; }
+/* The name breaks after a dot (the <wbr>s), unlike the other cells' break-all,
+   and inside a part only when that part is wider than its line. */
+.relcell .relname { word-break: normal; overflow-wrap: break-word; }
+/* A table's column shrinks to its cells' least width, which the flex row let fall
+   below the name's longest part; held to it, the name breaks only after a dot. The
+   buttons go under the name when the cell is narrow, as on the card, so only a
+   part wider than a very narrow dock makes the pane scroll sideways. The labels
+   keep their words for the same reason. */
+.loc .relcell { flex-wrap: wrap; }
+.loc .relcell .relname { min-width: min-content; }
+.loc td.k { word-break: normal; }
 .relcell .btn { flex: 0 0 auto; font-family: var(--ui); }
 /* The card's location (0160): a key, its lines, the relation, in a list that
    wraps wherever it has to rather than clip a name. A key set one way at every
@@ -3216,16 +3227,18 @@ span.envpill:hover { filter: none; }
 .coltools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--fg-dim); margin-bottom: 8px; }
 .coltools .grow { flex: 1; }
 /* The filter is a boxed field with its count inside at the right: the
-   count shown and the count typed, which cannot be read as part of the word. */
+   count shown and the count typed, which cannot be read as part of the word.
+   The box is 230px at least and grows with its count: a fixed width let a long
+   count squeeze the typed word to a few characters. */
 .colfind {
-  display: flex; align-items: center; gap: 6px; width: 230px; height: 26px; box-sizing: border-box; padding: 0 8px;
+  display: flex; align-items: center; gap: 6px; width: auto; min-width: 230px; max-width: 100%; height: 26px; box-sizing: border-box; padding: 0 8px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg-mute);
 }
 .colfind:focus-within { border-color: rgba(var(--accent-rgb), .7); }
 .colfind-ico { width: 13px; height: 13px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.colfilter { flex: 1 1 0; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--fg); font: 12px var(--mono); }
+.colfilter { flex: 1 1 auto; width: 10ch; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; color: var(--fg); font: 12px var(--mono); }
 .colfilter::placeholder { color: var(--fg-mute); }
-.colcount { flex: 0 0 auto; font: 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.colcount { flex: 0 0 auto; text-align: right; font: 11px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .coltools .cllpick { height: 24px; box-sizing: border-box; gap: 7px; padding: 0 8px 0 9px; border-radius: 12px; background: none; font-size: 12px; }
 .coltools .cllpick:hover { background: var(--hover); }
 .coltools .btn.ghost { height: 20px; padding: 0 7px; font-size: 11px; }
