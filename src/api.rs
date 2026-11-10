@@ -3166,6 +3166,7 @@ async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<ArtifactQ
                 ArtifactRelation {
                     id: &t.id,
                     name: &t.name,
+                    source_name: &t.source_name,
                     relation: &t.relation,
                     materialized: &t.materialized,
                     own,
@@ -3230,6 +3231,10 @@ fn file_opening(graph: &Graph, n: &crate::graph::Node, root: &Path, canon: &Path
 struct ArtifactRelation<'a> {
     id: &'a str,
     name: &'a str,
+    /// A source table's source, which the page cannot recover from `name` when
+    /// either part holds a dot; absent on every other node.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    source_name: &'a str,
     relation: &'a str,
     materialized: &'a str,
     /// The node's own relation, which the SQL rarely names but a run's
@@ -6260,6 +6265,9 @@ mod tests {
         // A source with nothing written is placed all the same.
         let source = &body["relations"][0];
         assert_eq!(source["location"]["envs"][".env.qa"]["place"]["database"], "raw");
+        // The source's own name is sent, for the hover's source(...) call; a model has none.
+        assert_eq!(source["source_name"], "crm");
+        assert!(body["relations"][1].get("source_name").is_none(), "{}", body["relations"][1]);
         assert_eq!(body["env_reads"], serde_json::json!([{ "kind": "target", "detail": "name", "line": 3 }]));
 
         // A node with no file under target has nothing to swap: neither key is sent.

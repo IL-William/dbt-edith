@@ -60,7 +60,10 @@ check('a source is source(name, table)', relationRef({ id: 'source.shop.jaffle_s
 check('a versioned model says its version', [relationRef({ id: 'model.shop.orders.v2', name: 'orders.v2' }), relationRef({ id: 'model.shop.orders.v1.5', name: 'orders.v1.5' })],
   ["ref('orders', v=2)", "ref('orders', v=1.5)"]);
 check('a version that is a word is quoted', relationRef({ id: 'model.shop.orders.vbeta', name: 'orders.vbeta' }), "ref('orders', v='beta')");
-check('a source named with a dot of its own falls back to the node\'s name', relationRef({ id: 'source.shop.a.b.c', name: 'a.b.c' }), "source('a.b.c')");
+check('a source named with a dot of its own falls back to the node\'s name when the server sent no source name', relationRef({ id: 'source.shop.a.b.c', name: 'a.b.c' }), "source('a.b.c')");
+check('the source name the server sends splits a table name that holds a dot', relationRef({ id: 'source.shop.a.b.c', name: 'a.b.c', source_name: 'a' }), "source('a', 'b.c')");
+check('and a source name that holds one', relationRef({ id: 'source.shop.a.b.c', name: 'a.b.c', source_name: 'a.b' }), "source('a.b', 'c')");
+check('and a plain source is the same either way', relationRef({ id: 'source.shop.jaffle_shop.raw_orders', name: 'jaffle_shop.raw_orders', source_name: 'jaffle_shop' }), "source('jaffle_shop', 'raw_orders')");
 check('the hover is the call and the environment, then what was there',
   swapTitle({ ref: "ref('stg_customers')", was: '"jaffle_shop"."main"."stg_customers"' }, 'PROD'),
   'ref(\'stg_customers\'), for PROD\nwas "jaffle_shop"."main"."stg_customers" as compiled');
@@ -89,6 +92,10 @@ check('the tmp and backup names follow', rs.text,
   'create or replace transient table ANALYTICS_QA.marts.orders__dbt_tmp as (select 1);\n'
   + 'alter table ANALYTICS_QA.marts.orders rename to ANALYTICS_QA.marts.orders__dbt_backup;');
 check('and count as one relation', rs.counts, { swapped: 1, kept: 0, same: 0 });
+check('the hover names {{ this }} for the plain form and says which suffix for the others', rs.swaps.map(function (w) { return w.ref; }),
+  ['{{ this }} with the __dbt_tmp suffix', '{{ this }}', '{{ this }} with the __dbt_backup suffix']);
+check('and the hover then reads without a stray comma', swapTitle({ ref: rs.swaps[0].ref, was: rs.swaps[0].was }, 'QA').split('\n')[0],
+  '{{ this }} with the __dbt_tmp suffix, for QA');
 var selfQ = rel('orders', '"A"."M"."ORDERS"', place('A', 'M', 'ORDERS'), { '.env.qa': 'A_QA' }, { own: true });
 check('a quoted name takes its suffix inside the quotes', envSql('create table "A"."M"."ORDERS__dbt_tmp"', [selfQ], QA).text,
   'create table "A_QA"."M"."ORDERS__dbt_tmp"');
@@ -191,6 +198,7 @@ var all = reads.findings;
 check('the model\'s own SQL is named', all[0].text, 'this model, line 4, reads target.name');
 check('a macro by name and line', all[1].text, 'stamp, line 19, reads target.name');
 check('a macro that opens carries its file and line', all[1].macro, { file: 'macros/stamp.sql', name: 'stamp', line: 19 });
+check('a finding in a macro carries the macro\'s name apart, the model\'s own none', [all[1].name, all[2].name, all[0].name], ['stamp', 'x', undefined]);
 check('a model\'s own line opens nothing', all[0].macro, null);
 check('a macro outside the project opens nothing', all[2].macro, null);
 check('a withheld variable is not named', all[2].text, 'x, line 2, reads an environment variable');
@@ -203,6 +211,7 @@ check('a placing macro that reads the target through another says which, with no
   envSql('select 1', [], QA), 'QA', QA,
   [{ macro_id: 'macro.shop.generate_schema_name', macro_name: 'generate_schema_name', file: 'macros/g.sql', kind: 'placing', through: 'schema_part', line: 0 }]).findings[0],
   { text: 'generate_schema_name, follows the target to decide where a model builds, which is not evaluated, through schema_part',
+    name: 'generate_schema_name', through: 'schema_part',
     macro: { file: 'macros/g.sql', name: 'generate_schema_name', line: 1 } });
 check('every finding is listed, and the fold says how many', [reads.findings.length, reads.differ], [6, 'May differ beyond its relations (6)']);
 
@@ -363,9 +372,77 @@ items[0].find('filelink')[0].on.click({ preventDefault: function () {} });
 check('a finding in a macro opens the macro at its line', macros, [{ file: 'macros/m1.sql', name: 'm1', line: 1 }]);
 var modelOnly = artifactEnvNote(noteShown, [{ kind: 'target', detail: 'name', line: 4 }], '.env.qa', 'qa').find('cdiffer')[0];
 check('a finding in the model\'s own SQL is plain text', [modelOnly.kids[1].kids[0].find('filelink').length, modelOnly.kids[1].kids[0].textContent], [0, 'this model, line 4, reads target.name']);
+var macroItem = items[0].kids;
+check('a macro\'s name is drawn in mono, a link, and the rest of the line follows as text', [macroItem[0].tag, macroItem[0].className, macroItem[0].textContent, macroItem[1]],
+  ['a', 'filelink mono', 'm1', ', line 1, reads target.name']);
+var mixed = artifactEnvNote(noteShown, [
+  { macro_id: 'macro.pkg.x', macro_name: 'x', kind: 'env_var', detail: '', line: 2 },
+  { macro_id: 'macro.shop.generate_schema_name', macro_name: 'generate_schema_name', file: 'macros/g.sql', kind: 'placing', through: 'schema_part', line: 0 },
+], '.env.qa', 'qa').find('cdiffer')[0].kids[1].kids;
+check('a macro that cannot be opened is mono text and no link', [mixed[0].kids[0].tag, mixed[0].kids[0].className, mixed[0].find('filelink').length, mixed[0].text()],
+  ['span', 'mono', 0, 'x, line 2, reads an environment variable']);
+check('the macro it goes through is mono too, apart from the link', [mixed[1].kids.map(function (k) { return typeof k === 'string' ? k : k.className + ':' + k.textContent; })],
+  [['filelink mono:generate_schema_name', ', follows the target to decide where a model builds, which is not evaluated, through ', 'mono:schema_part']]);
 var plain = artifactEnvNote(noteShown, [], '', 'manifest');
 check('with none picked there is no tag and no finding', [plain.find('envtag').length, plain.find('cdiffer').length, plain.dataset.tone], [0, 0, 'manifest']);
 check('and the note says the relations are the manifest\'s own', plain.text(), 'As dbt compiled it. The relations are the manifest\'s own, nothing swapped.');
 S.meta.sandbox = 'dev_db.dbt_someone';
 check('on a sandbox manifest it says into where',
   artifactEnvNote(noteShown, [], '', 'manifest').text(), 'As your own compile wrote it, into dev_db.dbt_someone, nothing swapped.');
+
+print('\n--- the tab paints the picker, the note and the marks as one (0164) ---');
+// paintArtifact itself, with the page stubbed: the picker and the note are drawn
+// only when envRowShown() says so, and every mark is made after the editor
+// carries the environment's tone, which the marks read --env from.
+S.artifactInfo = {};
+S.artifactCm = {};
+var heads = {}, timers = [], typed = [];
+var $ = function (sel) { var k = sel.slice(1); heads[k] = heads[k] || new El('div'); return heads[k]; };
+// The shim's textContent does not empty its children, so each paint starts from fresh elements.
+function paint(keep) { heads = {}; paintArtifact('compiled', keep); return $('#compiled-head'); }
+var sendToTerminal = function () { typed.push(Array.prototype.slice.call(arguments)); };
+var setTimeout = function (f) { timers.push(f); };
+El.prototype.appendChild = El.prototype.append;
+var marks = [];
+var CodeMirror = function (host) {
+  var wrapper = new El('div');
+  return {
+    getWrapperElement: function () { return wrapper; },
+    setValue: function () {}, getScrollInfo: function () { return { left: 0, top: 0 }; }, scrollTo: function () {}, refresh: function () {},
+    getDoc: function () {
+      return { posFromIndex: function (i) { return i; },
+        markText: function (a, b, o) { marks.push([o.className, wrapper.dataset.tone]); } };
+    },
+  };
+};
+eval(src.slice(src.indexOf('function envTone('), src.indexOf('\n}\n', src.indexOf('function envTone(')) + 2));
+eval(src.slice(src.indexOf('function paintArtifact('), src.indexOf('/* "Relations for"')));
+eval(src.slice(src.indexOf('function artifactPath('), src.indexOf('/* What the Git panel')));
+function held(over) {
+  var info = { found: true, kind: 'compiled', rel: 'target/compiled/shop/models/x.sql', path: '/p/target/compiled/shop/models/x.sql',
+    content: 'from raw.crm.orders join raw.crm.m1', relations: [orders, missing], env_reads: [], age_secs: 100, compiled_at: 1, stale: false };
+  S.artifactInfo.compiled = { info: Object.assign(info, over || {}), name: 'x', isTest: false };
+}
+held();
+S.env = '.env.qa';
+S.envs = { referenced: ['DBT_DB'], files: [{ file: '.env.qa', hidden: false }] };
+marks = [];
+var drawn = paint(false);
+check('with a file to pick the line has the picker and the note follows it', [drawn.find('cenv').length, drawn.find('cnote').length], [1, 1]);
+check('a swap and a kept relation are both marked, each after the tone was set', marks, [['cm-env-swap', 'qa'], ['cm-env-kept', 'qa']]);
+S.envs = { referenced: ['DBT_DB'], files: [{ file: '.env.qa', hidden: true }] };
+marks = [];
+drawn = paint(false);
+check('with every file hidden neither is drawn', [drawn.find('cenv').length, drawn.find('cnote').length], [0, 0]);
+S.envs = { referenced: [], files: [] };
+drawn = paint(false);
+check('and with no environment in use, none either', [drawn.find('cenv').length, drawn.find('cnote').length], [0, 0]);
+S.envs = { referenced: ['DBT_DB'], files: [{ file: '.env.qa', hidden: false }] };
+marks = [];
+// The wrapper still says qa from the paint above: emptied, the check holds only if the repaint sets it again first.
+S.artifactCm.compiled.getWrapperElement().dataset.tone = '';
+paint(true);
+check('a repaint of the same editor still sets the tone before it marks', marks, [['cm-env-swap', 'qa'], ['cm-env-kept', 'qa']]);
+
+var css = read('web/app.css');
+check('the editor reads --env from the tone it was given', css.indexOf('.compiled-body .CodeMirror { height: 100%; --env: var(--tone); }') >= 0, true);
