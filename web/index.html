@@ -487,10 +487,15 @@
         </div>
         <div id="lineage-empty" class="pane-empty"><p>Select a model to see its lineage.</p></div>
         <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
-        <div id="lineage-legend" class="legend"></div>
-        <div id="lineage-status" class="graph-status"></div>
-        <!-- A column canvas cut at its cap: the button that draws more, this time only (0118). -->
-        <div id="lineage-cap" class="graph-cap hidden"></div>
+        <!-- One row for both, so a long legend wraps beside the line instead of under it. -->
+        <div class="canvas-foot">
+          <div id="lineage-legend" class="legend"></div>
+          <div class="foot-right">
+            <!-- A column canvas cut at its cap: the button that draws more, this time only (0118). -->
+            <div id="lineage-cap" class="graph-cap hidden"></div>
+            <div id="lineage-status" class="graph-status"></div>
+          </div>
+        </div>
       </div>
       <div id="dock-terminal" class="dock-pane hidden">
         <div id="term"></div>

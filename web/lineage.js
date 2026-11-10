@@ -282,13 +282,14 @@ const Lineage = (() => {
 
   /* The area an exported picture shows: the layout's box plus room for what is
      drawn outside the boxes, a +N badge reaching 28 or more beside one (4px off
-     the box and as wide as its number) and a pill (the steps, PARTIAL) 14
-     above one. A page gets at least a screenful at natural size, because it
-     scales its picture to fit the window: one box alone would arrive six times
-     too big, which the canvas avoids by capping its own zoom at 1.1. An image
-     has a size of its own and takes the tight frame. */
-  function frameOf(b, minW = 1000, minH = 560) {
-    const pad = 40;
+     the box and as wide as its number, `reach` from the edge, badgeReach) and
+     a pill (the steps, PARTIAL) 14 above one. A page gets at least a
+     screenful at natural size, because it scales its picture to fit the
+     window: one box alone would arrive six times too big, which the canvas
+     avoids by capping its own zoom at 1.1. An image has a size of its own and
+     takes the tight frame. */
+  function frameOf(b, minW = 1000, minH = 560, reach = 0) {
+    const pad = Math.max(40, reach + 4);
     const w = Math.max(minW, b.x1 - b.x0 + pad * 2);
     const h = Math.max(minH, b.y1 - b.y0 + pad * 2);
     return { x: (b.x0 + b.x1 - w) / 2, y: (b.y0 + b.y1 - h) / 2, w, h };
@@ -763,7 +764,9 @@ const Lineage = (() => {
     }
     const n = d.nodes[r.v];
     if (r.type === 'member') {
-      if (!r.byName) return { text: String(n.column), keep: 0 };
+      // The column alone, as the mono run of a lone slip: its test is the group's
+      // row above it, so the generic is not said again (writeRow).
+      if (!r.byName) return { text: String(n.column), keep: 0, col: 'alone' };
       return { text: memberName(n, host), keep: 0 };
     }
     if (r.level === 'column') {
@@ -875,7 +878,7 @@ const Lineage = (() => {
         }
         if (r.type === 'member') { b.x += ride.sub; b.w -= ride.sub; }
         boxes[r.v] = Object.assign(b, {
-          rider: true, test: r.level, member: r.type === 'member', warn: !!d.nodes[r.v].warn, label: say.text, keep: say.keep, col: !!say.col,
+          rider: true, test: r.level, member: r.type === 'member', warn: !!d.nodes[r.v].warn, label: say.text, keep: say.keep, col: say.col || false,
         });
       });
       const chip = hosts.chips.get(h);
@@ -2505,11 +2508,13 @@ const Lineage = (() => {
 
   /* A row's text, the generic in the UI font and the column after it in mono,
      dimmer, as two tspans with no dot between them: what rowClip left of
-     "name · column". A row with no column to show, a singular test's, a
-     member's or a group's, is one run. `make` creates the tspans, as writeSub's
-     does. The gap is the tspan's dx. */
+     "name · column". A row with no column to show, a singular test's or a
+     group's, is one run. A member told by its column (`col` is 'alone') is that
+     column's run only, since the group above already says the generic. `make`
+     creates the tspans, as writeSub's does. The gap is the tspan's dx. */
   function rowParts(text, col) {
     const s = String(text);
+    if (col === 'alone') return { name: '', col: s };
     if (!col) return { name: s, col: '' };
     const at = s.indexOf(' \u00b7');
     if (at < 0) return { name: s, col: '' };
@@ -2520,13 +2525,16 @@ const Lineage = (() => {
     const p = rowParts(text, col);
     t.textContent = '';
     if (!p.col) { t.textContent = p.name; return; }
-    const a = make('tspan'), c = make('tspan');
-    a.setAttribute('class', 'rn');
-    a.textContent = p.name;
+    const c = make('tspan');
     c.setAttribute('class', 'rc');
-    c.setAttribute('dx', '6');
     c.textContent = p.col;
-    t.appendChild(a);
+    if (p.name) {
+      const a = make('tspan');
+      a.setAttribute('class', 'rn');
+      a.textContent = p.name;
+      c.setAttribute('dx', '6');
+      t.appendChild(a);
+    }
     t.appendChild(c);
   }
 
@@ -2563,6 +2571,19 @@ const Lineage = (() => {
      on the point the circle it replaced was. */
   function pillSize(label) {
     return { w: Math.max(24, label.length * 6 + 8), h: 18 };
+  }
+
+  /* How far past a box's edge the widest +N pill of these nodes reaches: the
+     4px gap and the pill itself, which grows with its number. What an exported
+     picture's frame must leave room for, or a four-digit count is clipped. */
+  function badgeReach(nodes) {
+    let reach = 0;
+    for (const n of nodes) {
+      for (const count of [n.hidden_up, n.hidden_down]) {
+        if (count) reach = Math.max(reach, pillSize(`+${count}`).w + 4);
+      }
+    }
+    return reach;
   }
 
   function badge(x, y, label, dir, node) {
@@ -2824,7 +2845,8 @@ const Lineage = (() => {
 
   function snapshotOf({ css = '', scale = 1, tight = false } = {}) {
     if (!data || !bbox || !data.nodes.length) return null;
-    const frame = tight ? frameOf(bbox, 0, 0) : frameOf(bbox);
+    const reach = badgeReach(data.nodes);
+    const frame = tight ? frameOf(bbox, 0, 0, reach) : frameOf(bbox, undefined, undefined, reach);
     const byId = new Map(data.nodes.map((n) => [String(n.id), n]));
     const at = new Map(data.nodes.map((n, i) => [String(n.id), i]));
     const g = root.cloneNode(true);
@@ -2933,11 +2955,12 @@ const Lineage = (() => {
       title.textContent = [n.name, subtitle(n), n.file, n.warn && 'severity warn', n.context && 'context, not selected'].filter(Boolean).join('\n');
       nd.insertBefore(title, nd.firstChild);
       const t1 = nd.querySelector('.t1');
-      // A lone column test's row keeps its two runs; the label, dot and all, is the whole line.
+      // A lone column test's row keeps its two runs (a member's, its column's run
+      // alone); the label, dot and all, is the whole line.
       const rowBox = t1 && t1.dataset.full ? place[at.get(nd.dataset.id)] : null;
       const twoRuns = rowBox && rowBox.col;
       spell(t1, t1 && t1.dataset.full ? t1.dataset.full : n.name,
-        twoRuns ? (x) => writeRow(x, rowBox.label, true, el) : undefined, twoRuns ? rowBox.label.replace(' · ', '') : undefined);
+        twoRuns ? (x) => writeRow(x, rowBox.label, rowBox.col, el) : undefined, rowBox && rowBox.col === true ? rowBox.label.replace(' · ', '') : undefined);
       if (t1) t1.removeAttribute('data-full');
       // Written in its parts, so the picture keeps the strike.
       const t2 = nd.querySelector('.t2'), parts = subtitleParts(n);

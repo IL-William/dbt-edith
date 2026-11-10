@@ -3125,20 +3125,27 @@ of its own, and each panel updates the tour, its page under
     - With By folder pressed the dock's tools row is about 50px wider, so its
       folds come about 50px sooner and it breaks a little earlier, at about
       1100px with the folds spent (item 43's limit on a narrow window).
-    - The legend keeps its alphabetical order and its bar for a kind, where the
-      design lists the kinds, then the tests, and draws a kind as a square.
-    - The legend and the line under the canvas overlap on a narrow canvas, with
-      the card open at the bar's narrowest.
-    - A member row of an opened group (a column alone, or a name told from its
-      siblings) is one run of text, not two.
+    - ~~The legend keeps its alphabetical order and its bar for a kind, where the
+      design lists the kinds, then the tests, and draws a kind as a square.~~
+      Fixed in 2.20.11, the order only: a kind is still drawn as a bar (0148).
+    - ~~The legend and the line under the canvas overlap on a narrow canvas, with
+      the card open at the bar's narrowest.~~ Fixed in 2.20.11.
+    - ~~A member row of an opened group (a column alone, or a name told from its
+      siblings) is one run of text, not two.~~ Fixed in 2.20.11.
     - Under Halloween the tests under a model have the same slip look as in
       the other themes; only the three box styles are drawn there.
-    - The model's dashed stem is drawn in `--line-strong`, as the design asks,
+    - ~~The model's dashed stem is drawn in `--line-strong`, as the design asks,
       which stands about 1.5:1 on Light's canvas and 1.8:1 on Night's, where
-      the dotted grey it replaced stood near 3:1.
-    - A four-digit `+N` on the outermost column reaches 42px from the box, while
+      the dotted grey it replaced stood near 3:1.~~ Fixed in 2.20.11.
+    - ~~A four-digit `+N` on the outermost column reaches 42px from the box, while
       the export frame pads 40px (`web/lineage.js:291`), so about 2px of it is
-      clipped in a file.
+      clipped in a file.~~ Fixed in 2.20.11.
+    - The stem is drawn in `--edge-test`, not `--line-strong`, and is told from
+      the dotted line by its dashes alone; `--edge-test` is raised to 50% of the
+      text colour for the three derived themes so the dotted line holds 3:1 in
+      Light too.
+    - The legend draws every test as a whole bar, where the design draws a
+      column test, a model test and a singular test in its own shape.
 46. **The terminal's limits (0161, 2.12.0).**
     - The eleven ANSI colours the design does not draw (black, magenta, white
       and the eight brights) are ours, in each of the four themes, and have not

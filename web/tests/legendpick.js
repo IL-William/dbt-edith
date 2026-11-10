@@ -146,6 +146,17 @@ check('none of them is one the exported file must copy',
 ok('the strip around the entries still lets a pan through',
   /\.legend \{[^}]*pointer-events: none/.test(css) && /\.legend span \{[^}]*pointer-events: auto/.test(css));
 
+// Both at the same corner overlapped once the legend ran long: they share a row.
+var html = read('web/index.html');
+ok('the legend and the status line sit in one foot row',
+  /<div class="canvas-foot">\s*<div id="lineage-legend" class="legend"><\/div>\s*<div class="foot-right">[\s\S]*?<div id="lineage-status" class="graph-status"><\/div>\s*<\/div>\s*<\/div>/.test(html));
+ok('the cap button is in the foot, above the status line in the same column',
+  /<div class="foot-right">\s*(?:<!--[^>]*-->\s*)?<div id="lineage-cap"[^>]*><\/div>\s*<div id="lineage-status"/.test(html));
+ok('so it is no longer placed on its own, and takes the press the foot lets through',
+  !/\.graph-cap \{[^}]*position: absolute/.test(css) && /\.graph-cap \{[^}]*pointer-events: auto/.test(css));
+ok('the row is the one absolute box, the legend is not', /\.canvas-foot \{[^}]*position: absolute/.test(css)
+  && !/\.legend \{[^}]*position: absolute/.test(css) && !/\.graph-status \{[^}]*position: absolute/.test(css));
+
 print('\n--- column mode: stop at ---');
 ok('the column walk sends the roles it stops at',
   /\/api\/collineage\?[\s\S]{0,200}&cut=\$\{encodeURIComponent\(\[\.\.\.S\.colCut\]/.test(src));

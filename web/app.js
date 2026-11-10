@@ -8754,7 +8754,10 @@ function legendEntries(sub) {
   for (const k of kinds.map(Lineage.edgeLegendLabel).concat(badges)) {
     if (k && !apart.has(k) && !seen.has(k)) seen.set(k, Lineage.legendColour(k));
   }
-  return [...seen].sort((a, b) => a[0].localeCompare(b[0])).concat(rows);
+  // The kinds first, as the board lists them, the tests after them: a test is
+  // told by the colour of its bar, which no kind shares.
+  const test = (e) => (/^var\(--t-/.test(e[1]) ? 1 : 0);
+  return [...seen].sort((a, b) => test(a) - test(b) || a[0].localeCompare(b[0])).concat(rows);
 }
 
 function paintLegend(sub) {
@@ -9678,7 +9681,7 @@ function exportCanvasCss(vars = {}) {
     '#graph text { font-family: var(--ui); user-select: none; }',
     '.edge { fill: none; stroke: var(--edge-col, var(--edge)); stroke-width: 1.5; }',
     '.edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }',
-    '.edge.test.stem { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }',
+    '.edge.test.stem { stroke: var(--edge-test); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }',
     '.edge.indirect { stroke-width: .9; stroke-dasharray: 3 2; }',
     '.edge.hi { stroke: var(--edge-col, var(--edge-hot)); stroke-width: 2; }',
     '.colcanvas .edge.hi { stroke-width: 3; }',

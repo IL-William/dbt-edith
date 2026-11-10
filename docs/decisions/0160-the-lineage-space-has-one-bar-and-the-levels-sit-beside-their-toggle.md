@@ -63,6 +63,8 @@ ring that no other mark of the page shares.
   Only the host's own stem and a group's are dashed, thin and in `--line-strong`;
   a line from another parent into a test keeps its dots. An exported file carries
   both, and not the ring.
+  *Amended in 2.20.11: the stem is drawn in `--edge-test`, `--line-strong`
+  standing under 3:1 on the canvas.*
 - **The card lays out by a flag, not a width**: the Catalog rendered inside
   `#selpanel-card` passes `inCard` down, so dragging the card's edge never
   switches layouts under the pointer. Context is a grid of three

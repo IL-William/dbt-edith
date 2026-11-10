@@ -247,7 +247,9 @@
    the three themes that follow Night. A var() resolves on the element that
    carries the attribute, so one rule serves each theme, its picker's preview
    and an export's probe. The proportions were fitted against Night's own
-   values, so the relations Night draws carry over. */
+   values, so the relations Night draws carry over. --edge-test is the one
+   exception: Night's is about 44%, which left the tests' lines at 2.7:1 in
+   Light; 50 holds them at 3.2:1, a margin over the 48 that barely reaches 3. */
 [data-theme="graphite"], [data-theme="light"], [data-theme="halloween"] {
   /* The text colour into the page */
   --btn-hover: color-mix(in srgb, var(--fg) 15%, var(--bg));
@@ -260,7 +262,7 @@
   --env-manifest: color-mix(in srgb, var(--fg) 36%, var(--bg));
   --crumb-sep: color-mix(in srgb, var(--fg) 42%, var(--bg));
   --keylink-line: color-mix(in srgb, var(--fg) 42%, var(--bg));
-  --edge-test: color-mix(in srgb, var(--fg) 44%, var(--bg));
+  --edge-test: color-mix(in srgb, var(--fg) 50%, var(--bg));
   --none: color-mix(in srgb, var(--fg) 54%, var(--bg));
   --link-line: color-mix(in srgb, var(--fg) 54%, var(--bg));
   --fg-faint: color-mix(in srgb, var(--fg) 34%, var(--bg));
@@ -2487,8 +2489,9 @@ kbd {
 .edge.test { stroke: var(--edge-test); stroke-dasharray: 1 3; stroke-linecap: round; }
 /* Its model's stem, down its left side and a tick into each row: a thin dashed
    line (0160). Only the host's own, and a group's; a line from another parent
-   into a test keeps the dots. */
-.edge.test.stem { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }
+   into a test keeps the dots. Drawn in the tests' grey: --line-strong, a
+   menu's edge, stood under 3:1 on the canvas in every theme. */
+.edge.test.stem { stroke: var(--edge-test); stroke-width: 1; stroke-dasharray: 3 3; stroke-linecap: butt; }
 /* An indirect edge, a filter's, a join key's or a dedup key's (0097): the
    column decided which rows exist, not what a value is. Thin and in short
    dashes, neither the test's dots nor the back edge's long dashes; before
@@ -2600,22 +2603,32 @@ kbd {
 .folder-head.l1 { background: color-mix(in srgb, var(--band-l1) 90.196%, transparent); border-color: var(--head-l1-line); }
 .folder-head.l2 { background: color-mix(in srgb, var(--band-l2) 90.196%, transparent); border-color: var(--head-l2-line); }
 .folder-head.l3 { background: color-mix(in srgb, var(--band-l3) 90.196%, transparent); border-color: var(--head-l3-line); }
+/* The legend and the status line share the foot of the canvas: both at the
+   same corner they overlapped as soon as the legend ran long. */
+.canvas-foot {
+  position: absolute; left: 10px; right: 10px; bottom: 8px; display: flex; align-items: flex-end; gap: 10px;
+  pointer-events: none;
+}
+/* The status line and, above it, the cap's button: one column at the right, so
+   a status that wraps pushes the button up instead of running under it. */
+.foot-right { flex: 0 0 auto; max-width: 60%; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .graph-status {
-  position: absolute; right: 10px; bottom: 8px; font: 11px var(--mono);
+  font: 11px var(--mono);
   color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 2px 8px; border-radius: 4px;
   pointer-events: none;
 }
-/* Over the status line, which it never covers: a click here is not a pan. */
+/* Over the status line, in the same column so it never covers it: the foot lets
+   a press through, so this takes its own, and a click here is not a pan. */
 .graph-cap {
-  position: absolute; right: 10px; bottom: 34px; display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; pointer-events: auto;
   font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent); padding: 3px 8px; border-radius: 4px;
 }
 .graph-cap .btn { flex: none; }
 
 .legend {
-  position: absolute; left: 10px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
   font: 10px var(--mono); color: var(--fg-dim); background: color-mix(in srgb, var(--bg) 80%, transparent);
-  padding: 3px 8px; border-radius: 4px; pointer-events: none; max-width: 70%;
+  padding: 3px 8px; border-radius: 4px; pointer-events: none;
 }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 /* A role, a line as its edges are drawn (0162), dashed for the `indirect` entry

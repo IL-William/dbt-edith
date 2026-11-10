@@ -49,10 +49,13 @@ var testSub = { mode: 'model', edges: [], nodes: [
   { name: 'unique_orders_id', kind: 'test', test_name: 'unique', column: 'id' },
   { name: 'combo', kind: 'test', test_name: 'unique_combination_of_columns' },
   { name: 'assert_positive', kind: 'test' },
+  { name: 'customers', kind: 'model', materialized: 'view' },
+  { name: 'raw_orders', kind: 'seed' },
 ] };
-check('each kind of test once, in its own colour', legendEntries(testSub).map(function (e) { return e.join(' '); }), [
+check('each kind of test once, in its own colour, after the kinds, which stay alphabetical', legendEntries(testSub).map(function (e) { return e.join(' '); }), [
+  'seed ' + nodeColor(testSub.nodes[6]), 'table ' + nodeColor(testSub.nodes[0]), 'view ' + nodeColor(testSub.nodes[5]),
   'column test ' + nodeColor(testSub.nodes[1]), 'model test ' + nodeColor(testSub.nodes[3]),
-  'singular test ' + nodeColor(testSub.nodes[4]), 'table ' + nodeColor(testSub.nodes[0])]);
+  'singular test ' + nodeColor(testSub.nodes[4])]);
 // Two roles meet on the third column, which makes it mixed; the other two are
 // a source's, with nothing feeding them, which makes them raw. The fourth is
 // set by a literal: generated. All three only ever appear on a box.
@@ -269,6 +272,12 @@ check('one box gets the smallest frame, not a giant one', [one.w, one.h], [1000,
 check('centred on it', [one.x + one.w / 2, one.y + one.h / 2], [100, 0]);
 var tightOne = frameOf({ x0: 0, x1: 200, y0: -24, y1: 24 }, 0, 0);
 check('an image takes the tight frame, badges included', [tightOne.x, tightOne.y, tightOne.w, tightOne.h], [-40, -64, 280, 128]);
+var wide = frameOf({ x0: 0, x1: 200, y0: -24, y1: 24 }, 0, 0, 42);
+check('a four-digit +N (pill 38, gap 4) fits inside the tight frame', [wide.x, wide.w], [-46, 292]);
+check('a short one keeps the old room', [frameOf({ x0: 0, x1: 200, y0: -24, y1: 24 }, 0, 0, 28).x, frameOf({ x0: 0, x1: 200, y0: -24, y1: 24 }, 0, 0, 0).x], [-40, -40]);
+ok('the picture asks the nodes how far their badges reach, for the page frame as for the tight one',
+  /const reach = badgeReach\(data\.nodes\);[\s\S]{0,120}frameOf\(bbox, 0, 0, reach\) : frameOf\(bbox, undefined, undefined, reach\)/.test(lin));
+check('and the page frame pads by it too', [frameOf({ x0: 0, x1: 1480, y0: -300, y1: 300 }, 1000, 560, 42).x, fr.x], [-46, -40]);
 
 print('\n--- zooming ---');
 var vb = [0, 0, 1000, 500];

@@ -102,8 +102,10 @@ sources, seeds and snapshots keep theirs, and **any materialization the tool
 does not know is drawn in magenta** so a custom one stands out rather than
 blending in. Ephemeral models are dashed, like disabled ones: nothing of them
 exists in the warehouse. The legend in the corner lists only the
-materializations actually on screen. A model's kind is the thin bar of its box,
-and the same bar, in the same colour, stands before its name in the sidebar, the
+materializations actually on screen, the kinds first and the tests after them,
+each in alphabetical order, at the foot of the canvas on one row with the status
+line, wrapping beside it. A model's kind is the thin bar of its box, and the
+same bar, in the same colour, stands before its name in the sidebar, the
 palette, the Catalog and the cards, so a model looks the same everywhere.
 
 **Click an entry of the legend** to keep what it names lit and fade the rest:
@@ -165,9 +167,10 @@ to it by a stem. A singular test, which has no YAML, hangs under the last built
 of the models it reads. An edge from another model the test reads comes in from
 the left, loops out on the right when that model sits in the same column, and
 comes back dashed when it is built later. The model's own stem, down its left
-side with a tick into each row, is a thin dashed line; a line from another model
-into a test is dotted and grey, where the lines between models are solid: either
-links a check to what it checks rather than data to where it goes.
+side with a tick into each row, is a thin dashed line in the same grey as the
+dotted ones; a line from another model into a test is dotted and grey, where the
+lines between models are solid: either links a check to what it checks rather
+than data to where it goes.
 
 A model's box is 220 by 48 with its kind as a 3px bar set in from the left, the
 name at 13px and the second line in mono at 11px; the lineage's focus has an
@@ -182,10 +185,11 @@ generic share a row, `not_null  12 cols ▸`, which a click or Enter opens into 
 row per column, and closes again; a generic that guards the whole model several
 times reads `expect_table_row_count_to_be_between ×3 ▸` and opens into its
 tests, named by what is left of dbt's name once the generic and the model are
-taken off. Generics on the whole model come first, then singular tests, then
-generics on a column, each by name. A model whose rows all fit in five, every
-group opened, starts with its groups open, so a model with three tests shows
-three.
+taken off. In an opened group, a test a column tells apart from its siblings is
+that column alone, in mono. Generics on the whole model come first, then
+singular tests, then generics on a column, each by name. A model whose rows all
+fit in five, every group opened, starts with its groups open, so a model with
+three tests shows three.
 
 Each kind of test has a grey and a shape, lighter in the order the rows go, and
 the legend names them: a generic on the whole model a near-white bar doubled by
