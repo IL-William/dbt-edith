@@ -162,8 +162,10 @@ rows fitting, and the name gives way to the bar of its kind in a narrow dock:
 ```
 
 Edith's menu is driven by a real pointer, the same way: what opens it under
-the pointer, what closes it, and what a click on it holds open, and where the
-theme menu sits and what its keys do:
+the pointer, what closes it, and what a click on it holds open, where the
+theme menu sits and what its keys do, and that the manifest pill's card, held
+open, has a poll rewrite its age in place and keeps the focus on its Run button
+when a poll changes the answer (0157):
 
 ```
 /tmp/dbt/bin/python scripts/walk_menu.py

@@ -3039,10 +3039,12 @@ of its own, and each panel updates the tour, its page under
       dbt keeps.
     - The footer for a file of an installed package is covered by tests, not
       pictured in `docs/shots`.
-41. **The manifest card's test (0157, 2.8.0).** Nothing tests the card in the
+41. **The manifest card's test (0157, 2.8.0).** ~~Nothing tests the card in the
     page: the age rewritten in place when a poll changes the answer, the focus
     kept on the Run button. Before 0157 the badge's click had no such test
-    either.
+    either.~~ Fixed: `scripts/walk_menu.py` holds the card open by a click on
+    an edited Jaffle Shop, has a poll rewrite its age in the same element, and a
+    second edited file draw it again with the focus back on Run dbt parse.
 42. **Static analysis still to add.**
     - Clippy, about 80 lints on the code today, all of style, complexity or
       performance and none of correctness, to be fixed or allowed one by one
