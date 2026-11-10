@@ -6,6 +6,8 @@
 // Run from the repository root: jsc web/tests/layout.js
 var lin = read('web/lineage.js');
 eval(lin.slice(lin.indexOf('const MAT = {'), lin.indexOf('let svg, root')));
+// wearsPill, which tells column mode which boxes draw a pill above them.
+eval(lin.slice(lin.indexOf('  const RECURSIVE_STEPS'), lin.indexOf('  /* The two lines the column\'s card adds')));
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -165,7 +167,7 @@ group('the same answer every time', function () {
 });
 
 var MODEL = { w: 200, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 0, bundle: 4 };
-var COLUMN = { w: 250, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4 };
+var COLUMN = { w: 250, h: 48, hgap: 80, vgap: 14, lane: 10, badge: 6, bundle: 4, pill: wearsPill };
 
 // A path as its commands, every number absolute: M x,y then C and L.
 function parse(s) {
@@ -259,6 +261,11 @@ function column(names, links, kinds) {
   if (kinds) d.edge_kinds = kinds;
   return d;
 }
+// Every box wearing a PARTIAL pill, so every lane has to clear it.
+function pilled(d) {
+  d.nodes.forEach(function (n) { n.partial = ['x']; });
+  return d;
+}
 
 group('edges run left to right, through lanes', function () {
   [reported, generated(150, 1), generated(400, 7)].forEach(function (d, k) {
@@ -283,10 +290,48 @@ group('edges run left to right, through lanes', function () {
       laneClearance(L, MODEL) >= MODEL.vgap, true);
   });
 
-  var col = dagLayout(column(['amount', 'amount_net', 'amount_x', 'amount_y', 'total'],
-    [['amount', 'amount_net'], ['amount_net', 'amount_x'], ['amount_x', 'amount_y'], ['amount_y', 'total'], ['amount', 'total']]), COLUMN);
-  check('in column mode a lane keeps clear of the role tag drawn above a box too',
+  var amounts = function () {
+    return column(['amount', 'amount_net', 'amount_x', 'amount_y', 'total'],
+      [['amount', 'amount_net'], ['amount_net', 'amount_x'], ['amount_x', 'amount_y'], ['amount_y', 'total'], ['amount', 'total']]);
+  };
+  var col = dagLayout(pilled(amounts()), COLUMN);
+  check('in column mode a lane keeps clear of the pill drawn above a box too',
     laneClearance(col, COLUMN) >= COLUMN.vgap + COLUMN.badge, true);
+  var bare = dagLayout(amounts(), COLUMN);
+  check('boxes that wear no pill ask for no room above, the layout being the one with no badge',
+    JSON.stringify(bare.boxes) === JSON.stringify(dagLayout(amounts(), Object.assign({}, COLUMN, { badge: 0 })).boxes)
+      && laneClearance(bare, COLUMN) >= COLUMN.vgap, true);
+  var steps = amounts();
+  steps.nodes[1].expression = { steps: 3 };
+  check('a box with a steps count asks for it, one with a single step does not',
+    [wearsPill(steps.nodes[1]), wearsPill({ expression: { steps: 1 } }), wearsPill({ partial: [] }), wearsPill({ partial: ['x'] })], [true, false, false, true]);
+  // Per lane: the room kept beside each box, split by whether that box wears a pill.
+  var some = amounts();
+  some.nodes[2].expression = { steps: 3 };
+  var mixed = dagLayout(some, COLUMN), beside = { pill: [], plain: [] };
+  lanes(mixed, COLUMN).forEach(function (l) {
+    mixed.boxes.forEach(function (b, i) {
+      if (b.x !== l.x0) return;
+      (wearsPill(some.nodes[i]) ? beside.pill : beside.plain).push(l.y < b.y ? b.y - l.y : l.y > b.y + b.h ? l.y - b.y - b.h : -1);
+    });
+  });
+  check('a lane clears a box with a pill by VGAP and the badge, one without by VGAP at least',
+    [beside.pill.length > 0 && Math.min.apply(null, beside.pill) >= COLUMN.vgap + COLUMN.badge,
+     beside.plain.length > 0 && Math.min.apply(null, beside.plain) >= COLUMN.vgap], [true, true]);
+  // The gap asked between a lane and each box, which the heights above may leave slack in.
+  var R = dagRank(some.nodes), lay = dagLayers(some.nodes.length, some.edges, R);
+  var pg = dagProper(some.nodes.length, lay, R.rank, [], COLUMN.bundle);
+  pg.pill = Uint8Array.from(some.nodes, function (x) { return wearsPill(x) ? 1 : 0; });
+  var asked = { pill: [], plain: [] };
+  pg.dummy.forEach(function (isLane, z) {
+    if (!isLane) return;
+    pg.layer.forEach(function (l, v) {
+      if (pg.dummy[v] || l !== pg.layer[z]) return;
+      asked[pg.pill[v] ? 'pill' : 'plain'].push(dagGap(pg, v, z, COLUMN) - dagHalf(pg, v, COLUMN) - dagHalf(pg, z, COLUMN));
+    });
+  });
+  check('the gap asked beside a lane is VGAP and the badge for a box with a pill, VGAP alone for one without',
+    [asked.pill, asked.plain], [[COLUMN.vgap + COLUMN.badge], [COLUMN.vgap, COLUMN.vgap]]);
 
   var straight = graph(['stg_a', 'int_a', 'int_b', 'int_c', 'fct_a'],
     [['stg_a', 'int_a'], ['int_a', 'int_b'], ['int_b', 'int_c'], ['int_c', 'fct_a'], ['stg_a', 'fct_a']]);
@@ -454,7 +499,9 @@ group('level lanes, unless they cost the height', function () {
   check('still no box on another', tightest(L) >= MODEL.vgap, true);
   check('and every lane clear of the boxes', laneClearance(L, MODEL) >= MODEL.vgap, true);
   var C = dagLayout((function () { var c = tested(60, 5); c.mode = 'column'; return c; })(), COLUMN);
-  check('in column mode too, clear of the role tags', [tightest(C) >= COLUMN.vgap, laneClearance(C, COLUMN) >= COLUMN.vgap + COLUMN.badge], [true, true]);
+  check('in column mode too, a lane clears a box that wears nothing by VGAP', [tightest(C) >= COLUMN.vgap, laneClearance(C, COLUMN) >= COLUMN.vgap], [true, true]);
+  var P = dagLayout(pilled((function () { var c = tested(60, 5); c.mode = 'column'; return c; })()), COLUMN);
+  check('and the pills of boxes that wear one', [tightest(P) >= COLUMN.vgap, laneClearance(P, COLUMN) >= COLUMN.vgap + COLUMN.badge], [true, true]);
   ok('whole pixels, so no gap is lost to rounding', L.boxes.every(function (b) { return b.y === Math.round(b.y); }));
 
   var cheap = staged(reported, MODEL);
@@ -743,8 +790,8 @@ group('a model\'s tests hang grouped by their generic', function () {
   check('a clipped row keeps its column', rowClip('accepted_values · order_status', 15, 25), 'accepted_… · order_status');
   check('and a group its count', rowClip('expect_table_row_count_to_be_between ×3 ▸', 5, 25), 'expect_table_row_co… ×3 ▸');
   check('a row that fits is left alone', rowClip('unique · id', 5, 25), 'unique · id');
-  check('a long generic gives way to its column', rowClip('dq__keys_exist_in_other_table · participation_hk', 19, 26),
-    'dq__ke… · participation_hk');
+  check('a long generic gives way to its column', rowClip('expect_column_values_to_be_between · customer_lifetime_value', 26, 33),
+    'expect… · customer_lifetime_value');
   check('a column too long to keep is cut at its end, after the generic', rowClip('not_null · an_expression_far_too_long_to_keep', 36, 25),
     'not_null · an_expression…');
   check('and after ten of a long one', rowClip('expect_column_values_to_be_between · an_expression_far_too_long', 29, 25),

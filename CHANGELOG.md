@@ -13,6 +13,16 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.12 - 2026-11-10
+
+- Keep the room above a column's box for a lane only beside the boxes that wear
+  a steps or PARTIAL pill, so a canvas of plain columns is no taller than it
+  needs to be.
+- Cut a column's name and every box's second line to the width of the page's own
+  mono font, so a machine whose mono font is Consolas shows more of each than it
+  did, and one that resolves SF Mono, a little wider than Menlo, no longer
+  overruns its box.
+
 ## 2.20.11 - 2026-11-10
 
 - List the legend's kinds first and the tests after them, as the Lineage board

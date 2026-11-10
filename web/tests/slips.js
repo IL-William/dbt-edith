@@ -126,6 +126,57 @@ check('stg_payments \u00b7 DOUBLE fits whole beside TRANSFORM', (function () {
 ok('a longer word leaves less', boxRoom(true, 'passthrough').sub < boxRoom(true, 'aggregate').sub && boxRoom(true, 'aggregate').sub < boxRoom(true, 'raw').sub);
 check('the name keeps the whole width, the tag being on the second line', boxRoom(true, 'passthrough').name, croom.name);
 check('a model\'s box has no tag and keeps its room whatever it is told', boxRoom(false, 'aggregate'), boxRoom(false));
+
+print('\n--- a box at the mono font the page has ---');
+check('the width a Mac\'s mono font advances, and one within 2% of it, is left as it is', [monoScaleOf(0.6), monoScaleOf(0.605), monoScaleOf(0.595)], [1, 1, 1]);
+check('what is no font\'s advance is left as it is too', [monoScaleOf(0), monoScaleOf(NaN), monoScaleOf(Infinity), monoScaleOf(undefined), monoScaleOf(0.3), monoScaleOf(1.2)], [1, 1, 1, 1, 1, 1]);
+check('Consolas, 1126 units of 2048, takes the characters narrower', Math.round(monoScaleOf(1126 / 2048) * 10000) / 10000, 0.9163);
+var consolas = monoScaleOf(1126 / 2048);
+check('a column box at Consolas keeps more of its name and of its second line', [boxRoom(true, 'passthrough', consolas), boxRoom(true, 'passthrough')], [{ name: 31, sub: 22 }, { name: 29, sub: 20 }]);
+check('the scale is the default of boxRoom, and 1 until the page has measured', boxRoom(true, 'passthrough'), boxRoom(true, 'passthrough', 1));
+check('a model\'s name is in the UI font and keeps its room, its mono line gains', [boxRoom(false, '', consolas).name, boxRoom(false, '', consolas).sub > boxRoom(false).sub], [boxRoom(false).name, true]);
+check('at the Consolas scale the second line still stops 8px short of each tag', ROLES.filter(function (r) {
+  var room = boxRoom(true, r, consolas), tagLeft = COLUMN_W - TAG.edge - tagWidth(r);
+  return !(PAD_L + room.sub * SUB_PX * consolas <= tagLeft - TAG.gap && PAD_L + (room.sub + 1) * SUB_PX * consolas > tagLeft - TAG.gap);
+}), []);
+check('and the name keeps the box less its margins', (function () {
+  var room = boxRoom(true, 'raw', consolas);
+  return room.name * COLUMN_NAME_PX * consolas <= COLUMN_W - PAD_L - PAD_R && (room.name + 1) * COLUMN_NAME_PX * consolas > COLUMN_W - PAD_L - PAD_R;
+})(), true);
+var sf = monoScaleOf(1266 / 2048);
+check('SF Mono, 1266 units of 2048, is outside the 2% and keeps its measured scale, a character fewer in a column box', [Math.round(sf * 1000) / 1000, boxRoom(true, 'passthrough', sf).name, boxRoom(true, 'passthrough', sf).sub],
+  [1.03, boxRoom(true, 'passthrough', 1).name - 1, boxRoom(true, 'passthrough', 1).sub - 1]);
+// measureMono against a stub page, in an eval of its own with the room it fills.
+(function () {
+  var measured = 0, advance = 549.8, throws = false;
+  // Put back after, so a check added below meets the page it had.
+  var had = { root: document.documentElement, make: document.createElement, style: globalThis.getComputedStyle };
+  document.documentElement = {};
+  document.createElement = function () {
+    if (throws) throw new Error('no canvas');
+    return { getContext: function () { return { measureText: function (s) { measured++; return { width: advance * s.length / 10 }; } }; } };
+  };
+  globalThis.getComputedStyle = function () { return { getPropertyValue: function () { return ' ui-monospace, Consolas, monospace'; } }; };
+  function fresh() {
+    return eval(lin.slice(lin.indexOf('const el = (name'), lin.indexOf('  /* Second line of a node box.'))
+      + lin.slice(lin.indexOf('  let monoRead'), lin.indexOf('  /* `opts.folders` draws the canvas'))
+      + '; ({ boxRoom: boxRoom, measureMono: measureMono })');
+  }
+  var page = fresh(), before = page.boxRoom(true, 'passthrough');
+  page.measureMono();
+  check('measuring a Consolas stub, the page\'s boxes pick up about 0.9163 by default', [before, page.boxRoom(true, 'passthrough')],
+    [page.boxRoom(true, 'passthrough', 1), page.boxRoom(true, 'passthrough', 1126 / 2048 / 0.6)]);
+  page.measureMono();
+  check('and a second call does not measure again', measured, 1);
+  throws = true;
+  var broken = fresh();
+  broken.measureMono();
+  check('a canvas that throws leaves the Mac\'s widths', broken.boxRoom(true, 'passthrough'), broken.boxRoom(true, 'passthrough', 1));
+  document.documentElement = had.root;
+  document.createElement = had.make;
+  globalThis.getComputedStyle = had.style;
+})();
+check('measuring costs one measureText for the page, never one a box', [(lin.match(/measureText\(/g) || []).length, /function measureMono\(\) \{\s*if \(monoRead\) return;/.test(lin), /function render\(d, opts = \{\}\) \{\s*measureMono\(\);/.test(lin)], [1, true, true]);
 function drawn(role) {
   var g = roleTag(role);
   return { cls: g.attrs.class, role: g.attrs['data-role'], rect: g.kids[0], text: g.kids[1] };

@@ -10,8 +10,9 @@ const Lineage = (() => {
   // A lane carries no text, so two of them only need telling apart.
   const LANE = 10;
   // Column mode draws the steps and PARTIAL pills in the 14 px above a box: a
-  // lane beside a box keeps this much further off, or the pill's fill hides
-  // it. The role tag sits inside the box (0162) and asks for no room here.
+  // lane beside a box that wears one keeps this much further off, or the pill's
+  // fill hides it. The role tag sits inside the box (0162) and asks for no room
+  // here.
   const TAG_ROOM = 6;
   // From this many long edges out of one node they share a lane per kind, or a
   // date spine read across the graph becomes a band of hundreds of lines.
@@ -587,6 +588,8 @@ const Lineage = (() => {
     const lay = dagLayers(n, c.edges, R, F && F.band);
     const hosts = cut && dagHosts(d, cut, lay.layer, R.rank, ride.fold, open, d.focus);
     const g = dagProper(n, lay, R.rank, c.edge_kinds || [], dim.bundle);
+    // Only the boxes that wear a pill need the room above them.
+    if (dim.badge && dim.pill) g.pill = Uint8Array.from(c.nodes, (x) => (dim.pill(x) ? 1 : 0));
     if (hosts) g.extra = dagStacks(hosts, n, ride);
     dagOrder(g, R);
     let y = bkCoords(g, dim);
@@ -1002,11 +1005,13 @@ const Lineage = (() => {
 
   /* How far apart two neighbours in a column sit, centre to centre. Two boxes
      keep VGAP between them; two lanes only need telling apart, so they sit
-     closer. A lane beside a box keeps clear of the pills column mode draws
-     above one (the steps, PARTIAL). */
+     closer. A lane beside a box that wears a pill keeps clear of it: column
+     mode draws the steps and PARTIAL above the box. The gap stays the same
+     whichever of the two is higher, as the layers are also laid out flipped. */
   function dagGap(g, a, b, dim) {
     const da = g.dummy[a], db = g.dummy[b];
-    return dagHalf(g, a, dim) + dagHalf(g, b, dim) + (da && db ? dim.lane : dim.vgap) + (da !== db ? dim.badge : 0);
+    return dagHalf(g, a, dim) + dagHalf(g, b, dim) + (da && db ? dim.lane : dim.vgap)
+      + (da !== db && g.pill && g.pill[da ? b : a] ? dim.badge : 0);
   }
 
   // The height of the tallest column stacked tight: no layout can be shorter.
@@ -1447,9 +1452,26 @@ const Lineage = (() => {
      that sits at its right (0162): the tag's width and 8px. The clip counts
      characters, the doubled spaces round the dot included, so a line with a
      type is drawn a little short of its room and one that is a bare name, which
-     has no spaces to fold, fits it exactly. */
+     has no spaces to fold, fits it exactly. The mono sizes are counted at
+     Menlo's advance, about 0.6 em, which is also Chrome's on a Mac; measureMono
+     scales them by what the page's mono font really advances. Consolas, at
+     0.55, then fills its boxes instead of stopping with room left, and SF Mono,
+     at 0.618 where the canvas resolves it, no longer runs about 5px past the
+     box. */
   const NAME_PX = 7.4, SUB_PX = 6.6, PAD_L = 19, PAD_R = 12;
   const COLUMN_NAME_PX = 7.5;
+  const MAC_MONO_EM = 0.6;
+  let monoScale = 1;
+
+  /* The factor to take the counted mono character widths to the page's, from
+     the advance in em the page's mono font measured. 1 for one within 2% of
+     Menlo's, and for a number that is no font's (an unloaded font, zero), which
+     would shrink every name to nothing. */
+  function monoScaleOf(em) {
+    if (!Number.isFinite(em) || em < 0.4 || em > 0.8) return 1;
+    const scale = em / MAC_MONO_EM;
+    return Math.abs(scale - 1) <= 0.02 ? 1 : scale;
+  }
 
   /* A column's role tag (0162), inside its box on the second line at the
      right: `edge` in from the box's right, `gap` kept clear on its left, 9.5px
@@ -1471,13 +1493,15 @@ const Lineage = (() => {
     return tag ? tag.getAttribute('data-role') : '';
   }
 
-  /* `role` is the tag the box wears, when it wears one. */
-  function boxRoom(columnMode, role) {
+  /* `role` is the tag the box wears, when it wears one. A model's name is in
+     the UI font, so only the mono lines follow `scale`. */
+  function boxRoom(columnMode, role, scale = monoScale) {
+    const sub = SUB_PX * scale;
     if (!columnMode) {
-      return { name: Math.floor((MODEL_W - PAD_L - PAD_R) / NAME_PX), sub: Math.floor((MODEL_W - PAD_L - PAD_R + 2) / SUB_PX) };
+      return { name: Math.floor((MODEL_W - PAD_L - PAD_R) / NAME_PX), sub: Math.floor((MODEL_W - PAD_L - PAD_R + 2) / sub) };
     }
     const stop = role ? COLUMN_W - TAG.edge - tagWidth(role) - TAG.gap : COLUMN_W - PAD_R + 2;
-    return { name: Math.floor((COLUMN_W - PAD_L - PAD_R) / COLUMN_NAME_PX), sub: Math.floor((stop - PAD_L) / SUB_PX) };
+    return { name: Math.floor((COLUMN_W - PAD_L - PAD_R) / (COLUMN_NAME_PX * scale)), sub: Math.floor((stop - PAD_L) / sub) };
   }
 
   /* Second line of a node box. Column mode ships a ready-made `sub`; model mode
@@ -1584,6 +1608,12 @@ const Lineage = (() => {
     const steps = expression && Number(expression.steps) || 0;
     if (steps < 2) return '';
     return steps >= RECURSIVE_STEPS ? `${RECURSIVE_STEPS}+` : `\u00d7${steps}`;
+  }
+
+  /* Whether a column's box wears a pill above it, the steps' or PARTIAL (0145):
+     the same rule render draws them by. */
+  function wearsPill(n) {
+    return !!(stepsLabel(n.expression) || (n.partial && n.partial.length));
   }
 
   /* The two lines the column's card adds when collin gave it an expression:
@@ -2112,7 +2142,7 @@ const Lineage = (() => {
   function layout(d, folders, levels) {
     const L = dagLayout(d, {
       w: W, h: H, hgap: HGAP, vgap: VGAP, lane: LANE, bundle: BUNDLE,
-      badge: d.mode === 'column' ? TAG_ROOM : 0,
+      badge: d.mode === 'column' ? TAG_ROOM : 0, pill: wearsPill,
     }, folders, unfolded, levels);
     bbox = L.bbox;
     return L;
@@ -2160,11 +2190,29 @@ const Lineage = (() => {
     });
   }
 
+  /* How wide the page's mono font draws a character, read once: one string
+     measured on one canvas, never a box at a time. A font that cannot be
+     measured leaves the Mac's widths. */
+  let monoRead = false;
+  function measureMono() {
+    if (monoRead) return;
+    monoRead = true;
+    try {
+      const font = getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
+      const ctx = document.createElement('canvas').getContext('2d');
+      ctx.font = `100px ${font || 'monospace'}`;
+      monoScale = monoScaleOf(ctx.measureText('0'.repeat(10)).width / 1000);
+    } catch (e) {
+      monoScale = 1;
+    }
+  }
+
   /* `opts.folders` draws the canvas by folder: the project's package, '' when
      it is not known, or null for the usual canvas (0029), and `opts.levels`
      how many levels of folders, 1 when left out (0080). What comes back says
      what the bands added, for the line under the canvas; null without them. */
   function render(d, opts = {}) {
+    measureMono();
     data = d;
     lastOpts = opts;
     const columnMode = d.mode === 'column';
