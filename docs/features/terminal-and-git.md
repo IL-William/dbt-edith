@@ -54,8 +54,10 @@ activation lines and the update's, marks it at the end of its line with a chip:
 `typed from the Jobs tab · Enter is yours`, or `run from the manifest's card`
 for the one command whose Enter the page presses. The chip goes when you type
 a key or paste, when bash shows its next prompt, on Clear and on Restart, and
-there is only one. If the shell does not echo the line within a second, the toast
-`command ready in the terminal, press Enter to run it` says it instead.
+there is only one. If the shell does not echo the line within a second, or the
+line has no room left for the chip before the terminal's right edge, the toast
+`command ready in the terminal, press Enter to run it` says it instead. Press
+Enter yourself while the page waits and neither is shown.
 
 ## Python environment
 

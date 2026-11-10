@@ -13,6 +13,15 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.8 - 2026-11-10
+
+- Say it in the toast, in place of a clipped chip, when the line of a command typed
+  for you has no room left for the chip before the terminal's right edge (0161).
+- Keep bash's line keys on when you type a key while the page waits to press Enter
+  for the command it ran, instead of leaving them off until the next prompt (0161).
+- Show neither the chip nor the toast saying to press Enter when you pressed Enter
+  yourself while the page waited for the command's echo (0161).
+
 ## 2.20.7 - 2026-11-10
 
 - Say an age of hours as `3 h ago` on the Compiled and Run tabs, the manifest

@@ -77,9 +77,14 @@ with no trace of which page had typed it or whether Enter had been pressed.
 - A theme added later declares sixteen `--ansi-*` colours or the test fails.
 - The chip is drawn only when the shell echoes the command at the cursor: a
   program reading the keys itself, or a line the shell repaints, gets the toast.
+  *Amended in 2.20.8: a line with no room left before the terminal's right
+  edge for the whole chip gets the toast too; a resize after the chip is drawn
+  can still clip it.*
 - zsh says nothing at its prompt, so there a chip stays until a key, Clear or
   Restart.
 - The command the page runs for the person is sent in two writes, and the Enter
   is left out when the person typed a key in between; no chip is drawn then,
   the line no longer ending with the command, and the toast says Enter is
   theirs. A restart in between says nothing.
+  *Amended in 2.20.8: when the key typed in between is Enter, neither the chip
+  nor the toast is shown: the line is the person's and has run.*

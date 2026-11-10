@@ -15,6 +15,7 @@ const S = {
   cm: null,
   term: null, ws: null, fit: null,
   termKeys: 0,                // how many keys or pastes the person has typed into the terminal, so a command waiting for its Enter can tell a line they changed (0161)
+  termEnters: 0,              // how many of those keys were an Enter, counted as promptAfter reads one, so a command waiting for its echo knows the person ran a line themselves (0161)
   typedChip: null,            // the chip beside a command typed for the person: its decoration and marker, one at a time (0161)
   venv: null,                 // /api/meta's venv: the one dbt-edith was started in, and each found
   termVenv: undefined,        // the terminal's VIRTUAL_ENV at its last prompt, '' for none, undefined unheard (0069)
@@ -10630,11 +10631,12 @@ function sendToTerminal(cmd, run, typed, from) {
   const attempt = () => {
     const ws = S.ws;
     if (ws && ws.readyState === 1) {
-      S.termPrompt = promptAfter(S.termPrompt, run ? cmd + '\r' : cmd);
+      // The Enter of `run` is told to promptAfter once it is sent, in settle: a key typed meanwhile cancels it.
+      S.termPrompt = promptAfter(S.termPrompt, cmd);
       // Where the line starts, as a row of the whole buffer: a shell that wraps a long line by moving the cursor leaves its rows unmarked as wrapped.
       const first = S.term ? S.term.buffer.active.baseY + S.term.buffer.active.cursorY : 0;
       const before = S.term ? termLineToCursor(first) : '';
-      const keys = S.termKeys;
+      const keys = S.termKeys, enters = S.termEnters;
       ws.send(JSON.stringify({ t: 'i', d: cmd }));
       S.term && S.term.focus();
       if (typed) typed();
@@ -10642,9 +10644,14 @@ function sendToTerminal(cmd, run, typed, from) {
         const live = S.ws === ws && ws.readyState === 1;
         // Enter only for a line still as it was sent: a key typed since, or a new shell, may have changed what it would run.
         const ran = enterAfterEcho(run, keys, S.termKeys, live);
-        const drawn = live && seen && showTypedChip(typedChipText(from, ran));
-        if (ran) ws.send(JSON.stringify({ t: 'i', d: '\r' }));
-        if (!drawn && live && !typed) toast(ran ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
+        // The person's own Enter in the meantime: the line has run, or another, and "press Enter" would be false. Their Enter may be echoed before the shell's newline, so a chip drawn then would stay on a line already run.
+        const entered = enters !== S.termEnters;
+        const drawn = live && seen && !entered && showTypedChip(typedChipText(from, ran));
+        if (ran) {
+          ws.send(JSON.stringify({ t: 'i', d: '\r' }));
+          S.termPrompt = promptAfter(S.termPrompt, '\r');
+        }
+        if (!drawn && live && !typed && !entered) toast(ran ? 'running ' + cmd + ' in the terminal' : 'command ready in the terminal, press Enter to run it');
       };
       if (S.term) awaitEcho(first, before, cmd, settle);
       else settle(false);
@@ -19196,8 +19203,14 @@ function termLineKey(e, at) {
    to a command, which reads the keys itself until the next prompt's OSC says
    bash has them back. A bracketed paste keeps its newlines in the line. */
 function promptAfter(prompt, d) {
-  if (prompt !== true || d.startsWith('\x1b[200~')) return prompt;
-  return /[\r\n]/.test(d) ? false : prompt;
+  return prompt === true && handsLineOn(d) ? false : prompt;
+}
+
+/* Whether `d` hands the line on: it holds a newline, outside a bracketed paste,
+   which keeps its newlines in the line. The one reading of Enter, for the
+   prompt and for the Enters counted. */
+function handsLineOn(d) {
+  return !d.startsWith('\x1b[200~') && /[\r\n]/.test(d);
 }
 
 /* xterm.js's colours from the page's variables, `read` giving the value of
@@ -19228,6 +19241,13 @@ function typedChipText(from, run) {
   return (from ? `typed from ${from}` : 'typed for you') + ' · Enter is yours';
 }
 
+/* Whether a chip `chipW` wide, which starts 12px (its margin) right of column
+   `x`, ends inside a screen `screenW` wide of `cols` columns. A cursor waiting
+   to wrap sits at `cols` and has no room. */
+function chipFits(x, cols, screenW, chipW) {
+  return x < cols && x * (screenW / cols) + 12 + chipW <= screenW;
+}
+
 /* Whether the shell has echoed `cmd` since the line read `before` up to the
    cursor: longer by its length, and ending in it. Compared on the line and not
    looked for in it, so a command typed twice is seen twice. */
@@ -19247,6 +19267,19 @@ function enterAfterEcho(run, keysBefore, keysNow, live) {
    reply to a colour query. Only the first takes the chip away. */
 function typedByPerson(d) {
   return !/^\x1b(?:\[[?>]?[\d;]*[cnRIO]|[P\]])/.test(d);
+}
+
+/* What xterm.js hands to onData: a key or a paste of the person's takes the
+   chip away and is counted, an Enter among them too, and all of it goes to the
+   shell. Named so that the harness can feed it keys. */
+function termInput(d) {
+  if (typedByPerson(d)) {
+    S.termKeys++;
+    if (handsLineOn(d)) S.termEnters++;
+    dropTypedChip();
+  }
+  S.termPrompt = promptAfter(S.termPrompt, d);
+  if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ t: 'i', d }));
 }
 
 /* The OSC number pty.rs has bash print its VIRTUAL_ENV under. */
@@ -19277,11 +19310,7 @@ function initTerm() {
     return true;
   });
   connectTerm();
-  S.term.onData((d) => {
-    if (typedByPerson(d)) { S.termKeys++; dropTypedChip(); }
-    S.termPrompt = promptAfter(S.termPrompt, d);
-    if (S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ t: 'i', d }));
-  });
+  S.term.onData(termInput);
   S.term.attachCustomKeyEventHandler((e) => {
     const act = termClipboard(e, IS_MAC, S.term.hasSelection());
     // A paste is the browser's to do: refused by xterm.js, the key fires a
@@ -19356,17 +19385,29 @@ function awaitEcho(first, before, cmd, done) {
 /* The chip beside a command typed for you, at the end of its line. One at a
    time: a second command replaces it. It sits on a marker, which the terminal
    moves with the line as output scrolls it, and which goes with the line when
-   it leaves the scrollback. False when it could not be made. */
+   it leaves the scrollback. False when it could not be made, which includes a
+   line with no room left of the terminal's edge for the whole chip: clipped,
+   it would say less than the toast does. */
 function showTypedChip(label) {
   dropTypedChip();
+  const x = S.term.buffer.active.cursorX;
+  // Measured once, here, and not at each render, which would ask the layout for every frame of output. The cell is the screen over the columns, public values both; xterm.js's own cell size is private.
+  const screen = S.term.element.querySelector('.xterm-screen');
+  const chip = Object.assign(document.createElement('span'), { className: 'termtyped', textContent: label });
+  chip.style.cssText = 'position: absolute; visibility: hidden';
+  screen.append(chip);
+  const fits = chipFits(x, S.term.cols, screen.offsetWidth, chip.offsetWidth);
+  chip.remove();
+  chip.style.cssText = '';
+  if (!fits) return false;
   const marker = S.term.registerMarker(0);
   if (!marker) return false;
-  const deco = S.term.registerDecoration({ marker, x: S.term.buffer.active.cursorX, width: 1, layer: 'top' });
+  const deco = S.term.registerDecoration({ marker, x, width: 1, layer: 'top' });
   if (!deco) { marker.dispose(); return false; }
   // The element is made and moved by xterm.js, at every render.
   deco.onRender((el) => {
     if (el.firstChild) return;
-    el.append(Object.assign(document.createElement('span'), { className: 'termtyped', textContent: label }));
+    el.append(chip);
   });
   S.typedChip = { deco, marker };
   return true;
