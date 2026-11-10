@@ -20,7 +20,10 @@ real pointer, through the DevTools protocol, and checks what that menu does:
     rests on the name;
   - the theme menu (0150), in a window 1000 pixels wide, sits inside it, under
     the right edge of its button; two arrows down and Enter pick Light, and
-    Escape gives the focus back to the button.
+    Escape gives the focus back to the button;
+  - the manifest pill's card (0157), held open by a click, has a poll rewrite
+    its age in place, the same element, and keeps the focus on its Run dbt
+    parse button when a poll changes the answer and the card is drawn again.
 
 It runs as scripts/walk_tour.py does, whose copy of Jaffle Shop, server and
 DevTools client it borrows: it needs dbt to parse the copy, and Chrome, and
@@ -58,6 +61,14 @@ LOOKS_ON = """(() => { const f = window.fetch;
     const u = await r.json();
     return new Response(JSON.stringify(Object.assign(u, { off: false })), { status: r.status, headers: r.headers });
   }; })()"""
+
+CARD = "document.querySelector('.mcard')"
+# The card's Run button holds the focus: that and which key it carries.
+RUN_FOCUS = ("(() => { const a = document.activeElement; return a && a.matches('.mcard .mc-run')"
+             " ? a.dataset.key : (a ? a.tagName + (a.id ? '#' + a.id : '') : ''); })()")
+TAGGED = ("(() => { const w = document.querySelector('.mcard .mc-when'), r = document.querySelector('.mcard .mc-run');"
+          " return [!!w && w.__walk === 1 && w.isConnected, !!r && r.__walk === 1 && r.isConnected,"
+          " !!r && document.activeElement === r]; })()")
 
 
 class Walk:
@@ -122,7 +133,79 @@ class Walk:
                 self.page.until("!" + OPEN, "the menu closing again", timeout=3)
         return None
 
-    def run(self, url):
+    def touch(self, project, model):
+        """Edits a model and dates it two seconds after the manifest: the
+        copy is no repository, so a file newer than the manifest counts as
+        edited, and freshness compares whole seconds."""
+        path = project / "models" / "staging" / f"{model}.sql"
+        with open(path, "a") as f:
+            f.write("\n-- edited by the walk\n")
+        stamp = (project / "target" / "manifest.json").stat().st_mtime + 2
+        os.utime(path, (stamp, stamp))
+
+    def manifest_card(self, project, away):
+        page = self.page
+        print("--- the manifest's card ---")
+        page.key(*W.ESCAPE)
+        time.sleep(0.2)
+        self.check("nothing is left open by the walk before it",
+                   not page.js("!!document.querySelector('.crumbmenu, .updmenu')"))
+        self.move(away)
+
+        # A manifest seconds old has an age that moves at each poll for a minute.
+        # The page has it once its status line names the new time: the server
+        # looks at manifest.json every 3 s, so a file edited before then turns
+        # the badge amber against the old manifest. Both waits are 30 s: a full
+        # run sharing the machine with other Chrome runs once took more than 15.
+        status = "document.querySelector('#status-manifest').textContent"
+        was = page.js(status)
+        W.parse(project)
+        page.until(f"{status} !== {was!r}", "the page reading the new manifest", 30)
+        self.touch(project, "stg_orders")
+        page.until("document.querySelector('#fresh-badge')?.dataset.tone === 'warn'", "the badge turning amber", 30)
+
+        self.click(self.centre("#fresh-badge"))
+        self.move(away)
+        time.sleep(PAST)
+        self.check("a click on the pill opens its card and the pointer leaving keeps it", page.js(f"!!{CARD}"))
+        self.check("the focus is on its Run dbt parse button", page.js(RUN_FOCUS) == "parse", page.js(RUN_FOCUS))
+
+        # The card's first opening is drawn again once the colours of its files
+        # have been asked for (markFreshCard), which replaces what is tagged.
+        page.until("!!document.querySelector('.mcard .mc-file .ficon.node')", "the card's file colours", 10)
+        page.js("(() => { document.querySelector('.mcard .mc-when').__walk = 1;"
+                " document.querySelector('.mcard .mc-run').__walk = 1; })()")
+        before = page.js("document.querySelector('.mcard .mc-when').textContent")
+        try:
+            page.until(f"{CARD}?.querySelector('.mc-when')?.textContent !== {before!r}", "the card's age moving", 20)
+        except AssertionError:
+            pass
+        after = page.js(f"{CARD}?.querySelector('.mc-when')?.textContent")
+        tagged = page.js(TAGGED)
+        self.check("a poll rewrites the age", after != before, f"{before!r} before, {after!r} after")
+        self.check("in the same element, not a redraw", tagged[0], f"the age line: {tagged}")
+        self.check("the Run button is the same one", tagged[1], f"the button: {tagged}")
+        self.check("and keeps the focus", tagged[2], page.js(RUN_FOCUS))
+
+        self.touch(project, "stg_payments")
+        try:
+            page.until("[...document.querySelectorAll('.mcard .mc-file')].some((f) => f.title.endsWith('stg_payments.sql'))",
+                       "the card listing stg_payments.sql", 15)
+        except AssertionError:
+            pass
+        self.check("a poll that changes the answer draws the card again, with the new file",
+                   page.js("[...document.querySelectorAll('.mcard .mc-file')].some((f) => f.title.endsWith('stg_payments.sql'))"))
+        self.check("the card is still open", page.js(f"!!{CARD}"))
+        self.check("and the focus is on its Run dbt parse button again", page.js(RUN_FOCUS) == "parse", page.js(RUN_FOCUS))
+
+        page.key(*W.ESCAPE)
+        time.sleep(0.2)
+        self.check("Escape closes the card", page.js(f"!{CARD}"))
+        self.check("and the focus goes back to the pill", page.js("document.activeElement.id") == "fresh-badge",
+                   page.js(RUN_FOCUS))
+        self.move(away)
+
+    def run(self, url, project):
         page = self.page
         page.call("Page.addScriptToEvaluateOnNewDocument", source=LOOKS_ON)
         page.call("Page.navigate", url=url)
@@ -259,6 +342,8 @@ class Walk:
         self.check("nor joins a breadcrumb's menu, which keeps its own",
                    page.js("!!document.querySelector('.crumbmenu') && !document.querySelector('.updmenu')"))
 
+        self.manifest_card(project, away)
+
         self.check("no error in the page", not page.errors, "; ".join(page.errors))
         return self.failed
 
@@ -277,7 +362,7 @@ def main():
         page = None
         try:
             page = W.Page(work, 1)
-            failed = Walk(page).run(edith.url)
+            failed = Walk(page).run(edith.url, project)
         finally:
             if page:
                 page.close()
