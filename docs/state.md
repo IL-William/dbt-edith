@@ -3028,11 +3028,18 @@ of its own, and each panel updates the tour, its page under
     - The file name's date is taken when the menu opens, so a menu left open
       past midnight names the day before.
 39. **The Search tab's limits (0155, 2.6.0).**
-    - A line is cut at the front only once the match ends past column 24, so
+    - ~~A line is cut at the front only once the match ends past column 24, so
       in a very narrow sidebar the match can still sit behind the row's
-      ellipsis.
-    - Graphite and Halloween were not looked at; the tab was drawn and
-      checked in Night and Light.
+      ellipsis.~~ Fixed in 2.20.10.
+    - ~~Graphite and Halloween were not looked at; the tab was drawn and
+      checked in Night and Light.~~ Looked at in 2.20.10: Graphite draws the
+      tab as Night does, the mark's grey fill reading clearly at the sidebar's
+      default width and at its narrowest.
+    - A match longer than the row is cut at its end with no ellipsis; at the
+      150 px drag limit about ten columns fit, so `customer_payments` is cut.
+    - A row copied by selection holds line breaks between its text before the
+      match, the match and the text after it, as flex items are blocks.
+    - Halloween is still not looked at.
 40. **The keys excerpt's limits (0156, 2.7.0).**
     - A config written twice at one level (`+schema` and `schema` side by
       side) is skipped on both sides, so the upper level's line stays unstruck

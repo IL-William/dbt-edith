@@ -19887,6 +19887,35 @@ function grepLine(text, query) {
   return ['…' + trimmed.slice(from, at), hit, after];
 }
 
+/* The text of a hit row. With a match, the row is three boxes so the match is
+   the one thing that never gives way: the text after it is cut at its end
+   first, then the text before it at its left, so what sits beside the match is
+   what stays. A cut that only fell at word edges (grepLine) still hid the match
+   in a sidebar narrower than the 24 columns it assumes. Without one, the row
+   is a single text with its ellipsis at the end, as before. */
+function grepHitText(host, parts) {
+  if (!parts[1]) {
+    markedText(host, parts);
+    return;
+  }
+  // A tab or a run of spaces becomes one space, as the row's own nowrap made
+  // it before: the rtl box would put a tab at its own level, reordering the
+  // words around it.
+  const before = parts[0].replace(/\s+/g, ' ');
+  const after = parts[2].replace(/\s+/g, ' ');
+  host.classList.add('split');
+  if (before) {
+    // The box is right-to-left so its overflow, and its ellipsis, fall on the
+    // left; the inner span is isolated left-to-right so the text itself, and
+    // the punctuation at its ends, is not reordered by that.
+    const a = jel('span', 'tx-a');
+    a.appendChild(jel('span', 'tx-in', before));
+    host.appendChild(a);
+  }
+  host.appendChild(jel('mark', '', parts[1]));
+  if (after) host.appendChild(jel('span', 'tx-b', after));
+}
+
 let grepTimer = null;
 let grepRun = 0;
 /* The files folded in the list, kept from one query to the next and emptied
@@ -19937,7 +19966,7 @@ function paintGrep(result, query) {
       row.setAttribute('aria-current', String(grepCur === `${f.path}:${h.line}`));
       row.append(jel('span', 'ln', String(h.line)));
       const body = jel('span', 'tx');
-      markedText(body, grepLine(h.text, query));
+      grepHitText(body, grepLine(h.text, query));
       row.appendChild(body);
       row.addEventListener('click', () => {
         grepCur = `${f.path}:${h.line}`;
