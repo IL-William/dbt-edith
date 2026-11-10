@@ -350,8 +350,11 @@ of the levels the canvas would draw: `amount`, `1+amount`, `amount+1`, with what
 each adds (`+ raw_payments.amount`, `+ 6 columns`, `+ 1 column, 1 model` where an
 indirect edge draws a model's box). They are counted from the same walk as the
 canvas, with the roles stopped at, the indirect button and the cap in force, so
-a level the cap cut short reads `or more` and the menu ends on `Cut at the
-canvas's cap`. No dbt selector says a column's depth, so there is no copy button.
+a level the cap cut short within the 20 listed reads `or more` and the menu ends
+on `Cut at the canvas's cap`; a chain that goes on past 20 levels ends on `Goes
+on past 20 levels` instead, even when the cap is met only on the extra level
+walked to learn that. No dbt selector says a column's depth, so there is no copy
+button.
 
 **The column canvas draws 1000 boxes**, a box for a column or a model. A
 canvas cut there says so in its status line, and a **Draw up to 3000** button

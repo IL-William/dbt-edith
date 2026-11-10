@@ -2559,7 +2559,8 @@ impl Graph {
     /// after the request's own upstream walk (`up`), because the canvas shares
     /// one map and one cap between the two: a column already reached upstream
     /// is not counted again (a loop in the cache), and an upstream side that
-    /// fills the cap leaves the downstream one cut at its first step.
+    /// fills the cap leaves the downstream one cut at its first step. A cap met
+    /// only on the walk's extra level past the twentieth is not a cut.
     pub fn column_levels(&self, focus: ColRef, up: u32, max_nodes: usize, cut: &[&str], row_edges: RowEdges) -> Option<Levels> {
         let cll = self.cll.as_ref()?;
         let cut = cll.cut_kinds(cut);
@@ -2600,7 +2601,10 @@ impl Graph {
         let below = cll.walk(focus, up.min(MAX_LEVELS as u32), deep, max_nodes, &cut, row_edges);
         let (up, up_more) = fold_levels(tally(&above, true), above.cut_up, name_of);
         let (down, down_more) = fold_levels(tally(&below, false), below.cut_down, name_of);
-        Some(Levels { up, down, up_more, down_more, up_cut: above.cut_up.is_some(), down_cut: below.cut_down.is_some() })
+        // The 21st level is walked only to learn the graph goes on, so a cap met
+        // there cut nothing the menu lists or the canvas draws.
+        let cut_within = |k: Option<i32>| k.is_some_and(|k| k <= MAX_LEVELS as i32);
+        Some(Levels { up, down, up_more, down_more, up_cut: cut_within(above.cut_up), down_cut: cut_within(below.cut_down) })
     }
 
     pub(crate) fn by_name_then_id(&self, a: u32, b: u32) -> std::cmp::Ordering {
@@ -2971,9 +2975,10 @@ pub struct Lineage<'a> {
 
 /// The levels that exist on each side of a focus, for the depth menu: level
 /// `i + 1` is `up[i]` or `down[i]`. At most `MAX_LEVELS` are listed, and a
-/// `_more` says the walk goes on past them; a `_cut` says why, when it is a
-/// column walk's cap rather than the graph's depth, so the menu does not blame
-/// the cap for a graph that is only deep.
+/// `_more` says the walk goes on past them; a `_cut` says why, only when the
+/// cap of a column walk stopped it within the levels listed rather than the
+/// graph's depth, so the menu does not blame the cap for a graph that is only
+/// deep.
 #[derive(serde::Serialize, Debug, PartialEq, Default)]
 pub struct Levels {
     pub up: Vec<Level>,
@@ -5789,6 +5794,47 @@ mod tests {
         assert_eq!(g.column_lineage(focus, 0, 20, 3, &[], RowEdges::Hidden).nodes.len() - 1, 2, "the canvas draws these two");
         let roomy = column_levels(&g, focus, 0, 100, &[], RowEdges::Hidden);
         assert!(!roomy.down[0].cut && !roomy.down_more && !roomy.down_cut && roomy.down.len() == 2);
+    }
+
+    /// `stg_orders.status` feeds `mart_00.c`, which feeds `mart_01.c`, and so
+    /// on: a chain of `n` marts, one column per level.
+    fn column_chain(n: usize) -> Graph {
+        let mut g = shop(n);
+        let mut edges = vec![link("stg_orders", "status", "mart_00", "c", "rename")];
+        edges.extend((1..n).map(|i| link(&format!("mart_{:02}", i - 1), "c", &format!("mart_{i:02}"), "c", "rename")));
+        g.merge_col_lineage(cache(edges), 1);
+        g
+    }
+
+    /// A column chain deeper than the menu lists goes on without a cap having
+    /// cut anything, on either side.
+    #[test]
+    fn a_column_chain_past_twenty_levels_goes_on() {
+        let g = column_chain(25);
+        let l = column_levels(&g, col(&g, "stg_orders", "status"), 0, 100, &[], RowEdges::Hidden);
+        assert_eq!((l.down.len(), l.down_more, l.down_cut), (20, true, false));
+        assert_eq!(l.down[19].name, "mart_19.c");
+        assert!(!l.down[19].cut);
+        let tail = column_levels(&g, col(&g, "mart_24", "c"), 20, 100, &[], RowEdges::Hidden);
+        assert_eq!((tail.up.len(), tail.up_more, tail.up_cut), (20, true, false));
+        assert!(!tail.up[19].cut);
+    }
+
+    /// A cap met only by the 21st level, which is walked to learn the graph
+    /// goes on, does not blame the cap; one met within the 20 still does.
+    #[test]
+    fn a_cap_met_only_past_the_twentieth_level_cuts_nothing_drawn() {
+        let g = column_chain(25);
+        let head = col(&g, "stg_orders", "status");
+        let l = column_levels(&g, head, 0, 21, &[], RowEdges::Hidden);
+        assert_eq!((l.down.len(), l.down_more, l.down_cut), (20, true, false));
+        assert!(!l.down[19].cut);
+        let drawn = g.column_lineage(head, 0, 20, 21, &[], RowEdges::Hidden);
+        assert_eq!((drawn.nodes.len(), drawn.truncated), (21, false));
+        let tight = column_levels(&g, head, 0, 20, &[], RowEdges::Hidden);
+        assert!(tight.down_cut && tight.down.len() == 19, "{tight:?}");
+        let tail = column_levels(&g, col(&g, "mart_24", "c"), 20, 21, &[], RowEdges::Hidden);
+        assert_eq!((tail.up.len(), tail.up_more, tail.up_cut), (20, true, false));
     }
 
     /// A stop reached again around the cut is walked on from the step it was

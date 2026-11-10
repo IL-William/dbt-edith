@@ -23,13 +23,16 @@ opens a menu of the levels that exist. A row gives the selector it draws
 `+ 3 views`, `+ 2 views, 1 table`, `+ stg_customers` for a level of one node,
 `· all` on the last level of the graph), the one drawn checked; the menu ends on
 a line saying when the graph goes on past 20 levels, or when one side has
-nothing (`Nothing downstream: customers has no children.`). A side with no level
-shows 0 and its button says why when focused or hovered, though the depth behind
-it still carries to the next model. The copy button writes the selector as it
-shows, a zero side dropped (`Copied 2+customers+1`), with `source:` before a
-source's name. A name past 24 characters is cut in the middle, whole in its
-tooltip and in the copy; in a narrow dock it is the first thing to fold, giving
-way to the bar of its kind before the tabs lose their labels. The menus open with Enter or Space, move
+nothing (`Nothing downstream: customers has no children.`). A menu opened before
+the levels arrive says `Counting the levels…` and fills in place; if the
+request failed it says `The levels could not be counted.` until the next focus
+or redraw. A side with no level shows 0 and its button says why when focused or
+hovered, though the depth behind it still carries to the next model. The copy
+button writes the selector as it shows, a zero side dropped
+(`Copied 2+customers+1`), with `source:` before a source's name. A name past
+24 characters is cut in the middle, whole in its tooltip and in the copy; in a
+narrow dock it is the first thing to fold, giving way to the bar of its kind
+before the tabs lose their labels. The menus open with Enter or Space, move
 with the arrows and close on Escape. A Selection draws what its expression says,
 so the depth is dimmed there.
 

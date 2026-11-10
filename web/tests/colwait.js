@@ -65,7 +65,7 @@ function reset() {
   S = { graphMode: 'model', colFocus: null, colSub: null, colDraw: 0, colWait: false, colCut: new Set(),
     colIndirect: false, colRaise: null, cllTool: 'collin', focus: 'model.shop.orders',
     collin: { found: true, stale: true, state: 'done' } };
-  log = []; asks = [];
+  log = []; asks = []; failedAsks = [];
   $('#lineage-empty').children = [];
   $('#lineage-empty').classList.add('hidden');
   $('#lineage-empty').classList.remove('waiting');
@@ -85,6 +85,8 @@ function paintMode() {}
 // The depth control's own, which the wait neither reads nor sets.
 function askDepth() {}
 function landDepth() {}
+var failedAsks = [];
+function failDepth(k) { failedAsks.push(k); }
 function paintColCap() {}
 function paintLegend() {}
 function paintTestsCount() {}
@@ -217,6 +219,7 @@ step(function () {
     [false, false, '', 'model', false]);
   check('the error is said, and the model drawn', log.filter(function (l) { return /^(toast|model)/.test(l); }),
     ['toast column lineage: unknown column', 'model model.shop.orders']);
+  check('the depth ask is failed once, under the column draw\'s empty key', failedAsks, ['']);
 });
 step(function () {
   print('\n--- the drawing goes with the wait ---');

@@ -48,7 +48,7 @@ const S = {
   colCut: new Set(),          // roles the column walk stops at downstream, kept across refocuses
   colIndirect: false,         // collin's indirect edges walked and drawn: off on load, kept across refocuses (0097)
   colSub: null,               // last /api/collineage payload, which the stop at menu counts
-  depthLevels: null,          // {key, levels, kind, name} of the answer drawn: what the depth menus list (0158)
+  depthLevels: null,          // {key, levels, kind, colour, failed} of the answer drawn: what the depth menus list (0158)
   depthKey: '',               // the ask the depth control waits on: an answer under another key is not its own
   colReach: new WeakMap(),    // /api/colreach answers, by the /api/node payload they complete
   selectSub: null,            // last /api/select payload, for the two copy buttons
@@ -5416,7 +5416,10 @@ async function focusNode(id, { open = false, keepDepth = false } = {}) {
     }
     if (S.dock === 'jobs') loadJobs();
     if (open && detail.file) openFile(detail.file, { focusLineage: false });
-  } catch (e) { toast('lineage: ' + e.message, 'err'); }
+  } catch (e) {
+    failDepth('m|' + id);
+    toast('lineage: ' + e.message, 'err');
+  }
 }
 
 /* Column nodes carry a composite id, "<unique_id>::<column>". Model nodes carry
@@ -5526,6 +5529,7 @@ async function focusColumn(id, column) {
     // The column's levels are not the model's: an answer under the same key
     // would otherwise leave them in the model's menus.
     askDepth('');
+    failDepth('');
     paintMode();
     if (fromWait) focusNode(id);
   }
@@ -8938,7 +8942,9 @@ function shownDepth(value, list) {
    ask that made them, so a menu opened before the answer waits for it and one
    opened after never lists another focus's levels. */
 function askDepth(key) {
-  if (S.depthLevels && S.depthLevels.key !== key) S.depthLevels = null;
+  // A failed hold under the same key goes too: the same ask made again waits
+  // for its own answer.
+  if (S.depthLevels && (S.depthLevels.key !== key || S.depthLevels.failed)) S.depthLevels = null;
   S.depthKey = key;
 }
 
@@ -8947,6 +8953,15 @@ function landDepth(key, sub) {
   const f = sub.mode === 'model' && sub.nodes[sub.focus];
   S.depthLevels = { key, levels: sub.levels || null,
     kind: f ? f.kind : '', colour: f ? Lineage.nodeColor(f) : '' };
+  paintDepth();
+}
+
+/* An ask that failed holds its key too, so a menu open on it says the levels
+   could not be counted instead of waiting for an answer that never comes. An
+   answer already landed under the key keeps its levels. */
+function failDepth(key) {
+  if (key !== S.depthKey || (S.depthLevels && S.depthLevels.key === key)) return;
+  S.depthLevels = { key, levels: null, failed: true, kind: '', colour: '' };
   paintDepth();
 }
 
@@ -9048,7 +9063,7 @@ function fillDepthMenu() {
   head.title = `${word} of ${name}`;
   el.append(head);
   if (!levels) {
-    el.append(make('div', 'lvwait', 'Counting the levels…'));
+    el.append(make('div', 'lvwait', held && held.failed ? 'The levels could not be counted.' : 'Counting the levels…'));
   } else {
     const input = $(side === 'up' ? '#up' : '#down');
     for (const r of depthRows(side, name, levels, input.value)) {

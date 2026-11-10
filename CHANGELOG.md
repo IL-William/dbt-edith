@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.2 - 2026-11-10
+
+- Say `The levels could not be counted.` in a depth menu when the request failed,
+  where it kept saying `Counting the levels…` until the next focus (0158).
+- Stop the depth menu of a column from saying the cap cut it when the cap was met
+  only by the 21st level, which is walked to learn the graph goes on (0158).
+
 ## 2.20.1 - 2026-11-10
 
 - Name the settings' Orchestration section in the command line's errors, its

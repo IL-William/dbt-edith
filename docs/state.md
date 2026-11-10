@@ -3052,6 +3052,10 @@ of its own, and each panel updates the tour, its page under
     - dbt's name method also matches a bare name against a package or a
       model's first folder, so the copied `1+customers` selects the models
       under `models/customers/` too, as the Export menu's `dbt ls` line does.
+      Left as it is: no dbt method names exactly one node (`fqn:` is a prefix,
+      `path:` is relative to each package root), only the server holds the
+      fqns (`select::fqn_match`), and a selector that tried would break 0158's
+      rule that the copy selects the rows the menu shows.
     - The copy writes `source:` before a source's name; the Export menu's `dbt ls`
       line writes nothing for a source. The two are left as they are.
     - Every page lineage request walks the graph once more on the server, and a
@@ -3061,11 +3065,18 @@ of its own, and each panel updates the tour, its page under
       back) lists that level as `+ nothing new`.
     - In a window narrower than the three folds can save, the tools row still
       breaks, now with the control in it.
-    - No test drives a column chain past 20 levels with the cap not reached, and
+    - ~~No test drives a column chain past 20 levels with the cap not reached, and
       `_cut` is also true when the cap is hit only at the 21st level, which the
-      page never draws.
-    - After a column request fails outside the collin wait, an open menu keeps
-      saying "Counting the levels…" until the next focus.
+      page never draws.~~ Fixed in 2.20.2.
+    - ~~After a column request fails outside the collin wait, an open menu keeps
+      saying "Counting the levels…" until the next focus.~~ Fixed in 2.20.2.
+    - When a column request fails outside the collin wait, the canvas keeps what
+      it drew before (the model's own when the column was asked from it), while
+      the menus, back on the model, say `The levels could not be counted.`: the
+      model's levels went with the column's ask. A model whose node detail fails
+      says it too, though its lineage answer came back with the levels, the two
+      being awaited together. The count is asked again with the next focus or
+      redraw.
 44. **The Jobs tab's limits (0159, 2.10.0).**
     - A cron is worded only in its plain shapes: a range of hours, both day
       fields, a month, the 29th to the 31st, `@quarterly` and a step that does
@@ -3091,7 +3102,7 @@ of its own, and each panel updates the tour, its page under
       else sets them now.
     - With By folder pressed the dock's tools row is about 50px wider, so its
       folds come about 50px sooner and it breaks a little earlier, at about
-      1100px with the folds spent (item 43's last limit).
+      1100px with the folds spent (item 43's limit on a narrow window).
     - The legend keeps its alphabetical order and its bar for a kind, where the
       design lists the kinds, then the tests, and draws a kind as a square.
     - The legend and the line under the canvas overlap on a narrow canvas, with
