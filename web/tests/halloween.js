@@ -195,6 +195,7 @@ ok('the saves go out one after the other', /S\.hw\.saving = S\.hw\.saving\.then\
 ok('the Theme section draws the cards, Follow the system and the apparitions',
   /paintThemeCards\(box\)[\s\S]*paintThemeFollow\(box\)[\s\S]*paintThemeHalloween\(box\)/.test(src)
   && /'look-apparitions', 'Random apparitions'/.test(src) && /switchRow\('theme-follow', 'Follow the system'/.test(src));
+ok('Follow the system carries no "new" tag', !/newtag/.test(src + css));
 ok('a redrawn switch walks from where it was, in the box on screen and not in the probe',
   /function walkSwitch\(toggle, key, now, real\) \{\s*if \(!real\) return;/.test(src));
 ok('and never touches aria-checked to do it', !/function walkSwitch[\s\S]*?\n\}\n/.exec(src)[0].match(/setAttribute/));

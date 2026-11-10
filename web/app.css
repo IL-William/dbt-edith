@@ -900,11 +900,6 @@ kbd {
 .tname { font-weight: 500; }
 .tdesc { font-size: 11.5px; color: var(--fg-dim); }
 @media (max-width: 1180px) { .tcards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-/* Follow the system's tag. */
-.newtag {
-  font: 600 9.5px/14px var(--ui); letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
-  border: 1px solid rgba(var(--accent-rgb), .45); border-radius: 4px; padding: 0 4px;
-}
 .sficon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: var(--tool); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 /* A switch rather than a check mark: on and off have to read at a glance. In
    the settings it is the board's 32 by 18 with a 14px knob, in the colour of the

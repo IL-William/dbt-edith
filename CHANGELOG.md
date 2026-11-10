@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.22.0 - 2026-11-11
+
+- Open the page in the theme you picked, so Light, Graphite and Halloween no
+  longer flash Night on load (0170).
+- Take a theme picked in another page once this one is shown or focused again
+  (0170).
+- Drop the "new" tag beside Follow the system.
+
 ## 2.21.0 - 2026-11-11
 
 - Draw the kind's bar before the name on the editor's tabs, and the file's icon

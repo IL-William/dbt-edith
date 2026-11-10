@@ -1,6 +1,6 @@
 # 0052. The API wants the key this launch printed
 
-Date: 2026-10-10 · Status: accepted, amended by 0122 · Amends 0015
+Date: 2026-10-10 · Status: accepted, amended by 0122 and 0170 · Amends 0015
 
 **Trigger:** read before adding a route, changing what the printed link holds,
 or letting anything reach the API without the key.
@@ -29,6 +29,8 @@ the printed link and every bookmark, not for being unneeded.
   the `.env` and the profile leave. The cookie, or `Authorization: Bearer` for a
   tool. Without it, `401` and a sentence the page shows in a bar that stays.
   The page's own files stay open, so a tab without the key can say why.
+  *Amended by [0170](0170-the-page-is-served-in-the-theme-kept.md): `index.html`
+  carries one value of `look.json`, the theme's name from a closed list.*
 - **It adds to 0015, it replaces nothing.** Host and Origin are still checked
   first, and `Sec-Fetch-Site` now backs `Origin` on anything that is not a read.
 
