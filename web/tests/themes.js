@@ -180,6 +180,23 @@ check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-
   }).map(function (t) { return t[0]; });
   check('the dimmed Reports glyph is at least 3:1 on the bar (--bg-2) in the four themes', bad, []);
 }());
+// A test's line on the canvas, the dotted one and the host's dashed stem (0160), is a graphic and holds 3:1 on the page in every theme.
+(function () {
+  var share = /color-mix\(in srgb, var\(--fg\) (\d+)%, var\(--bg\)\)/.exec(derived.decl['--edge-test'] || '');
+  ok('the three themes derive --edge-test as a share of the text colour over the page', !!share);
+  var p = share ? parseInt(share[1], 10) / 100 : 0;
+  function edge(t) {
+    if (t === night) return night.decl['--edge-test'];
+    var fg = channels2(t.decl['--fg']), bg = channels2(t.decl['--bg']);
+    return '#' + fg.map(function (v, i) { return ('0' + Math.round(v * p + bg[i] * (1 - p)).toString(16)).slice(-2); }).join('');
+  }
+  var bad = [['Night', night], ['Graphite', graphite], ['Light', light], ['Halloween', halloween]].filter(function (t) {
+    return ratio(edge(t[1]), t[1].decl['--bg'] || night.decl['--bg']) < 3;
+  }).map(function (t) { return t[0]; });
+  check('--edge-test is at least 3:1 on the page (--bg) in the four themes', bad, []);
+  ok('and the stem is drawn in it, in the page and in an exported file', /\.edge\.test\.stem \{ stroke: var\(--edge-test\);/.test(css)
+    && src.indexOf("'.edge.test.stem { stroke: var(--edge-test);") > 0);
+}());
 // The warning colour as text (the pill's "manifest" and its age, the card's amber line): Light darkens it, the others keep Night's.
 check('every theme but Light has Night\'s warning text, and Light\'s is at least 4.5:1 on its sidebar and on a card',
   [night.decl['--warn-text'] === night.decl['--warn'], '--warn-text' in graphite.decl, '--warn-text' in halloween.decl,

@@ -52,6 +52,15 @@ var two = row('not_null · customer_id', true);
 check('written as two tspans: the generic, then the column at a gap, with no dot between them',
   [two.kids.map(function (k) { return [k.name, k.attrs.class, k.textContent]; }), two.kids[1].attrs.dx, two.textContent],
   [[['tspan', 'rn', 'not_null'], ['tspan', 'rc', 'customer_id']], '6', 'not_nullcustomer_id']);
+check('a member told by its column is that column\'s run alone, no generic and no gap',
+  [rowParts('customer_id', 'alone'), (function () { var t = row('customer_id', 'alone'); return [t.kids.map(function (k) { return [k.attrs.class, k.textContent, k.attrs.dx]; }), t.textContent]; })()],
+  [{ name: '', col: 'customer_id' }, [[['rc', 'customer_id', null]], 'customer_id']]);
+check('a member told by its name stays one run',
+  rowLabel({ type: 'member', byName: true, v: 0 }, { nodes: [{ name: 'orders_min_1', test_name: 'row_count', column: 'id' }] }, 'orders'),
+  { text: 'min_1', keep: 0 });
+check('a member told by its column says it alone to rowLabel',
+  rowLabel({ type: 'member', byName: false, v: 0 }, { nodes: [{ name: 'x', test_name: 'not_null', column: 'id' }] }, 'orders'),
+  { text: 'id', keep: 0, col: 'alone' });
 check('a singular test is plain text, no tspan', [row('assert_a', false).kids.length, row('assert_a', false).textContent], [0, 'assert_a']);
 check('a lone column test says its column to rowLabel', [
   rowLabel({ type: 'row', level: 'column', v: 0 }, { nodes: [{ test_name: 'not_null', column: 'id', name: 'x' }] }, 'orders'),
@@ -138,6 +147,9 @@ ok('every role that has a tag has a text twin of its colour, named for it', Arra
 print('\n--- the +N pill ---');
 check('24 by 18 for a short number', pillSize('+1'), { w: 24, h: 18 });
 check('wider where the number is', [pillSize('+12').w, pillSize('+123').w], [26, 32]);
+check('the reach past a box\'s edge is the widest pill and its 4px gap, whichever side', [
+  badgeReach([{ hidden_up: 1 }]), badgeReach([{ hidden_down: 1234 }, { hidden_up: 3 }]), badgeReach([{ hidden_up: 12345 }]), badgeReach([{ name: 'a' }, { hidden_up: 0 }]), badgeReach([])],
+  [28, 42, 48, 0, 0]);
 
 print('\n--- the glow: a ring just outside the border ---');
 var nd = { classList: { contains: function (c) { return c === 'rider'; } }, querySelector: function () { return { getAttribute: function (k) { return k === 'width' ? '202' : '22'; } }; } };

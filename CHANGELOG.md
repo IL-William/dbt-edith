@@ -13,6 +13,20 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.11 - 2026-11-10
+
+- List the legend's kinds first and the tests after them, as the Lineage board
+  does (0160).
+- Keep the legend and the line under the canvas apart: they share one row, so a
+  long legend wraps beside the line instead of under it (0160).
+- Draw a member of an opened group as its column alone, in the mono run of a
+  lone slip, since the group's row above it already says the generic (0160).
+- Draw a test's dashed stem in the tests' grey and raise that grey in the
+  Graphite, Light and Halloween themes, so the dotted and the dashed lines both
+  hold 3:1 on the canvas (0160).
+- Leave room in an exported picture for a four-digit `+N` badge, which the frame
+  used to clip by about 2px (0160).
+
 ## 2.20.10 - 2026-11-10
 
 - Keep the match of a Search tab line whole in a sidebar too narrow for it: the text
