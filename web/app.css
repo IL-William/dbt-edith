@@ -1831,6 +1831,8 @@ kbd {
 .rhead-row { display: flex; align-items: center; gap: 10px; }
 .rhead .ttl { font-size: 15px; font-weight: 600; }
 .rhead .sub { margin-top: 3px; font: 11.5px var(--mono); color: var(--fg-mute); overflow-wrap: anywhere; }
+/* A sentence about the section, not what was read: the UI font. */
+.rhead .sub.prose { font: 12.5px/1.45 var(--ui); color: var(--fg-dim); }
 .rhead .btn, .rhead .btn.sm {
   display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 6px;
   background: none; font-size: 12px; white-space: nowrap;

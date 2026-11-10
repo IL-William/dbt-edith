@@ -12816,8 +12816,10 @@ function paintReportStale() {
 }
 
 /* The head every section shares: what it is, what it was read from, and its
-   buttons, Read again saying when the file has changed since. */
-function reportHead({ title, tool, tone, about, again, extra = [] }) {
+   buttons, Read again saying when the file has changed since. The line under
+   it is mono when it says what was read (a path, a version, a time) and
+   `prose` when it is a sentence about the section. */
+function reportHead({ title, tool, tone, about, prose = false, again, extra = [] }) {
   const head = jel('div', 'rhead');
   const row = jel('div', 'rhead-row');
   row.append(jel('span', 'ttl', title));
@@ -12845,7 +12847,7 @@ function reportHead({ title, tool, tone, about, again, extra = [] }) {
   head.append(row);
   // What it was read from, on a line of its own; a section with nothing to say
   // of that has no line.
-  if (about) head.append(jel('div', 'sub', about));
+  if (about) head.append(jel('div', prose ? 'sub prose' : 'sub', about));
   return head;
 }
 
@@ -12978,6 +12980,13 @@ function reportFolderSummary(text) {
   return sum;
 }
 
+/* Whether a fold's count is a number to draw as a pill ("12", "3 of 12",
+   "1,204 of 3,000"). A phrase in its place (a macro's "used by 3 models, 2
+   tests") stays text, which a pill would squeeze. */
+function reportCounted(count) {
+  return /^\d[\d,. ]*(of \d[\d,. ]*)?$/.test(String(count || ''));
+}
+
 /* A fold as reportFiltered hands it back: its title and count, then its lever.
    Its list is the caller's, appended to it. A finding that has a severity
    (collin's) says it in a tag after the count. Opened or shut by the reader,
@@ -12987,10 +12996,7 @@ function reportFold(f) {
   d.open = f.open;
   if (f.tone) d.dataset.tone = f.tone;
   const sum = jel('summary', '');
-  // A count is a pill; a phrase in its place (a macro's "used by 3 models, 2
-  // tests") stays text, which a pill would squeeze.
-  const counted = /^\d[\d,. ]*(of \d[\d,. ]*)?$/.test(String(f.count || ''));
-  sum.append(reportChevron(), jel('span', 'rtitle', f.title), jel('span', counted ? 'tabbadge rcount' : 'rcount', f.count));
+  sum.append(reportChevron(), jel('span', 'rtitle', f.title), jel('span', reportCounted(f.count) ? 'tabbadge rcount' : 'rcount', f.count));
   if (f.severity) sum.append(jel('span', 'sevtag', f.severity));
   sum.addEventListener('click', () => { d.dataset.touched = '1'; });
   d.append(sum);
@@ -13540,7 +13546,7 @@ async function jobsCoverageSection(again) {
   const sources = jel('button', 'btn sm', 'Sources…');
   sources.title = 'Where the jobs are read from, and how';
   sources.addEventListener('click', openJobSources);
-  const head = reportHead({ title: 'Job coverage', tool: 'jobs', about: 'every job read, against every model of the project',
+  const head = reportHead({ title: 'Job coverage', tool: 'jobs', about: 'Every job read, against every model of the project.', prose: true,
     again, extra: [sources] });
   // The job files are looked at as the section opens, never on a click in it
   // (0063).
@@ -13844,7 +13850,7 @@ function jobOrderFoldList(hits, d) {
 }
 
 async function jobOrderSection(again) {
-  const head = reportHead({ title: 'Job order', tool: 'jobs', about: 'what each step builds, against what the job files order before it', again });
+  const head = reportHead({ title: 'Job order', tool: 'jobs', about: 'What each step builds, against what the job files order before it.', prose: true, again });
   // The job files are looked at as the section opens, never on a click in it
   // (0063).
   let order;

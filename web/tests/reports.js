@@ -409,3 +409,20 @@ var withAbout = reportHead({ title: 'T', tool: 'dbt', about: 'read from run_resu
 check('what it was read from is a line of its own under the row, with a rule under the head',
   [withAbout.className, withAbout.children.map(function (c) { return c.className; }), withAbout.children[1].textContent], ['rhead', ['rhead-row', 'sub'], 'read from run_results.json']);
 check('a section with nothing to say of that has no line, and none is made up', reportHead({ title: 'T', tool: 'dbt' }).children.length, 1);
+check('a sentence about the section is a prose line; what was read stays the plain mono one',
+  [reportHead({ title: 'T', tool: 'jobs', about: 'A sentence.', prose: true }).children[1].className, withAbout.children[1].className], ['sub prose', 'sub']);
+// The two callers cannot be run here (they read the job files), so their source is pinned.
+function callerSource(name) { var at = app.indexOf('async function ' + name); return app.slice(at, app.indexOf('\nasync function ', at + 1) < 0 ? undefined : app.indexOf('\nasync function ', at + 1)); }
+check('Job coverage and Job order each ask for the prose line',
+  ['jobsCoverageSection', 'jobOrderSection'].map(function (n) { return /reportHead\(\{[^}]*prose: true/.test(callerSource(n)); }), [true, true]);
+var proseRule = /\.rhead \.sub\.prose \{[^}]*font:[^;}]*var\(--ui\)/.test(read('web/app.css'));
+check('the prose line is drawn in the UI font', proseRule, true);
+check('prose without a line says nothing', reportHead({ title: 'T', tool: 'jobs', prose: true }).children.length, 1);
+
+print('\n--- a fold\'s count: a pill or text ---');
+eval(app.slice(app.indexOf('function reportCounted'), app.indexOf('/* A fold as reportFiltered')));
+check('a number, a thousands separator (comma or space) and "n of m" are pills',
+  ['12', '0', '1,234', '1 234', '3 of 12', '1,204 of 3,000'].map(reportCounted), [true, true, true, true, true, true]);
+check('the number 7, not a string, is a pill', reportCounted(7), true);
+check('a phrase, words after the number, nothing, or "of" first stay text',
+  ['used by 3 models, 2 tests', '3 models', '', undefined, 'of 3'].map(reportCounted), [false, false, false, false, false]);

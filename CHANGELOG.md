@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.4 - 2026-11-10
+
+- Write Job coverage's and Job order's line under their head as a sentence in
+  the interface's font, as the design draws them.
+
 ## 2.20.3 - 2026-11-10
 
 - Widen the Catalog's column filter with its count while a word is typed, so
