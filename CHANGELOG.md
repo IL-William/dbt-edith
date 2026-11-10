@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.5 - 2026-11-10
+
+- Draw the text of an editor find hit in the editor's text colour, so it holds
+  4.5:1 on the amber in every theme, and Graphite's current hit in white.
+
 ## 2.20.4 - 2026-11-10
 
 - Write Job coverage's and Job order's line under their head as a sentence in

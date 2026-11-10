@@ -269,7 +269,6 @@
   --chip-fg: var(--fg-2);
   --code-fg: var(--fg);
   --syn-var: var(--fg);
-  --find-cur-fg: var(--fg);
   --crumb-fg: var(--fg-dim);
   --knob: var(--fg-dim);
   --placeholder: var(--fg-mute);
@@ -369,6 +368,7 @@
   --dbt-yaml: #9b87f5;
   --py: #ffd43b;
   /* Code */
+  --find-cur-fg: #fff;
   --syn-kw: #b9a8e8;
   --syn-fn: #d8c38f;
   --syn-jj: #c8a07c;
@@ -494,6 +494,7 @@
   --git-u: #0b6039;
   --warn-text: #9a5a00;   /* 4.5:1 on the sidebar, where the pill sits, and on a card */
   /* Code */
+  --find-cur-fg: #1d2026;   /* Light's --fg: each theme declares this name, which the derived rule cannot share */
   --syn-kw: #7d4cc4;
   --syn-fn: #985a00;
   --syn-jj: #b0541c;
@@ -632,6 +633,7 @@
   --dbt-yaml: #9b87f5;
   --py: #ffd43b;
   /* Code */
+  --find-cur-fg: #efe3d3;
   --syn-kw: #d7a6e8;
   --syn-fn: #f0c27a;
   --syn-jj: #ff9a4d;
@@ -2383,8 +2385,10 @@ kbd {
 .find-count.none { color: var(--bad-soft); }
 .findbar .icon { font-size: 13px; }
 .CodeMirror.find-open .CodeMirror-lines { padding-top: 36px; }
-.cm-findhit { background: color-mix(in srgb, var(--warn) 36%, transparent); border-radius: 2px; }
-.cm-findcur { background: color-mix(in srgb, var(--warn) 55%, transparent); outline: 1px solid var(--warn); border-radius: 2px; color: var(--find-cur-fg) !important; }
+/* The amber fill takes the syntax colours under 4.5:1, so a hit's text takes the editor's own colour, as the current hit takes its own.
+   Written with .CodeMirror span so it outranks .cm-reflink.dis's colour on the same span. */
+.CodeMirror span.cm-findhit { background: color-mix(in srgb, var(--warn) 36%, transparent); border-radius: 2px; color: var(--code-fg) !important; }
+.CodeMirror span.cm-findcur { background: color-mix(in srgb, var(--warn) 55%, transparent); outline: 1px solid var(--warn); border-radius: 2px; color: var(--find-cur-fg) !important; }
 
 /* ------------------------------------------------------------------ dock -- */
 #dock { height: var(--dock-h); flex: 0 0 auto; display: flex; flex-direction: column; min-height: 60px; background: var(--bg-2); }

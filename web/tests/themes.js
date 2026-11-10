@@ -319,3 +319,33 @@ check('transform is a step lighter in the three dark themes, 4.5:1 on the box, a
 ok('and the lightened one is 4.5:1 or more on each dark box fill', ['night', 'graphite', 'halloween'].every(function (n) {
   return ratio(BOX[n].decl['--r-transform'], BOX[n].decl['--bg-3']) >= 4.5;
 }));
+
+print('\n--- the editor\'s find hits ---');
+// A hit's fill is --warn at a percentage over the editor's page (--bg); the percentage is read from the rule.
+(function () {
+  var hit = /\.CodeMirror span\.cm-findhit \{([^}]*)\}/.exec(css), cur = /\.CodeMirror span\.cm-findcur \{([^}]*)\}/.exec(css);
+  ok('.CodeMirror span.cm-findhit (0,2,1, over .cm-reflink.dis) sets the editor\'s text colour with !important, so the syntax colours do not sit on the amber', !!hit && /(^|;)\s*color: var\(--code-fg\) !important;/.test(hit[1]));
+  ok('.CodeMirror span.cm-findcur comes after .CodeMirror span.cm-findhit, so its !important colour wins on the current hit', !!hit && !!cur && css.indexOf(hit[0]) < css.indexOf(cur[0]));
+  function pct(rule) { return +/background: color-mix\(in srgb, var\(--warn\) (\d+)%, transparent\)/.exec(rule)[1] / 100; }
+  function blend(w, bg, p) { return '#' + channels2(w).map(function (v, i) { return ('0' + Math.round(v * p + channels2(bg)[i] * (1 - p)).toString(16)).slice(-2); }).join(''); }
+  function resolve(b, n) {
+    var v = n in b.decl ? b.decl[n] : (n in derived.decl ? derived.decl[n] : night.decl[n]);
+    var m = /^var\((--[\w-]+)\)$/.exec(v);
+    if (m) return resolve(b, m[1]);
+    return /^#[0-9a-f]{3}$/i.test(v) ? '#' + v.slice(1).replace(/./g, '$&$&') : v;
+  }
+  [['Night', night], ['Graphite', graphite], ['Light', light]].forEach(function (t) {
+    var fill = blend(resolve(t[1], '--warn'), resolve(t[1], '--bg'), pct(hit[1]));
+    var r = ratio(resolve(t[1], '--code-fg'), fill);
+    ok(t[0] + ': --code-fg is at least 4.5:1 on a find hit (' + r.toFixed(2) + ' on ' + fill + ')', r >= 4.5);
+    // The current hit is selected and, in the main editor, on the cursor line: --cur-line, then --select, then the fill, over --bg.
+    var under = resolve(t[1], '--bg');
+    ['--cur-line', '--select'].forEach(function (n) {
+      var m = /^rgba\((\d+), (\d+), (\d+), ([\d.]+)\)$/.exec(resolve(t[1], n));
+      under = blend('#' + [m[1], m[2], m[3]].map(function (v) { return ('0' + (+v).toString(16)).slice(-2); }).join(''), under, +m[4]);
+    });
+    var now = blend(resolve(t[1], '--warn'), under, pct(cur[1]));
+    var c = ratio(resolve(t[1], '--find-cur-fg'), now);
+    ok(t[0] + ': --find-cur-fg is at least 4.5:1 on the current hit, selected on the cursor line (' + c.toFixed(2) + ' on ' + now + ')', c >= 4.5);
+  });
+}());

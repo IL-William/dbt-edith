@@ -2962,8 +2962,11 @@ of its own, and each panel updates the tour, its page under
       `--dots`, `--node-shadow`, `--py` and ~~`--ansi-*`~~ (read by the terminal
       since 2.12.0, 0161).
 32. **Contrast and browser controls (#164, #165).**
-    - Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
-      is 3.0:1, below AA.
+    - ~~Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
+      is 3.0:1, below AA.~~ Fixed in 2.20.5: every syntax colour fell under
+      4.5:1 on the hit's amber in Light, and most in Night and Graphite, so a
+      hit's text takes the editor's text colour (`--code-fg`), as the current
+      hit takes `--find-cur-fg`; Graphite's current hit takes white, 4.48:1 before.
     - ~~The exported page sets no `color-scheme`, so its node list can show a
       light scrollbar.~~ Settled in 2.2.0 (0150): the file's `:root` holds its
       theme's.
