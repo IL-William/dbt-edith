@@ -90,7 +90,7 @@ print('\n--- a job chip ---');
 var job = { kind: 'airflow', name: 'shop_daily' };
 check('its two halves', jobsChipParts(job, { name: 'marts', n: 2 }), ['shop_daily', 'marts']);
 check('and the text the title and the tests know', jobsChipText(job, { name: 'marts', n: 2 }), 'shop_daily \u203a marts');
-check('a dbt Cloud step', jobsChipParts({ kind: 'dbt_cloud', name: 'Daily build', steps: 3 }, { n: 2 }), ['Daily build', 'step 2/3']);
+check('a dbt Cloud step', jobsChipParts({ kind: 'dbt_cloud', name: 'Daily build', steps: 3 }, { n: 2 }), ['Daily build', 'step 2 of 3']);
 
 print('\n--- one look ---');
 check('a heading is the same in both tabs', /letter-spacing:\s*\.05em/.test(rule('.cat-body h3')) && /font-size:\s*11px/.test(rule('.cat-body h3')), true);

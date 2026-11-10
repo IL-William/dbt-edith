@@ -40,7 +40,7 @@ job, a `CI` or `Merge` tag when the job runs on a pull request or a merge, and
 how it starts. A clock marks a job that runs on its own, and its start is said
 in words where the cron reads as one short sentence (`Every day at 05:00`,
 `Weekdays at 06:30`, `Mondays, Wednesdays and Fridays at 06:00`, `Every 2 hours`,
-`The 1st of each month at 05:00`), with the cron itself beside it and the zone it is read in
+`The 1st of each month at 05:00`, `The 1st of January, April, July and October at 00:00`), with the cron itself beside it and the zone it is read in
 after it: the Airflow source's, UTC where it names none, and UTC for a dbt Cloud
 job. A cron that is no
 short sentence (a range of hours, a month, both day fields) shows only itself.
@@ -77,7 +77,10 @@ project's own models, seeds and snapshots no scheduled job runs, which run only
 in jobs nothing schedules (*Only in unscheduled jobs*: manual, CI, a merge),
 which run only in jobs whose schedule is not read and in no scheduled one
 (*Only in jobs whose schedule is not read*), which steps select nothing, and
-which jobs were read. `dbt-edith --job-coverage` prints the same lists
+which jobs were read, each with its start said as the card says it: the clock
+for a job that runs on its own, the words, the cron and its zone, a `CI` or
+`Merge` tag, `Manual` for a job nothing starts, and in amber the words of one
+whose schedule is not read. `dbt-edith --job-coverage` prints the same lists
 ([0131](../decisions/0131-job-coverage-is-answered-on-the-command-line.md)).
 A model sits under the deepest folder it shares with another listed model,
 with the rest of its path beside its name, and one no folder gathers is listed
@@ -445,8 +448,10 @@ list and leaves the tab dimmed until it has been read
 **Builds by job** is listed beside it once a source is named as well, and is
 filled by the same button and the same read: nothing more is asked of Snowflake.
 It answers whether last night's run built what it should have. One row per job,
-scheduled ones first as in the Jobs tab, with its kind, its schedule and the
-zone that schedule is read in (or Manual, CI, Not read), how many models it runs
+scheduled ones first as in the Jobs tab, with its kind, its start said as the
+Jobs tab's card says it (the clock for a job that runs on its own, the words and
+the cron; `Manual`, a `CI` or `Merge` tag, or the words in amber for a schedule
+not read) and, under it, the zone a cron is read in, how many models it runs
 and how many seeds and snapshots it runs that no build is read for, then one
 column per environment read: a mark in the job's worst tone (a check, a
 triangle for late, a cross, a dashed ring) and short counts,

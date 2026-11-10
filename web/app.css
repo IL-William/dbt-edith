@@ -2131,7 +2131,7 @@ kbd {
 .mlink .dot { height: 10px; }
 .mlink:hover, .mlink:focus-visible { border-color: var(--line-strong); background: var(--bg-3); outline: none; }
 .mlink:focus-visible { border-color: var(--accent); }
-.rline .jobwhen { max-width: 100%; }
+.rline .jobsched { max-width: 100%; }
 .rcmd {
   flex: 1 1 auto; min-width: 0; font: 11.5px var(--mono); color: var(--fg-2); background: var(--bg-2);
   border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
@@ -2851,22 +2851,16 @@ kbd {
 .jobsched[data-start=unread] { color: var(--warn-text); }
 .jobcron { font: 11px var(--mono); color: var(--fg-mute); }
 .jobmeta { margin-top: 2px; font-size: 12px; color: var(--fg-dim); }
-/* How a job starts, as a pill in the reports' lists: green and filled when it
-   runs on its own, grey and outlined when it does not. A Catalog chip names
-   one of its steps in the same colours. */
-.jobwhen, .jobchip {
+/* A Catalog chip names one of a job's steps. Every chip is drawn alike, on
+   `--line` as the board draws it: how its job starts is said in its tooltip
+   and by the order, not by a colour (0169). */
+.jobchip {
   font: 11px/16px var(--mono); color: var(--chip-fg);
-  border: 1px solid var(--pill-line); border-radius: 9px;
+  border: 1px solid var(--line); border-radius: 9px;
 }
-.jobwhen[data-start=scheduled], .jobchip[data-start=scheduled] { color: var(--ok); background: var(--ok-tint); border-color: var(--ok-line); }
-.jobwhen[data-start=manual], .jobchip[data-start=manual] { background: var(--bg-3); }
-/* May run on its own: neither the green of a clock nor the grey of nothing. */
-.jobwhen[data-start=unread], .jobchip[data-start=unread] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
-.jobwhen { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding: 0 8px; }
-.jobwhen b { font: 600 9.5px/16px var(--ui); letter-spacing: .6px; text-transform: uppercase; white-space: nowrap; }
 .jobchip { background: none; cursor: pointer; padding: 1px 8px; }
 /* In the Catalog: the Jobs tool's clock, the job, an arrow in the dim colour,
-   the step. Colours stay the chip's own, which say how the job starts. */
+   the step. */
 .cat-body .jobchip { display: inline-flex; align-items: center; gap: 7px; min-height: 22px; box-sizing: border-box; padding: 2px 9px; border-radius: 11px; font: 11.5px/1.3 var(--mono); text-align: left; }
 .cat-body .jobchip .sl { color: var(--fg-mute); }
 .jobchip.more { border-style: dashed; color: var(--fg-dim); }
@@ -3752,10 +3746,12 @@ span.envpill:hover { filter: none; }
 .jbtag { flex: 0 0 auto; font-size: 11px; }
 .jbalso { font-weight: 400; color: var(--fg-dim); }
 .jbwhen { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
-.jbwhen .jobwhen { max-width: 100%; }
-/* Cut at the column's edge past 560px: the pill's tooltip holds the whole of it. */
-.jbwhen .jobwhen span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.jbzone { font-size: 11px; color: var(--fg-dim); }
+.jbwhen { max-width: 100%; }
+.jbline { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.jbwhen .jobsched { max-width: 100%; }
+/* Cut at the column's edge past 560px: the line's tooltip holds the whole of it. */
+.jbwhen .jobsched > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jbzone { font-size: 11px; color: var(--fg-dim); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jbmodels { font-size: 12px; }
 .jbcell { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 12px; padding: 0 4px; border-radius: 4px; }
 .jbheads > .jbenvh { padding: 0 4px; }

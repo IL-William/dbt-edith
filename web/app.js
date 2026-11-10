@@ -10914,7 +10914,16 @@ function jobsChipText(job, step) {
 
 /* The chip's two halves, drawn either side of its own arrow. */
 function jobsChipParts(job, step) {
-  return [job.name, job.kind === 'airflow' ? (step.name || 'task ' + step.n) : `step ${step.n}/${job.steps}`];
+  return [job.name, job.kind === 'airflow' ? (step.name || 'task ' + step.n) : `step ${step.n} of ${job.steps}`];
+}
+
+/* A chip's tooltip: the job, then how it starts in words with the cron and
+   its zone and its CI or Merge tag, what that start means, the command, and
+   what a click does. */
+function jobsChipTitle(job, step) {
+  const sched = jobsSchedule(job);
+  const start = [sched.words, sched.cron, ...jobsTags(job).map((tag) => tag.text)].filter(Boolean).join(' · ');
+  return [[jobsJobLabel(job), start].filter(Boolean).join(': '), sched.title, step.shown, 'click: show it in the Jobs tab'].join('\n');
 }
 
 /* One chip per step that runs the node, scheduled jobs first, as the Jobs
@@ -10968,7 +10977,7 @@ function jobsDaysWords(dow) {
 function jobsCronWords(cron) {
   const text = String(cron || '').trim();
   const presets = { '@hourly': 'Every hour', '@daily': 'Every day at 00:00', '@midnight': 'Every day at 00:00', '@weekly': 'Sundays at 00:00',
-    '@monthly': 'The 1st of each month at 00:00', '@yearly': 'Every 1 January at 00:00', '@annually': 'Every 1 January at 00:00' };
+    '@monthly': 'The 1st of each month at 00:00', '@quarterly': 'The 1st of January, April, July and October at 00:00', '@yearly': 'Every 1 January at 00:00', '@annually': 'Every 1 January at 00:00' };
   if (presets[text.toLowerCase()]) return presets[text.toLowerCase()];
   if (!cronFields(text)) return '';
   const f = text.split(/\s+/);
@@ -11009,6 +11018,7 @@ function jobsCronWords(cron) {
 /* How a job starts, for its card: what starts it in words, the cron and its
    zone beside them (always, as the builds judge it: UTC where the source names none, 0119,
    and only after a string that is a cron), and the tooltip saying what the clock's presence means.
+   `zone` is the same zone apart, for the cell that draws it under the line.
    CI and a merge are tags of the card, not words here (0159). */
 function jobsSchedule(job) {
   const start = jobsStart(job);
@@ -11027,7 +11037,16 @@ function jobsSchedule(job) {
     : start === 'unread' ? JOBS_UNREAD_WHY
     : start === 'other' ? 'Started by something, never by a clock'
     : 'Nothing starts it: run by hand';
-  return { start, words: pieces.join(' · '), cron: job.cron ? job.cron + (cronFields(job.cron) ? ` ${job.kind === 'airflow' ? (job.timezone || 'UTC') : 'UTC'}` : '') : '', title };
+  const zone = job.cron && cronFields(job.cron) ? (job.kind === 'airflow' ? (job.timezone || 'UTC') : 'UTC') : '';
+  return { start, words: pieces.join(' · '), cron: job.cron ? job.cron + (zone ? ` ${zone}` : '') : '', zone, title };
+}
+
+/* The text of a start's line: the words, then the cron with its zone, or
+   without it where the zone is drawn apart (Builds by job). The one string the
+   line is drawn from, its column is sized from and its tooltip repeats. */
+function jobsLineText(job, { zone = true } = {}) {
+  const sched = jobsSchedule(job);
+  return [sched.words, zone ? sched.cron : job.cron || ''].filter(Boolean).join(' ');
 }
 
 /* The tags of a card's head for what starts a job but no clock, each saying so
@@ -11420,19 +11439,6 @@ async function loadJobs({ look = false } = {}) {
 
 const jel = (tag, className, textContent = '') => Object.assign(document.createElement(tag), { className, textContent });
 
-/* How a job starts, as a pill that says scheduled, not read or manual in a
-   word, so they can be told apart at a glance down the Reports' lists. */
-const JOBS_WORD = { scheduled: 'Scheduled', unread: 'Not read', manual: 'Manual' };
-function jobsWhen(job) {
-  const start = jobsStart(job);
-  const pill = jel('span', 'jobwhen');
-  pill.dataset.start = start;
-  if (JOBS_WORD[start]) pill.append(jel('b', '', JOBS_WORD[start]));
-  if (start !== 'manual') pill.append(jel('span', '', jobsScheduleText(job)));
-  if (start === 'unread') pill.title = JOBS_UNREAD_WHY;
-  return pill;
-}
-
 /* The head of the tab: one line naming the node, how many jobs run it and
    where they were read from, how long ago. The coverage of every model lives
    in Reports (0064) and the sources form beside it, in the dock's tab row
@@ -11547,6 +11553,32 @@ function jobsClock() {
   return clock;
 }
 
+/* How a job starts, as the nodes of one line: its CI or Merge tags, then the
+   clock for a job that runs on its own, the words and the cron (0159, 0169).
+   The card's head, the Reports' list of jobs and Builds by job's cell all draw
+   it, so a job reads alike in each. `zone: false` leaves the zone off the cron,
+   for the cell that says it under the line. The words are a span of their own,
+   which a cell can cut with an ellipsis. */
+function jobsStartNodes(job, { zone = true } = {}) {
+  const sched = jobsSchedule(job);
+  const nodes = jobsTags(job).map((tag) => {
+    const tagEl = jel('span', 'jobtag', tag.text);
+    tagEl.title = tag.title;
+    return tagEl;
+  });
+  const cron = zone ? sched.cron : job.cron || '';
+  if (sched.words || cron) {
+    const when = jel('span', 'jobsched');
+    when.dataset.start = sched.start;
+    when.title = sched.title;
+    if (sched.start === 'scheduled') when.append(jobsClock());
+    if (sched.words) when.append(jel('span', '', sched.words));
+    if (cron) when.append(jel('span', 'jobcron', cron));
+    nodes.push(when);
+  }
+  return nodes;
+}
+
 /* What a step selects, said once under its command: the segments of jobsWhy
    joined by a dot, the node as a chip with its kind's bar. */
 function jobsWhyLine(segments, mark, name) {
@@ -11581,26 +11613,12 @@ function jobsWarn(text) {
    the node's chip draws its kind from, `name` the node's name. */
 function jobsCard(group, { reason = false, mark = 'model', name = '' } = {}) {
   const { job } = group;
-  const sched = jobsSchedule(job);
   const card = jel('div', 'jobcard');
   card.dataset.kind = job.kind;
   const head = jel('div', 'jobhead');
   head.append(jel('span', 'jobkind', job.kind === 'airflow' ? 'Airflow' : 'dbt Cloud'), jel('b', 'jobname', job.name));
   if (job.kind === 'dbt_cloud' && job.ident) head.append(jel('span', 'jobid', job.ident));
-  for (const tag of jobsTags(job)) {
-    const tagEl = jel('span', 'jobtag', tag.text);
-    tagEl.title = tag.title;
-    head.append(tagEl);
-  }
-  if (sched.words || sched.cron) {
-    const when = jel('span', 'jobsched');
-    when.dataset.start = sched.start;
-    when.title = sched.title;
-    if (sched.start === 'scheduled') when.append(jobsClock());
-    if (sched.words) when.append(sched.words);
-    if (sched.cron) when.append(jel('span', 'jobcron', sched.cron));
-    head.append(when);
-  }
+  head.append(...jobsStartNodes(job));
   head.append(jel('span', 'grow'), jobsFileButton(job.source, job.file, job.line, true));
   card.append(head);
   const meta = jobsMeta(job);
@@ -11723,6 +11741,16 @@ function jobsStepList(title, refs, lever = '') {
     draw: (hits, d) => [reportList(hits, jobsStepRow, d)] };
 }
 
+/* One job of the coverage's Jobs read list: its name, then its start as the
+   card says it and the file it is in. */
+function jobsReadRow(j) {
+  const li = jel('li', '');
+  const line = jel('div', 'rline');
+  line.append(...jobsStartNodes(j), jobsFileButton(j.source, j.file, j.line));
+  li.append(jel('span', 'rstep', jobsJobLabel(j)), line);
+  return li;
+}
+
 function renderCoverage(body, cov) {
   if (cov.sources_refused) return jobsRefusedFile(body, cov.sources_refused);
   if (!cov.configured) return jobsNoSource(body);
@@ -11740,14 +11768,8 @@ function renderCoverage(body, cov) {
   folds.push(jobsStepList('Steps that select nothing they act on', cov.empty));
   folds.push(jobsStepList('Steps not resolved', cov.unresolved));
   folds.push({ title: 'Jobs read', tone: '', rows: jobsByStart(cov.jobs, (j) => j), open: false,
-    find: (j) => `${jobsJobLabel(j)} ${jobsScheduleText(j)} ${j.source}`,
-    draw: (hits, d) => [reportList(hits, (j) => {
-      const li = jel('li', '');
-      const line = jel('div', 'rline');
-      line.append(jobsWhen(j), jobsFileButton(j.source, j.file, j.line));
-      li.append(jel('span', 'rstep', jobsJobLabel(j)), line);
-      return li;
-    }, d)] });
+    find: (j) => `${jobsJobLabel(j)} ${jobsLineText(j)} ${jobsScheduleText(j)} ${j.source}`,
+    draw: (hits, d) => [reportList(hits, jobsReadRow, d)] });
   // The figures (jobsCoverageTiles) say what a sentence over the lists would.
   body.replaceChildren(reportTiles(jobsCoverageTiles(cov)));
   reportLists(body, [{ folds }], 'Filter the models and steps');
@@ -17824,11 +17846,8 @@ function paintCatalogJobs(box, view) {
   };
   const chips = jobsChips(view.groups);
   for (const c of chips) {
-    const start = jobsStart(c.job);
-    const word = { scheduled: 'scheduled, ', unread: 'schedule not read, ' }[start] || '';
-    chip('jobchip', c.parts,
-      `${jobsJobLabel(c.job)}: ${word}${jobsScheduleText(c.job)}\n${c.step.shown}\nclick: show it in the Jobs tab`,
-      { key: jobsStepKey(c.job, c.step), index: c.step.index }).dataset.start = start;
+    chip('jobchip', c.parts, jobsChipTitle(c.job, c.step),
+      { key: jobsStepKey(c.job, c.step), index: c.step.index });
   }
   const maybe = jobsMaybeCount(view.maybe);
   if (maybe) {
@@ -18239,29 +18258,33 @@ function jobBuildsLoad(read) {
   return read.jobsAsked;
 }
 
-/* A job's schedule as the Reports' lists draw their pill, and under it, small, the
-   zone its cron is read in and so what the verdicts are judged against. A job
-   whose cron never fires has a clock and no start to hold a run to, and is
-   judged on the threshold like one with no clock. */
+/* A job's start as the card draws it, and under it, small, the zone its cron
+   is read in and so what the verdicts are judged against. A job whose cron
+   never fires has a clock and no start to hold a run to, and is judged on the
+   threshold like one with no clock. */
 function jobBuildsWhen(job, clock) {
   const cell = jel('div', 'jbwhen');
-  const pill = jobsWhen(job);
-  cell.append(pill);
+  const sched = jobsSchedule(job);
+  const line = jel('span', 'jbline');
+  line.append(...jobsStartNodes(job, { zone: false }));
+  cell.append(line);
+  if (sched.zone) cell.append(jel('span', 'jbzone', sched.zone));
   const judged = clock && clock.before !== null;
   const threshold = `Late here means no success in ${counted(buildsStaleDays(), 'day', 'days')}.`;
-  // The pill's own words first, which its ellipsis may cut (a list of assets),
-  // then what the verdicts are judged against.
-  const said = [jobsStart(job) !== 'manual' ? jobsScheduleText(job) : 'Manual', jobsStart(job) === 'unread' ? JOBS_UNREAD_WHY : ''].filter(Boolean).join('. ');
+  // The line's own text first, which its ellipsis may cut (a list of assets),
+  // then what it means, then what the verdicts are judged against.
+  const said = [jobsLineText(job), sched.title].filter(Boolean).join('\n');
   let rule;
   if (judged) {
-    cell.append(jel('span', 'jbzone', clock.tz));
     rule = `Late here means no success since the run before the last start of ${clock.said}.`;
   } else if (clock) {
     rule = `${job.cron} does not fire twice in the years this looks back over, so there is no earlier run to hold a model to. ${threshold}`;
   } else {
     rule = `${jobClockWhy(job) || 'No clock of its own.'} ${threshold}`;
   }
-  pill.title = `${said}\n${rule}`;
+  // On the line too, whose own tooltip would otherwise say only what the clock means.
+  cell.title = `${said}\n${rule}`;
+  for (const node of line.children) if (node.className === 'jobsched') node.title = cell.title;
   return cell;
 }
 
@@ -18468,10 +18491,14 @@ async function jobBuildsSection() {
   const count = jel('p', 'runnote', '');
   const list = jel('div', 'jobbuilds');
   list.style.setProperty('--envs', String(Math.max(1, ready.length)));
-  // The schedule column is as wide as its longest pill, which stays on one
+  // The schedule column is as wide as its longest line, which stays on one
   // line: each row is a grid of its own, so the width is given to all of them.
-  const widest = Math.max(0, ...cfg.jobs.map((j) => jobsScheduleText(j).length));
-  list.style.setProperty('--sched', `${Math.min(560, Math.ceil(widest * 6.8) + 110)}px`);
+  // The zone is a line of its own under the start, so a long one (a cron with no
+  // words, in America/Argentina/Buenos_Aires) sizes the column as much as the start does.
+  const widest = Math.max(0, ...cfg.jobs.map((j) => Math.max(
+    [...jobsTags(j).map((tag) => tag.text), jobsLineText(j, { zone: false })].join(' ').length,
+    jobsSchedule(j).zone.length)));
+  list.style.setProperty('--sched', `${Math.min(560, Math.ceil(widest * 6.8) + 35)}px`);
   // The table takes the panel's width and shrinks to it; many environments
   // scroll it sideways.
   const scroll = jel('div', 'jbscroll');

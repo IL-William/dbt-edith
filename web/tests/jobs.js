@@ -60,7 +60,7 @@ check('a task', jobsStepLabel({ kind: 'airflow' }, { name: 'marts', n: 2 }), 'ta
 check('a task with no id', jobsStepLabel({ kind: 'airflow' }, { name: '', n: 2 }), 'task 2');
 check('a task on a chip', jobsChipText({ kind: 'airflow', name: 'shop_daily' }, { name: 'marts', n: 2 }), 'shop_daily › marts');
 check('a task with no id on a chip', jobsChipText({ kind: 'airflow', name: 'shop_daily' }, { name: '', n: 2 }), 'shop_daily › task 2');
-check('a dbt Cloud step on a chip', jobsChipText({ kind: 'dbt_cloud', name: 'Daily build', steps: 3 }, { n: 2 }), 'Daily build › step 2/3');
+check('a dbt Cloud step on a chip', jobsChipText({ kind: 'dbt_cloud', name: 'Daily build', steps: 3 }, { n: 2 }), 'Daily build › step 2 of 3');
 check('chips, scheduled jobs first and each job\'s steps in order',
       jobsChips([
         { job: { kind: 'airflow', name: 'jaffle_reports', scheduled: false }, steps: [{ name: 'all', n: 1 }] },
@@ -89,7 +89,7 @@ check('the step dbt Cloud adds', jobsStepLabel({ kind: 'dbt_cloud', steps: 3 }, 
 print('\n--- a cron in words ---');
 [
   ['@hourly', 'Every hour'], ['@daily', 'Every day at 00:00'], ['@midnight', 'Every day at 00:00'], ['@weekly', 'Sundays at 00:00'],
-  ['@monthly', 'The 1st of each month at 00:00'], ['@yearly', 'Every 1 January at 00:00'], ['@annually', 'Every 1 January at 00:00'],
+  ['@monthly', 'The 1st of each month at 00:00'], ['@quarterly', 'The 1st of January, April, July and October at 00:00'], ['@yearly', 'Every 1 January at 00:00'], ['@annually', 'Every 1 January at 00:00'],
   ['0 5 * * *', 'Every day at 05:00'], ['30 6 * * 1-5', 'Weekdays at 06:30'], ['0 6 * * 0,6', 'Weekends at 06:00'], ['0 6 * * 6,0', 'Weekends at 06:00'],
   ['0 6 * * 1', 'Mondays at 06:00'], ['0 6 * * mon', 'Mondays at 06:00'], ['0 6 * * 7', 'Sundays at 06:00'],
   ['0 6 * * 5,1,3', 'Mondays, Wednesdays and Fridays at 06:00'], ['0 6 * * 0-6', 'Every day at 06:00'],
@@ -108,14 +108,14 @@ print('\n--- a cron in words ---');
   ['a range of hours', '0 9-17 * * *'], ['five hours listed', '0 1,2,3,4,5 * * *'], ['an hour step that does not divide the day', '0 */5 * * *'],
   ['an hour step of 1', '0 */1 * * *'], ['a step of 24', '0 */24 * * *'], ['a minute step that does not divide the hour', '*/7 * * * *'],
   ['a minute list', '0,30 * * * *'], ['a weekday step', '0 5 * * */2'], ['a day of the month step', '0 5 */2 * *'],
-  ['a minute step with an hour', '*/15 6 * * *'], ['@quarterly', '@quarterly'], ['nothing', ''], ['a minute out of range', '75 5 * * *'],
+  ['a minute step with an hour', '*/15 6 * * *'], ['nothing', ''], ['a minute out of range', '75 5 * * *'],
   ['an hour step on a weekday', '0 */6 * * 1'], ['the 29th, which February skips', '0 5 29 * *'], ['the 30th', '0 5 30 * *'], ['the 31st', '0 5 31 * *'],
 ].forEach(function (c) { check('no words for ' + c[0], jobsCronWords(c[1]), ''); });
 
 print('\n--- how a job starts, for its card ---');
 function sched(job) { return jobsSchedule(job); }
 check('a cron said in words, beside the cron', JSON.stringify(sched({ kind: 'airflow', cron: '0 5 * * *', scheduled: true })),
-      JSON.stringify({ start: 'scheduled', words: 'Every day at 05:00', cron: '0 5 * * * UTC', title: 'Runs on its own' }));
+      JSON.stringify({ start: 'scheduled', words: 'Every day at 05:00', cron: '0 5 * * * UTC', zone: 'UTC', title: 'Runs on its own' }));
 check('the zone follows the cron, UTC where the source names none', sched({ kind: 'airflow', cron: '0 5 * * *', timezone: 'Europe/London', scheduled: true }).cron, '0 5 * * * Europe/London');
 check('a dbt Cloud cron is read in UTC', sched({ kind: 'dbt_cloud', cron: '0 2 * * *', timezone: 'Europe/London', scheduled: true }).cron, '0 2 * * * UTC');
 check('no cron, no zone', sched({ kind: 'airflow', timezone: 'Europe/London', after: 'Nightly build', scheduled: true }).cron, '');
@@ -134,7 +134,7 @@ check('a note, capitalised', sched({ kind: 'dbt_cloud', note: 'a schedule only t
 check('several, in the order cron, job, assets, note',
       sched({ cron: '0 * * * *', after: 'a', assets: ['x'], note: 'later', scheduled: true }).words, 'Every hour · After the job a · On the asset x · Later');
 check('nothing starts it', JSON.stringify(sched({ kind: 'airflow' })),
-      JSON.stringify({ start: 'manual', words: 'Manual', cron: '', title: 'Nothing starts it: run by hand' }));
+      JSON.stringify({ start: 'manual', words: 'Manual', cron: '', zone: '', title: 'Nothing starts it: run by hand' }));
 check('CI is a tag, not words', sched({ kind: 'dbt_cloud', ci: true }).words, '');
 check('a merge is a tag, not words', sched({ kind: 'dbt_cloud', merge: true }).words, '');
 check('an asset alone is started by something, never by a clock', sched({ assets: ['a'] }).title, 'Started by something, never by a clock');
@@ -148,6 +148,28 @@ check('the zone only follows a string that is a cron', sched({ kind: 'airflow', 
 check('nor a templated one', sched({ kind: 'airflow', cron: '{{ var.value.cron }}' }).cron, '{{ var.value.cron }}');
 check('but a preset has it', sched({ kind: 'airflow', cron: '@daily', timezone: 'Europe/London' }).cron, '@daily Europe/London');
 check('not read says why', sched({ note: 'a schedule only known when the DAG is parsed', schedule_unread: true }).title.indexOf('May start on its own'), 0);
+check('the zone apart, for the cell that draws it under the line', sched({ kind: 'airflow', cron: '0 5 * * *', timezone: 'Europe/London' }).zone, 'Europe/London');
+check('no zone for a string that is no cron', sched({ kind: 'airflow', cron: '{{ var.value.cron }}' }).zone, '');
+check('a CI job has no words and no cron, only its tag', JSON.stringify([sched({ kind: 'dbt_cloud', ci: true }).words, sched({ kind: 'dbt_cloud', ci: true }).cron]), JSON.stringify(['', '']));
+check('nor a merge job', JSON.stringify([sched({ kind: 'dbt_cloud', merge: true }).words, sched({ kind: 'dbt_cloud', merge: true }).cron]), JSON.stringify(['', '']));
+
+print('\n--- the text of a start\'s line ---');
+var daily = { kind: 'airflow', cron: '0 5 * * *', timezone: 'Europe/London', scheduled: true };
+check('the words, the cron and its zone', jobsLineText(daily), 'Every day at 05:00 0 5 * * * Europe/London');
+check('the cron without its zone, where the zone is drawn apart', jobsLineText(daily, { zone: false }), 'Every day at 05:00 0 5 * * *');
+check('a cron with no words has only itself', jobsLineText({ kind: 'airflow', cron: '0 5 1 * 1', scheduled: true }), '0 5 1 * 1 UTC');
+check('manual says so', jobsLineText({ kind: 'airflow' }), 'Manual');
+check('a CI job has no line', jobsLineText({ kind: 'dbt_cloud', ci: true }), '');
+check('assets, in words', jobsLineText({ kind: 'airflow', assets: ['marts_ready'], scheduled: true }), 'On the asset marts_ready');
+
+print('\n--- a chip\'s tooltip ---');
+var chipStep = { shown: 'dbt build --select orders', n: 2 };
+check('the job, its start in words with the zone, what it means, the command, the click',
+      jobsChipTitle({ kind: 'airflow', name: 'shop_daily', cron: '0 5 * * *', scheduled: true }, chipStep),
+      'DAG shop_daily: Every day at 05:00 · 0 5 * * * UTC\nRuns on its own\ndbt build --select orders\nclick: show it in the Jobs tab');
+check('a CI job names its tag', jobsChipTitle({ kind: 'dbt_cloud', name: 'PR check', ci: true }, chipStep).split('\n')[0], 'Job PR check: CI');
+check('a manual job says Manual', jobsChipTitle({ kind: 'airflow', name: 'shop_adhoc' }, chipStep).split('\n').slice(0, 2).join('|'),
+      'DAG shop_adhoc: Manual|Nothing starts it: run by hand');
 check('not read has the start unread', sched({ schedule_unread: true, note: 'x' }).start, 'unread');
 
 print('\n--- what ties them to others ---');

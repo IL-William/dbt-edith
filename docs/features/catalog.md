@@ -48,9 +48,10 @@ and a `unique_key` written as an expression is counted, never checked for
 folder's config gave a strategy or a key lists it, dimmed, under details: it
 does not use it, but `config.incremental_strategy:` still selects it.
 Once a [job source](jobs-and-reports.md#jobs) is named, Preview also lists the steps that run the
-node, one chip each, `DAG › task` or `job › step`, green when the job is
-scheduled, amber when its schedule is not read and grey when it is not
-scheduled, in the Jobs tab's order. A click on one
+node, one chip each, `DAG › task` or `job › step 2 of 3`, all drawn alike, with the
+Jobs tool's clock in front, in the Jobs tab's order: the jobs that run on their
+own first. Hover one for the job, how it starts in words with its cron and zone,
+and the command. A click on one
 opens the Jobs tab on that node at that step, even when it is a box clicked
 once in the lineage rather than the node in focus. A dashed chip counts the
 steps not resolved, or the files not read, that could run it too.
