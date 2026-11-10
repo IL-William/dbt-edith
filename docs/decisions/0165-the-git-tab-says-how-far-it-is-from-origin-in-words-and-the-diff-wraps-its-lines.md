@@ -1,6 +1,6 @@
 # 0165. The Git tab says how far it is from origin in words, and the diff wraps its lines
 
-Date: 2026-11-09 · Status: accepted · Amends 0007
+Date: 2026-11-09 · Status: accepted, amended by 0168 (the inline layout marks the words, the final newline and the line endings) · Amends 0007
 
 **Trigger:** read before changing the Git tab's branch row, its rows or its
 commit button, or how a diff lays out, wraps or folds its lines.

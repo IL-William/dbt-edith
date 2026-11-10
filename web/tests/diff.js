@@ -45,6 +45,7 @@ function same(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
   print((g === w ? 'PASS  ' : 'FAIL  ') + label + (g === w ? '' : '\n        expected ' + w + '\n        got      ' + g));
 }
+function inlineOf(view) { return inlineDiffLines(view.before, view.after, diffSides(view).extra); }
 function brief(lines) { return lines.map(function (l) { return l.kind[0] + ':' + l.text + '@' + l.a + '/' + l.b; }); }
 
 same('identical sides are all unchanged lines, numbered alike',
@@ -84,8 +85,8 @@ same('under autocrlf, one real change lists one removed and one added line, as g
   brief(inlineDiffLines('a\nb\nc\n', 'a\r\nB\r\nc\r\n')), ['s:a@1/1', 'd:b@2/null', 'a:B@null/2', 's:c@3/3']);
 same('LF to CRLF only lists no changed line',
   brief(inlineDiffLines('a\nb\nc\n', 'a\r\nb\r\nc\r\n')), ['s:a@1/1', 's:b@2/2', 's:c@3/3']);
-same('a CRLF file without a final newline, against LF with one',
-  brief(inlineDiffLines('a\nb\n', 'a\r\nb')), ['s:a@1/1', 's:b@2/2']);
+same('a CRLF file without a final newline, against LF with one: HEAD ends with an empty line the file has not',
+  brief(inlineOf({ before: 'a\nb\n', after: 'a\r\nb' })), ['s:a@1/1', 's:b@2/2', 'd:@3/null']);
 same('the head says why a file changed only in its line endings is listed',
   diffStateText({ before: 'a\nb\n', after: 'a\r\nb\r\n' }),
   'your working tree against HEAD · line endings differ (CRLF here, LF in HEAD)');
@@ -93,13 +94,92 @@ same('and the other way round, when HEAD is the CRLF one',
   diffStateText({ before: 'a\r\nb\r\n', after: 'a\nb\n' }),
   'your working tree against HEAD · line endings differ (LF here, CRLF in HEAD)');
 same('no note when both end alike, or when a side has no line break or is missing',
-  [diffStateText({ before: 'a\n', after: 'b\n' }), diffStateText({ before: 'a', after: 'a\r\n' }),
+  [diffStateText({ before: 'a\n', after: 'b\n' }), diffStateText({ before: 'a', after: 'a' }),
    diffStateText({ before_missing: true, before: '', after: 'a\r\n' })],
   ['your working tree against HEAD', 'your working tree against HEAD', 'a new file, nothing in HEAD']);
-same('a final newline starts no line: a file without one reads the same',
-  brief(inlineDiffLines('a\nb', 'a\nb\n')), ['s:a@1/1', 's:b@2/2']);
+same('a file that gained a final newline: HEAD lacks it, and the working tree ends with an empty line',
+  [brief(inlineOf({ before: 'a\nb', after: 'a\nb\n' })), diffStateText({ before: 'a', after: 'a\r\n' })],
+  [['s:a@1/1', 's:b@2/2', 'a:@null/3'], 'your working tree against HEAD · no final newline in HEAD']);
+same('and one that lost it',
+  [brief(inlineOf({ before: 'a\nb\n', after: 'a\nb' })), diffStateText({ before: 'a\n', after: 'a' })],
+  [['s:a@1/1', 's:b@2/2', 'd:@3/null'], 'your working tree against HEAD · no final newline here']);
 same('a last line added to a file without a final newline',
-  brief(inlineDiffLines('a\nb', 'a\nb\nc')), ['s:a@1/1', 's:b@2/2', 'a:c@null/3']);
+  brief(inlineOf({ before: 'a\nb', after: 'a\nb\nc' })), ['s:a@1/1', 's:b@2/2', 'a:c@null/3']);
+
+print('\n--- the final newline, as git reads it, in both layouts (0168) ---');
+same('both ending in a newline, side by side is given the texts without it, CRs gone',
+  diffSides({ before: 'a\r\nb\r\n', after: 'a\nB\n' }), { before: 'a\nb', after: 'a\nB', extra: '', note: '' });
+same('a newline on one side only is kept on that side, and the other gets the empty line inline',
+  diffSides({ before: 'a', after: 'a\n' }), { before: 'a', after: 'a\n', extra: 'after', note: ' · no final newline in HEAD' });
+same('git order: an empty line and a line added at the end list the empty line first',
+  [brief(inlineOf({ before: 'a\n', after: 'a\n\nb\n' })), diffSides({ before: 'a\n', after: 'a\n\nb\n' }).after],
+  [['s:a@1/1', 'a:@null/2', 'a:b@null/3'], 'a\n\nb']);
+same('a file that is only a newline is one empty line, and x with a newline replaces it',
+  brief(inlineOf({ before: '\n', after: 'x\n' })), ['d:@1/null', 'a:x@null/1']);
+same('a new file and a deleted one have no note and no empty line',
+  [diffStateText({ before_missing: true, before: '', after: 'a' }), diffStateText({ after_missing: true, before: 'a\n', after: '' }),
+   brief(inlineOf({ before_missing: true, before: '', after: 'a' })), brief(inlineOf({ after_missing: true, before: 'a\n', after: '' }))],
+  ['a new file, nothing in HEAD', 'deleted from your working tree', ['a:a@null/1'], ['d:a@1/null']]);
+same('a cut view says nothing of the newline, and neither does a binary one',
+  [diffStateText({ before: 'a\nb', after: 'a\nb\n', truncated: true }), diffSides({ before: 'a\nb', after: 'a\nb\n', truncated: true }).extra,
+   diffStateText({ before: 'a', after: 'a\n', binary: true }), diffSides({ before: 'a', after: 'a\n', binary: true }).extra],
+  ['your working tree against HEAD · truncated', '', 'your working tree against HEAD', '']);
+same('a binary file says nothing of its line endings',
+  diffStateText({ before: 'a\r\nb\n', after: 'a\nb\n', binary: true }), 'your working tree against HEAD');
+same('the note comes after the line endings and before truncated',
+  diffStateText({ before: 'a\nb', after: 'a\r\nb\r\n' }),
+  'your working tree against HEAD · line endings differ (CRLF here, LF in HEAD) · no final newline in HEAD');
+
+print('\n--- line endings: CRLF, LF, CR or mixed (0168) ---');
+same('each kind is named, and a mix is mixed',
+  [lineEnding('a\r\nb\r\n'), lineEnding('a\nb'), lineEnding('a\rb'), lineEnding('a\r\nb\n'), lineEnding('a\rb\n'), lineEnding('a'), lineEnding('')],
+  ['CRLF', 'LF', 'CR', 'mixed', 'mixed', '', '']);
+same('a HEAD with mixed endings against a file all in CRLF gets the note',
+  diffStateText({ before: 'a\r\nb\nc\r\n', after: 'a\r\nb\r\nc\r\n' }),
+  'your working tree against HEAD · line endings differ (CRLF here, mixed in HEAD)');
+same('a mixed file against an LF one, the other way round',
+  diffStateText({ before: 'a\nb\n', after: 'a\r\nb\nc\n' }),
+  'your working tree against HEAD · line endings differ (mixed here, LF in HEAD)');
+same('a lone CR reads as CR, not LF',
+  diffStateText({ before: 'a\rb\r', after: 'a\nb\n' }),
+  'your working tree against HEAD · line endings differ (LF here, CR in HEAD)');
+same('two mixed sides alike get none, nor when a line was added',
+  [diffStateText({ before: 'a\r\nb\nc\r\n', after: 'a\r\nb\nc\r\n' }),
+   diffStateText({ before: 'a\r\nb\nc\r\n', after: 'a\r\nb\nX\nc\r\n' })],
+  ['your working tree against HEAD', 'your working tree against HEAD']);
+same('two mixed sides with a shared line whose ending changed get one',
+  diffStateText({ before: 'a\r\nb\nc\r\n', after: 'a\r\nb\r\nc\r\nd\n' }),
+  'your working tree against HEAD · line endings differ (mixed here and in HEAD)');
+
+print('\n--- the words that changed inside a line, inline (0168) ---');
+function marks(before, after, deadline) {
+  var lines = inlineOf({ before: before, after: after });
+  return inlineWordMarks(lines, deadline === undefined ? Date.now() + 60000 : deadline).map(function (r) {
+    return r.kind + ' ' + r.from.line + ':' + r.from.ch + '-' + r.to.line + ':' + r.to.ch;
+  });
+}
+same('one changed word marks only it, on both lines',
+  marks('select id, name from t\n', 'select id, title from t\n'), ['del 0:11-0:14', 'add 1:11-1:15']);
+same('a pure added line is marked whole', marks('a\nc\n', 'a\nbcd\nc\n'), ['add 1:0-1:3']);
+same('and a pure removed one', marks('a\nbcd\nc\n', 'a\nc\n'), ['del 1:0-1:3']);
+same('a part across a newline is one range, the newline at its end left out',
+  marks('a\n', 'x\ny\n'), ['del 0:0-0:1', 'add 1:0-2:1']);
+same('three added lines in a row are one range from the first to the end of the last',
+  marks('z\n', 'z\nx\nyy\nw\n'), ['add 1:0-3:1']);
+same('empty lines are not marked', marks('a\n', 'a\n\n'), []);
+same('past the deadline a block is marked whole, not by word',
+  marks('select id, name from t\n', 'select id, title from t\n', 0), ['del 0:0-0:22', 'add 1:0-1:23']);
+same('an unchanged file has no mark', marks('a\nb\n', 'a\nb\n'), []);
+
+print('\n--- both layouts read the sides from one function ---');
+check('side by side is given the texts diffSides returns',
+  /f\.sides = diffSides\(f\.view\)[\s\S]*?const sides = f\.sides;[\s\S]*?value:\s*sides\.after,\s*origLeft:\s*sides\.before/.test(src), true);
+check('the inline lines take its empty last line', /inlineDiffLines\(f\.view\.before, f\.view\.after, f\.sides\.extra\)/.test(src), true);
+check('mountInline marks the words with markText, from inlineWordMarks',
+  /function mountInline[\s\S]*?inlineWordMarks\(lines, Date\.now\(\) \+ 1000\)[\s\S]*?cm\.markText\(r\.from, r\.to/.test(src), true);
+
+check('the marks are kept on the tab like the lines, so two switches to Inline show the same ones',
+  /function mountInline[\s\S]*?f\.inlineMarks = f\.inlineMarks \|\| inlineWordMarks\(lines, Date\.now\(\) \+ 1000\);\s*for \(const r of f\.inlineMarks\)/.test(src), true);
 
 function plain(n) { var out = []; for (var i = 0; i < n; i++) out.push({ kind: 'same', a: i + 1, b: i + 1 }); return out; }
 var long = plain(40); long[20].kind = 'add'; long[20].a = null;

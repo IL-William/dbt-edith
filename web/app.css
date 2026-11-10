@@ -2256,6 +2256,9 @@ kbd {
 }
 .CodeMirror-merge-collapsed-widget:hover { color: var(--fg); }
 .CodeMirror-merge-collapsed-widget:before { content: "\22EF  " attr(data-n) " unchanged lines"; }
+/* The block widget sits inside the line's text, and the line box that text leaves beside it
+   keeps the editor's line height: a blank row under the 24px one. Its own height is the whole row. */
+.CodeMirror .CodeMirror-merge-collapsed-line pre.CodeMirror-line { line-height: 0; }
 
 /* Markdown reads the same in a tab and in a diff: a heading is bold text, its
    marks quiet, inline code in the string colour (0165). CodeMirror tags code
