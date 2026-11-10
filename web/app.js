@@ -2568,18 +2568,61 @@ async function openDiff(path) {
 function diffStateText(view) {
   const said = view.before_missing ? 'a new file, nothing in HEAD'
     : view.after_missing ? 'deleted from your working tree' : 'your working tree against HEAD';
-  // A file changed only in its line endings is listed with no line marked: the head says why.
-  const here = lineEnding(view.after), there = lineEnding(view.before);
-  const ends = !view.before_missing && !view.after_missing && here && there && here !== there
-    ? ` · line endings differ (${here} here, ${there} in HEAD)` : '';
-  return said + ends + (view.truncated ? ' · truncated' : '');
+  return said + lineEndingsNote(view) + diffSides(view).note + (view.truncated ? ' · truncated' : '');
 }
 
-/* How a text ends its lines: CRLF when any does, else LF, '' for a text of one
-   line, which has no ending to compare. */
+/* How a text ends its lines: CRLF, LF or CR when every break is of that kind,
+   'mixed' when it has more than one kind, '' for a text of one line, which has
+   no ending to compare. */
 function lineEnding(text) {
-  if (!text || !/[\r\n]/.test(text)) return '';
-  return /\r\n/.test(text) ? 'CRLF' : 'LF';
+  if (!text) return '';
+  const crlf = (text.match(/\r\n/g) || []).length;
+  const lf = (text.match(/\n/g) || []).length - crlf;
+  const cr = (text.match(/\r/g) || []).length - crlf;
+  const kinds = [crlf && 'CRLF', lf && 'LF', cr && 'CR'].filter(Boolean);
+  return kinds.length > 1 ? 'mixed' : kinds[0] || '';
+}
+
+/* A file changed only in its line endings is listed with no line marked: the
+   head says why. Two mixed sides differ only where they hold the same line
+   (a line added or removed shifts every ending after it), and a line whose side
+   has no ending at all is the final newline's business, not this one's. */
+function lineEndingsNote(view) {
+  if (view.before_missing || view.after_missing || view.binary) return '';
+  const here = lineEnding(view.after), there = lineEnding(view.before);
+  if (!here || !there) return '';
+  if (here !== 'mixed' || there !== 'mixed') {
+    return here === there ? '' : ` · line endings differ (${here} here, ${there} in HEAD)`;
+  }
+  const endsOf = (text) => text.match(/\r\n|\r|\n/g) || [];
+  const old = endsOf(view.before), now = endsOf(view.after);
+  const differ = inlineDiffLines(view.before, view.after).some((l) => {
+    if (l.kind !== 'same') return false;
+    const was = old[l.a - 1], is = now[l.b - 1];
+    return was && is && was !== is;
+  });
+  return differ ? ' · line endings differ (mixed here and in HEAD)' : '';
+}
+
+/* The two texts a diff compares, as both layouts must read them: with the CRs
+   of a CRLF file gone (CodeMirror shows plain line breaks) and a final newline
+   ending its last line and starting no other, as git reads it. The one case it
+   is shown is a file that has it on one side only, both sides holding text and
+   the view whole: that side then keeps its newline, so side by side ends it with
+   an empty line, and `extra` names the side the inline layout appends that empty
+   line to. The head says which side lacks the newline (0168). A cut view ends
+   mid-line, and a binary one has no lines to speak of. */
+function diffSides(view) {
+  const clean = (t) => (t || '').replace(/\r\n?/g, '\n');
+  let before = clean(view.before), after = clean(view.after);
+  const endsBefore = before.endsWith('\n'), endsAfter = after.endsWith('\n');
+  if (before && after && endsBefore !== endsAfter && !view.truncated && !view.binary) {
+    return endsAfter ? { before, after, extra: 'after', note: ' · no final newline in HEAD' }
+      : { before, after, extra: 'before', note: ' · no final newline here' };
+  }
+  if (endsBefore) before = before.slice(0, -1);
+  if (endsAfter) after = after.slice(0, -1);
+  return { before, after, extra: '', note: '' };
 }
 
 /* The lines of both sides in order, for the inline layout: HEAD's lines that
@@ -2587,20 +2630,23 @@ function lineEnding(text) {
    hold ('same'), each with its number in HEAD (`a`) and in the working tree
    (`b`), null on the side that has no such line. Built on diff_match_patch in
    line mode, which the side by side view uses too, so both layouts agree on
-   what changed. A final newline ends its line and starts no other (0165). */
-function inlineDiffLines(before, after) {
+   what changed. A final newline ends its line and starts no other (0165),
+   except that `extra` ('before' or 'after', from diffSides) appends the empty
+   last line a lone final newline shows (0168). */
+function inlineDiffLines(before, after, extra) {
   // A line ends however it ends, and the CR of a CRLF is no part of it: under
   // core.autocrlf the working file is CRLF against an LF blob, and only the lines
   // that really changed are listed, as git and the side by side view do (0165).
-  const split = (text) => {
+  const split = (text, side) => {
     if (!text) return [];
     const parts = text.split(/\r\n|\r|\n/);
     if (parts[parts.length - 1] === '') parts.pop();
+    if (extra === side) parts.push('');
     return parts;
   };
   const keyOf = (l) => l + '\n';
   const dmp = new diff_match_patch();
-  const packed = dmp.diff_linesToChars_(split(before).map(keyOf).join(''), split(after).map(keyOf).join(''));
+  const packed = dmp.diff_linesToChars_(split(before, 'before').map(keyOf).join(''), split(after, 'after').map(keyOf).join(''));
   const diffs = dmp.diff_main(packed.chars1, packed.chars2, false);
   dmp.diff_charsToLines_(diffs, packed.lineArray);
   const out = [];
@@ -2668,6 +2714,70 @@ function inlineRuns(lines) {
     else runs.push({ kind: l.kind, from: i, to: i + 1 });
   });
   return runs;
+}
+
+/* The words that changed inside the lines of a block, for the inline layout, as
+   side by side tints them: each block of changed lines has its removed text
+   diffed against its added text in characters, and every removed part is marked
+   on the lines that hold it, every added part likewise. A line only added or only
+   removed is marked whole. One range is returned per part, `{ kind, from, to }`
+   with CodeMirror positions, spanning lines where the part does; the newline at a
+   part's end is never inside it. `deadline` is a time in ms shared by every block:
+   once it is past, a block is marked whole instead of diffed (0168). */
+function inlineWordMarks(lines, deadline) {
+  const dmp = new diff_match_patch();
+  const ranges = [];
+  // One side of a block: its text, and where each of its lines starts in it.
+  const sideOf = (rows) => {
+    const starts = [];
+    let at = 0;
+    for (const r of rows) { starts.push(at); at += r.text.length + 1; }
+    return { rows, starts, text: rows.map((r) => r.text).join('\n') };
+  };
+  const mark = (side, kind, from, to) => {
+    // A part's own edges are never a newline: it paints characters only.
+    while (from < to && side.text[from] === '\n') from++;
+    while (to > from && side.text[to - 1] === '\n') to--;
+    if (from >= to) return;
+    const at = (offset) => {
+      let k = side.starts.length - 1;
+      while (side.starts[k] > offset) k--;
+      return k;
+    };
+    const first = at(from), last = at(to - 1);
+    // The lines of a side are side by side in the editor; if another kind came
+    // between two of them the part is cut there rather than painted across it.
+    let start = first;
+    for (let k = first; k <= last; k++) {
+      if (k < last && side.rows[k + 1].index === side.rows[k].index + 1) continue;
+      ranges.push({
+        kind,
+        from: { line: side.rows[start].index, ch: start === first ? from - side.starts[first] : 0 },
+        to: { line: side.rows[k].index, ch: k === last ? to - side.starts[last] : side.rows[k].text.length },
+      });
+      start = k + 1;
+    }
+  };
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].kind === 'same') continue;
+    let j = i;
+    while (j + 1 < lines.length && lines[j + 1].kind !== 'same') j++;
+    const rowsOf = (kind) => lines.slice(i, j + 1).map((l, k) => ({ text: l.text, kind: l.kind, index: i + k }))
+      .filter((r) => r.kind === kind);
+    const gone = sideOf(rowsOf('del')), came = sideOf(rowsOf('add'));
+    const diffs = Date.now() > deadline
+      ? [[-1, gone.text], [1, came.text]]
+      : dmp.diff_main(gone.text, came.text, false, deadline);
+    let was = 0, now = 0;
+    for (const d of diffs) {
+      const n = d[1].length;
+      // The operation is -1 for a deletion, 0 for text both hold, 1 for an insertion.
+      if (d[0] <= 0) { if (d[0] < 0) mark(gone, 'del', was, was + n); was += n; }
+      if (d[0] >= 0) { if (d[0] > 0) mark(came, 'add', now, now + n); now += n; }
+    }
+    i = j;
+  }
+  return ranges;
 }
 
 /* Where the first line in view lands when the layout changes: a line of the
@@ -2880,11 +2990,13 @@ function mountDiff(key) {
    first line in view stays in view. The choice is the page's, one for every
    diff tab, so a tab opened before it is rebuilt when it is shown (0165). */
 function fillDiff(f) {
+  // A tab's view is read once and never replaced, so its sides are too.
+  if (!f.sides) f.sides = diffSides(f.view);
   let line = null;
   if (f.mv || f.icm) {
     const cm = f.mv ? f.mv.editor() : f.icm;
     const first = cm.lineAtHeight(cm.getScrollInfo().top, 'local');
-    const lines = f.inlineLines || (f.inlineLines = inlineDiffLines(f.view.before, f.view.after));
+    const lines = f.inlineLines || (f.inlineLines = inlineDiffLines(f.view.before, f.view.after, f.sides.extra));
     line = f.mv ? inlineIndexFor(lines, first) : workingLineFor(lines, first);
   }
   if (f.ro) f.ro.disconnect();
@@ -2899,14 +3011,15 @@ function fillDiff(f) {
   f.layout = S.diffLayout;
   f.scrollTo = line;
   if (S.diffLayout === 'inline') {
-    f.inlineLines = f.inlineLines || inlineDiffLines(f.view.before, f.view.after);
+    f.inlineLines = f.inlineLines || inlineDiffLines(f.view.before, f.view.after, f.sides.extra);
     f.icm = mountInline(f, pane);
   } else {
+    // CodeMirror shows a CRLF file with plain line breaks: the addon is given the text it shows,
+    // or it would compare the CRs and mark every line of an autocrlf file.
+    const sides = f.sides;
     f.mv = CodeMirror.MergeView(pane, {
-      // CodeMirror shows a CRLF file with plain line breaks: the addon is given the text it shows,
-      // or it would compare the CRs and mark every line of an autocrlf file.
-      value: f.view.after.replace(/\r\n?/g, '\n'),
-      origLeft: f.view.before.replace(/\r\n?/g, '\n'),
+      value: sides.after,
+      origLeft: sides.before,
       lineNumbers: true,
       lineWrapping: true,
       // Forwarded to both panes by the addon, so each gets a +/- column.
@@ -2980,6 +3093,14 @@ function mountInline(f, pane) {
       cm.addLineClass(i, 'background', 'diff-line-' + l.kind);
       cm.addLineClass(i, 'gutter', 'diff-line-' + l.kind);
     });
+    // The words that changed take the stronger tint side by side gives them. One
+    // second for the whole file: a block past it is marked whole. Kept on the tab like
+    // the lines: the deadline makes the answer depend on the machine's moment, so a
+    // second switch to Inline must not recompute it and show other marks.
+    f.inlineMarks = f.inlineMarks || inlineWordMarks(lines, Date.now() + 1000);
+    for (const r of f.inlineMarks) {
+      cm.markText(r.from, r.to, { className: r.kind === 'add' ? 'CodeMirror-merge-l-inserted' : 'CodeMirror-merge-l-deleted' });
+    }
     for (const fold of inlineFolds(lines, 12)) collapseInline(cm, fold.from, fold.to);
   });
   const total = Math.max(1, lines.length);

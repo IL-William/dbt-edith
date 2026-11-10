@@ -172,7 +172,12 @@ Its head is one row: the file's icon, its name, its folder, what is compared
 (`your working tree against HEAD`, `a new file, nothing in HEAD`, `deleted from
 your working tree`, with ` · line endings differ (CRLF here, LF in HEAD)` added
 when the two sides end their lines differently, since the lines are compared
-without their CRs and such a file may have no changed line), a `read only` chip, the layout switch and `Open the file`,
+without their CRs and such a file may have no changed line: a side is named CRLF,
+LF, CR or `mixed`, and two mixed sides are said to differ (`mixed here and in
+HEAD`) only where a line they both hold ends differently; then ` · no final
+newline here` or ` · no final newline in HEAD` when only one side ends with a
+newline, shown as an empty last line on the side that has it, which is said
+of no new, deleted, binary or cut file), a `read only` chip, the layout switch and `Open the file`,
 which edits it. Two layouts, picked with the switch (the arrow keys move it):
 
 - **Side by side**, HEAD on the left and the working tree on the right, the
@@ -181,8 +186,8 @@ which edits it. Two layouts, picked with the switch (the arrow keys move it):
   tinted green or red in the rows and in the number gutters, and the words that
   changed inside it are tinted stronger.
 - **Inline**, one list holding the lines of both sides in order, with a number
-  for HEAD and one for the working tree, the same tints, and the lines that
-  changed marked as lines (not as words).
+  for HEAD and one for the working tree, the same tints, and the words that
+  changed inside a line tinted stronger, as side by side does.
 
 Both wrap their lines instead of cutting them, so a long line is read whole;
 the 12 lines beside a change stay in view, and a stretch of more than 12

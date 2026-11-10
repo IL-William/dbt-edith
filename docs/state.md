@@ -3307,17 +3307,18 @@ of its own, and each panel updates the tour, its page under
       from which the swap marks read their colour.
 
 54. **The Git tab's limits (0165, 2.19.0).**
-    - The inline layout marks the lines that changed, not the words inside
+    - ~~The inline layout marks the lines that changed, not the words inside
       them, where side by side tints both. A line changed in one word shows as
-      the old line and the new one.
-    - A file without a final newline reads in the inline layout as one with it:
+      the old line and the new one.~~ Fixed in 2.20.6 (0168).
+    - ~~A file without a final newline reads in the inline layout as one with it:
       the newline ends its line and is no line of its own, so a change of that
       alone shows in the inline layout as nothing. Side by side shows it as a
-      last empty line, as the editor does.
-    - Where a file ends in a newline, Inline reads it as git does and side by
+      last empty line, as the editor does.~~ Fixed in 2.20.6 (0168).
+    - ~~Where a file ends in a newline, Inline reads it as git does and side by
       side as the editor does, with one more, empty, last line: an empty line
       and a line of text added at the end show as the empty line first in Inline
-      (as `git diff` does) and the text first side by side.
+      (as `git diff` does) and the text first side by side.~~ Fixed in 2.20.6
+      (0168).
     - The layout is the page's, not a setting (rejected in 0165): a reload
       returns to side by side.
     - After the pane is made narrower or wider, side by side is laid out and
@@ -3325,7 +3326,9 @@ of its own, and each panel updates the tour, its page under
       with their counterparts. It leans on the addon's own flag (`dealigned`).
     - The board's `Commit` shortcut is drawn as `Ctrl+Enter` outside a Mac, as
       the other keycaps are, not `Ctrl+↩`.
-    - The commit box's keycap is drawn dim, and its contrast was not measured.
+    - ~~The commit box's keycap is drawn dim, and its contrast was not measured.~~
+      Measured in 2.20.6: 6.0:1 in Night, 6.6:1 in Graphite, 6.1:1 in Light, 6.9:1
+      in Halloween.
     - The commit button's words for a merge with a file still conflicted
       (`Resolve the conflicts first`) are not on the board, which has no merge.
     - What the board leaves out stays: the Conflicts section, the merge banner
@@ -3340,11 +3343,20 @@ of its own, and each panel updates the tour, its page under
       Halloween, both layouts; not at a pane resized with a long diff open, nor
       while a commit runs: the realignment on a resize and the commit's words
       are read from the code.
-    - A folded stretch sits a few pixels above the next line, where the board's
-      row is flush: the replaced text keeps the line's own height beside it.
-    - The head's `line endings differ` note calls a side CRLF when any of its
+    - ~~A folded stretch sits a few pixels above the next line, where the board's
+      row is flush: the replaced text keeps the line's own height beside it.~~
+      Fixed in 2.20.6.
+    - ~~The head's `line endings differ` note calls a side CRLF when any of its
       lines ends that way: a HEAD with mixed endings against a working file all
-      in CRLF gets no note and no marked line, and a lone `\r` reads as LF.
+      in CRLF gets no note and no marked line, and a lone `\r` reads as LF.~~
+      Fixed in 2.20.6 (0168).
+    - A block of changed lines reached after the first second of a diff is
+      marked whole in Inline, not by word, so a huge rewrite may be marked
+      differently on a slower machine, as side by side's own diff already is.
+    - A new or deleted file holding only a newline shows nothing marked side by
+      side, where Inline lists its one empty line. An empty file in HEAD that
+      becomes "\n" behaves the same way: Side by side shows nothing, Inline one
+      added empty line.
 55. **The shell's limits (0166, 0167, 2.20.0).**
     - The editor's tabs have no kind bar: a tab knows its file, not its node
       (item 34).

@@ -13,6 +13,20 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.6 - 2026-11-10
+
+- Tint the words that changed inside a line in the Inline diff, as side by side
+  does, where it showed only the old line and the new one (0168).
+- Show a final newline in both layouts as git reads it: a file that gained or lost
+  it shows an empty last line in Inline too, an empty line added before a line of
+  text is listed before it, and the head says `no final newline here` or
+  `no final newline in HEAD` (0168).
+- Say `line endings differ` for a file of mixed endings against one of CRLF or LF,
+  and name a lone CR as CR, without flagging two mixed files for a line added
+  (0168).
+- Draw a folded stretch in a diff as its row alone, with the next line flush
+  against it.
+
 ## 2.20.5 - 2026-11-10
 
 - Draw the text of an editor find hit in the editor's text colour, so it holds

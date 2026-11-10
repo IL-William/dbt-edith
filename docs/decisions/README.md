@@ -171,6 +171,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0165](0165-the-git-tab-says-how-far-it-is-from-origin-in-words-and-the-diff-wraps-its-lines.md) | The Git tab says how far it is from origin in words, and the diff wraps its lines | changing the Git tab's branch row, rows or commit button, or how a diff lays out, wraps or folds its lines |
 | [0166](0166-the-shell-is-laid-out-as-the-boards-draw-it.md) | The shell is laid out as the boards draw it | changing what the top bar or the status bar holds and in which order, how either folds, what the dock's tabs keep when their row is full, or what the status bar says on its left |
 | [0167](0167-a-hover-card-from-the-editor-stays-in-the-editor.md) | A hover card from the editor stays in the editor | changing where a hover card opens, or what bounds it |
+| [0168](0168-the-inline-diff-marks-words-and-both-layouts-read-a-final-newline-as-git-does.md) | The inline diff marks words, and both layouts read a final newline as git does | changing how a diff marks words, treats a final newline or line endings |
 
 ## Keeping these honest
 
