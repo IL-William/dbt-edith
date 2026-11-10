@@ -8,10 +8,17 @@ var app = read('web/app.js');
 eval(app.slice(app.indexOf('function reportsSections'), app.indexOf('async function loadReportsIndex')));
 eval(app.slice(app.indexOf('function strokeIcon'), app.indexOf('/* The lineage fields of an /api/meta answer')));
 eval(app.slice(app.indexOf('function reportFoldKey'), app.indexOf('/* Draws one section')));
+eval(app.slice(app.indexOf('function cronFields'), app.indexOf('function zoneWall')));
 eval(app.slice(app.indexOf('function jobsScheduleText'), app.indexOf('async function loadJobs')));
+eval(app.slice(app.indexOf('function jobsClock'), app.indexOf('function jobsWhyLine')));
 eval(app.slice(app.indexOf('function jobOrderLine'), app.indexOf('async function jobOrderSection')));
 eval(app.slice(app.indexOf('function checkFoldList'), app.indexOf('/* A macro card\'s first line')));
 eval(app.slice(app.indexOf('function jobsStepRow'), app.indexOf('function renderCoverage')));
+// Builds by job's schedule cell, with what it asks of the page stood in for.
+function counted(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+function buildsStaleDays() { return 3; }
+function jobClockWhy() { return ''; }
+eval(app.slice(app.indexOf('function jobBuildsWhen'), app.indexOf('function jobBreakable')));
 // A top-level const the page holds: read from it, so the test follows the cap.
 var CHECK_SHOWN = Number(/const CHECK_SHOWN = (\d+)/.exec(app)[1]);
 
@@ -44,6 +51,7 @@ function el(tag) {
     addEventListener: function (type, fn) { this.on[type] = fn; },
     setAttribute: function (k, v) { this.attrs[k] = v; if (k === 'class') this.className = v; },
     getAttribute: function (k) { return this.attrs[k]; },
+    removeAttribute: function (k) { delete this.attrs[k]; },
     closest: function (sel) {
       for (var at = this; at; at = at.parentElement) if (matches(at, sel)) return at;
       return null;
@@ -589,3 +597,44 @@ showAll.click();
 check('Show all draws the rest, is remembered on the fold, and the button goes',
   [all(bigFold, cls('rstep')).length, bigFold.dataset.all, showAll.parentElement.removed], [CHECK_SHOWN + 20, '1', true]);
 check('under the cap, no button', all(folds(drawn(answer(pairsMany.slice(0, CHECK_SHOWN))))[0], cls('showall')).length, 0);
+
+print('\n--- how a job starts, in the coverage list and in Builds by job (0169) ---');
+var STARTS = {
+  scheduled: { kind: 'airflow', name: 'shop_daily', cron: '0 5 * * *', timezone: 'Europe/London', scheduled: true, source: 'dags', file: 'daily.yml', line: 2 },
+  manual: { kind: 'airflow', name: 'shop_adhoc', source: 'dags', file: 'adhoc.yml', line: 3 },
+  unread: { kind: 'airflow', name: 'shop_odd', cron: '{{ var.value.cron }}', schedule_unread: true, source: 'dags', file: 'odd.yml', line: 4 },
+  ci: { kind: 'dbt_cloud', name: 'PR check', ci: true, source: 'jobs', file: 'jobs.yml', line: 5 },
+};
+function clocks(e) { return all(e, function (n) { return n.tag === 'svg'; }).length; }
+function sched1(e) { return all(e, cls('jobsched'))[0]; }
+var readRows = {};
+Object.keys(STARTS).forEach(function (k) { readRows[k] = jobsReadRow(STARTS[k]); });
+check('a job that runs on its own has the clock, the words and the cron with its zone',
+  [clocks(readRows.scheduled), text(all(readRows.scheduled, cls('jobsched'))[0].children[1]), text(all(readRows.scheduled, cls('jobcron'))[0])],
+  [1, 'Every day at 05:00', '0 5 * * * Europe/London']);
+check('the words are a span of their own, for a cell to cut', all(readRows.scheduled, cls('jobsched'))[0].children[1].tag, 'span');
+check('the row names the job and holds its file', [text(all(readRows.scheduled, cls('rstep'))[0]), text(all(readRows.scheduled, cls('jobfile'))[0])], ['DAG shop_daily', 'dags · daily.yml:2']);
+check('a manual job has no clock and says Manual', [clocks(readRows.manual), text(sched1(readRows.manual)), sched1(readRows.manual).dataset.start], [0, 'Manual', 'manual']);
+check('a job not read has no clock and its start marked unread', [clocks(readRows.unread), sched1(readRows.unread).dataset.start], [0, 'unread']);
+check('and its words are the cron alone', text(sched1(readRows.unread)), '{{ var.value.cron }}');
+check('a CI job has its tag and no line', [all(readRows.ci, cls('jobtag')).map(text), all(readRows.ci, cls('jobsched')).length], [['CI'], 0]);
+check('the tag says what it means', all(readRows.ci, cls('jobtag'))[0].title, 'Started on each pull request, never by a clock');
+check('a pill of the old kind is gone', all(readRows.scheduled, cls('jobwhen')).length, 0);
+
+var cells = {};
+Object.keys(STARTS).forEach(function (k) { cells[k] = jobBuildsWhen(STARTS[k], null); });
+function zones(c) { return all(c, cls('jbzone')).map(text); }
+check('Builds by job: the clock and the words, and the cron without its zone',
+  [clocks(cells.scheduled), text(all(cells.scheduled, cls('jobsched'))[0].children[1]), text(all(cells.scheduled, cls('jobcron'))[0])],
+  [1, 'Every day at 05:00', '0 5 * * *']);
+check('the zone goes under it, though the job is not judged', zones(cells.scheduled), ['Europe/London']);
+check('a judged job says it the same', zones(jobBuildsWhen(STARTS.scheduled, { before: 1, tz: 'Europe/London', said: 'x' })), ['Europe/London']);
+check('a job with no cron has no zone line', [zones(cells.manual), zones(cells.ci)], [[], []]);
+check('a manual job has no clock and says Manual', [clocks(cells.manual), text(sched1(cells.manual))], [0, 'Manual']);
+check('a job not read keeps its mark', sched1(cells.unread).dataset.start, 'unread');
+check('a CI job has its tag, so its cell is not empty', [all(cells.ci, cls('jobtag')).map(text), all(cells.ci, cls('jobsched')).length], [['CI'], 0]);
+check('the tooltip: the words, cron and zone, what it means, then the rule',
+  cells.scheduled.title.split('\n').slice(0, 2), ['Every day at 05:00 0 5 * * * Europe/London', 'Runs on its own']);
+check('and the line carries it too', sched1(cells.scheduled).title, cells.scheduled.title);
+check('a manual job says why nothing judges it', cells.manual.title.split('\n').slice(0, 2), ['Manual', 'Nothing starts it: run by hand']);
+check('the threshold ends it', /Late here means no success in 3 days\.$/.test(cells.manual.title), true);

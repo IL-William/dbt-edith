@@ -3084,15 +3084,24 @@ of its own, and each panel updates the tour, its page under
       being awaited together. The count is asked again with the next focus or
       redraw.
 44. **The Jobs tab's limits (0159, 2.10.0).**
-    - A cron is worded only in its plain shapes: a range of hours, both day
+    - ~~A cron is worded only in its plain shapes: a range of hours, both day
       fields, a month, the 29th to the 31st, `@quarterly` and a step that does
-      not divide the day or the hour keep the cron alone.
+      not divide the day or the hour keep the cron alone.~~ Settled in 2.20.9
+      (0169) for `@quarterly`; the other shapes keep the cron alone.
     - The Not resolved group is folded by default, though the design pictures
       it open: a project with many `state:modified` CI jobs would list them
       under every model.
-    - The Catalog's chips and the Reports lists keep the older wording (the
+    - ~~The Catalog's chips and the Reports lists keep the older wording (the
       cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
-      changed.
+      changed.~~ Settled in 2.20.9 (0169).
+    - The job order and the command line keep `step 2/3` and the cron as
+      written: the server writes those words (`label_of` in `src/jobs.rs`) and
+      both read them.
+    - The Reports' Jobs read filter has no test: none reaches the coverage's
+      fold.
+    - The clock now has three meanings that meet in the coverage section: the
+      Jobs tool's glyph, violet beside a source's name, and the card's muted
+      "runs on its own" before a start's words (0169).
 45. **The Lineage space's limits (0160, 2.11.0).**
     - Light has no node shadow: the design draws one near enough invisible, and
       a filter per box costs too much on a canvas of thousands. The ring round
@@ -3259,10 +3268,10 @@ of its own, and each panel updates the tour, its page under
     - The columns table is still a `table`, not the board's grid of rows, so a
       row's hover tint stops at its cells and the board's 8px bleed is not
       drawn.
-    - A job chip keeps the colours that say how its job starts (green and
+    - ~~A job chip keeps the colours that say how its job starts (green and
       filled for a scheduled one, the warning's for one not read), where the
       board draws every chip on `--line`; only its shape and the clock are the
-      board's.
+      board's.~~ Settled in 2.20.9 (0169).
     - ~~A relation's name wraps in the middle of a word in a narrow dock, as it did
       before the redesign.~~ Fixed in 2.20.3: it breaks after a dot, its
       buttons going under it when the cell is narrow; the table is held to the

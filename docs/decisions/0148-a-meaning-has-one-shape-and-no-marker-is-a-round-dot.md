@@ -1,6 +1,6 @@
 # 0148. A meaning has one shape, and no marker is a round dot
 
-Date: 2026-11-05 · Status: accepted, amended by 0151 · Amends 0049, 0079, 0100, 0117 and 0137
+Date: 2026-11-05 · Status: accepted, amended by 0151 and 0169 (the clock) · Amends 0049, 0079, 0100, 0117 and 0137
 
 **Trigger:** read before adding a marker for a kind, a state, an environment or
 a tool, or before drawing anything small and round in the page.

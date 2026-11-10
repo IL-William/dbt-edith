@@ -1,6 +1,6 @@
 # 0159. A job's start is said in words, and a clock marks the ones that run alone
 
-Date: 2026-11-08 · Status: accepted · Amends 0063 and 0077
+Date: 2026-11-08 · Status: accepted, amended by 0169 (the Reports, Builds by job and the Catalog) · Amends 0063 and 0077
 
 **Trigger:** read before changing how the Jobs tab words a job's schedule,
 what marks a job as running on its own, or what the tab's header says.
@@ -80,3 +80,6 @@ from.
   job), and a page where none has shows no age.
 - The Catalog's chips, the Reports lists and the command line keep the older
   wording (`jobsScheduleText`, `Scheduled` pill): only the card changed.
+  *Amended by [0169](0169-reports-and-builds-by-job-say-a-start-as-the-card-does.md):
+  the Reports, Builds by job and the Catalog's chips say a start as the card
+  does; the command line and the Job order keep the older wording.*

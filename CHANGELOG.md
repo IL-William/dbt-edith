@@ -13,6 +13,18 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.9 - 2026-11-10
+
+- Say a job's start in the Reports' Jobs read list and in Builds by job as the Jobs
+  tab's card does: the clock for a job that runs on its own, the words and the
+  cron, `Manual`, a `CI` or `Merge` tag, the zone under the line in Builds by job
+  whether or not the job is judged (0169).
+- Outline every job chip of the Catalog alike, as the board draws it, without the
+  green, grey and amber fills, and say `step 2 of 3` on it, with the job's start
+  in words in its tooltip (0169).
+- Word `@quarterly` as `The 1st of January, April, July and October at 00:00`
+  (0169).
+
 ## 2.20.8 - 2026-11-10
 
 - Say it in the toast, in place of a clipped chip, when the line of a command typed
