@@ -227,9 +227,9 @@ The date and time the file was written are one hover away, on the age; the age
 is what a glance wants. The path is a link. Clicking it opens the file tree at
 the file, so the folder dbt wrote, the files beside it and the file itself are
 one click away. When the dock is too narrow for the line it wraps; the
-environments' group stays whole. The last button types the command that
-regenerates the file (`Compile again`, `Recompile`, `Run again`, or `Test again`
-for a test) and leaves Enter to you.
+environments' group wraps inside its ring, `Relations for` staying beside it.
+The last button types the command that regenerates the file (`Compile again`,
+`Recompile`, `Run again`, or `Test again` for a test) and leaves Enter to you.
 
 The pictogram is a triangle, the line turns amber (a wash and a rule at its left)
 and adds `changed since: ...`, when something the file was built from has moved since it was written: the
@@ -296,7 +296,9 @@ dotted underline in that colour, and hovering it gives the call it stands for
 and the environment, then the relation it was in the file dbt wrote:
 `ref('stg_customers'), for PROD`, then `was "jaffle_shop"."main"."stg_customers"
 as compiled`. A source reads `source('jaffle_shop', 'raw_orders')` and a
-versioned model `ref('orders', v=2)`.
+versioned model `ref('orders', v=2)`. The model's own relation, which a Run
+statement names with its `__dbt_tmp` and `__dbt_backup` suffixes, reads `{{ this }}`,
+or `{{ this }} with the __dbt_tmp suffix`, as the model's SQL writes it.
 
 Under the sentence, a fold, **May differ beyond its relations (3)**, open when
 drawn, gives what in the model, or in a macro it reaches, however deep, reads

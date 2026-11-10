@@ -64,6 +64,10 @@ and the marks in the SQL take the environment's colour.
   source reads `source('jaffle_shop', 'raw_orders')` and a versioned model
   `ref('orders', v=2)`, built from the node's id and name. A relation kept as compiled
   stays amber. `--env-swap`, the blue, is gone from every theme.
+  *Amended in 2.20.7: a source is split by its own name, which the server now
+  sends, so a dot in either part reads right; the model's own relation reads
+  `{{ this }}`, and its suffixed forms in a Run statement `{{ this }} with the
+  __dbt_tmp suffix`, as the model's SQL writes it.*
 - **The dock's row describes the open tab,** at the right, in one dim line cut
   with an ellipsis: the tab's own tooltip, read from `data-about` where
   `wireTabs` stores it, so the two cannot drift. It is hidden while the fold of
@@ -92,6 +96,8 @@ and the marks in the SQL take the environment's colour.
   note's tag and presses `.artifact-redo`.
 - A project with very many `.env` files makes the group wider than a narrow dock
   (docs/state.md).
+  *Amended in 2.20.7: the group wraps inside its ring on a narrow dock,
+  `Relations for` staying beside it.*
 - A theme added later gives every `--env-*` colour a mark of 3:1 on its sidebar
   and, since a name sits on its own wash, on the picked radio's 16% and the
   note tag's 8% plus 14%, and the dotted underline of a swapped relation, in

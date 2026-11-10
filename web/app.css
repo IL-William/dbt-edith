@@ -2754,11 +2754,12 @@ kbd {
 .artifact-path.link:hover { color: var(--fg); }
 .artifact-path.outside { cursor: default; opacity: .75; }
 .btn.artifact-redo { color: var(--fg); font-size: 12px; padding: 3px 9px; white-space: nowrap; }
-.cenv { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
+/* The group wraps inside its ring on a narrow dock, "Relations for" staying beside it, rather than pushing past the dock's edge. */
+.cenv { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-dim); white-space: nowrap; min-width: 0; max-width: 100%; }
 /* An environment is its name in its colour, never a dot (0148); the picked one
    is tinted and ringed in it. --env is the tone's colour (set by the page's
    [data-tone] rules), the manifest's own is quiet. */
-.cenv .envseg { display: flex; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
+.cenv .envseg { display: flex; flex-wrap: wrap; row-gap: 2px; min-width: 0; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); }
 .cenv .envseg button {
   --env: var(--tone); height: 22px; padding: 0 9px; border: 0; border-radius: 5px;
   background: none; font: 12px var(--ui); color: var(--env); cursor: pointer;
@@ -2789,6 +2790,10 @@ kbd {
 }
 .cdiffer ul { margin: 2px 0 0; padding-left: 18px; font-size: 12px; color: var(--fg-2); }
 .cdiffer li { margin: 1px 0; }
+/* A macro's name is code. Opened by a click it is a link, but quiet: the note's own text colour and the path link's dotted underline, not the accent on the environment's wash. */
+.cdiffer .mono { font: 11.5px var(--mono); }
+.cdiffer .filelink { color: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.cdiffer .filelink:hover { color: var(--fg); text-decoration: underline; text-decoration-style: dotted; }
 .compiled-empty { padding: 16px; font-size: 12px; color: var(--fg-dim); }
 .compiled-empty code {
   display: inline-block; font: 11.5px var(--mono); background: var(--bg-3);

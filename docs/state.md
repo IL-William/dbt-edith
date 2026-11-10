@@ -2976,10 +2976,11 @@ of its own, and each panel updates the tour, its page under
     - The env var hover card (`web/app.js`, near line 351) and the Snowflake
       column lineage (near line 7476) read `S.env` directly instead of
       `activeEnv()`, so a stale choice can show there.
-    - The row of buttons is no longer a wrapping line: 0164 made it one
+    - ~~The row of buttons is no longer a wrapping line: 0164 made it one
       segmented group that does not wrap. This is not settled: a project with
       very many `.env` files makes the group wider than a narrow dock, and it
-      then takes a line of its own and is cut at the dock's edge.
+      then takes a line of its own and is cut at the dock's edge.~~ Fixed in
+      2.20.7: the group wraps inside its ring.
 34. **Markers and shapes still to draw (#166, 0148).**
     - Editor tabs carry no kind bar: a tab knows its file, not its node.
     - ~~A column's role is still an 8px square (the column card, the legend, the
@@ -3286,25 +3287,39 @@ of its own, and each panel updates the tour, its page under
     - ~~No test covers the regular expression that finds the count pills.~~
       Fixed in 2.20.4: `reportCounted`, in `web/tests/reports.js`.
 53. **The Compiled tab's limits (0164, 2.18.0).**
-    - The age is said as the manifest card says it, so a file a few days old
+    - ~~The age is said as the manifest card says it, so a file a few days old
       reads `Compiled 2 d ago` and one a few hours old `Compiled 3h07 ago`; the
-      two units are not spelled alike.
+      two units are not spelled alike.~~ Fixed in 2.20.7.
     - The date and time are on the age's hover only, and the file's path is cut
       at its left on a short dock, the identifying segment kept.
     - The note does not say which database the relations moved to: a swap can
       reach several, and the board's `to <database>` would be true for one.
-    - A project with very many `.env` files makes the picker wider than a narrow
-      dock (item 33).
-    - A swapped relation's hover is the call that names it, built from the node:
+    - ~~A project with very many `.env` files makes the picker wider than a narrow
+      dock (item 33).~~ Fixed in 2.20.7: the group wraps inside its ring.
+    - ~~A swapped relation's hover is the call that names it, built from the node:
       the model's own table in a Run statement reads `ref('customers')` where dbt
       writes `{{ this }}`, a source whose name holds a dot falls back to
       `source('<its node name>')`, and a version written as a string reads
-      `v=2`, not `v='2'`.
-    - The fold's macro findings take the link colour on the environment-tinted
-      note, where the board writes the macro's name in mono.
-    - No test pins that the picker and the note are drawn only when
+      `v=2`, not `v='2'`.~~ Fixed in 2.20.7 except the version: the own table
+      reads `{{ this }}` and a source is split by the source's own name.
+    - ~~The fold's macro findings take the link colour on the environment-tinted
+      note, where the board writes the macro's name in mono.~~ Fixed in 2.20.7:
+      the name is mono, and a link only when the macro can be opened.
+    - ~~No test pins that the picker and the note are drawn only when
       `envRowShown()` is true, nor that the editor's wrapper gets `data-tone`,
-      from which the swap marks read their colour.
+      from which the swap marks read their colour.~~ Fixed in 2.20.7:
+      `web/tests/compiledenv.js` paints the tab with the page stubbed.
+    - A version written as a string reads `v=2` in a swapped relation's hover,
+      not `v='2'`: how the caller wrote `v=` is in the caller's refs, which the
+      payload does not carry.
+    - A relation reached through an ephemeral parent hovers its own node's call
+      (`ref('stg_customers')`), though the model writes the ephemeral's
+      (`ref('int_customers')`).
+    - When the environment group wraps, its focus ring stays as wide as the
+      line, so up to a button's width is left empty at the end of its first
+      row.
+    - At a dock narrower than about 150px the `manifest` button still
+      overflows: the label and the widest button no longer fit side by side.
 
 54. **The Git tab's limits (0165, 2.19.0).**
     - ~~The inline layout marks the lines that changed, not the words inside

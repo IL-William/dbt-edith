@@ -13,6 +13,18 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.7 - 2026-11-10
+
+- Say an age of hours as `3 h ago` on the Compiled and Run tabs, the manifest
+  card and the Jobs tab's header, so every unit is a number, a space and the
+  unit (0164).
+- Keep the environments' picker inside a narrow dock by wrapping its group, with
+  `Relations for` beside it (0164).
+- Name a model's own relation `{{ this }}` in a swapped relation's hover, and
+  split a source whose table name holds a dot by the source's own name (0164).
+- Draw a macro's name in mono in the note's findings, as a quiet dotted link
+  when it can be opened (0164).
+
 ## 2.20.6 - 2026-11-10
 
 - Tint the words that changed inside a line in the Inline diff, as side by side

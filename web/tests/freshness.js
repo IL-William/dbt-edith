@@ -48,8 +48,10 @@ check('the card leads with a sentence, not a number', fresh.head, 'The lineage m
 ok('and says what that means', said(fresh).indexOf('what your project says') >= 0);
 ok('names the moment it was written', fresh.when.indexOf(', 12 min ago') >= 0);
 // The card's ages are the board's ("2 min ago", "a moment ago"); the pill and the other screens keep humanAge's.
-check('the card spells its ages as the board does', [0, 9, 10, 45, 120, 12 * 60, 3 * 3600 + 300, 3 * 86400].map(cardAge),
-  ['a moment ago', 'a moment ago', '10 s ago', '45 s ago', '2 min ago', '12 min ago', '3h05 ago', '3 d ago']);
+check('the card spells its ages as the board does, every unit a number, a space and the unit', [0, 9, 10, 45, 120, 12 * 60, 3 * 3600 + 300, 3 * 86400].map(cardAge),
+  ['a moment ago', 'a moment ago', '10 s ago', '45 s ago', '2 min ago', '12 min ago', '3 h ago', '3 d ago']);
+check('the minutes stop at 59 and the hours are floored', [3569, 3570, 3599, 3600, 86399, 86400].map(cardAge),
+  ['59 min ago', '59 min ago', '59 min ago', '1 h ago', '23 h ago', '1 d ago']);
 check('while humanAge keeps its compact form', [45, 120, 3 * 86400].map(humanAge), ['45s', '2min', '3d']);
 check('nothing to list', fresh.groups.length, 0);
 check('nothing to parse: no button', fresh.action, null);

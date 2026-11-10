@@ -10328,10 +10328,22 @@ function artifactEnvNote(shown, envReads, env, tone) {
     const ul = document.createElement('ul');
     words.findings.forEach((f) => {
       const li = document.createElement('li');
-      if (f.macro) {
-        const a = Object.assign(document.createElement('a'), { className: 'filelink', textContent: f.text, title: f.macro.file });
-        a.addEventListener('click', (ev) => { ev.preventDefault(); openMacro(f.macro); });
-        li.append(a);
+      if (f.name) {
+        // A macro's name is code: mono, and a link only when it can be opened.
+        const lead = document.createElement(f.macro ? 'a' : 'span');
+        lead.className = f.macro ? 'filelink mono' : 'mono';
+        lead.textContent = f.name;
+        if (f.macro) {
+          lead.title = f.macro.file;
+          lead.addEventListener('click', (ev) => { ev.preventDefault(); openMacro(f.macro); });
+        }
+        li.append(lead);
+        if (f.through) {
+          li.append(f.text.slice(f.name.length, f.text.length - f.through.length),
+            Object.assign(document.createElement('span'), { className: 'mono', textContent: f.through }));
+        } else {
+          li.append(f.text.slice(f.name.length));
+        }
       } else {
         li.textContent = f.text;
       }
@@ -10372,10 +10384,16 @@ function humanAge(secs) {
 }
 
 /* The manifest card's "written ..., 2 min ago": the age spelled the way the card's
-   board does, with a space before its unit and a moment for the first seconds.
-   humanAge keeps the compact form the pill and the other screens use. */
+   board does, every unit a number, a space and the unit, and a moment for the
+   first seconds. Whole hours are floored as buildsAge does, and the minutes stop
+   at 59 because humanAge rounds, which would read 3570 s as "60 min". humanAge
+   keeps the compact form the pill and the other screens use. */
 function cardAge(secs) {
-  return secs < 10 ? 'a moment ago' : humanAge(secs).replace(/^(\d+)(s|min|d)$/, '$1 $2') + ' ago';
+  if (secs < 10) return 'a moment ago';
+  if (secs < 60) return secs + ' s ago';
+  if (secs < 3600) return Math.min(59, Math.round(secs / 60)) + ' min ago';
+  if (secs < 86400) return Math.floor(secs / 3600) + ' h ago';
+  return Math.floor(secs / 86400) + ' d ago';
 }
 
 /* Every word the Compiled or Run tab puts on screen for one file. The line
@@ -10384,7 +10402,7 @@ function cardAge(secs) {
 
    It leads with the age, as the manifest card says one ("Compiled 2 min ago"),
    and keeps the date for the hover. The date is what you can compare with:
-   "3h ago" does not say whether this predates the nightly build, the pull you
+   "3 h ago" does not say whether this predates the nightly build, the pull you
    did at nine, or the edit still open in the editor, whereas "22/09/2026
    08:14" does. It is one hover away rather than in the line, which the
    environment's picker shares (0164).
@@ -16008,11 +16026,14 @@ function artifactContent(info) {
 /* The call a relation was written as in the model, from its node id and name:
    `ref('stg_customers')`, `ref('orders', v=2)` for a versioned model (its name
    carries `.v2`), `source('jaffle_shop', 'raw_orders')` for a source table.
-   A source whose own name holds a dot cannot be split back, and is named by the
-   node's name alone. */
+   The server sends a source's own name as `source_name`, which is what splits
+   a table name holding a dot; without it the id is split, and a source whose
+   name holds a dot is named by the node's name alone. */
 function relationRef(rel) {
   const parts = String(rel.id || '').split('.');
   if (parts[0] === 'source') {
+    const src = rel.source_name;
+    if (src && String(rel.name).startsWith(src + '.')) return `source('${src}', '${rel.name.slice(src.length + 1)}')`;
     return parts.length === 4 ? `source('${parts[2]}', '${parts[3]}')` : `source('${rel.name}')`;
   }
   const m = /^([^.]+)\.v(.+)$/.exec(rel.name);
@@ -16042,13 +16063,15 @@ function envSql(content, relations, env, sandbox = '') {
   relations.forEach((rel, id) => {
     if (!rel.relation) return;
     const to = envArtifactRelation(rel, env, sandbox);
-    const forms = [{ from: rel.relation, to: to.text }];
+    // The node's own relation is what its SQL writes as {{ this }}, not a ref to itself.
+    const forms = [{ from: rel.relation, to: to.text, ref: rel.own ? '{{ this }}' : relationRef(rel) }];
     if (rel.own) {
       ['__dbt_tmp', '__dbt_backup'].forEach((suffix) => forms.push({
         from: relationWithSuffix(rel.relation, suffix), to: to.text ? relationWithSuffix(to.text, suffix) : '',
+        ref: `{{ this }} with the ${suffix} suffix`,
       }));
     }
-    forms.forEach((f) => cands.push({ id, name: rel.name, ref: relationRef(rel), from: f.from, to: f.to, reason: to.reason }));
+    forms.forEach((f) => cands.push({ id, name: rel.name, ref: f.ref, from: f.from, to: f.to, reason: to.reason }));
   });
   const hits = [];
   cands.forEach((c) => {
@@ -16124,6 +16147,9 @@ function artifactEnvWords(result, envName, file, envReads) {
     text: f.through
       ? `${f.macro_name}, ${envReadWords(f)}, through ${f.through}`
       : `${f.macro_id ? f.macro_name : 'this model'}, line ${f.line}, ${envReadWords(f)}`,
+    // The macros' names, for the note to set apart in mono; text stays the whole line.
+    name: f.macro_id ? f.macro_name : undefined,
+    through: f.macro_id && f.through ? f.through : undefined,
     macro: f.macro_id && f.file ? { file: f.file, name: f.macro_name, line: f.line || 1 } : null,
   }));
   return {
