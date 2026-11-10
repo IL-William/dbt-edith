@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-10.
+belongs here. Last updated 2026-11-11.
 
 ## Shipped
 
@@ -2469,6 +2469,110 @@ decisions linked. The feature pages were read again against the screens and thei
 words fixed where they had drifted. Held by `web/tests/colourvars.js`, `shapes.js`
 and `themes.js`.
 
+The evening's fixes, each a small change to what an earlier step drew, in the
+order they merged (versions 2.20.1 to 2.22.1).
+
+The command line names the Orchestration section (2.20.1). Its errors, `--help`,
+the header `jobs.yml` is written with and the Reports rail's Job coverage tooltip
+said Jobs settings or the Jobs tab where the page now has a section called
+Orchestration, so they send people there.
+
+Three tests failed now and then for causes outside what they test, and a walk
+was added (#194 and #199, tests only, no version). The MCP tests that cut an
+answer at a cap held the clock on one second, since two answers saying `1 s ago`
+and `0 s ago` differ across a second boundary; the Chrome walks start the
+server on port 0 and read the port it took; the tour walk waits up to 3 s for
+its ring to land. `scripts/walk_menu.py` now also holds the manifest card open
+by a click and checks that a poll rewrites its age in the same element and that
+a second edited file draws it again with the focus back on Run dbt parse.
+
+A depth menu says so when it could not count (2.20.2, a note under 0158). It
+says `The levels could not be counted.` where it kept saying `Counting the
+levels…` until the next ask, and a column's menu no longer says the cap cut it
+when the cap was met only by the 21st level, which is walked to learn that the
+graph goes on.
+
+The Catalog's column filter and relation names stay readable (2.20.3). The
+filter box is 230px at least and grows with its count while a word is typed, so
+the word keeps about ten characters on a model with many columns; a relation's
+name in the Location table breaks after a dot, not in the middle of a word.
+
+Job coverage's and Job order's line under their head is a sentence in the
+interface's font (2.20.4), as the design draws them, and a test now holds the
+expression that finds the count pills.
+
+An editor find hit draws its text in the editor's text colour (2.20.5): every
+syntax colour fell under 4.5:1 on the hit's amber in Light and most did in
+Night and Graphite, so a hit holds 4.5:1 in every theme and Graphite's current
+hit takes white.
+
+The Inline diff marks the words that changed (2.20.6, 0168), as side by side
+does, where it marked the lines. Both layouts read a final newline as git does,
+the head says `no final newline here` or `no final newline in HEAD`, `line
+endings differ` is said for a file of mixed endings against CRLF or LF with a
+lone CR named as CR, a folded stretch is its row alone with the next line flush
+against it, and the commit keycap's contrast is measured in the four themes.
+
+The Compiled tab's picker stays inside the dock (2.20.7, notes under 0164): the
+group wraps inside its ring with `Relations for` beside it, an age of hours
+reads `3 h ago` as the manifest card says it, a model's own relation is
+`{{ this }}` in a swapped relation's hover and a source whose table name holds
+a dot is split by the source's own name, and a macro in the note is in mono, a
+quiet link only when it can be opened.
+
+The terminal's chip gives way to the toast when it won't fit (2.20.8, notes under
+0161): a line with no room left before the right edge for the whole chip gets the
+toast, bash's line keys stay on when a key is typed while the page waits to press
+Enter, and neither the chip nor the toast speaks when Enter was pressed by hand.
+
+Reports and Builds by job say a job's start as the Jobs tab does (2.20.9, 0169):
+the clock for a job that runs on its own, the words and the cron, `Manual`, a
+`CI` or `Merge` tag, and the zone under the line in Builds by job. The
+Catalog's job chips are all outlined alike with `step 2 of 3` and the start in
+their tooltip, and `@quarterly` is worded.
+
+A Search line keeps its match whole in a narrow sidebar (2.20.10): the text
+before the match is cut at its left with the ellipsis there, the text after it
+at its end. Graphite was looked at; Halloween was not.
+
+The lineage legend stays clear of its status line (2.20.11, a note under 0160).
+The kinds are listed first and the tests after them, as the board does; the
+legend wraps beside the line under the canvas instead of under it; a member
+of an opened group is its column alone; the test's dashed stem is drawn in
+`--edge-test`, raised in the three derived themes so the dotted and dashed
+lines hold 3:1; and the export frame leaves room for a four-digit `+N`.
+
+A column's box cuts its text to the page's mono font (2.20.12). The canvas
+measures `--mono` once instead of counting Menlo's widths, so Consolas shows
+more of a name and SF Mono no longer overruns the box, and a lane keeps the room
+for the steps and PARTIAL pills only beside a box that wears one. Job coverage's
+model line no longer draws a dot that drew nothing.
+
+An exported file is dated from the click (2.20.13). The three outputs take the
+day when a row is clicked, so a menu left open past midnight no longer names the
+day before; the footer, a preview of the name, keeps the day the menu opened.
+
+The kind's bar is drawn on the editor's tabs and the file's icon in Open
+editors (2.21.0, no decision of its own, amending 0148 and 0151), from the marks
+a path can already ask for. A file no node stands for has no bar. Light's table,
+materialized view, seed, source, snapshot, exposure, other and custom kind
+colours and the macro glyph's are a shade darker so each holds 3:1 on a selected
+row, held by a test for every kind and file mark in the four themes.
+
+The page is served in the theme kept (2.22.0, 0170). The server writes the
+theme's id on the `<html>` tag as it sends `index.html`, so Light, Graphite and
+Halloween no longer flash Night on load; a page shown or focused again reads the
+look once more, so a theme picked in another window is taken; the static `new` tag
+beside Follow the system is gone.
+
+The manifest is read again when it was half written (2.22.1). The watcher noted
+a new time before reading, so a manifest read while dbt was still writing it was
+never read again if the write ended within the same second. When it does not
+read, the times go back and the next look reads it again, at most three times
+for the same times; a catalog that does not read takes the same bounded retries.
+The walks that wait on the page's poll start Chrome with the flags against
+background throttling.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -2526,21 +2630,13 @@ are never edited, so find an item by its title.
    of these would join the one that fits it, checked against dbt the same way
    in `scripts/compare_with_dbt.py`.
    - **Others worth ranking:**
-     - ~~sources no model reads;~~ Settled in 1.51.0 (0116), in Checks.
-     - ~~sources without a freshness config, which `dbt source freshness`
-       skips;~~ Settled in 1.51.0 (0116), in Checks.
-     - ~~models with no test or no description;~~ Settled in 1.51.0 (0116), in
-       Checks.
      - vars `dbt_project.yml` defines that no `var()` call reads, from 0018's
        scanner;
      - the `tests:` key, which dbt 1.8 renamed `data_tests:`;
      - a package in `packages.yml` that `dbt_packages/` does not hold.
-   - ~~**A "Checks" section in Reports, apart from Warnings:** sources without
-     freshness, project models with no test, no description, and sources no
-     model reads. dbt warns of none of these. It needs `freshness` read from
-     the manifest, and its own decision.~~ Settled in 1.51.0 (0116). Left
-     over: dbt Fusion's manifest shape for `freshness` was not looked at, and
-     the checks hold only the root project's own nodes.
+   - **Left over from the Checks section (0116):** dbt Fusion's manifest shape
+     for `freshness` was not looked at, and the checks hold only the root
+     project's own nodes.
 7. **A Run button on a node's file.** It sits at the end of the breadcrumb
     bar, after the config button. One click opens a menu of the commands the
     node takes. A command opens its selections and types nothing itself:
@@ -2684,10 +2780,6 @@ are never edited, so find an item by its title.
     - **When it happens:** the room left depends on several things at once:
       - the window's width, and the sidebar's;
       - the Query history tab, shown with Snowflake's features on;
-      - ~~the eye's count, which counts the tests the canvas is sent. Past
-        five on a model it draws fewer of them (0035), so the label can be
-        longer than the boxes on screen suggest;~~ Gone in 2.4.0 (0153): the
-        count is in the Tests button's tooltip;
       - the column chip in Columns mode, which carries a column's name and
         has no width limit;
       - the indirect button in Columns mode, there when the cache holds
@@ -2796,8 +2888,7 @@ are never edited, so find an item by its title.
     project's name is already cut to 40px and the search, the shortcut list,
     the theme, GitHub, the settings button and the manifest's pill are what is
     left.
-    - **Possible answers:** ~~fold the Search button to its glyph~~ (done in
-      2.20.0, 0166), or move the look's and GitHub's buttons into one menu.
+    - **Possible answer:** move the look's and GitHub's buttons into one menu.
     - **How to check it:** measured with Snowflake's features off only; the
       news chips on the Reports tab, which several reports can fill, were not.
 11. **The README's options, held to `--help`.** The README writes its options
@@ -2958,61 +3049,30 @@ of its own, and each panel updates the tour, its page under
       text, line numbers, placeholders, toasts) keep their pre-2.0 values until
       the screen using each is redrawn; the other themes derive these names
       from their own, so they follow when Night's change.
-    - Declared and not read yet: ~~`--cur-line`~~ (read since 2.20.0, 0166),
-      `--dots`, `--node-shadow`, `--py` and ~~`--ansi-*`~~ (read by the terminal
-      since 2.12.0, 0161).
-32. **Contrast and browser controls (#164, #165).**
-    - ~~Jinja punctuation (`--syn-p`) inside an editor find hit (`.cm-findhit`)
-      is 3.0:1, below AA.~~ Fixed in 2.20.5: every syntax colour fell under
-      4.5:1 on the hit's amber in Light, and most in Night and Graphite, so a
-      hit's text takes the editor's text colour (`--code-fg`), as the current
-      hit takes `--find-cur-fg`; Graphite's current hit takes white, 4.48:1 before.
-    - ~~The exported page sets no `color-scheme`, so its node list can show a
-      light scrollbar.~~ Settled in 2.2.0 (0150): the file's `:root` holds its
-      theme's.
-    - ~~Checkboxes and radios take the browser's dark-scheme blue, not the
-      accent (no `accent-color`).~~ Settled in 2.2.0 (0150).
+    - Declared and not read yet: `--dots`, `--node-shadow` and `--py`.
+32. **Contrast and the find hits (#164, #165, 2.20.5).**
+    - Inside a find hit the syntax colours are gone until the bar closes: the
+      hit's text takes the editor's text colour.
+    - Halloween's `--find-cur-fg` is 3.88:1 on the line the cursor is on.
+    - A hit's text colour is `!important` and outranks `.cm-reflink:hover`, so a
+      link inside a hit does not change colour on hover.
 33. **The environment choice (#163, 0147).**
     - The env var hover card (`web/app.js`, near line 351) and the Snowflake
       column lineage (near line 7476) read `S.env` directly instead of
       `activeEnv()`, so a stale choice can show there.
-    - ~~The row of buttons is no longer a wrapping line: 0164 made it one
-      segmented group that does not wrap. This is not settled: a project with
-      very many `.env` files makes the group wider than a narrow dock, and it
-      then takes a line of its own and is cut at the dock's edge.~~ Fixed in
-      2.20.7: the group wraps inside its ring.
 34. **Markers and shapes still to draw (#166, 0148).**
-    - ~~Editor tabs carry no kind bar: a tab knows its file, not its node.~~
-      Fixed in 2.21.0.
-    - ~~A column's role is still an 8px square (the column card, the legend, the
-      stop at menu) until roles are drawn inside the column boxes.~~ Gone in
-      2.13.0 (0162).
-    - ~~In Job coverage, `dot(r.kind)` draws nothing, an inline `.dot` in a block
-      `li`, and would be grey anyway, the row carrying no materialization
-      (`Row` in `src/jobs.rs`).~~ Fixed in 2.20.12.
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
+    - 0148 and 0151 still say the tab bar's and Open editors' icons are not yet
+      drawn; they are since 2.21.0, and decisions are not edited.
 35. **The C runtime of the Windows `.exe` (0149).** Link it statically
     (`+crt-static` for the `*-pc-windows-msvc` targets) so the `.exe` imports
     only system libraries, checked with the import table of the built `.exe`.
     Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
     runs, so the search path 0149 sets does not cover it.
 36. **The themes' limits (0150, 2.2.0).**
-    - ~~The page is Night until `/api/look` answers, so a Light user sees one
-      flash on load. Serving `index.html` with the theme already set would end
-      it.~~ Fixed in 2.22.0 (0170).
-    - ~~Another open page keeps its theme until it is reloaded.~~ Fixed in
-      2.22.0 (0170).
-    - ~~The "new" tag beside Follow the system is static text.~~ Fixed in
-      2.22.0: the tag is gone.
-    - ~~A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
-      Light; the selection wash (`--select`, as the boards use) comes with the
-      shell step.~~ Settled in 2.20.0 (0166): the shell's selected rows take
-      `--select`. ~~The wash leaves a few of Light's kind marks below 3:1 all the
-      same (item 55).~~ Fixed in 2.21.0.
-    - The theme has no keyboard shortcut, ~~and the settings' one-column layout
-      is the settings step's~~ (2.14.0, 0163).
+    - The theme has no keyboard shortcut.
     - With Follow the system on, the page is Night until `/api/look` answers,
       and Halloween's night art waits for that answer too.
     - A window beside the one where the theme was picked keeps its theme until
@@ -3021,31 +3081,21 @@ of its own, and each panel updates the tour, its page under
       `look.json` that does.
 
 37. **The file icons' limits (0151, 2.3.0).**
-    - ~~The editor's tabs and Open editors draw no file icon, nor the kind's bar
-      (0148): a tab knows its file, not its node.~~ Fixed in 2.21.0.
     - A file deleted in the working tree is not in the tree, so no row shows
       git's D.
-    - ~~The search palette and a diff's title colour a model's file only once
-      its folder is known (the diff asks for it; the palette's file hits are
-      the files no node stands for, so they are grey).~~ Gone in 2.5.0 (0154):
-      the palette asks for each file's folder too.
     - A `.sql` the manifest does not define (an analysis, a macro, a test) is a
       grey cylinder, as an ephemeral model's is a grey-blue one.
 38. **The Export menu's limits (0153, 2.4.0).**
     - Save as image saves after the click, once the picture is drawn: it is not
       yet tried in Safari or Firefox.
-    - ~~The file name's date is taken when the menu opens, so a menu left open
-      past midnight names the day before.~~ Fixed in 2.20.13.
     - The menu's footer keeps the day the menu opened, so it can name the day
       before the file a click saves.
+    - The tests of the export day are regular expressions over the source, not
+      a run of the menu across midnight.
+    - The foot of `docs/features/lineage.md` says the date is the day at the
+      click, which holds for the file; the menu's foot, a preview of the name,
+      shows the day the menu opened.
 39. **The Search tab's limits (0155, 2.6.0).**
-    - ~~A line is cut at the front only once the match ends past column 24, so
-      in a very narrow sidebar the match can still sit behind the row's
-      ellipsis.~~ Fixed in 2.20.10.
-    - ~~Graphite and Halloween were not looked at; the tab was drawn and
-      checked in Night and Light.~~ Looked at in 2.20.10: Graphite draws the
-      tab as Night does, the mark's grey fill reading clearly at the sidebar's
-      default width and at its narrowest.
     - A match longer than the row is cut at its end with no ellipsis; at the
       150 px drag limit about ten columns fit, so `customer_payments` is cut.
     - A row copied by selection holds line breaks between its text before the
@@ -3058,12 +3108,11 @@ of its own, and each panel updates the tour, its page under
       dbt keeps.
     - The footer for a file of an installed package is covered by tests, not
       pictured in `docs/shots`.
-41. **The manifest card's test (0157, 2.8.0).** ~~Nothing tests the card in the
-    page: the age rewritten in place when a poll changes the answer, the focus
-    kept on the Run button. Before 0157 the badge's click had no such test
-    either.~~ Fixed: `scripts/walk_menu.py` holds the card open by a click on
-    an edited Jaffle Shop, has a poll rewrite its age in the same element, and a
-    second edited file draw it again with the focus back on Run dbt parse.
+41. **The manifest card and the watcher (0157, 2.8.0, 2.22.1).**
+    - The card's stale state (a commit since the manifest) is not walked: the
+      copy `scripts/walk_menu.py` edits is no repository.
+    - A click on Reload after a catalog was given up on costs one quiet read of
+      it.
 42. **Static analysis still to add.**
     - Clippy, about 80 lints on the code today, all of style, complexity or
       performance and none of correctness, to be fixed or allowed one by one
@@ -3089,11 +3138,6 @@ of its own, and each panel updates the tour, its page under
       back) lists that level as `+ nothing new`.
     - In a window narrower than the three folds can save, the tools row still
       breaks, now with the control in it.
-    - ~~No test drives a column chain past 20 levels with the cap not reached, and
-      `_cut` is also true when the cap is hit only at the 21st level, which the
-      page never draws.~~ Fixed in 2.20.2.
-    - ~~After a column request fails outside the collin wait, an open menu keeps
-      saying "Counting the levels…" until the next focus.~~ Fixed in 2.20.2.
     - When a column request fails outside the collin wait, the canvas keeps what
       it drew before (the model's own when the column was asked from it), while
       the menus, back on the model, say `The levels could not be counted.`: the
@@ -3102,16 +3146,9 @@ of its own, and each panel updates the tour, its page under
       being awaited together. The count is asked again with the next focus or
       redraw.
 44. **The Jobs tab's limits (0159, 2.10.0).**
-    - ~~A cron is worded only in its plain shapes: a range of hours, both day
-      fields, a month, the 29th to the 31st, `@quarterly` and a step that does
-      not divide the day or the hour keep the cron alone.~~ Settled in 2.20.9
-      (0169) for `@quarterly`; the other shapes keep the cron alone.
     - The Not resolved group is folded by default, though the design pictures
       it open: a project with many `state:modified` CI jobs would list them
       under every model.
-    - ~~The Catalog's chips and the Reports lists keep the older wording (the
-      cron as it is written, a `Scheduled` pill) and `step 2/3`; only the card
-      changed.~~ Settled in 2.20.9 (0169).
     - The job order and the command line keep `step 2/3` and the cron as
       written: the server writes those words (`label_of` in `src/jobs.rs`) and
       both read them.
@@ -3125,38 +3162,21 @@ of its own, and each panel updates the tour, its page under
       a filter per box costs too much on a canvas of thousands. The ring round
       the box clicked is a rect, not a filter, for the same reason.
     - The dock's Catalog keeps its row of stats and its table of three
-      columns; only the space's card is laid out narrow. ~~The card's head (the
-      name with `table · main` beside it), its tabs and its chips are the
-      Catalog step's.~~ Done in 2.16.0 (item 51).
-    - ~~A column's box keeps the look it had, with its 180 by 40, its fonts and
-      its role tag: it carries `.col`, and the column step restyles it.~~ Gone in
-      2.13.0 (0162). Edges are 1.5px on every canvas.
+      columns; only the space's card is laid out narrow.
     - The design hides the levels at 640px and below; they stay, since nothing
       else sets them now.
     - With By folder pressed the dock's tools row is about 50px wider, so its
       folds come about 50px sooner and it breaks a little earlier, at about
       1100px with the folds spent (item 43's limit on a narrow window).
-    - ~~The legend keeps its alphabetical order and its bar for a kind, where the
-      design lists the kinds, then the tests, and draws a kind as a square.~~
-      Fixed in 2.20.11, the order only: a kind is still drawn as a bar (0148).
-    - ~~The legend and the line under the canvas overlap on a narrow canvas, with
-      the card open at the bar's narrowest.~~ Fixed in 2.20.11.
-    - ~~A member row of an opened group (a column alone, or a name told from its
-      siblings) is one run of text, not two.~~ Fixed in 2.20.11.
     - Under Halloween the tests under a model have the same slip look as in
       the other themes; only the three box styles are drawn there.
-    - ~~The model's dashed stem is drawn in `--line-strong`, as the design asks,
-      which stands about 1.5:1 on Light's canvas and 1.8:1 on Night's, where
-      the dotted grey it replaced stood near 3:1.~~ Fixed in 2.20.11.
-    - ~~A four-digit `+N` on the outermost column reaches 42px from the box, while
-      the export frame pads 40px (`web/lineage.js:291`), so about 2px of it is
-      clipped in a file.~~ Fixed in 2.20.11.
     - The stem is drawn in `--edge-test`, not `--line-strong`, and is told from
       the dotted line by its dashes alone; `--edge-test` is raised to 50% of the
       text colour for the three derived themes so the dotted line holds 3:1 in
       Light too.
     - The legend draws every test as a whole bar, where the design draws a
       column test, a model test and a singular test in its own shape.
+    - Halloween is not looked at for the other points of this item.
 46. **The terminal's limits (0161, 2.12.0).**
     - The eleven ANSI colours the design does not draw (black, magenta, white
       and the eight brights) are ours, in each of the four themes, and have not
@@ -3165,18 +3185,9 @@ of its own, and each panel updates the tour, its page under
       within about a second: a program reading the keys itself or a shell that
       repaints the line gets the toast. zsh says nothing at its prompt, so its
       chip stays until a key, Clear or Restart.
-    - ~~The chip sits a few cells right of the typed text and is clipped by the
-      terminal's right edge on a line that fills the width.~~ Fixed in 2.20.8.
     - The command the page runs for you (the manifest card's `dbt parse`) is
       sent in two writes, Enter after the echo, and left out when a key was typed
       in between.
-    - ~~`S.termPrompt` is set false before `settle` decides whether Enter is
-      pressed, so a key typed in that window leaves it false, and under bash
-      (Git Bash) the line keys of 0073 are off until the next prompt.~~ Fixed in
-      2.20.8.
-    - ~~If the person presses Enter themselves while the page waits for the
-      command's echo, the toast still tells them to press Enter.~~ Fixed in
-      2.20.8.
     - The cursor is drawn in `--accent`, where the board draws it in `--fg`
       (0161's choice).
     - A line with no room before the terminal's right edge for the whole chip
@@ -3198,10 +3209,10 @@ of its own, and each panel updates the tour, its page under
       in the same neutral.
     - The longest role word, `PASSTHROUGH`, leaves a second line about 20
       characters of `model  ·  type`, and a longer model name is cut with an
-      ellipsis; the hover card and the box's label say it whole. The clip counts
-      characters at the widths measured for a Mac's system mono; ~~Windows'
-      Consolas is narrower, so a line may stop earlier than it needs there.~~
-      Fixed in 2.20.12.
+      ellipsis; the hover card and the box's label say it whole. Since 2.20.12
+      the clip counts at the page's own mono font, so the `29 characters` of
+      0162 holds for Menlo only (a column's name is cut at 31 in Consolas and 28
+      in SF Mono).
     - Under the coffin's art the names are cut to the room the tag leaves them,
       17 characters at most and about 12 to 14 beside a long role word, so that
       they stay clear of the tag, which sits up in the cut end; the tombstone's tag lies
@@ -3214,9 +3225,6 @@ of its own, and each panel updates the tour, its page under
       rule's: a ringed model's moss is 5 to 215 like a resting one's (seen in
       headless Chrome, left as it was). The column canvas's lit rule has the
       weight, and takes its 14px and 222.
-    - ~~The steps and PARTIAL pills still ask for 6px more between boxes
-      (`TAG_ROOM`) on every column canvas, though most boxes have neither.~~
-      Fixed in 2.20.12.
     - In the Halloween skins 5px a character is not the widest: an all-capitals
       second line comes within 0.3 to 3.3px of the role tag, and an all-capitals
       coffin name ends 4px inside it. The clip wants measuring with
@@ -3232,6 +3240,7 @@ of its own, and each panel updates the tour, its page under
       counted mono widths are Menlo's, about 0.6em, which is what Chrome on a
       Mac resolves; where the canvas resolves SF Mono (0.618em, Safari's
       `ui-monospace`, or SF Mono installed) the measured scale is 1.03.
+    - Halloween is not looked at for the other points of this item.
 48. **The settings' limits (0163, 2.14.0).**
     - On the Column lineage cards the arrows move the focus and pick nothing
       (a pick regenerates collin's cache or starts Snowflake's script), and
@@ -3264,33 +3273,17 @@ of its own, and each panel updates the tour, its page under
       columns left the words a few characters a line. The key column's 200px
       was worked out for Consolas and not rendered with it.
     - A second `?` typed while the sheet is open lands in its find box.
-50. **Flaky tests (two in `src/mcp.rs`, the Chrome walks).**
-    - ~~`mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
-      and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
-      answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
-      so they fail now and then. Freezing the clock in them would end it.~~
-      Fixed: every test built on `capped` holds the clock on one second
-      (`ls::hold_clock`, tests only), `an_error_carrying_cards_is_cut_and_stays_an_error`
-      included, which failed the same way.
-    - ~~The walks of `scripts/check.sh` (the menu, the tour, the export) fail with
-      "Chrome did not start" or "Chrome closed the connection" when another walk,
-      or `take_shots.py`, runs at the same time: `free_port` in `walk_tour.py`
-      finds a port free and lets it go before Chrome takes it, so two runs can
-      pick the same one. Run one at a time, or have `free_port` hold the port
-      until Chrome has it.~~ Not the cause: `free_port` named dbt-edith's port,
-      not Chrome's, which Chrome picks itself (`--remote-debugging-port=0`), and
-      the walks read the URL the server prints. The gap is closed all the same:
-      the walks and `compare_with_dbt.py`, which did build its URLs from the port
-      it asked for, start the server on port 0 and read the port it took.
-    - ~~`walk_tour.py`'s check that the tour "rings #selpanel-head" failed once in
-      a full run, the ring still on the previous target.~~ Fixed: the check waits
-      up to 3 s for the ring to land.
+50. **Flaky tests (the Chrome walks).**
     - "Chrome did not start" and "Chrome closed the connection" have no known
       cause: six walks run at once on one machine (two tours, two menus, the
       depth control, the export) all passed.
     - `web/tests/layout.js`'s timings (400 models laid out under 100 ms, the
       worst chain under 250 ms) failed once in a full run while other builds
       ran on the machine.
+    - `walk_tour.py` still timed out now and then on a tour step (step 5 once,
+      step 7 once) in a full `scripts/check.sh` run, and passed when run alone;
+      its `--shots` mode may take its picture of the ring 6px before the ring
+      lands.
 51. **The Catalog's limits (2.16.0).**
     - The Catalog's tabs say `tablist`, `tab` and `aria-selected` but move
       between them with Tab alone, as the dock's do: arrows would be a new key
@@ -3298,25 +3291,9 @@ of its own, and each panel updates the tour, its page under
     - The Sort tray is `--bg` and its raised segment `--bg-3`, as the dock's
       mode switch is, since the pane under it is `--bg-2`; the board draws the
       tray `--bg-2` on a `--bg` pane. The pane's own fill is the dock step's.
-    - ~~The filter box keeps its 230px with the count inside: while a word is
-      typed the count (`3 of 8 · 7/8 typed`) takes more of the box as the
-      column count grows, and on a model of a few hundred columns leaves the
-      word about 20px.~~ Fixed in 2.20.3: the box is 230px at least and grows
-      with its count, the word keeping about ten characters.
     - The columns table is still a `table`, not the board's grid of rows, so a
       row's hover tint stops at its cells and the board's 8px bleed is not
       drawn.
-    - ~~A job chip keeps the colours that say how its job starts (green and
-      filled for a scheduled one, the warning's for one not read), where the
-      board draws every chip on `--line`; only its shape and the clock are the
-      board's.~~ Settled in 2.20.9 (0169).
-    - ~~A relation's name wraps in the middle of a word in a narrow dock, as it did
-      before the redesign.~~ Fixed in 2.20.3: it breaks after a dot, its
-      buttons going under it when the cell is narrow; the table is held to the
-      longest part of a name, so a part wider than a very narrow dock (40
-      characters under about 760px) makes the pane scroll sideways.
-    - ~~The hover card's column list keeps its amber type: `--fg-mute` there is
-      the shell step's (21).~~ Settled in 2.20.0 (0166).
 52. **The Reports' limits (2.17.0).**
     - A chip's kind bar is drawn from a `materialized` field the server adds
       to the rows it already sends (the Checks', the job coverage's and
@@ -3334,34 +3311,14 @@ of its own, and each panel updates the tour, its page under
       is a link, not a chip.
     - The rail is 224px for the settings' too, which shares `.reports-navrow`
       and its rules: its rows keep their own height, gap and accent rule.
-    - ~~The mono line under a head is one line of `about` whatever the section;
-      the board draws Job coverage's and Job order's in the UI font.~~ Fixed in
-      2.20.4: those two are the board's sentences, in the UI font.
-    - ~~No test covers the regular expression that finds the count pills.~~
-      Fixed in 2.20.4: `reportCounted`, in `web/tests/reports.js`.
+    - The line under the head of the other sections, the builds ones included, is
+      still the mono `about` line; only Job coverage's and Job order's are
+      sentences in the interface's font.
 53. **The Compiled tab's limits (0164, 2.18.0).**
-    - ~~The age is said as the manifest card says it, so a file a few days old
-      reads `Compiled 2 d ago` and one a few hours old `Compiled 3h07 ago`; the
-      two units are not spelled alike.~~ Fixed in 2.20.7.
     - The date and time are on the age's hover only, and the file's path is cut
       at its left on a short dock, the identifying segment kept.
     - The note does not say which database the relations moved to: a swap can
       reach several, and the board's `to <database>` would be true for one.
-    - ~~A project with very many `.env` files makes the picker wider than a narrow
-      dock (item 33).~~ Fixed in 2.20.7: the group wraps inside its ring.
-    - ~~A swapped relation's hover is the call that names it, built from the node:
-      the model's own table in a Run statement reads `ref('customers')` where dbt
-      writes `{{ this }}`, a source whose name holds a dot falls back to
-      `source('<its node name>')`, and a version written as a string reads
-      `v=2`, not `v='2'`.~~ Fixed in 2.20.7 except the version: the own table
-      reads `{{ this }}` and a source is split by the source's own name.
-    - ~~The fold's macro findings take the link colour on the environment-tinted
-      note, where the board writes the macro's name in mono.~~ Fixed in 2.20.7:
-      the name is mono, and a link only when the macro can be opened.
-    - ~~No test pins that the picker and the note are drawn only when
-      `envRowShown()` is true, nor that the editor's wrapper gets `data-tone`,
-      from which the swap marks read their colour.~~ Fixed in 2.20.7:
-      `web/tests/compiledenv.js` paints the tab with the page stubbed.
     - A version written as a string reads `v=2` in a swapped relation's hover,
       not `v='2'`: how the caller wrote `v=` is in the caller's refs, which the
       payload does not carry.
@@ -3375,18 +3332,6 @@ of its own, and each panel updates the tour, its page under
       overflows: the label and the widest button no longer fit side by side.
 
 54. **The Git tab's limits (0165, 2.19.0).**
-    - ~~The inline layout marks the lines that changed, not the words inside
-      them, where side by side tints both. A line changed in one word shows as
-      the old line and the new one.~~ Fixed in 2.20.6 (0168).
-    - ~~A file without a final newline reads in the inline layout as one with it:
-      the newline ends its line and is no line of its own, so a change of that
-      alone shows in the inline layout as nothing. Side by side shows it as a
-      last empty line, as the editor does.~~ Fixed in 2.20.6 (0168).
-    - ~~Where a file ends in a newline, Inline reads it as git does and side by
-      side as the editor does, with one more, empty, last line: an empty line
-      and a line of text added at the end show as the empty line first in Inline
-      (as `git diff` does) and the text first side by side.~~ Fixed in 2.20.6
-      (0168).
     - The layout is the page's, not a setting (rejected in 0165): a reload
       returns to side by side.
     - After the pane is made narrower or wider, side by side is laid out and
@@ -3394,9 +3339,6 @@ of its own, and each panel updates the tour, its page under
       with their counterparts. It leans on the addon's own flag (`dealigned`).
     - The board's `Commit` shortcut is drawn as `Ctrl+Enter` outside a Mac, as
       the other keycaps are, not `Ctrl+↩`.
-    - ~~The commit box's keycap is drawn dim, and its contrast was not measured.~~
-      Measured in 2.20.6: 6.0:1 in Night, 6.6:1 in Graphite, 6.1:1 in Light, 6.9:1
-      in Halloween.
     - The commit button's words for a merge with a file still conflicted
       (`Resolve the conflicts first`) are not on the board, which has no merge.
     - What the board leaves out stays: the Conflicts section, the merge banner
@@ -3411,13 +3353,6 @@ of its own, and each panel updates the tour, its page under
       Halloween, both layouts; not at a pane resized with a long diff open, nor
       while a commit runs: the realignment on a resize and the commit's words
       are read from the code.
-    - ~~A folded stretch sits a few pixels above the next line, where the board's
-      row is flush: the replaced text keeps the line's own height beside it.~~
-      Fixed in 2.20.6.
-    - ~~The head's `line endings differ` note calls a side CRLF when any of its
-      lines ends that way: a HEAD with mixed endings against a working file all
-      in CRLF gets no note and no marked line, and a lone `\r` reads as LF.~~
-      Fixed in 2.20.6 (0168).
     - A block of changed lines reached after the first second of a diff is
       marked whole in Inline, not by word, so a huge rewrite may be marked
       differently on a slower machine, as side by side's own diff already is.
@@ -3426,8 +3361,6 @@ of its own, and each panel updates the tour, its page under
       becomes "\n" behaves the same way: Side by side shows nothing, Inline one
       added empty line.
 55. **The shell's limits (0166, 0167, 2.20.0).**
-    - ~~The editor's tabs have no kind bar: a tab knows its file, not its node
-      (item 34).~~ Fixed in 2.21.0.
     - The sidebar's tabs keep their accent underline, the tree its indents, and
       the sidebar its width and the rule beside it; only the row's height
       (34px, the editor's tab bar's) follows the boards.
@@ -3437,16 +3370,10 @@ of its own, and each panel updates the tour, its page under
       1017px with no model open and 1052px with one, so below that it runs
       past the window, as it does on main. The dock's row is still `bare`
       there for the same reason.
-    - ~~On a selected row in Light the table, materialized view, seed, source,
-      snapshot, exposure, other and custom kind marks are 2.6 to 2.9:1 (the
-      boards' own values over `--select`); only the view, incremental, YAML
-      and Python marks and git's letters are held by a test.~~ Fixed in
-      2.21.0.
     - The editor's gutter and current line are the main editor's: the Compiled
       and Run tabs and the diff keep the old gutter (their own steps).
     - The hover card's types are `--fg-mute`, no longer the amber of
-      `--source`; ~~the Catalog's own types are another step's.~~ Already so
-      since 2.16.0 (#186), held by `web/tests/catalog.js`.
+      `--source`.
     - A tab whose folder no listing has asked yet opens without its kind bar, and
       its name moves 11px to the right when the mark arrives.
     - Light's `--t-column` is 2.60:1 on a selected row's wash; no selected row
@@ -3462,12 +3389,9 @@ of its own, and each panel updates the tour, its page under
     as on Compiled and Run and every other dock tab; it is one fix for all of
     them, not one per tab.
 57. **What the design docs step left (#190).**
-    - ~~The code still says "Jobs settings" where the settings' section is now
-      Orchestration: `src/job.rs:65`, `src/job_coverage.rs:62`,
-      `src/job_order.rs:63`, the `--help` text in `src/main.rs:180` and the header
-      `src/jobs.rs:450` writes in a `jobs.yml`.~~ Fixed in 2.20.1.
     - The pictures of `docs/design/` differ from the page in three ways, listed
       in its README; they are to be redrawn from the boards.
+    - No test pins the second sentence of the header `jobs.yml` is written with.
 
 Left by the pull requests of 2026-10-14, each a known limit written in
 its pull request, unranked:
