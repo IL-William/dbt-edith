@@ -30,9 +30,11 @@ of three buttons the arrows move over and pick as they go
 
 What you pick is kept on the machine, in `look.json` in dbt-edith's config
 directory, so it holds for every project and every start; where there is no
-config directory it lasts until the page is closed. The page starts in Night and
-changes once the server has answered, and another open page keeps its theme
-until it is reloaded.
+config directory it lasts until the page is closed. The page opens in the theme
+you picked, the server writing its name on the page as it sends it. With Follow
+the system on, the page starts in Night and changes once the server has
+answered. Another open page takes a theme picked elsewhere once it is shown or
+focused again.
 
 ## The four
 

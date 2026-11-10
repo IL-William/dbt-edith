@@ -173,6 +173,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0167](0167-a-hover-card-from-the-editor-stays-in-the-editor.md) | A hover card from the editor stays in the editor | changing where a hover card opens, or what bounds it |
 | [0168](0168-the-inline-diff-marks-words-and-both-layouts-read-a-final-newline-as-git-does.md) | The inline diff marks words, and both layouts read a final newline as git does | changing how a diff marks words, treats a final newline or line endings |
 | [0169](0169-reports-and-builds-by-job-say-a-start-as-the-card-does.md) | The Reports and Builds by job say a start as the card does | changing how a job's start is drawn outside the Jobs tab, what a Catalog chip looks like or says, or what the clock means |
+| [0170](0170-the-page-is-served-in-the-theme-kept.md) | The page is served in the theme kept | changing what the server writes into `index.html`, what of `look.json` leaves without the key, or when a page reads the look again |
 
 ## Keeping these honest
 

@@ -284,6 +284,54 @@ ok('it tracks the system as it turns, only while Follow is on, closing an open m
   /DARK\.addEventListener\('change', \(\) => \{ if \(S\.look\.follow\) \{ closePopup\(\); applyLook\(\); repaintSettings\(\); \} \}\)/.test(src)
   && /matchMedia\('\(prefers-color-scheme: dark\)'\)/.test(src));
 ok('applyLook sets data-theme on <html>', /root\.dataset\.theme = theme;/.test(src) && /const root = document\.documentElement;/.test(src));
+ok('the witch is placed whenever Halloween is on and she has no place, not only on the switch',
+  /if \(on !== was\) S\.hw\.witchX = undefined;\s*if \(on && S\.hw\.witchX === undefined\) placeWitch\(false\);/.test(src));
+ok('a page shown or focused again reads the look once more, after its own saves, and drops what is not news or comes after a choice here',
+  /document\.addEventListener\('visibilitychange', again\);/.test(src) && /window\.addEventListener\('focus', again\);/.test(src)
+  && /const again = \(\) => \{ if \(!document\.hidden\) loadLook\(true\); \};/.test(src)
+  && /S\.hw\.saving\.then\(\(\) => api\.get\('\/api\/look'\)\)/.test(src)
+  && /if \(again && \(JSON\.stringify\(S\.look\) !== before \|\| said === before \|\| said === last\)\) return;/.test(src));
+// loadLook and saveLook against a stub server. With no config directory it
+// answers the defaults whatever was posted: a pick made here must survive a
+// focus. With one, a theme another window picked back must be taken.
+function stubLook(kept) {
+  var S = { look: { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' }, hw: { read: '', saving: Promise.resolve() } };
+  var server = { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' };
+  var api = {
+    get: function () { return Promise.resolve(JSON.parse(JSON.stringify(server))); },
+    send: function (path, method, body) { if (kept) server = body; return Promise.resolve(body); }
+  };
+  var themeId = function (t) { return t || 'night'; }, hwBoxes = function (b) { return b || 'tombstone'; };
+  var applyLook = function () {}, repaintSettings = function () {}, closed = 0, closePopup = function () { closed++; };
+  eval(src.slice(src.indexOf('function lookFrom'), src.indexOf('/* A choice made by a click')) + ';var fns = { load: loadLook, save: saveLook };');
+  return { S: S, load: fns.load, save: fns.save, closed: function () { return closed; },
+    other: function (theme) { server = Object.assign({}, server, { theme: theme }); } };
+}
+var bare = stubLook(false);
+bare.load().then(function () {
+  check('the first read closes no menu', bare.closed(), 0);
+  bare.S.look.theme = 'light';
+  bare.save();
+  return bare.S.hw.saving;
+}).then(function () { return bare.load(true); }).then(function () {
+  check('a pick the server did not keep survives the next focus', bare.S.look.theme, 'light');
+});
+var kept = stubLook(true);
+kept.load().then(function () {
+  kept.S.look.theme = 'light';
+  kept.save();
+  return kept.S.hw.saving;
+}).then(function () {
+  kept.other('night');
+  return kept.load(true);
+}).then(function () {
+  check('a theme picked back in another window is taken', kept.S.look.theme, 'night');
+  check('and an open theme menu is closed for it', kept.closed(), 1);
+  kept.other('graphite');
+  return kept.load(true);
+}).then(function () {
+  check('a theme another page kept is taken once it differs from what was last said', kept.S.look.theme, 'graphite');
+});
 ok('what is kept is the theme, whether to follow, the apparitions and the box style, and nothing of the old switch or sound',
   /const body = \{ theme: themeId\(S\.look\.theme\), follow: !!S\.look\.follow, apparitions: S\.look\.apparitions !== false, boxes: hwBoxes\(S\.look\.boxes\) \};/.test(src));
 ok('the menu has one radio row per theme, keyed theme-<id>, with its swatch',

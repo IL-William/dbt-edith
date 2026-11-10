@@ -36,6 +36,19 @@ pub enum Theme {
     Halloween,
 }
 
+impl Theme {
+    /// The name `data-theme` carries and `look.json` keeps, the one value of the
+    /// look the page is served with (0170).
+    pub fn id(self) -> &'static str {
+        match self {
+            Theme::Night => "night",
+            Theme::Graphite => "graphite",
+            Theme::Light => "light",
+            Theme::Halloween => "halloween",
+        }
+    }
+}
+
 /// The shape of a lineage box under the Halloween theme. An enum, not a free string, so
 /// the page cannot make the server keep a name no stylesheet draws.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Default, PartialEq)]
@@ -137,6 +150,31 @@ impl Look {
     }
 }
 
+/// The page with the kept theme on its `<html>` tag, so a reload opens in it
+/// instead of flashing Night until `/api/look` answers (0170). The page cannot
+/// do this itself: its script is not allowed inline, and `/` is served without
+/// the key. Only the theme's name goes out, from the closed list, and never
+/// `follow`: the server cannot know the system's scheme, so a page that follows
+/// it keeps Night until the page applies the look. The swap stays inside the
+/// `<html ...>` tag, so a `data-theme` later in the page is never touched.
+pub fn dress<'a>(page: &'a [u8], kept: &Kept) -> std::borrow::Cow<'a, [u8]> {
+    const BARE: &[u8] = b"data-theme=\"night\"";
+    let plain = std::borrow::Cow::Borrowed(page);
+    if kept.follow || kept.theme == Theme::Night {
+        return plain;
+    }
+    let find = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).position(|w| w == needle);
+    let Some(open) = find(page, b"<html") else { return plain };
+    let Some(len) = page[open..].iter().position(|&b| b == b'>') else { return plain };
+    let tag = &page[open..open + len];
+    let Some(at) = find(tag, BARE).map(|i| open + i) else { return plain };
+    let mut dressed = Vec::with_capacity(page.len() + 16);
+    dressed.extend_from_slice(&page[..at]);
+    dressed.extend_from_slice(format!("data-theme=\"{}\"", kept.theme.id()).as_bytes());
+    dressed.extend_from_slice(&page[at + BARE.len()..]);
+    std::borrow::Cow::Owned(dressed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +202,26 @@ mod tests {
         let keys: Vec<&String> = file.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["apparitions", "boxes", "follow", "theme"], "nothing else is kept");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_page_wears_the_kept_theme_on_its_html_tag_alone() {
+        let page = b"<!doctype html>\n<html lang=\"en\" data-theme=\"night\">\n<body data-theme=\"night\"></body></html>";
+        let light = dress(page, &kept(Theme::Light, false, true, Boxes::Tombstone));
+        assert_eq!(
+            light.as_ref(),
+            &b"<!doctype html>\n<html lang=\"en\" data-theme=\"light\">\n<body data-theme=\"night\"></body></html>"[..],
+            "the html tag changes and the body's attribute does not"
+        );
+        let hallows = dress(page, &kept(Theme::Halloween, false, true, Boxes::Tombstone));
+        assert!(String::from_utf8_lossy(&hallows).contains("<html lang=\"en\" data-theme=\"halloween\">"));
+        for same in [kept(Theme::Night, false, true, Boxes::Tombstone), kept(Theme::Light, true, true, Boxes::Tombstone)] {
+            assert!(matches!(dress(page, &same), std::borrow::Cow::Borrowed(_)), "Night and Follow leave the page as it is");
+        }
+        let late = b"<html lang=\"en\"><body data-theme=\"night\"></body></html>";
+        assert_eq!(dress(late, &kept(Theme::Light, false, true, Boxes::Tombstone)).as_ref(), &late[..], "a data-theme after the tag is untouched");
+        let none = b"<html><body></body></html>";
+        assert!(matches!(dress(none, &kept(Theme::Light, false, true, Boxes::Tombstone)), std::borrow::Cow::Borrowed(_)), "no attribute, no change");
     }
 
     #[test]

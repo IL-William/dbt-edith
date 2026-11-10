@@ -1,6 +1,6 @@
 # 0150. A theme is a set of variables on the page, and Halloween is one
 
-Date: 2026-11-05 · Status: accepted, amended by 0151 and 0161 · Amends 0106 and 0107
+Date: 2026-11-05 · Status: accepted, amended by 0151, 0161 and 0170 · Amends 0106 and 0107
 
 **Trigger:** read before adding or changing a theme, the theme button or its
 menu, what `look.json` holds, which theme an export is drawn in, or the
@@ -106,6 +106,8 @@ without four copies of two hundred names, and what an export takes of it.
 - **Keeping the sound.** The user's answer: it goes, and the speaker with it.
 - **Serving `index.html` with the theme already set,** to avoid a flash of
   Night on load: a later step, with the config read before the first byte.
+  *Amended by [0170](0170-the-page-is-served-in-the-theme-kept.md): it is done,
+  with the theme's name alone.*
 
 ## Consequences
 
@@ -115,3 +117,6 @@ colour is a name in Night and, if no theme can do with Night's value, in the
 three blocks or in the derived rule, which the theme test holds to the same set.
 The page is Night until `/api/look` answers, so a Light user sees one flash on
 load, and another open tab keeps its theme until it is reloaded.
+*Amended by [0170](0170-the-page-is-served-in-the-theme-kept.md): the page is
+served in the theme kept, and another open page reads the look again when it is
+shown or focused.*

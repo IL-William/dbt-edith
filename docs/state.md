@@ -2999,11 +2999,13 @@ of its own, and each panel updates the tour, its page under
     Today it imports `VCRUNTIME140.dll`, which the loader resolves before `main`
     runs, so the search path 0149 sets does not cover it.
 36. **The themes' limits (0150, 2.2.0).**
-    - The page is Night until `/api/look` answers, so a Light user sees one
+    - ~~The page is Night until `/api/look` answers, so a Light user sees one
       flash on load. Serving `index.html` with the theme already set would end
-      it.
-    - Another open page keeps its theme until it is reloaded.
-    - The "new" tag beside Follow the system is static text.
+      it.~~ Fixed in 2.22.0 (0170).
+    - ~~Another open page keeps its theme until it is reloaded.~~ Fixed in
+      2.22.0 (0170).
+    - ~~The "new" tag beside Follow the system is static text.~~ Fixed in
+      2.22.0: the tag is gone.
     - ~~A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
       Light; the selection wash (`--select`, as the boards use) comes with the
       shell step.~~ Settled in 2.20.0 (0166): the shell's selected rows take
@@ -3011,6 +3013,12 @@ of its own, and each panel updates the tour, its page under
       same (item 55).~~ Fixed in 2.21.0.
     - The theme has no keyboard shortcut, ~~and the settings' one-column layout
       is the settings step's~~ (2.14.0, 0163).
+    - With Follow the system on, the page is Night until `/api/look` answers,
+      and Halloween's night art waits for that answer too.
+    - A window beside the one where the theme was picked keeps its theme until
+      it is focused.
+    - The theme's name goes out without the key (0170), the one value of
+      `look.json` that does.
 
 37. **The file icons' limits (0151, 2.3.0).**
     - ~~The editor's tabs and Open editors draw no file icon, nor the kind's bar

@@ -486,19 +486,29 @@ async fn guard(State(st): State<Arc<AppState>>, req: axum::extract::Request, nex
 /// The printed link lands here and gets the page like `/` does. The key in it
 /// is read by the page, which keeps it for its own origin and takes it out of
 /// the address (0122); the server sets nothing.
-async fn index(uri: Uri) -> Response {
-    static_asset(uri).await
+async fn index(State(st): State<Arc<AppState>>, uri: Uri) -> Response {
+    static_asset(State(st), uri).await
 }
 
 // ---------------------------------------------------------------- static ----
 
-async fn static_asset(uri: Uri) -> Response {
+async fn static_asset(State(st): State<Arc<AppState>>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
     match Assets::get(path) {
         Some(file) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
-            ([(header::CONTENT_TYPE, mime.as_ref())], file.data).into_response()
+            // The page opens in the theme kept on this machine, which is the one
+            // thing of look.json served without the key (0170); the rest of the
+            // assets are served as they are.
+            let body: std::borrow::Cow<'static, [u8]> = if path == "index.html" {
+                let look = crate::look::Look { path: st.look.path.clone() };
+                let kept = tokio::task::spawn_blocking(move || look.read()).await.unwrap_or_default();
+                std::borrow::Cow::Owned(crate::look::dress(&file.data, &kept).into_owned())
+            } else {
+                file.data
+            };
+            ([(header::CONTENT_TYPE, mime.as_ref())], body).into_response()
         }
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
     }
@@ -5630,6 +5640,48 @@ mod tests {
         assert!(status_of(port, keyless(with_json("POST", "/api/look", &post, body))).await.ends_with("401 Unauthorized"));
         let foreign = [("Host", host.as_str()), ("Origin", "https://evil.example")];
         assert!(!status_of(port, with_json("POST", "/api/look", &foreign, body)).await.contains(" 200 "));
+        server.abort();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A reload of `/` has no key and its script cannot be inline (0170), so
+    /// the server writes the theme's name on the `<html>` tag and nothing else
+    /// of the look: not follow, apparitions or boxes, and never a value the
+    /// closed list does not hold.
+    #[tokio::test]
+    async fn the_page_is_served_in_the_theme_kept_and_nothing_else_of_it() {
+        let root = temp_project("page-theme");
+        let (port, _st, server) = serve(&root).await;
+        let host = format!("127.0.0.1:{port}");
+        let own = format!("http://127.0.0.1:{port}");
+        let h = [("Host", host.as_str())];
+        let post = [("Host", host.as_str()), ("Origin", own.as_str())];
+        let page = Assets::get("index.html").expect("the page is embedded");
+        let page = String::from_utf8_lossy(&page.data).into_owned();
+        let night = r#"data-theme="night""#;
+        assert!(page.contains(night), "the file keeps Night as its own");
+        let served = |path: &'static str| {
+            let h = h;
+            async move { past_head(&response_of(port, keyless(get(path, &h))).await).to_string() }
+        };
+
+        assert_eq!(served("/").await, page, "Night before anyone chose");
+        let light = r#"{"theme":"light","follow":false,"apparitions":true,"boxes":"coffin"}"#;
+        assert!(status_of(port, with_json("POST", "/api/look", &post, light)).await.contains(" 200 "));
+        let dressed = page.replacen(night, r#"data-theme="light""#, 1);
+        for path in ["/", "/index.html", "/?key=abcdef"] {
+            assert_eq!(served(path).await, dressed, "{path} without a key");
+        }
+        let halloween = r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#;
+        assert!(status_of(port, with_json("POST", "/api/look", &post, halloween)).await.contains(" 200 "));
+        assert_eq!(served("/").await, page.replacen(night, r#"data-theme="halloween""#, 1), "the other boxes and apparitions stay out of it");
+        let follows = r#"{"theme":"light","follow":true,"apparitions":true,"boxes":"coffin"}"#;
+        assert!(status_of(port, with_json("POST", "/api/look", &post, follows)).await.contains(" 200 "));
+        assert_eq!(served("/").await, page, "following the system is left to the page");
+
+        let file = root.join("config").join("look.json");
+        std::fs::write(&file, r#"{"theme":"\"><script>","follow":false}"#).unwrap();
+        assert_eq!(served("/").await, page, "a name outside the list serves Night");
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }

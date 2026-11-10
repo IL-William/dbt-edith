@@ -25,7 +25,7 @@ const S = {
   termPrompt: undefined,      // true at bash's prompt, false once Enter hands its line on, undefined unheard (0073)
   venvAsked: undefined,       // the last folder the terminal named that sent the page to read the venvs again
   look: { theme: 'night', follow: false, apparitions: true, boxes: 'tombstone' },  // /api/look: the theme, Follow the system, the Halloween theme's apparitions and box style, kept per machine (0106, 0150)
-  hw: { ghostTimer: 0, eyesTimer: 0, flyTimer: 0, witchX: undefined, running: false, saving: Promise.resolve(), sides: new Map() },  // what the look has running
+  hw: { ghostTimer: 0, eyesTimer: 0, flyTimer: 0, witchX: undefined, read: '', running: false, saving: Promise.resolve(), sides: new Map() },  // what the look has running
   preview: null,              // path of the reusable preview tab, VS Code style
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
@@ -20438,10 +20438,10 @@ function applyLook() {
   // The boxes' art, drawn by the lineage itself, which keeps it through its own redraws.
   Lineage.setSkin(on ? hwBoxes(S.look.boxes) : null);
   $('#theme-btn').title = 'Theme: ' + THEMES.find((t) => t.id === theme).name;
-  if (on !== was) {
-    S.hw.witchX = undefined;
-    if (on) placeWitch(false);
-  }
+  // A page served as Halloween (0170) is already on at its first look, so she is
+  // placed whenever the theme is on and she has no place, not only on the switch.
+  if (on !== was) S.hw.witchX = undefined;
+  if (on && S.hw.witchX === undefined) placeWitch(false);
   // The timers follow what is wanted, so a switch flipped in the settings
   // that changes nothing about them leaves them running.
   const want = on && S.look.apparitions !== false;
@@ -20449,16 +20449,39 @@ function applyLook() {
   else if (!want && S.hw.running) stopApparitions();
 }
 
-/* One chain, so two quick choices reach the server in the order they were
-   made and the last one is what is kept. */
-function saveLook() {
-  const body = { theme: themeId(S.look.theme), follow: !!S.look.follow, apparitions: S.look.apparitions !== false, boxes: hwBoxes(S.look.boxes) };
-  S.hw.saving = S.hw.saving.then(() => api.send('/api/look', 'POST', body)).then(() => {}, () => {});
+/* The look as /api/look says it, whatever shape the answer has. */
+function lookFrom(r) {
+  return { theme: themeId(r && r.theme), follow: !!(r && r.follow), apparitions: !r || r.apparitions !== false, boxes: hwBoxes(r && r.boxes) };
 }
 
-function loadLook() {
-  api.get('/api/look').then((r) => {
-    S.look = { theme: themeId(r && r.theme), follow: !!(r && r.follow), apparitions: !r || r.apparitions !== false, boxes: hwBoxes(r && r.boxes) };
+/* One chain, so two quick choices reach the server in the order they were
+   made and the last one is what is kept. The save is read back, since its own
+   answer repeats what was asked even where nothing is kept: what the server
+   says afterwards is what loadLook must not mistake for news. */
+function saveLook() {
+  const body = { theme: themeId(S.look.theme), follow: !!S.look.follow, apparitions: S.look.apparitions !== false, boxes: hwBoxes(S.look.boxes) };
+  S.hw.saving = S.hw.saving.then(() => api.send('/api/look', 'POST', body))
+    .then(() => api.get('/api/look')).then((r) => { S.hw.read = JSON.stringify(lookFrom(r)); })
+    .then(() => {}, () => {});
+}
+
+/* `again` is a page shown or focused once more, which may have been left while
+   the theme was picked in another one (0170). It reads after this page's own
+   saves, so it cannot undo them, and drops an answer that is not news, that
+   arrives after a choice made here, or that says what the server said last
+   time: with no config directory the server keeps nothing, so it keeps
+   answering the old look and would take back a pick kept for the session. */
+function loadLook(again = false) {
+  const before = JSON.stringify(S.look);
+  return S.hw.saving.then(() => api.get('/api/look')).then((r) => {
+    const look = lookFrom(r);
+    const said = JSON.stringify(look);
+    const last = S.hw.read;
+    S.hw.read = said;
+    if (again && (JSON.stringify(S.look) !== before || said === before || said === last)) return;
+    // An open theme menu would keep the tick of the theme that was on screen, so it closes.
+    if (again && (look.theme !== S.look.theme || look.follow !== S.look.follow)) closePopup();
+    S.look = look;
     applyLook();
     repaintSettings();
   }).catch(() => {});
@@ -20481,6 +20504,10 @@ function wireLook() {
   // While Follow is on, the page tracks the system as it turns.
   // An open theme menu would keep the tick of the theme that was on screen, so it closes.
   if (DARK) DARK.addEventListener('change', () => { if (S.look.follow) { closePopup(); applyLook(); repaintSettings(); } });
+  // A theme picked in another window shows here once this one is seen again.
+  const again = () => { if (!document.hidden) loadLook(true); };
+  document.addEventListener('visibilitychange', again);
+  window.addEventListener('focus', again);
 }
 
 /* The theme menu (0150), under its button and held inside the window from the
@@ -20542,9 +20569,9 @@ function walkSwitch(toggle, key, now, real) {
 
 /* A switch row of the Theme section, drawn as Snowflake's is, the zombie of
    the Halloween theme walking its knob. `real` tells the box in the page from
-   the probe redrawIfChanged compares with; `tag` follows the name. */
-function switchRow(key, label, about, on, onClick, real, tag = null) {
-  const { row, sc } = buildRow(tag ? [label, tag] : label, about);
+   the probe redrawIfChanged compares with. */
+function switchRow(key, label, about, on, onClick, real) {
+  const { row, sc } = buildRow(label, about);
   const toggle = jel('button', 'switch');
   toggle.type = 'button';
   toggle.dataset.key = key;
@@ -20612,7 +20639,7 @@ function paintThemeFollow(box) {
   box.dataset.tool = 'theme';
   box.replaceChildren(switchRow('theme-follow', 'Follow the system', 'Light while the system is light, Night once it turns dark.', !!S.look.follow,
     // Off, it keeps the theme on screen.
-    () => setLook(S.look.follow ? { follow: false, theme: themeNow() } : { follow: true }), box.isConnected, jel('span', 'newtag', 'new')));
+    () => setLook(S.look.follow ? { follow: false, theme: themeNow() } : { follow: true }), box.isConnected));
 }
 
 /* What only the Halloween theme has: its apparitions and its box style.
