@@ -13,6 +13,14 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.21.0 - 2026-11-11
+
+- Draw the kind's bar before the name on the editor's tabs, and the file's icon
+  before its name in Open editors, as the tree and the boards do (0148, 0151).
+- Darken Light's table, materialized view, seed, source, snapshot, exposure,
+  other and custom kind colours, and the macro glyph's, a shade so each holds 3:1
+  on a selected row.
+
 ## 2.20.13 - 2026-11-11
 
 - Date an exported file from the click, so a menu left open past midnight

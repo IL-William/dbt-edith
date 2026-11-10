@@ -530,16 +530,16 @@
   --t-un: #1f67a3;
   /* Node kinds (MAT, KIND, CUSTOM), from lineage.js */
   --k-view: #1f74d6;
-  --k-table: #1e9461;
+  --k-table: #1e9260;
   --k-incr: #b26b00;
   --k-ephemeral: #6f7d90;
-  --k-mview: #2d9a9a;
-  --k-seed: #7a9600;
-  --k-source: #a870ec;
-  --k-snapshot: #eb5781;
-  --k-exposure: #eb5781;
-  --k-other: #7a879a;
-  --k-custom: #ff2dad;
+  --k-mview: #298d8d;
+  --k-seed: #718a00;
+  --k-source: #9b67da;
+  --k-snapshot: #d85077;
+  --k-exposure: #d85077;
+  --k-other: #758194;
+  --k-custom: #eb299f;
   /* Tests (TEST), from lineage.js */
   --t-model: #3d4450;
   --t-singular: #6b7380;
@@ -571,7 +571,7 @@
      The four tones the board does not draw are darker again, since a name sits on its own wash (the picked radio's 16%,
      the note's tag on 8% and 14%) and holds 3:1 there too */
   --env-ci: #2979ce; --env-stg: #06848b; --env-uat: #b46330; --env-other: #89782b;
-  --f-md: #638fc1; --f-macro: #8f8e62;
+  --f-md: #638fc1; --f-macro: #8b8a60;
   --syn-num: #bb5637; --syn-atom: #4c71c1; --syn-macro: #4c71c1; --syn-param: #c44a54; --syn-jatom: #925eb2;
   /* Shadows and scrims, warm and light */
   --shadow-sm: 0 6px 18px rgba(20, 20, 10, .10);
@@ -1623,10 +1623,10 @@ kbd {
   content: "×"; width: auto; height: auto; font-size: 14px;
   background: none; -webkit-mask: none; mask: none;
 }
-.ftab.preview span:first-child { font-style: italic; }
+.ftab.preview .nm { font-style: italic; }
 /* The file moved on disk under a tab that kept its own text (0067). */
-.ftab.disk-changed span:first-child { color: var(--warn); }
-.ftab.disk-gone span:first-child { text-decoration: line-through; }
+.ftab.disk-changed .nm { color: var(--warn); }
+.ftab.disk-gone .nm { text-decoration: line-through; }
 
 /* ----------------------------------------------------------- breadcrumbs -- */
 .crumbs {

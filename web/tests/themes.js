@@ -157,13 +157,23 @@ check('both are at least 3:1 on Light\'s sidebar, where the icons sit', ['--dbt-
     if (ratio(hex(mix(c, bg2, .85)), light.decl['--bg-2']) < 4.5) bad.push(n + ' dimmed on a folder');
   });
   check('Light\'s git letters are at least 4.5:1 on its sidebar, on a selected row and dimmed on a folder', bad, []);
-  // The icons of a selected row are the kind colours (a file's, 0151). The board's Light values for the table, materialized view,
-  // seed, source, snapshot, exposure, other and custom kinds are 2.6 to 2.9:1 on the wash, as they are drawn (docs/state.md, the shell's
-  // limits): the ones that hold are checked, so a change that loses one is seen.
-  var kinds = ['--k-view', '--k-incr', '--dbt-yaml', '--py'];
-  check('Light\'s view, incremental, YAML and Python marks are at least 3:1 on a selected row (--select over --bg-2)', kinds.filter(function (n) {
-    return ratio(lightValue(n), hex(onSel)) < 3;
-  }), []);
+  // The icons of a selected row are the kind colours (a file's, 0151): every kind colour, the YAML and the Python marks hold 3:1
+  // there, in each theme on its own --select over its sidebar, which is where Open editors' and the tree's selected rows sit.
+  // The macro glyph (--f-macro) sits on the selected row of the palette, whose box is --bg-3, so it is held on that wash.
+  // Only the test colour --t-column is left out (no selected row draws a test; docs/state.md, the shell's limits).
+  var kinds = night.names.filter(function (n) { return /^--k-/.test(n) && /^#[0-9a-f]{6}$/i.test(night.decl[n]) && !(n in derived.decl); }).concat(['--dbt-yaml', '--py']);
+  ok('the names checked are every kind colour and the two file marks: ' + kinds.length, kinds.length === 13);
+  check('Light\'s macro glyph is at least 3:1 on the selected row of the palette (--select over --bg-3)',
+    ratio(lightValue('--f-macro'), hex(mix([+wash[1], +wash[2], +wash[3]], channels2(light.decl['--bg-3']), parseFloat(wash[4])))) < 3, false);
+  [['Night', night], ['Graphite', graphite], ['Light', light], ['Halloween', halloween]].forEach(function (t) {
+    var d = t[1].decl, bgT = channels2(d['--bg-2']);
+    var w = /rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/.exec(d['--select']);
+    var sel = hex(mix([+w[1], +w[2], +w[3]], bgT, parseFloat(w[4])));
+    check(t[0] + '\'s kind and file marks are at least 3:1 on a selected row (--select over --bg-2)', kinds.filter(function (n) {
+      var v = n in d ? d[n] : (t[1] === light ? lightValue(n) : night.decl[n]);
+      return ratio(v, sel) < 3;
+    }), []);
+  });
 }());
 // Reports is dimmed while it has nothing to show (0075, 0166): its glyph, --fg-mute at the tab's opacity over the bar, is a control and holds 3:1 in every theme.
 (function () {
