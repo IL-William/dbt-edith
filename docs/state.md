@@ -3131,18 +3131,24 @@ of its own, and each panel updates the tour, its page under
       within about a second: a program reading the keys itself or a shell that
       repaints the line gets the toast. zsh says nothing at its prompt, so its
       chip stays until a key, Clear or Restart.
-    - The chip sits a few cells right of the typed text and is clipped by the
-      terminal's right edge on a line that fills the width.
+    - ~~The chip sits a few cells right of the typed text and is clipped by the
+      terminal's right edge on a line that fills the width.~~ Fixed in 2.20.8.
     - The command the page runs for you (the manifest card's `dbt parse`) is
       sent in two writes, Enter after the echo, and left out when a key was typed
       in between.
-    - `S.termPrompt` is set false before `settle` decides whether Enter is
+    - ~~`S.termPrompt` is set false before `settle` decides whether Enter is
       pressed, so a key typed in that window leaves it false, and under bash
-      (Git Bash) the line keys of 0073 are off until the next prompt.
-    - If the person presses Enter themselves while the page waits for the
-      command's echo, the toast still tells them to press Enter.
+      (Git Bash) the line keys of 0073 are off until the next prompt.~~ Fixed in
+      2.20.8.
+    - ~~If the person presses Enter themselves while the page waits for the
+      command's echo, the toast still tells them to press Enter.~~ Fixed in
+      2.20.8.
     - The cursor is drawn in `--accent`, where the board draws it in `--fg`
       (0161's choice).
+    - A line with no room before the terminal's right edge for the whole chip
+      gets the toast, decided when the chip is drawn from the cursor's column
+      and the chip's width. A resize after that can still clip a chip that
+      fitted.
 47. **The column box's limits (0162, 2.13.0).**
     - A column's edge is at full opacity, not the design's 85%: at 85% `window`
       and `inferred` fall under 3:1 on the page in Night, Graphite and Halloween

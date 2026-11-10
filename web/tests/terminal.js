@@ -5,6 +5,8 @@
 // Run from the repository root: jsc web/tests/terminal.js
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function termClipboard'), src.indexOf('function initTerm')));
+// sendToTerminal runs up to the Catalog's section marker, where nothing else of the terminal's is.
+var sendSrc = src.slice(src.indexOf('function sendToTerminal'), src.indexOf('// ---------------------------------------------------------------- catalog --'));
 
 function check(label, got, want) {
   var g = JSON.stringify(got), w = JSON.stringify(want);
@@ -146,3 +148,99 @@ check('Enter follows the echo of a command the page runs, on a line nobody touch
 check('not after a key the person typed in between', enterAfterEcho(true, 4, 5, true), false);
 check('not into a shell that was restarted', enterAfterEcho(true, 4, 4, false), false);
 check('and never for a command that only waits', enterAfterEcho(false, 4, 4, true), false);
+
+print('\n--- where the chip fits ---');
+// 100 columns over 800px is 8px a cell; the chip is 120px wide and starts 12px right of the cursor.
+check('beside a short line', chipFits(10, 100, 800, 120), true);
+check('up to the edge exactly', chipFits(83, 100, 800, 124), true);
+check('a line that fills the width has no room', chipFits(90, 100, 800, 120), false);
+check('a cursor waiting to wrap, at the last column, has none', chipFits(100, 100, 800, 120), false);
+check('nor one at the last column of the row', chipFits(99, 100, 800, 8), false);
+check('a chip that fits nowhere', chipFits(0, 100, 800, 800), false);
+
+print('\n--- a command typed for you, and the person\'s keys meanwhile (0161, 0073) ---');
+// The shell's echo, the timers, the socket and the page are stood in for.
+var S, sent, toasts, chips, echoed_ = true, timers;
+function fresh(over) {
+  S = { termKeys: 0, termEnters: 0, termPrompt: true, typedChip: null, ws: null, term: null };
+  sent = []; toasts = []; chips = []; timers = [];
+  var ws = { readyState: 1, send: function (m) { sent.push(JSON.parse(m).d); } };
+  S.ws = ws;
+  for (var k in over || {}) S[k] = over[k];
+  return ws;
+}
+var closePanel = function () {}, showDock = function () {};
+var toast = function (t) { toasts.push(t); };
+var showTypedChip = function (label) { chips.push(label); return true; };
+var dropTypedChip = function () {};
+var termLineToCursor = function () { return ''; };
+var done_;
+// The echo is heard when the test says so, so a key can be typed before it.
+var awaitEcho = function (first, before, cmd, done) { done_ = done; };
+var setTimeout = function (f) { f(); };
+eval(sendSrc);
+function send(run, typed, from) {
+  S.term = { buffer: { active: { baseY: 0, cursorY: 0 } }, focus: function () {} };
+  sendToTerminal('dbt ls', run, typed, from);
+}
+
+fresh(); send(true, null, 'the Jobs tab');
+check('the command is sent at once, and Enter waits for its echo', sent, ['dbt ls']);
+check('  and bash is still at its prompt until Enter is pressed', S.termPrompt, true);
+done_(true);
+check('an untouched line gets its Enter', sent, ['dbt ls', '\r']);
+check('  after which bash has handed the line on', S.termPrompt, false);
+check('  and the chip says it was run', [chips, toasts], [['run from the Jobs tab'], []]);
+
+fresh(); send(true, null, 'the Jobs tab');
+termInput('x');
+done_(true);
+check('a key typed before the echo: no Enter is sent', sent, ['dbt ls', 'x']);
+check('  and bash is still at its prompt, so its line keys stay on', S.termPrompt, true);
+check('  and the line is left to the person, with the chip', chips, ['typed from the Jobs tab \u00b7 Enter is yours']);
+
+fresh(); send(false, null, 'the Jobs tab');
+done_(true);
+check('a command that only waits sends no Enter and leaves bash at its prompt', [sent, S.termPrompt], [['dbt ls'], true]);
+
+fresh(); send(false, null, 'the Jobs tab');
+termInput('\r');
+done_(true);
+check('the person pressed Enter themselves while the page waited: no chip', chips, []);
+check('  and no toast saying to press Enter', toasts, []);
+check('  and the Enter was counted once', S.termEnters, 1);
+
+fresh(); send(true, null, 'the Jobs tab');
+termInput('\r');
+done_(true);
+check('  and none of the page\'s own Enter either', [sent, chips, toasts], [['dbt ls', '\r'], [], []]);
+
+fresh(); send(false, null, 'the Jobs tab');
+termInput('\x1b[200~select 1\nfrom orders\x1b[201~');
+done_(true);
+check('a bracketed paste holding a newline is no Enter: the chip is drawn', [S.termEnters, S.termKeys, chips.length], [0, 1, 1]);
+check('  and bash is still at its prompt', S.termPrompt, true);
+
+fresh(); send(false, null, 'the Jobs tab');
+termInput('\x1b[?1;2c');
+termInput('\x1b[I');
+done_(true);
+check('xterm.js\'s own answers are no key and no Enter', [S.termKeys, S.termEnters, chips.length], [0, 0, 1]);
+
+fresh(); send(false, null, 'the Jobs tab');
+done_(false);
+check('no echo seen: the toast says Enter is theirs', toasts, ['command ready in the terminal, press Enter to run it']);
+
+fresh(); send(true, null, 'the Jobs tab');
+done_(false);
+check('no echo seen, and run: Enter is pressed and the toast says so', [sent, toasts], [['dbt ls', '\r'], ['running dbt ls in the terminal']]);
+
+fresh(); S.ws.readyState = 3;
+send(false, null, 'the Jobs tab');
+check('a socket that never opens is told, and nothing is sent', [sent, toasts], [[], ['terminal is not connected']]);
+
+print('\n--- a line with no room for the chip says it in the toast ---');
+fresh(); send(false, null, 'the Jobs tab');
+showTypedChip = function (label) { chips.push(label); return false; };
+done_(true);
+check('chip not made: the toast', toasts, ['command ready in the terminal, press Enter to run it']);
