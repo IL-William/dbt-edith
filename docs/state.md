@@ -3239,10 +3239,11 @@ of its own, and each panel updates the tour, its page under
     - The Sort tray is `--bg` and its raised segment `--bg-3`, as the dock's
       mode switch is, since the pane under it is `--bg-2`; the board draws the
       tray `--bg-2` on a `--bg` pane. The pane's own fill is the dock step's.
-    - The filter box keeps its 230px with the count inside: while a word is
+    - ~~The filter box keeps its 230px with the count inside: while a word is
       typed the count (`3 of 8 · 7/8 typed`) takes more of the box as the
       column count grows, and on a model of a few hundred columns leaves the
-      word about 20px.
+      word about 20px.~~ Fixed in 2.20.3: the box is 230px at least and grows
+      with its count, the word keeping about ten characters.
     - The columns table is still a `table`, not the board's grid of rows, so a
       row's hover tint stops at its cells and the board's 8px bleed is not
       drawn.
@@ -3250,8 +3251,11 @@ of its own, and each panel updates the tour, its page under
       filled for a scheduled one, the warning's for one not read), where the
       board draws every chip on `--line`; only its shape and the clock are the
       board's.
-    - A relation's name wraps in the middle of a word in a narrow dock, as it did
-      before the redesign.
+    - ~~A relation's name wraps in the middle of a word in a narrow dock, as it did
+      before the redesign.~~ Fixed in 2.20.3: it breaks after a dot, its
+      buttons going under it when the cell is narrow; the table is held to the
+      longest part of a name, so a part wider than a very narrow dock (40
+      characters under about 760px) makes the pane scroll sideways.
     - ~~The hover card's column list keeps its amber type: `--fg-mute` there is
       the shell step's (21).~~ Settled in 2.20.0 (0166).
 52. **The Reports' limits (2.17.0).**

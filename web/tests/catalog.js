@@ -10,6 +10,7 @@ var Lineage = { subtitleParts: subtitleParts };
 var app = read('web/app.js');
 eval(app.slice(app.indexOf('function catalogMeta'), app.indexOf('function renderCatalog')));
 eval(app.slice(app.indexOf('function columnCountText'), app.indexOf('function catalogColumns')));
+eval(app.slice(app.indexOf('function relationParts'), app.indexOf('function relationBody')));
 eval(app.slice(app.indexOf('function reachParts'), app.indexOf('/* Whether the Columns table has a Lineage column')));
 eval(app.slice(app.indexOf('function jobsChipText'), app.indexOf('/* One chip per step that runs the node')));
 
@@ -61,6 +62,20 @@ check('filtering', columnCountText(3, 8, 7, true), '3 of 8 \u00b7 7/8 typed');
 check('filtering to none', columnCountText(0, 8, 7, true), '0 of 8 \u00b7 7/8 typed');
 check('no type at all is the sentence beside the box, not a count', columnCountText(8, 8, 0, false), '');
 check('filtering with no type', columnCountText(2, 8, 0, true), '2 of 8');
+check('the count keeps its widest form while a word is typed, in ch', columnCountWidth(200, 180, true), '26ch');
+check('with no type the widest form is the kept of total', columnCountWidth(200, 0, true), '10ch');
+check('nothing typed keeps no room', columnCountWidth(200, 180, false), '');
+
+print('--- a relation name breaks after its dots ---');
+// What relationBody appends: a <wbr> between two pieces, never after the last.
+function nameParts(t) { return relationParts(t).join('|'); }
+check('a quoted name', nameParts('"jaffle_shop"."main"."customers"'), '"jaffle_shop".|"main".|"customers"');
+check('an unquoted name', nameParts('analytics.dbt_alice.stg_orders'), 'analytics.|dbt_alice.|stg_orders');
+check('a name with no dot is one piece, so no <wbr>', relationParts('customers'), ['customers']);
+check('a trailing dot ends the last piece, no <wbr> after it', relationParts('main.'), ['main.']);
+check('the pieces read back as the name, whatever it holds',
+  ['"jaffle_shop"."main"."customers"', 'analytics.dbt_alice.stg_orders', 'customers', 'main.', 'a..b', ''].map(function (t) { return relationParts(t).join('') === t; }),
+  [true, true, true, true, true, true]);
 
 print('\n--- the halves of a Lineage cell ---');
 // Nodes without a DOM: a tag and a text.
@@ -93,3 +108,7 @@ check('a test chip has no margin of its own: its box gaps them, so a row stays o
   [!/margin/.test(rule('.testchip')), /gap:\s*4px/.test(rule('.cols .testchips'))], [true, true]);
 check('a job chip wraps rather than overflow', /min-height:\s*22px/.test(rule('.cat-body .jobchip')), true);
 check('Sort is a tray of segments, the one in front raised', /box-shadow/.test(rule('.coltools .segbtn.active')), true);
+check('a relation name breaks at its dots, inside a part only when the part alone is too long',
+  [/word-break:\s*normal/.test(rule('.relcell .relname')), /overflow-wrap:\s*break-word/.test(rule('.relcell .relname'))], [true, true]);
+check('in the Location table the name keeps its longest part whole and the buttons wrap under it',
+  [/min-width:\s*min-content/.test(rule('.loc .relcell .relname')), /flex-wrap:\s*wrap/.test(rule('.loc .relcell'))], [true, true]);

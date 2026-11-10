@@ -16844,6 +16844,12 @@ function relationCell(text, reason, what, materialized) {
   return td;
 }
 
+/* The name cut after each dot, so a narrow cell may break there (a <wbr> goes
+   between two pieces, never at the end) and the pieces read back as the name. */
+function relationParts(text) {
+  return text.match(/[^.]*\.|[^.]+$/g) || [];
+}
+
 /* What a relation row holds, in a cell or in the card's list: the name and its
    buttons, or why there is none. */
 function relationBody(text, reason, what, materialized) {
@@ -16853,7 +16859,12 @@ function relationBody(text, reason, what, materialized) {
   const wrap = document.createElement('div');
   wrap.className = 'relcell';
   const name = document.createElement('span');
-  name.textContent = text;
+  name.className = 'relname';
+  const parts = relationParts(text);
+  parts.forEach((part, i) => {
+    name.append(part);
+    if (i < parts.length - 1) name.append(document.createElement('wbr'));
+  });
   name.title = what;
   const copy = document.createElement('button');
   copy.type = 'button';
@@ -18660,6 +18671,12 @@ function columnCountText(kept, total, typed, filtering) {
   return [filtering ? `${kept} of ${total}` : '', typed ? `${typed}/${total} typed` : ''].filter(Boolean).join(' \u00b7 ');
 }
 
+/* The room the count keeps while a word is typed: its widest form, in ch
+   (mono, tabular: one character each), '' with nothing typed. */
+function columnCountWidth(total, typed, filtering) {
+  return filtering ? columnCountText(total, total, typed, true).length + 'ch' : '';
+}
+
 function catalogColumns(body, n) {
   if (!n.columns.length) {
     if (S.colReveal === n.id && S.dock === 'catalog') S.colReveal = '';
@@ -18920,6 +18937,9 @@ function catalogColumns(body, n) {
       r.name.append(after);
     }
     shown.textContent = columnCountText(kept, rows.length, typed, !!q);
+    // The widest this count can be, so the box widens once when a word is typed
+    // and stays put as the kept count gains or loses digits (mono, tabular: 1ch a character).
+    shown.style.minWidth = columnCountWidth(rows.length, typed, !!q);
     none.textContent = q && !kept ? `No column name contains "${q}".` : '';
     none.classList.toggle('hidden', !none.textContent);
   };

@@ -13,6 +13,13 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.3 - 2026-11-10
+
+- Widen the Catalog's column filter with its count while a word is typed, so
+  the word stays readable on a model with many columns.
+- Break a relation's name in the Catalog's Location table after a dot, not in
+  the middle of a word.
+
 ## 2.20.2 - 2026-11-10
 
 - Say `The levels could not be counted.` in a depth menu when the request failed,
