@@ -3334,10 +3334,10 @@ of its own, and each panel updates the tour, its page under
     as on Compiled and Run and every other dock tab; it is one fix for all of
     them, not one per tab.
 57. **What the design docs step left (#190).**
-    - The code still says "Jobs settings" where the settings' section is now
+    - ~~The code still says "Jobs settings" where the settings' section is now
       Orchestration: `src/job.rs:65`, `src/job_coverage.rs:62`,
       `src/job_order.rs:63`, the `--help` text in `src/main.rs:180` and the header
-      `src/jobs.rs:450` writes in a `jobs.yml`.
+      `src/jobs.rs:450` writes in a `jobs.yml`.~~ Fixed in 2.20.1.
     - The pictures of `docs/design/` differ from the page in three ways, listed
       in its README; they are to be redrawn from the boards.
 

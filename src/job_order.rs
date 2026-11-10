@@ -60,7 +60,7 @@ fn job_order(root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, o
     let known = kept.cloned().unwrap_or_else(|| jobs::known(graph, root));
     let read = match known {
         Known::Absent => {
-            writeln!(err, "error: no {} in this project; name the sources in the Jobs settings", clean(jobs::SOURCES_FILE))?;
+            writeln!(err, "error: no {} in this project; name the sources in the Orchestration section of the settings", clean(jobs::SOURCES_FILE))?;
             return Ok(CANNOT_RUN);
         }
         Known::Refused(why) => {
@@ -1433,7 +1433,7 @@ mod tests {
         std::fs::create_dir_all(&none).unwrap();
         let (out, err, code) = ask(&none, Output::Name);
         assert_eq!((out.as_str(), code), ("", CANNOT_RUN));
-        assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Jobs settings\n"), "{err}");
+        assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"), "{err}");
         let root = project("broken", &[("airflow", "dags", "")], &[]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs: nope\n").unwrap();
         let (_, err, code) = ask(&root, Output::Name);

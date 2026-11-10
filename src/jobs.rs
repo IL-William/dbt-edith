@@ -447,7 +447,7 @@ fn quoted(value: &str) -> String {
 /// `parse_sources` reads and nothing else. The key names are the ones `check`
 /// lets through, so they are written bare.
 pub fn sources_yaml(list: &[JobSource]) -> String {
-    let mut out = String::from("# Where dbt-edith reads the orchestrator's jobs. Written by its Jobs settings.\n");
+    let mut out = String::from("# Where dbt-edith reads the orchestrator's jobs. Written by the Orchestration section of its settings.\n");
     if list.is_empty() {
         out.push_str("jobs: []\n");
         return out;

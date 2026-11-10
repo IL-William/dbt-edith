@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.1 - 2026-11-10
+
+- Name the settings' Orchestration section in the command line's errors, its
+  `--help`, the header of `jobs.yml` and the Reports rail's Job coverage
+  tooltip, where they still sent people to the Jobs settings or the Jobs tab.
+
 ## 2.20.0 - 2026-11-09
 
 - Draw the top bar as the boards do: the search a field in the middle, the right

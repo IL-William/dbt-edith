@@ -12239,7 +12239,7 @@ function reportsSections(index, focus) {
     { key: 'collin', label: "collin's report", tool: 'collin',
       title: 'What collin found reading the compiled SQL, from target/collin.report.json' },
     { key: 'jobs', label: 'Job coverage', tool: 'jobs',
-      title: "Which models the orchestrator's jobs run, read from the sources the Jobs tab names" },
+      title: "Which models the orchestrator's jobs run, read from the sources the Orchestration section of the settings names" },
     { key: 'joborder', label: 'Job order', tool: 'jobs',
       title: "Which steps build a model whose dbt parent another job's step builds, without the job files ordering that step first" },
     { key: 'macros', label: 'Macros', tool: 'dbt',

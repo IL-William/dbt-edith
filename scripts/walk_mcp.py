@@ -674,10 +674,10 @@ def main():
         manifest = target / "manifest.json"
         (target / "column_lineage.collin.json").write_text(json.dumps(CACHE))
         (target / "catalog.json").write_text(json.dumps(CATALOG))
-        # The project names where its jobs are, in the file the Jobs settings
-        # write: a copy of the invented job fixtures, named from the project
-        # (the file takes no other kind of path), read by the command line and
-        # the tool alike (0115).
+        # The project names where its jobs are, in the file the Orchestration
+        # section of the settings writes: a copy of the invented job fixtures,
+        # named from the project (the file takes no other kind of path), read by
+        # the command line and the tool alike (0115).
         jobs = work / "jobs"
         shutil.copytree(C.JOBS, jobs)
         (project / ".dbt-edith").mkdir()
