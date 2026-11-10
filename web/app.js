@@ -11703,15 +11703,16 @@ function coverageSays(r, path) {
   return path || '';
 }
 
-/* A model of the coverage, its kind's bar first: the name opens it with the
-   Jobs tab listing its jobs, and its folder follows, muted. */
+/* A model of the coverage: the name opens it with the Jobs tab listing its
+   jobs, and its folder follows, muted. A chip carries the model's bar; a line
+   carries none, as a check's line does not. */
 function coverageRow(r, path, chip = false) {
   const li = jel('li', '');
   const title = `Open ${r.name}, with the Jobs tab listing its jobs`;
   const open = () => openFromReport(r.id, { dock: 'jobs' });
-  // The row says what its bar is drawn from; the kind alone is what it falls back to.
-  const node = reportLook(r.materialized) || r.kind;
   if (chip) {
+    // The chip says what its bar is drawn from; the kind alone is what it falls back to.
+    const node = reportLook(r.materialized) || r.kind;
     // A chip has no folder after it, so its tooltip names the folder.
     li.append(reportModelChip(r.name, node, r.folder ? `${title}\n${r.folder}` : title, open));
     return li;
@@ -11719,7 +11720,7 @@ function coverageRow(r, path, chip = false) {
   const link = jel('a', 'filelink', r.name);
   link.title = title;
   link.addEventListener('click', (ev) => { ev.preventDefault(); open(); });
-  li.append(dot(node), ' ', link);
+  li.append(link);
   if (path) li.append(jel('span', 'muted', ' · ' + path));
   return li;
 }

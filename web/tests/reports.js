@@ -310,6 +310,20 @@ check('one sentence has no rest, with or without its stop', [leverSplit('Only th
 check('nothing at all', leverSplit(''), { first: '', rest: '' });
 check('the rest keeps its own sentences', leverSplit('One. Two. Three.').rest, 'Two. Three.');
 
+print('\n--- a model of the job coverage ---');
+// A line is a block item, where a dot inline draws nothing; only a chip carries the model's bar.
+var asked = [];
+function dot(n) { asked.push('dot:' + n); return jel('span', 'dot ' + n); }
+function reportLook(m) { return m === 'view' ? 'view' : ''; }
+function reportModelChip(name, node, title) { asked.push('chip:' + node); return jel('span', 'chip', name); }
+function openFromReport() {}
+eval(app.slice(app.indexOf('function coverageRow'), app.indexOf('/* One step of a job')));
+var line = coverageRow({ id: 'model.shop.orders', name: 'orders', kind: 'model', materialized: 'view' }, 'marts');
+check('a line is the name and its folder, with no dot before them', [line.children.map(function (c) { return c.className; }), asked], [['filelink', 'muted'], []]);
+coverageRow({ id: 'model.shop.orders', name: 'orders', kind: 'model', materialized: 'view' }, '', true);
+coverageRow({ id: 'model.shop.stg', name: 'stg', kind: 'source' }, '', true);
+check('a chip keeps the bar of its materialization, or its kind', asked, ['chip:view', 'chip:source']);
+
 print('\n--- the folds, filtered on their data ---');
 function fold(title, rows, more) {
   return Object.assign({ title: title, tone: '', lever: '', rows: rows, open: true, find: function (r) { return r.name; }, draw: function () { return []; } }, more || {});

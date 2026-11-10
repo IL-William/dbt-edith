@@ -680,6 +680,11 @@ check('nor a column with no expression', stepsLabel(undefined) + stepsLabel({}),
 check('more than one is counted', stepsLabel({ steps: 2 }) + '|' + stepsLabel({ steps: 31 }), '\u00d72|\u00d731');
 check('32 is not a number but a recursive chain', stepsLabel({ steps: 32 }), '32+');
 check('and no more than 32 is ever said', stepsLabel({ steps: 40 }), '32+');
+check('a box wears a pill above it for more than one step or for a name collin lost, and the layout is told',
+      [wearsPill({ expression: { steps: 2 } }), wearsPill({ partial: ['a'] }), wearsPill({ expression: { steps: 1 } }), wearsPill({ partial: [] }), wearsPill({})]
+      .concat(/badge: d\.mode === 'column' \? TAG_ROOM : 0, pill: wearsPill/.test(lin)).join(' '), 'true true false false false true');
+check('and render draws them by the same two rules',
+      /const lost = columnMode && n\.partial && n\.partial\.length;/.test(lin) && wearsPill.toString().indexOf('stepsLabel(n.expression)') > 0, true);
 check('the badge is drawn only for a box that has more than one',
       /const count = columnMode \? stepsLabel\(n\.expression\) : '';\s*if \(count\) g\.appendChild\(stepsBadge\(count\)\)/.test(lin), true);
 check('the box\'s label says how it is computed, the badge having no tooltip of its own',

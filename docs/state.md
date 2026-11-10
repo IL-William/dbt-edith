@@ -2986,9 +2986,9 @@ of its own, and each panel updates the tour, its page under
     - ~~A column's role is still an 8px square (the column card, the legend, the
       stop at menu) until roles are drawn inside the column boxes.~~ Gone in
       2.13.0 (0162).
-    - In Job coverage, `dot(r.kind)` draws nothing, an inline `.dot` in a block
+    - ~~In Job coverage, `dot(r.kind)` draws nothing, an inline `.dot` in a block
       `li`, and would be grey anyway, the row carrying no materialization
-      (`Row` in `src/jobs.rs`).
+      (`Row` in `src/jobs.rs`).~~ Fixed in 2.20.12.
     - The clock is both the Jobs tool's glyph and the "under way" state
       (recorded in 0148); the Updates arrow beside Edith widens her button, so
       the top bar re-folds on it.
@@ -3188,8 +3188,9 @@ of its own, and each panel updates the tour, its page under
     - The longest role word, `PASSTHROUGH`, leaves a second line about 20
       characters of `model  ·  type`, and a longer model name is cut with an
       ellipsis; the hover card and the box's label say it whole. The clip counts
-      characters at the widths measured for a Mac's system mono; Windows'
-      Consolas is narrower, so a line may stop earlier than it needs there.
+      characters at the widths measured for a Mac's system mono; ~~Windows'
+      Consolas is narrower, so a line may stop earlier than it needs there.~~
+      Fixed in 2.20.12.
     - Under the coffin's art the names are cut to the room the tag leaves them,
       17 characters at most and about 12 to 14 beside a long role word, so that
       they stay clear of the tag, which sits up in the cut end; the tombstone's tag lies
@@ -3202,12 +3203,24 @@ of its own, and each panel updates the tour, its page under
       rule's: a ringed model's moss is 5 to 215 like a resting one's (seen in
       headless Chrome, left as it was). The column canvas's lit rule has the
       weight, and takes its 14px and 222.
-    - The steps and PARTIAL pills still ask for 6px more between boxes
-      (`TAG_ROOM`) on every column canvas, though most boxes have neither.
+    - ~~The steps and PARTIAL pills still ask for 6px more between boxes
+      (`TAG_ROOM`) on every column canvas, though most boxes have neither.~~
+      Fixed in 2.20.12.
     - In the Halloween skins 5px a character is not the widest: an all-capitals
       second line comes within 0.3 to 3.3px of the role tag, and an all-capitals
       coffin name ends 4px inside it. The clip wants measuring with
       `getComputedTextLength` rather than counting.
+    - A lane beside a box with a pill keeps `TAG_ROOM` clear of it whichever side
+      of the box the lane is on: the gap is the same above and below, because
+      the layers are also laid out flipped, so a lane under such a box keeps
+      room it does not need.
+    - The mono widths follow the page's font (`measureMono`, read once from
+      `--mono`), but the role tag's width is still counted at 6.1px a
+      character, and a model's name at a Mac's UI font, 7.4px: a machine whose
+      UI font is narrower or wider cuts a model's name early or late. The
+      counted mono widths are Menlo's, about 0.6em, which is what Chrome on a
+      Mac resolves; where the canvas resolves SF Mono (0.618em, Safari's
+      `ui-monospace`, or SF Mono installed) the measured scale is 1.03.
 48. **The settings' limits (0163, 2.14.0).**
     - On the Column lineage cards the arrows move the focus and pick nothing
       (a pick regenerates collin's cache or starts Snowflake's script), and
