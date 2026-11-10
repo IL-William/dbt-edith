@@ -3,7 +3,7 @@
 Rewritten as things change, unlike [decisions/](decisions/) and
 [../CHANGELOG.md](../CHANGELOG.md), which are appended to. What shipped and in
 which version belongs there; what is half done, deferred or waiting on someone
-belongs here. Last updated 2026-11-09.
+belongs here. Last updated 2026-11-10.
 
 ## Shipped
 
@@ -3195,18 +3195,32 @@ of its own, and each panel updates the tour, its page under
       was worked out for Consolas and not rendered with it.
     - A second `?` typed while the sheet is open lands in its find box.
 50. **Flaky tests (two in `src/mcp.rs`, the Chrome walks).**
-    - `mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
+    - ~~`mcp::tests::a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow`
       and `mcp::tests::an_answer_under_the_cap_is_the_uncapped_one` compare an
       answer saying "1 s ago" with one saying "0 s ago" across a second boundary,
-      so they fail now and then. Freezing the clock in them would end it.
-    - The walks of `scripts/check.sh` (the menu, the tour, the export) fail with
+      so they fail now and then. Freezing the clock in them would end it.~~
+      Fixed: every test built on `capped` holds the clock on one second
+      (`ls::hold_clock`, tests only), `an_error_carrying_cards_is_cut_and_stays_an_error`
+      included, which failed the same way.
+    - ~~The walks of `scripts/check.sh` (the menu, the tour, the export) fail with
       "Chrome did not start" or "Chrome closed the connection" when another walk,
       or `take_shots.py`, runs at the same time: `free_port` in `walk_tour.py`
       finds a port free and lets it go before Chrome takes it, so two runs can
       pick the same one. Run one at a time, or have `free_port` hold the port
-      until Chrome has it.
-    - `walk_tour.py`'s check that the tour "rings #selpanel-head" failed once in
-      a full run, the ring still on the previous target.
+      until Chrome has it.~~ Not the cause: `free_port` named dbt-edith's port,
+      not Chrome's, which Chrome picks itself (`--remote-debugging-port=0`), and
+      the walks read the URL the server prints. The gap is closed all the same:
+      the walks and `compare_with_dbt.py`, which did build its URLs from the port
+      it asked for, start the server on port 0 and read the port it took.
+    - ~~`walk_tour.py`'s check that the tour "rings #selpanel-head" failed once in
+      a full run, the ring still on the previous target.~~ Fixed: the check waits
+      up to 3 s for the ring to land.
+    - "Chrome did not start" and "Chrome closed the connection" have no known
+      cause: six walks run at once on one machine (two tours, two menus, the
+      depth control, the export) all passed.
+    - `web/tests/layout.js`'s timings (400 models laid out under 100 ms, the
+      worst chain under 250 ms) failed once in a full run while other builds
+      ran on the machine.
 51. **The Catalog's limits (2.16.0).**
     - The Catalog's tabs say `tablist`, `tab` and `aria-selected` but move
       between them with Tab alone, as the dock's do: arrows would be a new key

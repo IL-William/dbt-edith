@@ -57,7 +57,6 @@ import os
 import re
 import shlex
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -581,12 +580,6 @@ if not EXECUTABLE:
              "Install both, point this at a Python that has them, or set DBT to a dbt executable.")
 
 
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 class Edith:
     """dbt-edith over the project copy and the manifest dbt wrote for it."""
 
@@ -595,24 +588,26 @@ class Edith:
         # A directory of its own, which the one-shot mode must never create:
         # it reads no settings and writes none (0057).
         self.command_line_config = home / "command-line-config"
-        self.port = free_port()
         self.log = open(home / "server.log", "w")
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"))
         self.proc = subprocess.Popen(
-            [str(binary), str(project), "--manifest", str(manifest), "--port", str(self.port), "--no-open"],
+            [str(binary), str(project), "--manifest", str(manifest), "--port", "0", "--no-open"],
             stdout=self.log, stderr=subprocess.STDOUT, env=env,
         )
         # The API wants the key the launch prints in its `open` line (0052),
         # so it is read there, as a person would read it, before anything is asked.
+        # The port is read there too: it is 0 above, so the server takes a free
+        # one at bind time and no other process can have taken it first.
         self.key = None
+        self.port = None
         deadline = time.time() + 60
         while True:
             try:
                 if self.key is None:
-                    found = re.search(r"\?key=([0-9a-f]{64})", (home / "server.log").read_text())
+                    found = re.search(r"127\.0\.0\.1:(\d+)/\?key=([0-9a-f]{64})", (home / "server.log").read_text())
                     if not found:
                         raise ConnectionError("no key printed yet")
-                    self.key = found.group(1)
+                    self.port, self.key = int(found.group(1)), found.group(2)
                 self.get("/api/meta")
                 return
             except (urllib.error.URLError, ConnectionError):

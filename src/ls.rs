@@ -507,8 +507,40 @@ pub(crate) fn path_of(graph: &Graph, n: &Node) -> String {
 /// How many names `did you mean` offers.
 pub(crate) const SUGGESTED: usize = 5;
 
+#[cfg(test)]
+thread_local! {
+    // A test that compares two answers holds the clock on one second, or an age printed on one side of a second's edge differs from the other's.
+    static HELD_SECS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Holds `now_secs` on the current second for this thread until the guard drops.
+#[cfg(test)]
+#[must_use = "the clock is held only while the guard lives"]
+pub(crate) fn hold_clock() -> HeldClock {
+    HeldClock(HELD_SECS.with(|h| h.replace(Some(real_now_secs()))))
+}
+
+/// Keeps what it replaced, so a hold inside another leaves the outer one in force.
+#[cfg(test)]
+pub(crate) struct HeldClock(Option<u64>);
+
+#[cfg(test)]
+impl Drop for HeldClock {
+    fn drop(&mut self) {
+        HELD_SECS.with(|h| h.set(self.0));
+    }
+}
+
 /// The seconds since the epoch, for the age of a file.
 pub(crate) fn now_secs() -> u64 {
+    #[cfg(test)]
+    if let Some(held) = HELD_SECS.with(|h| h.get()) {
+        return held;
+    }
+    real_now_secs()
+}
+
+fn real_now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
