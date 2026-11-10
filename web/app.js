@@ -10115,7 +10115,10 @@ function openExportMenu(anchor) {
     item.dataset.key = r.key;
     item.append(strokeIcon('0 0 16 16', '', r.glyph), el('span', 'ml', r.label), el('span', 'fmt', r.fmt), el('span', 'ms', r.say));
     if (!sub) item.setAttribute('aria-disabled', 'true');
-    else item.addEventListener('click', () => { closePopup(); anchor.focus(); act[r.key](day); });
+    // The file is named for the day of the click, not of the menu opening, so a
+    // menu left open past midnight cannot date it a day early; the footer is
+    // only a preview and keeps the day the menu opened.
+    else item.addEventListener('click', () => { closePopup(); anchor.focus(); act[r.key](localDay(new Date())); });
     menu.append(item);
   }
   if (sub) menu.append(document.createElement('hr'), el('div', 'xm-foot', exportName(sub, day, '')));

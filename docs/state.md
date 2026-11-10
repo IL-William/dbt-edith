@@ -3025,8 +3025,10 @@ of its own, and each panel updates the tour, its page under
 38. **The Export menu's limits (0153, 2.4.0).**
     - Save as image saves after the click, once the picture is drawn: it is not
       yet tried in Safari or Firefox.
-    - The file name's date is taken when the menu opens, so a menu left open
-      past midnight names the day before.
+    - ~~The file name's date is taken when the menu opens, so a menu left open
+      past midnight names the day before.~~ Fixed in 2.20.13.
+    - The menu's footer keeps the day the menu opened, so it can name the day
+      before the file a click saves.
 39. **The Search tab's limits (0155, 2.6.0).**
     - ~~A line is cut at the front only once the match ends past column 24, so
       in a very narrow sidebar the match can still sit behind the row's

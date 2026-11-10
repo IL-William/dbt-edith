@@ -199,6 +199,11 @@ ok('the toasts say what was saved, as the board writes them',
 ok('the menu says nothing drawn exactly when an export would', /shown: \(\) => \(data && bbox && data\.nodes\.length \? data : null\)/.test(lin)
   && /if \(!data \|\| !bbox \|\| !data\.nodes\.length\) return null;/.test(lin));
 
+var menuSrc = src.slice(src.indexOf('function openExportMenu'), src.indexOf('// ---', src.indexOf('function openExportMenu')));
+ok('a row dates its file from the click, not from the day the menu opened',
+  /act\[r\.key\]\(localDay\(new Date\(\)\)\)/.test(menuSrc) && menuSrc.indexOf('act[r.key](day)') < 0);
+ok('the footer previews the day the menu opened', menuSrc.indexOf("exportName(sub, day, '')") > 0);
+
 print('\n--- moments, never ages ---');
 var t = Date.UTC(2026, 8, 22, 6, 14) / 1000;
 check('in UTC', exportStamp(t, 0), '2026-09-22 06:14 UTC+00:00');
