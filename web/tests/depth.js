@@ -4,6 +4,12 @@
 // Run from the repository root: jsc web/tests/depth.js
 var src = read('web/app.js');
 eval(src.slice(src.indexOf('function cutMiddle'), src.indexOf('function askDepth')));
+// The holds of an ask: askDepth to depthKind, with a state and a repaint counter.
+var S = { depthLevels: null, depthKey: '' };
+var painted = 0;
+function paintDepth() { painted++; }
+var Lineage = { nodeColor: function () { return 'red'; } };
+eval(src.slice(src.indexOf('function askDepth'), src.indexOf('function depthKind')));
 var css = read('web/app.css');
 var html = read('web/index.html');
 
@@ -77,6 +83,33 @@ check('past them, the last level', shownDepth('3', [{}]), 1);
 check('a side with none shows 0 though the box holds 1', shownDepth('1', []), 0);
 check('levels not known, the box as it is', shownDepth('3', null), 3);
 check('nonsense is 0', shownDepth('', null), 0);
+
+print('\n--- an ask that failed ---');
+askDepth('m|a');
+failDepth('m|a');
+check('a failure after the ask is held as failed, repainted once', [S.depthLevels.key, S.depthLevels.failed, S.depthLevels.levels, painted], ['m|a', true, null, 1]);
+landDepth('m|a', { mode: 'model', focus: 0, nodes: [{ kind: 'model' }], levels: { up: [], down: [] } });
+failDepth('m|a');
+check('a failure after the levels landed keeps them', [!!S.depthLevels.levels, !!S.depthLevels.failed], [true, false]);
+askDepth('m|b');
+askDepth('m|a');
+failDepth('m|a');
+askDepth('m|a');
+check('the same key asked again drops the failure', S.depthLevels, null);
+askDepth('m|b');
+failDepth('m|a');
+check('a failure under a stale key is ignored', S.depthLevels, null);
+painted = 0;
+failDepth('m|a');
+check('and repaints nothing', painted, 0);
+askDepth('');
+failDepth('');
+check('the column draw failing holds the empty key failed', [S.depthLevels.key, S.depthLevels.failed], ['', true]);
+
+print('\n--- where the failure is said and set ---');
+ok('the menu says it on a failed hold', /held && held\.failed \? 'The levels could not be counted\.'/.test(src));
+ok('the model\'s catch fails its ask', /failDepth\('m\|' \+ id\);\s+toast\('lineage: '/.test(src));
+ok('the column\'s catch fails its ask before the canvas is painted again', /askDepth\(''\);\s+failDepth\(''\);\s+paintMode\(\);/.test(src));
 
 print('\n--- the markup and the style ---');
 ok('the inputs stay, hidden, with their range', /<input id="up" type="number" min="0" max="20" value="1" hidden>/.test(html)

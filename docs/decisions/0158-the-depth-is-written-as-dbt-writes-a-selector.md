@@ -62,6 +62,8 @@ the levels that exist.
   back to the button; a menu opened before the answer says `Counting the
   levels…` and fills in place, the focus kept. The row already drawn only closes
   the menu. A new ask closes a depth menu and never another popup.
+  *Amended in 2.20.2: a menu whose request failed says `The levels could not
+  be counted.` until the next ask.*
 
 ## Rejected
 
