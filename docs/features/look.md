@@ -40,8 +40,10 @@ until it is reloaded.
 - **Graphite**: neutral grey with no tint, and colour only where it means
   something.
 - **Light**: for daylight and screenshots. Each colour that means something is
-  darker than in Night, at least 3:1 on the page and on the sidebar's grey,
-  and the code colours at least 4.5:1 on the page.
+  darker than in Night, at least 3:1 on the page and on the sidebar's grey, the
+  kind and file marks also on a selected row's wash (in the tree and Open
+  editors, and in the palette for the macro glyph), and the code colours at
+  least 4.5:1 on the page.
 - **Halloween**: orange and black, with a ghost and a witch, below.
 
 The terminal wears the theme too: its page, text, cursor and selection are the
@@ -69,8 +71,8 @@ glyph, unsaved edits a pencil
 **The kind's bar** is the thin bar, 3px wide and in the node's colour, that says
 what a node is built as: a model's materialization, a source, a seed, a snapshot.
 It sits inside the left edge of a box, and before a name in the sidebar, the
-palette, the Catalog, the cards, the legend and Reports' chips of model names; in
-a narrow dock it stands in for the name in the depth control
+palette, the Catalog, the cards, the legend, the editor's tabs and Reports' chips
+of model names; in a narrow dock it stands in for the name in the depth control
 ([0148](../decisions/0148-a-meaning-has-one-shape-and-no-marker-is-a-round-dot.md),
 [0160](../decisions/0160-the-lineage-space-has-one-bar-and-the-levels-sit-beside-their-toggle.md),
 [0158](../decisions/0158-the-depth-is-written-as-dbt-writes-a-selector.md)).

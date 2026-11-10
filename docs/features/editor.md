@@ -202,15 +202,18 @@ of it, a `ref()`, a macro call, a `var()` or a `Cmd/Ctrl + K` result, so that
 Back has it to return to; the link's target opens as the preview in its turn.
 A tab shows its close × only while it is in front, or under the pointer or the
 focus; a file with unsaved edits shows the pencil in its place, the × under the
-pointer. The bar's line runs under the tabs, and the one in front opens into the
-editor. The line the cursor is on is lit in the page and its number in the
-gutter.
+pointer. The tab of a model, a seed or a snapshot starts with its kind's bar, in
+the colour its box has on the canvas, and a model's diff tab has it too; the tab
+of any other file has none. The bar's line runs under the tabs, and the one in
+front opens into the editor. The line the cursor is on is lit in the page and
+its number in the gutter.
 
 The **Open editors** panel at the top of the sidebar starts closed, a row with a
 chevron, the title and the number of open files; Enter or a click on it opens
 the list of every open file with its own close and save buttons, plus save-all and
 close-all in its header, and the choice holds until the page is reloaded. The
-open file's row has the selection's wash, as the tree's does. Closing a tab never
+open file's row has the selection's wash, as the tree's does. Each row starts
+after its close slot with the file's icon, drawn as the tree draws it. Closing a tab never
 touches the file on disk.
 
 A tab follows its file when something else rewrites it: a `git pull` in the

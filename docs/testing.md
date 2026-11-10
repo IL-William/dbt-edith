@@ -79,6 +79,7 @@ $JSC web/tests/themes.js      # the four themes: their blocks, Light's contrast,
 $JSC web/tests/shapes.js      # one shape per meaning: no marker round, every state its pictogram
 $JSC web/tests/catalog.js     # the Catalog: the words beside the name, its tabs, the filter's count, a Lineage cell's halves, a job chip, and the rules of its one look
 $JSC web/tests/fileicons.js   # a file's icon: its shape by extension, its colour by what the manifest builds it as, the tree's git letters
+$JSC web/tests/tabkinds.js    # the editor's tabs and Open editors: a model's tab draws its kind's bar, a row its file's icon, a late mark draws the tabs once more
 ```
 
 The Snowflake script has tests of its own, against a fake connector and a fake

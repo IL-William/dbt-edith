@@ -30,6 +30,7 @@ const S = {
   back: [], fwd: [],          // where following a link came from, a browser's two stacks
   rows: new Map(),            // tree rows currently rendered, by path
   fileMarks: new Map(),       // path -> {kind, materialized} of a model's, seed's or snapshot's file, from /api/dir, for the file's icon (0151)
+  tabsAsk: 0,                 // the latest renderTabs, so folder answers that arrive together draw the tabs once
   gitMod: new Set(), gitUnt: new Set(), gitAdded: new Set(),
   gitModDirs: new Set(), gitUntDirs: new Set(),
   gitPrefixes: [], gitKey: '',
@@ -3469,6 +3470,7 @@ function renderTabs() {
     t.dataset.key = path;
     t.className = 'ftab' + (path === S.active ? ' active' : '') + (f.dirty ? ' dirty' : '') + (f.disk ? ' disk-' + f.disk : '');
     const name = document.createElement('span');
+    name.className = 'nm';
     name.textContent = f.kind === 'diff' ? base(f.path) + '  ↔' : f.kind === 'profile' || collinTab(f) ? fileName(f.path) : base(path);
     name.title = f.kind === 'diff' ? f.path + '  (HEAD against the working tree)'
       : f.kind === 'profile' ? f.path + '  (the dbt profile, outside the project)'
@@ -3481,6 +3483,10 @@ function renderTabs() {
     // built again whenever dirty changes, as the Open editors row is.
     x.title = f.dirty ? 'Close, losing unsaved changes' : 'Close';
     x.addEventListener('click', (e) => { e.stopPropagation(); closeFile(path); });
+    // A bar only for a file a node stands for, as the board draws it: a tab with
+    // no kind reserves no room for one (0148, 0151).
+    const mark = fileMark(projectPath(path));
+    if (mark) t.append(dot(mark));
     t.append(name, x);
     if (path === S.preview) t.classList.add('preview');
     t.addEventListener('click', () => activate(path));
@@ -3492,6 +3498,11 @@ function renderTabs() {
     // here: the cursor belongs to the editor.
     if (path === S.active) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
+  // S.fileMarks only knows the folders something has listed, so a tab opened from
+  // the canvas, the Catalog, Cmd+K or a link, in a folder no listing has asked,
+  // is drawn again once its mark came.
+  const n = ++S.tabsAsk;
+  askMarks(S.order.map(projectPath).filter(Boolean)).then((gained) => { if (gained && n === S.tabsAsk) renderTabs(); });
   renderOpenEditors();
   paintTree();
 }
@@ -3554,7 +3565,8 @@ function renderOpenEditors() {
       if (await saveFile(path)) { renderTabs(); toast('saved ' + base(path), 'ok'); }
     });
 
-    row.append(state, nm, dir, sv);
+    const icon = fileIcon(projectPath(path) || f.path, fileMark(projectPath(path)));
+    row.append(state, icon, nm, dir, sv);
     row.title = compare ? 'target/collin/' : path;
     row.addEventListener('click', () => activate(path));
     row.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); closeFile(path); } });
@@ -4678,11 +4690,16 @@ async function loadDir(container, path, depth) {
 }
 
 /* A new manifest can change what a file is built as, or give a file a node it
-   had none of: each folder the tree has opened is listed again and the icons
-   whose mark moved are drawn again. Nothing is asked before a tree exists. */
+   had none of: each folder the tree has opened, and each the open tabs sit in,
+   is listed again and the icons whose mark moved are drawn again. Nothing is
+   asked before a tree exists. */
 async function refreshFileMarks() {
-  const dirs = [''];
-  for (const [path, row] of S.rows) if (row.dir && row.el.loading) dirs.push(path);
+  const dirs = new Set(['']);
+  for (const [path, row] of S.rows) if (row.dir && row.el.loading) dirs.add(path);
+  // The tabs' own folders, so a tab keeps its bar through the refresh instead of
+  // losing it and getting it back (its name would move twice). Not dirOf, which
+  // shortens a long folder for display.
+  for (const p of S.order.map(projectPath).filter(Boolean)) dirs.add(p.slice(0, Math.max(0, p.lastIndexOf('/'))));
   // What was known of a file that no folder listed again is no longer known.
   const was = new Map(S.fileMarks);
   S.fileMarks.clear();
@@ -4691,6 +4708,8 @@ async function refreshFileMarks() {
     let entries;
     try { entries = await api.get('/api/dir?path=' + encodeURIComponent(dir)); } catch { continue; }
     rememberMarks(entries);
+    // Listed, so the redraw below has nothing left to ask.
+    marksAsked.set(dir, Promise.resolve());
     for (const e of entries) {
       if (e.dir) continue;
       const row = S.rows.get(e.path);
@@ -4701,6 +4720,8 @@ async function refreshFileMarks() {
       if (old) old.replaceWith(fileIcon(e.name, now));
     }
   }
+  // The tabs and Open editors read the same marks.
+  renderTabs();
 }
 
 // ------------------------------------------------------------ git status --

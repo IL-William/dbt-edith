@@ -88,6 +88,11 @@ check('the breadcrumb\'s row and the tree\'s draw the same icon', (function () {
 }()), 'var(--k-incr)');
 
 print('\n--- a new manifest redraws the icons whose mark moved ---');
+// The tabs and Open editors read the same marks, so a new manifest draws them again.
+var tabsDrawn = 0, barAtDraw = [], listed = [];
+// What the real one reads: whether the open tab's file has its mark at the moment of the draw.
+function projectPath(key) { return key; }
+function renderTabs() { tabsDrawn++; barAtDraw.push(!!fileMark('analyses/x.sql')); }
 var refreshSrc = src.slice(src.indexOf('async function refreshFileMarks'), src.indexOf('// ------------------------------------------------------------ git status --'));
 function makeRow(name, path) {
   var icon = fileIcon(name, fileMark(path)), row = { el: { isConnected: true, loading: null, querySelector: function () { return icon; } }, dir: false, icon: icon };
@@ -97,10 +102,12 @@ function makeRow(name, path) {
 var listing = { '': [{ name: 'models', path: 'models', dir: true }, { name: 'LICENSE', path: 'LICENSE', dir: false }],
   'models': [{ name: 'a.sql', path: 'models/a.sql', dir: false, kind: 'model', materialized: 'table' },
     { name: 'b.sql', path: 'models/b.sql', dir: false, kind: 'model', materialized: 'view' }, { name: 'c.sql', path: 'models/c.sql', dir: false }] };
-var api = { get: function (url) { return Promise.resolve(listing[decodeURIComponent(url.split('path=')[1])]); } };
+listing['analyses'] = [{ name: 'x.sql', path: 'analyses/x.sql', dir: false, kind: 'model', materialized: 'view' }];
+var api = { get: function (url) { listed.push(decodeURIComponent(url.split('path=')[1])); return Promise.resolve(listing[decodeURIComponent(url.split('path=')[1])]); } };
 eval(refreshSrc.replace(/^async function refreshFileMarks/, 'var refreshFileMarks = async function'));
 S.rows = new Map();
-S.fileMarks = new Map([['models/a.sql', { kind: 'model', materialized: 'view' }], ['models/b.sql', { kind: 'model', materialized: 'view' }], ['models/gone.sql', { kind: 'model', materialized: 'view' }]]);
+S.order = ['analyses/x.sql'];
+S.fileMarks = new Map([['analyses/x.sql', { kind: 'model', materialized: 'view' }], ['models/a.sql', { kind: 'model', materialized: 'view' }], ['models/b.sql', { kind: 'model', materialized: 'view' }], ['models/gone.sql', { kind: 'model', materialized: 'view' }]]);
 var folder = { el: { isConnected: true, loading: Promise.resolve() }, dir: true };
 S.rows.set('models', folder);
 S.rows.set('models/a.sql', makeRow('a.sql', 'models/a.sql'));
@@ -110,6 +117,9 @@ var done = false;
 refreshFileMarks().then(function () { done = true; });
 drainMicrotasks();
 ok('the refresh finished', done);
+check('the tab bar is drawn again once the marks moved', tabsDrawn, 1);
+check('a tab in a folder the tree never opened keeps its bar through the refresh: one draw, with the bar, and its folder listed once',
+  [barAtDraw, listed.filter(function (d) { return d === 'analyses'; }).length, marksAsked.has('analyses')], [[true], 1, true]);
 check('a model now built as a table is drawn again', S.rows.get('models/a.sql').redrawn, 1);
 check('one whose mark did not move is left alone', S.rows.get('models/b.sql').redrawn || 0, 0);
 check('marks are what the listings say now: a.sql table, b.sql view, c.sql none, and the file no listing names forgotten',

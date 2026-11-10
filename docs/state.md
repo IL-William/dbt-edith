@@ -2982,7 +2982,8 @@ of its own, and each panel updates the tour, its page under
       then takes a line of its own and is cut at the dock's edge.~~ Fixed in
       2.20.7: the group wraps inside its ring.
 34. **Markers and shapes still to draw (#166, 0148).**
-    - Editor tabs carry no kind bar: a tab knows its file, not its node.
+    - ~~Editor tabs carry no kind bar: a tab knows its file, not its node.~~
+      Fixed in 2.21.0.
     - ~~A column's role is still an 8px square (the column card, the legend, the
       stop at menu) until roles are drawn inside the column boxes.~~ Gone in
       2.13.0 (0162).
@@ -3006,14 +3007,14 @@ of its own, and each panel updates the tour, its page under
     - ~~A selected row's tint (`--accent-dim`) lowers some marks below 3:1 in
       Light; the selection wash (`--select`, as the boards use) comes with the
       shell step.~~ Settled in 2.20.0 (0166): the shell's selected rows take
-      `--select`. The wash leaves a few of Light's kind marks below 3:1 all the
-      same (item 55).
+      `--select`. ~~The wash leaves a few of Light's kind marks below 3:1 all the
+      same (item 55).~~ Fixed in 2.21.0.
     - The theme has no keyboard shortcut, ~~and the settings' one-column layout
       is the settings step's~~ (2.14.0, 0163).
 
 37. **The file icons' limits (0151, 2.3.0).**
-    - The editor's tabs and Open editors draw no file icon, nor the kind's bar
-      (0148): a tab knows its file, not its node.
+    - ~~The editor's tabs and Open editors draw no file icon, nor the kind's bar
+      (0148): a tab knows its file, not its node.~~ Fixed in 2.21.0.
     - A file deleted in the working tree is not in the tree, so no row shows
       git's D.
     - ~~The search palette and a diff's title colour a model's file only once
@@ -3417,8 +3418,8 @@ of its own, and each panel updates the tour, its page under
       becomes "\n" behaves the same way: Side by side shows nothing, Inline one
       added empty line.
 55. **The shell's limits (0166, 0167, 2.20.0).**
-    - The editor's tabs have no kind bar: a tab knows its file, not its node
-      (item 34).
+    - ~~The editor's tabs have no kind bar: a tab knows its file, not its node
+      (item 34).~~ Fixed in 2.21.0.
     - The sidebar's tabs keep their accent underline, the tree its indents, and
       the sidebar its width and the rule beside it; only the row's height
       (34px, the editor's tab bar's) follows the boards.
@@ -3428,14 +3429,26 @@ of its own, and each panel updates the tour, its page under
       1017px with no model open and 1052px with one, so below that it runs
       past the window, as it does on main. The dock's row is still `bare`
       there for the same reason.
-    - On a selected row in Light the table, materialized view, seed, source,
+    - ~~On a selected row in Light the table, materialized view, seed, source,
       snapshot, exposure, other and custom kind marks are 2.6 to 2.9:1 (the
       boards' own values over `--select`); only the view, incremental, YAML
-      and Python marks and git's letters are held by a test.
+      and Python marks and git's letters are held by a test.~~ Fixed in
+      2.21.0.
     - The editor's gutter and current line are the main editor's: the Compiled
       and Run tabs and the diff keep the old gutter (their own steps).
     - The hover card's types are `--fg-mute`, no longer the amber of
-      `--source`; the Catalog's own types are another step's.
+      `--source`; ~~the Catalog's own types are another step's.~~ Already so
+      since 2.16.0 (#186), held by `web/tests/catalog.js`.
+    - A tab whose folder no listing has asked yet opens without its kind bar, and
+      its name moves 11px to the right when the mark arrives.
+    - Light's `--t-column` is 2.60:1 on a selected row's wash; no selected row
+      draws a test, so nothing holds it there.
+    - Eight of Light's kind colours (table, materialized view, seed, source,
+      snapshot, exposure, other and custom) are a shade darker than the boards
+      draw them, so that each holds 3:1 on a selected row; the folder bands that
+      mix the materialized view and source colours, and the folder wash and text,
+      are a shade darker with them, as is `--f-macro`, for the palette's selected
+      row.
 56. **The witch hat on the dock's tabs (Halloween).** The hat on the tab in
     front pushes the pane under the dock's row down about 14px, on the Catalog
     as on Compiled and Run and every other dock tab; it is one fix for all of
