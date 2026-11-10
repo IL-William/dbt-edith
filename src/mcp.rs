@@ -1418,6 +1418,7 @@ mod tests {
 
     #[test]
     fn an_answer_under_the_cap_is_the_uncapped_one() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-under");
         let whole = capped(&dir, "-s 'long_model_name_00+'", MAX_ANSWER);
         assert!(whole.out.lines().count() > 30 && !whole.out.contains("left out"));
@@ -1430,6 +1431,7 @@ mod tests {
 
     #[test]
     fn a_long_selection_is_cut_at_a_line_and_closed_by_a_line_saying_how_to_narrow() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-cut");
         let whole = capped(&dir, "-s 'long_model_name_00+'", MAX_ANSWER);
         let total = whole.out.lines().count();
@@ -1452,6 +1454,7 @@ mod tests {
 
     #[test]
     fn json_lines_stay_json_and_each_output_is_offered_only_a_shorter_one() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-json");
         let whole = capped(&dir, "-s 'long_model_name_00+' --output json", MAX_ANSWER);
         let total = whole.out.lines().count();
@@ -1470,6 +1473,7 @@ mod tests {
 
     #[test]
     fn an_answer_that_is_one_line_has_none_to_keep_and_is_refused_with_the_hint() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-one");
         let whole = capped(&dir, "--overview --output json", MAX_ANSWER);
         assert_eq!(whole.out.lines().count(), 1);
@@ -1483,6 +1487,7 @@ mod tests {
 
     #[test]
     fn job_coverage_is_one_object_in_json_and_is_refused_over_the_cap() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-coverage");
         std::fs::create_dir_all(dir.join("dags")).unwrap();
         std::fs::write(
@@ -1508,6 +1513,7 @@ mod tests {
 
     #[test]
     fn each_mode_names_what_makes_its_answer_shorter() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-modes");
         for (line, hint) in [
             ("--overview", "a smaller --depth"),
@@ -1548,6 +1554,7 @@ mod tests {
 
     #[test]
     fn a_short_error_is_not_cut_whatever_the_cap() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-error");
         let refused = capped(&dir, "--overview --port 4321", 10);
         assert!(refused.is_error && refused.err.chars().count() > 10 && refused.out.is_empty());
@@ -1560,6 +1567,7 @@ mod tests {
 
     #[test]
     fn an_error_carrying_cards_is_cut_and_stays_an_error() {
+        let _clock = ls::hold_clock();
         let dir = wide("cap-cards");
         let names: Vec<String> = (0..10).map(|i| format!("long_model_name_{i:02}")).collect();
         let line = format!("--describe {},nope", names.join(","));

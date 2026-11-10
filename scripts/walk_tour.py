@@ -102,15 +102,8 @@ def parse(project):
         raise RuntimeError(f"dbt parse failed: {res.exception}")
 
 
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 class Edith:
     def __init__(self, binary, project, home, update_check=False):
-        self.port = free_port()
         self.log_path = home / "server.log"
         self.log = open(self.log_path, "w")
         env = dict(os.environ, DBT_EDITH_CONFIG_DIR=str(home / "config"), HOME=str(home / "home"))
@@ -119,7 +112,9 @@ class Edith:
         # picture the update pill, with a release list it wrote itself.
         flags = [] if update_check else ["--no-update-check"]
         self.proc = subprocess.Popen(
-            [str(binary), str(project), "--port", str(self.port), "--no-open", *flags],
+            # Port 0: the server takes a free one when it binds. A number found
+            # here first could be taken by another process before the server asks.
+            [str(binary), str(project), "--port", "0", "--no-open", *flags],
             stdout=self.log, stderr=subprocess.STDOUT, env=env,
         )
         deadline = time.time() + 60
@@ -370,15 +365,26 @@ class Walk:
             " && document.querySelector('#tour-title').textContent",
             f"step {index + 1}")
 
+    @staticmethod
+    def ringed(geometry, target):
+        """Whether the ring is where the step puts it: around its target, or
+        hidden when the step has none. The poll and the check share this."""
+        ring = geometry["ring"]
+        if target is None:
+            return ring is None
+        box, view = geometry["target"], geometry["view"]
+        return bool(ring and box and all(abs(a - b) <= 6 for a, b in zip(ring, [
+            max(2, box[0] - 4), max(2, box[1] - 4), min(view[0] - 2, box[2] + 4), min(view[1] - 2, box[3] + 4)])))
+
     def look(self, index, total):
         """The step on screen against STEPS: its title, its ring around its
         target, its card on screen, and the page under it."""
         title, target, shows = STEPS[index]
         got = self.step_shown(index, total)
         self.check(f"step {index + 1}: {title}", got == title, f"got {got!r}")
-        # The ring slides from one target to the next in 0.2 s.
-        time.sleep(0.35)
-        geometry = self.page.js(f"""(() => {{
+        # The ring slides from one target to the next in 0.2 s, so it is read
+        # again until it is where the step puts it.
+        script = f"""(() => {{
           const ring = document.querySelector('#tour .tour-ring');
           const card = document.querySelector('#tour .tour-card').getBoundingClientRect();
           const rs = [].concat({json.dumps(target)} || []).map((s) => document.querySelector(s))
@@ -388,19 +394,22 @@ class Walk:
           const g = ring.classList.contains('hidden') ? null : ring.getBoundingClientRect();
           return {{ ring: g && [g.left, g.top, g.right, g.bottom], target: r && [r.left, r.top, r.right, r.bottom],
                    card: [card.left, card.top, card.right, card.bottom], view: [innerWidth, innerHeight] }};
-        }})()""")
+        }})()"""
+        deadline = time.time() + 3
+        while True:
+            geometry = self.page.js(script)
+            if self.ringed(geometry, target) or time.time() > deadline:
+                break
+            time.sleep(0.1)
         view = geometry["view"]
         card = geometry["card"]
         self.check("  its card is on screen", card[0] >= 0 and card[1] >= 0 and card[2] <= view[0] and card[3] <= view[1],
                    f"card {card} in {view}")
         if target is None:
-            self.check("  rings nothing, the card centred", geometry["ring"] is None, f"ring {geometry['ring']}")
+            self.check("  rings nothing, the card centred", self.ringed(geometry, target), f"ring {geometry['ring']}")
         else:
-            ring, box = geometry["ring"], geometry["target"]
-            around = ring and box and all(abs(a - b) <= 6 for a, b in zip(ring, [
-                max(2, box[0] - 4), max(2, box[1] - 4), min(view[0] - 2, box[2] + 4), min(view[1] - 2, box[3] + 4)]))
-            self.check(f"  rings {' and '.join([target] if isinstance(target, str) else target)}", bool(around),
-                       f"ring {ring} around {box}")
+            self.check(f"  rings {' and '.join([target] if isinstance(target, str) else target)}", self.ringed(geometry, target),
+                       f"ring {geometry['ring']} around {geometry['target']}")
         if shows:
             self.check("  the page shows what it says", bool(self.page.until(shows, f"step {index + 1}'s page", 10)))
         if self.shots:
