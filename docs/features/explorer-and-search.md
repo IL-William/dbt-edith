@@ -126,7 +126,9 @@ how many lines it holds; the file open in the editor says `· open`. A click on
 a header folds the file, and the button beside the summary folds or unfolds
 every file; the folded files stay folded as you type, and come back open when
 the box is cleared. A match far along a line is brought into view by cutting the
-front of the line, so the letters you typed are never the part hidden. From the
+front of the line, and in a sidebar too narrow even for that the text before the
+match is cut at its left, with an ellipsis, and the text after it at its end, so
+the letters you typed are never the part hidden. From the
 keyboard, Down from the box goes to the first file, the arrows move over the
 rows, Left and Right fold and unfold a header, and Escape goes back to the box
 ([0155](../decisions/0155-the-search-tab-groups-its-lines-by-file-and-keeps-the-match-in-sight.md)).

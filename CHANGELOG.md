@@ -13,6 +13,12 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.10 - 2026-11-10
+
+- Keep the match of a Search tab line whole in a sidebar too narrow for it: the text
+  before the match is cut at its left, with the ellipsis there, and the text after
+  it at its end.
+
 ## 2.20.9 - 2026-11-10
 
 - Say a job's start in the Reports' Jobs read list and in Builds by job as the Jobs
