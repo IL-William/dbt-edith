@@ -275,28 +275,28 @@ menu of the three ways out.
 
 ![The Export menu open over the lineage: what the canvas shows and how many nodes and edges, three rows with their format and use, and the name of the file](../shots/lineage-export.png)
 
-Its head says what the canvas shows and how much, folded tests included,
-`4 nodes · 3 edges · 11 tests` (a test is no node and its stem no edge), or
-`8 columns` on a column canvas, the model boxes not counted. It can differ from
-the line under the canvas, which also counts what a selection keeps for context
-or a cap leaves out, and says how many of the tests are folded under a chip
-(`11 tests · 3 folded`). Its rows,
-each with a format tag and a sentence, are **Copy as image** (PNG), which puts
-the picture on the clipboard to paste into a ticket or a chat; **Save as image**
-(.png), the same picture as a file; and **Save as HTML page** (.html). Its foot
-is the name the file takes, `lineage-<what it shows>-<date>`, without its
-extension, the date being the exporter's own day. With nothing drawn the head
-says so and the rows cannot be picked. Each output says what it did in a toast:
-`Saved <name>`, `Image copied: paste it into the ticket`, or `The clipboard took
-no image, saved <name> instead`. Enter or Space on the button opens the menu on
-its first row, the arrows step through the rows, Enter picks one and Escape
-closes the menu and gives the button its focus back. Copy names, under a list
-glyph, is in the bar of the [Lineage space](selection.md) and copies the names,
-never the picture. On a narrow window the depth control's name gives way to the bar of its kind
-first, then the dock's tabs not in front show their glyphs alone, the one in
-front keeping its name; on a narrower one, when the row runs out of room even
-then, the front tab's name goes too, and on a narrower one still Export keeps
-its glyph and chevron alone, each named by its tooltip.
+Its head says what the canvas shows and how much, folded tests included, `4
+nodes · 3 edges · 11 tests` (a test is no node and its stem no edge), or `8
+columns` on a column canvas, the model boxes not counted. It can differ from the
+line under the canvas, which also counts what a selection keeps for context or a
+cap leaves out, and says how many of the tests are folded under a chip (`11
+tests · 3 folded`). Its rows, each with a format tag and a sentence, are **Copy
+as image** (PNG), which puts the picture on the clipboard to paste into a ticket
+or a chat; **Save as image** (.png), the same picture as a file; and **Save as
+HTML page** (.html). Its foot is the name the file takes, `lineage-<what it
+shows>-<date>`, without its extension, the date being the exporter's own day at
+the click. With nothing drawn the head says so and the rows cannot be picked.
+Each output says what it did in a toast: `Saved <name>`, `Image copied: paste it
+into the ticket`, or `The clipboard took no image, saved <name> instead`. Enter
+or Space on the button opens the menu on its first row, the arrows step through
+the rows, Enter picks one and Escape closes the menu and gives the button its
+focus back. Copy names, under a list glyph, is in the bar of the [Lineage
+space](selection.md) and copies the names, never the picture. On a narrow window
+the depth control's name gives way to the bar of its kind first, then the dock's
+tabs not in front show their glyphs alone, the one in front keeping its name; on
+a narrower one, when the row runs out of room even then, the front tab's name
+goes too, and on a narrower one still Export keeps its glyph and chevron alone,
+each named by its tooltip.
 
 **Save as HTML page** saves what the canvas shows as one HTML file named after it,
 `lineage-<what it shows>-<date>.html`, for a ticket or a message.

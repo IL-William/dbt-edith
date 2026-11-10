@@ -13,6 +13,11 @@ points at the decision behind it. A version's date is the day its bump merged,
 which tags and releases it with its section here as the notes (0045): the
 newest dated heading has to be the version `Cargo.toml` names.
 
+## 2.20.13 - 2026-11-11
+
+- Date an exported file from the click, so a menu left open past midnight
+  names the right day (0153).
+
 ## 2.20.12 - 2026-11-10
 
 - Keep the room above a column's box for a lane only beside the boxes that wear
