@@ -143,7 +143,12 @@ fn keys_of(graph: &Graph, i: u32, f: &mut Found, rows: bool) {
     }
     if graph.nodes[i as usize].is_incremental() && !ignored {
         if let Some(k) = keys.iter().find(|k| k.in_config()).filter(|k| !k.tested()) {
-            f.untested_key.push(Hit { node: i, detail: format!("unique_key {}", k.entries.join(", ")), column: String::new(), key: k.entries.clone() });
+            f.untested_key.push(Hit {
+                node: i,
+                detail: format!("unique_key {}", k.entries.join(", ")),
+                column: String::new(),
+                key: k.entries.clone(),
+            });
         }
     }
     if !keys.iter().any(|k| k.tested()) {
@@ -599,7 +604,10 @@ mod tests {
         }));
         let c = checks(&g);
         let looks = |rows: &[Row]| rows.iter().map(|r| (r.name.clone(), r.materialized.clone())).collect::<Vec<_>>();
-        assert_eq!(looks(&c.models_without_description.rows), [("bare".to_string(), String::new()), ("tabled".to_string(), "table".to_string())]);
+        assert_eq!(
+            looks(&c.models_without_description.rows),
+            [("bare".to_string(), String::new()), ("tabled".to_string(), "table".to_string())]
+        );
         assert_eq!(looks(&c.sources_not_read.rows), [("crm.alone".to_string(), "source".to_string())]);
         let sent = serde_json::to_value(&c.models_without_description.rows).unwrap();
         assert!(sent[0].get("materialized").is_none(), "an empty one is not sent");
@@ -707,7 +715,14 @@ mod tests {
         assert_eq!(seen, [("key id: no not_null on id", "id"), ("key order_id, line: no not_null on line", "line")]);
         assert_eq!(rows.rows[1].key, ["order_id", "line"]);
         // The count the index reads is the rows', built without any of them.
-        assert_eq!(count(&g), checks(&g).keys_maybe_null.total + checks(&g).models_without_key.total + checks(&g).models_without_test.total + checks(&g).models_without_description.total + checks(&g).unique_keys_untested.total);
+        assert_eq!(
+            count(&g),
+            checks(&g).keys_maybe_null.total
+                + checks(&g).models_without_key.total
+                + checks(&g).models_without_test.total
+                + checks(&g).models_without_description.total
+                + checks(&g).unique_keys_untested.total
+        );
         // Both rows are the same model, and neither is a model with no key.
         assert!(checks(&g).models_without_key.rows.iter().all(|r| r.name == "lonely"));
     }
@@ -720,7 +735,10 @@ mod tests {
         assert_eq!(names(&c.unique_keys_untested.rows), ["orders"]);
         assert_eq!(c.unique_keys_untested.rows[0].detail, "unique_key id, line");
         // The test of the whole list, in another order, checks it.
-        let g = keyed(incremental(json!(["id", "line"])), vec![("c", "unique_combination_of_columns", None, json!({ "combination_of_columns": ["line", "id"] }))]);
+        let g = keyed(
+            incremental(json!(["id", "line"])),
+            vec![("c", "unique_combination_of_columns", None, json!({ "combination_of_columns": ["line", "id"] }))],
+        );
         assert!(checks(&g).unique_keys_untested.rows.is_empty());
         // A table with a unique_key is not held to it: it does not merge.
         let g = keyed(json!({ "materialized": "table", "unique_key": "id" }), vec![]);
@@ -754,8 +772,13 @@ mod tests {
         let c = checks(&g);
         assert!(c.unique_keys_untested.rows.is_empty() && c.keys_maybe_null.rows.is_empty());
         let total = |c: &Checks| {
-            c.sources_without_freshness.total + c.models_without_test.total + c.models_without_description.total + c.sources_not_read.total
-                + c.keys_maybe_null.total + c.unique_keys_untested.total + c.models_without_key.total
+            c.sources_without_freshness.total
+                + c.models_without_test.total
+                + c.models_without_description.total
+                + c.sources_not_read.total
+                + c.keys_maybe_null.total
+                + c.unique_keys_untested.total
+                + c.models_without_key.total
         };
         assert_eq!(count(&g), total(&c), "the count leaves it out too");
         // A test of the same column makes it a key the checks look at.

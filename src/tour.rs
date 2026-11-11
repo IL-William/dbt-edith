@@ -51,10 +51,12 @@ pub struct Pick {
 /// on its packages'.
 pub fn pick(graph: &Graph, ran: &[bool]) -> Option<Pick> {
     let side = |ids: &[u32]| {
-        ids.iter().filter(|&&i| {
-            let n = &graph.nodes[i as usize];
-            n.kind.is_graph_node() && !n.disabled
-        }).count()
+        ids.iter()
+            .filter(|&&i| {
+                let n = &graph.nodes[i as usize];
+                n.kind.is_graph_node() && !n.disabled
+            })
+            .count()
     };
     let rank = |own: bool| {
         graph
@@ -173,10 +175,8 @@ mod tests {
         let mut manifest_nodes = serde_json::Map::new();
         for (name, kind, package, parents) in nodes {
             let uid = id(name, kind, package);
-            let parents: Vec<String> = parents
-                .iter()
-                .map(|p| nodes.iter().find(|n| n.0 == *p).map(|n| id(n.0, n.1, n.2)).unwrap())
-                .collect();
+            let parents: Vec<String> =
+                parents.iter().map(|p| nodes.iter().find(|n| n.0 == *p).map(|n| id(n.0, n.1, n.2)).unwrap()).collect();
             parent_map.insert(uid.clone(), serde_json::json!(parents));
             manifest_nodes.insert(
                 uid.clone(),
@@ -234,8 +234,7 @@ mod tests {
         }
         let names: Vec<(String, &str, &str, Vec<&str>)> =
             nodes.iter().map(|(n, k, p, ps)| (n.clone(), *k, *p, ps.iter().map(String::as_str).collect())).collect();
-        let refs: Vec<(&str, &str, &str, &[&str])> =
-            names.iter().map(|(n, k, p, ps)| (n.as_str(), *k, *p, ps.as_slice())).collect();
+        let refs: Vec<(&str, &str, &str, &[&str])> = names.iter().map(|(n, k, p, ps)| (n.as_str(), *k, *p, ps.as_slice())).collect();
         let g = graph("p", &refs);
         assert_eq!(pick(&g, &[]).unwrap().name, "mid");
         // A job running the hub wins it the pick: a Jobs tab with nothing in
@@ -254,12 +253,7 @@ mod tests {
     fn the_project_s_own_models_come_before_a_package_s() {
         let g = graph(
             "shop",
-            &[
-                ("a", "model", "pkg", &[]),
-                ("b", "model", "pkg", &["a"]),
-                ("c", "model", "pkg", &["b"]),
-                ("mine", "model", "shop", &[]),
-            ],
+            &[("a", "model", "pkg", &[]), ("b", "model", "pkg", &["a"]), ("c", "model", "pkg", &["b"]), ("mine", "model", "shop", &[])],
         );
         assert_eq!(pick(&g, &[]).unwrap().name, "mine");
         assert_eq!(pick(&g, &[]).unwrap().package, None, "the project's own says no package");

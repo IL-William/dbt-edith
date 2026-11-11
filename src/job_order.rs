@@ -43,12 +43,7 @@ pub fn run_job_order(project: &Path, manifest: Option<&Path>, catalog: Option<&P
 /// holds between calls (MCP); None reads them here, if the project has a
 /// sources file.
 pub(crate) fn respond_job_order(
-    root: &Path,
-    graph: &Graph,
-    kept: Option<&Known>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let code = job_order(root, graph, kept, output, out, err)?;
     out.flush()?;
@@ -56,11 +51,17 @@ pub(crate) fn respond_job_order(
     Ok(code)
 }
 
-fn job_order(root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+fn job_order(
+    root: &Path, graph: &Graph, kept: Option<&Known>, output: Output, out: &mut impl Write, err: &mut impl Write,
+) -> io::Result<i32> {
     let known = kept.cloned().unwrap_or_else(|| jobs::known(graph, root));
     let read = match known {
         Known::Absent => {
-            writeln!(err, "error: no {} in this project; name the sources in the Orchestration section of the settings", clean(jobs::SOURCES_FILE))?;
+            writeln!(
+                err,
+                "error: no {} in this project; name the sources in the Orchestration section of the settings",
+                clean(jobs::SOURCES_FILE)
+            )?;
             return Ok(CANNOT_RUN);
         }
         Known::Refused(why) => {
@@ -336,10 +337,29 @@ impl Order {
         let mut link_at: Vec<Vec<usize>> = Vec::new();
         let mut sensor_at: Vec<Vec<usize>> = Vec::new();
         for j in &read.jobs {
-            link_at.push((0..j.links.len()).map(|_| { total += 1; total - 1 }).collect());
-            sensor_at.push((0..j.sensors.len()).map(|_| { total += 1; total - 1 }).collect());
+            link_at.push(
+                (0..j.links.len())
+                    .map(|_| {
+                        total += 1;
+                        total - 1
+                    })
+                    .collect(),
+            );
+            sensor_at.push(
+                (0..j.sensors.len())
+                    .map(|_| {
+                        total += 1;
+                        total - 1
+                    })
+                    .collect(),
+            );
         }
-        let feeder_at: Vec<usize> = (0..read.feeders.len()).map(|_| { total += 1; total - 1 }).collect();
+        let feeder_at: Vec<usize> = (0..read.feeders.len())
+            .map(|_| {
+                total += 1;
+                total - 1
+            })
+            .collect();
         let mut o = Order {
             plain: vec![Vec::new(); total],
             groups: vec![Vec::new(); total],
@@ -405,11 +425,16 @@ impl Order {
                 }
                 continue;
             }
-            let tasks: Vec<usize> = j.steps.iter().copied().chain(link_at[ji].iter().copied()).chain(o.sensors[ji].iter().copied()).collect();
+            let tasks: Vec<usize> =
+                j.steps.iter().copied().chain(link_at[ji].iter().copied()).chain(o.sensors[ji].iter().copied()).collect();
             for &x in &tasks {
                 o.plain[x].push(start(ji));
             }
-            let deps = j.steps.iter().map(|&si| (si, &read.steps[si].upstream)).chain(j.links.iter().enumerate().map(|(k, l)| (link_at[ji][k], &l.upstream)));
+            let deps = j
+                .steps
+                .iter()
+                .map(|&si| (si, &read.steps[si].upstream))
+                .chain(j.links.iter().enumerate().map(|(k, l)| (link_at[ji][k], &l.upstream)));
             let mut waits: Vec<(usize, usize)> = Vec::new();
             for (x, upstream) in deps {
                 for u in upstream {
@@ -428,7 +453,8 @@ impl Order {
                     // Whole run only when it names neither a task nor a group; a
                     // group's tasks are not read, so it orders nothing.
                     if s.whole() {
-                        o.plain[x].extend(other.steps.iter().copied().chain(link_at[ki].iter().copied()).chain(o.sensors[ki].iter().copied()));
+                        o.plain[x]
+                            .extend(other.steps.iter().copied().chain(link_at[ki].iter().copied()).chain(o.sensors[ki].iter().copied()));
                     } else {
                         for t in &s.tasks {
                             o.plain[x].extend(named.get(&(ki, t.as_str())).into_iter().flatten().filter(|&&p| p != x));
@@ -567,7 +593,15 @@ impl Infos<'_> {
                     schedule = format!("scheduled {} {}{}", v.cron, v.timezone, &rest[v.cron.len()..]);
                 }
             }
-            Info { kind: v.kind, label: v.label(), source: v.source.clone(), schedule, cron: v.cron.clone(), timezone: v.timezone.clone(), file: v.file.clone() }
+            Info {
+                kind: v.kind,
+                label: v.label(),
+                source: v.source.clone(),
+                schedule,
+                cron: v.cron.clone(),
+                timezone: v.timezone.clone(),
+                file: v.file.clone(),
+            }
         })
     }
 
@@ -718,8 +752,13 @@ pub fn order(graph: &Graph, read: &Read) -> OrderAnswer {
                 })
                 .collect();
             edges.sort_by(|a, b| {
-                (&a.node_name, &a.parent_name, a.through.iter().map(|t| &t.name).collect::<Vec<_>>(), &a.node, &a.parent)
-                    .cmp(&(&b.node_name, &b.parent_name, b.through.iter().map(|t| &t.name).collect::<Vec<_>>(), &b.node, &b.parent))
+                (&a.node_name, &a.parent_name, a.through.iter().map(|t| &t.name).collect::<Vec<_>>(), &a.node, &a.parent).cmp(&(
+                    &b.node_name,
+                    &b.parent_name,
+                    b.through.iter().map(|t| &t.name).collect::<Vec<_>>(),
+                    &b.node,
+                    &b.parent,
+                ))
             });
             let by = |s: usize| {
                 let j = &read.jobs[read.steps[s].job];
@@ -834,10 +873,23 @@ fn write_text(a: &OrderAnswer, out: &mut impl Write) -> io::Result<()> {
             writeln!(out, "{}", clean(&format!("    {} runs after it", s.title)))?;
         }
         for s in &p.idle_sensors {
-            writeln!(out, "{}", clean(&format!("    note: {} of this DAG waits for {}; this task does not depend on it", who(&s.id), s.waits.join(", "))))?;
+            writeln!(
+                out,
+                "{}",
+                clean(&format!("    note: {} of this DAG waits for {}; this task does not depend on it", who(&s.id), s.waits.join(", ")))
+            )?;
         }
         for s in &p.group_sensors {
-            writeln!(out, "{}", clean(&format!("    note: {} depends on {}, which waits for {}, whose tasks are not read", s.task, who(&s.id), s.waits.join(", "))))?;
+            writeln!(
+                out,
+                "{}",
+                clean(&format!(
+                    "    note: {} depends on {}, which waits for {}, whose tasks are not read",
+                    s.task,
+                    who(&s.id),
+                    s.waits.join(", ")
+                ))
+            )?;
         }
         for e in p.edges.iter().take(EDGES_SHOWN) {
             let through = if e.through.is_empty() {
@@ -861,11 +913,17 @@ fn write_text(a: &OrderAnswer, out: &mut impl Write) -> io::Result<()> {
     if !a.left_out.is_empty() {
         // Named with its source when two sources hold a job of one name, so the
         // count and the names agree.
-        let mut names: Vec<String> = a
-            .left_out
-            .iter()
-            .map(|l| if a.left_out.iter().filter(|o| o.job == l.job).count() > 1 { format!("{}: {}", l.source, l.job) } else { l.job.clone() })
-            .collect();
+        let mut names: Vec<String> =
+            a.left_out
+                .iter()
+                .map(|l| {
+                    if a.left_out.iter().filter(|o| o.job == l.job).count() > 1 {
+                        format!("{}: {}", l.source, l.job)
+                    } else {
+                        l.job.clone()
+                    }
+                })
+                .collect();
         let more = names.len().saturating_sub(NAMES_SHOWN);
         names.truncate(NAMES_SHOWN);
         let tail = if more > 0 { format!(", +{more} more") } else { String::new() };
@@ -955,7 +1013,12 @@ mod tests {
         }
         let list: Vec<JobSource> = sources
             .iter()
-            .map(|(kind, dir, zone)| JobSource { kind: kind.to_string(), path: dir.to_string(), timezone: zone.to_string(), ..Default::default() })
+            .map(|(kind, dir, zone)| JobSource {
+                kind: kind.to_string(),
+                path: dir.to_string(),
+                timezone: zone.to_string(),
+                ..Default::default()
+            })
             .collect();
         std::fs::write(root.join(".dbt-edith/jobs.yml"), jobs::sources_yaml(&list)).unwrap();
         root
@@ -978,7 +1041,8 @@ mod tests {
         out
     }
 
-    const STAGE: &str = "dag_id: jaffle_stage\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: stage\n    command: dbt run --select stg_orders\n";
+    const STAGE: &str =
+        "dag_id: jaffle_stage\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: stage\n    command: dbt run --select stg_orders\n";
     const MARTS: &str = "dag_id: jaffle_marts\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: build\n    command: dbt run --select orders\n";
 
     #[test]
@@ -1006,7 +1070,10 @@ mod tests {
         // The sensor is in the DAG, and the task does not name it: it waits for nothing.
         let out = dags("sensor-idle", &[("stage", STAGE), ("marts", &gated(""))]);
         assert!(out.starts_with("pairs 1:"), "{out}");
-        assert!(out.contains("    note: sensor wait_stage of this DAG waits for jaffle_stage › stage; this task does not depend on it\n"), "{out}");
+        assert!(
+            out.contains("    note: sensor wait_stage of this DAG waits for jaffle_stage › stage; this task does not depend on it\n"),
+            "{out}"
+        );
         // A whole-run sensor orders what names it all the same.
         let whole = gated("    depends_on: [wait_stage]\n").replace("    external_task_id: stage\n", "");
         assert!(dags("sensor-whole", &[("stage", STAGE), ("marts", &whole)]).starts_with("pairs 0\n"));
@@ -1075,14 +1142,16 @@ mod tests {
     fn a_view_and_an_ephemeral_are_read_through_and_a_table_nothing_builds_ends_the_walk() {
         // order_items reads a view of stg_orders: the builder of the view
         // consumes nothing, and the builder of stg_orders is what it waits for.
-        let items = "dag_id: jaffle_items\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: items\n    command: dbt run --select order_items\n";
+        let items =
+            "dag_id: jaffle_items\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: items\n    command: dbt run --select order_items\n";
         let views = "dag_id: jaffle_views\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: views\n    command: dbt run --select v_orders\n";
         let out = dags("view", &[("stage", STAGE), ("items", items), ("views", views)]);
         assert!(out.contains("  DAG jaffle_items › task items  should wait for  DAG jaffle_stage › task stage\n"), "{out}");
         assert!(out.contains("    order_items reads stg_orders through v_orders\n"), "{out}");
         assert!(out.starts_with("pairs 1:"), "the view's builder is no pair: {out}");
         // An ephemeral another step selects is walked through as well.
-        let eph = "dag_id: jaffle_eph\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: eph\n    command: dbt run --select int_orders orders\n";
+        let eph =
+            "dag_id: jaffle_eph\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: eph\n    command: dbt run --select int_orders orders\n";
         let out = dags("ephemeral", &[("stage", STAGE), ("eph", eph)]);
         assert!(out.contains("    orders reads stg_orders through int_orders\n"), "{out}");
         // Another step selecting the ephemeral changes nothing: it builds no object, and consumes none.
@@ -1090,7 +1159,8 @@ mod tests {
         let out = dags("ephemeral-elsewhere", &[("stage", STAGE), ("marts", MARTS), ("other", other)]);
         assert!(out.starts_with("pairs 1:") && out.contains("DAG jaffle_marts › task build  should wait for  DAG jaffle_stage"), "{out}");
         // orders_summary reads orders, which nothing builds: no walk past it.
-        let summary = "dag_id: jaffle_summary\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: s\n    command: dbt run --select orders_summary\n";
+        let summary =
+            "dag_id: jaffle_summary\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: s\n    command: dbt run --select orders_summary\n";
         assert!(dags("nothing-builds", &[("stage", STAGE), ("summary", summary)]).starts_with("pairs 0\n"));
     }
 
@@ -1099,7 +1169,9 @@ mod tests {
         let other = "dag_id: jaffle_again\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: again\n    command: dbt run --select stg_orders\n";
         let out = dags("two", &[("again", other), ("marts", MARTS), ("stage", STAGE)]);
         assert!(
-            out.contains("  DAG jaffle_marts › task build  should wait for one of  DAG jaffle_again › task again, DAG jaffle_stage › task stage\n"),
+            out.contains(
+                "  DAG jaffle_marts › task build  should wait for one of  DAG jaffle_again › task again, DAG jaffle_stage › task stage\n"
+            ),
             "{out}"
         );
         // It waits for one of them: no pair.
@@ -1113,10 +1185,14 @@ mod tests {
         let both = "dag_id: jaffle_all\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: stage\n    command: dbt run --select stg_orders\n\
                     \x20 - task_id: build\n    command: dbt run --select orders\n";
         let out = dags("same-dag", &[("all", both)]);
-        assert!(out.contains("nothing orders them  1\n  DAG jaffle_all › task build  should wait for  DAG jaffle_all › task stage\n"), "{out}");
+        assert!(
+            out.contains("nothing orders them  1\n  DAG jaffle_all › task build  should wait for  DAG jaffle_all › task stage\n"),
+            "{out}"
+        );
         let ordered = both.replace("command: dbt run --select orders\n", "command: dbt run --select orders\n    depends_on: [stage]\n");
         assert!(dags("same-dag-ordered", &[("all", &ordered)]).starts_with("pairs 0\n"));
-        let one = "dag_id: jaffle_all\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: all\n    command: dbt run --select stg_orders orders\n";
+        let one =
+            "dag_id: jaffle_all\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: all\n    command: dbt run --select stg_orders orders\n";
         assert!(dags("same-step", &[("all", one)]).starts_with("pairs 0\n"));
     }
 
@@ -1193,7 +1269,10 @@ mod tests {
         assert!(both.starts_with("pairs 0\n"), "{both}");
         // Only one named: the other is still unordered.
         let one = dags("sensor-list-one", &[("stage", stage), ("marts", &marts("    external_task_ids: [stage]\n"))]);
-        assert!(one.contains("should wait for  DAG jaffle_stage › task cust\n") && one.contains("customers reads stg_customers\n"), "{one}");
+        assert!(
+            one.contains("should wait for  DAG jaffle_stage › task cust\n") && one.contains("customers reads stg_customers\n"),
+            "{one}"
+        );
         // A group is not the whole run: its tasks are not read, so nothing is ordered.
         // The step does depend on that sensor, so the pairs say the group may order them.
         let group = dags("sensor-group", &[("stage", stage), ("marts", &marts("    external_task_group_id: loading\n"))]);
@@ -1202,7 +1281,11 @@ mod tests {
             group.matches("    note: task build depends on sensor wait, which waits for jaffle_stage › task group loading, whose tasks are not read\n").count() == 2,
             "{group}"
         );
-        let root = project("sensor-group-json", &[("airflow", "dags", "")], &[("dags/s.yml", stage), ("dags/m.yml", &marts("    external_task_group_id: loading\n"))]);
+        let root = project(
+            "sensor-group-json",
+            &[("airflow", "dags", "")],
+            &[("dags/s.yml", stage), ("dags/m.yml", &marts("    external_task_group_id: loading\n"))],
+        );
         let json: serde_json::Value = serde_json::from_str(&ask(&root, Output::Json).0).unwrap();
         assert_eq!(
             json["pairs"][0]["group_sensors"],
@@ -1224,8 +1307,22 @@ mod tests {
         // On the DAG's later task: it would order the pair if build named it.
         let later = marts("  - task_id: wait_publish\n    external_dag_id: jaffle_stage\n    external_task_id: publish\n");
         let out = dags("sensor-later", &[("stage", stage), ("marts", &later)]);
-        assert!(out.contains("    note: sensor wait_publish of this DAG waits for jaffle_stage › publish; this task does not depend on it\n"), "{out}");
-        let json: serde_json::Value = serde_json::from_str(&ask(&project("sensor-json", &[("airflow", "dags", "")], &[("dags/s.yml", STAGE), ("dags/m.yml", &marts("  - external_dag_id: jaffle_stage\n"))]), Output::Json).0).unwrap();
+        assert!(
+            out.contains("    note: sensor wait_publish of this DAG waits for jaffle_stage › publish; this task does not depend on it\n"),
+            "{out}"
+        );
+        let json: serde_json::Value = serde_json::from_str(
+            &ask(
+                &project(
+                    "sensor-json",
+                    &[("airflow", "dags", "")],
+                    &[("dags/s.yml", STAGE), ("dags/m.yml", &marts("  - external_dag_id: jaffle_stage\n"))],
+                ),
+                Output::Json,
+            )
+            .0,
+        )
+        .unwrap();
         assert_eq!(json["pairs"][0]["idle_sensors"], json!([{"waits": ["jaffle_stage"]}]), "no id, and the whole run");
         // A sensor on a DAG that has nothing to do with the pair is no note.
         let other = marts("  - task_id: wait_x\n    external_dag_id: jaffle_elsewhere\n");
@@ -1245,7 +1342,8 @@ mod tests {
     #[test]
     fn a_dynamic_table_is_read_through_like_a_view_and_a_materialized_view_is_built() {
         // orders_latest reads orders_live, a dynamic table over stg_orders.
-        let latest = "dag_id: jaffle_latest\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: latest\n    command: dbt run --select orders_latest\n";
+        let latest =
+            "dag_id: jaffle_latest\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: latest\n    command: dbt run --select orders_latest\n";
         let out = dags("dynamic", &[("stage", STAGE), ("latest", latest)]);
         assert!(out.contains("    orders_latest reads stg_orders through orders_live\n"), "{out}");
         // Building it consumes nothing, and builds nothing to wait for.
@@ -1255,7 +1353,8 @@ mod tests {
         // A materialized view is refreshed by every run of dbt: its step reads
         // stg_orders, and the step a report reads it through is the one to wait for.
         let mv = "dag_id: jaffle_mv\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: mv\n    command: dbt run --select orders_mv\n";
-        let report = "dag_id: jaffle_report\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: report\n    command: dbt run --select mv_report\n";
+        let report =
+            "dag_id: jaffle_report\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: report\n    command: dbt run --select mv_report\n";
         let out = dags("mv", &[("stage", STAGE), ("mv", mv), ("report", report)]);
         assert!(out.starts_with("pairs 2:"), "{out}");
         assert!(out.contains("  DAG jaffle_mv › task mv  should wait for  DAG jaffle_stage › task stage\n    scheduled 0 6 * * *  ·  scheduled 0 6 * * *\n    orders_mv reads stg_orders\n"), "{out}");
@@ -1268,7 +1367,8 @@ mod tests {
         // stage updates an asset; a DAG with no dbt task runs on it; marts waits
         // for that DAG's task and names the sensor.
         let stage = "dag_id: jaffle_stage\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: stage\n    command: dbt run --select stg_orders\n    outlets: [staged]\n";
-        let bridge = "dag_id: jaffle_bridge\nschedule: [staged]\ntasks:\n  - task_id: bridge\n    python_callable: send\n    outlets: [bridged]\n";
+        let bridge =
+            "dag_id: jaffle_bridge\nschedule: [staged]\ntasks:\n  - task_id: bridge\n    python_callable: send\n    outlets: [bridged]\n";
         let marts = |wait: &str| {
             format!(
                 "dag_id: jaffle_marts\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: build\n    command: dbt run --select orders\n    depends_on: [wait]\n\
@@ -1318,7 +1418,11 @@ mod tests {
     #[test]
     fn a_job_of_one_name_in_two_sources_is_counted_and_named_twice() {
         let manual = "dag_id: jaffle_full_refresh\nschedule: null\ntasks:\n  - task_id: build\n    command: dbt run --select orders\n";
-        let root = project("two-sources", &[("airflow", "dags_a", ""), ("airflow", "dags_b", "")], &[("dags_a/m.yml", manual), ("dags_b/m.yml", manual)]);
+        let root = project(
+            "two-sources",
+            &[("airflow", "dags_a", ""), ("airflow", "dags_b", "")],
+            &[("dags_a/m.yml", manual), ("dags_b/m.yml", manual)],
+        );
         let (out, _, _) = ask(&root, Output::Name);
         assert!(out.contains("2 jobs nothing starts left out: dags_a: jaffle_full_refresh, dags_b: jaffle_full_refresh\n"), "{out}");
     }
@@ -1341,23 +1445,33 @@ mod tests {
         assert!(run("cloud-after", &cloud(after, one)).starts_with("pairs 0\n"));
         // Within a job, a step runs after the one written before it.
         let steps = "      - dbt run --select stg_orders\n      - dbt run --select orders\n";
-        let alone = "jobs:\n  daily:\n    name: Daily\n    execute_steps:\n".to_string() + steps + "    triggers:\n      schedule: true\n    schedule:\n      cron: \"0 6 * * *\"\n";
+        let alone = "jobs:\n  daily:\n    name: Daily\n    execute_steps:\n".to_string()
+            + steps
+            + "    triggers:\n      schedule: true\n    schedule:\n      cron: \"0 6 * * *\"\n";
         assert!(run("cloud-steps", &alone).starts_with("pairs 0\n"));
         let backwards = "jobs:\n  daily:\n    name: Daily\n    execute_steps:\n      - dbt run --select orders\n      - dbt run --select stg_orders\n    triggers:\n      schedule: true\n    schedule:\n      cron: \"0 6 * * *\"\n";
         let out = run("cloud-back", backwards);
-        assert!(out.contains("ordered the other way  1\n") && out.contains("  job Daily › step 1/2  should wait for  job Daily › step 2/2\n"), "{out}");
+        assert!(
+            out.contains("ordered the other way  1\n") && out.contains("  job Daily › step 1/2  should wait for  job Daily › step 2/2\n"),
+            "{out}"
+        );
     }
 
     #[test]
     fn a_job_nothing_starts_is_left_out_on_both_sides_and_named() {
         let manual = "dag_id: jaffle_full_refresh\nschedule: null\ntasks:\n  - task_id: build\n    command: dbt run --select orders\n";
         let out = dags("manual", &[("stage", STAGE), ("manual", manual)]);
-        assert_eq!(out, "pairs 0\nevery step waits for the steps that build its parents\n1 job nothing starts left out: jaffle_full_refresh\n");
+        assert_eq!(
+            out,
+            "pairs 0\nevery step waits for the steps that build its parents\n1 job nothing starts left out: jaffle_full_refresh\n"
+        );
         // And as a producer: a manual job building the parent is no one to wait for.
         let manual_stage = STAGE.replace("schedule: \"0 6 * * *\"", "schedule: null");
         let out = dags("manual-producer", &[("stage", &manual_stage), ("marts", MARTS)]);
         assert!(out.starts_with("pairs 0\n") && out.contains("left out: jaffle_stage"), "{out}");
-        let json: serde_json::Value = serde_json::from_str(&ask(&project("manual-json", &[("airflow", "dags", "")], &[("dags/m.yml", manual)]), Output::Json).0).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&ask(&project("manual-json", &[("airflow", "dags", "")], &[("dags/m.yml", manual)]), Output::Json).0)
+                .unwrap();
         assert_eq!(json["left_out"][0]["job"], "jaffle_full_refresh");
     }
 
@@ -1366,10 +1480,18 @@ mod tests {
         let lost = "dag_id: jaffle_lost\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: lost\n    command: dbt run --selector nowhere\n";
         let out = dags("unresolved", &[("lost", lost), ("stage", STAGE)]);
         assert!(out.contains("1 step not resolved, which could hide more\n"), "{out}");
-        let json: serde_json::Value = serde_json::from_str(&ask(&project("unresolved-json", &[("airflow", "dags", "")], &[("dags/l.yml", lost)]), Output::Json).0).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&ask(&project("unresolved-json", &[("airflow", "dags", "")], &[("dags/l.yml", lost)]), Output::Json).0)
+                .unwrap();
         let lost = &json["unresolved"][0];
-        assert_eq!((lost["source"].as_str(), lost["job"].as_str(), lost["label"].as_str()), (Some("dags"), Some("jaffle_lost"), Some("task lost")));
-        assert_eq!((lost["shown"].as_str(), lost["file"].as_str(), lost["line"].as_u64()), (Some("dbt run --selector nowhere"), Some("l.yml"), Some(5)));
+        assert_eq!(
+            (lost["source"].as_str(), lost["job"].as_str(), lost["label"].as_str()),
+            (Some("dags"), Some("jaffle_lost"), Some("task lost"))
+        );
+        assert_eq!(
+            (lost["shown"].as_str(), lost["file"].as_str(), lost["line"].as_u64()),
+            (Some("dbt run --selector nowhere"), Some("l.yml"), Some(5))
+        );
         assert!(lost["why"].as_str().unwrap().contains("no selector named `nowhere`"), "{lost}");
         assert_eq!(json["configured"], true);
     }
@@ -1401,19 +1523,60 @@ mod tests {
     #[test]
     fn more_than_five_edges_of_a_pair_are_counted_in_text_and_all_listed_in_json() {
         let many = |n: usize| {
-            let selected: Vec<String> = ["orders", "customers", "order_items", "orders_summary"].iter().take(n).map(|s| s.to_string()).collect();
-            format!("dag_id: jaffle_marts\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: build\n    command: dbt run --select {}\n", selected.join(" "))
+            let selected: Vec<String> =
+                ["orders", "customers", "order_items", "orders_summary"].iter().take(n).map(|s| s.to_string()).collect();
+            format!(
+                "dag_id: jaffle_marts\nschedule: \"0 6 * * *\"\ntasks:\n  - task_id: build\n    command: dbt run --select {}\n",
+                selected.join(" ")
+            )
         };
         let out = dags("edges", &[("stage", STAGE), ("marts", &many(4))]);
         assert!(out.contains("customers reads stg_orders") && out.contains("order_items reads stg_orders through v_orders"), "{out}");
         // The cut is the writer's: seven edges of a hand-made pair.
-        let mut a = OrderAnswer { configured: true, checked: 1, counts: Counts::default(), pairs: Vec::new(), unresolved: Vec::new(), left_out: Vec::new(), cyclic: Vec::new(), not_read: None };
+        let mut a = OrderAnswer {
+            configured: true,
+            checked: 1,
+            counts: Counts::default(),
+            pairs: Vec::new(),
+            unresolved: Vec::new(),
+            left_out: Vec::new(),
+            cyclic: Vec::new(),
+            not_read: None,
+        };
         a.pairs.push(Pair {
             group: Group::Unordered,
-            step: Side { kind: AIRFLOW, job: "a".into(), source: "s".into(), label: "task x".into(), schedule: "manual".into(), cron: String::new(), timezone: String::new(), file: "a.yml".into(), line: 1, title: "DAG a › task x".into() },
-            waits_for: vec![Side { kind: AIRFLOW, job: "b".into(), source: "s".into(), label: "task y".into(), schedule: "manual".into(), cron: String::new(), timezone: String::new(), file: "b.yml".into(), line: 1, title: "DAG b › task y".into() }],
+            step: Side {
+                kind: AIRFLOW,
+                job: "a".into(),
+                source: "s".into(),
+                label: "task x".into(),
+                schedule: "manual".into(),
+                cron: String::new(),
+                timezone: String::new(),
+                file: "a.yml".into(),
+                line: 1,
+                title: "DAG a › task x".into(),
+            },
+            waits_for: vec![Side {
+                kind: AIRFLOW,
+                job: "b".into(),
+                source: "s".into(),
+                label: "task y".into(),
+                schedule: "manual".into(),
+                cron: String::new(),
+                timezone: String::new(),
+                file: "b.yml".into(),
+                line: 1,
+                title: "DAG b › task y".into(),
+            }],
             edges: (0..7)
-                .map(|i| Edge { node: format!("m{i}"), node_name: format!("m{i}"), parent: "p".into(), parent_name: "p".into(), through: Vec::new() })
+                .map(|i| Edge {
+                    node: format!("m{i}"),
+                    node_name: format!("m{i}"),
+                    parent: "p".into(),
+                    parent_name: "p".into(),
+                    through: Vec::new(),
+                })
                 .collect(),
             later: Vec::new(),
             idle_sensors: Vec::new(),
@@ -1433,7 +1596,12 @@ mod tests {
         std::fs::create_dir_all(&none).unwrap();
         let (out, err, code) = ask(&none, Output::Name);
         assert_eq!((out.as_str(), code), ("", CANNOT_RUN));
-        assert!(err.starts_with("error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"), "{err}");
+        assert!(
+            err.starts_with(
+                "error: no .dbt-edith/jobs.yml in this project; name the sources in the Orchestration section of the settings\n"
+            ),
+            "{err}"
+        );
         let root = project("broken", &[("airflow", "dags", "")], &[]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), "jobs: nope\n").unwrap();
         let (_, err, code) = ask(&root, Output::Name);

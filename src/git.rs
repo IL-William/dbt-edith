@@ -301,16 +301,15 @@ fn locate(root: &Path) -> Option<Repo> {
                     return Some(Repo { git_dir: dot.clone(), common_dir: dot, gitfile: None });
                 }
             } else if meta.is_file() {
-                let named = std::fs::read_to_string(&dot)
-                    .ok()
-                    .and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
+                let named = std::fs::read_to_string(&dot).ok().and_then(|t| t.trim().strip_prefix("gitdir:").map(|p| dir.join(p.trim())));
                 // A file git cannot read fails every call on its own; its stamp
                 // still stands for it, so mending it is noticed.
                 let git_dir = named.unwrap_or_else(|| dot.clone());
                 // Only a regular file is read: a FIFO (a tar archive can carry
                 // one) would block the poll for good.
                 let commondir = git_dir.join("commondir");
-                let common = std::fs::metadata(&commondir).is_ok_and(|m| m.is_file()).then(|| std::fs::read_to_string(&commondir).ok()).flatten();
+                let common =
+                    std::fs::metadata(&commondir).is_ok_and(|m| m.is_file()).then(|| std::fs::read_to_string(&commondir).ok()).flatten();
                 let common_dir = match common {
                     Some(c) => git_dir.join(c.trim()),
                     None => git_dir.clone(),
@@ -394,7 +393,13 @@ fn paused(root: &Path) -> Option<String> {
             break;
         }
     }
-    let files: Vec<(PathBuf, Stamp)> = files.into_iter().map(|p| { let s = stamp(&p); (p, s) }).collect();
+    let files: Vec<(PathBuf, Stamp)> = files
+        .into_iter()
+        .map(|p| {
+            let s = stamp(&p);
+            (p, s)
+        })
+        .collect();
     let recent = SystemTime::now() - Duration::from_secs(2);
     let settled = files.iter().all(|(_, s)| s.is_none_or(|(at, _)| at < recent));
     if settled && agrees {
@@ -471,8 +476,19 @@ fn allowed(key: &str) -> bool {
         "remote" => match sub {
             Some(_) => matches!(
                 name,
-                "url" | "pushurl" | "fetch" | "push" | "tagopt" | "prune" | "prunetags" | "mirror" | "skipdefaultupdate"
-                    | "skipfetchall" | "promisor" | "partialclonefilter" | "gh-resolved"
+                "url"
+                    | "pushurl"
+                    | "fetch"
+                    | "push"
+                    | "tagopt"
+                    | "prune"
+                    | "prunetags"
+                    | "mirror"
+                    | "skipdefaultupdate"
+                    | "skipfetchall"
+                    | "promisor"
+                    | "partialclonefilter"
+                    | "gh-resolved"
             ),
             None => name == "pushdefault",
         },
@@ -480,11 +496,35 @@ fn allowed(key: &str) -> bool {
             sub.is_none()
                 && matches!(
                     name,
-                    "repositoryformatversion" | "filemode" | "bare" | "logallrefupdates" | "ignorecase" | "precomposeunicode"
-                        | "symlinks" | "autocrlf" | "safecrlf" | "eol" | "longpaths" | "fscache" | "untrackedcache"
-                        | "sparsecheckout" | "sparsecheckoutcone" | "splitindex" | "commitgraph" | "multipackindex"
-                        | "checkstat" | "trustctime" | "quotepath" | "abbrev" | "worktree" | "fsmonitor" | "hookspath"
-                        | "sshcommand" | "excludesfile" | "preloadindex" | "whitespace"
+                    "repositoryformatversion"
+                        | "filemode"
+                        | "bare"
+                        | "logallrefupdates"
+                        | "ignorecase"
+                        | "precomposeunicode"
+                        | "symlinks"
+                        | "autocrlf"
+                        | "safecrlf"
+                        | "eol"
+                        | "longpaths"
+                        | "fscache"
+                        | "untrackedcache"
+                        | "sparsecheckout"
+                        | "sparsecheckoutcone"
+                        | "splitindex"
+                        | "commitgraph"
+                        | "multipackindex"
+                        | "checkstat"
+                        | "trustctime"
+                        | "quotepath"
+                        | "abbrev"
+                        | "worktree"
+                        | "fsmonitor"
+                        | "hookspath"
+                        | "sshcommand"
+                        | "excludesfile"
+                        | "preloadindex"
+                        | "whitespace"
                 )
         }
         // Left by git gui on exit and by everyday habits; each is read as
@@ -495,16 +535,23 @@ fn allowed(key: &str) -> bool {
             sub.is_none()
                 && matches!(
                     name,
-                    "ignorerevsfile" | "markignoredlines" | "markunblamablelines" | "coloring" | "date" | "showemail"
-                        | "showroot" | "blankboundary"
+                    "ignorerevsfile"
+                        | "markignoredlines"
+                        | "markunblamablelines"
+                        | "coloring"
+                        | "date"
+                        | "showemail"
+                        | "showroot"
+                        | "blankboundary"
                 )
         }
         "rerere" => sub.is_none() && matches!(name, "enabled" | "autoupdate"),
         "i18n" => sub.is_none() && matches!(name, "commitencoding" | "logoutputencoding"),
         // Only switches for help messages.
         "advice" => sub.is_none(),
-        "commit" | "tag" | "pull" | "push" | "fetch" | "rebase" | "merge" | "status" | "log" | "init" | "pack" | "index"
-        | "feature" => sub.is_none(),
+        "commit" | "tag" | "pull" | "push" | "fetch" | "rebase" | "merge" | "status" | "log" | "init" | "pack" | "index" | "feature" => {
+            sub.is_none()
+        }
         "diff" => sub.is_none() && name != "external",
         "gc" => sub.is_none() && name != "recentobjectshook",
         "url" => sub.is_some() && matches!(name, "insteadof" | "pushinsteadof"),
@@ -513,9 +560,7 @@ fn allowed(key: &str) -> bool {
             Some(_) => name == "allowedsignersfile",
         },
         "credential" => matches!(name, "username" | "usehttppath"),
-        "submodule" => {
-            sub.is_none() || matches!(name, "url" | "active" | "branch" | "fetchrecursesubmodules" | "ignore" | "shallow")
-        }
+        "submodule" => sub.is_none() || matches!(name, "url" | "active" | "branch" | "fetchrecursesubmodules" | "ignore" | "shallow"),
         _ => false,
     }
 }
@@ -662,12 +707,7 @@ pub fn branches(root: &Path) -> Vec<Branch> {
     let current = read(root, &["branch", "--show-current"]).unwrap_or_default().trim().to_string();
     let Some(out) = read(
         root,
-        &[
-            "for-each-ref",
-            "--sort=-committerdate",
-            "--format=%(refname:short)\t%(upstream:short)\t%(committerdate:relative)",
-            "refs/heads",
-        ],
+        &["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)\t%(upstream:short)\t%(committerdate:relative)", "refs/heads"],
     ) else {
         return Vec::new();
     };
@@ -696,12 +736,7 @@ pub fn checkout(root: &Path, branch: &str, stash_first: bool) -> GitRun {
     if stash_first {
         let from = read(root, &["branch", "--show-current"]).unwrap_or_default().trim().to_string();
         let label = format!("dbt-edith: switching away from {}", if from.is_empty() { "detached HEAD" } else { &from });
-        let stashed = run(
-            root,
-            &["stash", "push", "--include-untracked", "-m", &label],
-            &[],
-            Duration::from_secs(60),
-        );
+        let stashed = run(root, &["stash", "push", "--include-untracked", "-m", &label], &[], Duration::from_secs(60));
         if !stashed.ok {
             return stashed;
         }
@@ -767,7 +802,13 @@ pub fn commit(root: &Path, message: &str) -> (GitRun, Option<String>) {
 pub fn push(root: &Path) -> GitRun {
     let branch = read(root, &["branch", "--show-current"]).unwrap_or_default().trim().to_string();
     if branch.is_empty() {
-        return GitRun { ok: false, code: -1, stdout: String::new(), stderr: "detached HEAD, nothing to push".into(), blocking: Vec::new() };
+        return GitRun {
+            ok: false,
+            code: -1,
+            stdout: String::new(),
+            stderr: "detached HEAD, nothing to push".into(),
+            blocking: Vec::new(),
+        };
     }
     // --set-upstream is safe and makes the first push of a topic branch work.
     run(root, &["push", "--set-upstream", "origin", &branch], NET_ENV, Duration::from_secs(180))
@@ -785,9 +826,7 @@ pub fn fetch(root: &Path) -> GitRun {
 
 /// The commits a push would send.
 pub fn outgoing(root: &Path) -> Vec<String> {
-    read(root, &["log", "--oneline", "--no-decorate", "@{u}..HEAD"])
-        .map(|o| o.lines().map(str::to_string).collect())
-        .unwrap_or_default()
+    read(root, &["log", "--oneline", "--no-decorate", "@{u}..HEAD"]).map(|o| o.lines().map(str::to_string).collect()).unwrap_or_default()
 }
 
 #[derive(serde::Serialize, Default)]
@@ -918,9 +957,7 @@ pub fn drift(root: &Path, git_dir: &str) -> Drift {
     if d.base.is_empty() {
         return d;
     }
-    d.behind = read_auto(root, &["rev-list", "--count", &format!("HEAD..{}", d.base)])
-        .and_then(|c| c.trim().parse().ok())
-        .unwrap_or(0);
+    d.behind = read_auto(root, &["rev-list", "--count", &format!("HEAD..{}", d.base)]).and_then(|c| c.trim().parse().ok()).unwrap_or(0);
     d
 }
 
@@ -1183,7 +1220,10 @@ mod tests {
     fn every_change_is_listed_under_the_project_with_v1_codes() {
         let dir = scratch("codes");
         repo(&dir);
-        for f in ["proj/models/edited.sql", "proj/models/staged.sql", "proj/models/both.sql", "proj/models/gone.sql", "proj/models/my model.sql", "elsewhere.txt"] {
+        for f in [
+            "proj/models/edited.sql", "proj/models/staged.sql", "proj/models/both.sql", "proj/models/gone.sql", "proj/models/my model.sql",
+            "elsewhere.txt",
+        ] {
             write(&dir, f, "select 1\n");
         }
         git(&dir, &["add", "."]);
@@ -1204,10 +1244,7 @@ mod tests {
         assert!(info.repo && !info.merging);
         assert_eq!(info.branch, "main");
         assert!(Path::new(&info.git_dir).is_absolute(), "asked from a subfolder, git answers an absolute path");
-        assert_eq!(
-            changes(&info.staged),
-            pairs(&[("A ", "models/added.sql"), ("MM", "models/both.sql"), ("M ", "models/staged.sql")])
-        );
+        assert_eq!(changes(&info.staged), pairs(&[("A ", "models/added.sql"), ("MM", "models/both.sql"), ("M ", "models/staged.sql")]));
         assert_eq!(
             changes(&info.unstaged),
             pairs(&[("MM", "models/both.sql"), (" M", "models/edited.sql"), (" D", "models/gone.sql"), (" M", "models/my model.sql")])
@@ -1476,17 +1513,58 @@ mod tests {
     #[test]
     fn the_list_of_keys_that_are_only_data() {
         for key in [
-            "core.repositoryformatversion", "core.fsmonitor", "core.hooksPath", "core.sshCommand", "branch.main.merge",
-            "branch.autoSetupMerge", "remote.origin.url", "remote.Origin.pushurl", "user.signingkey", "commit.gpgsign",
-            "gpg.format", "gpg.ssh.allowedSignersFile", "credential.username", "credential.https://x.example.useHttpPath",
-            "submodule.a.b.url", "submodule.recurse", "url.git@example.com:.insteadOf", "diff.algorithm", "gc.auto",
-            "color.ui", "lfs.url", "lfs.pushurl", "lfs.https://x.example/info/lfs.access", "lfs.locksverify",
-            "lfs.fetchinclude", "http.postBuffer", "http.https://x.example/.lowSpeedLimit", "remote.origin.gh-resolved",
-            "alias.st", "safe.directory", "pull.ff", "REMOTE.origin.URL", "tag.gpgsign", "gui.wmstate", "gui.geometry",
-            "blame.ignoreRevsFile", "blame.markIgnoredLines", "blame.markUnblamableLines", "blame.coloring", "blame.date",
-            "blame.showEmail", "blame.showRoot", "blame.blankBoundary", "rerere.enabled", "rerere.autoUpdate",
-            "core.excludesFile", "core.preloadIndex", "core.whitespace", "i18n.commitEncoding", "i18n.logOutputEncoding",
-            "advice.detachedHead", "advice.statusHints",
+            "core.repositoryformatversion",
+            "core.fsmonitor",
+            "core.hooksPath",
+            "core.sshCommand",
+            "branch.main.merge",
+            "branch.autoSetupMerge",
+            "remote.origin.url",
+            "remote.Origin.pushurl",
+            "user.signingkey",
+            "commit.gpgsign",
+            "gpg.format",
+            "gpg.ssh.allowedSignersFile",
+            "credential.username",
+            "credential.https://x.example.useHttpPath",
+            "submodule.a.b.url",
+            "submodule.recurse",
+            "url.git@example.com:.insteadOf",
+            "diff.algorithm",
+            "gc.auto",
+            "color.ui",
+            "lfs.url",
+            "lfs.pushurl",
+            "lfs.https://x.example/info/lfs.access",
+            "lfs.locksverify",
+            "lfs.fetchinclude",
+            "http.postBuffer",
+            "http.https://x.example/.lowSpeedLimit",
+            "remote.origin.gh-resolved",
+            "alias.st",
+            "safe.directory",
+            "pull.ff",
+            "REMOTE.origin.URL",
+            "tag.gpgsign",
+            "gui.wmstate",
+            "gui.geometry",
+            "blame.ignoreRevsFile",
+            "blame.markIgnoredLines",
+            "blame.markUnblamableLines",
+            "blame.coloring",
+            "blame.date",
+            "blame.showEmail",
+            "blame.showRoot",
+            "blame.blankBoundary",
+            "rerere.enabled",
+            "rerere.autoUpdate",
+            "core.excludesFile",
+            "core.preloadIndex",
+            "core.whitespace",
+            "i18n.commitEncoding",
+            "i18n.logOutputEncoding",
+            "advice.detachedHead",
+            "advice.statusHints",
         ] {
             assert!(allowed(key), "{key} should be allowed");
         }
@@ -1494,12 +1572,12 @@ mod tests {
             "credential.helper", "credential.https://x.example.helper", "filter.lfs.clean", "filter.lfs.smudge", "core.askpass",
             "core.gitProxy", "core.editor", "core.pager", "core.alternateRefsCommand", "remote.origin.uploadpack",
             "remote.origin.receivepack", "remote.origin.vcs", "protocol.allow", "protocol.ext.allow", "diff.external",
-            "diff.word.textconv", "diff.x.command", "merge.x.driver", "gpg.program", "gpg.ssh.program",
-            "gpg.ssh.defaultKeyCommand", "submodule.vendor.update", "uploadpack.packObjectsHook", "receive.denyCurrentBranch",
-            "trailer.x.cmd", "mergetool.x.cmd", "difftool.x.cmd", "gc.recentObjectsHook", "sequence.editor", "core",
-            "ssh.variant", "http", "unknown.key", "include.path", "includeIf.gitdir:~/work/.path", "lfs.extension.x.clean",
-            "lfs.customtransfer.x.path", "http.proxy", "http.sslVerify", "http.cookieFile", "http.https://x.example/.proxy",
-            "remote.origin.proxy", "remote.origin.proxyAuthMethod", "gui.editor", "gui.fontui", "blame.x.date",
+            "diff.word.textconv", "diff.x.command", "merge.x.driver", "gpg.program", "gpg.ssh.program", "gpg.ssh.defaultKeyCommand",
+            "submodule.vendor.update", "uploadpack.packObjectsHook", "receive.denyCurrentBranch", "trailer.x.cmd", "mergetool.x.cmd",
+            "difftool.x.cmd", "gc.recentObjectsHook", "sequence.editor", "core", "ssh.variant", "http", "unknown.key", "include.path",
+            "includeIf.gitdir:~/work/.path", "lfs.extension.x.clean", "lfs.customtransfer.x.path", "http.proxy", "http.sslVerify",
+            "http.cookieFile", "http.https://x.example/.proxy", "remote.origin.proxy", "remote.origin.proxyAuthMethod", "gui.editor",
+            "gui.fontui", "blame.x.date",
         ] {
             assert!(!allowed(key), "{key} should pause git");
         }
@@ -1533,8 +1611,8 @@ mod tests {
         for key in [
             "core.repositoryformatversion", "core.filemode", "core.bare", "core.logallrefupdates", "core.ignorecase",
             "core.precomposeunicode", "core.sshcommand", "branch.main.remote", "branch.main.merge", "remote.origin.url",
-            "remote.origin.fetch", "user.name", "user.email", "gpg.format", "gpg.ssh.allowedsignersfile",
-            "commit.gpgsign", "tag.gpgsign", "submodule.vendor.url", "submodule.vendor.active",
+            "remote.origin.fetch", "user.name", "user.email", "gpg.format", "gpg.ssh.allowedsignersfile", "commit.gpgsign", "tag.gpgsign",
+            "submodule.vendor.url", "submodule.vendor.active",
         ] {
             assert!(allowed(key), "{key} should not pause git");
         }
@@ -1629,7 +1707,8 @@ mod tests {
         std::thread::sleep(Duration::from_millis(1100));
         write(&dir, "models/a.sql", "select 1\n");
 
-        let found = Command::new("git").arg("-C").arg(&dir).args(["status", "--porcelain"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap();
+        let found =
+            Command::new("git").arg("-C").arg(&dir).args(["status", "--porcelain"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap();
         assert!(found.status.success(), "{}", String::from_utf8_lossy(&found.stderr));
         assert!(marks.join("filter").exists(), "git should take this folder for a repository and run its filter");
         let _ = std::fs::remove_file(marks.join("filter"));
@@ -1735,7 +1814,15 @@ mod tests {
         let dir = project.clone();
         let (inside, found) = promptly(Box::new(move || (in_repository(&dir), locate(&dir))));
         assert!(!inside && found.is_none());
-        assert!(!Command::new("git").arg("-C").arg(&project).args(["rev-parse", "--git-dir"]).env("GIT_CONFIG_GLOBAL", "/dev/null").output().unwrap().status.success());
+        assert!(!Command::new("git")
+            .arg("-C")
+            .arg(&project)
+            .args(["rev-parse", "--git-dir"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .unwrap()
+            .status
+            .success());
 
         // Below a repository: the parent's, as git finds it.
         let parent = scratch("fifo-parent");

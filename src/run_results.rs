@@ -446,10 +446,20 @@ mod tests {
 
     #[test]
     fn statuses_read_in_a_few_words_and_an_unknown_one_as_written() {
-        for (raw, want) in [("success", "ok"), ("pass", "ok"), ("error", "error"), ("runtime error", "error"),
-            ("RUNTIME_ERROR", "error"), ("fail", "fail"), ("warn", "warn"), ("skipped", "skipped"),
-            ("partial success", "partial"), ("no-op", "noop"), ("reused", "reused"), ("Interrupted", "interrupted")]
-        {
+        for (raw, want) in [
+            ("success", "ok"),
+            ("pass", "ok"),
+            ("error", "error"),
+            ("runtime error", "error"),
+            ("RUNTIME_ERROR", "error"),
+            ("fail", "fail"),
+            ("warn", "warn"),
+            ("skipped", "skipped"),
+            ("partial success", "partial"),
+            ("no-op", "noop"),
+            ("reused", "reused"),
+            ("Interrupted", "interrupted"),
+        ] {
             assert_eq!(status(raw), want, "{raw}");
         }
     }
@@ -479,10 +489,12 @@ mod tests {
     #[test]
     fn a_unit_test_a_macro_and_an_inline_query_are_no_node_gone() {
         let g = graph();
-        let raw = parse(br#"{"args":{"which":"build"},"results":[
+        let raw = parse(
+            br#"{"args":{"which":"build"},"results":[
             {"unique_id":"unit_test.shop.orders.counts_refunds","status":"fail","failures":1},
             {"unique_id":"macro.shop.grant_select","status":"success"},
-            {"unique_id":"sql_operation.shop.inline_query","status":"success"}]}"#)
+            {"unique_id":"sql_operation.shop.inline_query","status":"success"}]}"#,
+        )
         .unwrap();
         let r = report(&raw, &g, 200, "");
         assert_eq!(r.unknown.of, 0, "{:?}", r.unknown.items);
@@ -531,20 +543,25 @@ mod tests {
     #[test]
     fn a_fusion_file_and_a_test_run_read_too() {
         let g = graph();
-        let raw = parse(br#"{"metadata":{"dbt_version":"2.0.0","invocation_id":"x","env":{}},
+        let raw = parse(
+            br#"{"metadata":{"dbt_version":"2.0.0","invocation_id":"x","env":{}},
             "args":{"command":"test","which":"","__other__":{"command":"test"}},
             "results":[{"unique_id":"test.shop.not_null_orders_id.abc","status":"Fail","failures":3,
-                        "message":"Got 3 results","execution_time":0.2}]}"#)
+                        "message":"Got 3 results","execution_time":0.2}]}"#,
+        )
         .unwrap();
         let r = report(&raw, &g, 200, "");
         assert_eq!(r.command, "test");
         assert_eq!(r.kinds.len(), 1, "only the tests ran");
         assert_eq!((r.problems.items[0].status.as_str(), r.problems.items[0].failures), ("fail", Some(3)));
         assert_eq!(counts(&raw), Counts { command: "test".into(), error: 0, fail: 1, warn: 0, partial: 0, ok: 0, other: 0 });
-        let part = parse(br#"{"metadata":{},"args":{"which":"build"},"results":[{"unique_id":"model.shop.orders","status":"partial success"}]}"#).unwrap();
+        let part =
+            parse(br#"{"metadata":{},"args":{"which":"build"},"results":[{"unique_id":"model.shop.orders","status":"partial success"}]}"#)
+                .unwrap();
         assert_eq!(counts(&part).partial, 1, "a partial success is counted");
         let word = |s: &str| {
-            let raw = format!(r#"{{"metadata":{{}},"args":{{"which":"build"}},"results":[{{"unique_id":"model.shop.orders","status":"{s}"}}]}}"#);
+            let raw =
+                format!(r#"{{"metadata":{{}},"args":{{"which":"build"}},"results":[{{"unique_id":"model.shop.orders","status":"{s}"}}]}}"#);
             let c = counts(&parse(raw.as_bytes()).unwrap());
             (c.ok, c.other, c.error + c.fail + c.warn + c.partial)
         };

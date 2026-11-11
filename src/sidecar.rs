@@ -306,20 +306,15 @@ pub fn interpreters(env: &VenvInfo) -> Vec<Interpreter> {
     let mut dirs: Vec<PathBuf> = envs.iter().filter(|e| venv::has_snowflake_connector(e)).cloned().collect();
     dirs.extend(chosen.filter(|e| !dirs.contains(e)));
 
-    let mut out: Vec<Interpreter> = dirs
-        .iter()
-        .map(|dir| Interpreter { program: venv::python_in(dir), args: Vec::new() })
-        .filter(|i| i.program.exists())
-        .collect();
-    let on_path: &[(&str, &[&str])] = if cfg!(windows) {
-        &[("python", &[]), ("py", &["-3"])]
-    } else {
-        &[("python3", &[]), ("python", &[])]
-    };
-    out.extend(on_path.iter().map(|(program, args)| Interpreter {
-        program: PathBuf::from(program),
-        args: args.iter().map(|a| a.to_string()).collect(),
-    }));
+    let mut out: Vec<Interpreter> =
+        dirs.iter().map(|dir| Interpreter { program: venv::python_in(dir), args: Vec::new() }).filter(|i| i.program.exists()).collect();
+    let on_path: &[(&str, &[&str])] =
+        if cfg!(windows) { &[("python", &[]), ("py", &["-3"])] } else { &[("python3", &[]), ("python", &[])] };
+    out.extend(
+        on_path
+            .iter()
+            .map(|(program, args)| Interpreter { program: PathBuf::from(program), args: args.iter().map(|a| a.to_string()).collect() }),
+    );
     out
 }
 
@@ -522,10 +517,8 @@ impl Sidecar {
         let Some((candidate, mut child)) = spawned else {
             return self.fail(String::new(), error, Vec::new());
         };
-        let python = std::iter::once(candidate.program.display().to_string())
-            .chain(candidate.args.iter().cloned())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let python =
+            std::iter::once(candidate.program.display().to_string()).chain(candidate.args.iter().cloned()).collect::<Vec<_>>().join(" ");
 
         let (tx, replies) = mpsc::channel(64);
         if let Some(stdout) = child.stdout.take() {
@@ -586,10 +579,7 @@ impl Sidecar {
         match ready {
             Ok(Some(value)) if self.wanted() => {
                 let text = |key: &str| value.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                let targets = value
-                    .get("targets")
-                    .and_then(|t| serde_json::from_value(t.clone()).ok())
-                    .unwrap_or_default();
+                let targets = value.get("targets").and_then(|t| serde_json::from_value(t.clone()).ok()).unwrap_or_default();
                 if let Ok(mut cancel) = self.cancel.lock() {
                     *cancel = Some(run.cancel.clone());
                 }
@@ -674,10 +664,7 @@ impl Sidecar {
             message.extend(fields);
         }
         let request = serde_json::Value::Object(message);
-        let sent = run
-            .stdin
-            .as_mut()
-            .is_some_and(|stdin| writeln!(stdin, "{request}").and_then(|()| stdin.flush()).is_ok());
+        let sent = run.stdin.as_mut().is_some_and(|stdin| writeln!(stdin, "{request}").and_then(|()| stdin.flush()).is_ok());
         let within = if run.signed_in { self.deadlines.later } else { self.deadlines.first };
         let cancel = run.cancel.clone();
 
@@ -718,7 +705,10 @@ impl Sidecar {
                 }
                 let log = self.shut(run).await;
                 let error = if late {
-                    format!("Snowflake did not answer within {} s, so the script was stopped. The next click starts it again.", within.as_secs())
+                    format!(
+                        "Snowflake did not answer within {} s, so the script was stopped. The next click starts it again.",
+                        within.as_secs()
+                    )
                 } else {
                     explain(&log).unwrap_or_else(|| "the Snowflake script stopped".into())
                 };
@@ -977,7 +967,10 @@ done
         assert_eq!(row.last_success, "2026-10-14T03:01:09Z");
         assert_eq!(row.compiled, "2026-10-21T03:00:40Z", "the start of a model that never ended");
         let sent = serde_json::to_string(&read).unwrap();
-        assert!(!sent.contains("hunter2") && !sent.contains("env_vars") && !sent.contains("adapter_response"), "a field this build does not name stays here: {sent}");
+        assert!(
+            !sent.contains("hunter2") && !sent.contains("env_vars") && !sent.contains("adapter_response"),
+            "a field this build does not name stays here: {sent}"
+        );
         assert!(!sent.contains("completed"), "an empty field is left out: {sent}");
 
         car.stop().await;
@@ -990,8 +983,8 @@ done
             assert!(valid_relation(ok), "{ok}");
         }
         for bad in [
-            "", "a", "a.b", "a.b.c.d", "a..c", ".b.c", "a.b.", "1a.b.c", "a b.c.d", "a.b.c;", "a.b.c' or 1=1", r#"a."".c"#,
-            r#"a."b.c"#, "a.\"b\nc\".d", "a-b.c.d",
+            "", "a", "a.b", "a.b.c.d", "a..c", ".b.c", "a.b.", "1a.b.c", "a b.c.d", "a.b.c;", "a.b.c' or 1=1", r#"a."".c"#, r#"a."b.c"#,
+            "a.\"b\nc\".d", "a-b.c.d",
         ] {
             assert!(!valid_relation(bad), "{bad:?}");
         }
@@ -1175,7 +1168,11 @@ done
         }
         std::fs::create_dir_all(root.join("sf-env/lib/python3.12/site-packages/snowflake/connector")).unwrap();
         let found = |name: &str| Venv { name: name.into(), path: root.join(name).display().to_string(), ..Default::default() };
-        let env = VenvInfo { chosen: found("plain-env"), found: vec![found("plain-env"), found("sf-env"), found("other-env")], ..Default::default() };
+        let env = VenvInfo {
+            chosen: found("plain-env"),
+            found: vec![found("plain-env"), found("sf-env"), found("other-env")],
+            ..Default::default()
+        };
         let programs: Vec<String> = interpreters(&env).iter().map(|i| i.program.display().to_string()).collect();
         assert_eq!(
             programs,

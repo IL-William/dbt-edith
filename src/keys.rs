@@ -89,7 +89,11 @@ fn is_generic(t: &Node, generic: &str, package: &str) -> bool {
 /// The column a `unique` or `not_null` test names: the node's own, else the
 /// kwarg of a test written under its model. Empty when it names none.
 fn column_of(t: &Node) -> &str {
-    if t.column.trim().is_empty() { t.column_arg.trim() } else { t.column.trim() }
+    if t.column.trim().is_empty() {
+        t.column_arg.trim()
+    } else {
+        t.column.trim()
+    }
 }
 
 /// Whether the test checks every row: a `where:` limits it to some.
@@ -157,12 +161,8 @@ fn gather(graph: &Graph, i: u32) -> (Vec<Draft<'_>>, BTreeSet<String>) {
     // Its tests as the node lists them: the ones with it as a parent, of which
     // some only point at it, a relationships target. Those it declares are
     // found by `declaring`, as everywhere else.
-    let mut tests: Vec<&Node> = n
-        .tests
-        .iter()
-        .map(|&t| &graph.nodes[t as usize])
-        .filter(|t| declaring(&graph.nodes, &graph.index, t) == Some(i))
-        .collect();
+    let mut tests: Vec<&Node> =
+        n.tests.iter().map(|&t| &graph.nodes[t as usize]).filter(|t| declaring(&graph.nodes, &graph.index, t) == Some(i)).collect();
     tests.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut drafts: Vec<Draft> = Vec::new();
@@ -420,10 +420,7 @@ mod tests {
 
     #[test]
     fn the_tally_counts_what_the_keys_say() {
-        let g = graph(
-            incremental("orders", json!(["id", "line"])),
-            vec![unique("u", "code"), not_null("n", "code"), unique("v", "id")],
-        );
+        let g = graph(incremental("orders", json!(["id", "line"])), vec![unique("u", "code"), not_null("n", "code"), unique("v", "id")]);
         let t = tally(&g, g.index["model.shop.orders"]);
         // The config key and `id` have a column left, `code` has none.
         assert_eq!((t.nullable, t.config_untested, t.tested), (2, true, true));
@@ -498,7 +495,10 @@ mod tests {
 
     #[test]
     fn a_kwarg_column_holding_jinja_names_no_column() {
-        let g = graph(model("orders", json!({})), vec![under_model("u", "unique", json!("{{ var('pk') }}")), under_model("v", "unique", json!("id"))]);
+        let g = graph(
+            model("orders", json!({})),
+            vec![under_model("u", "unique", json!("{{ var('pk') }}")), under_model("v", "unique", json!("id"))],
+        );
         let k = orders(&g);
         assert_eq!(k.len(), 1);
         assert_eq!(k[0].entries, ["id"]);

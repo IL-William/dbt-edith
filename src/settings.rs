@@ -123,10 +123,7 @@ fn looks_absolute(value: &str, windows: bool) -> bool {
 /// On Windows `HOME` is not consulted: under Git Bash it holds an MSYS path.
 pub fn config_dir(lookup: impl Fn(&str) -> Option<OsString>, windows: bool) -> Option<PathBuf> {
     let get = |key: &str| {
-        lookup(key)
-            .map(|v| v.to_string_lossy().into_owned())
-            .filter(|v| !v.is_empty() && looks_absolute(v, windows))
-            .map(PathBuf::from)
+        lookup(key).map(|v| v.to_string_lossy().into_owned()).filter(|v| !v.is_empty() && looks_absolute(v, windows)).map(PathBuf::from)
     };
     if let Some(explicit) = get("DBT_EDITH_CONFIG_DIR") {
         return Some(explicit);
@@ -313,8 +310,7 @@ impl Store {
         let windows = cfg!(windows);
         let root = root.to_string_lossy();
         Store {
-            path: config_dir(|key| std::env::var_os(key), windows)
-                .map(|dir| dir.join("projects").join(file_name(&root, windows))),
+            path: config_dir(|key| std::env::var_os(key), windows).map(|dir| dir.join("projects").join(file_name(&root, windows))),
             project: normalise(&root, windows),
             lock: tokio::sync::Mutex::new(()),
         }
@@ -418,7 +414,8 @@ mod tests {
         std::fs::write(&reference, b"").unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&path), mode(&reference));
-        let strays: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
+        let strays: Vec<_> =
+            std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
         assert!(strays.is_empty(), "the probe and the temporary file are gone");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -474,7 +471,12 @@ mod tests {
         symlink("../../dotfiles/dbt/profiles.yml", &link).unwrap();
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         let strays = |d: &Path| -> Vec<String> {
-            std::fs::read_dir(d).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains("tmp-")).collect()
+            std::fs::read_dir(d)
+                .unwrap()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.contains("tmp-"))
+                .collect()
         };
 
         write_atomic_through_link(&link, b"after\n").unwrap();
@@ -530,7 +532,8 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         let first = text.lines().next().unwrap().to_string();
         assert!(text.lines().all(|l| l == first) && text.lines().count() == 200, "one whole write");
-        let strays: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
+        let strays: Vec<_> =
+            std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("tmp-")).collect();
         assert!(strays.is_empty(), "left behind {} temporary files", strays.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -555,7 +558,10 @@ mod tests {
 
     #[test]
     fn config_dir_ignores_empty_and_relative_values() {
-        assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", ""), ("HOME", "/home/me")]), false), Some(PathBuf::from("/home/me/.config/dbt-edith")));
+        assert_eq!(
+            config_dir(env(&[("XDG_CONFIG_HOME", ""), ("HOME", "/home/me")]), false),
+            Some(PathBuf::from("/home/me/.config/dbt-edith"))
+        );
         assert_eq!(config_dir(env(&[("XDG_CONFIG_HOME", "relative/dir")]), false), None);
         assert_eq!(config_dir(env(&[]), false), None);
     }

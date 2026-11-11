@@ -47,8 +47,7 @@ pub fn decode(bytes: &[u8]) -> String {
 
 fn valid_key(key: &str) -> bool {
     let mut chars = key.chars();
-    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_') && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// A value with at most one pair of surrounding quotes removed. A quoted value
@@ -176,9 +175,7 @@ pub(crate) fn is_secret(name: &str) -> bool {
 /// Matched on underscore-delimited tokens, because `KEY` as a substring also
 /// catches `PARTITION_KEY`, `DBT_UNIQUE_KEY` and `MONKEY`.
 pub fn sensitive_name(name: &str) -> bool {
-    const ALWAYS: [&str; 10] = [
-        "PASSWORD", "PASSWD", "PWD", "PW", "SECRET", "TOKEN", "CREDENTIAL", "CREDENTIALS", "PRIVATE", "PASSPHRASE",
-    ];
+    const ALWAYS: [&str; 10] = ["PASSWORD", "PASSWD", "PWD", "PW", "SECRET", "TOKEN", "CREDENTIAL", "CREDENTIALS", "PRIVATE", "PASSPHRASE"];
     // Only as the last token after a prefix: `DB_PASS` and `SNOWFLAKE_DSN` are
     // credentials; `PASS_RATE`, `DQ_PASS_THRESHOLD`, Fivetran's
     // `<pkg>__<table>_pass_through_columns` and dbt-exasol's `dsn`, a host
@@ -208,11 +205,12 @@ pub fn sensitive_name(name: &str) -> bool {
 /// is one too; `https://example.com/a:b@c` has no `:` in its authority and
 /// stays what it is. A URL's fragment is never one.
 pub fn carries_credential(value: &str) -> bool {
-    let as_parameter = value.split('#').next().unwrap_or("").split(|c: char| matches!(c, ';' | '&' | '?') || c.is_whitespace()).any(|pair| {
-        pair.split_once('=').is_some_and(|(key, password)| {
-            matches!(key.trim().to_ascii_lowercase().as_str(), "password" | "passwd" | "pwd") && !password.is_empty()
-        })
-    });
+    let as_parameter =
+        value.split('#').next().unwrap_or("").split(|c: char| matches!(c, ';' | '&' | '?') || c.is_whitespace()).any(|pair| {
+            pair.split_once('=').is_some_and(|(key, password)| {
+                matches!(key.trim().to_ascii_lowercase().as_str(), "password" | "passwd" | "pwd") && !password.is_empty()
+            })
+        });
     if as_parameter {
         return true;
     }
@@ -261,8 +259,7 @@ pub fn lookup(name: &str, vars: &Vars) -> (String, Cell) {
 pub fn is_placeholder(value: &str) -> bool {
     let v = value.trim().to_ascii_lowercase();
     // `na` is left out on purpose: it is a plausible schema name.
-    matches!(v.as_str(), "n/a" | "null" | "none" | "tbd" | "todo" | "changeme")
-        || (v.len() > 2 && v.starts_with('<') && v.ends_with('>'))
+    matches!(v.as_str(), "n/a" | "null" | "none" | "tbd" | "todo" | "changeme") || (v.len() > 2 && v.starts_with('<') && v.ends_with('>'))
 }
 
 /// Removes `{# ... #}` comments.
@@ -383,7 +380,11 @@ fn if_else(expr: &str) -> Option<(String, String)> {
 pub(crate) fn same_ident(a: &str, b: &str) -> bool {
     let bare = |s: &str| {
         let s = s.trim();
-        if s.len() > 1 && s.starts_with('"') && s.ends_with('"') { s[1..s.len() - 1].to_ascii_lowercase() } else { s.to_ascii_lowercase() }
+        if s.len() > 1 && s.starts_with('"') && s.ends_with('"') {
+            s[1..s.len() - 1].to_ascii_lowercase()
+        } else {
+            s.to_ascii_lowercase()
+        }
     };
     bare(a) == bare(b)
 }
@@ -637,9 +638,8 @@ pub fn coverage(file: &EnvFile, referenced: &[RefVar]) -> Coverage {
 /// The reason a file is hidden before the user has any say: its name marks it
 /// as a template or a backup, or it defines none of the variables in use.
 pub fn auto_hidden(file: &EnvFile, coverage: &Coverage, referenced: &[RefVar]) -> Option<&'static str> {
-    file.auto_hidden.or_else(|| {
-        (!referenced.is_empty() && coverage.defined == 0).then_some("defines none of the variables your config reads")
-    })
+    file.auto_hidden
+        .or_else(|| (!referenced.is_empty() && coverage.defined == 0).then_some("defines none of the variables your config reads"))
 }
 
 /// A `DBT_TARGET` that disagrees with the file suffix, which is usually a file
@@ -845,40 +845,55 @@ mod tests {
 
     #[test]
     fn sensitive_name_catches_credentials() {
-        for name in ["SNOWFLAKE_PASSWORD", "DBT_API_KEY", "MY_TOKEN", "AZURE_CLIENT_SECRET",
-                     "svc_passwd", "DB_CREDENTIALS", "SSH_PRIVATE_KEY", "A_PASSPHRASE",
-                     "SF_PW", "DB_PWD", "DB_PASS", "DATABASE_URL", "DB_URI", "CONN_STR", "CONNECTION_STRING",
-                     "SNOWFLAKE_DSN"] {
+        for name in [
+            "SNOWFLAKE_PASSWORD", "DBT_API_KEY", "MY_TOKEN", "AZURE_CLIENT_SECRET", "svc_passwd", "DB_CREDENTIALS", "SSH_PRIVATE_KEY",
+            "A_PASSPHRASE", "SF_PW", "DB_PWD", "DB_PASS", "DATABASE_URL", "DB_URI", "CONN_STR", "CONNECTION_STRING", "SNOWFLAKE_DSN",
+        ] {
             assert!(sensitive_name(name), "{name} should be treated as sensitive");
         }
     }
 
     #[test]
     fn a_value_with_a_password_in_its_url_is_a_credential_whatever_its_name() {
-        for value in ["postgres://me:hunter2@db.example.com:5432/shop", "redis://:s3cret@cache/0?ssl=true",
-                      "postgresql://db.example.com/shop?user=me&password=hunter2",
-                      "jdbc:snowflake://acct.snowflakecomputing.com/?user=me&PASSWORD=s3cret&role=r",
-                      "mssql://host/db?Pwd=x;Encrypt=true",
-                      "jdbc:sqlserver://db:1433;databaseName=x;user=me;password=hunter2",
-                      "Driver={ODBC Driver 18 for SQL Server};Server=db;Uid=me;Pwd=hunter2;",
-                      "host=db user=me password=hunter2",
-                      "postgres://me:ab/cd@db/x", "postgres://me:ab?cd@db/x", "postgres://me:ab#cd@db/x"] {
+        for value in [
+            "postgres://me:hunter2@db.example.com:5432/shop",
+            "redis://:s3cret@cache/0?ssl=true",
+            "postgresql://db.example.com/shop?user=me&password=hunter2",
+            "jdbc:snowflake://acct.snowflakecomputing.com/?user=me&PASSWORD=s3cret&role=r",
+            "mssql://host/db?Pwd=x;Encrypt=true",
+            "jdbc:sqlserver://db:1433;databaseName=x;user=me;password=hunter2",
+            "Driver={ODBC Driver 18 for SQL Server};Server=db;Uid=me;Pwd=hunter2;",
+            "host=db user=me password=hunter2",
+            "postgres://me:ab/cd@db/x",
+            "postgres://me:ab?cd@db/x",
+            "postgres://me:ab#cd@db/x",
+        ] {
             assert!(carries_credential(value), "{value}");
         }
-        for value in ["postgres://me@db.example.com/shop", "https://example.com/a:b@c", "https://host:8080/x@y",
-                      "RAW_DB", "me:hunter2", "", "https://example.com/?password=",
-                      "https://example.com/docs?topic=password", "https://example.com/reset#password=x",
-                      "host=db user=me", "ssh://git@github.com:org/repo"] {
+        for value in [
+            "postgres://me@db.example.com/shop",
+            "https://example.com/a:b@c",
+            "https://host:8080/x@y",
+            "RAW_DB",
+            "me:hunter2",
+            "",
+            "https://example.com/?password=",
+            "https://example.com/docs?topic=password",
+            "https://example.com/reset#password=x",
+            "host=db user=me",
+            "ssh://git@github.com:org/repo",
+        ] {
             assert!(!carries_credential(value), "{value}");
         }
     }
 
     #[test]
     fn sensitive_name_leaves_ordinary_config_alone() {
-        for name in ["DBT_UNIQUE_KEY", "PARTITION_KEY", "SORT_KEY", "MERGE_KEY", "KEYSTONE_SCHEMA",
-                     "MONKEY", "DBT_DB_RAW", "DBT_TARGET", "KEY", "POWER_BI_URL", "PWA_HOST", "API_URL",
-                     "BYPASS_CACHE", "DB_NAME", "PASSPORT_ID", "stripe__charge_pass_through_columns",
-                     "DQ_PASS_THRESHOLD", "PASS_RATE", "PASS", "DSN", "dsn", "DSN_TEMPLATE"] {
+        for name in [
+            "DBT_UNIQUE_KEY", "PARTITION_KEY", "SORT_KEY", "MERGE_KEY", "KEYSTONE_SCHEMA", "MONKEY", "DBT_DB_RAW", "DBT_TARGET", "KEY",
+            "POWER_BI_URL", "PWA_HOST", "API_URL", "BYPASS_CACHE", "DB_NAME", "PASSPORT_ID", "stripe__charge_pass_through_columns",
+            "DQ_PASS_THRESHOLD", "PASS_RATE", "PASS", "DSN", "dsn", "DSN_TEMPLATE",
+        ] {
             assert!(!sensitive_name(name), "{name} should not be treated as sensitive");
         }
     }

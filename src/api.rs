@@ -374,14 +374,10 @@ fn needs_key(path: &str) -> bool {
 /// port, so any other server on 127.0.0.1 the browser visited would have been
 /// sent it (0122).
 fn carries_key(req: &axum::extract::Request, st: &AppState) -> bool {
-    let in_bearer = header_str(req, header::AUTHORIZATION)
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|v| same_key(v.trim(), &st.key));
+    let in_bearer =
+        header_str(req, header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer ")).is_some_and(|v| same_key(v.trim(), &st.key));
     let in_query = req.uri().path().starts_with("/ws/")
-        && req
-            .uri()
-            .query()
-            .is_some_and(|q| q.split('&').filter_map(|pair| pair.strip_prefix("key=")).any(|v| same_key(v, &st.key)));
+        && req.uri().query().is_some_and(|q| q.split('&').filter_map(|pair| pair.strip_prefix("key=")).any(|v| same_key(v, &st.key)));
     in_bearer || in_query
 }
 
@@ -703,7 +699,15 @@ async fn collin_now(st: &Arc<AppState>) -> CollinNow {
         let stale = collin_run::stale(&out, &shared.manifest_path) || other;
         CollinNow { bin, version, stale, versions, outdated, refused, chosen_refused }
     });
-    read.await.unwrap_or(CollinNow { bin: None, version: None, stale: false, versions: Vec::new(), outdated: false, refused: None, chosen_refused: false })
+    read.await.unwrap_or(CollinNow {
+        bin: None,
+        version: None,
+        stale: false,
+        versions: Vec::new(),
+        outdated: false,
+        refused: None,
+        chosen_refused: false,
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -723,11 +727,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
     let found = caches(st).await;
     let chosen = st.snowflake_features.lock().map(|c| *c).unwrap_or(None);
     let snowflake = crate::settings::snowflake_features(chosen, &graph.meta.adapter);
-    let cll_active = st
-        .cll()
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let cll_active = st.cll().file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let live = st.sidecar.enabled();
     let collin_out = collin::path_for(&st.target_dir, "collin");
     let cll_tool = if live {
@@ -788,11 +788,7 @@ async fn meta_body(st: &Arc<AppState>) -> MetaBody {
         meta: graph.meta.clone(),
         cll_sources: found.into_iter().filter(|a| collin::offered(a, snowflake)).collect(),
         cll_active,
-        features: Features {
-            snowflake,
-            snowflake_set: chosen.is_some(),
-            builds_stale_days: st.settings.load().builds_stale_days(),
-        },
+        features: Features { snowflake, snowflake_set: chosen.is_some(), builds_stale_days: st.settings.load().builds_stale_days() },
         sidecar: SidecarBody { enabled: live, status: st.sidecar.status() },
         collin,
         profiles: {
@@ -1065,7 +1061,8 @@ async fn unused_paths(st: &Arc<AppState>) -> Option<crate::unused_paths::Report>
 async fn warnings_report(State(st): State<Arc<AppState>>) -> Response {
     match unused_paths(&st).await {
         Some(report) => Json(report).into_response(),
-        None => (StatusCode::NOT_FOUND, "nothing to hold dbt_project.yml against: no manifest, or no dbt_project.yml this can read").into_response(),
+        None => (StatusCode::NOT_FOUND, "nothing to hold dbt_project.yml against: no manifest, or no dbt_project.yml this can read")
+            .into_response(),
     }
 }
 
@@ -1114,11 +1111,8 @@ async fn macros_report(State(st): State<Arc<AppState>>, Query(q): Query<MacrosRe
                 callers: usage.callers.iter().map(|&c| entry(c)).collect(),
             }
         });
-        let mut unreached: Vec<Unreached> = uses
-            .unreached(macros)
-            .into_iter()
-            .map(|at| Unreached { entry: entry(at), used: macro_used(&graph, at) })
-            .collect();
+        let mut unreached: Vec<Unreached> =
+            uses.unreached(macros).into_iter().map(|at| Unreached { entry: entry(at), used: macro_used(&graph, at) }).collect();
         // Grouped as the section shows them, what is left unexplained first,
         // by name within each group.
         unreached.sort_by(|a, b| (a.used.why, &a.entry.call).cmp(&(b.used.why, &b.entry.call)));
@@ -1143,7 +1137,12 @@ async fn checks_report(State(st): State<Arc<AppState>>) -> Response {
     if graph.meta.manifest_mtime == 0 {
         return (StatusCode::NOT_FOUND, "nothing to check: no manifest").into_response();
     }
-    match tokio::task::spawn_blocking(move || ChecksReport { manifest_at: graph.meta.manifest_mtime, checks: crate::checks::checks(&graph) }).await {
+    match tokio::task::spawn_blocking(move || ChecksReport {
+        manifest_at: graph.meta.manifest_mtime,
+        checks: crate::checks::checks(&graph),
+    })
+    .await
+    {
         Ok(r) => Json(r).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -1250,10 +1249,12 @@ async fn last_run_report(State(st): State<Arc<AppState>>) -> Response {
     let raw = match read {
         Ok(Ok(Some(raw))) => raw,
         Ok(Ok(None)) => {
-            return (StatusCode::NOT_FOUND, "dbt has written no run_results.json here yet: run dbt build, run, test or seed").into_response()
+            return (StatusCode::NOT_FOUND, "dbt has written no run_results.json here yet: run dbt build, run, test or seed")
+                .into_response()
         }
         Ok(Err(e)) => {
-            return (StatusCode::BAD_REQUEST, format!("target/run_results.json could not be read, dbt may still be writing it: {e}")).into_response()
+            return (StatusCode::BAD_REQUEST, format!("target/run_results.json could not be read, dbt may still be writing it: {e}"))
+                .into_response()
         }
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "reading target/run_results.json failed").into_response(),
     };
@@ -1449,9 +1450,7 @@ fn collin_missing(refused: Option<(PathBuf, collin_run::Refusal)>) -> String {
 /// alone, and this starts a process.
 async fn generate_col_lineage(State(st): State<Arc<AppState>>) -> Response {
     match regenerate(&st).await {
-        None => {
-            (StatusCode::NOT_FOUND, collin_missing(collin_now(&st).await.refused)).into_response()
-        }
+        None => (StatusCode::NOT_FOUND, collin_missing(collin_now(&st).await.refused)).into_response(),
         Some(status) if status.state == "failed" => (StatusCode::BAD_GATEWAY, status.error).into_response(),
         Some(_) => Json(meta_body(&st).await).into_response(),
     }
@@ -1570,7 +1569,11 @@ struct FeaturesBody {
 async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBody>) -> Response {
     if let Some(days) = b.builds_stale_days {
         if !(1..=crate::settings::MAX_STALE_DAYS).contains(&days) {
-            return (StatusCode::BAD_REQUEST, format!("builds_stale_days is a number of days from 1 to {}", crate::settings::MAX_STALE_DAYS)).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("builds_stale_days is a number of days from 1 to {}", crate::settings::MAX_STALE_DAYS),
+            )
+                .into_response();
         }
         if let Err(e) = st.settings.update(|s| s.builds_stale_days = (days != crate::settings::DEFAULT_STALE_DAYS).then_some(days)).await {
             eprintln!("  builds threshold not saved: {e}");
@@ -1858,18 +1861,12 @@ struct NodeDetail<'a> {
 /// the editor (so the editor and the lineage view stay in sync).
 async fn node(State(st): State<Arc<AppState>>, Query(q): Query<NodeQuery>) -> Response {
     let graph = st.graph.read().await.clone();
-    let idx = if !q.id.is_empty() {
-        graph.index.get(&q.id).copied()
-    } else {
-        graph.node_of_file(&q.file.replace('\\', "/"))
-    };
+    let idx = if !q.id.is_empty() { graph.index.get(&q.id).copied() } else { graph.node_of_file(&q.file.replace('\\', "/")) };
     let Some(idx) = idx else {
         return (StatusCode::NOT_FOUND, "unknown node").into_response();
     };
     let n = &graph.nodes[idx as usize];
-    let note = collin_report(&st, collin::tool_of(&graph.meta.cll_source))
-        .await
-        .and_then(|r| r.notes.get(&n.id).cloned());
+    let note = collin_report(&st, collin::tool_of(&graph.meta.cll_source)).await.and_then(|r| r.notes.get(&n.id).cloned());
     // A handful of files of a few kilobytes each, read fresh so an edit to a
     // .env file shows up on the next click.
     let env_files = {
@@ -2217,8 +2214,7 @@ async fn resolve_project_keys(State(st): State<Arc<AppState>>, Json(b): Json<Pro
             .filter_map(|key| {
                 let p = crate::project::place(&root, &paths, name.as_deref(), &key.block, &key.chain)?;
                 let under = format!("{}/", p.path);
-                let nodes = (counted && p.dir)
-                    .then(|| graph.nodes.iter().filter(|n| n.file.starts_with(&under)).count());
+                let nodes = (counted && p.dir).then(|| graph.nodes.iter().filter(|n| n.file.starts_with(&under)).count());
                 Some(ProjectPlace { key, path: p.path, dir: p.dir, also: p.also, nodes })
             })
             .collect::<Vec<_>>();
@@ -2462,12 +2458,7 @@ async fn list_selectors(State(st): State<Arc<AppState>>) -> Response {
         .selectors
         .list()
         .iter()
-        .map(|n| SelectorEntry {
-            name: &n.name,
-            description: &n.description,
-            default: n.default,
-            unsupported: n.unsupported.as_deref(),
-        })
+        .map(|n| SelectorEntry { name: &n.name, description: &n.description, default: n.default, unsupported: n.unsupported.as_deref() })
         .collect();
     Json(SelectorsBody { selectors, lost_indirect: graph.selectors.lost_indirect() }).into_response()
 }
@@ -2508,8 +2499,7 @@ async fn list_envs(State(st): State<Arc<AppState>>) -> Response {
     let settings = st.settings.load();
     let settings_path = st.settings.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
     let body = tokio::task::spawn_blocking(move || {
-        let places: Vec<(&Place, &Place)> =
-            graph.nodes.iter().filter(|n| n.kind != Kind::Test).map(|n| (&n.written, &n.parsed)).collect();
+        let places: Vec<(&Place, &Place)> = graph.nodes.iter().filter(|n| n.kind != Kind::Test).map(|n| (&n.written, &n.parsed)).collect();
         let referenced = envs::referenced(&places);
         let files = envs::discover(&root)
             .into_iter()
@@ -2673,8 +2663,7 @@ async fn list_vars(State(st): State<Arc<AppState>>, Query(q): Query<VarsQuery>) 
     if !q.env.is_empty() && !valid_env_file(&q.env) {
         return (StatusCode::BAD_REQUEST, "not an env file name").into_response();
     }
-    let names: Vec<String> =
-        q.names.split(',').map(str::trim).filter(|s| !s.is_empty()).take(MAX_VAR_NAMES).map(String::from).collect();
+    let names: Vec<String> = q.names.split(',').map(str::trim).filter(|s| !s.is_empty()).take(MAX_VAR_NAMES).map(String::from).collect();
 
     let root = st.root.clone();
     let want_env = q.env.clone();
@@ -2814,9 +2803,7 @@ async fn save_envs(State(st): State<Arc<AppState>>, Json(b): Json<OverridesBody>
 /// read of a source walks its folders and resolves every step (0063). With
 /// `look`, the files are looked at first, and read again if one moved.
 async fn with_jobs<T: Send + 'static>(
-    st: &Arc<AppState>,
-    look: bool,
-    answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
+    st: &Arc<AppState>, look: bool, answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
 ) -> Result<T, Response> {
     with_jobs_sources(st, look, answer).await.map(|(answered, _)| answered)
 }
@@ -2825,9 +2812,7 @@ async fn with_jobs<T: Send + 'static>(
 /// blocking task: the route that says where the sources came from says what it
 /// read, and the file is read once.
 async fn with_jobs_sources<T: Send + 'static>(
-    st: &Arc<AppState>,
-    look: bool,
-    answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
+    st: &Arc<AppState>, look: bool, answer: impl FnOnce(&Graph, &crate::jobs::Read) -> T + Send + 'static,
 ) -> Result<(T, crate::jobs::Sources), Response> {
     let graph = st.graph.read().await.clone();
     let saved = st.job_sources.lock().map(|s| s.clone()).unwrap_or_default();
@@ -3041,10 +3026,8 @@ struct JobsNodeQuery {
 
 /// Every step that acts on one node, grouped by job, with what reached it.
 async fn jobs_for_node(State(st): State<Arc<AppState>>, Query(q): Query<JobsNodeQuery>) -> Response {
-    let answer = with_jobs_sources(&st, q.look, move |graph, read| {
-        graph.index.get(&q.id).map(|&i| crate::jobs::for_node(graph, read, i))
-    })
-    .await;
+    let answer =
+        with_jobs_sources(&st, q.look, move |graph, read| graph.index.get(&q.id).map(|&i| crate::jobs::for_node(graph, read, i))).await;
     match answer {
         Ok((Some(view), sources)) => {
             // Said with the answer: a file that does not read leaves the tab
@@ -3153,14 +3136,7 @@ async fn compiled_sql(State(st): State<Arc<AppState>>, Query(q): Query<ArtifactQ
     let (package, file, yml) = (n.package.clone(), n.file.clone(), n.yml.clone());
     let (compiled_at, name, alias) = (n.compiled.clone(), n.name.clone(), n.alias.clone());
     match tokio::task::spawn_blocking(move || {
-        let subject = compiled::Subject {
-            package: &package,
-            file: &file,
-            yml: &yml,
-            compiled: &compiled_at,
-            name: &name,
-            alias: &alias,
-        };
+        let subject = compiled::Subject { package: &package, file: &file, yml: &yml, compiled: &compiled_at, name: &name, alias: &alias };
         let info = compiled::look_up(&root, &target, kind, &subject, 2 * 1024 * 1024);
         if !info.found {
             return Json(ArtifactBody { info, relations: Vec::new(), env_reads: Vec::new() }).into_response();
@@ -3532,15 +3508,13 @@ async fn claim_tour_offer(State(st): State<Arc<AppState>>) -> Response {
     let graph = st.graph.read().await.clone();
     let answer = match st.tour.path.clone() {
         Some(path) => tokio::task::spawn_blocking(move || {
-            crate::tour::Offer { path: Some(path) }
-                .visit(env!("CARGO_PKG_VERSION"), || crate::tour::pick(&graph, &[]).is_some())
+            crate::tour::Offer { path: Some(path) }.visit(env!("CARGO_PKG_VERSION"), || crate::tour::pick(&graph, &[]).is_some())
         })
         .await
         .unwrap_or(crate::tour::Answer::No),
         None => crate::tour::Answer::No,
     };
-    Json(OfferBody { offer: answer == crate::tour::Answer::Offer, held: answer == crate::tour::Answer::Held })
-        .into_response()
+    Json(OfferBody { offer: answer == crate::tour::Answer::Offer, held: answer == crate::tour::Answer::Held }).into_response()
 }
 
 /// The theme as the page reads and sets it: every field wanted, so a request
@@ -3836,7 +3810,8 @@ async fn fetch_col_lineage(State(st): State<Arc<AppState>>, Json(b): Json<FetchB
     // Otherwise Snowflake's own file. Never another producer's: one file per
     // producer is what keeps a half Snowflake, half other cache from existing.
     let shown = st.cll();
-    let path = if collin::tool_of(&st.graph.read().await.meta.cll_source) == "snowflake" && shown.parent() == Some(st.target_dir.as_path()) {
+    let path = if collin::tool_of(&st.graph.read().await.meta.cll_source) == "snowflake" && shown.parent() == Some(st.target_dir.as_path())
+    {
         shown
     } else {
         collin::path_for(&st.target_dir, "snowflake")
@@ -4120,11 +4095,9 @@ async fn clone_plan(State(st): State<Arc<AppState>>, Query(q): Query<CloneQuery>
             None => crate::profiles::Target { why: NO_PROFILE.into(), ..Default::default() },
             Some(path) => match profile_text(&root, &path) {
                 Err(e) => crate::profiles::Target { why: e.message(), ..Default::default() },
-                Ok(text) => crate::profiles::active_target(
-                    &text,
-                    &crate::project::profile(&root).unwrap_or_default(),
-                    lookup.target.as_deref(),
-                ),
+                Ok(text) => {
+                    crate::profiles::active_target(&text, &crate::project::profile(&root).unwrap_or_default(), lookup.target.as_deref())
+                }
             },
         };
         let newer = |p: &str| !p.is_empty() && crate::files::mtime_secs(&root.join(freshness::rel(p))) > manifest_at;
@@ -4362,9 +4335,7 @@ async fn git_cached(st: &Arc<AppState>) -> GitInfo {
         }
     }
     let root = st.root.clone();
-    let info = tokio::task::spawn_blocking(move || git::status(&root))
-        .await
-        .unwrap_or_default();
+    let info = tokio::task::spawn_blocking(move || git::status(&root)).await.unwrap_or_default();
     *cached = Some((std::time::Instant::now(), info.clone()));
     info
 }
@@ -4392,9 +4363,7 @@ async fn freshness_status(State(st): State<Arc<AppState>>) -> Response {
     let node_files = freshness::project_files(&graph);
 
     let root = st.root.clone();
-    let f = tokio::task::spawn_blocking(move || freshness::check(&root, manifest_at, &node_files, &git))
-        .await
-        .unwrap_or_default();
+    let f = tokio::task::spawn_blocking(move || freshness::check(&root, manifest_at, &node_files, &git)).await.unwrap_or_default();
     *st.fresh.lock().await = Some((std::time::Instant::now(), f.clone()));
     Json(FreshnessBody { fresh: f, reports_at }).into_response()
 }
@@ -4421,9 +4390,7 @@ where
 /// `Path::join` replaces the root with either.
 fn sane_path(p: &str) -> bool {
     let unified = p.replace('\\', "/");
-    !p.is_empty()
-        && !unified.starts_with('/')
-        && !unified.split('/').any(|seg| seg == ".." || seg.ends_with(':'))
+    !p.is_empty() && !unified.starts_with('/') && !unified.split('/').any(|seg| seg == ".." || seg.ends_with(':'))
 }
 
 fn sane_paths(paths: &[String]) -> Result<(), Response> {
@@ -4690,7 +4657,8 @@ enum Say {
 /// stamps, a manifest that failed and a catalog left out at the same stamps
 /// sharing one count. The cache's stamp is not what failed and is never put back.
 fn after_artifacts_read(now: [u64; 3], before: [u64; 3], stamps: [u64; 3], tried: Tried, loaded: Option<u64>) -> ([u64; 3], Tried, Say) {
-    let mut tried = if tried.stamps == [stamps[0], stamps[1]] { tried } else { Tried { stamps: [stamps[0], stamps[1]], tries: 0, ..tried } };
+    let mut tried =
+        if tried.stamps == [stamps[0], stamps[1]] { tried } else { Tried { stamps: [stamps[0], stamps[1]], tries: 0, ..tried } };
     let mut seen = now;
     let (what, catalog_left_out) = match loaded {
         None => ("artifacts", false),
@@ -4739,9 +4707,7 @@ pub async fn watch_artifacts(st: Arc<AppState>) {
         // would otherwise merge into the graph this reload is about to replace.
         let _cache = st.cll_lock.lock().await;
         let (mp, cp, lp) = (st.manifest_path.clone(), st.catalog_path.clone(), st.cll());
-        let stamps = tokio::task::spawn_blocking(move || [mtime_secs(&mp), mtime_secs(&cp), mtime_secs(&lp)])
-            .await
-            .unwrap_or([0, 0, 0]);
+        let stamps = tokio::task::spawn_blocking(move || [mtime_secs(&mp), mtime_secs(&cp), mtime_secs(&lp)]).await.unwrap_or([0, 0, 0]);
         let (changed, artifacts, before) = st
             .seen
             .lock()
@@ -5022,9 +4988,7 @@ mod tests {
 
     /// With `shell` as the terminal's, for what a route makes for that shell.
     async fn serve_in(
-        root: &Path,
-        profiles: crate::profiles::Lookup,
-        shell: ShellSpec,
+        root: &Path, profiles: crate::profiles::Lookup, shell: ShellSpec,
     ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         // Looks only when a test asks it to, and from a file the test wrote
         // first, so no test reaches GitHub.
@@ -5034,21 +4998,14 @@ mod tests {
 
     /// With `update` as the server's, for what the update route says of it.
     async fn serve_full(
-        root: &Path,
-        profiles: crate::profiles::Lookup,
-        shell: ShellSpec,
-        update: crate::update::Update,
+        root: &Path, profiles: crate::profiles::Lookup, shell: ShellSpec, update: crate::update::Update,
     ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         serve_cwd(root, profiles, shell, update, None).await
     }
 
     /// With `cwd` as why the terminal's shell reads the current folder (0130).
     async fn serve_cwd(
-        root: &Path,
-        profiles: crate::profiles::Lookup,
-        shell: ShellSpec,
-        update: crate::update::Update,
-        cwd: Option<crate::program::Reads>,
+        root: &Path, profiles: crate::profiles::Lookup, shell: ShellSpec, update: crate::update::Update, cwd: Option<crate::program::Reads>,
     ) -> (u16, Arc<AppState>, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -5123,9 +5080,7 @@ mod tests {
                 }
             }
         };
-        tokio::time::timeout(std::time::Duration::from_secs(5), read)
-            .await
-            .unwrap_or_else(|_| panic!("no head within 5 s to {request}"));
+        tokio::time::timeout(std::time::Duration::from_secs(5), read).await.unwrap_or_else(|_| panic!("no head within 5 s to {request}"));
         let text = String::from_utf8_lossy(&buf).into_owned();
         // The last chunk usually carries the start of the body with it.
         split_head(&text).0.to_string()
@@ -5270,7 +5225,10 @@ mod tests {
         let collin = &json_of(&meta)["collin"];
         assert_eq!((collin["chosen"].as_str(), collin["chosen_refused"].as_bool()), (Some("0.3.0"), Some(true)), "{meta}");
         assert!(collin["refused"].as_str().unwrap().ends_with("0.3.0/bin/collin"), "names the binary refused: {meta}");
-        assert!(!collin["path"].as_str().unwrap_or_default().contains("collin-installs"), "the default runs, never the refused one: {meta}");
+        assert!(
+            !collin["path"].as_str().unwrap_or_default().contains("collin-installs"),
+            "the default runs, never the refused one: {meta}"
+        );
         assert!(!meta.contains(r#""origin":"installed""#), "{meta}");
         assert!(meta.contains(r#""refused_shared":""#) && meta.contains("can be written by its group (mode 775)"), "{meta}");
         let refused = response_of(port, post(r#"{"version":"0.3.0"}"#)).await;
@@ -5298,7 +5256,9 @@ mod tests {
     async fn two_kept_versions_compare_and_others_do_not() {
         let root = temp_project("compare");
         let target = root.join("target");
-        for (version, edges) in [("0.1.0", "[]"), ("0.4.0", r#"[{"from":"model.p.a","from_col":"x","to":"model.p.b","to_col":"x","kind":"passthrough"}]"#)] {
+        for (version, edges) in
+            [("0.1.0", "[]"), ("0.4.0", r#"[{"from":"model.p.a","from_col":"x","to":"model.p.b","to_col":"x","kind":"passthrough"}]"#)]
+        {
             let dir = crate::collin_compare::kept_dir(&target).join(version);
             std::fs::create_dir_all(&dir).unwrap();
             let body = format!(r#"{{"version":1,"source":"collin","edges":{edges}}}"#);
@@ -5359,11 +5319,17 @@ mod tests {
         assert!(!off.contains(r#""id":"model.demo.mart""#) && off.contains(r#""rows_of":[["mart","filter"]]"#), "{off}");
         let boxed = response_of(port, get("/api/collineage?id=model.demo.stg&column=y&up=0&down=1&indirect=1", &h)).await;
         assert!(boxed.contains(r#""id":"model.demo.mart""#) && boxed.contains(r#""sub":"whole model""#), "{boxed}");
-        assert!(!boxed.contains(r#""id":"model.demo.mart::x""#) && boxed.contains(r#""edge_kinds":["filter"]"#), "one edge, not one a column: {boxed}");
+        assert!(
+            !boxed.contains(r#""id":"model.demo.mart::x""#) && boxed.contains(r#""edge_kinds":["filter"]"#),
+            "one edge, not one a column: {boxed}"
+        );
         assert!(boxed.contains(r#""rows_of":[["mart","filter"]]"#) && !boxed.contains("indirect_hidden"), "{boxed}");
         // A column only indirect edges reach counts none, and still opens.
         let node = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
-        assert!(node.contains(r#""name":"y","data_type":"","description":"","undeclared":false,"up":0,"down":0,"indirect":true"#), "{node}");
+        assert!(
+            node.contains(r#""name":"y","data_type":"","description":"","undeclared":false,"up":0,"down":0,"indirect":true"#),
+            "{node}"
+        );
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -5394,7 +5360,10 @@ mod tests {
             to_col: "x".into(),
             kind: "rename".into(),
         };
-        g.merge_col_lineage(crate::collin::RawColLineage { version: 1, edges: vec![link("a", "b"), link("b", "c")], ..Default::default() }, 1);
+        g.merge_col_lineage(
+            crate::collin::RawColLineage { version: 1, edges: vec![link("a", "b"), link("b", "c")], ..Default::default() },
+            1,
+        );
         *st.graph.write().await = Arc::new(g);
 
         // One level drawn, both listed: the menu offers what the canvas did not draw.
@@ -5494,7 +5463,10 @@ mod tests {
         assert!(!node.contains("generated"), "{node}");
         // A root reaches the Catalog's Columns table with its value (0096).
         let mart = response_of(port, get("/api/node?id=model.demo.mart", &h)).await;
-        assert!(mart.contains(r#""name":"at","data_type":"","description":"","undeclared":true,"up":0,"down":0,"generated":["now()"]"#), "{mart}");
+        assert!(
+            mart.contains(r#""name":"at","data_type":"","description":"","undeclared":true,"up":0,"down":0,"generated":["now()"]"#),
+            "{mart}"
+        );
 
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
@@ -5659,13 +5631,7 @@ mod tests {
         std::fs::create_dir_all(cargo.join("bin")).unwrap();
         std::fs::write(cargo.join(".crates2.json"), "").unwrap();
         std::fs::write(cargo.join("bin").join("dbt-edith"), "").unwrap();
-        let installed = crate::update::how(
-            &clone,
-            &cargo.join("bin").join("dbt-edith"),
-            Some(crate::update::Shell::Posix),
-            false,
-        )
-        .unwrap();
+        let installed = crate::update::how(&clone, &cargo.join("bin").join("dbt-edith"), Some(crate::update::Shell::Posix), false).unwrap();
         assert_eq!(installed.command, "", "no release, no line");
         let download = crate::update::How {
             command: "download it".into(),
@@ -5676,7 +5642,8 @@ mod tests {
             plan: None,
         };
         let update = crate::update::Update::new(false, Some(root.join("update.json")), Ok(vec![download, installed]));
-        let (port, st, server) = serve_full(&root, crate::profiles::Lookup::default(), ShellSpec { program: "/bin/sh".into(), args: Vec::new() }, update).await;
+        let (port, st, server) =
+            serve_full(&root, crate::profiles::Lookup::default(), ShellSpec { program: "/bin/sh".into(), args: Vec::new() }, update).await;
         let host = format!("127.0.0.1:{port}");
         let h = [("Host", host.as_str())];
         let now = crate::update::now_secs();
@@ -5691,7 +5658,11 @@ mod tests {
             "{body}"
         );
         // The clone's line names the release the look found.
-        let line = format!("git -C \"{}\" fetch --tags --force origin; git -C \"{}\" merge --ff-only v99.0.0 && cargo install", clone.display(), clone.display());
+        let line = format!(
+            "git -C \"{}\" fetch --tags --force origin; git -C \"{}\" merge --ff-only v99.0.0 && cargo install",
+            clone.display(),
+            clone.display()
+        );
         assert!(head.contains(&line.replace('"', "\\\"")), "{body}");
         assert!(head.contains(r#""kind":"install""#) && !head.contains("pull --ff-only"), "{body}");
         assert!(!past_head(&body).contains(r#""why""#) && !past_head(&body).contains(r#""how":"#), "{body}");
@@ -5788,12 +5759,10 @@ mod tests {
         let mut graph = Graph::build(raw_manifest, &root.join("target/manifest.json"), 0, 0);
         graph.place_packages(&root);
         *st.graph.write().await = Arc::new(graph);
-        let list = |dir: &'static str| {
-            async move {
-                let listed = response_of(port, get(&format!("/api/dir?path={dir}"), &h)).await;
-                let rows: serde_json::Value = serde_json::from_str(past_head(&listed)).unwrap();
-                rows
-            }
+        let list = |dir: &'static str| async move {
+            let listed = response_of(port, get(&format!("/api/dir?path={dir}"), &h)).await;
+            let rows: serde_json::Value = serde_json::from_str(past_head(&listed)).unwrap();
+            rows
         };
         let models = list("models").await;
         let of = |rows: &serde_json::Value, name: &str| {
@@ -5810,7 +5779,11 @@ mod tests {
         }
         assert_eq!(of(&list("seeds").await, "raw.csv"), some("seed", None));
         assert_eq!(of(&list("snapshots").await, "snap.sql"), some("snapshot", None));
-        assert_eq!(of(&list("dbt_packages/artifacts/models").await, "runs.sql"), some("model", Some("view")), "an installed package's file");
+        assert_eq!(
+            of(&list("dbt_packages/artifacts/models").await, "runs.sql"),
+            some("model", Some("view")),
+            "an installed package's file"
+        );
         server.abort();
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -5830,14 +5803,34 @@ mod tests {
 
         let first = response_of(port, get("/api/look", &h)).await;
         assert!(first.starts_with("HTTP/1.1 200"), "{first}");
-        assert_eq!(past_head(&first), r#"{"theme":"night","follow":false,"apparitions":true,"boxes":"tombstone"}"#, "Night by default, apparitions on, headstones");
+        assert_eq!(
+            past_head(&first),
+            r#"{"theme":"night","follow":false,"apparitions":true,"boxes":"tombstone"}"#,
+            "Night by default, apparitions on, headstones"
+        );
         assert!(!file.exists(), "reading keeps nothing");
-        let set = response_of(port, with_json("POST", "/api/look", &post, r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#)).await;
+        let set = response_of(
+            port,
+            with_json("POST", "/api/look", &post, r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#),
+        )
+        .await;
         assert_eq!(past_head(&set), r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#, "{set}");
-        assert_eq!(past_head(&response_of(port, get("/api/look", &h)).await), r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#);
-        let halloween = crate::look::Kept { theme: crate::look::Theme::Halloween, follow: false, apparitions: false, boxes: crate::look::Boxes::Coffin };
+        assert_eq!(
+            past_head(&response_of(port, get("/api/look", &h)).await),
+            r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#
+        );
+        let halloween = crate::look::Kept {
+            theme: crate::look::Theme::Halloween,
+            follow: false,
+            apparitions: false,
+            boxes: crate::look::Boxes::Coffin,
+        };
         assert_eq!(crate::look::Look { path: Some(file.clone()) }.read(), halloween);
-        let light = response_of(port, with_json("POST", "/api/look", &post, r#"{"theme":"light","follow":true,"apparitions":false,"boxes":"coffin"}"#)).await;
+        let light = response_of(
+            port,
+            with_json("POST", "/api/look", &post, r#"{"theme":"light","follow":true,"apparitions":false,"boxes":"coffin"}"#),
+        )
+        .await;
         assert_eq!(past_head(&light), r#"{"theme":"light","follow":true,"apparitions":false,"boxes":"coffin"}"#);
 
         let sepia = r#"{"theme":"sepia","follow":false,"apparitions":true,"boxes":"coffin"}"#;
@@ -5876,9 +5869,7 @@ mod tests {
         let page = String::from_utf8_lossy(&page.data).into_owned();
         let night = r#"data-theme="night""#;
         assert!(page.contains(night), "the file keeps Night as its own");
-        let served = |path: &'static str| {
-            async move { past_head(&response_of(port, keyless(get(path, &h))).await).to_string() }
-        };
+        let served = |path: &'static str| async move { past_head(&response_of(port, keyless(get(path, &h))).await).to_string() };
 
         assert_eq!(served("/").await, page, "Night before anyone chose");
         let light = r#"{"theme":"light","follow":false,"apparitions":true,"boxes":"coffin"}"#;
@@ -5889,7 +5880,11 @@ mod tests {
         }
         let halloween = r#"{"theme":"halloween","follow":false,"apparitions":false,"boxes":"coffin"}"#;
         assert!(status_of(port, with_json("POST", "/api/look", &post, halloween)).await.contains(" 200 "));
-        assert_eq!(served("/").await, page.replacen(night, r#"data-theme="halloween""#, 1), "the other boxes and apparitions stay out of it");
+        assert_eq!(
+            served("/").await,
+            page.replacen(night, r#"data-theme="halloween""#, 1),
+            "the other boxes and apparitions stay out of it"
+        );
         let follows = r#"{"theme":"light","follow":true,"apparitions":true,"boxes":"coffin"}"#;
         assert!(status_of(port, with_json("POST", "/api/look", &post, follows)).await.contains(" 200 "));
         assert_eq!(served("/").await, page, "following the system is left to the page");
@@ -6053,7 +6048,10 @@ mod tests {
         assert!(run.contains(r#""unknown":{"items":["test.shop.gone.x"],"of":1}"#), "{run}");
         assert!(!run.contains("hunter2"), "{run}");
         let index = response_of(port, get("/api/reports", &h)).await;
-        assert!(index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0,"partial":0,"ok":0,"other":0}}"#)), "{index}");
+        assert!(
+            index.contains(&format!(r#""run":{{"at":{at},"command":"build","error":1,"fail":1,"warn":0,"partial":0,"ok":0,"other":0}}"#)),
+            "{index}"
+        );
         let fresh = response_of(port, get("/api/freshness", &h)).await;
         assert!(fresh.contains(&format!(r#""reports_at":{at}"#)), "{fresh}");
 
@@ -6112,7 +6110,8 @@ mod tests {
                     (id, node)
                 })
                 .collect();
-            let raw: RawManifest = serde_json::from_value(serde_json::json!({ "metadata": { "adapter_type": "snowflake" }, "nodes": nodes })).unwrap();
+            let raw: RawManifest =
+                serde_json::from_value(serde_json::json!({ "metadata": { "adapter_type": "snowflake" }, "nodes": nodes })).unwrap();
             Arc::new(Graph::build(raw, &target.join("manifest.json"), 0, 0))
         };
 
@@ -6183,8 +6182,7 @@ mod tests {
         let nodes: serde_json::Map<String, serde_json::Value> = (0..=SELECT_DRAWN)
             .map(|i| {
                 let name = format!("m{i:05}");
-                let node =
-                    serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo", "fqn": ["demo", name] });
+                let node = serde_json::json!({ "name": name, "resource_type": "model", "package_name": "demo", "fqn": ["demo", name] });
                 (format!("model.demo.{name}"), node)
             })
             .collect();
@@ -6414,7 +6412,12 @@ mod tests {
         assert!(old.contains(r#""name":"totals.v1","version":"1","latest_version":"2","version_state":"old""#), "{old}");
         let plain_node = response_of(port, get("/api/node?id=model.demo.uses_old", &h)).await;
         assert!(!plain_node.contains(r#""version""#), "{plain_node}");
-        assert!(plain_node.contains(r#""name":"totals.v1","kind":"model","file":"models/totals_v1.sql","materialized":"","disabled":false,"base":"totals""#), "{plain_node}");
+        assert!(
+            plain_node.contains(
+                r#""name":"totals.v1","kind":"model","file":"models/totals_v1.sql","materialized":"","disabled":false,"base":"totals""#
+            ),
+            "{plain_node}"
+        );
         assert!(!plain_node.contains(r#""latest":true"#), "{plain_node}");
         let latest = response_of(port, get("/api/node?id=model.demo.uses_latest", &h)).await;
         assert!(latest.contains(r#""base":"totals","latest":true"#), "{latest}");
@@ -6642,8 +6645,11 @@ mod tests {
         let body = r#"{"file":"models/orders.sql","calls":["cents","grant_select"]}"#;
         let resolve = with_json("POST", "/api/macros/resolve", &[("Host", &host), ("Origin", &own)], body);
         let links = json(&response_of(port, resolve).await);
-        assert_eq!(links[0]["used"], serde_json::json!({ "by": [{ "kind": "model", "n": 3 }], "through": 2,
-            "callers": ["round_amount"], "callers_of": 1 }));
+        assert_eq!(
+            links[0]["used"],
+            serde_json::json!({ "by": [{ "kind": "model", "n": 3 }], "through": 2,
+            "callers": ["round_amount"], "callers_of": 1 })
+        );
         assert_eq!(links[1]["used"], serde_json::json!({ "why": "none" }), "no reference found, never unused");
 
         let hits = json(&response_of(port, get("/api/macros/search?q=round", &h)).await);
@@ -6754,8 +6760,14 @@ mod tests {
         };
         assert_eq!(report["manifest_at"], 7);
         assert_eq!(report["sources_without_freshness"]["total"], 1);
-        assert_eq!(report["sources_without_freshness"]["rows"], serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models", "source")]));
-        assert_eq!(report["models_without_test"]["rows"], serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts", "")]));
+        assert_eq!(
+            report["sources_without_freshness"]["rows"],
+            serde_json::json!([row("source.shop.crm.customers", "crm.customers", "models/sources.yml", "models", "source")])
+        );
+        assert_eq!(
+            report["models_without_test"]["rows"],
+            serde_json::json!([row("model.shop.orders", "orders", "models/marts/orders.sql", "models/marts", "")])
+        );
         assert_eq!(report["models_without_description"]["rows"][0]["name"], "orders");
         assert_eq!(report["models_without_key"]["rows"][0]["name"], "orders");
         assert_eq!(report["keys_maybe_null"]["total"], 0);
@@ -6892,7 +6904,9 @@ mod tests {
         let answer = response_of(port, read).await;
         assert!(answer.starts_with("HTTP/1.1 401") && answer.contains(NO_KEY), "{answer}");
         assert!(!answer.contains("hunter2"), "{answer}");
-        assert!(status_of(port, keyless(raw("POST", "/api/git/fetch", &[("Host", &host), ("Origin", &own)]))).await.ends_with("401 Unauthorized"));
+        assert!(status_of(port, keyless(raw("POST", "/api/git/fetch", &[("Host", &host), ("Origin", &own)])))
+            .await
+            .ends_with("401 Unauthorized"));
         let ws = |extra: Option<(&str, &str)>| {
             let mut h = vec![
                 ("Host", host.as_str()),
@@ -6990,10 +7004,8 @@ mod tests {
     /// moves on every second.
     fn undated(response: &str) -> String {
         let (head, body) = split_head(response);
-        let kept: Vec<&str> = head
-            .split("\r\n")
-            .filter(|line| !line.split_once(':').is_some_and(|(name, _)| name.eq_ignore_ascii_case("date")))
-            .collect();
+        let kept: Vec<&str> =
+            head.split("\r\n").filter(|line| !line.split_once(':').is_some_and(|(name, _)| name.eq_ignore_ascii_case("date"))).collect();
         format!("{}\r\n\r\n{body}", kept.join("\r\n"))
     }
 
@@ -7025,7 +7037,8 @@ mod tests {
         // A pull rewrites it. The size changes too, so this holds on a
         // filesystem keeping whole seconds.
         std::fs::write(&model, "select 1\nunion all\nselect 2\n").unwrap();
-        let pulled = json_of(&response_of(port, stamps(r#"["models/orders.sql"]"#)).await)["models/orders.sql"].as_str().unwrap().to_string();
+        let pulled =
+            json_of(&response_of(port, stamps(r#"["models/orders.sql"]"#)).await)["models/orders.sql"].as_str().unwrap().to_string();
         assert_ne!(pulled, first);
 
         let save = |stamp: &str| send("PUT", "/api/file", &format!(r#"{{"path":"models/orders.sql","content":"select 9\n"{stamp}}}"#));
@@ -7149,7 +7162,10 @@ mod tests {
         let models = response_of(port, get("/api/jobs/models?look=true", &[("Host", &host)])).await;
         assert!(models.starts_with("HTTP/1.1 200"), "{models}");
         assert!(models.contains(r#""ids":["model.shop.customers","model.shop.orders"]"#), "{models}");
-        assert!(models.contains(r#""name":"shop_added""#) && models.contains(r#""by_step":[{"n":1,"name":"all","models":[0]}]"#), "{models}");
+        assert!(
+            models.contains(r#""name":"shop_added""#) && models.contains(r#""by_step":[{"n":1,"name":"all","models":[0]}]"#),
+            "{models}"
+        );
         assert!(!models.contains("timezone") && !models.contains("hunter2"), "{models}");
         // The same bytes as a read built again from the same files (0055), not the cached one twice.
         let (graph, sources) = (st.graph.read().await.clone(), st.job_sources.lock().unwrap().clone());
@@ -7157,9 +7173,8 @@ mod tests {
         let want = serde_json::to_string(&ModelsBody { view: crate::jobs::models_by_job(&graph, &fresh), sources_refused: None }).unwrap();
         assert_eq!(models.split("\r\n\r\n").nth(1), Some(want.as_str()));
         assert!(status_of(port, keyless(get("/api/jobs/models", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
-        let zoned = |tz: &str| {
-            serde_json::json!({ "sources": [{ "kind": "airflow", "path": path, "keys": keys, "timezone": tz }] }).to_string()
-        };
+        let zoned =
+            |tz: &str| serde_json::json!({ "sources": [{ "kind": "airflow", "path": path, "keys": keys, "timezone": tz }] }).to_string();
         let refused = response_of(port, put(&zoned("Europe/Lon don"))).await;
         assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("time zone"), "{refused}");
         let saved = response_of(port, put(&zoned(" Europe/London "))).await;
@@ -7180,7 +7195,8 @@ mod tests {
         assert!(!inside.contains("shop_daily"), "a file's name, never its text: {inside}");
         assert!(status_of(port, keyless(get("/api/jobs/browse", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
 
-        let foreign = with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
+        let foreign =
+            with_json("PUT", "/api/jobs/sources", &[("Host", &host), ("Origin", "https://evil.example")], &body("airflow", &path, &keys));
         assert!(status_of(port, foreign).await.ends_with("403 Forbidden"));
         assert!(status_of(port, keyless(get("/api/jobs", &[("Host", &host)]))).await.ends_with("401 Unauthorized"));
         server.abort();
@@ -7240,14 +7256,21 @@ mod tests {
         let body = json_of(&wrote);
         assert_eq!((body["from"].as_str(), body["saved"].as_bool(), body["jobs"].as_u64()), (Some("project"), Some(true), Some(1)));
         let text = std::fs::read_to_string(&file).unwrap();
-        assert!(text.starts_with("# Where dbt-edith reads the orchestrator's jobs.") && text.contains("label: \"orchestration\""), "{text}");
+        assert!(
+            text.starts_with("# Where dbt-edith reads the orchestrator's jobs.") && text.contains("label: \"orchestration\""),
+            "{text}"
+        );
         assert_eq!(st.job_sources.lock().unwrap().len(), 1, "the settings are untouched");
         let stamp = body["stamp"].as_str().unwrap().to_string();
         let node = response_of(port, get("/api/jobs/node?id=model.shop.orders", &[("Host", &host)])).await;
         assert!(node.contains(r#""name":"shop_daily""#), "{node}");
 
         // The file wins: other sources in the settings are not read while it exists.
-        st.job_sources.lock().unwrap().push(crate::settings::JobSource { kind: "dbt_cloud".into(), path: "nowhere".into(), ..Default::default() });
+        st.job_sources.lock().unwrap().push(crate::settings::JobSource {
+            kind: "dbt_cloud".into(),
+            path: "nowhere".into(),
+            ..Default::default()
+        });
         let both = read().await;
         assert_eq!((both["from"].as_str(), both["sources"].as_array().map(Vec::len)), (Some("project"), Some(1)));
         assert_eq!(both["stamp"].as_str(), Some(stamp.as_str()));
@@ -7492,9 +7515,8 @@ b"}"#,
             target.join(file)
         };
         let (a, b) = (cache("column_lineage.collin.json", "collin", "only_a"), cache("column_lineage.x.json", "x", "only_b"));
-        let columns = |g: &Graph| -> Vec<String> {
-            g.nodes[g.index["model.demo.orders"] as usize].columns.iter().map(|c| c.name.clone()).collect()
-        };
+        let columns =
+            |g: &Graph| -> Vec<String> { g.nodes[g.index["model.demo.orders"] as usize].columns.iter().map(|c| c.name.clone()).collect() };
 
         let base = load_base(&root, &target.join("manifest.json"), &target.join("catalog.json")).unwrap();
         let over_a = with_cache(&base, &a);
@@ -7545,7 +7567,10 @@ b"}"#,
             ("/api/collineage/source", r#"{"file":"column_lineage.snowflake.json"}"#),
             ("/api/collineage/fetch", fetch),
             ("/api/snowflake/history", "{}"),
-            ("/api/snowflake/builds", r#"{"executions":"meta.dbt_artifacts.model_executions","invocations":"meta.dbt_artifacts.invocations"}"#),
+            (
+                "/api/snowflake/builds",
+                r#"{"executions":"meta.dbt_artifacts.model_executions","invocations":"meta.dbt_artifacts.invocations"}"#,
+            ),
             ("/api/snowflake/session", "{}"),
             ("/api/snowflake/clone/into", r#"{"into":"DEV_DB.dbt_someone"}"#),
         ] {
@@ -7603,8 +7628,7 @@ b"}"#,
             "shop:\n  target: dev\n  outputs:\n    dev:\n      type: snowflake\n      user: ME\n      password: s3cret-in-profile\n      database: DEV_DB\n      schema: dbt_someone\n",
         )
         .unwrap();
-        let (port, st, server) =
-            serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()), target: None }).await;
+        let (port, st, server) = serve_with(&root, crate::profiles::Lookup { dir: None, home: Some(home.clone()), target: None }).await;
         let host = format!("127.0.0.1:{port}");
         let own = format!("http://127.0.0.1:{port}");
 
@@ -7655,9 +7679,12 @@ b"}"#,
         assert!(plan.contains(r#""ephemeral":["int_orders"]"#), "{plan}");
         assert!(plan.contains(r#"".env.uat":{"place":{"database":"ANALYTICS_UAT","schema":"marts","alias":"""#), "{plan}");
         assert!(plan.contains(r#""database":"RAW_UAT","schema":"crm""#), "the source resolves too: {plan}");
-        assert!(plan.contains(
-            r#""profile":{"profile":"shop","target":"dev","target_from":"profile","database":"DEV_DB","schema":"dbt_someone"}"#
-        ), "{plan}");
+        assert!(
+            plan.contains(
+                r#""profile":{"profile":"shop","target":"dev","target_from":"profile","database":"DEV_DB","schema":"dbt_someone"}"#
+            ),
+            "{plan}"
+        );
         assert!(plan.contains(r#""persist":false"#), "{plan}");
         assert!(!plan.contains("s3cret-in-profile") && !plan.contains("hunter2"), "a secret left the server");
         assert!(!plan.contains(r#""user""#) && !plan.contains("ME\""), "{plan}");
@@ -7676,7 +7703,13 @@ b"}"#,
 
         let post = |body: &str| with_json("POST", "/api/snowflake/clone/into", &[("Host", &host), ("Origin", &own)], body);
         let long = format!(r#"{{"into":"DEV_DB.{}"}}"#, "s".repeat(300));
-        for bad in [r#"{"into":"DEV_DB.dbt_someone.extra"}"#, r#"{"into":"DEV_DB"}"#, r#"{"into":"DEV_DB.\u0007"}"#, r#"{"into":"DEV_DB. "}"#, long.as_str()] {
+        for bad in [
+            r#"{"into":"DEV_DB.dbt_someone.extra"}"#,
+            r#"{"into":"DEV_DB"}"#,
+            r#"{"into":"DEV_DB.\u0007"}"#,
+            r#"{"into":"DEV_DB. "}"#,
+            long.as_str(),
+        ] {
             assert!(status_of(port, post(bad)).await.ends_with("400 Bad Request"), "{bad}");
         }
         // Without a configuration directory it is not kept, and not an error.
@@ -7741,7 +7774,10 @@ b"}"#,
         let answer = response_of(port, get("/api/profiles", &[("Host", &host)])).await;
         assert!(!answer.contains("hunter2"), "{answer}");
         assert!(answer.contains(crate::redact::HIDDEN) && answer.contains(r#""hidden":1"#), "{answer}");
-        let edited = format!(r#"{{"content":"shop:\n  target: dev\n  outputs:\n    dev:\n      user: YOU\n      password: {}\n"}}"#, crate::redact::HIDDEN);
+        let edited = format!(
+            r#"{{"content":"shop:\n  target: dev\n  outputs:\n    dev:\n      user: YOU\n      password: {}\n"}}"#,
+            crate::redact::HIDDEN
+        );
         assert!(status_of(port, put(&edited)).await.ends_with("200 OK"));
         assert_eq!(std::fs::read_to_string(&profile).unwrap(), secret.replace("ME", "YOU"));
         let lost = format!(r#"{{"content":"shop:\n  outputs:\n    prod:\n      password: {}\n"}}"#, crate::redact::HIDDEN);

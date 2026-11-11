@@ -100,9 +100,9 @@ impl Fqns {
         }
         let exact = joined(chain);
         let below = format!("{exact}{SEP}");
-        lists.iter().any(|l| {
-            l.binary_search(&exact).is_ok() || l.get(l.partition_point(|f| **f < *below)).is_some_and(|f| f.starts_with(&below))
-        })
+        lists
+            .iter()
+            .any(|l| l.binary_search(&exact).is_ok() || l.get(l.partition_point(|f| **f < *below)).is_some_and(|f| f.starts_with(&below)))
     }
 }
 
@@ -277,21 +277,18 @@ tests:
         assert_eq!(
             said(text, &f),
             [
-                "models.shop.staging.nope",
-                "models.shop.stagign",
-                "models.shop.marts.core",
-                "models.shop.meta",
-                "models.shop.merged",
-                "models.other_package",
-                "snapshots",
-                "sources.shop.ap",
-                "data_tests.shop.nowhere",
+                "models.shop.staging.nope", "models.shop.stagign", "models.shop.marts.core", "models.shop.meta", "models.shop.merged",
+                "models.other_package", "snapshots", "sources.shop.ap", "data_tests.shop.nowhere",
             ]
         );
         // One disabled node of any kind uses every block itself.
-        let mut with_off = serde_json::json!({ "nodes": {}, "disabled": { "model.shop.old": [node("model", &["shop", "legacy", "old"])] } });
+        let mut with_off =
+            serde_json::json!({ "nodes": {}, "disabled": { "model.shop.old": [node("model", &["shop", "legacy", "old"])] } });
         with_off["nodes"]["seed.shop.raw"] = node("seed", &["shop", "raw"]);
-        assert_eq!(said("snapshots:\n  +tags: ['x']\nseeds:\n  shop:\n    legacy:\n      +tags: ['y']\n", &fqns(with_off)), Vec::<String>::new());
+        assert_eq!(
+            said("snapshots:\n  +tags: ['x']\nseeds:\n  shop:\n    legacy:\n      +tags: ['y']\n", &fqns(with_off)),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -332,12 +329,8 @@ functions:\n  shop:\n    to_cents:\n      +tags: [x]\n";
         assert_eq!(
             said(text, &fqns(serde_json::json!({}))),
             [
-                "exposures.shop.weekly",
-                "unit_tests.shop.orders",
-                "metrics.shop.revenue",
-                "semantic_models.shop.sales",
-                "saved_queries.shop.daily",
-                "functions.shop.to_cents",
+                "exposures.shop.weekly", "unit_tests.shop.orders", "metrics.shop.revenue", "semantic_models.shop.sales",
+                "saved_queries.shop.daily", "functions.shop.to_cents",
             ]
         );
     }
@@ -351,7 +344,10 @@ functions:\n  shop:\n    to_cents:\n      +tags: [x]\n";
             &yaml::parse("models:\n  shop:\n    with_anchor: &anc\n      inner:\n        +tags: [x]\n    aliased: *anc\n").unwrap(),
             &f,
         );
-        assert_eq!(unused, [Unused { block: "models", written: None, chain: vec!["shop".into(), "aliased".into(), "inner".into()], line: 6 }]);
+        assert_eq!(
+            unused,
+            [Unused { block: "models", written: None, chain: vec!["shop".into(), "aliased".into(), "inner".into()], line: 6 }]
+        );
     }
 
     /// A prefix is a whole part, never part of one, whatever the parts hold.

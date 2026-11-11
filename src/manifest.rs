@@ -261,9 +261,9 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Box<serde_js
 /// `warn_after` or `error_after` holds both a count and a period. A half
 /// threshold, `{}` and `null` are none (0116).
 pub fn has_freshness(v: &serde_json::Value) -> bool {
-    ["warn_after", "error_after"].iter().any(|k| {
-        v.get(k).is_some_and(|t| t.get("count").is_some_and(|c| !c.is_null()) && t.get("period").is_some_and(|p| !p.is_null()))
-    })
+    ["warn_after", "error_after"]
+        .iter()
+        .any(|k| v.get(k).is_some_and(|t| t.get("count").is_some_and(|c| !c.is_null()) && t.get("period").is_some_and(|p| !p.is_null())))
 }
 
 /// The three location keys, and nothing else, out of `unrendered_config`.
@@ -336,13 +336,8 @@ pub struct RawMacro {
 /// (`src/macros.rs`): the materialization, the strategy macros and the merge
 /// macros they call, by their own names, and whatever reads the configured
 /// strategy, for a materialization that reads it one call deep.
-const STRATEGY_WORDS: &[&str] = &[
-    "materialization incremental",
-    "get_incremental_",
-    "get_merge_sql",
-    "get_delete_insert_merge_sql",
-    "incremental_strategy",
-];
+const STRATEGY_WORDS: &[&str] =
+    &["materialization incremental", "get_incremental_", "get_merge_sql", "get_delete_insert_merge_sql", "incremental_strategy"];
 
 /// What is kept of a macro's `macro_sql`: the body itself only when it may say
 /// something about the strategy, and for every body what it reads from the

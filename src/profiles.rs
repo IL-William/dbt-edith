@@ -64,8 +64,7 @@ pub const LINKS_OUT: &str = "profiles.yml in the project links to a file outside
 /// `files::resolve`. One outside the project is the user's own, linked from a
 /// dotfiles repository or not, and is followed as dbt follows it (0094).
 pub fn held(root: &Path, path: &Path) -> Result<(), String> {
-    let (Ok(canon_root), Some(Ok(folder)), Some(name)) =
-        (root.canonicalize(), path.parent().map(Path::canonicalize), path.file_name())
+    let (Ok(canon_root), Some(Ok(folder)), Some(name)) = (root.canonicalize(), path.parent().map(Path::canonicalize), path.file_name())
     else {
         return Ok(());
     };
@@ -478,8 +477,18 @@ shop:
             (PROFILES, "shop", Some("ci"), "the schema of target ci is Jinja that dbt-edith does not evaluate"),
             ("shop:\n  target: dev\n", "shop", None, "profile shop has no outputs"),
             ("shop:\n  outputs:\n    dev:\n      database: D\n", "shop", Some("dev"), "target dev sets no schema"),
-            ("shop:\n  outputs:\n    dev:\n      <<: *base\n      schema: s\n", "shop", Some("dev"), "target dev takes its database from a YAML merge key, which dbt-edith does not follow"),
-            ("shop:\n  outputs:\n    dev:\n      database: *db\n      schema: s\n", "shop", Some("dev"), "the database of target dev is not a plain value"),
+            (
+                "shop:\n  outputs:\n    dev:\n      <<: *base\n      schema: s\n",
+                "shop",
+                Some("dev"),
+                "target dev takes its database from a YAML merge key, which dbt-edith does not follow",
+            ),
+            (
+                "shop:\n  outputs:\n    dev:\n      database: *db\n      schema: s\n",
+                "shop",
+                Some("dev"),
+                "the database of target dev is not a plain value",
+            ),
         ] {
             let t = active_target(text, profile, env);
             assert_eq!(t.why, why, "{text}");

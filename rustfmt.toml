@@ -1,0 +1,6 @@
+# As wide and packed as the code was written by hand, so formatting moves about
+# 1% of the lines instead of a third (0172).
+max_width = 140
+use_small_heuristics = "Max"
+fn_params_layout = "Compressed"
+short_array_element_width_threshold = 40

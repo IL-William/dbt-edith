@@ -14,8 +14,8 @@
 //! job file it walks are as they were, and read again otherwise; a project with
 //! no such file keeps nothing and reads nothing.
 
-use crate::graph::Graph;
 use crate::describe::Standings;
+use crate::graph::Graph;
 use crate::jobs::{self, Known};
 use crate::{api, ls, macros};
 use std::path::{Path, PathBuf};
@@ -190,7 +190,11 @@ impl Graphs {
                 }
             }
         };
-        let base = self.base.as_ref().map(|k| Base { graph: &k.graph, warning: k.warning.as_deref(), standings: k.standings.as_ref().expect(BASE_STANDINGS) });
+        let base = self.base.as_ref().map(|k| Base {
+            graph: &k.graph,
+            warning: k.warning.as_deref(),
+            standings: k.standings.as_ref().expect(BASE_STANDINGS),
+        });
         base.map(|b| (b, known)).ok_or_else(|| "error: the manifest is not loaded".to_string())
     }
 
@@ -395,11 +399,17 @@ pub(crate) mod tests {
         g.base().unwrap();
         std::fs::write(dir.join("target/manifest.json"), "{ \"nodes\": ").unwrap();
         let why = g.manifest().err().unwrap();
-        assert!(why.starts_with(&format!("error: cannot read {}", dir.canonicalize().unwrap().join("target/manifest.json").display())), "{why}");
+        assert!(
+            why.starts_with(&format!("error: cannot read {}", dir.canonicalize().unwrap().join("target/manifest.json").display())),
+            "{why}"
+        );
         assert!(g.base().is_err(), "the base is not served from the graph of the old file");
         std::fs::remove_file(dir.join("target/manifest.json")).unwrap();
         let why = g.manifest().err().unwrap();
-        assert!(why.contains("no manifest at") && why.contains("run dbt parse, or name it in the arguments the server was started with"), "{why}");
+        assert!(
+            why.contains("no manifest at") && why.contains("run dbt parse, or name it in the arguments the server was started with"),
+            "{why}"
+        );
         assert!(!why.contains("--manifest"), "a line cannot pass that flag: {why}");
         std::fs::write(dir.join("target/manifest.json"), good).unwrap();
         let before = g.loads();
@@ -478,7 +488,11 @@ pub(crate) mod tests {
             let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, true, None, None, output, o, e));
             let got = said(|o, e| crate::describe::respond_describe(&root, base, None, None, &names, true, None, None, output, o, e));
             assert_eq!(got.0, want.0, "describe {output:?}");
-            assert!(got.0.contains("helper") && got.0.contains("BIGINT"), "the cards hold the package's model and the catalog's type: {}", got.0);
+            assert!(
+                got.0.contains("helper") && got.0.contains("BIGINT"),
+                "the cards hold the package's model and the catalog's type: {}",
+                got.0
+            );
             assert_eq!(got.2, want.2);
             // The freshness line's age is the one thing the clock moves.
             let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:")).collect::<Vec<_>>().join("\n");
@@ -510,9 +524,14 @@ pub(crate) mod tests {
         let names = ["orders".to_string()];
         let mut g = graphs(&dir);
         // The ages of both lines are the clock's, per call.
-        let strip = |s: &str| s.lines().filter(|l| !l.starts_with("manifest:") && !l.starts_with("column lineage:")).collect::<Vec<_>>().join("\n");
-        for (line, output) in [("--describe orders --rules", ls::Output::Name), ("--describe orders --rules --output json", ls::Output::Json)] {
-            let want = said(|o, e| crate::describe::respond_describe(&root, &opened, None, None, &names, false, None, Some(&manifest), output, o, e));
+        let strip =
+            |s: &str| s.lines().filter(|l| !l.starts_with("manifest:") && !l.starts_with("column lineage:")).collect::<Vec<_>>().join("\n");
+        for (line, output) in
+            [("--describe orders --rules", ls::Output::Name), ("--describe orders --rules --output json", ls::Output::Json)]
+        {
+            let want = said(|o, e| {
+                crate::describe::respond_describe(&root, &opened, None, None, &names, false, None, Some(&manifest), output, o, e)
+            });
             let got = crate::mcp::answer_line(&mut g, line, &std::sync::atomic::AtomicBool::new(false));
             assert!(!got.is_error, "{line}: {}", got.err);
             assert_eq!(got.out, want.0, "{line}");
@@ -554,8 +573,20 @@ pub(crate) mod tests {
         let card = |g: &mut Graphs| {
             let (base, jobs) = g.base_and_jobs().unwrap();
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            crate::describe::respond_describe(&root, base.graph, Some(&jobs), Some(base.standings), &names, false, None, None, ls::Output::Name, &mut out, &mut err)
-                .unwrap();
+            crate::describe::respond_describe(
+                &root,
+                base.graph,
+                Some(&jobs),
+                Some(base.standings),
+                &names,
+                false,
+                None,
+                None,
+                ls::Output::Name,
+                &mut out,
+                &mut err,
+            )
+            .unwrap();
             String::from_utf8(out).unwrap()
         };
         let resolved = || crate::describe::RESOLVED.with(|n| n.get());
@@ -582,10 +613,15 @@ pub(crate) mod tests {
         let dags = dir.join("dags");
         std::fs::create_dir_all(&dags).unwrap();
         let dag = dags.join("daily.yml");
-        std::fs::write(&dag, "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n").unwrap();
+        std::fs::write(&dag, "dag_id: daily\nschedule: \"0 5 * * *\"\ntasks:\n  - task_id: marts\n    command: dbt run --select orders\n")
+            .unwrap();
         let sources = dir.join(".dbt-edith/jobs.yml");
         std::fs::create_dir_all(dir.join(".dbt-edith")).unwrap();
-        std::fs::write(&sources, jobs::sources_yaml(&[crate::settings::JobSource { kind: "airflow".into(), path: "dags".into(), ..Default::default() }])).unwrap();
+        std::fs::write(
+            &sources,
+            jobs::sources_yaml(&[crate::settings::JobSource { kind: "airflow".into(), path: "dags".into(), ..Default::default() }]),
+        )
+        .unwrap();
         let Known::Read(read) = known(&mut g) else { panic!("read") };
         assert_eq!((read.jobs.len(), g.jobs_read()), (1, 1));
         known(&mut g);
@@ -601,7 +637,8 @@ pub(crate) mod tests {
         touch(&dir.join("target/manifest.json"));
         known(&mut g);
         assert_eq!(g.jobs_read(), 4, "the base graph reloaded, so the steps resolve again");
-        std::fs::write(dags.join("added.yml"), "dag_id: added\ntasks:\n  - task_id: t\n    command: dbt run --select stg_orders\n").unwrap();
+        std::fs::write(dags.join("added.yml"), "dag_id: added\ntasks:\n  - task_id: t\n    command: dbt run --select stg_orders\n")
+            .unwrap();
         let Known::Read(read) = known(&mut g) else { panic!("read") };
         assert_eq!((read.jobs.len(), g.jobs_read()), (2, 5), "a job file added");
 

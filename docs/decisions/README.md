@@ -175,6 +175,7 @@ it; these files say why it is built this way, for whoever changes it next.
 | [0169](0169-reports-and-builds-by-job-say-a-start-as-the-card-does.md) | The Reports and Builds by job say a start as the card does | changing how a job's start is drawn outside the Jobs tab, what a Catalog chip looks like or says, or what the clock means |
 | [0170](0170-the-page-is-served-in-the-theme-kept.md) | The page is served in the theme kept | changing what the server writes into `index.html`, what of `look.json` leaves without the key, or when a page reads the look again |
 | [0171](0171-clippy-runs-on-stable-with-every-lint-an-error.md) | Clippy runs on stable with every lint an error | silencing a Clippy lint or adding an `#[allow]`, changing the Clippy step of `check.sh` or CI, or pinning a toolchain |
+| [0172](0172-only-the-rust-code-is-formatted-by-rustfmt-with-a-packed-config.md) | Only the Rust code is formatted, by rustfmt with a packed config | changing `rustfmt.toml`, formatting another language, or resolving a conflict in formatted code |
 
 ## Keeping these honest
 

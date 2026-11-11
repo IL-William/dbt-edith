@@ -230,11 +230,7 @@ struct Header {
 /// The bare `column_lineage.json` is what every producer wrote before this
 /// existed, so an empty source keeps it rather than inventing a new name.
 pub fn path_for(target_dir: &Path, source: &str) -> PathBuf {
-    let clean: String = source
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
-        .collect::<String>()
-        .to_lowercase();
+    let clean: String = source.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect::<String>().to_lowercase();
     if clean.is_empty() {
         target_dir.join("column_lineage.json")
     } else {
@@ -315,10 +311,7 @@ pub fn discover_cached(target_dir: &Path, headers: &Headers) -> Vec<Available> {
             target: head.target,
             generated_at: head.generated_at,
             producer: head.producer,
-            mtime: modified
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+            mtime: modified.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0),
         });
     }
     // A file gone is forgotten, so one of the same name written later is read.
@@ -405,7 +398,8 @@ pub fn pick(target_dir: &Path, found: &[Available], wanted: Wanted, snowflake: b
             }
         }
         Wanted::File(name) => {
-            let a = resolve_choice(found, name).ok_or_else(|| Refusal::NoCache("no such column lineage cache beside the manifest".into()))?;
+            let a =
+                resolve_choice(found, name).ok_or_else(|| Refusal::NoCache("no such column lineage cache beside the manifest".into()))?;
             if !offered(a, snowflake) {
                 return Err(Refusal::SnowflakeOff);
             }
@@ -426,7 +420,8 @@ pub fn other_source(path: &Path, source: &str) -> String {
 /// there, in which case nothing is written.
 pub fn add_to_file(path: &Path, edges: Vec<RawColEdge>, target: &str, now: u64) -> Result<Option<(RawColLineage, usize)>, String> {
     let mut cache = if path.exists() {
-        RawColLineage::load(path).map_err(|e| format!("cannot read {}: {e}. Move it away to fetch lineage from Snowflake.", path.display()))?
+        RawColLineage::load(path)
+            .map_err(|e| format!("cannot read {}: {e}. Move it away to fetch lineage from Snowflake.", path.display()))?
     } else {
         RawColLineage::default()
     };
@@ -468,10 +463,7 @@ pub(crate) fn relation_parts(relation: &str) -> Vec<&str> {
 /// this keeps out nonsense rather than injection.
 pub fn valid_relation(relation: &str) -> bool {
     let parts = relation_parts(relation);
-    relation.len() <= 512
-        && !relation.chars().any(char::is_control)
-        && parts.len() == 3
-        && parts.iter().all(|p| !p.trim().is_empty())
+    relation.len() <= 512 && !relation.chars().any(char::is_control) && parts.len() == 3 && parts.iter().all(|p| !p.trim().is_empty())
 }
 
 fn same_relation(a: &str, b: &str) -> bool {
@@ -528,13 +520,7 @@ pub fn node_for(graph: &Graph, object: &str, vars: Option<&Vars>) -> Option<u32>
 /// `relation` its name as the browser showed it, so that end needs no matching.
 /// A pair with an end that is no node of this project is left out, and its
 /// objects are returned, sorted, so the UI can say what was skipped.
-pub fn edges_for(
-    graph: &Graph,
-    rows: &[RelEdge],
-    focus: u32,
-    relation: &str,
-    vars: Option<&Vars>,
-) -> (Vec<RawColEdge>, Vec<String>) {
+pub fn edges_for(graph: &Graph, rows: &[RelEdge], focus: u32, relation: &str, vars: Option<&Vars>) -> (Vec<RawColEdge>, Vec<String>) {
     let mut known: HashMap<String, Option<u32>> = HashMap::new();
     let mut lookup = |object: &str| {
         if same_relation(object, relation) {
@@ -780,7 +766,12 @@ mod tests {
         assert_eq!(
             cache.partial,
             [
-                RawPartial { node: "model.shop.orders".into(), column: "line_no".into(), reason: "window_key_unbound".into(), name: "shipped_at".into() },
+                RawPartial {
+                    node: "model.shop.orders".into(),
+                    column: "line_no".into(),
+                    reason: "window_key_unbound".into(),
+                    name: "shipped_at".into()
+                },
                 RawPartial { node: "model.shop.orders".into(), column: "total".into(), reason: String::new(), name: String::new() },
             ]
         );

@@ -179,9 +179,8 @@ fn at_line(line: usize, message: &str) -> String {
 pub fn check_in_project(source: &JobSource) -> Option<String> {
     let path = source.path.trim();
     let b = path.as_bytes();
-    let absolute = Path::new(path).is_absolute()
-        || path.starts_with(['/', '\\'])
-        || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':');
+    let absolute =
+        Path::new(path).is_absolute() || path.starts_with(['/', '\\']) || (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':');
     if absolute {
         return Some("an absolute path, which a file of the project may not name: write it from the project".into());
     }
@@ -1060,13 +1059,7 @@ fn airflow_schedule(node: Option<&Node>) -> Schedule {
 /// One Airflow DAG file. Ok(false) for a file that holds no dbt task, which
 /// still leaves a feeder behind when it updates an asset.
 fn read_airflow(
-    si: usize,
-    src: &JobSource,
-    file: &str,
-    doc: &Node,
-    jobs: &mut Vec<Job>,
-    steps: &mut Vec<Step>,
-    feeders: &mut Vec<Feeder>,
+    si: usize, src: &JobSource, file: &str, doc: &Node, jobs: &mut Vec<Job>, steps: &mut Vec<Step>, feeders: &mut Vec<Feeder>,
 ) -> Result<bool, Refusal> {
     let refuse = |line: usize, message: String| Refusal { file: file.to_string(), line, message };
     let tasks_key = key(src, "tasks");
@@ -1088,7 +1081,8 @@ fn read_airflow(
         // runs on matter. One that runs on an asset and updates none starts
         // nothing, but a sensor of another DAG may wait for it.
         let sched = airflow_schedule(doc.at_path(&key(src, "schedule")));
-        if let Some(dag) = text(doc.at_path(&dag_key)).filter(|n| !n.is_empty()).filter(|_| !others.is_empty() || !sched.assets.is_empty()) {
+        if let Some(dag) = text(doc.at_path(&dag_key)).filter(|n| !n.is_empty()).filter(|_| !others.is_empty() || !sched.assets.is_empty())
+        {
             feeders.push(Feeder { dag, assets: sched.assets, asset_unread: sched.asset_unread, outlets: others, own: sched.own });
         }
         return Ok(false);
@@ -1325,7 +1319,8 @@ fn link(read: &mut Read) {
         }
     }
     let waits: Vec<&[String]> = jobs.iter().map(|j| j.assets.as_slice()).chain(read.feeders.iter().map(|f| f.assets.as_slice())).collect();
-    let feeds: Vec<Vec<Vec<usize>>> = waits.iter().map(|a| a.iter().map(|a| producers.get(a.as_str()).cloned().unwrap_or_default()).collect()).collect();
+    let feeds: Vec<Vec<Vec<usize>>> =
+        waits.iter().map(|a| a.iter().map(|a| producers.get(a.as_str()).cloned().unwrap_or_default()).collect()).collect();
     let hidden: Vec<bool> = jobs.iter().map(|j| j.asset_unread).chain(read.feeders.iter().map(|f| f.asset_unread)).collect();
     let after: Vec<Option<usize>> = jobs.iter().map(|j| j.after_job).chain(read.feeders.iter().map(|_| None)).collect();
     // A job no file defines may be on a clock or not.
@@ -1493,10 +1488,7 @@ impl Cache {
     pub fn get(&self, graph: &Arc<Graph>, root: &Path, sources: &[JobSource], look: bool) -> Arc<Read> {
         let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(h) = slot.as_ref() {
-            if Weak::ptr_eq(&h.graph, &Arc::downgrade(graph))
-                && h.sources == sources
-                && (!look || stamps_of(root, sources) == h.stamps)
-            {
+            if Weak::ptr_eq(&h.graph, &Arc::downgrade(graph)) && h.sources == sources && (!look || stamps_of(root, sources) == h.stamps) {
                 return h.read.clone();
             }
         }
@@ -1721,13 +1713,8 @@ fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepVi
         selected: s.nodes.len(),
     };
     if job.kind == AIRFLOW && !s.name.is_empty() {
-        view.downstream = job
-            .steps
-            .iter()
-            .map(|&o| &read.steps[o])
-            .filter(|o| o.upstream.contains(&s.name))
-            .map(|o| o.name.clone())
-            .collect();
+        view.downstream =
+            job.steps.iter().map(|&o| &read.steps[o]).filter(|o| o.upstream.contains(&s.name)).map(|o| o.name.clone()).collect();
         view.waited_by = awaiting(read, &job.name, &s.name).into_iter().map(|(dag, id, _)| sensor_text(dag, id)).collect();
         view.feeds = fed_by(read, &s.outlets);
     }
@@ -2784,7 +2771,10 @@ tasks:
         let s = &read.sources[0];
         assert_eq!((s.files, s.jobs, s.steps, s.skipped), (2, 1, 2, 1));
         let job = &read.jobs[0];
-        assert_eq!((job.name.as_str(), job.cron.as_str(), job.file.as_str(), job.line), ("shop_daily", "0 5 * * *", "dags/shop_daily.yml", 1));
+        assert_eq!(
+            (job.name.as_str(), job.cron.as_str(), job.file.as_str(), job.line),
+            ("shop_daily", "0 5 * * *", "dags/shop_daily.yml", 1)
+        );
         assert_eq!(job.start, Start::Yes);
         let (stage, marts) = (&read.steps[0], &read.steps[1]);
         assert_eq!(names_of(&g, &stage.nodes), ["stg_customers", "stg_orders"]);
@@ -3003,7 +2993,11 @@ tasks:
         write(&d, "on_mixed_by_hand.yml", &one_dag("on_mixed_by_hand", "[typed_in, { uri: \"s3://bucket/raw\" }]", "customers"));
         write(&d, "on_nothing.yml", &one_dag("on_nothing", "[]", "orders"));
         // A feeder on such an asset passes on what it knows.
-        write(&d, "relay.yml", "dag_id: relay\nschedule: [{ uri: \"s3://bucket/raw\" }]\ntasks:\n  - task_id: copy\n    outlets: [relayed]\n");
+        write(
+            &d,
+            "relay.yml",
+            "dag_id: relay\nschedule: [{ uri: \"s3://bucket/raw\" }]\ntasks:\n  - task_id: copy\n    outlets: [relayed]\n",
+        );
         write(&d, "on_relayed.yml", &one_dag("on_relayed", "[relayed]", "orders"));
         // An empty entry names nothing; a list in the list is no name either.
         write(&d, "on_blank.yml", &one_dag("on_blank", "[raw_ready, ~]", "stg_orders"));
@@ -3298,7 +3292,11 @@ jobs:
         // An older Fusion writes the selector without `indirect_selection`,
         // which selectors.yml sets: its tests are then dbt's default (0032).
         let d = dir("lost");
-        write(&d, "selectors.yml", "selectors:\n  - name: orders_only\n    definition:\n      method: fqn\n      value: orders\n      indirect_selection: empty\n");
+        write(
+            &d,
+            "selectors.yml",
+            "selectors:\n  - name: orders_only\n    definition:\n      method: fqn\n      value: orders\n      indirect_selection: empty\n",
+        );
         let mut g = graph_with(json!({ "orders_only": { "name": "orders_only", "definition": { "method": "fqn", "value": "orders" } } }));
         g.selectors.check_against(&d);
         let (_, warnings) = select_nodes(&g, &command::read("dbt test --selector orders_only").unwrap()).unwrap();
@@ -3464,7 +3462,11 @@ jobs:
         let cache = Cache::default();
         let first = cache.get(&g, &d, &sources, false);
         assert!(Arc::ptr_eq(&first, &cache.get(&g, &d, &sources, true)), "nothing changed, so a look reads nothing");
-        write(&d, "daily.yml", &DAG.replace("shop_daily", "shop_renamed").replace("tasks:", "tasks:\n  - task_id: more\n    command: seed"));
+        write(
+            &d,
+            "daily.yml",
+            &DAG.replace("shop_daily", "shop_renamed").replace("tasks:", "tasks:\n  - task_id: more\n    command: seed"),
+        );
         write(&d, "added.yml", "dag_id: added\nschedule: null\ntasks:\n  - task_id: t\n    command: run\n");
         assert!(Arc::ptr_eq(&first, &cache.get(&g, &d, &sources, false)), "a click does not look");
         let second = cache.get(&g, &d, &sources, true);
@@ -3611,7 +3613,9 @@ jobs:
     fn a_sources_file_names_only_what_a_cloned_repository_may_supply() {
         let d = dir("sources-guard");
         let file = |path: &str| format!("jobs:\n  - kind: airflow\n    path: {path}\n");
-        for ok in ["../orchestration/dags", "../../orchestration/dags", "dags", "./a/b", "a/../b", "a\\b", "'x..y/z'", "my~1-dags", "../orch~12"] {
+        for ok in
+            ["../orchestration/dags", "../../orchestration/dags", "dags", "./a/b", "a/../b", "a\\b", "'x..y/z'", "my~1-dags", "../orch~12"]
+        {
             kept(&d, &file(ok));
             assert_eq!(sources(&d, &[]).refused, None, "{ok}");
         }
@@ -3636,7 +3640,10 @@ jobs:
             assert!(message.starts_with("line 2: ") && message.contains(why), "{bad}: {message}");
         }
         // The check alone, for the page's save: the settings are not held to it.
-        assert_eq!(check_in_project(&source(AIRFLOW, Path::new("/srv/dags"), &[])).as_deref().map(|w| w.starts_with("an absolute")), Some(true));
+        assert_eq!(
+            check_in_project(&source(AIRFLOW, Path::new("/srv/dags"), &[])).as_deref().map(|w| w.starts_with("an absolute")),
+            Some(true)
+        );
         assert_eq!(check(&source(AIRFLOW, Path::new("/srv/dags"), &[])), None);
     }
 
@@ -3655,7 +3662,15 @@ jobs:
         let d = dir("unread");
         write(&d, "dags/shop_daily.yml", DAG);
         let g = graph();
-        let (read, _) = build(&g, &d, &[source(AIRFLOW, &d.join("dags"), &[]), source(AIRFLOW, &d.join("missing"), &[]), source(DBT_CLOUD, &d.join("dags/shop_daily.yml"), &[])]);
+        let (read, _) = build(
+            &g,
+            &d,
+            &[
+                source(AIRFLOW, &d.join("dags"), &[]),
+                source(AIRFLOW, &d.join("missing"), &[]),
+                source(DBT_CLOUD, &d.join("dags/shop_daily.yml"), &[]),
+            ],
+        );
         let u = unread(&read).unwrap();
         assert_eq!((u.sources, u.of), (1, 3));
         assert_eq!(u.text(), "1 of 3 sources (nothing at this path)");
@@ -3674,10 +3689,7 @@ jobs:
         write(&d, "profiles.yml", PROFILE);
         write(&d, "conf/Profiles.YAML", PROFILE);
         write(&d, "dags/daily.yml", DAG);
-        kept(
-            &d,
-            "jobs:\n  - kind: airflow\n    path: .\n    keys:\n      dag_id: shop.outputs.dev.password\n      tasks: shop.outputs\n",
-        );
+        kept(&d, "jobs:\n  - kind: airflow\n    path: .\n    keys:\n      dag_id: shop.outputs.dev.password\n      tasks: shop.outputs\n");
         let g = graph();
         let Known::Read(read) = known(&g, &d) else { panic!("read") };
         let names: Vec<&str> = read.jobs.iter().map(|j| j.name.as_str()).collect();
@@ -3686,7 +3698,14 @@ jobs:
         assert_eq!(read.sources[0].files, 1, "only dags/daily.yml");
         assert_eq!(read.sources[0].skipped, 1);
         // The settings read what they are told to, as before (0063).
-        let from_settings = [JobSource { kind: AIRFLOW.into(), path: d.to_string_lossy().into_owned(), keys: [("dag_id".to_string(), "shop.outputs.dev.password".to_string()), ("tasks".to_string(), "shop.outputs".to_string())].into_iter().collect(), ..Default::default() }];
+        let from_settings = [JobSource {
+            kind: AIRFLOW.into(),
+            path: d.to_string_lossy().into_owned(),
+            keys: [("dag_id".to_string(), "shop.outputs.dev.password".to_string()), ("tasks".to_string(), "shop.outputs".to_string())]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        }];
         let (read, _) = build(&g, &d, &from_settings);
         assert!(read.jobs.iter().any(|j| j.name == "FAKE_SECRET_123"), "the settings' rules are today's");
         // The same walk is what a change is looked for in.
@@ -3716,7 +3735,10 @@ jobs:
         ] {
             kept(&project, &file(path));
             let got = sources(&project, &[]);
-            assert!(got.list.is_empty() && got.refused.as_deref().is_some_and(|m| m.starts_with("line 2: ") && m.contains(why)), "{path}: {got:?}");
+            assert!(
+                got.list.is_empty() && got.refused.as_deref().is_some_and(|m| m.starts_with("line 2: ") && m.contains(why)),
+                "{path}: {got:?}"
+            );
         }
         // A sibling folder, directly and through a link, still reads.
         for path in ["../orchestration/dags", "vendor/orch/dags"] {
@@ -3906,7 +3928,11 @@ jobs:
         let got = models_by_job(&g, &read);
         assert!(got.configured);
         let name = |id: usize| g.nodes[g.index[&got.ids[id]] as usize].name.clone();
-        assert_eq!(got.ids, ["model.shop.customers", "model.shop.orders", "model.shop.stg_customers", "model.shop.stg_orders"], "sorted, once, own models only");
+        assert_eq!(
+            got.ids,
+            ["model.shop.customers", "model.shop.orders", "model.shop.stg_customers", "model.shop.stg_orders"],
+            "sorted, once, own models only"
+        );
         let job = |n: &str| got.jobs.iter().find(|j| j.job.name == n).unwrap_or_else(|| panic!("{n}"));
         // Each model with the steps that run it, worked out from the steps as the page does.
         let ran = |j: &JobBuilds| {
@@ -3924,7 +3950,12 @@ jobs:
         // The ephemeral model int_pivot is out, so is the compile-only task.
         assert_eq!(
             ran(daily),
-            [("customers".to_string(), vec![2]), ("orders".to_string(), vec![2]), ("stg_customers".to_string(), vec![1]), ("stg_orders".to_string(), vec![1, 2])]
+            [
+                ("customers".to_string(), vec![2]),
+                ("orders".to_string(), vec![2]),
+                ("stg_customers".to_string(), vec![1]),
+                ("stg_orders".to_string(), vec![1, 2])
+            ]
         );
         assert_eq!(step_names(daily), ["stage", "marts"]);
         assert_eq!(daily.job.timezone, "");
@@ -3958,7 +3989,12 @@ jobs:
         for ok in ["UTC", "America/Argentina/Buenos_Aires", "Etc/GMT+5"] {
             assert_eq!(check(&JobSource { timezone: ok.into(), ..london.clone() }), None, "{ok}");
         }
-        for (tz, want) in [("Europe/Lon don", "time zone"), ("Europe\nLondon", "time zone"), ("\u{e9}t\u{e9}", "time zone"), (&"a".repeat(65), "at most 64")] {
+        for (tz, want) in [
+            ("Europe/Lon don", "time zone"),
+            ("Europe\nLondon", "time zone"),
+            ("\u{e9}t\u{e9}", "time zone"),
+            (&"a".repeat(65), "at most 64"),
+        ] {
             let got = check(&JobSource { timezone: tz.into(), ..london.clone() }).unwrap_or_default();
             assert!(got.contains(want), "{tz:?}: {got}");
         }
@@ -3977,7 +4013,11 @@ jobs:
         // Its jobs carry it, and a dbt Cloud job none.
         let d = dir("zone-view");
         write(&d, "dags/daily.yml", DAG);
-        write(&d, "cloud/jobs.yml", "jobs:\n  n:\n    name: N\n    schedule:\n      cron: \"0 2 * * *\"\n    execute_steps:\n      - dbt run\n");
+        write(
+            &d,
+            "cloud/jobs.yml",
+            "jobs:\n  n:\n    name: N\n    schedule:\n      cron: \"0 2 * * *\"\n    execute_steps:\n      - dbt run\n",
+        );
         let g = graph();
         let zoned = JobSource { timezone: "Europe/London".into(), ..source(AIRFLOW, &d.join("dags"), &[]) };
         let (read, _) = build(&g, &d, &[zoned, source(DBT_CLOUD, &d.join("cloud"), &[])]);

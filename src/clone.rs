@@ -152,11 +152,7 @@ mod tests {
             Why::Parent => name(it.node),
             Why::Via(e) => format!("{} via {}", name(it.node), name(e)),
         };
-        (
-            p.items.iter().map(item).collect(),
-            p.sources.iter().map(item).collect(),
-            p.ephemeral.iter().map(|&i| name(i)).collect(),
-        )
+        (p.items.iter().map(item).collect(), p.sources.iter().map(item).collect(), p.ephemeral.iter().map(|&i| name(i)).collect())
     }
 
     #[test]

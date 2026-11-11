@@ -172,7 +172,11 @@ fn dbt_versions(venv: &Path) -> String {
     let fusion = fusion.map(|v| {
         let major: u32 = v.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0);
         // Before Fusion, `dbt` on PyPI was dbt-core's old umbrella package.
-        if major >= 2 { format!("dbt-fusion {v}") } else { format!("dbt {v}") }
+        if major >= 2 {
+            format!("dbt-fusion {v}")
+        } else {
+            format!("dbt {v}")
+        }
     });
     fusion.into_iter().chain(core.map(|v| format!("dbt-core {v}"))).chain(adapters).collect::<Vec<_>>().join(", ")
 }
@@ -346,10 +350,15 @@ mod tests {
     #[test]
     fn a_venv_is_read_from_disk_and_nothing_in_it_runs() {
         let root = project("read");
-        venv(&root, ".venv", "home = /usr/bin\nversion = 3.12.4\n", &[
-            "dbt_core-1.8.7", "adapter:dbt_snowflake-1.8.3", "dbt_common-1.10.0", "adapter:dbt_adapters-1.7.0", "requests-2.32.3",
-            "dbt_core_experimental_parser-2.0.5", "dbt_extractor-0.6.0",
-        ]);
+        venv(
+            &root,
+            ".venv",
+            "home = /usr/bin\nversion = 3.12.4\n",
+            &[
+                "dbt_core-1.8.7", "adapter:dbt_snowflake-1.8.3", "dbt_common-1.10.0", "adapter:dbt_adapters-1.7.0", "requests-2.32.3",
+                "dbt_core_experimental_parser-2.0.5", "dbt_extractor-0.6.0",
+            ],
+        );
         let info = detect_with(&root, None);
         assert_eq!(info.chosen.name, ".venv");
         assert_eq!(info.source, "project");
@@ -391,9 +400,12 @@ mod tests {
     #[test]
     fn fusion_is_named_and_the_tools_beside_it_are_not() {
         let root = project("fusion");
-        let dir = venv(&root, "fusion-env", "version = 3.12.13\n", &[
-            "dbt-2.0.0rc196", "dbt_autofix-0.21.1", "dbt_fusion_package_tools-0.21.1", "dbt_protos-1.0.541",
-        ]);
+        let dir = venv(
+            &root,
+            "fusion-env",
+            "version = 3.12.13\n",
+            &["dbt-2.0.0rc196", "dbt_autofix-0.21.1", "dbt_fusion_package_tools-0.21.1", "dbt_protos-1.0.541"],
+        );
         assert_eq!(dbt_versions(&dir), "dbt-fusion 2.0.0rc196");
         let old = venv(&root, "old-env", "version = 3.8.10\n", &["dbt-0.18.1", "adapter:dbt_postgres-0.18.1"]);
         assert_eq!(dbt_versions(&old), "dbt 0.18.1, dbt-postgres 0.18.1");
@@ -414,13 +426,16 @@ mod tests {
         std::fs::remove_file(root.join("bare/Scripts/dbt.exe")).unwrap();
 
         let info = detect_with(&root, None);
-        let found: Vec<(&str, &str, &str)> =
-            info.found.iter().map(|v| (v.name.as_str(), v.python.as_str(), v.dbt.as_str())).collect();
-        assert_eq!(found, [
-            ("core-env", "3.12.4", "dbt-core 1.8.7, dbt-snowflake 1.8.3"),
-            ("fusion-env", "3.12.13", "dbt-fusion 2.0.0rc196"),
-            ("bare", "3.11.9", ""),
-        ], "in the order the status bar ranks them");
+        let found: Vec<(&str, &str, &str)> = info.found.iter().map(|v| (v.name.as_str(), v.python.as_str(), v.dbt.as_str())).collect();
+        assert_eq!(
+            found,
+            [
+                ("core-env", "3.12.4", "dbt-core 1.8.7, dbt-snowflake 1.8.3"),
+                ("fusion-env", "3.12.13", "dbt-fusion 2.0.0rc196"),
+                ("bare", "3.11.9", ""),
+            ],
+            "in the order the status bar ranks them"
+        );
         assert_eq!(info.chosen, info.found[0], "the best one found, read once");
         assert_eq!(info.found[1].path, root.join("fusion-env").display().to_string());
 

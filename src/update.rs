@@ -185,11 +185,8 @@ fn stale(checked: Option<u64>, now: u64) -> bool {
 /// first. A tag of any other shape, a pre-release among them, is not a
 /// release.
 pub fn releases(listed: &str) -> Vec<String> {
-    let mut found: Vec<&str> = listed
-        .lines()
-        .filter_map(|line| line.split('\t').nth(1)?.trim().strip_prefix("refs/tags/v"))
-        .filter(|v| is_version(v))
-        .collect();
+    let mut found: Vec<&str> =
+        listed.lines().filter_map(|line| line.split('\t').nth(1)?.trim().strip_prefix("refs/tags/v")).filter(|v| is_version(v)).collect();
     found.sort_by_key(|v| std::cmp::Reverse(semver(v)));
     found.dedup();
     found.into_iter().map(str::to_string).collect()
@@ -344,8 +341,7 @@ fn next_look(k: &Known, now: u64) -> u64 {
 /// would read as complete, so it is all or nothing.
 fn titled(seen: &Seen, current: &str) -> (Vec<(String, String)>, usize) {
     let (after, older) = missed(&seen.releases, current);
-    let listed: Option<Vec<(String, String)>> =
-        after.into_iter().map(|v| seen.titles.get(&v).map(|t| (v, t.clone()))).collect();
+    let listed: Option<Vec<(String, String)>> = after.into_iter().map(|v| seen.titles.get(&v).map(|t| (v, t.clone()))).collect();
     match listed {
         Some(listed) if !listed.is_empty() => (listed, older),
         _ => (Vec::new(), 0),
@@ -392,15 +388,7 @@ impl Drop for OnItsWay<'_> {
 
 impl Update {
     pub fn new(off: bool, file: Option<PathBuf>, hows: Result<Vec<How>, Why>) -> Update {
-        Update {
-            off,
-            current: env!("CARGO_PKG_VERSION").to_string(),
-            file,
-            hows,
-            known: Mutex::default(),
-            spread: spread(),
-            binary: None,
-        }
+        Update { off, current: env!("CARGO_PKG_VERSION").to_string(), file, hows, known: Mutex::default(), spread: spread(), binary: None }
     }
 
     /// Watches the file `exe` names, the running binary, from now on.
@@ -426,7 +414,11 @@ impl Update {
     pub fn hows_for(&self, latest: &str) -> Result<Vec<How>, Why> {
         let hows = self.hows.as_ref().map_err(|why| *why)?;
         let composed: Vec<How> = hows.iter().filter_map(|h| h.for_release(latest)).collect();
-        if composed.is_empty() { Err(Why::Release) } else { Ok(composed) }
+        if composed.is_empty() {
+            Err(Why::Release)
+        } else {
+            Ok(composed)
+        }
     }
 
     /// The same, as if `version` were running.
@@ -474,16 +466,14 @@ impl Update {
     /// dbt-edith in the file, still stands.
     pub async fn check(&self) {
         let (asked, titled) = (self.file.clone(), self.file.clone());
-        self.look(now_secs(), false, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v))
-            .await
+        self.look(now_secs(), false, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v)).await
     }
 
     /// Looks now, whatever is kept: the menu's button. Not while a look is
     /// already on its way, whose answer this one would only repeat.
     pub async fn check_now(&self) {
         let (asked, titled) = (self.file.clone(), self.file.clone());
-        self.look(now_secs(), true, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v))
-            .await
+        self.look(now_secs(), true, move || ask(&look_dir(asked.as_deref())), move |v| titles(&look_dir(titled.as_deref()), v)).await
     }
 
     /// `ask` lists the releases; `titler` names the ones this dbt-edith is
@@ -600,8 +590,7 @@ impl How {
         if !is_version(version) {
             return None;
         }
-        let command =
-            compose(plan.shell, &plan.source, version, &plan.step, plan.clean.as_deref(), plan.swap.as_deref());
+        let command = compose(plan.shell, &plan.source, version, &plan.step, plan.clean.as_deref(), plan.swap.as_deref());
         Some(How { command, ..self.clone() })
     }
 }
@@ -789,8 +778,7 @@ fn quotable(path: &Path, windows: bool) -> Option<String> {
 /// printed. A Posix brace group ends its last command on `;`, and PowerShell
 /// goes on after a failed native command by itself.
 fn compose(shell: Shell, source: &str, tag: &str, step: &str, clean: Option<&str>, swap: Option<&str>) -> String {
-    let bring =
-        format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" merge --ff-only v{tag}");
+    let bring = format!("git -C \"{source}\" fetch --tags --force origin; git -C \"{source}\" merge --ff-only v{tag}");
     let printed = format!("printf '\\n%s\\n' '{DONE}'");
     let closing = match clean {
         None => printed,
@@ -823,7 +811,11 @@ const DONE: &str = "dbt-edith is installed. Stop dbt-edith where you started it 
 /// one. An update keeps to the architecture it has, so an ARM64 build never
 /// swaps itself for the emulated one.
 fn asset(arm64: bool) -> &'static str {
-    if arm64 { "dbt-edith-arm64.exe" } else { "dbt-edith.exe" }
+    if arm64 {
+        "dbt-edith-arm64.exe"
+    } else {
+        "dbt-edith.exe"
+    }
 }
 
 /// The command that replaces the running `.exe` of a release with the next
@@ -1065,7 +1057,10 @@ mod tests {
             plain("fatal: unable to access 'https://ada:s3cret@github.com/IL-William/dbt-edith/': Could not resolve host"),
             "fatal: unable to access 'https://github.com/IL-William/dbt-edith/': Could not resolve host"
         );
-        assert_eq!(plain("Failed to connect to proxy http://me:pw@proxy.example:8080 x"), "Failed to connect to proxy http://proxy.example:8080 x");
+        assert_eq!(
+            plain("Failed to connect to proxy http://me:pw@proxy.example:8080 x"),
+            "Failed to connect to proxy http://proxy.example:8080 x"
+        );
         assert_eq!(plain("cannot run git: No such file"), "cannot run git: No such file");
         assert_eq!(plain(&"x".repeat(300)).chars().count(), 241);
     }
@@ -1404,7 +1399,9 @@ mod tests {
         let exe = source.join("target").join("release").join("dbt-edith");
         let built = how(&source, &exe, Some(Shell::Posix), false).unwrap().for_release("1.2.0").unwrap();
         assert_eq!(built.kind, "build");
-        assert!(built.command.contains(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
+        assert!(built
+            .command
+            .contains(&format!("cargo build --release --locked --manifest-path \"{}\"", source.join("Cargo.toml").display())));
         assert!(built.command.ends_with(&format!("&& printf '\\n%s\\n' '{DONE}'")));
         // The binary just built sits in the folder a clean would empty.
         assert!(!built.command.contains("cargo clean"), "{}", built.command);
@@ -1507,8 +1504,14 @@ mod tests {
         let c = &sh.command;
         // curl may only speak and be redirected to HTTPS, what guards the file in transit.
         let proto = "--proto '=https' --proto-redir '=https'";
-        assert!(c.starts_with(&format!("(curl -fsSL {proto} -o \"{e}.new\" \"{url}\" && curl -fsSL {proto} -o \"{e}.sha256\" \"{sum_url}\"")), "{c}");
-        assert!(c.contains(&format!("sha256sum \"{e}.new\"")) && c.contains(&format!("cut -d' ' -f1 \"{e}.sha256\"")), "the hash is checked: {c}");
+        assert!(
+            c.starts_with(&format!("(curl -fsSL {proto} -o \"{e}.new\" \"{url}\" && curl -fsSL {proto} -o \"{e}.sha256\" \"{sum_url}\"")),
+            "{c}"
+        );
+        assert!(
+            c.contains(&format!("sha256sum \"{e}.new\"")) && c.contains(&format!("cut -d' ' -f1 \"{e}.sha256\"")),
+            "the hash is checked: {c}"
+        );
         // Nothing is swapped before the check, and a failure removes what came down.
         let (check, swap) = c.split_once(&format!("&& {{ mv -f \"{e}\" \"{e}.old\"")).unwrap();
         assert!(check.contains(&format!("{{ rm -f \"{e}.new\" \"{e}.sha256\"; false; }}")), "{c}");
@@ -1551,9 +1554,15 @@ mod tests {
         assert!(swapped.contains(&format!("Move-Item -ErrorAction Continue -Force -LiteralPath \"{e}\" -Destination \"{e}.old\"")), "{c}");
         assert!(swapped.ends_with(&format!("if ($?) {{ Write-Host \"\"; Write-Host \"{DONE}\" }}")), "DONE after the swap: {c}");
         // The put-back prints nothing, and a hash that differs says so.
-        assert!(failed.trim_start().starts_with(&format!("-ErrorAction Continue -Force -LiteralPath \"{e}.old\" -Destination \"{e}\" }}")), "{c}");
+        assert!(
+            failed.trim_start().starts_with(&format!("-ErrorAction Continue -Force -LiteralPath \"{e}.old\" -Destination \"{e}\" }}")),
+            "{c}"
+        );
         assert!(c.contains(&format!("else {{ Write-Host \"{MISMATCH}\" }}")), "{c}");
-        assert!(c.ends_with(&format!("Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{e}.new\", \"{e}.sha256\" }}")), "{c}");
+        assert!(
+            c.ends_with(&format!("Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath \"{e}.new\", \"{e}.sha256\" }}")),
+            "{c}"
+        );
         assert!(!MISMATCH.contains(['\'', '"', '$', '`', '\\']), "it sits inside a string in either shell");
     }
 
@@ -2220,7 +2229,10 @@ mod tests {
         let named: Vec<(String, String)> = found.into_iter().map(|(t, s)| (t, title(&s))).collect();
         assert_eq!(
             named,
-            [("v1.14.0".to_string(), "Colour the venv in the status bar".to_string()), ("v1.13.2".into(), "Pan the lineage from a box".into())]
+            [
+                ("v1.14.0".to_string(), "Colour the venv in the status bar".to_string()),
+                ("v1.13.2".into(), "Pan the lineage from a box".into())
+            ]
         );
         assert!(crate::git::tag_subjects(&scratch_dir, url, &["v9.9.9".to_string()]).is_err());
         assert_eq!(std::fs::read_dir(&scratch_dir).unwrap().count(), 0, "the bare repository is removed");

@@ -25,8 +25,8 @@ mod job_coverage;
 mod job_order;
 mod jobs;
 mod keys;
-mod ls;
 mod look;
+mod ls;
 mod ls_column;
 mod macro_use;
 mod macros;
@@ -37,9 +37,9 @@ mod mcp_line;
 mod profiles;
 mod program;
 mod project;
-mod run_results;
 mod pty;
 mod redact;
+mod run_results;
 mod select;
 mod selectors;
 mod settings;
@@ -234,7 +234,12 @@ fn stray(args: &Args) -> Option<String> {
     let flags = [
         (args.sql, "--sql", "--describe", !args.describe.is_empty()),
         (args.compiled_sql, "--compiled-sql", "--describe", !args.describe.is_empty()),
-        (args.columns, "--columns", "--describe, --select or --selector", !args.describe.is_empty() || args.select.is_some() || args.selector.is_some()),
+        (
+            args.columns,
+            "--columns",
+            "--describe, --select or --selector",
+            !args.describe.is_empty() || args.select.is_some() || args.selector.is_some(),
+        ),
         (args.exclude.is_some(), "--exclude", "--select", args.select.is_some()),
         (args.count_by.is_some(), "--count-by", "--select or --selector", args.select.is_some() || args.selector.is_some()),
         (args.depth.is_some(), "--depth", "--overview or --count-by folder", args.overview || args.count_by == Some(ls::CountBy::Folder)),
@@ -256,7 +261,13 @@ fn stray(args: &Args) -> Option<String> {
             "--column-lineage",
             "--column, or the page",
             args.column.is_some()
-                || (args.describe.is_empty() && !args.overview && args.job.is_none() && !args.job_order && !args.job_coverage && args.select.is_none() && args.selector.is_none()),
+                || (args.describe.is_empty()
+                    && !args.overview
+                    && args.job.is_none()
+                    && !args.job_order
+                    && !args.job_coverage
+                    && args.select.is_none()
+                    && args.selector.is_none()),
         ),
     ];
     let stray = flags.iter().find(|(set, _, _, asked)| *set && !asked).map(|(_, flag, mode, _)| format!("{flag} goes with {mode}"));
@@ -275,12 +286,15 @@ fn stray(args: &Args) -> Option<String> {
     ];
     let stray = stray.or_else(|| {
         let flag = beside.iter().find(|(set, _)| *set && args.against.is_some())?.1;
-        Some(format!("{flag} does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"))
+        Some(format!(
+            "{flag} does not go with --against: the comparison walks every level, crosses the indirect edges and reads the rules itself"
+        ))
     });
     // Every folder is deeper than level 0, so a count to that depth would be
     // one row of nothing. The overview's 0 leaves its folders out on purpose.
     stray.or_else(|| {
-        (args.count_by == Some(ls::CountBy::Folder) && args.depth == Some(0)).then(|| "--depth 0 counts no folder; use 1 or more".to_string())
+        (args.count_by == Some(ls::CountBy::Folder) && args.depth == Some(0))
+            .then(|| "--depth 0 counts no folder; use 1 or more".to_string())
     })
 }
 
@@ -291,12 +305,23 @@ fn stray(args: &Args) -> Option<String> {
 enum Question {
     /// A selection, listed or, with a `Count`, counted (0112).
     Select(ls::Query, Option<ls::Count>),
-    Describe { names: Vec<String>, sql: bool, compiled_sql: bool, rules: bool },
+    Describe {
+        names: Vec<String>,
+        sql: bool,
+        compiled_sql: bool,
+        rules: bool,
+    },
     /// A selection's columns, one line each, or a card's columns alone (0134).
     SelectColumns(ls::Query),
-    DescribeColumns { names: Vec<String> },
-    Overview { depth: usize },
-    Job { name: String },
+    DescribeColumns {
+        names: Vec<String>,
+    },
+    Overview {
+        depth: usize,
+    },
+    Job {
+        name: String,
+    },
     JobOrder,
     JobCoverage,
     Column(ls_column::Ask),
@@ -311,7 +336,10 @@ fn question_of(args: &Args) -> Option<Question> {
     let count = args.count_by.map(|by| ls::Count { by, depth: args.depth.unwrap_or(3) });
     match (&args.select, &args.selector) {
         (Some(select), _) if args.columns => {
-            return Some(Question::SelectColumns(ls::Query::Line { select: select.clone(), exclude: args.exclude.clone().unwrap_or_default() }))
+            return Some(Question::SelectColumns(ls::Query::Line {
+                select: select.clone(),
+                exclude: args.exclude.clone().unwrap_or_default(),
+            }))
         }
         (None, Some(name)) if args.columns => return Some(Question::SelectColumns(ls::Query::Named(name.clone()))),
         (Some(select), _) => {
@@ -327,7 +355,12 @@ fn question_of(args: &Args) -> Option<Question> {
         return Some(Question::DescribeColumns { names: args.describe.clone() });
     }
     if !args.describe.is_empty() {
-        return Some(Question::Describe { names: args.describe.clone(), sql: args.sql, compiled_sql: args.compiled_sql, rules: args.rules });
+        return Some(Question::Describe {
+            names: args.describe.clone(),
+            sql: args.sql,
+            compiled_sql: args.compiled_sql,
+            rules: args.rules,
+        });
     }
     if args.overview {
         // Not clap's `default_value_t`: a flag with a default is always set,
@@ -356,10 +389,7 @@ fn question_of(args: &Args) -> Option<Question> {
             casts: args.casts,
             against: args.against.clone(),
             with: args.with.clone(),
-            produce: args.run_collin.then(|| ls_column::Produce {
-                catalog: args.catalog.clone(),
-                compiled: args.compiled.clone(),
-            }),
+            produce: args.run_collin.then(|| ls_column::Produce { catalog: args.catalog.clone(), compiled: args.compiled.clone() }),
         })
     })
 }
@@ -433,11 +463,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(question) = question_of(&args) {
         std::process::exit(question.run(&args));
     }
-    let root = args
-        .project
-        .canonicalize()
-        .map(files::plain)
-        .map_err(|e| anyhow::anyhow!("cannot open {}: {e}", args.project.display()))?;
+    let root = args.project.canonicalize().map(files::plain).map_err(|e| anyhow::anyhow!("cannot open {}: {e}", args.project.display()))?;
     if !files::is_dbt_project(&root) {
         eprintln!("  no dbt_project.yml in {} - point dbt-edith at the dbt project root", root.display());
     }
@@ -535,8 +561,7 @@ async fn run() -> anyhow::Result<()> {
     // Switched off, it neither asks GitHub nor looks at where it was built,
     // and shows nothing, so the reason it gives is never read.
     let how = if args.no_update_check { Err(update::Why::Elsewhere) } else { update_how(&shell, exe.as_deref()) };
-    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how)
-        .watching(exe.or(started));
+    let update = update::Update::new(args.no_update_check, config_dir.as_deref().map(update::seen_path), how).watching(exe.or(started));
     let state = Arc::new(api::AppState {
         port: listener.local_addr()?.port(),
         root: root.clone(),
@@ -763,7 +788,9 @@ mod tests {
 
     #[test]
     fn mcp_goes_alone_with_the_project_the_manifest_and_the_catalog() {
-        for line in ["--mcp", "--mcp /work/jaffle_shop", "--mcp . --manifest m.json", "--mcp --manifest m.json --catalog c.json /work/jaffle_shop"] {
+        for line in
+            ["--mcp", "--mcp /work/jaffle_shop", "--mcp . --manifest m.json", "--mcp --manifest m.json --catalog c.json /work/jaffle_shop"]
+        {
             let args = asked(line);
             assert!(args.mcp && question_of(&args).is_none() && stray(&args).is_none(), "{line}");
         }
@@ -819,10 +846,16 @@ mod tests {
         // is refused beside --mcp until someone decides it is not.
         use clap::CommandFactory;
         let command = Args::command();
-        let conflicts: std::collections::BTreeSet<&str> =
-            command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "mcp").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
-        let others: std::collections::BTreeSet<&str> =
-            command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| !["mcp", "project", "manifest", "catalog"].contains(id)).collect();
+        let conflicts: std::collections::BTreeSet<&str> = command
+            .get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "mcp").unwrap())
+            .iter()
+            .map(|a| a.get_id().as_str())
+            .collect();
+        let others: std::collections::BTreeSet<&str> = command
+            .get_arguments()
+            .map(|a| a.get_id().as_str())
+            .filter(|id| !["mcp", "project", "manifest", "catalog"].contains(id))
+            .collect();
         assert_eq!(conflicts, others);
     }
 
@@ -834,23 +867,10 @@ mod tests {
         assert!(args.skill == Some(skill::Kind::Command) && !args.mcp && question_of(&args).is_none() && stray(&args).is_none());
         assert_eq!((args.port, args.output), (4321, ls::Output::Name));
         for line in [
-            "--skill .",
-            "--skill /work/jaffle_shop",
-            "--skill --manifest m.json",
-            "--skill --catalog c.json",
-            "--skill --port 4321",
-            "--skill -s orders",
-            "--skill --describe orders",
-            "--skill --compiled-sql",
-            "--skill --overview",
-            "--skill --job jaffle_daily",
-            "--skill --job-order",
-            "--skill --job-coverage",
-            "--skill --output json",
-            "--skill --mcp",
-            "--skill --against ../legacy",
-            "--skill --with a.b",
-            "--mcp --skill",
+            "--skill .", "--skill /work/jaffle_shop", "--skill --manifest m.json", "--skill --catalog c.json", "--skill --port 4321",
+            "--skill -s orders", "--skill --describe orders", "--skill --compiled-sql", "--skill --overview", "--skill --job jaffle_daily",
+            "--skill --job-order", "--skill --job-coverage", "--skill --output json", "--skill --mcp", "--skill --against ../legacy",
+            "--skill --with a.b", "--mcp --skill",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {
                 Ok(_) => panic!("{line} was accepted"),
@@ -865,7 +885,10 @@ mod tests {
         for word in ["tool", "MCP", "."] {
             let Err(why) = Args::try_parse_from(["dbt-edith", "--skill", word]) else { panic!("{word} was accepted") };
             let why = why.to_string();
-            assert!(why.contains(&format!("invalid value '{word}' for '--skill")) && why.contains("[possible values: command, mcp]"), "{word}: {why}");
+            assert!(
+                why.contains(&format!("invalid value '{word}' for '--skill")) && why.contains("[possible values: command, mcp]"),
+                "{word}: {why}"
+            );
         }
         for line in ["--skill mcp .", "--skill mcp --overview", "--skill mcp --mcp"] {
             assert!(Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())).is_err(), "{line} was accepted");
@@ -874,9 +897,13 @@ mod tests {
         // beside --skill until someone decides it is not.
         use clap::CommandFactory;
         let command = Args::command();
-        let conflicts: std::collections::BTreeSet<&str> =
-            command.get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "skill").unwrap()).iter().map(|a| a.get_id().as_str()).collect();
-        let others: std::collections::BTreeSet<&str> = command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| *id != "skill").collect();
+        let conflicts: std::collections::BTreeSet<&str> = command
+            .get_arg_conflicts_with(command.get_arguments().find(|a| a.get_id() == "skill").unwrap())
+            .iter()
+            .map(|a| a.get_id().as_str())
+            .collect();
+        let others: std::collections::BTreeSet<&str> =
+            command.get_arguments().map(|a| a.get_id().as_str()).filter(|id| *id != "skill").collect();
         assert_eq!(conflicts, others);
     }
 
@@ -1016,23 +1043,10 @@ mod tests {
     #[test]
     fn a_job_goes_alone_among_the_questions() {
         for line in [
-            "--job a --overview",
-            "--job a --describe orders",
-            "--job a -s orders",
-            "--job a --selector s",
-            "--job a --column a.b",
-            "--job a --job-order",
-            "--job-order --overview",
-            "--job-order --describe orders",
-            "--job-order -s orders",
-            "--job-order --selector s",
-            "--job-order --column a.b",
-            "--job-coverage --overview",
-            "--job-coverage --describe orders",
-            "--job-coverage -s orders",
-            "--job-coverage --selector s",
-            "--job-coverage --column a.b",
-            "--job-coverage --job a",
+            "--job a --overview", "--job a --describe orders", "--job a -s orders", "--job a --selector s", "--job a --column a.b",
+            "--job a --job-order", "--job-order --overview", "--job-order --describe orders", "--job-order -s orders",
+            "--job-order --selector s", "--job-order --column a.b", "--job-coverage --overview", "--job-coverage --describe orders",
+            "--job-coverage -s orders", "--job-coverage --selector s", "--job-coverage --column a.b", "--job-coverage --job a",
             "--job-coverage --job-order",
         ] {
             let why = match Args::try_parse_from(std::iter::once("dbt-edith").chain(line.split_whitespace())) {

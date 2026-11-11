@@ -15,13 +15,13 @@
 use crate::collin::{self, iso_utc, Available};
 use crate::compiled;
 use crate::envs::{self, Status};
+use crate::files;
 use crate::graph::{Column, Graph, Kind, Node, Place};
 use crate::jobs::{self, Known};
-use crate::ls_column;
 use crate::ls::{self, find_node, Output, Unnamed, ANSWERED, REFUSED, SUGGESTED};
+use crate::ls_column;
 use crate::macro_use::{self, Summary, Why};
 use crate::macros::{self, Block, Macro};
-use crate::files;
 use std::collections::BTreeMap;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -130,13 +130,7 @@ fn clean(text: &str) -> String {
 /// names that resolve are all printed, then the ones that do not are refused,
 /// so a caller asking for three gets the two that exist.
 pub fn run_describe(
-    project: &Path,
-    manifest: Option<&Path>,
-    catalog: Option<&Path>,
-    names: &[String],
-    sql: bool,
-    compiled_sql: bool,
-    rules: bool,
+    project: &Path, manifest: Option<&Path>, catalog: Option<&Path>, names: &[String], sql: bool, compiled_sql: bool, rules: bool,
     output: Output,
 ) -> i32 {
     // Before the project is opened: reading a manifest and a catalog to say
@@ -170,17 +164,8 @@ pub(crate) fn target_dir(root: &Path, manifest_path: &Path) -> PathBuf {
 /// look in when `--rules` asks for the predicates of a card (0138): without
 /// it no cache is read, and the card is what it always was.
 pub(crate) fn respond_describe(
-    root: &Path,
-    graph: &Graph,
-    jobs: Option<&Known>,
-    standings: Option<&Standings>,
-    names: &[String],
-    sql: bool,
-    compiled: Option<&Path>,
-    rules: Option<&Path>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, jobs: Option<&Known>, standings: Option<&Standings>, names: &[String], sql: bool, compiled: Option<&Path>,
+    rules: Option<&Path>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let with = rules.and_then(|manifest| ls_column::with_rules(root, graph, manifest, err));
     let code = describe(graph, root, jobs, standings, names, sql, compiled, with.as_ref(), output, out, err)?;
@@ -212,17 +197,8 @@ fn wanted(names: &[String]) -> Vec<&str> {
 /// last card, as the mode promises. `rules` is the graph with the column
 /// lineage cache merged in, when the predicates were asked for.
 fn describe(
-    graph: &Graph,
-    root: &Path,
-    jobs: Option<&Known>,
-    standings: Option<&Standings>,
-    names: &[String],
-    sql: bool,
-    compiled: Option<&Path>,
-    rules: Option<&Graph>,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    graph: &Graph, root: &Path, jobs: Option<&Known>, standings: Option<&Standings>, names: &[String], sql: bool, compiled: Option<&Path>,
+    rules: Option<&Graph>, output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let names = wanted(names);
     if names.is_empty() {
@@ -447,17 +423,14 @@ fn has_compiled_form(n: &Node) -> bool {
 /// file older than what it was built from is still printed, with the note that
 /// the code may no longer be what dbt would compile now.
 fn read_compiled(
-    root: &Path,
-    target: &Path,
-    newest_macro: &std::cell::OnceCell<Option<(u64, String)>>,
-    n: &Node,
-    err: &mut impl Write,
+    root: &Path, target: &Path, newest_macro: &std::cell::OnceCell<Option<(u64, String)>>, n: &Node, err: &mut impl Write,
 ) -> io::Result<Option<String>> {
     if !has_compiled_form(n) {
         writeln!(err, "{}: no compiled SQL of its own", n.name)?;
         return Ok(None);
     }
-    let subject = compiled::Subject { package: &n.package, file: &n.file, yml: &n.yml, compiled: &n.compiled, name: &n.name, alias: &n.alias };
+    let subject =
+        compiled::Subject { package: &n.package, file: &n.file, yml: &n.yml, compiled: &n.compiled, name: &n.name, alias: &n.alias };
     // The macros are walked once for the whole call, not once per node.
     let newest = || newest_macro.get_or_init(|| crate::freshness::newest_input(root, crate::freshness::MACROS_DIR)).clone();
     let found = compiled::look_up_with(root, target, compiled::Kind::Compiled, &subject, COMPILED_MAX, newest);
@@ -466,7 +439,13 @@ fn read_compiled(
             writeln!(err, "{}: the compiled path the manifest records leaves the target folder, so it is not read", n.name)?;
             return Ok(None);
         }
-        writeln!(err, "{}: no compiled SQL under {}: run dbt compile -s {}", n.name, target.join(compiled::Kind::Compiled.dir()).display(), n.name)?;
+        writeln!(
+            err,
+            "{}: no compiled SQL under {}: run dbt compile -s {}",
+            n.name,
+            target.join(compiled::Kind::Compiled.dir()).display(),
+            n.name
+        )?;
         return Ok(None);
     }
     let shown = if found.rel.is_empty() { &found.path } else { &found.rel };
@@ -516,8 +495,14 @@ impl MacroFile {
         let macros = &graph.macros;
         let Some(path) = macros.place(root, m) else {
             let internal = macro_use::internal_package(&graph.meta.adapter, &m.package);
-            let missing =
-                |path: String, problem: String| MacroFile { path, block: None, body: None, problem: Some(problem), own: internal, signature: None };
+            let missing = |path: String, problem: String| MacroFile {
+                path,
+                block: None,
+                body: None,
+                problem: Some(problem),
+                own: internal,
+                signature: None,
+            };
             return if m.package == macros.root() || internal {
                 let problem = if internal {
                     "a macro of dbt's own, which the project holds no file of".to_string()
@@ -549,7 +534,8 @@ impl MacroFile {
         match files::read_file(root, &path) {
             Ok(read) => match macros::block_in(&read.content, &m.name) {
                 Some(block) => {
-                    let mut body: String = read.content.lines().skip(block.line - 1).take(block.end - block.line + 1).collect::<Vec<_>>().join("\n");
+                    let mut body: String =
+                        read.content.lines().skip(block.line - 1).take(block.end - block.line + 1).collect::<Vec<_>>().join("\n");
                     body.push('\n');
                     found.block = Some(block);
                     found.body = Some(body);
@@ -605,7 +591,11 @@ fn package_in(root: &Path, package: &str) -> Package {
             _ => {}
         }
     }
-    if outside { Package::Outside } else { Package::Missing }
+    if outside {
+        Package::Outside
+    } else {
+        Package::Missing
+    }
 }
 
 /// How many nodes of a kind call a macro, in the words of the page's card.
@@ -621,7 +611,11 @@ fn kind_words_of(kind: &str, n: usize) -> &str {
         "source" => ("source", "sources"),
         _ => ("node", "nodes"),
     };
-    if n == 1 { one } else { many }
+    if n == 1 {
+        one
+    } else {
+        many
+    }
 }
 
 /// What dbt runs a macro for, in the page's words: `each` for the reason,
@@ -648,7 +642,11 @@ fn used_text(used: &Summary, adapter: &str) -> (String, Vec<String>) {
     let mut notes = Vec::new();
     if total > 0 {
         if used.through > 0 {
-            notes.push(if used.through == total { "all of them through other macros".to_string() } else { format!("{} of them through other macros", used.through) });
+            notes.push(if used.through == total {
+                "all of them through other macros".to_string()
+            } else {
+                format!("{} of them through other macros", used.through)
+            });
         }
         if used.written > 0 {
             let which = if used.written == total { "all of them".to_string() } else { format!("{} of them", used.written) };
@@ -910,7 +908,11 @@ fn column_cells(graph: &Graph, c: &Column, tests_sep: &str) -> [String; 4] {
         .iter()
         .map(|&t| {
             let t = &graph.nodes[t as usize];
-            if t.test_name.is_empty() { t.name.as_str() } else { t.test_name.as_str() }
+            if t.test_name.is_empty() {
+                t.name.as_str()
+            } else {
+                t.test_name.as_str()
+            }
         })
         .collect();
     // A column only the warehouse has is said, since no YAML or SQL of the
@@ -964,7 +966,11 @@ fn built_rows(graph: &Graph, files: &Files, idx: u32, sheet: &mut Sheet) {
     let down = graph.reach(idx, false);
     sheet.line(
         "reach",
-        if n.kind == Kind::Source { format!("{down} downstream") } else { format!("{} upstream, {down} downstream", graph.reach(idx, true)) },
+        if n.kind == Kind::Source {
+            format!("{down} downstream")
+        } else {
+            format!("{} upstream, {down} downstream", graph.reach(idx, true))
+        },
     );
     jobs_row(graph, files.jobs(), idx, sheet);
 }
@@ -1337,7 +1343,11 @@ impl<'a> Files<'a> {
 /// variable named like a credential keeps nothing of its expression (0090).
 fn written_shown(text: &str) -> String {
     let secret_var = envs::var_names(text).iter().any(|v| envs::is_secret(v) || envs::sensitive_name(v));
-    if secret_var || envs::carries_credential(text) { "<hidden>".to_string() } else { text.to_string() }
+    if secret_var || envs::carries_credential(text) {
+        "<hidden>".to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 /// What a node's location says besides its built one: the keys as written
@@ -1717,12 +1727,7 @@ impl<'a> Described<'a> {
             jobs_sources: sources.filter(|&n| n == 0 || not_read.is_some()),
             jobs_not_read: not_read,
             jobs_refused: refused,
-            selectors_indirect_lost: selectors
-                .held
-                .iter()
-                .filter(|&&(_, lost)| lost)
-                .map(|&(name, _)| name)
-                .collect(),
+            selectors_indirect_lost: selectors.held.iter().filter(|&&(_, lost)| lost).map(|&(name, _)| name).collect(),
             selectors_may_hold: selectors.may_hold,
             selectors: selectors.held.iter().map(|&(name, _)| name).collect(),
             selectors_unresolved: selectors.unresolved,
@@ -1761,12 +1766,7 @@ pub fn run_describe_columns(project: &Path, manifest: Option<&Path>, catalog: Op
 /// What the mode does once the project is open: the columns, flushed, then the
 /// names that stand for no node, then what the manifest is worth.
 pub(crate) fn respond_describe_columns(
-    root: &Path,
-    graph: &Graph,
-    names: &[String],
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, graph: &Graph, names: &[String], output: Output, out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let names = wanted(names);
     if names.is_empty() {
@@ -1823,11 +1823,7 @@ struct ColumnsOf<'a> {
 /// one tab-separated row of five fields per column under `COLUMNS_HEADER`; JSON is one object
 /// per node.
 pub(crate) fn write_columns<'a>(
-    graph: &Graph,
-    nodes: &[&'a Node],
-    output: Output,
-    as_cards: bool,
-    out: &mut impl Write,
+    graph: &Graph, nodes: &[&'a Node], output: Output, as_cards: bool, out: &mut impl Write,
 ) -> io::Result<Vec<&'a Node>> {
     let (with, without): (Vec<&'a Node>, Vec<&'a Node>) = nodes.iter().partition(|n| !n.columns.is_empty());
     let shared = if output == Output::Json { Default::default() } else { ls::shared_names(graph) };
@@ -1837,7 +1833,13 @@ pub(crate) fn write_columns<'a>(
     for (at, n) in with.iter().enumerate() {
         match output {
             Output::Json => {
-                let of = ColumnsOf { unique_id: &n.id, name: &n.name, resource_type: n.resource_type(), disabled: n.disabled, columns: described_columns(graph, n) };
+                let of = ColumnsOf {
+                    unique_id: &n.id,
+                    name: &n.name,
+                    resource_type: n.resource_type(),
+                    disabled: n.disabled,
+                    columns: described_columns(graph, n),
+                };
                 serde_json::to_writer(&mut *out, &of)?;
                 writeln!(out)?;
             }
@@ -1893,29 +1895,16 @@ pub fn run_overview(project: &Path, manifest: Option<&Path>, catalog: Option<&Pa
 /// What the mode does once the project is open: the overview, flushed, then
 /// what the manifest is worth. The exit code, or the write that failed.
 pub(crate) fn respond_overview(
-    root: &Path,
-    manifest_path: &Path,
-    graph: &Graph,
-    jobs: Option<&Known>,
-    catalog: Option<&Path>,
-    depth: usize,
-    output: Output,
-    out: &mut impl Write,
-    err: &mut impl Write,
+    root: &Path, manifest_path: &Path, graph: &Graph, jobs: Option<&Known>, catalog: Option<&Path>, depth: usize, output: Output,
+    out: &mut impl Write, err: &mut impl Write,
 ) -> io::Result<i32> {
     let target_dir = target_dir(root, manifest_path);
     // The caches beside the manifest, as the page lists them, whichever of
     // them it would load.
     let caches = collin::discover(&target_dir);
     let whole = |path: &Path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()).display().to_string();
-    let mut found = Overview::of(
-        graph,
-        &whole(manifest_path),
-        &whole(&ls::catalog_path(root, manifest_path, catalog)),
-        &caches,
-        depth,
-        ls::now_secs(),
-    );
+    let mut found =
+        Overview::of(graph, &whole(manifest_path), &whole(&ls::catalog_path(root, manifest_path, catalog)), &caches, depth, ls::now_secs());
     // Read only when the project has a sources file, and by the caller when
     // it keeps them between calls (0115).
     match jobs.cloned().unwrap_or_else(|| jobs::known(graph, root)) {
@@ -2104,7 +2093,11 @@ impl Tally {
 
 /// How a model is built, `unset` for one whose config says nothing.
 pub(crate) fn materialization(n: &Node) -> String {
-    if n.materialized.is_empty() { "unset".to_string() } else { n.materialized.clone() }
+    if n.materialized.is_empty() {
+        "unset".to_string()
+    } else {
+        n.materialized.clone()
+    }
 }
 
 /// The first `SHOWN` entries, then how many the line leaves out.
@@ -2198,19 +2191,12 @@ impl Overview {
             nodes: m.counts.clone(),
             materializations,
             incremental_strategies: strategies,
-            macros: MacroFacts {
-                total: graph.macros.len(),
-                project: (!root.is_empty()).then(|| graph.macros.count_of(root)),
-            },
+            macros: MacroFacts { total: graph.macros.len(), project: (!root.is_empty()).then(|| graph.macros.count_of(root)) },
             selectors: graph
                 .selectors
                 .list()
                 .iter()
-                .map(|s| SelectorFacts {
-                    name: s.name.clone(),
-                    description: s.description.clone(),
-                    unsupported: s.unsupported.clone(),
-                })
+                .map(|s| SelectorFacts { name: s.name.clone(), description: s.description.clone(), unsupported: s.unsupported.clone() })
                 .collect(),
             jobs: None,
             jobs_sources: None,
@@ -2235,10 +2221,7 @@ impl Overview {
             who.push(format!("adapter {}", self.adapter));
         }
         sheet.line("project", who.join("  "));
-        sheet.line(
-            "manifest",
-            format!("{}  written {} ({} ago)", self.manifest.path, self.manifest.written, ls::age(self.manifest.age_s)),
-        );
+        sheet.line("manifest", format!("{}  written {} ({} ago)", self.manifest.path, self.manifest.written, ls::age(self.manifest.age_s)));
         sheet.line(
             "catalog",
             match &self.catalog {
@@ -2258,10 +2241,8 @@ impl Overview {
             sheet.line("column lineage", format!("{}{by}, written {} ({} ago)", c.file, c.written, ls::age(c.age_s)));
         }
 
-        let kinds: Vec<String> = KINDS
-            .iter()
-            .filter_map(|&(key, one, many)| self.nodes.get(key).filter(|&&n| n > 0).map(|&n| counted(n, one, many)))
-            .collect();
+        let kinds: Vec<String> =
+            KINDS.iter().filter_map(|&(key, one, many)| self.nodes.get(key).filter(|&&n| n > 0).map(|&n| counted(n, one, many))).collect();
         sheet.line("nodes", kinds.join(", "));
         if !self.materializations.is_empty() {
             let how: Vec<String> = sorted_by_count(&self.materializations)
@@ -2587,8 +2568,20 @@ mod tests {
                 source: "collin".into(),
                 rules: vec![
                     rule("model.shop.orders", "WHERE", "status <> 'cancelled'", false, &[("model.shop.stg_orders", "status")]),
-                    rule("model.shop.stg_orders", "QUALIFY", "row_number() over (partition by id order by updated_at desc) = 1", true, &[("source.shop.raw.orders", "id")]),
-                    rule("model.shop.orders", "JOIN", "o.customer_id\t= c.id", false, &[("model.shop.stg_orders", "customer_id"), ("model.shop.customers", "id")]),
+                    rule(
+                        "model.shop.stg_orders",
+                        "QUALIFY",
+                        "row_number() over (partition by id order by updated_at desc) = 1",
+                        true,
+                        &[("source.shop.raw.orders", "id")],
+                    ),
+                    rule(
+                        "model.shop.orders",
+                        "JOIN",
+                        "o.customer_id\t= c.id",
+                        false,
+                        &[("model.shop.stg_orders", "customer_id"), ("model.shop.customers", "id")],
+                    ),
                     rule("model.shop.orders", "HAVING", "count(*) > 0", false, &[]),
                 ],
                 ..Default::default()
@@ -2602,7 +2595,8 @@ mod tests {
         let names: Vec<String> = names.iter().map(|n| n.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let with = with_rules();
-        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, Some(&with), output, &mut out, &mut err).unwrap();
+        let code =
+            describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, Some(&with), output, &mut out, &mut err).unwrap();
         (String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap(), code)
     }
 
@@ -2624,7 +2618,10 @@ mod tests {
         // Another node's rules are its own, a cut text is marked, and a node
         // with none has the card it always had.
         let (stg, _, _) = ask_rules(&["stg_orders"], Output::Name);
-        assert!(stg.contains("    QUALIFY row_number() over (partition by id order by updated_at desc) = 1 (cut)  reads raw.orders.id\n"), "{stg}");
+        assert!(
+            stg.contains("    QUALIFY row_number() over (partition by id order by updated_at desc) = 1 (cut)  reads raw.orders.id\n"),
+            "{stg}"
+        );
         assert_eq!(ask_rules(&["customers"], Output::Name).0, ask(&["customers"], Output::Name).0);
         assert_eq!(ask_rules(&["orders"], Output::Compact).0, out);
     }
@@ -2634,8 +2631,11 @@ mod tests {
         let (out, _, _) = ask_rules(&["orders"], Output::Json);
         let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
         assert_eq!(v["rules"].as_array().map(Vec::len), Some(3), "{out}");
-        assert_eq!(v["rules"][0], json!({ "node": "model.shop.orders", "clause": "WHERE", "text": "status <> 'cancelled'",
-                                           "columns": [{ "node": "model.shop.stg_orders", "column": "status" }] }));
+        assert_eq!(
+            v["rules"][0],
+            json!({ "node": "model.shop.orders", "clause": "WHERE", "text": "status <> 'cancelled'",
+                                           "columns": [{ "node": "model.shop.stg_orders", "column": "status" }] })
+        );
         assert!(!ask(&["orders"], Output::Json).0.contains("rules"), "without --rules the card has no such key");
     }
 
@@ -2693,7 +2693,10 @@ mod tests {
         assert!(out.contains("  keeps the rows where\n    WHERE status <> 'cancelled'  reads stg_orders.status\n  reach"), "{out}");
         // The card's own columns are the manifest's: the cache names no column
         // the card did not already list.
-        assert_eq!(out.replace("  keeps the rows where\n    WHERE status <> 'cancelled'  reads stg_orders.status\n", ""), ask(&["orders"], Output::Name).0);
+        assert_eq!(
+            out.replace("  keeps the rows where\n    WHERE status <> 'cancelled'  reads stg_orders.status\n", ""),
+            ask(&["orders"], Output::Name).0
+        );
         std::fs::remove_dir_all(&with).unwrap();
 
         let none = cached("none", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.10.0","edges":[]}"#);
@@ -2704,8 +2707,12 @@ mod tests {
         std::fs::remove_dir_all(&none).unwrap();
 
         // A Fusion cache written later does not hide collin's rules.
-        let both = cached("both", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
-            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"status <> 'cancelled'","columns":[]}]}"#);
+        let both = cached(
+            "both",
+            "column_lineage.collin.json",
+            r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"status <> 'cancelled'","columns":[]}]}"#,
+        );
         let fusion = both.join("target/column_lineage.fusion.json");
         std::fs::write(&fusion, r#"{"version":1,"source":"fusion","edges":[]}"#).unwrap();
         let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
@@ -2716,8 +2723,12 @@ mod tests {
 
         // A cache older than the manifest is said, as `--column` says it: a
         // rule of a model since changed would read as current.
-        let old = cached("old", "column_lineage.collin.json", r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
-            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"x","columns":[]}]}"#);
+        let old = cached(
+            "old",
+            "column_lineage.collin.json",
+            r#"{"version":1,"source":"collin","producer":"collin 0.11.0","edges":[],
+            "rules":[{"node":"model.shop.orders","clause":"WHERE","text":"x","columns":[]}]}"#,
+        );
         let (cache, manifest) = (old.join("target/column_lineage.collin.json"), old.join("target/manifest.json"));
         std::fs::write(&manifest, "{}").unwrap();
         let earlier = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
@@ -2826,7 +2837,10 @@ mod tests {
             respond_describe_columns(Path::new("/nowhere"), &g, &names, output, &mut out, &mut err).unwrap();
             String::from_utf8(out).unwrap()
         };
-        assert_eq!(said(Output::Name), lines(&["model legacy  table  models/marts/legacy.sql", "  status  disabled", "  columns (1)", "    id\tinteger"]));
+        assert_eq!(
+            said(Output::Name),
+            lines(&["model legacy  table  models/marts/legacy.sql", "  status  disabled", "  columns (1)", "    id\tinteger"])
+        );
         let v: serde_json::Value = serde_json::from_str(said(Output::Json).trim_end()).unwrap();
         assert_eq!(v["disabled"], true);
         // An enabled node carries no such key.
@@ -3151,7 +3165,8 @@ mod tests {
     }
 
     fn json_of(g: &Graph, name: &str) -> serde_json::Value {
-        serde_json::to_value(Described::of(g, &Files::new(g, Path::new("/nowhere")), node_named(g, name, &[]).unwrap(), None, None)).unwrap()
+        serde_json::to_value(Described::of(g, &Files::new(g, Path::new("/nowhere")), node_named(g, name, &[]).unwrap(), None, None))
+            .unwrap()
     }
 
     #[test]
@@ -3190,7 +3205,10 @@ mod tests {
         // Found under the project: where it is.
         let at = g.index[audit] as usize;
         g.nodes[at].place = "dbt_modules/audit/models/customers.sql".into();
-        assert_eq!(card(&g, &Files::new(&g, Path::new("/nowhere")), at as u32).0, "model customers  view  dbt_modules/audit/models/customers.sql");
+        assert_eq!(
+            card(&g, &Files::new(&g, Path::new("/nowhere")), at as u32).0,
+            "model customers  view  dbt_modules/audit/models/customers.sql"
+        );
         let v = json_of(&g, audit);
         assert_eq!(v["original_file_path"], "models/customers.sql");
         assert_eq!(v["path"], "dbt_modules/audit/models/customers.sql");
@@ -3521,7 +3539,10 @@ mod tests {
 
         let (out, _, _) = ask_compiled(&graph(), &dir, &["orders"], true, Output::Json);
         let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
-        assert_eq!((v["sql"].as_str(), v["compiled_sql"].as_str()), (Some("select * from {{ ref('stg_orders') }}\n"), Some("select * from raw.stg_orders\n")));
+        assert_eq!(
+            (v["sql"].as_str(), v["compiled_sql"].as_str()),
+            (Some("select * from {{ ref('stg_orders') }}\n"), Some("select * from raw.stg_orders\n"))
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -3546,14 +3567,16 @@ mod tests {
     fn a_compiled_file_older_than_the_model_is_printed_with_a_note() {
         let dir = compiled_project("stale", &[("target/compiled/shop/models/marts/orders.sql", "select 1\n")]);
         let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
-        std::fs::File::options().write(true).open(dir.join("target/compiled/shop/models/marts/orders.sql")).unwrap().set_modified(old).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(dir.join("target/compiled/shop/models/marts/orders.sql"))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
         let (out, err, code) = ask_compiled(&graph(), &dir, &["orders"], false, Output::Name);
         assert_eq!(code, ANSWERED);
         assert!(out.ends_with("  compiled sql\n    select 1\n"), "{out}");
-        assert_eq!(
-            err,
-            "orders: target/compiled/shop/models/marts/orders.sql is older than the model file: run dbt compile -s orders\n"
-        );
+        assert_eq!(err, "orders: target/compiled/shop/models/marts/orders.sql is older than the model file: run dbt compile -s orders\n");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -3593,7 +3616,8 @@ mod tests {
         assert_eq!((code, err.as_str()), (REFUSED, "orders: a macro too, macro.shop.orders\nerror: no node or macro named nope\n"));
         // A name several nodes share is refused whatever macro is named so.
         let g = graph_with(|m| {
-            m["macros"]["macro.shop.customers"] = json!({ "name": "customers", "package_name": "shop", "original_file_path": "macros/c.sql" });
+            m["macros"]["macro.shop.customers"] =
+                json!({ "name": "customers", "package_name": "shop", "original_file_path": "macros/c.sql" });
         });
         let (out, err, code) = ask_on(&g, &dir, &["customers"], false, Output::Name);
         assert_eq!((out.as_str(), code), ("", REFUSED));
@@ -3643,7 +3667,8 @@ mod tests {
     fn nodes_and_macros_mix_in_one_call_and_each_is_said_once() {
         let dir = project_with_money();
         let g = with_macros();
-        let (out, err, code) = ask_on(&g, &dir, &["stg_orders", "cents_to_dollars", "macro.shop.cents_to_dollars", "nope"], false, Output::Name);
+        let (out, err, code) =
+            ask_on(&g, &dir, &["stg_orders", "cents_to_dollars", "macro.shop.cents_to_dollars", "nope"], false, Output::Name);
         assert_eq!(code, REFUSED);
         let cards: Vec<&str> = out.lines().filter(|l| !l.starts_with(' ') && !l.is_empty()).collect();
         assert_eq!(cards, ["model stg_orders  view  models/staging/stg_orders.sql", "macro cents_to_dollars  macros/money.sql:4"]);
@@ -3673,14 +3698,21 @@ mod tests {
         assert!(!out.contains("other()"), "{out}");
         let (out, _, _) = ask_on(&g, &dir, &["cents_to_dollars"], true, Output::Json);
         let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
-        assert_eq!(v["sql"], "{% macro cents_to_dollars(amount, scale=2) -%}\n    ({{ amount }} / 100)::numeric(16, {{ scale }})\n{%- endmacro %}\n");
+        assert_eq!(
+            v["sql"],
+            "{% macro cents_to_dollars(amount, scale=2) -%}\n    ({{ amount }} / 100)::numeric(16, {{ scale }})\n{%- endmacro %}\n"
+        );
 
         // dbt's own has no file in the project, a package not installed says
         // to run dbt deps, and a file the manifest remembers and a commit
         // moved is said too. The card is printed all the same.
         let (out, err, code) = ask_on(&g, &dir, &["ref", "dbt_utils.star", "orders_old"], true, Output::Name);
         assert_eq!(code, REFUSED);
-        assert!(out.contains("macro ref  dbt's own: macros/ref.sql\n") && out.contains("macro star  dbt_packages/dbt_utils/macros/sql/star.sql\n"), "{out}");
+        assert!(
+            out.contains("macro ref  dbt's own: macros/ref.sql\n")
+                && out.contains("macro star  dbt_packages/dbt_utils/macros/sql/star.sql\n"),
+            "{out}"
+        );
         assert_eq!(
             err,
             "ref: a macro of dbt's own, which the project holds no file of\n\
@@ -3783,7 +3815,8 @@ mod tests {
         let log: Log = Rc::default();
         let (mut out, mut err) = (BufWriter::new(Tap("out", log.clone())), Tap("err", log.clone()));
         let names: Vec<String> = ["stg_orders", "nothing", "weekly_report"].iter().map(|n| n.to_string()).collect();
-        let code = describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, None, Output::Name, &mut out, &mut err).unwrap();
+        let code =
+            describe(&graph(), Path::new("/nowhere"), None, None, &names, false, None, None, Output::Name, &mut out, &mut err).unwrap();
         assert_eq!(code, REFUSED);
         let seen = log.borrow();
         let first_error = seen.iter().position(|(stream, _)| *stream == "err").unwrap();
@@ -3862,7 +3895,10 @@ mod tests {
         assert!(one.contains("folders         (by folder, 1 level)\n  dbt_packages  1 model (1 view)\n  models        4 models"), "{one}");
         assert!(!one.contains("    marts ") && !one.contains("    staging "), "{one}");
         let two = text(&overview(2));
-        assert!(two.contains("    marts       3 models") && two.contains("    audit       1 model") && !two.contains("      models"), "{two}");
+        assert!(
+            two.contains("    marts       3 models") && two.contains("    audit       1 model") && !two.contains("      models"),
+            "{two}"
+        );
         // The subtree's counts are the same at every depth.
         assert!(two.contains("  models        4 models (2 table, 1 incremental, 1 view), 1 source, 3 tests, 1 exposure\n"), "{two}");
         // No levels, no folders, and no heading for none.
@@ -3874,7 +3910,10 @@ mod tests {
     fn the_overview_in_json_is_one_object() {
         let o = overview(2);
         let v = serde_json::to_value(&o).unwrap();
-        assert_eq!((v["project"].as_str(), v["dbt_version"].as_str(), v["adapter"].as_str()), (Some("shop"), Some("1.12.5"), Some("duckdb")));
+        assert_eq!(
+            (v["project"].as_str(), v["dbt_version"].as_str(), v["adapter"].as_str()),
+            (Some("shop"), Some("1.12.5"), Some("duckdb"))
+        );
         // No age: two runs a second apart would differ, and the text has it.
         assert_eq!(v["manifest"], json!({ "path": "/p/target/manifest.json", "written": "2026-03-01T10:00:00Z" }));
         assert!(!serde_json::to_string(&v).unwrap().contains("age_s"), "{v}");
@@ -3995,10 +4034,7 @@ mod tests {
     fn a_card_says_where_each_env_file_lands_the_node() {
         let root = root_with(
             "rows",
-            &[
-                (".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n"),
-                (".env.prod", "DBT_SCHEMA_SHOP=marts_prod\n"),
-            ],
+            &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\nDBT_SCHEMA_SHOP=marts_qa\n"), (".env.prod", "DBT_SCHEMA_SHOP=marts_prod\n")],
         );
         let (out, err, code) = ask_on(&orders_by_env(), &root, &["orders"], false, Output::Name);
         assert_eq!((code, err.as_str()), (ANSWERED, ""));
@@ -4133,12 +4169,8 @@ mod tests {
 
     #[test]
     fn a_key_nothing_writes_is_the_targets_not_this_parses() {
-        let (text, v) = landing_of(
-            "target",
-            &[(".env.prod", "DBT_DB_SHOP=SHOP_PROD\n")],
-            ["{{ env_var('DBT_DB_SHOP') }}", "", ""],
-            "SHOP_SANDBOX",
-        );
+        let (text, v) =
+            landing_of("target", &[(".env.prod", "DBT_DB_SHOP=SHOP_PROD\n")], ["{{ env_var('DBT_DB_SHOP') }}", "", ""], "SHOP_SANDBOX");
         // The sandbox schema of this parse is not where `.env.prod` lands; the
         // alias is the model's own.
         assert_eq!(row(&text, ".env.prod"), Some("SHOP_PROD.<target>.fct_orders"));
@@ -4166,7 +4198,11 @@ mod tests {
         let (text, v) = landing_of(
             "default",
             &[(".env.qa", "DBT_DB_SHOP=SHOP_QA\n")],
-            ["{{ env_var('DBT_DB_SHOP') }}", "{{ env_var('DBT_ENV_SECRET_PW', 'pw-default-1') }}", "{{ env_var('SHOP_API_KEY', 'abc123key') }}"],
+            [
+                "{{ env_var('DBT_DB_SHOP') }}",
+                "{{ env_var('DBT_ENV_SECRET_PW', 'pw-default-1') }}",
+                "{{ env_var('SHOP_API_KEY', 'abc123key') }}",
+            ],
             "",
         );
         assert_eq!(row(&text, "configured"), Some("database {{ env_var('DBT_DB_SHOP') }}  schema <hidden>  alias <hidden>"));
@@ -4381,11 +4417,13 @@ mod tests {
         assert_eq!(json["jobs_sources"], 2);
         // The overview says it too.
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err)
+            .unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("; 1 of 2 sources (nothing at this path) not read")), "{text}");
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Json, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Json, &mut out, &mut err)
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(json["jobs_not_read"]["of"], 2);
     }
@@ -4399,7 +4437,8 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!((json["jobs"].clone(), json["jobs_sources"].clone()), (json!([]), json!(0)));
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err)
+            .unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.lines().any(|l| l.starts_with("jobs") && l.ends_with("no sources in .dbt-edith/jobs.yml")), "{text}");
     }
@@ -4410,11 +4449,23 @@ mod tests {
         let root = project_with_jobs("deep-sources", &[]);
         std::fs::write(root.join(".dbt-edith/jobs.yml"), format!("jobs: {}{}\n", "[".repeat(400_000), "]".repeat(400_000))).unwrap();
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let code = respond_overview(&root, Path::new("/p/target/manifest.json"), &with_selectors(), None, None, 3, Output::Name, &mut out, &mut err).unwrap();
+        let code = respond_overview(
+            &root,
+            Path::new("/p/target/manifest.json"),
+            &with_selectors(),
+            None,
+            None,
+            3,
+            Output::Name,
+            &mut out,
+            &mut err,
+        )
+        .unwrap();
         let text = String::from_utf8(out).unwrap();
         assert_eq!(code, ANSWERED);
         assert!(
-            text.lines().any(|l| l.starts_with("jobs") && l.ends_with("not read, .dbt-edith/jobs.yml: line 1: collections nested deeper than this reader takes")),
+            text.lines().any(|l| l.starts_with("jobs")
+                && l.ends_with("not read, .dbt-edith/jobs.yml: line 1: collections nested deeper than this reader takes")),
             "{text}"
         );
         // A job file, and a block tree.
@@ -4461,7 +4512,10 @@ mod tests {
             .into_iter()
             .collect();
             all.insert("marts".into(), json!({ "name": "marts", "definition": { "method": "path", "value": "models/marts" } }));
-            all.insert("raw_and_after".into(), json!({ "name": "raw_and_after", "definition": { "method": "source", "value": "raw", "children": true } }));
+            all.insert(
+                "raw_and_after".into(),
+                json!({ "name": "raw_and_after", "definition": { "method": "source", "value": "raw", "children": true } }),
+            );
             // Its eager exclusion drops the test that reads `customers`; in the
             // exclusion's own mode `empty` that test would stay.
             all.insert(
@@ -4514,7 +4568,8 @@ mod tests {
         let mut held: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for s in g.selectors.list() {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            let code = ls::respond(Path::new("/nowhere"), &g, &ls::Query::Named(s.name.clone()), None, Output::Json, &mut out, &mut err).unwrap();
+            let code =
+                ls::respond(Path::new("/nowhere"), &g, &ls::Query::Named(s.name.clone()), None, Output::Json, &mut out, &mut err).unwrap();
             if s.unsupported.is_some() {
                 assert_eq!(code, REFUSED, "{}", s.name);
                 continue;
@@ -4550,7 +4605,10 @@ mod tests {
     #[test]
     fn a_manifest_that_lost_indirect_selection_flags_the_tests_it_decides() {
         let mut g = modes(false);
-        let root = root_with("lost-indirect", &[("selectors.yml", "selectors:\n  - name: orders_cautious\n    definition:\n      indirect_selection: cautious\n")]);
+        let root = root_with(
+            "lost-indirect",
+            &[("selectors.yml", "selectors:\n  - name: orders_cautious\n    definition:\n      indirect_selection: cautious\n")],
+        );
         g.selectors.check_against(&root);
         assert!(g.selectors.lost_indirect());
         let (test, _, _) = ask_on(&g, &root, &["relationships_orders_customers"], false, Output::Name);
@@ -4587,7 +4645,20 @@ mod tests {
         let before = RESOLVED.with(|n| n.get());
         for _ in 0..3 {
             let (mut out, mut err) = (Vec::new(), Vec::new());
-            describe(&g, Path::new("/nowhere"), None, Some(&kept), &["orders".to_string()], false, None, None, Output::Name, &mut out, &mut err).unwrap();
+            describe(
+                &g,
+                Path::new("/nowhere"),
+                None,
+                Some(&kept),
+                &["orders".to_string()],
+                false,
+                None,
+                None,
+                Output::Name,
+                &mut out,
+                &mut err,
+            )
+            .unwrap();
             assert!(String::from_utf8(out).unwrap().contains("selectors ("));
         }
         assert_eq!(RESOLVED.with(|n| n.get()) - before, 1);
