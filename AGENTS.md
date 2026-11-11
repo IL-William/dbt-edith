@@ -11,7 +11,7 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, Clippy, rustfmt, both audits, the Snowflake script, dbt itself, the MCP server, the tour, the depth control and Edith's menu in Chrome, browser tests, syntax
+./scripts/check.sh          # Rust tests, Clippy, rustfmt, both audits, the Snowflake script, the linters, dbt itself, the MCP server, the tour, the depth control and Edith's menu in Chrome, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
@@ -31,6 +31,10 @@ about it when online. GitHub Actions runs the Rust tests and both audits on
 every push and every Monday, Clippy and rustfmt on every push only (0171, 0172), never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
+`scripts/lint.py` runs Ruff, ShellCheck and Biome at the versions CI runs, each
+fetched from its GitHub release and checked against a SHA-256 pinned in the
+script, so nothing is installed; offline with nothing cached it skips itself,
+and CI runs it on every push and pull request (0173).
 The selection engine and the lineage are compared with `dbt ls`, and the unused
 config paths with dbt's warning (0103) and the Checks lists with what the
 manifest says (0116), on `tests/fixtures/jaffle_shop` and on Fivetran's Shopify,
@@ -196,6 +200,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change what the profile route sends or accepts, or which keys are secret | [0054](docs/decisions/0054-the-profile-is-edited-without-its-secrets.md), [0090](docs/decisions/0090-a-credential-is-hidden-by-its-value-as-well-as-its-name.md) |
 | change what a tab does when its file changes on disk, or what a save checks first | [0067](docs/decisions/0067-an-open-tab-follows-its-file-on-disk.md) |
 | rename a function in `web/app.js`, or add a test | [0013](docs/decisions/0013-tests-without-a-toolchain.md) |
+| add or change a linter rule, or bump a linter | [0173](docs/decisions/0173-the-linters-are-fetched-by-hash-and-aim-at-bugs.md), [0085](docs/decisions/0085-what-is-installed-is-what-was-audited.md) |
 | add a route, change the port logic, add a CORS header, or change how the key is presented | [0015](docs/decisions/0015-the-browser-is-not-trusted.md), [0052](docs/decisions/0052-the-api-wants-the-key-this-launch-printed.md), [0122](docs/decisions/0122-the-key-travels-in-a-header-per-origin-never-in-a-cookie.md) |
 | run a program found in the project, or ask a venv what it holds | [0053](docs/decisions/0053-a-project-is-read-before-anything-in-it-runs.md), [0094](docs/decisions/0094-what-a-repository-brings-is-held-to-it-what-you-bring-is-followed.md), [0121](docs/decisions/0121-git-runs-nothing-a-repositorys-own-config-names.md) |
 | start a process from the server, or touch `src/sidecar.rs` | [0016](docs/decisions/0016-column-lineage-on-demand.md), [0031](docs/decisions/0031-column-lineage-is-picked-by-tool.md) |

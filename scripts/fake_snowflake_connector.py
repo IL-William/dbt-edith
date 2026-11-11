@@ -127,7 +127,8 @@ def builds():
 
 
 class Cursor:
-    result = []
+    def __init__(self):
+        self.result = []
 
     def execute(self, sql, params=None):
         low = sql.lower()

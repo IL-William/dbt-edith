@@ -45,7 +45,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import walk_tour as W  # noqa: E402  skips, exit 2, without dbt or Chrome
+import walk_tour as W  # skips, exit 2, without dbt or Chrome
 
 # The model and the depth of the last lineage the page asked for.
 LINEAGE = W.LINEAGE
@@ -223,8 +223,8 @@ class Walk:
         rows = self.menu_rows()
         self.check("it lists the focus alone, then the levels", rows[:3] == ["customers", "1+customers", "2+customers"], str(rows))
         self.check("the level drawn has the focus", page.js(
-            f"document.activeElement.classList.contains('lvrow') && document.activeElement.getAttribute('aria-checked') === 'true'"
-            f" && document.activeElement.querySelector('.s').textContent === '1+customers'"))
+            "document.activeElement.classList.contains('lvrow') && document.activeElement.getAttribute('aria-checked') === 'true'"
+            " && document.activeElement.querySelector('.s').textContent === '1+customers'"))
         self.check("its footer says nothing is downstream", page.js(f"{q}('.depthmenu .lvfoot').textContent") == "Nothing downstream: customers has no children.")
         self.check("each row says what it adds", page.js(
             "[...document.querySelectorAll('.depthmenu .lvrow .a')].map((a) => a.textContent)[0]") == "alone")
@@ -323,7 +323,7 @@ class Walk:
             self.check("a bar and not a dot: 3 by 12", page.js(
                 f"(r => Math.round(r.width) + 'x' + Math.round(r.height))({q}('#depth-bar').getBoundingClientRect())") == "3x12")
             self.check("the tabs keep their labels", page.js(
-                f"[...document.querySelectorAll('#dock > .tabs .tab:not(.hidden) > span')].every((e) => e.getBoundingClientRect().width > 2)"))
+                "[...document.querySelectorAll('#dock > .tabs .tab:not(.hidden) > span')].every((e) => e.getBoundingClientRect().width > 2)"))
             self.check("the control fits the row", page.js(
                 f"(r => r.height <= {q}('#dock > .tabs').getBoundingClientRect().height)({q}('#depth-sel').getBoundingClientRect())"))
         # Wide enough for everything, the name is back and the tabs are labelled.

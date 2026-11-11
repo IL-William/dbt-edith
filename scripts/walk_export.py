@@ -43,7 +43,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import walk_tour as W  # noqa: E402  skips, exit 2, without dbt or Chrome
+import walk_tour as W  # skips, exit 2, without dbt or Chrome
 
 STYLES = ["tombstone", "coffin", "grimoire"]
 # Both short of the 27 characters the plain look keeps and past what each style
@@ -147,7 +147,7 @@ class Walk:
             cut = page.js("[...document.querySelectorAll('#graph .nd:not(.rider) .t1')].some((t) => t.textContent.endsWith('…'))")
             self.check("and cuts the long name, which is what the export must undo", cut)
             themed = page.js(SNAPSHOT)
-            first = next((i for i, (a, b) in enumerate(zip(themed, plain)) if a != b), None)
+            first = next((i for i, (a, b) in enumerate(zip(themed, plain, strict=False)) if a != b), None)
             if first is None and len(themed) != len(plain):
                 first = min(len(themed), len(plain))
             where = "" if first is None else f"first difference at {first}: {themed[first - 40:first + 60]!r} against {plain[first - 40:first + 60]!r}"

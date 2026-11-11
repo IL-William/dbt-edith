@@ -643,7 +643,7 @@ class Builds(ScriptTest):
         self.assertEqual(int(found.group(1)), sf.BUILDS_DAYS, "the page and the script read the same number of days")
 
     def test_a_table_past_the_cap_says_it_was_cut(self):
-        many = [("model.jaffle.m%d" % i, "prod", "success", datetime(2026, 10, 20), None, None, "x", None, None, None, None, None, None, None)
+        many = [(f"model.jaffle.m{i}", "prod", "success", datetime(2026, 10, 20), None, None, "x", None, None, None, None, None, None, None)
                 for i in range(sf.BUILDS_MAX + 1)]
         cur = FakeCursor(FakeConnection())
         cur.conn.build_rows = many
@@ -757,7 +757,7 @@ class Profile(ScriptTest):
         elsewhere.mkdir()
         self.write(elsewhere, profiles(role="from_variable"))
 
-        role = lambda: sf.load_profile("shop", None, None)[0]["role"]  # noqa: E731
+        role = lambda: sf.load_profile("shop", None, None)[0]["role"]
         self.assertEqual(role(), "from_project")
         os.environ["DBT_PROFILES_DIR"] = str(elsewhere)
         self.assertEqual(role(), "from_variable")
@@ -774,7 +774,7 @@ class Profile(ScriptTest):
         key.write_text('"-----BEGIN OPENSSH PRIVATE KEY-----"')
         (self.project / "profiles.yml").unlink()
         (self.project / "profiles.yml").symlink_to(key)
-        code, lines, err = self.serve({"op": "quit"})
+        code, _lines, err = self.serve({"op": "quit"})
         self.assertEqual(code, 2)
         self.assertIn("links to a file outside it", err)
         self.assertNotIn("PRIVATE", err)
@@ -834,7 +834,7 @@ class Profile(ScriptTest):
     def test_a_profile_that_is_no_mapping_is_not_listed_in_the_error(self):
         (self.home / ".dbt" / "profiles.yml").write_text('"hunter2"')
         (self.project / "profiles.yml").unlink()
-        code, lines, err = self.serve({"op": "quit"})
+        code, _lines, err = self.serve({"op": "quit"})
         self.assertEqual(code, 2)
         self.assertIn("is not a dbt profile", err)
         self.assertNotIn("h, u, n", err)

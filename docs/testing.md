@@ -42,6 +42,9 @@ cargo fmt --check -- -l
 A conflict in a Rust file is never resolved by hand: take one side of the
 file and run `cargo fmt` again.
 
+`git blame` looks past the formatting commit once the clone is told where it is
+listed: `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 The browser code has small harnesses that run on macOS with the system
 JavaScript engine, no install required, from the repository root:
 
@@ -110,6 +113,16 @@ PyYAML, so they need no warehouse and nothing installed:
 ```
 python3 tools/test_sf_lineage.py
 ```
+
+The linters run alone with `python3 scripts/lint.py` (`--github` for CI's
+annotations): Ruff on the Python and ShellCheck on the shell scripts git
+tracks or would add, Biome on `web/app.js` and `web/lineage.js`, with the rules
+of `ruff.toml` and `biome.jsonc` (0173). Each is downloaded once, from its
+upstream release and against a SHA-256 pinned in the script, into
+`target/lint-tools/<tool>-<version>-<hash>/`, and run from there; delete that
+folder to fetch them again. It exits 2, and `check.sh` skips the part, offline
+with nothing cached or on a platform no build is pinned for. Needs Python 3.10
+or later and nothing else.
 
 The selection box of the Lineage space, `--select` and the lineage are compared with dbt
 itself: every named selector and a list of typed expressions, asked of the box

@@ -74,7 +74,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import walk_tour as wt  # noqa: E402  skips itself without dbt or Chrome
+import walk_tour as wt  # skips itself without dbt or Chrome
 
 SHOTS = wt.ROOT / "docs" / "shots"
 WIDTH, HEIGHT = 1440, 900

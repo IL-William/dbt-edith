@@ -4,6 +4,7 @@
    lane in each one it crosses, median sweeps keep crossings down, and Brandes
    and Kopf sets the heights so long edges run level, unless that costs too much
    height, when a compact isotonic step does (0027). */
+// biome-ignore lint/correctness/noUnusedVariables: the global app.js reads; a plain script has no export
 const Lineage = (() => {
   const NS = 'http://www.w3.org/2000/svg';
   const HGAP = 80, VGAP = 14;
@@ -2202,7 +2203,7 @@ const Lineage = (() => {
       const ctx = document.createElement('canvas').getContext('2d');
       ctx.font = `100px ${font || 'monospace'}`;
       monoScale = monoScaleOf(ctx.measureText('0'.repeat(10)).width / 1000);
-    } catch (e) {
+    } catch {
       monoScale = 1;
     }
   }

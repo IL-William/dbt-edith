@@ -40,7 +40,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import walk_tour as W  # noqa: E402  skips, exit 2, without dbt or Chrome
+import walk_tour as W  # skips, exit 2, without dbt or Chrome
 
 OPEN = "!!document.querySelector('.updmenu')"
 # Where the focus is: the menu, or the element that had it before.

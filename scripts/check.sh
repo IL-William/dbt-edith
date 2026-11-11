@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Everything that has to pass before a change is done: Rust tests, Clippy, rustfmt, the release
-# notes, both audits, the Snowflake script's tests, the selection engine against
+# notes, both audits, the Snowflake script's tests, the linters, the selection engine against
 # dbt itself, the MCP server against the command line, the guided tour walked in Chrome, the browser harnesses, and a
 # syntax check on the frontend the harnesses cannot catch.
 #
 # JavaScriptCore ships with macOS. Elsewhere, set JSC to a JavaScript shell
 # (jsc, d8, node) or accept that the browser half is skipped.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 JSC=${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc}
 failed=0
@@ -35,8 +35,7 @@ if ! cargo clippy --version > /dev/null 2>&1; then
   echo "SKIPPED: no clippy. Install it with: rustup component add clippy"
   skip "clippy"
 else
-  out=$(cargo clippy --quiet --all-targets --locked -- -D warnings 2>&1)
-  if [ $? -eq 0 ]; then
+  if out=$(cargo clippy --quiet --all-targets --locked -- -D warnings 2>&1); then
     echo "clippy ok"
   else
     found=$(printf '%s\n' "$out" | awk '
@@ -59,8 +58,7 @@ if ! cargo fmt --version > /dev/null 2>&1; then
   echo "SKIPPED: no rustfmt. Install it with: rustup component add rustfmt"
   skip "rustfmt"
 else
-  out=$(cargo fmt --check -- -l 2>&1)
-  if [ $? -eq 0 ]; then
+  if out=$(cargo fmt --check -- -l 2>&1); then
     echo "rustfmt ok"
   else
     # -l prints the physical path of each file that differs; any other line is
@@ -129,14 +127,31 @@ if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' > /dev/null 2
   echo "SKIPPED: no python3 at 3.10 or later"
   skip "snowflake script"
 else
-  out=$(python3 tools/test_sf_lineage.py 2>&1)
-  if [ $? -eq 0 ]; then
+  if out=$(python3 tools/test_sf_lineage.py 2>&1); then
     echo "snowflake script ok ($(printf '%s\n' "$out" | sed -n 's/^Ran \([0-9]*\) tests.*/\1/p') tests)"
   else
     printf '%s\n' "$out" | tail -30
     echo "SNOWFLAKE SCRIPT FAILED"
     failed=$((failed + 1))
   fi
+fi
+
+echo
+echo "== lint =="
+# Ruff on the Python, ShellCheck on the shell, Biome on app.js and lineage.js
+# (0173). scripts/lint.py fetches each at the version CI runs, by hash, so
+# nothing is installed here; offline with nothing cached, or on a platform it
+# pins no build for, it exits 2 and the part skips itself.
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' > /dev/null 2>&1; then
+  echo "SKIPPED: no python3 at 3.10 or later"
+  skip "lint"
+else
+  out=$(python3 scripts/lint.py 2>&1)
+  case $? in
+    0) echo "lint ok" ;;
+    2) printf '%s\n' "$out" | tail -1; skip "lint" ;;
+    *) printf '%s\n' "$out"; echo "LINT FAILED"; failed=$((failed + 1)) ;;
+  esac
 fi
 
 echo
