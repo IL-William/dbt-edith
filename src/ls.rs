@@ -134,7 +134,7 @@ pub(crate) fn cannot_open(why: &str) -> i32 {
 /// printed, so an answer that is not a process can carry it. `--column` opens
 /// the project the same way.
 pub(crate) fn open(project: &Path, manifest: Option<&Path>) -> Result<(PathBuf, PathBuf, Graph), String> {
-    open_with(project, manifest, |root, path| api::load_manifest(root, path))
+    open_with(project, manifest, api::load_manifest)
 }
 
 /// `open`, with the catalog merged in when there is one, for an answer that

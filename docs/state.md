@@ -3114,9 +3114,6 @@ of its own, and each panel updates the tour, its page under
     - A click on Reload after a catalog was given up on costs one quiet read of
       it.
 42. **Static analysis still to add.**
-    - Clippy, about 80 lints on the code today, all of style, complexity or
-      performance and none of correctness, to be fixed or allowed one by one
-      before they run in CI.
     - Fuzzing the hand-written parsers with `cargo-fuzz`.
 43. **The depth control's limits (0158, 2.9.0).**
     - Metrics, semantic models, saved queries and functions are not loaded,

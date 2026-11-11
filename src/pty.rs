@@ -227,6 +227,8 @@ fn line_editor_ready(master: &Weak<Mutex<Master>>) -> bool {
             None => return false,
         };
         match termios {
+            // bits() is u32 on Linux and u64 on macOS, so the conversion is useless on one of them only.
+            #[allow(clippy::useless_conversion)]
             Some(t) if u64::from(t.local_flags.bits()) & ECHO == 0 => return true,
             Some(_) => std::thread::sleep(Duration::from_millis(50)),
             None => return false,

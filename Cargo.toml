@@ -18,6 +18,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs", "signal"] }
 
+# Clippy runs with -D warnings in check.sh and CI (0171). These three are design
+# choices, not slips: the printers take their inputs as arguments rather than
+# through a context struct, a few payload types nest tuples that a `type` alias
+# would only rename, and the handlers return an axum `Response` as their `Err`.
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+result_large_err = "allow"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

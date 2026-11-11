@@ -20,6 +20,17 @@ settings store:
 cargo test --locked
 ```
 
+Clippy runs on every target with each lint an error, on stable (0171). It needs
+the `clippy` component, `rustup component add clippy`, and `check.sh` skips it
+without. Alone:
+
+```
+cargo clippy --all-targets --locked -- -D warnings
+```
+
+A lint that is wrong for one place is allowed on that item, with a
+one-line reason; three are allowed for the whole crate, in `Cargo.toml`.
+
 The browser code has small harnesses that run on macOS with the system
 JavaScript engine, no install required, from the repository root:
 

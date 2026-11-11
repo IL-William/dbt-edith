@@ -11,18 +11,21 @@ That is why there is no build step, no framework, and a short dependency list.
 ## Verify
 
 ```
-./scripts/check.sh          # Rust tests, both audits, the Snowflake script, dbt itself, the MCP server, the tour, the depth control and Edith's menu in Chrome, browser tests, syntax
+./scripts/check.sh          # Rust tests, Clippy, both audits, the Snowflake script, dbt itself, the MCP server, the tour, the depth control and Edith's menu in Chrome, browser tests, syntax
 ```
 
 Run it before saying a change works. It is the only answer to "how do I check
-this", and it needs nothing installed beyond Rust and macOS. The audit step
+this", and it needs nothing installed beyond Rust and macOS. Clippy is held to
+`-D warnings` on stable, with three lints allowed crate-wide in `Cargo.toml`
+and any other allow carrying its reason where it sits (0171); it skips itself
+without the `clippy` component. The audit step
 needs `cargo install cargo-audit --locked` and skips itself without it, like
 the browser half without a JavaScript shell. A passing run that skipped
 anything ends on `passed, but skipped:` and the parts it left out, never on
 `all good`, so say which when reporting it. The second audit compares
 `web/vendor/` with its upstream releases by hash, offline too, and asks OSV
 about it when online. GitHub Actions runs the Rust tests and both audits on
-every push and every Monday, never the browser half, which wants
+every push and every Monday, Clippy on every push only (0171), never the browser half, which wants
 macOS (0013). The Snowflake script is tested against a fake connector, so it
 needs no warehouse, only Python 3.10 or later, and skips itself without one.
 The selection engine and the lineage are compared with `dbt ls`, and the unused
@@ -273,6 +276,7 @@ frontend fix does not exist in a release binary until it is rebuilt (see 0005).
 | change the agent skill or its MCP variant, what `--skill` prints, or let the binary write anything for an agent client | [0114](docs/decisions/0114-a-skill-is-shipped-and-printed-never-installed.md), [0136](docs/decisions/0136-a-client-that-defers-tools-gets-its-own-printed-skill.md), [0110](docs/decisions/0110-an-agent-may-ask-over-mcp-through-one-tool.md) |
 | write SQL for the user to run, change what a clone copies or where it lands, or read anything else out of the profile | [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
 | change what the Compiled or Run tab shows for an environment, what `/api/compiled` carries, or what the page says the SQL may differ in | [0139](docs/decisions/0139-compiled-sql-is-shown-per-environment-by-swapping-its-relations.md), [0143](docs/decisions/0143-a-sandbox-manifests-relations-are-swapped-where-the-file-places-them.md), [0147](docs/decisions/0147-the-compiled-and-run-tabs-offer-every-environment.md), [0164](docs/decisions/0164-the-compiled-tab-says-when-and-where-on-one-line-and-the-environment-is-picked-beside-it.md), [0113](docs/decisions/0113-the-card-resolves-a-location-per-env-file.md), [0058](docs/decisions/0058-a-model-is-cloned-into-your-schema-by-statements-you-run.md) |
+| silence a Clippy lint, add an `#[allow]`, or pin a Rust toolchain | [0171](docs/decisions/0171-clippy-runs-on-stable-with-every-lint-an-error.md) |
 | set this up for someone, rather than change it | [README, Getting started](README.md#getting-started) |
 | get, build or install the Windows `.exe`, or touch `scripts/build_windows.sh` | [docs/windows.md](docs/windows.md) |
 | change what the `.exe`'s properties say, or what a Windows build does without `windres` | [0093](docs/decisions/0093-the-exe-names-its-publisher-when-windres-is-there.md) |

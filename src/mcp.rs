@@ -802,7 +802,7 @@ mod tests {
     fn a_line_over_a_mebibyte_is_answered_and_skipped_and_the_next_is_read() {
         let s = Session::start(&project("long"));
         let mut long = br#"{"jsonrpc":"2.0","id":1,"method":"ping","params":{"x":""#.to_vec();
-        long.extend(std::iter::repeat(b'a').take(MAX_MESSAGE + 10));
+        long.extend(std::iter::repeat_n(b'a', MAX_MESSAGE + 10));
         long.extend_from_slice(b"\"}}\n");
         s.raw(&long);
         let said = s.recv();

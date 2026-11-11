@@ -426,7 +426,7 @@ impl MacroUse {
     /// the macro dbt runs that calls it.
     pub fn why(&self, macros: &Macros, nodes: &[Node], adapter: &str, m: u32) -> (Why, Option<Run>, Option<u32>) {
         let name = macros.at(m).name.as_str();
-        if let Some(root) = self.from_dbt(macros, nodes, adapter)[m as usize] {
+        if let Some(root) = self.roots_from_dbt(macros, nodes, adapter)[m as usize] {
             if root != m {
                 return (Why::Dbt, None, Some(root));
             }
@@ -475,7 +475,7 @@ impl MacroUse {
 
     /// Per macro, the macro dbt runs itself that reaches it: down from the
     /// project's own that dbt runs, then from dbt's and its adapter's.
-    fn from_dbt(&self, macros: &Macros, nodes: &[Node], adapter: &str) -> &[Option<u32>] {
+    fn roots_from_dbt(&self, macros: &Macros, nodes: &[Node], adapter: &str) -> &[Option<u32>] {
         self.from_dbt.get_or_init(|| {
             let n = macros.len() as u32;
             let mut order: Vec<u32> = (0..n).collect();
@@ -669,7 +669,7 @@ pub fn jinja_calls(code: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = code;
     while let Some(at) = rest.find('{') {
-        let close = match rest[at..].as_bytes().get(1) {
+        let close = match rest.as_bytes()[at..].get(1) {
             Some(b'{') => "}}",
             Some(b'%') => "%}",
             Some(b'#') => "#}",
