@@ -272,7 +272,7 @@ pub fn outdated(version: Option<&str>) -> bool {
 
 /// Whether the collin found is older than `since`. One that gave no version is.
 pub fn older_than(version: Option<&str>, since: (u32, u32, u32)) -> bool {
-    version.and_then(semver).map_or(true, |v| v < since)
+    version.and_then(semver).is_none_or(|v| v < since)
 }
 
 /// The version each collin last asked gave, kept while its binary is the same
@@ -348,7 +348,7 @@ fn listed(dir: &Path) -> Vec<Install> {
             bin.is_file().then_some(Install { version, bin })
         })
         .collect();
-    out.sort_by(|a, b| semver(&b.version).cmp(&semver(&a.version)));
+    out.sort_by_key(|a| std::cmp::Reverse(semver(&a.version)));
     out
 }
 
@@ -1400,7 +1400,7 @@ pub(crate) mod tests {
         assert!(update_offered(Some(&default), &[], old), "an older default is offered the update");
         let same = pinned("0.2.0");
         assert!(
-            !update_offered(Some(&same.bin), &[same.clone()], old),
+            !update_offered(Some(&same.bin), std::slice::from_ref(&same), old),
             "the same version installed by its tag and picked is not: no update reaches it"
         );
         let beside = [pinned("0.4.0")];

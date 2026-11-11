@@ -1209,8 +1209,8 @@ impl Graph {
             let mut columns: Vec<Column> = if heavy {
                 raw_node
                     .columns
-                    .into_iter()
-                    .map(|(_, c)| Column {
+                    .into_values()
+                    .map(|c| Column {
                         name: c.name,
                         data_type: c.data_type.unwrap_or_default(),
                         description: c.description,
@@ -1778,7 +1778,7 @@ impl Graph {
             }
         }
 
-        edges.sort_by(|a, b| (a.from, a.to).cmp(&(b.from, b.to)));
+        edges.sort_by_key(|a| (a.from, a.to));
         edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
         let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
         by_to.sort_by_key(|&i| edges[i as usize].to);
@@ -1792,7 +1792,7 @@ impl Graph {
                 edges: edges.iter().filter(|e| e.kind as usize == i).count(),
             })
             .collect();
-        breakdown.sort_by(|a, b| b.edges.cmp(&a.edges));
+        breakdown.sort_by_key(|a| std::cmp::Reverse(a.edges));
         self.meta.cll_kinds = breakdown;
         outside.sort_unstable();
         outside.dedup();
@@ -2852,8 +2852,7 @@ impl Graph {
         while head < queue.len() {
             let p = queue[head];
             head += 1;
-            for k in 0..out_adj[p].len() {
-                let q = out_adj[p][k];
+            for &q in &out_adj[p] {
                 depth[q] = depth[q].max(depth[p] + 1);
                 indeg[q] -= 1;
                 if indeg[q] == 0 {
@@ -3927,7 +3926,7 @@ mod tests {
     // Edges laid out as `merge_col_lineage` lays them, for graphs wider than
     // a manifest worth writing.
     fn lineage_of(mut edges: Vec<ColEdge>) -> ColLineage {
-        edges.sort_by(|a, b| (a.from, a.to).cmp(&(b.from, b.to)));
+        edges.sort_by_key(|a| (a.from, a.to));
         edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
         let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
         by_to.sort_by_key(|&i| edges[i as usize].to);
@@ -5297,7 +5296,7 @@ mod tests {
                 break;
             }
         }
-        edges.sort_by(|a, b| (a.from, a.to).cmp(&(b.from, b.to)));
+        edges.sort_by_key(|a| (a.from, a.to));
         edges.dedup_by(|a, b| a.from == b.from && a.to == b.to);
         let mut by_to: Vec<u32> = (0..edges.len() as u32).collect();
         by_to.sort_by_key(|&i| edges[i as usize].to);
@@ -5310,7 +5309,7 @@ mod tests {
                 edges: edges.iter().filter(|e| e.kind as usize == i).count(),
             })
             .collect();
-        breakdown.sort_by(|a, b| b.edges.cmp(&a.edges));
+        breakdown.sort_by_key(|a| std::cmp::Reverse(a.edges));
         g.meta.cll_kinds = breakdown;
         g.cll = Some(ColLineage { edges, by_to, kinds, ..Default::default() });
         g.meta.cll_edges = total;

@@ -564,7 +564,7 @@ fn ignored(words: &[Token], i: usize, shown: &mut Vec<String>) -> Result<usize, 
 }
 
 /// The values of a flag that takes several, up to the next flag.
-fn values_after<'w>(words: &'w [Token], i: usize, inline: Option<&str>) -> Result<(Vec<Token>, usize), String> {
+fn values_after(words: &[Token], i: usize, inline: Option<&str>) -> Result<(Vec<Token>, usize), String> {
     if let Some(v) = inline {
         // `--select=a b` gives dbt one value and a stray word, which it refuses.
         return Ok((vec![Token { text: v.to_string(), dynamic: words[i].dynamic }], 1));

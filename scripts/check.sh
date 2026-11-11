@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Everything that has to pass before a change is done: Rust tests, the release
+# Everything that has to pass before a change is done: Rust tests, Clippy, the release
 # notes, both audits, the Snowflake script's tests, the selection engine against
 # dbt itself, the MCP server against the command line, the guided tour walked in Chrome, the browser harnesses, and a
 # syntax check on the frontend the harnesses cannot catch.
@@ -25,6 +25,30 @@ if cargo test --quiet --locked; then
 else
   echo "RUST FAILED"
   failed=$((failed + 1))
+fi
+
+echo
+echo "== clippy =="
+# The lints of stable Clippy, any at all being an error (0171). One line per
+# finding, at most 30, then the count: the rest is a `cargo clippy` away.
+if ! cargo clippy --version > /dev/null 2>&1; then
+  echo "SKIPPED: no clippy. Install it with: rustup component add clippy"
+  skip "clippy"
+else
+  out=$(cargo clippy --quiet --all-targets --locked -- -D warnings 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "clippy ok"
+  else
+    found=$(printf '%s\n' "$out" | awk '
+      /^(error|warning)(\[[^]]*\])?: / { msg = $0; sub(/^[a-z]+(\[[^]]*\])?: /, "", msg); next }
+      /^ *--> / { if (msg != "") { print $2 ": " msg; msg = "" } }')
+    printf '%s\n' "$found" | head -30
+    # A build that fails before any lint prints no location: show its tail instead.
+    [ -n "$found" ] || printf '%s\n' "$out" | tail -10
+    echo "$(printf '%s\n' "$found" | grep -c .) finding(s), run: cargo clippy --all-targets --locked -- -D warnings"
+    echo "CLIPPY FAILED"
+    failed=$((failed + 1))
+  fi
 fi
 
 echo

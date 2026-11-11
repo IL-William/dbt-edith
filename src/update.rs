@@ -178,7 +178,7 @@ fn next_turn(now: u64) -> u64 {
 /// Whether a look made at `checked` no longer stands at `now`: a turn came
 /// between them, or it is dated after `now`, by a clock set back since.
 fn stale(checked: Option<u64>, now: u64) -> bool {
-    checked.map_or(true, |t| t > now || (t as i64) < last_turn(now as i64))
+    checked.is_none_or(|t| t > now || (t as i64) < last_turn(now as i64))
 }
 
 /// Every `vX.Y.Z` in what `git ls-remote --tags --refs` printed, newest
@@ -505,7 +505,7 @@ impl Update {
                 (Some(a), Some(b)) => Some(a.merged(b)),
                 (a, b) => a.or(b),
             };
-            let retry = k.failed.as_ref().map_or(true, |(t, _)| *t > now || now - t >= HOUR as u64);
+            let retry = k.failed.as_ref().is_none_or(|(t, _)| *t > now || now - t >= HOUR as u64);
             let due = !k.checking && (now_anyway || (stale(seen.as_ref().map(|s| s.checked), now) && retry));
             k.seen = seen;
             if due {

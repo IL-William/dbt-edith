@@ -1725,7 +1725,7 @@ fn step_view(graph: &Graph, read: &Read, si: usize, node: Option<u32>) -> StepVi
             .steps
             .iter()
             .map(|&o| &read.steps[o])
-            .filter(|o| o.upstream.iter().any(|u| *u == s.name))
+            .filter(|o| o.upstream.contains(&s.name))
             .map(|o| o.name.clone())
             .collect();
         view.waited_by = awaiting(read, &job.name, &s.name).into_iter().map(|(dag, id, _)| sensor_text(dag, id)).collect();
@@ -3966,8 +3966,8 @@ jobs:
         assert!(check(&cloud).unwrap_or_default().contains("UTC"));
 
         // The file carries it, and holds it to the same check.
-        assert_eq!(parse_sources(&sources_yaml(&[london.clone()])), Ok(vec![london.clone()]));
-        assert!(sources_yaml(&[london.clone()]).contains("    timezone: \"Europe/London\"\n"));
+        assert_eq!(parse_sources(&sources_yaml(std::slice::from_ref(&london))), Ok(vec![london.clone()]));
+        assert!(sources_yaml(std::slice::from_ref(&london)).contains("    timezone: \"Europe/London\"\n"));
         assert!(!sources_yaml(&[source(AIRFLOW, Path::new("dags"), &[])]).contains("timezone"));
         let refused = parse_sources("jobs:\n  - kind: dbt_cloud\n    path: x\n    timezone: UTC\n").unwrap_err();
         assert!(refused.starts_with("line 2:") && refused.contains("UTC"), "{refused}");

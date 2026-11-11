@@ -421,7 +421,7 @@ pub fn new_key() -> String {
 /// What a request without the key is told. The page shows it as it is.
 pub const NO_KEY: &str = "no key for this server in this tab: open the link dbt-edith printed when it started";
 
-fn header_str<'a>(req: &'a axum::extract::Request, name: header::HeaderName) -> Option<&'a str> {
+fn header_str(req: &axum::extract::Request, name: header::HeaderName) -> Option<&str> {
     req.headers().get(name).and_then(|v| v.to_str().ok())
 }
 
@@ -1602,7 +1602,7 @@ async fn set_features(State(st): State<Arc<AppState>>, Json(b): Json<FeaturesBod
         if !on && (st.sidecar.enabled() || shown || !st.cll().is_file()) {
             stop_fetching(&st);
             let found = caches(&st).await;
-            let remembered = saved.map_or_else(|_| st.settings.load(), |s| s).cll_file;
+            let remembered = saved.unwrap_or_else(|_| st.settings.load()).cll_file;
             let path = collin::choose(&st.target_dir, &found, remembered.as_deref(), false, false);
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
             let _ = st.settings.update(|s| s.cll_file = name).await;
@@ -5789,7 +5789,6 @@ mod tests {
         graph.place_packages(&root);
         *st.graph.write().await = Arc::new(graph);
         let list = |dir: &'static str| {
-            let h = h.clone();
             async move {
                 let listed = response_of(port, get(&format!("/api/dir?path={dir}"), &h)).await;
                 let rows: serde_json::Value = serde_json::from_str(past_head(&listed)).unwrap();
@@ -5878,7 +5877,6 @@ mod tests {
         let night = r#"data-theme="night""#;
         assert!(page.contains(night), "the file keeps Night as its own");
         let served = |path: &'static str| {
-            let h = h;
             async move { past_head(&response_of(port, keyless(get(path, &h))).await).to_string() }
         };
 
@@ -7308,7 +7306,7 @@ mod tests {
         let profile = serde_json::json!([{ "kind": "airflow", "path": "conf/profiles.yml", "keys": {} }]);
         let refused = response_of(port, put(serde_json::json!({ "sources": profile, "place": "project", "seen": stamp }))).await;
         assert!(refused.starts_with("HTTP/1.1 400") && refused.contains("a profiles.yml"), "{refused}");
-        assert_eq!(std::fs::read_to_string(&file).unwrap().contains("profiles.yml"), false);
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("profiles.yml"));
 
         // Emptied in the form, the file stays, saying so.
         let emptied = response_of(port, put(serde_json::json!({ "sources": [], "place": "project", "seen": stamp }))).await;

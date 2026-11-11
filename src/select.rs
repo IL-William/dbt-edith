@@ -464,7 +464,7 @@ fn kind_by_name(v: &str) -> Option<Kind> {
     })
 }
 
-fn config_value<'a>(node: &'a Node, key: ConfigKey) -> &'a str {
+fn config_value(node: &Node, key: ConfigKey) -> &str {
     match key {
         ConfigKey::Materialized => &node.materialized,
         ConfigKey::Schema => &node.schema,

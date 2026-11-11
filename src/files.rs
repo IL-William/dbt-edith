@@ -33,7 +33,6 @@ pub fn mtime_secs(path: &Path) -> u64 {
 /// None when the file is not there, and the parser's error when it is there
 /// and cannot be read, as when dbt is still writing it. The error is kept as
 /// an answer is, so a file left broken is not read again on every poll.
-#[allow(clippy::type_complexity)]
 pub struct Cached<T>(std::sync::Mutex<Option<(u64, Option<std::time::SystemTime>, Result<std::sync::Arc<T>, String>)>>);
 
 impl<T> Default for Cached<T> {
@@ -336,8 +335,6 @@ pub fn scan(root: &Path) -> Vec<String> {
     out
 }
 
-/// Ranked substring search over the index. Deliberately not fuzzy: with paths
-/// this long, a subsequence match returns everything and ranks nothing.
 // ------------------------------------------------------------ content search --
 
 /// A search reads files rather than path strings, so it needs its own ceilings.
@@ -581,6 +578,8 @@ fn search_file(root: &Path, canon_root: &Path, rel: &str, needle: &str, per_file
     Searched::Read { hits, more, total }
 }
 
+/// Ranked substring search over the index. Deliberately not fuzzy: with paths
+/// this long, a subsequence match returns everything and ranks nothing.
 pub fn search_paths<'a>(paths: &'a [String], query: &str, limit: usize) -> Vec<&'a str> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {

@@ -124,7 +124,7 @@ fn secrets(all: &[(&str, &str)]) -> Vec<Found> {
 /// it is, and put back whole by the key it hangs from.
 fn flow_holds_secret(inline: &str) -> bool {
     let Some(inner) = inline.strip_prefix('{') else { return false };
-    inner.split(|c| c == ',' || c == '{').any(|pair| {
+    inner.split([',', '{']).any(|pair| {
         pair.split_once(':').is_some_and(|(k, _)| secret_key(k.trim().trim_matches(|c| c == '\'' || c == '"')))
     })
 }
