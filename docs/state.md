@@ -2573,6 +2573,16 @@ for the same times; a catalog that does not read takes the same bounded retries.
 The walks that wait on the page's poll start Chrome with the flags against
 background throttling.
 
+The code is read by linters, with no version bumped (0171, 0172, 0173).
+Clippy runs with every lint an error, in `scripts/check.sh` and in CI, and the
+few lints that are design choices are allowed in `Cargo.toml`. The Rust code is
+formatted by rustfmt with a packed config that keeps the layout it had, so a
+change runs `cargo fmt` before `check.sh`; the other languages are not
+formatted. `scripts/lint.py` runs Ruff on the Python, ShellCheck on the shell
+and Biome on `web/app.js` and `web/lineage.js`, each fetched at a pinned version
+and checked by SHA-256, in `check.sh` and in a lint job of CI. None of the three
+runs on the Monday run, which stays for advisories.
+
 ## Deferred, in the order they were chosen
 
 Item numbers move as items are struck. Decisions 0022, 0065, 0100, 0101, 0103,
@@ -3115,6 +3125,19 @@ of its own, and each panel updates the tour, its page under
       it.
 42. **Static analysis still to add.**
     - Fuzzing the hand-written parsers with `cargo-fuzz`.
+    - Biome reads `web/app.js` and `web/lineage.js` only: `web/tests/` evals
+      slices of `app.js`, so every name there is undeclared, and the CSS is not
+      linted.
+    - `scripts/lint.py` pins builds for macOS (arm64, x64) and Linux x64 only; on
+      Linux arm64 or Windows it exits 2 and `check.sh` skips the linters (0173).
+    - A cached linter is trusted once its folder, named with its hash, exists;
+      the binary is not hashed again on each run.
+    - Clippy in CI reads the Linux build and `check.sh` the macOS one, so the
+      few Linux-only lines are linted in CI alone.
+    - A new stable Clippy or rustfmt can fail a push with no code change; it is
+      fixed in that push (0171), not pinned.
+    - zizmor and actionlint found nothing on the workflows and are not run.
+    - collin has none of the three yet.
 43. **The depth control's limits (0158, 2.9.0).**
     - Metrics, semantic models, saved queries and functions are not loaded,
       though dbt's graph holds them as parents and children, so `dbt ls` can
@@ -4623,7 +4646,9 @@ both that route and the cross-compile.
 
 ## Automated checks
 
-GitHub Actions runs `cargo test --locked`, a RustSec audit of the lockfile that
+GitHub Actions runs `cargo fmt --check`, Clippy with every lint an error and the
+`scripts/lint.py` linters (0171, 0172, 0173) on every push and pull request,
+not on the Monday run, and `cargo test --locked`, a RustSec audit of the lockfile that
 refuses a yanked version, an audit of `web/vendor/` by SHA-256 against the
 upstream tarballs and against OSV, the Snowflake script's tests and the
 comparison with dbt-core 1.11 and 1.12 on Jaffle Shop and Shopify, every
